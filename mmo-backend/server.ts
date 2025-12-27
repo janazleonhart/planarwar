@@ -401,6 +401,9 @@ function main() {
             characterState = hydrateCharacterRegion(characterState, world);
             (session as any).character = characterState;
 
+            const m = (session.character as any).melody;
+            if (m) m.active = false;
+
             log.info("Character loaded for session", {
               sessionId: session.id,
               userId: attachedIdentity.userId,
@@ -579,6 +582,12 @@ function main() {
     });
 
     socket.on("close", () => {
+      // Safety: stop any running melody on logout/disconnect
+      const char = session.character;
+      if (char && (char as any).melody) {
+        (char as any).melody.active = false;
+      }
+
       // Ensure we leave room so despawn broadcasts and membership doesn't leak
       rooms.leaveRoom(session);
       sessions.removeSession(session.id);

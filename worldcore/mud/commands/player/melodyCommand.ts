@@ -135,17 +135,31 @@ export async function handleMelodyCommand(
     }
 
     case "start": {
-      if (melodyState.spellIds.length === 0) {
-        return "Your melody is empty. Add a song first with 'melody add <song>'.";
+      const state = getMelody(char);
+
+      if (!state.spellIds || state.spellIds.length === 0) {
+        return "Your melody is empty. Use: melody add <song>";
+      }
+
+      if (state.isActive) {
+        return "Your melody is already weaving around you.";
       }
 
       setMelodyActive(char, true);
-      return "You begin weaving your melody; your songs will now play in the background.";
+
+      return "You begin weaving your melody.";
     }
 
     case "stop": {
+      const state = getMelody(char);
+
+      if (!state.isActive) {
+        return "Your melody is already silent.";
+      }
+
       setMelodyActive(char, false);
-      return "You let your melody fade out.";
+
+      return "You let your melody fade away.";
     }
 
     default: {

@@ -2,7 +2,7 @@
 
 import { listKnownAbilitiesForChar } from "../../MudAbilities";
 
-export async function handleAbilitiesListCommand(
+export async function handleAbilitiesCommand(
   _ctx: any,
   char: any
 ): Promise<string> {

@@ -316,6 +316,13 @@ function applySimpleNpcCounterAttack(
   
     if (newHp <= 0) {
     killEntity(p);
+
+    // Safety: stop any running melody when the player dies
+    const deadChar = ctx.session.character;
+    if (deadChar && (deadChar as any).melody) {
+      (deadChar as any).melody.active = false;
+    }
+    
     return `[combat] ${npc.name} hits you for ${dmg} damage. You die. (0/${maxHp} HP) Use 'respawn' to return to safety or wait for someone to resurrect you.`;
     }
   

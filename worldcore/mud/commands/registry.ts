@@ -37,11 +37,12 @@ import { handleGuildBankCommand } from "./guildBankCommand";
 
 // NEW: Virtuoso melody command
 import { handleMelodyCommand } from "./player/melodyCommand";
+import { handleSongsCommand } from "./player/songsCommand";
 
 import { handleCastMudCommand } from "./combat/castCommand";
 import { handleAbilityMudCommand } from "./combat/abilityCommand";
-import { handleAbilitiesListCommand } from "./combat/abilitiesListCommand";
-import { handleSpellsListCommand } from "./combat/spellsListCommand";
+import { handleAbilitiesCommand } from "./player/abilitiesCommand";
+import { handleSpellsCommand } from "./player/spellsCommand";
 import { handleAttackCommand } from "./combat/attackCommand";
 import { handleAutoAttackCommand } from "./combat/autoAttackCommand";
 
@@ -133,8 +134,8 @@ export const COMMANDS: Record<string, MudCommandHandlerFn> = {
   resources: handleResourcesCommand,
   res: handleResourcesCommand,
 
-  skills: async (ctx, char, input) => handleSkillsCommand(ctx, char, input),
-  skill: async (ctx, char, input) => handleSkillsCommand(ctx, char, input),
+  skills: async (ctx, char, input) => handleSkillsCommand(ctx),
+  skill: async (ctx, char, input) => handleSkillsCommand(ctx),
 
   // NEW: melody management for Virtuoso
   melody: async (ctx, char, input) => handleMelodyCommand(ctx, char, input),
@@ -146,8 +147,11 @@ export const COMMANDS: Record<string, MudCommandHandlerFn> = {
   ability: handleAbilityMudCommand,
   use_ability: handleAbilityMudCommand,
 
-  abilities: async (ctx, char) => handleAbilitiesListCommand(ctx, char),
-  spells: async (ctx, char) => handleSpellsListCommand(ctx, char),
+  abilities: async (ctx, char) => handleAbilitiesCommand(ctx, char),
+  spell: async (ctx, char) => handleSpellsCommand(ctx),
+  spells: async (ctx, char) => handleSpellsCommand(ctx),
+  song: handleSongsCommand,
+  songs: handleSongsCommand,
 
   attack: handleAttackCommand,
   autoattack: handleAutoAttackCommand,

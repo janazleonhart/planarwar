@@ -197,13 +197,38 @@ export async function tickSongsForCharacter(
   char: CharacterState,
   nowMs: number
 ): Promise<string | null> {
+
+  // --- Hard safety guard: no songs without a living entity ---
+
+  const ent = ctx.entities?.getEntityByOwner(ctx.session.id);
+  const hp =
+    ent && typeof (ent as any).hp === "number" ? (ent as any).hp : undefined;
+  const aliveFlag =
+    ent && typeof (ent as any).alive === "boolean"
+      ? (ent as any).alive
+      : undefined;
+
+  if (!ent || hp === 0 || (typeof hp === "number" && hp < 0) || aliveFlag === false) {
+    // Kill melody runtime flag on this character if present
+    const m = (char as any).melody;
+    if (m) {
+      m.active = false;
+    }
+    return null;
+  }
+
   const classId = (char.classId ?? "").toLowerCase();
   if (classId !== "virtuoso") return null;
 
-  const melody = getMelody(char);
+  const melody = (char as any).melody;
 
-  if (!melody.isActive) return null;
-  if (!Array.isArray(melody.spellIds) || melody.spellIds.length === 0) {
+  if (
+    !melody ||
+    melody.active !== true ||
+    !Array.isArray(melody.spellIds) ||
+    melody.spellIds.length === 0
+  ) {
+    // Nothing to do; either no playlist, inactive, or empty
     return null;
   }
 
@@ -211,14 +236,25 @@ export async function tickSongsForCharacter(
   if (nowMs < melody.nextCastAtMs) return null;
 
   // Resolve melody spell list to actual, valid Virtuoso songs
-  const songSpells: SpellDefinition[] = melody.spellIds
-    .map((id) => SPELLS[id])
+  const rawIds =
+    (Array.isArray((melody as any).spellIds) && (melody as any).spellIds) ||
+    (Array.isArray((melody as any).songIds) && (melody as any).songIds) ||
+    [];
+
+  const ids = rawIds as string[];
+
+  const songSpells: SpellDefinition[] = ids
+    .map((id: string): SpellDefinition | undefined => SPELLS[id])
     .filter(
-      (s): s is SpellDefinition =>
+      (s: SpellDefinition | undefined): s is SpellDefinition =>
         !!s &&
         s.isSong === true &&
         (s.classId ?? "").toLowerCase() === "virtuoso"
     );
+
+  // Optional: normalize back onto spellIds so everyone agrees going forward
+  (melody as any).spellIds = ids;
+  (melody as any).songIds = ids;
 
   if (songSpells.length === 0) {
     // Nothing valid left; clean up
