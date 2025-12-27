@@ -299,7 +299,7 @@ function main() {
         });
     }
   },
-});
+}, npcs);
 
   tickEngine.start();
 
