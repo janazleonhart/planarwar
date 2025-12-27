@@ -287,34 +287,65 @@ export async function performNpcAttack(
 }
 
 function applySimpleNpcCounterAttack(
-    ctx: MudContext,
-    npc: Entity,
-    player: Entity
-  ): string | null {
-    const p: any = player;
-    const n: any = npc;
-  
-    const maxHp =
-      typeof p.maxHp === "number" && p.maxHp > 0 ? p.maxHp : 100;
-    const hp = typeof p.hp === "number" ? p.hp : maxHp;
-  
-    if (hp <= 0) return null; // already dead, nothing to do
-  
-    // Super simple mob damage: 3–6-ish per hit at 100 HP, scales with max HP.
-    const base = typeof (n as any).attackPower === "number"
+  ctx: MudContext,
+  npc: Entity,
+  player: Entity
+): string | null {
+  const p: any = player;
+  const n: any = npc;
+
+  const maxHp =
+    typeof p.maxHp === "number" && p.maxHp > 0 ? p.maxHp : 100;
+  const hp = typeof p.hp === "number" ? p.hp : maxHp;
+  if (hp <= 0) return null; // already dead, nothing to do
+
+  // --- NEW: coward behavior gate for counterattacks ---
+  try {
+    if (ctx.npcs) {
+      const st = ctx.npcs.getNpcStateByEntityId(npc.id);
+      if (st) {
+        const proto =
+          getNpcPrototype(st.protoId) ??
+          getNpcPrototype(st.templateId);
+        const behavior = proto?.behavior ?? "aggressive";
+
+        const npcCurHp =
+          typeof n.hp === "number" ? n.hp : st.hp;
+        const npcMaxHp =
+          typeof n.maxHp === "number" && n.maxHp > 0
+            ? n.maxHp
+            : st.maxHp || proto?.maxHp || 1;
+
+        // If this is a coward and it has taken any damage at all,
+        // do NOT counterattack.
+        if (
+          behavior === "coward" &&
+          npcMaxHp > 0 &&
+          npcCurHp < npcMaxHp
+        ) {
+          return null;
+        }
+      }
+    }
+  } catch {
+    // don't let AI bugs break basic combat
+  }
+
+  // Super simple mob damage: 3–6-ish per hit at 100 HP, scales with max HP.
+  const base =
+    typeof (n as any).attackPower === "number"
       ? (n as any).attackPower
       : Math.max(1, Math.round(maxHp * 0.03)); // 3% of max HP baseline
-  
-    const roll = 0.8 + Math.random() * 0.4; // ±20%
-    const dmg = Math.max(1, Math.floor(base * roll));
-  
-    const newHp = Math.max(0, hp - dmg);
-    p.hp = newHp;
-  
-    markInCombat(p);
-    markInCombat(n);
-  
-    if (newHp <= 0) {
+
+  const roll = 0.8 + Math.random() * 0.4; // ±20%
+  const dmg = Math.max(1, Math.floor(base * roll));
+  const newHp = Math.max(0, hp - dmg);
+
+  p.hp = newHp;
+  markInCombat(p);
+  markInCombat(n);
+
+  if (newHp <= 0) {
     killEntity(p);
 
     // Safety: stop any running melody when the player dies
@@ -322,11 +353,13 @@ function applySimpleNpcCounterAttack(
     if (deadChar && (deadChar as any).melody) {
       (deadChar as any).melody.active = false;
     }
-    
-    return `[combat] ${npc.name} hits you for ${dmg} damage. You die. (0/${maxHp} HP) Use 'respawn' to return to safety or wait for someone to resurrect you.`;
-    }
-  
-    return `[combat] ${npc.name} hits you for ${dmg} damage. (${newHp}/${maxHp} HP)`;
+
+    return `[combat] ${npc.name} hits you for ${dmg} damage.
+You die. (0/${maxHp} HP) Use 'respawn' to return to safety or wait for someone to resurrect you.`;
+  }
+
+  return `[combat] ${npc.name} hits you for ${dmg} damage.
+(${newHp}/${maxHp} HP)`;
 }
 
 export function announceSpawnToRoom(ctx: MudContext, roomId: string, text: string): void {

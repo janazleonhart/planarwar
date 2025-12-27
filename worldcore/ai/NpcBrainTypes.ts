@@ -14,7 +14,7 @@ export type EntityId = string;
 export type CharacterId = string;
 
 /**
- * Minimal view of a player for AI purposes.
+ * Simplified representation of a player in the same room.
  */
 export interface PerceivedPlayer {
   entityId: EntityId;
@@ -24,7 +24,7 @@ export interface PerceivedPlayer {
 }
 
 /**
- * What the AI “sees” about an NPC at decision time.
+ * What the brain "sees" each tick.
  */
 export interface NpcPerception {
   npcId: NpcId;
@@ -35,37 +35,20 @@ export interface NpcPerception {
   maxHp: number;
   alive: boolean;
 
-  /**
-   * High-level behavior profile from the prototype:
-   * "aggressive", "neutral", "coward", "guard"
-   */
   behavior: NpcBehavior;
-
-  /**
-   * Simple “can I treat this as a hostile combatant?” flag.
-   * Derived from behavior + tags.
-   */
   hostile: boolean;
 
   currentTargetId?: EntityId;
 
   playersInRoom: PerceivedPlayer[];
 
-  /**
-   * Milliseconds since last decision tick for this NPC.
-   */
+  /** Milliseconds since last decision for this NPC. */
   sinceLastDecisionMs: number;
 }
 
-/**
- * High-level AI intentions – not raw damage numbers.
- */
-export type NpcDecisionKind =
-  | "idle"
-  | "attack_entity"
-  | "move_to_room"
-  | "say"
-  | "flee";
+// ---------------------------------------------------------------------------
+// Decisions
+// ---------------------------------------------------------------------------
 
 export interface NpcDecisionIdle {
   kind: "idle";
@@ -79,16 +62,17 @@ export interface NpcDecisionAttackEntity {
 
 export interface NpcDecisionMoveToRoom {
   kind: "move_to_room";
-  toRoomId: RoomId;
+  roomId: RoomId;
 }
 
 export interface NpcDecisionSay {
   kind: "say";
-  message: string;
+  text: string;
 }
 
 export interface NpcDecisionFlee {
   kind: "flee";
+  /** Optional entity to flee from; for logging/UI only. */
   fromEntityId?: EntityId;
 }
 

@@ -7,73 +7,60 @@ import {
   NpcDecisionAttackEntity,
 } from "./NpcBrainTypes";
 
+const DEFAULT_COOLDOWN_MS = 2000;
+
 /**
  * Very simple in-process NPC brain:
  *
- * - If not hostile → do nothing
- * - If no players → do nothing
- * - If "coward" and low HP → try to flee instead of attack
- * - Else: attack the first player in the room on cooldown
+ * - If not hostile → does nothing
+ * - If no players → does nothing
+ * - If behavior === "coward" and HP < maxHP → emits flee
+ * - Otherwise: attack the first player in the room on cooldown
  */
 export class LocalSimpleAggroBrain implements NpcBrain {
   private readonly attackCooldownMs: number;
   private readonly cooldowns = new Map<string, number>();
 
-  constructor(attackCooldownMs: number = 2000) {
+  constructor(attackCooldownMs: number = DEFAULT_COOLDOWN_MS) {
     this.attackCooldownMs = attackCooldownMs;
   }
 
   decide(perception: NpcPerception, dtMs: number): NpcDecision | null {
     const npcKey = perception.npcId;
 
-    // Update cooldown first so both flee and attack share the same timer.
+    // Update cooldown
     const prevCd = this.cooldowns.get(npcKey) ?? 0;
     const newCd = Math.max(0, prevCd - dtMs);
     this.cooldowns.set(npcKey, newCd);
 
-    // Non-hostile NPCs do nothing for now.
-    if (!perception.hostile) {
+    // Dead / non-hostile → nothing
+    if (!perception.alive || !perception.hostile) {
       return null;
     }
 
-    // Dead or zero HP: no decisions.
-    if (!perception.alive || perception.hp <= 0) {
+    const players = perception.playersInRoom ?? [];
+    if (players.length === 0) {
       return null;
     }
 
-    if (!perception.playersInRoom || perception.playersInRoom.length === 0) {
-      return null;
-    }
-
-    const hpFrac =
-      perception.maxHp > 0
-        ? perception.hp / perception.maxHp
-        : 1;
-
-    // --- Coward behavior: try to flee at low HP ---
-    if (perception.behavior === "coward" && hpFrac <= 0.3) {
-      // Only let the coward brain make a flee decision when off cooldown,
-      // so we don't spam flee intents every frame.
-      if (newCd > 0) {
-        return null;
-      }
-
-      const from = perception.playersInRoom[0];
-      this.cooldowns.set(npcKey, this.attackCooldownMs);
-
+    // Cowards: once hurt at all, they flee instead of attacking.
+    if (
+      perception.behavior === "coward" &&
+      perception.maxHp > 0 &&
+      perception.hp < perception.maxHp
+    ) {
       return {
         kind: "flee",
-        fromEntityId: from?.entityId,
+        fromEntityId: players[0]?.entityId,
       };
     }
 
-    // --- Aggressive / guard / high-HP coward: standard attack ---
+    // If still on cooldown, do nothing this tick
     if (newCd > 0) {
-      // Still on cooldown: no decision this tick.
       return null;
     }
 
-    const target = perception.playersInRoom[0];
+    const target = players[0];
     if (!target) {
       this.cooldowns.set(npcKey, 0);
       return null;
@@ -85,7 +72,6 @@ export class LocalSimpleAggroBrain implements NpcBrain {
       attackStyle: "melee",
     };
 
-    // Reset cooldown after deciding to attack.
     this.cooldowns.set(npcKey, this.attackCooldownMs);
 
     return decision;

@@ -5,12 +5,18 @@ export type NpcId = string;
 /**
  * High-level behavior profile for an NPC.
  *
- * - "aggressive": will happily attack valid targets on sight
- * - "neutral": will not auto-attack; may only fight when provoked
- * - "coward": will fight at high HP, but will try to flee when low
- * - "guard": reserved for faction/defender logic later
+ * - "aggressive": attacks valid targets on sight
+ * - "neutral": never auto-attacks (may retaliate later)
+ * - "coward": will fight briefly, then try to flee when hurt
+ * - "guard": aggressive, but with future faction checks
+ * - "testing": free slot for dev experiments
  */
-export type NpcBehavior = "neutral" | "aggressive" | "coward" | "guard";
+export type NpcBehavior =
+  | "neutral"
+  | "aggressive"
+  | "coward"
+  | "guard"
+  | "testing";
 
 export interface NpcLootEntry {
   itemId: string; // id in ItemCatalog
@@ -28,42 +34,31 @@ export interface NpcPrototype {
   baseDamageMin: number;
   baseDamageMax: number;
 
-  model?: string; // hook into art later
+  model?: string;
 
   /**
-   * General tags:
+   * Tags like:
    *  - "training", "beast", "undead", "elite"
-   *  - "resource", "resource_ore", etc.
-   *  - "non_hostile" for things that should never attack
+   *  - "resource", "resource_ore"
+   *  - "non_hostile"
    */
   tags?: string[];
 
-  // NEW: high-level behavior profile for AI to read
   behavior?: NpcBehavior;
 
-  // NEW: reward & drop info
   xpReward?: number;
   loot?: NpcLootEntry[];
 }
 
 /**
  * Runtime NPC state tracked server-side.
- * This is per-entity instance.
  */
 export interface NpcRuntimeState {
   entityId: string;
 
-  /** The canonical identity used by quests/progression ("sir_thaddeus") */
-  protoId: NpcId;
-
-  /** Which incarnation/version ("epic_step_4") */
+  protoId: NpcId;    // identity – e.g. "coward_rat"
+  templateId: NpcId; // actual prototype key used
   variantId?: string | null;
-
-  /**
-   * The resolved prototype key actually used
-   * ("sir_thaddeus@epic_step_4" or "sir_thaddeus")
-   */
-  templateId: NpcId;
 
   roomId: string;
 
@@ -71,15 +66,16 @@ export interface NpcRuntimeState {
   maxHp: number;
   alive: boolean;
 
-  // Bare-minimum combat scaffolding
   lastAggroAt?: number;
   lastAttackerEntityId?: string;
+
+  // For simple behavior flags; coward only uses this for now
+  fleeing?: boolean;
 }
 
 // ---------------------------------------------------------------------------
-// v1 prototype catalog (hard-coded default seed)
+// Hard-coded defaults (dev seed / fallback)
 // ---------------------------------------------------------------------------
-// Keep these as dev/test seed data only.
 
 export const DEFAULT_NPC_PROTOTYPES: Record<NpcId, NpcPrototype> = {
   training_dummy: {
@@ -127,13 +123,13 @@ export const DEFAULT_NPC_PROTOTYPES: Record<NpcId, NpcPrototype> = {
     id: "coward_rat",
     name: "Cowardly Rat",
     level: 1,
-    maxHp: 20,
+    maxHp: 200, // chunky for testing; tune later
     baseDamageMin: 1,
     baseDamageMax: 3,
     model: "rat_small",
     tags: ["beast", "critter", "coward_test"],
     behavior: "coward",
-    xpReward: 8,
+    xpReward: 10,
     loot: [
       {
         itemId: "rat_tail",
@@ -153,7 +149,7 @@ export const DEFAULT_NPC_PROTOTYPES: Record<NpcId, NpcPrototype> = {
     baseDamageMax: 0,
     model: "ore_vein_small",
     tags: ["resource", "resource_ore"],
-    behavior: "neutral", // non-hostile node
+    behavior: "neutral",
     xpReward: 0,
     loot: [
       {
@@ -166,21 +162,27 @@ export const DEFAULT_NPC_PROTOTYPES: Record<NpcId, NpcPrototype> = {
   },
 };
 
-// Live registry (starts from defaults; can be replaced with DB data)
+// live registry (DB + defaults merged)
 let npcPrototypes: Record<NpcId, NpcPrototype> = {
   ...DEFAULT_NPC_PROTOTYPES,
 };
 
+/**
+ * Merge DB-provided prototypes on top of defaults.
+ * DB wins for overlapping IDs, but defaults still exist for dev-only IDs
+ * like "coward_rat".
+ */
 export function setNpcPrototypes(list: NpcPrototype[]): void {
-  const bag: Record<NpcId, NpcPrototype> = {};
+  const bag: Record<NpcId, NpcPrototype> = {
+    ...DEFAULT_NPC_PROTOTYPES,
+  };
 
   for (const proto of list) {
-    bag[proto.id] = proto;
+    const existing = bag[proto.id];
+    bag[proto.id] = existing ? { ...existing, ...proto } : proto;
   }
 
-  // If DB is empty, keep defaults instead of nuking everything
-  npcPrototypes =
-    Object.keys(bag).length > 0 ? bag : { ...DEFAULT_NPC_PROTOTYPES };
+  npcPrototypes = bag;
 }
 
 export function getNpcPrototype(id: string): NpcPrototype | undefined {
@@ -191,5 +193,5 @@ export function getAllNpcPrototypes(): NpcPrototype[] {
   return Object.values(npcPrototypes);
 }
 
-// Backwards compat alias if anything else still imports this name:
+// legacy alias, in case anything still expects this name
 export const NPC_PROTOTYPES = npcPrototypes;

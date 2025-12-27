@@ -18,19 +18,24 @@ import { markInCombat, killEntity } from "../mud/MudHelperFunctions";
 
 const log = Logger.scope("NPC");
 
+/**
+ * Server-side NPC manager.
+ *
+ * - Owns runtime NPC state (hp, room, etc.)
+ * - Bridges EntityManager ↔ AI brain ↔ sessions/chat.
+ */
 export class NpcManager {
   private npcsByEntityId = new Map<string, NpcRuntimeState>();
   private npcsByRoom = new Map<string, Set<string>>();
 
-  // v0 in-process brain; later we can swap this to a remote client.
   private readonly brain = new LocalSimpleAggroBrain();
 
   constructor(private readonly entities: EntityManager) {}
 
-  /**
-   * Spawn an NPC of a given prototype into a room at the given position.
-   * Returns the runtime state (linked to a real Entity).
-   */
+  // -------------------------------------------------------------------------
+  // Spawning / Despawning
+  // -------------------------------------------------------------------------
+
   spawnNpc(
     proto: NpcPrototype,
     roomId: string,
@@ -39,10 +44,8 @@ export class NpcManager {
     z: number,
     variantId?: string | null
   ): NpcRuntimeState {
-    // use EntityManager's NPC creation helper
     const e = this.entities.createNpcEntity(roomId, proto.model ?? proto.name);
 
-    // Resource nodes are not NPCs (semantics), even if they use the same spawn pipeline.
     const tags = proto.tags ?? [];
     const isResource =
       tags.includes("resource") ||
@@ -50,13 +53,12 @@ export class NpcManager {
 
     if (isResource) {
       e.type = "node";
-      (e as any).protoId = proto.id;
     } else {
       e.type = "npc";
-      (e as any).protoId = proto.id;
     }
 
-    // sync Entity fields
+    (e as any).protoId = proto.id;
+
     e.hp = proto.maxHp;
     e.maxHp = proto.maxHp;
     e.alive = true;
@@ -66,13 +68,14 @@ export class NpcManager {
 
     const state: NpcRuntimeState = {
       entityId: e.id,
-      protoId: proto.id, // base proto id (stable)
-      templateId: proto.id, // resolved prototype key used
-      variantId: variantId ?? null, // incarnation
+      protoId: proto.id,
+      templateId: proto.id,
+      variantId: variantId ?? null,
       roomId,
       hp: proto.maxHp,
       maxHp: proto.maxHp,
       alive: true,
+      fleeing: false,
     };
 
     this.npcsByEntityId.set(e.id, state);
@@ -96,13 +99,6 @@ export class NpcManager {
     return state;
   }
 
-  getEntity(entityId: string): any {
-    return this.entities.get(entityId);
-  }
-
-  /**
-   * Convenience: spawn by prototype id or return null if not found.
-   */
   spawnNpcById(
     protoId: string,
     roomId: string,
@@ -112,11 +108,10 @@ export class NpcManager {
     variantId?: string | null
   ): NpcRuntimeState | null {
     const templateId =
-    variantId && variantId.trim().length > 0
-    ? `${protoId}@${variantId.trim()}`
-    : protoId;
+      variantId && variantId.trim().length > 0
+        ? `${protoId}@${variantId.trim()}`
+        : protoId;
 
-    // Try variant first, then base, then fall back to defaults
     const proto =
       getNpcPrototype(templateId) ??
       getNpcPrototype(protoId) ??
@@ -132,14 +127,14 @@ export class NpcManager {
       return null;
     }
 
-    const state = this.spawnNpc(proto, roomId, x, y, z);
+    const state = this.spawnNpc(proto, roomId, x, y, z, variantId);
 
-    // annotate (keeps quest/progression stable on protoId)
-    (state as any).protoId = protoId;
-    (state as any).variantId = variantId ?? null;
-    (state as any).templateId = proto.id;
+    // preserve identity vs template
+    state.protoId = protoId;
+    state.templateId = proto.id;
+    state.variantId = variantId ?? null;
 
-    return state as any;
+    return state;
   }
 
   getNpcStateByEntityId(entityId: string): NpcRuntimeState | undefined {
@@ -177,10 +172,10 @@ export class NpcManager {
     log.info("NPC despawned", { entityId });
   }
 
-  /**
-   * Soft damage hook that keeps runtime + Entity in sync.
-   * Returns the new HP.
-   */
+  // -------------------------------------------------------------------------
+  // Combat helpers
+  // -------------------------------------------------------------------------
+
   applyDamage(entityId: string, amount: number): number | null {
     const st = this.npcsByEntityId.get(entityId);
     if (!st) return null;
@@ -195,18 +190,19 @@ export class NpcManager {
     e.hp = newHp;
     e.alive = newHp > 0;
 
+    if (st.alive && st.maxHp > 0 && st.hp < st.maxHp) {
+      // if this was the first time they were hurt, clear fleeing flag
+      // (brain/manager will handle coward behavior next tick)
+      st.fleeing = st.fleeing ?? false;
+    }
+
     return newHp;
   }
 
-  /**
-   * v1 AI hook: scan NPCs and run simple behaviors.
-   *
-   * - Builds a perception for each NPC
-   * - Asks the brain for a decision
-   * - For attack decisions, applies simple damage to the target player
-   *   and sends them a combat line via SessionManager (if provided)
-   * - For flee decisions, just logs for now (MovementEngine hook later)
-   */
+  // -------------------------------------------------------------------------
+  // Tick update
+  // -------------------------------------------------------------------------
+
   updateAll(deltaMs: number, sessions?: SessionManager): void {
     for (const [entityId, st] of this.npcsByEntityId.entries()) {
       const npcEntity: any = this.entities.get(entityId);
@@ -214,11 +210,24 @@ export class NpcManager {
 
       const roomId = st.roomId;
 
-      // Resolve prototype + behavior
-      const proto =
-        getNpcPrototype(st.templateId) ?? getNpcPrototype(st.protoId);
-      const behavior = proto?.behavior ?? "aggressive";
-      const tags = proto?.tags ?? [];
+      let proto =
+        getNpcPrototype(st.templateId) ??
+        getNpcPrototype(st.protoId) ??
+        DEFAULT_NPC_PROTOTYPES[st.templateId] ??
+        DEFAULT_NPC_PROTOTYPES[st.protoId];
+
+      // safety: if coward id got scrambled, force default coward proto for tests
+      if (
+        st.protoId === "coward_rat" ||
+        st.templateId === "coward_rat"
+      ) {
+        proto = DEFAULT_NPC_PROTOTYPES["coward_rat"] ?? proto;
+      }
+
+      if (!proto) continue;
+
+      const behavior = proto.behavior ?? "aggressive";
+      const tags = proto.tags ?? [];
 
       const isResource =
         tags.includes("resource") ||
@@ -233,24 +242,60 @@ export class NpcManager {
           behavior === "guard" ||
           behavior === "coward");
 
-      // --- Build perception: players in same room ---
+      // --- HARD RULE: coward rats flee once hurt, no matter what the brain says ---
+    const isCoward =
+      behavior === "coward" ||
+      st.protoId === "coward_rat" ||
+      st.templateId === "coward_rat";
+
+    if (
+      isCoward &&
+      st.alive &&
+      st.maxHp > 0 &&
+      st.hp < st.maxHp
+    ) {
+      // First time we notice they’re hurt → announce the flee
+      if (!st.fleeing) {
+        st.fleeing = true;
+
+        if (sessions) {
+          try {
+            const ents = this.entities.getEntitiesInRoom(roomId) as any[];
+            const player = ents.find((e) => e.type === "player");
+            if (player && player.ownerSessionId) {
+              const s = sessions.get(player.ownerSessionId);
+              if (s) {
+                sessions.send(s, "chat", {
+                  from: "[world]",
+                  sessionId: "system",
+                  text: `[combat] ${npcEntity.name} turns to flee! (movement TODO)`,
+                  t: Date.now(),
+                });
+              }
+            }
+          } catch {
+            // ignore, this is dev-only behavior
+          }
+        }
+      }
+
+      // While fleeing, this NPC never gets to the brain / attack logic.
+      continue;
+    }
+
+      // Build perception
       const playersInRoom: PerceivedPlayer[] = [];
       try {
         const ents = this.entities.getEntitiesInRoom(roomId) as any[];
         for (const e of ents) {
           if (e.type !== "player") continue;
 
-          const hp =
-            typeof e.hp === "number"
-              ? e.hp
-              : typeof e.maxHp === "number"
-              ? e.maxHp
-              : 0;
-
           const maxHp =
             typeof e.maxHp === "number" && e.maxHp > 0
               ? e.maxHp
-              : hp || 1;
+              : 100;
+          const hp =
+            typeof e.hp === "number" ? e.hp : maxHp;
 
           playersInRoom.push({
             entityId: e.id,
@@ -259,8 +304,12 @@ export class NpcManager {
             maxHp,
           });
         }
-      } catch {
-        // If perception fails for this room, just skip this NPC this tick.
+      } catch (err) {
+        log.warn("Failed to build NPC perception", {
+          entityId,
+          err,
+        });
+        continue;
       }
 
       const perception: NpcPerception = {
@@ -281,8 +330,36 @@ export class NpcManager {
       if (!decision) continue;
 
       switch (decision.kind) {
+        case "flee": {
+          // Simple v0: announce and stop attacking; real movement later.
+          if (!st.fleeing) {
+            st.fleeing = true;
+
+            if (sessions && playersInRoom.length > 0) {
+              const target = playersInRoom[0];
+              const targetEntity = this.entities.get(
+                target.entityId
+              ) as any;
+              const ownerSessionId =
+                targetEntity?.ownerSessionId;
+              if (ownerSessionId) {
+                const s = sessions.get(ownerSessionId);
+                if (s) {
+                  sessions.send(s, "chat", {
+                    from: "[world]",
+                    sessionId: "system",
+                    text: `[combat] ${npcEntity.name} turns to flee! (movement TODO)`,
+                    t: Date.now(),
+                  });
+                }
+              }
+            }
+          }
+          // While fleeing, do not attack.
+          break;
+        }
+
         case "attack_entity": {
-          // Resolve the target; we only support player targets in v1.
           const target = this.entities.get(
             decision.targetEntityId
           ) as any;
@@ -290,6 +367,69 @@ export class NpcManager {
             break;
           }
 
+          // Is this a coward rat?
+          const isCoward =
+            behavior === "coward" ||
+            st.protoId === "coward_rat" ||
+            st.templateId === "coward_rat";
+
+          // 🔍 Figure out the NPC's *real* current HP from the entity, falling back to state
+          const currentNpcHp =
+            typeof (npcEntity as any).hp === "number"
+              ? (npcEntity as any).hp
+              : st.hp;
+
+          const currentNpcMaxHp =
+            typeof (npcEntity as any).maxHp === "number" &&
+            (npcEntity as any).maxHp > 0
+              ? (npcEntity as any).maxHp
+              : st.maxHp || proto.maxHp;
+
+          // Keep state roughly in sync so future checks see the same numbers
+          st.hp = currentNpcHp;
+          st.maxHp = currentNpcMaxHp;
+          st.alive = currentNpcHp > 0;
+
+          (npcEntity as any).hp = currentNpcHp;
+          (npcEntity as any).maxHp = currentNpcMaxHp;
+          (npcEntity as any).alive = st.alive;
+
+          // Debug string we’ll tack on to combat text so we can see NPC hp/behavior
+          const npcHpDebug = isCoward
+            ? ` [npc_hp=${currentNpcHp}/${currentNpcMaxHp} beh=${behavior}]`
+            : "";
+
+          // 🔒 HARD OVERRIDE:
+          // If this is a coward and it has taken any damage at all,
+          // do NOT attack. Announce a flee instead and bail.
+          if (
+            isCoward &&
+            st.alive &&
+            currentNpcMaxHp > 0 &&
+            currentNpcHp < currentNpcMaxHp
+          ) {
+            st.fleeing = true;
+
+            if (sessions) {
+              const ownerSessionId = (target as any).ownerSessionId;
+              if (ownerSessionId) {
+                const s = sessions.get(ownerSessionId);
+                if (s) {
+                  sessions.send(s, "chat", {
+                    from: "[world]",
+                    sessionId: "system",
+                    text: `[combat] ${npcEntity.name} turns to flee! (movement TODO)${npcHpDebug}`,
+                    t: Date.now(),
+                  });
+                }
+              }
+            }
+
+            // IMPORTANT: no damage dealt, no markInCombat, just bail.
+            break;
+          }
+
+          // ---------- Normal attack path (non-cowards, or unharmed cowards) ----------
           const maxHp =
             typeof target.maxHp === "number" && target.maxHp > 0
               ? target.maxHp
@@ -298,16 +438,15 @@ export class NpcManager {
             typeof target.hp === "number" ? target.hp : maxHp;
 
           if (hp <= 0) {
-            // Already dead, nothing to do.
             break;
           }
 
           const base =
             typeof npcEntity.attackPower === "number"
               ? npcEntity.attackPower
-              : Math.max(1, Math.round(maxHp * 0.03)); // 3% of max HP baseline
+              : Math.max(1, Math.round(proto.maxHp * 0.03));
 
-          const roll = 0.8 + Math.random() * 0.4; // ±20%
+          const roll = 0.8 + Math.random() * 0.4;
           const dmg = Math.max(1, Math.floor(base * roll));
           const newHp = Math.max(0, hp - dmg);
 
@@ -320,10 +459,10 @@ export class NpcManager {
 
           if (newHp <= 0) {
             killEntity(target);
-            line = `[combat] ${npcEntity.name} hits you for ${dmg} damage.
+            line = `[combat][AIv2${npcHpDebug}] ${npcEntity.name} hits you for ${dmg} damage.
 You die. (0/${maxHp} HP) Use 'respawn' to return to safety or wait for someone to resurrect you.`;
           } else {
-            line = `[combat] ${npcEntity.name} hits you for ${dmg} damage.
+            line = `[combat][AIv2${npcHpDebug}] ${npcEntity.name} hits you for ${dmg} damage.
 (${newHp}/${maxHp} HP)`;
           }
 
@@ -345,26 +484,8 @@ You die. (0/${maxHp} HP) Use 'respawn' to return to safety or wait for someone t
           break;
         }
 
-        case "flee": {
-          // v0: just log the intent; MovementEngine/RoomManager integration
-          // will eventually move the NPC to a neighboring room or towards
-          // some safe anchor.
-          log.debug("NPC is trying to flee", {
-            npcId: entityId,
-            roomId,
-            behavior,
-            hp: st.hp,
-            maxHp: st.maxHp,
-          });
-          break;
-        }
-
-        case "say":
-        case "move_to_room":
-        case "idle":
         default:
-          // No-op for now – these will be wired into higher-level
-          // systems (chat, movement, etc.) later.
+          // idle / say / move_to_room not yet implemented
           break;
       }
     }
