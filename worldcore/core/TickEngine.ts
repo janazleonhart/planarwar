@@ -8,6 +8,18 @@ import { Logger } from "../utils/logger";
 
 export interface TickEngineConfig {
   intervalMs: number; // tick interval (e.g. 50ms for 20 TPS)
+
+  /**
+   * Optional hook invoked once per tick with:
+   *  - nowMs: Date.now() for this tick
+   *  - tick:  current tick count (starting at 1)
+   *
+   * You can use this for:
+   *  - SongEngine ticks
+   *  - AI updates
+   *  - World events
+   */
+  onTick?: (nowMs: number, tick: number) => void;
 }
 
 /**
@@ -25,6 +37,7 @@ export interface TickEngineConfig {
 export class TickEngine {
   private readonly log = Logger.scope("TICK");
   private readonly intervalMs: number;
+  private readonly cfg: TickEngineConfig;
 
   private running = false;
   private handle: NodeJS.Timeout | null = null;
@@ -37,6 +50,7 @@ export class TickEngine {
     private readonly world: ServerWorldManager,
     cfg: TickEngineConfig
   ) {
+    this.cfg = cfg;
     this.intervalMs = Math.max(cfg.intervalMs, 10);
   }
 
@@ -54,6 +68,7 @@ export class TickEngine {
 
   stop(): void {
     if (!this.running) return;
+
     this.running = false;
 
     if (this.handle) {
@@ -70,10 +85,18 @@ export class TickEngine {
     if (!this.running) return;
 
     this.tickCount++;
+    const now = Date.now();
 
-    // Hook point: future server-side movement / AI / world events.
+    // Global hook for systems that want a heartbeat (SongEngine, AI, etc.)
+    try {
+      this.cfg.onTick?.(now, this.tickCount);
+    } catch (err: any) {
+      this.log.warn("Error in TickEngine onTick hook", {
+        error: String(err),
+      });
+    }
+
     // For now we just gather basic metrics.
-
     let roomCount = 0;
     for (const _ of this.rooms.listRooms()) {
       roomCount++;
