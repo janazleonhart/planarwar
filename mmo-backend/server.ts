@@ -102,9 +102,8 @@ function main() {
   const spawnPoints = new SpawnPointService();
   const npcSpawns = new NpcSpawnController(spawnPoints, npcs, entities);
 
-  // Respawn service (wired later)
-  const respawns = new RespawnService(world, spawnPoints, characters, entities);
-  void respawns; // avoid unused warning for now
+  // Respawn service
+  const respawnService = new RespawnService(world, spawnPoints, characters, entities);
 
   // Mail Service
   const mailService = new PostgresMailService();
@@ -247,49 +246,60 @@ function main() {
     tradeService,
     vendorService,
     bankService,
-    auctionService
+    auctionService,
   );
 
   // World tick engine + SongEngine hook
   const tickEngine = new TickEngine(entities, rooms, sessions, world, {
-    intervalMs: netConfig.tickIntervalMs,
-    onTick: (nowMs) => {
-      // Virtuoso song auto-cast tick
-      for (const s of sessions.values() as Iterable<any>) {
-        const ch: CharacterState | undefined = (s as any).character;
-        if (!ch) continue;
+  intervalMs: netConfig.tickIntervalMs,
 
-        // Only tick songs if the session is actually in a room
-        if (!s.roomId) continue;
+  onTick: (nowMs) => {
+    // Virtuoso song auto-cast tick
+    for (const s of sessions.values() as Iterable<any>) {
+      const ch = (s as any).character as CharacterState | undefined;
+      if (!ch) continue;
+      if (!s.roomId) continue; // only tick songs when actually in a room
 
-        const ctx: MudContext = {
-          sessions,
-          guilds,
-          session: s,
-          world,
-          characters,
-          entities,
-          items,
-          rooms,
-          npcs,
-          trades: tradeService,
-          vendors: vendorService,
-          bank: bankService,
-          auctions: auctionService,
-          mail: mailService,
-        };
+      const ctx: MudContext = {
+        sessions,
+        guilds,
+        session: s,
+        world,
+        characters,
+        entities,
+        items,
+        rooms,
+        npcs,
+        trades: tradeService,
+        vendors: vendorService,
+        bank: bankService,
+        auctions: auctionService,
+        mail: mailService,
+        respawns: respawnService,
+      };
 
-        // Fire-and-forget; TickEngine is sync
-        tickSongsForCharacter(ctx, ch, nowMs).catch((err) => {
+      tickSongsForCharacter(ctx, ch, nowMs)
+        .then((result) => {
+          if (!result || !result.trim()) return;
+
+          // Send result back as a normal world chat line
+          sessions.send(s, "chat", {
+            from: "[world]",
+            sessionId: "system",
+            text: result,
+            t: nowMs,
+          });
+        })
+        .catch((err) => {
           log.warn("Song tick failed for session", {
             sessionId: s.id,
             charId: ch.id,
             err: String(err),
           });
         });
-      }
-    },
-  });
+    }
+  },
+});
 
   tickEngine.start();
 

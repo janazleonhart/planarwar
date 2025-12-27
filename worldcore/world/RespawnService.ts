@@ -1,11 +1,11 @@
 // worldcore/world/RespawnService.ts
 
 import { Logger } from "../utils/logger";
-import { CharacterState } from "../characters/CharacterTypes";
-import { ServerWorldManager } from "./ServerWorldManager";
+import type { CharacterState } from "../characters/CharacterTypes";
+import type { ServerWorldManager } from "./ServerWorldManager";
 import { SpawnPointService, DbSpawnPoint } from "./SpawnPointService";
 import { EntityManager } from "../core/EntityManager";
-import { Session } from "../shared/Session";
+import type { Session } from "../shared/Session";
 
 // Keep this tiny: any character store that can save a full state works.
 export interface RespawnCharacterStore {
@@ -21,6 +21,8 @@ const log = Logger.scope("RESPAWN");
  *  - Picks a reasonably near spawn point for the character.
  *  - Teleports entity there, full-heals, clears combat.
  *  - Saves CharacterState with the new position + lastRegionId.
+ *
+ * Later, this is where shard death rules + sanctuary logic will plug in.
  */
 export class RespawnService {
   constructor(
@@ -76,12 +78,14 @@ export class RespawnService {
       // v1: simple full-heal + reset flags.
       const e: any = ent;
       e.alive = true;
+
       if (typeof e.maxHp === "number" && e.maxHp > 0) {
         e.hp = e.maxHp;
       } else {
         e.maxHp = 100;
         e.hp = 100;
       }
+
       e.inCombatUntil = 0;
     }
 
@@ -103,7 +107,9 @@ export class RespawnService {
   // Spawn selection
   // ---------------------------------------------------------------------------
 
-  private async pickSpawnPointFor(char: CharacterState): Promise<DbSpawnPoint | null> {
+  private async pickSpawnPointFor(
+    char: CharacterState
+  ): Promise<DbSpawnPoint | null> {
     const shardId = char.shardId;
 
     // 1) Try by lastRegionId first (strongest hint about where they belong).
@@ -113,8 +119,10 @@ export class RespawnService {
           shardId,
           char.lastRegionId
         );
+
         if (regionSpawns.length > 0) {
-          return regionSpawns[0]; // v1: just take the first; later weighted.
+          // v1: just take the first; later we can weight by type/priority.
+          return regionSpawns[0];
         }
       } catch (err) {
         log.warn("getSpawnPointsForRegion failed", {
@@ -153,6 +161,7 @@ export class RespawnService {
             sp.x ?? char.posX,
             sp.z ?? char.posZ
           );
+
           if (d2 < bestDistSq) {
             best = sp;
             bestDistSq = d2;
@@ -178,12 +187,16 @@ export class RespawnService {
           shardId,
           region.id
         );
+
         if (originSpawns.length > 0) {
           return originSpawns[0];
         }
       }
     } catch (err) {
-      log.warn("Fallback spawn lookup failed", { err, shardId });
+      log.warn("Fallback spawn lookup failed", {
+        err,
+        shardId,
+      });
     }
 
     // 4) Absolute last resort: “no spawn”, we’ll stand them up where they died.

@@ -1,8 +1,8 @@
 // worldcore/mud/commands/player/recoveryCommand.ts
 
 import type { MudContext } from "../../MudContext";
-import type { RecoveryContext } from "../../../systems/recovery/recoveryOps"
 
+import type { RecoveryContext } from "../../../systems/recovery/recoveryOps";
 import {
   respawnInPlace,
   restOrSleep,
@@ -17,20 +17,84 @@ import {
   gainPowerResource,
 } from "../../../resources/PowerResources";
 
-// --- Respawn (unchanged, HP-only) ---
-export async function handleRespawnCommand(ctx: MudContext): Promise<string> {
-  const recoveryCtx: RecoveryContext = {
-    session: { id: ctx.session.id },
-    entities: ctx.entities,
-    stopAutoAttack,
-    stopTrainingDummyAi,
-  };
+// Minimal structural type for the RespawnService we threaded in via ctx.
+// We don't import the actual class here to avoid extra compile coupling.
+type RespawnLike = {
+  respawnCharacter: (
+    session: any,
+    char: any
+  ) => Promise<{ character: any; spawn: any }>;
+};
 
-  return respawnInPlace(recoveryCtx);
+// --- Respawn: shard/world-aware (with fallback to old HP-only behavior) ---
+
+export async function handleRespawnCommand(
+  ctx: MudContext
+): Promise<string> {
+  const char = ctx.session.character;
+
+  // No character attached? Fallback to old behavior (or just shrug).
+  if (!char) {
+    const recoveryCtx: RecoveryContext = {
+      session: { id: ctx.session.id },
+      entities: ctx.entities,
+      stopAutoAttack,
+      stopTrainingDummyAi,
+    };
+    return respawnInPlace(recoveryCtx);
+  }
+
+  // Try to get a RespawnService instance off the context (wired by server.ts / router).
+  const respawns = (ctx as any).respawns as RespawnLike | undefined;
+
+  // If we don't have respawns or entities yet, fall back to the old local-only respawn.
+  if (!respawns || !ctx.entities) {
+    const recoveryCtx: RecoveryContext = {
+      session: { id: ctx.session.id },
+      entities: ctx.entities,
+      stopAutoAttack,
+      stopTrainingDummyAi,
+    };
+    return respawnInPlace(recoveryCtx);
+  }
+
+  const ent = ctx.entities.getEntityByOwner(ctx.session.id);
+  const hp =
+    ent && typeof (ent as any).hp === "number"
+      ? (ent as any).hp
+      : undefined;
+  const aliveFlag =
+    ent && typeof (ent as any).alive === "boolean"
+      ? (ent as any).alive
+      : undefined;
+
+  const isDead =
+    !ent ||
+    hp === 0 ||
+    hp! < 0 ||
+    aliveFlag === false;
+
+  if (!isDead) {
+    return "You are not dead enough to respawn.";
+  }
+
+  // v0: ask RespawnService to put you at a sensible spawn and stand you up.
+  const { spawn } = await respawns.respawnCharacter(ctx.session, char);
+
+  if (spawn && spawn.regionId) {
+    // Later we can include pretty region/settlement names.
+    return "You feel your spirit pulled back to safety. You awaken at a safe place in this region.";
+  }
+
+  // Fallback text if we had no spawn and just stood you up where you were.
+  return "You pull yourself back together and return to the waking world.";
 }
 
 // --- Rest: HP via recoveryOps + resource regen (mana/fury) ---
-export async function handleRestCommand(ctx: MudContext): Promise<string> {
+
+export async function handleRestCommand(
+  ctx: MudContext
+): Promise<string> {
   const recoveryCtx: RecoveryContext = {
     session: { id: ctx.session.id },
     entities: ctx.entities,
@@ -38,7 +102,7 @@ export async function handleRestCommand(ctx: MudContext): Promise<string> {
     stopTrainingDummyAi,
   };
 
-  // 1) HP / death handling
+  // 1) HP / death handling (existing recoveryOps behavior)
   const baseMsg = restOrSleep(recoveryCtx);
 
   // 2) Resource handling (needs character on the session)
@@ -53,9 +117,10 @@ export async function handleRestCommand(ctx: MudContext): Promise<string> {
 
   const before = pool.current;
   const gain = Math.max(10, Math.floor(pool.max * 0.25)); // 25% chunk
-  gainPowerResource(char, primary, gain);
-  const after = pool.current;
 
+  gainPowerResource(char, primary, gain);
+
+  const after = pool.current;
   const label = primary === "fury" ? "fury" : "mana";
 
   if (after === before) {

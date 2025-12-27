@@ -1,4 +1,4 @@
-//worldcore/mud/MudContext.ts
+// worldcore/mud/MudContext.ts
 
 import { ServerWorldManager } from "../world/ServerWorldManager";
 import { SessionManager } from "../core/SessionManager";
@@ -15,20 +15,26 @@ import type { VendorService } from "../vendors/VendorService";
 import type { BankService } from "../bank/BankService";
 import type { AuctionService } from "../auction/AuctionService";
 import type { MailService } from "../mail/MailService";
+import type { RespawnService } from "../world/RespawnService";
 
 export type MudContext = {
-    sessions: SessionManager;
-    guilds: GuildService;
-    session: Session;
-    world?: ServerWorldManager;
-    characters?: PostgresCharacterService;
-    entities?: EntityManager;
-    items?: ItemService;
-    rooms?: RoomManager;
-    npcs?: NpcManager; 
-    mail?: MailService;
-    trades?: TradeService;
-    vendors?: VendorService; 
-    bank?: BankService;
-    auctions?: AuctionService; 
-  };
+  sessions: SessionManager;
+  guilds: GuildService;
+  session: Session;
+
+  world?: ServerWorldManager;
+  characters?: PostgresCharacterService;
+  entities?: EntityManager;
+  items?: ItemService;
+  rooms?: RoomManager;
+  npcs?: NpcManager;
+
+  mail?: MailService;
+  trades?: TradeService;
+  vendors?: VendorService;
+  bank?: BankService;
+  auctions?: AuctionService;
+
+  // v0: wired from server/router so commands like /respawn can use shard-aware respawns
+  respawns?: RespawnService;
+};

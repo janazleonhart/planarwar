@@ -306,8 +306,8 @@ function applySimpleNpcCounterAttack(
     markInCombat(n);
   
     if (newHp <= 0) {
-      killEntity(p);
-      return `[combat] ${npc.name} hits you for ${dmg} damage. You die. (0/${maxHp} HP)`;
+    killEntity(p);
+    return `[combat] ${npc.name} hits you for ${dmg} damage. You die. (0/${maxHp} HP) Use 'respawn' to return to safety or wait for someone to resurrect you.`;
     }
   
     return `[combat] ${npc.name} hits you for ${dmg} damage. (${newHp}/${maxHp} HP)`;
