@@ -140,7 +140,7 @@ export async function handleMelodyCommand(
       }
 
       setMelodyActive(char, true);
-      return "You begin weaving your melody. (Tick engine wiring TBD.)";
+      return "You begin weaving your melody; your songs will now play in the background.";
     }
 
     case "stop": {

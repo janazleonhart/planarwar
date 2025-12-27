@@ -2,6 +2,7 @@
 
 import type { SpellSchoolId } from "../combat/CombatEngine";
 import type { PowerResourceKind } from "../resources/PowerResources";
+import type { SongSchoolId } from "../skills/SkillProgression";
 
 export type SpellKind = "damage_single_npc" | "heal_self";
 
@@ -16,7 +17,7 @@ export interface SpellDefinition {
   minLevel: number;
   kind: SpellKind;
 
-  // Magic school, for damage spells
+  // Magic school, for spells
   school?: SpellSchoolId;
 
   // Resource usage
@@ -33,9 +34,12 @@ export interface SpellDefinition {
   // Simple cooldown in ms
   cooldownMs?: number;
 
-  // NEW: metadata so systems (SongEngine, class logic) can reason about the spell
+  // Metadata for systems
   tags?: string[];
   isSong?: boolean;
+
+  // For songs: instrument / vocal “school”
+  songSchool?: SongSchoolId;
 }
 
 export const SPELLS: Record<string, SpellDefinition> = {
@@ -49,7 +53,7 @@ export const SPELLS: Record<string, SpellDefinition> = {
     kind: "damage_single_npc",
     school: "arcane",
     resourceType: "mana",
-    resourceCost: 0, // free debug nuke for testing
+    resourceCost: 0,
     damageMultiplier: 1.4,
     flatBonus: 2,
     cooldownMs: 3000,
@@ -98,11 +102,12 @@ export const SPELLS: Record<string, SpellDefinition> = {
     kind: "heal_self",
     school: "holy",
     resourceType: "mana",
-    resourceCost: 8, // small, cheap heal; later becomes a buff
+    resourceCost: 8,
     healAmount: 12,
     cooldownMs: 6000,
 
     isSong: true,
+    songSchool: "voice",
     tags: ["song", "virtuoso"],
   },
 
@@ -121,6 +126,7 @@ export const SPELLS: Record<string, SpellDefinition> = {
     cooldownMs: 12000,
 
     isSong: true,
+    songSchool: "voice",
     tags: ["song", "virtuoso"],
   },
 
@@ -141,6 +147,7 @@ export const SPELLS: Record<string, SpellDefinition> = {
     cooldownMs: 8000,
 
     isSong: true,
+    songSchool: "voice",
     tags: ["song", "virtuoso"],
   },
 };
@@ -149,10 +156,8 @@ export function findSpellByNameOrId(input: string): SpellDefinition | null {
   const needle = input.trim().toLowerCase();
   if (!needle) return null;
 
-  // id first
   if (SPELLS[needle]) return SPELLS[needle];
 
-  // then by exact name
   const match = Object.values(SPELLS).find(
     (s) => s.name.toLowerCase() === needle
   );

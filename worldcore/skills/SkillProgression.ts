@@ -6,9 +6,15 @@ import type { WeaponSkillId, SpellSchoolId } from "../combat/CombatEngine";
 export type WeaponSkillMap = Partial<Record<WeaponSkillId, number>>;
 export type SpellSchoolMap = Partial<Record<SpellSchoolId, number>>;
 
+// v1 song “instrument” schools – expand later as needed
+export type SongSchoolId = "voice" | "strings" | "winds";
+
+export type SongSchoolMap = Partial<Record<SongSchoolId, number>>;
+
 interface SkillRoot {
   weapons?: WeaponSkillMap;
   spells?: SpellSchoolMap;
+  songs?: SongSchoolMap;
 }
 
 function ensureSkillRoot(char: CharacterState): SkillRoot {
@@ -40,6 +46,16 @@ function ensureSpellSchools(char: CharacterState): SpellSchoolMap {
   }
 
   return root.spells;
+}
+
+function ensureSongSchools(char: CharacterState): SongSchoolMap {
+  const root = ensureSkillRoot(char);
+
+  if (!root.songs) {
+    root.songs = {};
+  }
+
+  return root.songs;
 }
 
 // --- Weapon skills ---
@@ -102,6 +118,40 @@ export function gainSpellSchoolSkill(
 
   const map = ensureSpellSchools(char);
   const current = getSpellSchoolSkill(char, school); // 0 if missing
+
+  const level =
+    typeof char.level === "number" && char.level > 0 ? char.level : 1;
+  const cap = level * 10;
+
+  const next = Math.min(cap, current + amount);
+  map[school] = next;
+}
+
+// --- Song “instrument” skills ---
+
+export function getSongSchoolSkill(
+  char: CharacterState,
+  school: SongSchoolId
+): number {
+  const map = ensureSongSchools(char);
+  const value = map[school];
+
+  if (typeof value !== "number" || value < 0) {
+    return 0;
+  }
+
+  return value;
+}
+
+export function gainSongSchoolSkill(
+  char: CharacterState,
+  school: SongSchoolId,
+  amount: number
+): void {
+  if (amount <= 0) return;
+
+  const map = ensureSongSchools(char);
+  const current = getSongSchoolSkill(char, school);
 
   const level =
     typeof char.level === "number" && char.level > 0 ? char.level : 1;

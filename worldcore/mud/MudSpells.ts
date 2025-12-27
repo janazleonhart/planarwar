@@ -22,8 +22,12 @@ import {
 import {
   getPrimaryPowerResourceForClass,
   trySpendPowerResource,
-  gainPowerResource,
 } from "../resources/PowerResources";
+
+import {
+  gainSpellSchoolSkill,
+  gainSongSchoolSkill,
+} from "../skills/SkillProgression";
 
 import { checkAndStartCooldown } from "../combat/Cooldowns";
 import { Logger } from "../utils/logger";
@@ -100,7 +104,7 @@ export function listKnownSpellsForChar(
 /**
  * Core spell-cast path used by both:
  *  - MUD 'cast' command
- *  - future backend-driven casts (e.g. SongEngine)
+ *  - backend-driven casts (e.g. SongEngine)
  */
 export async function castSpellForCharacter(
   ctx: MudContext,
@@ -123,7 +127,6 @@ export async function castSpellForCharacter(
     if (cdErr) return cdErr;
   }
 
-  // --- Resource gate (mana/fury/etc.) ---
   const spellResourceType =
     spell.resourceType ?? getPrimaryPowerResourceForClass(char.classId);
   const spellResourceCost = spell.resourceCost ?? 0;
@@ -147,6 +150,16 @@ export async function castSpellForCharacter(
   const roomId = ctx.session.roomId ?? char.shardId;
   const targetRaw = (targetNameRaw && targetNameRaw.trim()) || "rat";
 
+  const applySchoolGains = () => {
+    if (spell.school) {
+      gainSpellSchoolSkill(char, spell.school, 1);
+    }
+
+    if (spell.isSong && spell.songSchool) {
+      gainSongSchoolSkill(char, spell.songSchool, 1);
+    }
+  };
+
   switch (spell.kind) {
     case "damage_single_npc": {
       const npc = findNpcTargetByName(ctx.entities, roomId, targetRaw);
@@ -156,14 +169,17 @@ export async function castSpellForCharacter(
 
       startSpellCooldown(char, spell);
 
-      return await performNpcAttack(ctx, char, selfEntity, npc, {
+      const result = await performNpcAttack(ctx, char, selfEntity, npc, {
         abilityName: spell.name,
         tagPrefix: "spell",
         channel: "spell",
         damageMultiplier: spell.damageMultiplier,
         flatBonus: spell.flatBonus,
-        spellSchool: spell.school, // may be undefined; that's fine
+        spellSchool: spell.school,
       });
+
+      applySchoolGains();
+      return result;
     }
 
     case "heal_self": {
@@ -177,17 +193,22 @@ export async function castSpellForCharacter(
 
       startSpellCooldown(char, spell);
 
+      let result: string;
+
       if (isDeadEntity(selfEntity)) {
         resurrectEntity(selfEntity);
-        return `[spell:${spell.name}] You restore yourself to full health.\n(${maxHp}/${maxHp} HP)`;
+        (selfEntity as any).hp = maxHp;
+        result = `[spell:${spell.name}] You restore yourself to full health.\n(${maxHp}/${maxHp} HP)`;
+      } else {
+        const newHp = Math.min(maxHp, hp + heal);
+        (selfEntity as any).hp = newHp;
+        result = `[spell:${spell.name}] You restore ${
+          newHp - hp
+        } health. (${newHp}/${maxHp} HP)`;
       }
 
-      const newHp = Math.min(maxHp, hp + heal);
-      (selfEntity as any).hp = newHp;
-
-      return `[spell:${spell.name}] You restore ${
-        newHp - hp
-      } health. (${newHp}/${maxHp} HP)`;
+      applySchoolGains();
+      return result;
     }
 
     default: {
