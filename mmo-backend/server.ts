@@ -1,4 +1,4 @@
-//mmo-backend/server.ts
+// mmo-backend/server.ts
 
 import http from "http";
 import { WebSocketServer, WebSocket } from "ws";
@@ -39,12 +39,15 @@ import { setQuestDefinitions } from "../worldcore/quests/QuestRegistry";
 import { PostgresNpcService } from "../worldcore/npc/PostgresNpcService";
 import { setNpcPrototypes } from "../worldcore/npc/NpcTypes";
 
+import type { MudContext } from "../worldcore/mud/MudContext";
+import { tickSongsForCharacter } from "../worldcore/songs/SongEngine";
+
 const log = Logger.scope("SERVER");
 
 function describeSocket(ws: WebSocket): string {
   const sock: any = ws;
   const r = sock?._socket;
-  if (!r) return "<unknown peer>";
+  if (!r) return "";
   return `${r.remoteAddress || "?"}:${r.remotePort || "?"}`;
 }
 
@@ -77,7 +80,7 @@ function main() {
   const terrainStream = new TerrainStream(world, sessions);
   const objectStream = new ObjectStream(world, sessions);
 
-  // NEW: auth service
+  // Auth service
   const auth = new PostgresAuthService();
 
   // Character service (Postgres-backed)
@@ -99,11 +102,15 @@ function main() {
   const spawnPoints = new SpawnPointService();
   const npcSpawns = new NpcSpawnController(spawnPoints, npcs, entities);
 
+  // Respawn service (wired later)
+  const respawns = new RespawnService(world, spawnPoints, characters, entities);
+  void respawns; // avoid unused warning for now
+
   // Mail Service
   const mailService = new PostgresMailService();
 
   // Trade Service
-  const tradeService = new InMemoryTradeService()
+  const tradeService: TradeService = new InMemoryTradeService();
 
   // Vendor Service
   const vendorService = new PostgresVendorService();
@@ -114,31 +121,29 @@ function main() {
   // Auction Service
   const auctionService = new PostgresAuctionService();
 
-  // NEW: Quest Service (Postgres-backed, shared across MUD / 2.5D / city builder)
+  // Quest Service (Postgres-backed, shared across MUD / 2.5D / city builder)
   const questService = new PostgresQuestService();
-
   questService
-  .listQuests()
-  .then((defs) => {
-    if (defs.length > 0) {
-      setQuestDefinitions(defs);
-      log.success("Loaded quests from Postgres", { count: defs.length });
-    } else {
-      log.info(
-        "No quests found in Postgres; using hardcoded quest definitions."
+    .listQuests()
+    .then((defs) => {
+      if (defs.length > 0) {
+        setQuestDefinitions(defs);
+        log.success("Loaded quests from Postgres", { count: defs.length });
+      } else {
+        log.info(
+          "No quests found in Postgres; using hardcoded quest definitions."
+        );
+      }
+    })
+    .catch((err) => {
+      log.warn(
+        "Failed to load quests from Postgres; falling back to hardcoded quest definitions.",
+        { err }
       );
-    }
-  })
-  .catch((err) => {
-    log.warn(
-      "Failed to load quests from Postgres; falling back to hardcoded quest definitions.",
-      { err }
-    );
-  });
+    });
 
-  // NEW: NPC Service
+  // NPC Service
   const npcService = new PostgresNpcService();
-
   npcService
     .listNpcs()
     .then((protos) => {
@@ -160,56 +165,64 @@ function main() {
       );
     });
 
-  // NEW: Resource Respawning
+  // Personal resource respawn loop (ore/herbs/etc.)
   const personalRefreshInFlight = new Set<string>();
-
   setInterval(async () => {
-    for (const s of sessions.values()) {
-      const ch: any = (s as any).character;
+    for (const s of sessions.values() as Iterable<any>) {
+      const ch: CharacterState | undefined = (s as any).character;
       if (!ch) continue;
-  
+
       const roomId = s.roomId;
       if (!roomId) continue;
-  
+
       const shardId = ch.shardId ?? "prime_shard";
-      const regionId = ch.lastRegionId ?? ch.regionId ?? roomId;
-  
+      const regionId = ch.lastRegionId ?? (ch as any).regionId ?? roomId;
       const key = `${roomId}:${s.id}`;
+
       if (personalRefreshInFlight.has(key)) continue;
-  
       personalRefreshInFlight.add(key);
+
       try {
         // Snapshot current personal nodes visible to this session
         const before = new Set(
           entities
             .getEntitiesInRoom(roomId)
-            .filter(e => e.ownerSessionId === s.id && (e.type === "node" || e.type === "object"))
-            .map(e => e.id)
+            .filter(
+              (e: any) =>
+                e.ownerSessionId === s.id &&
+                (e.type === "node" || e.type === "object")
+            )
+            .map((e: any) => e.id)
         );
-  
+
         // Attempt to spawn any nodes whose timers are ready
-        const spawnedCount = await (npcSpawns as any).spawnPersonalNodesFromRegion?.(
-          shardId,
-          regionId,
-          roomId,
-          s.id,
-          ch
-        );
-  
+        const spawnedCount =
+          await (npcSpawns as any).spawnPersonalNodesFromRegion?.(
+            shardId,
+            regionId,
+            roomId,
+            s.id,
+            ch
+          );
+
         if (spawnedCount > 0) {
           // Diff: send entity_spawn for newly created nodes (to owner only)
           const after = entities
             .getEntitiesInRoom(roomId)
-            .filter(e => e.ownerSessionId === s.id && (e.type === "node" || e.type === "object"));
-  
+            .filter(
+              (e: any) =>
+                e.ownerSessionId === s.id &&
+                (e.type === "node" || e.type === "object")
+            );
+
           for (const e of after) {
             if (!before.has(e.id)) {
-              sessions.send(s, "entity_spawn", e);
+              sessions.send(s, "entity_spawn", e as any);
             }
           }
         }
-      } catch (err) {
-        // optional log
+      } catch {
+        // optional log; left quiet to avoid spam
         // log.warn("personal node refresh tick failed", { err, sessionId: s.id });
       } finally {
         personalRefreshInFlight.delete(key);
@@ -234,17 +247,50 @@ function main() {
     tradeService,
     vendorService,
     bankService,
-    auctionService,
+    auctionService
   );
 
-  // World tick engine
-  const tickEngine = new TickEngine(
-    entities,
-    rooms,
-    sessions,
-    world,
-    { intervalMs: netConfig.tickIntervalMs }
-  );
+  // World tick engine + SongEngine hook
+  const tickEngine = new TickEngine(entities, rooms, sessions, world, {
+    intervalMs: netConfig.tickIntervalMs,
+    onTick: (nowMs) => {
+      // Virtuoso song auto-cast tick
+      for (const s of sessions.values() as Iterable<any>) {
+        const ch: CharacterState | undefined = (s as any).character;
+        if (!ch) continue;
+
+        // Only tick songs if the session is actually in a room
+        if (!s.roomId) continue;
+
+        const ctx: MudContext = {
+          sessions,
+          guilds,
+          session: s,
+          world,
+          characters,
+          entities,
+          items,
+          rooms,
+          npcs,
+          trades: tradeService,
+          vendors: vendorService,
+          bank: bankService,
+          auctions: auctionService,
+          mail: mailService,
+        };
+
+        // Fire-and-forget; TickEngine is sync
+        tickSongsForCharacter(ctx, ch, nowMs).catch((err) => {
+          log.warn("Song tick failed for session", {
+            sessionId: s.id,
+            charId: ch.id,
+            err: String(err),
+          });
+        });
+      }
+    },
+  });
+
   tickEngine.start();
 
   // Heartbeat / idle session cleanup
@@ -254,12 +300,12 @@ function main() {
   });
 
   // HTTP + WebSocket server
-const server = http.createServer();
+  const server = http.createServer();
 
-const wss = new WebSocketServer({
-  server,
-  path: netConfig.path,
-});
+  const wss = new WebSocketServer({
+    server,
+    path: netConfig.path,
+  });
 
   wss.on("listening", () => {
     log.success("MMO shard WebSocketServer listening", {
@@ -325,7 +371,6 @@ const wss = new WebSocketServer({
       if (attachedIdentity && requestedCharacterId) {
         try {
           const state = await characters.loadCharacter(requestedCharacterId);
-
           if (!state) {
             log.warn("Character not found for attach", {
               characterId: requestedCharacterId,
@@ -341,9 +386,10 @@ const wss = new WebSocketServer({
             characterState = state;
             attachedIdentity.characterId = requestedCharacterId;
             session.identity = attachedIdentity;
+
             // Hydrate region BEFORE choosing room
             characterState = hydrateCharacterRegion(characterState, world);
-            session.character = characterState;
+            (session as any).character = characterState;
 
             log.info("Character loaded for session", {
               sessionId: session.id,
@@ -377,7 +423,6 @@ const wss = new WebSocketServer({
     // join their shard room, and sync the entity to their position.
     if (characterState) {
       const shardId = characterState.shardId || "prime_shard";
-
       const regionId = characterState.lastRegionId;
       const roomId = regionId ?? shardId; // region room preferred
 
@@ -399,14 +444,17 @@ const wss = new WebSocketServer({
             spawnedCount,
           });
         } catch (err: any) {
-          log.warn("Failed to auto-seed NPCs from spawn_points (pre-join)", {
-            err,
-            sessionId: session.id,
-            characterId: characterState.id,
-            shardId,
-            roomId,
-            regionId,
-          });
+          log.warn(
+            "Failed to auto-seed NPCs from spawn_points (pre-join)",
+            {
+              err,
+              sessionId: session.id,
+              characterId: characterState.id,
+              shardId,
+              roomId,
+              regionId,
+            }
+          );
         }
       }
 
@@ -424,14 +472,17 @@ const wss = new WebSocketServer({
             );
 
           if (typeof spawnedNodes === "number") {
-            log.info("Seeded personal nodes on character attach (pre-join)", {
-              sessionId: session.id,
-              characterId: characterState.id,
-              shardId,
-              roomId,
-              regionId,
-              spawnedNodes,
-            });
+            log.info(
+              "Seeded personal nodes on character attach (pre-join)",
+              {
+                sessionId: session.id,
+                characterId: characterState.id,
+                shardId,
+                roomId,
+                regionId,
+                spawnedNodes,
+              }
+            );
           } else {
             log.warn(
               "npcSpawns.spawnPersonalNodesFromRegion missing (ore will not spawn)",
@@ -455,17 +506,21 @@ const wss = new WebSocketServer({
 
       rooms.joinRoom(session, roomId);
 
-      // AFTER join: push personal nodes to client so they appear immediately (no relog needed)
+      // AFTER join: push personal nodes to client so they appear immediately
       try {
         const ents = entities.getEntitiesInRoom(roomId);
         const personalNodes = ents.filter((e: any) => {
           const isNodeLike = e.type === "node" || e.type === "object";
-          const hasSpawnPoint = typeof e.spawnPointId === "number";
-          return isNodeLike && hasSpawnPoint && e.ownerSessionId === session.id;
+          const hasSpawnPoint = typeof (e as any).spawnPointId === "number";
+          return (
+            isNodeLike &&
+            hasSpawnPoint &&
+            (e as any).ownerSessionId === session.id
+          );
         });
 
         for (const e of personalNodes) {
-          sessions.send(session, "entity_spawn", e);
+          sessions.send(session, "entity_spawn", e as any);
         }
 
         if (personalNodes.length > 0) {
@@ -482,16 +537,16 @@ const wss = new WebSocketServer({
           roomId,
         });
       }
-      
+
       // Sync entity to character pos/name
       const ent = entities.getEntityByOwner(session.id);
       if (ent) {
-        ent.x = characterState.posX;
-        ent.y = characterState.posY;
-        ent.z = characterState.posZ;
-        ent.name = characterState.name;
+        (ent as any).x = characterState.posX;
+        (ent as any).y = characterState.posY;
+        (ent as any).z = characterState.posZ;
+        (ent as any).name = characterState.name;
       }
-      
+
       log.info("Character attached to world", {
         sessionId: session.id,
         characterId: characterState.id,
@@ -519,7 +574,6 @@ const wss = new WebSocketServer({
       sessions.removeSession(session.id);
     });
   });
-
 
   server.listen(netConfig.port, netConfig.host, () => {
     log.success("MMO shard listening", {
