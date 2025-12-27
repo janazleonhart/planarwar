@@ -123,6 +123,27 @@ export const DEFAULT_NPC_PROTOTYPES: Record<NpcId, NpcPrototype> = {
     ],
   },
 
+  coward_rat: {
+    id: "coward_rat",
+    name: "Cowardly Rat",
+    level: 1,
+    maxHp: 20,
+    baseDamageMin: 1,
+    baseDamageMax: 3,
+    model: "rat_small",
+    tags: ["beast", "critter", "coward_test"],
+    behavior: "coward",
+    xpReward: 8,
+    loot: [
+      {
+        itemId: "rat_tail",
+        chance: 0.7,
+        minQty: 1,
+        maxQty: 2,
+      },
+    ],
+  },
+
   ore_vein_small: {
     id: "ore_vein_small",
     name: "Hematite Ore Vein",
@@ -132,7 +153,7 @@ export const DEFAULT_NPC_PROTOTYPES: Record<NpcId, NpcPrototype> = {
     baseDamageMax: 0,
     model: "ore_vein_small",
     tags: ["resource", "resource_ore"],
-    behavior: "neutral", // non-hostile node, even if someone misuses it later
+    behavior: "neutral", // non-hostile node
     xpReward: 0,
     loot: [
       {
