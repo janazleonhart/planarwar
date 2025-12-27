@@ -12,6 +12,7 @@ export {
   isDeadEntity,
   resurrectEntity,
   applySimpleDamageToPlayer,
+  computeNpcMeleeDamage,
 } from "../combat/entityCombat";
 export {
   findTargetPlayerEntityByName,

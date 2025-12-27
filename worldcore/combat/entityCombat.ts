@@ -38,12 +38,14 @@ export interface SimpleDamageResult {
   killed: boolean;
 }
 
-export function applySimpleDamageToPlayer(target: Entity, amount: number): SimpleDamageResult {
+export function applySimpleDamageToPlayer(
+  target: Entity,
+  amount: number
+): SimpleDamageResult {
   const e: any = target;
-
-  const maxHp = typeof e.maxHp === "number" && e.maxHp > 0 ? e.maxHp : 100;
+  const maxHp =
+    typeof e.maxHp === "number" && e.maxHp > 0 ? e.maxHp : 100;
   const oldHp = typeof e.hp === "number" ? e.hp : maxHp;
-
   const dmg = Math.max(0, Math.floor(amount));
   const newHp = Math.max(0, oldHp - dmg);
 
@@ -59,4 +61,27 @@ export function applySimpleDamageToPlayer(target: Entity, amount: number): Simpl
   }
 
   return { newHp, maxHp, killed };
+}
+
+/**
+ * Shared v1 NPC melee damage formula.
+ *
+ * - Uses NPC's own power:
+ *   - explicit `attackPower` if present
+ *   - otherwise ~3% of its own max HP as baseline
+ * - Adds ±20% randomness.
+ */
+export function computeNpcMeleeDamage(npc: Entity): number {
+  const n: any = npc;
+  const npcMaxHp =
+    typeof n.maxHp === "number" && n.maxHp > 0 ? n.maxHp : 100;
+
+  const base =
+    typeof n.attackPower === "number"
+      ? n.attackPower
+      : Math.max(1, Math.round(npcMaxHp * 0.03)); // ~3% of its own HP
+
+  const roll = 0.8 + Math.random() * 0.4; // ±20%
+  const dmg = Math.max(1, Math.floor(base * roll));
+  return dmg;
 }

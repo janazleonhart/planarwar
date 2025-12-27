@@ -14,7 +14,11 @@ import {
   NpcPerception,
 } from "../ai/NpcBrainTypes";
 import { LocalSimpleAggroBrain } from "../ai/LocalSimpleNpcBrain";
-import { markInCombat, killEntity } from "../mud/MudHelperFunctions";
+import {
+  markInCombat,
+  applySimpleDamageToPlayer,
+  computeNpcMeleeDamage,
+} from "../mud/MudHelperFunctions"
 
 const log = Logger.scope("NPC");
 
@@ -331,38 +335,46 @@ export class NpcManager {
 
       switch (decision.kind) {
         case "flee": {
-          // Simple v0: announce and stop attacking; real movement later.
-          if (!st.fleeing) {
-            st.fleeing = true;
+          // v0.2: actual behavior – coward runs away and despawns.
+          st.fleeing = true;
 
-            if (sessions && playersInRoom.length > 0) {
-              const target = playersInRoom[0];
-              const targetEntity = this.entities.get(
-                target.entityId
-              ) as any;
-              const ownerSessionId =
-                targetEntity?.ownerSessionId;
-              if (ownerSessionId) {
-                const s = sessions.get(ownerSessionId);
+          // Try to send a one-line flavor message to whoever is here.
+          if (sessions) {
+            try {
+              const ents = this.entities.getEntitiesInRoom(roomId) as any[];
+              const player = ents.find((e) => e.type === "player");
+              if (player && player.ownerSessionId) {
+                const s = sessions.get(player.ownerSessionId);
                 if (s) {
                   sessions.send(s, "chat", {
                     from: "[world]",
                     sessionId: "system",
-                    text: `[combat] ${npcEntity.name} turns to flee! (movement TODO)`,
+                    text: `[combat] ${npcEntity.name} squeals and scurries away!`,
                     t: Date.now(),
                   });
                 }
               }
+            } catch {
+              // If this explodes, fleeing still works, we just skip the text.
             }
           }
-          // While fleeing, do not attack.
+
+          log.info("NPC fleeing and despawning", {
+            npcId: entityId,
+            roomId,
+            behavior,
+            hp: st.hp,
+            maxHp: st.maxHp,
+          });
+
+          // Remove from the world; clients will see an entity_despawn.
+          this.despawnNpc(entityId);
           break;
         }
 
+
         case "attack_entity": {
-          const target = this.entities.get(
-            decision.targetEntityId
-          ) as any;
+          const target = this.entities.get(decision.targetEntityId) as any;
           if (!target || target.type !== "player") {
             break;
           }
@@ -373,12 +385,11 @@ export class NpcManager {
             st.protoId === "coward_rat" ||
             st.templateId === "coward_rat";
 
-          // 🔍 Figure out the NPC's *real* current HP from the entity, falling back to state
+          // Figure out the NPC's *real* current HP from the entity, falling back to state
           const currentNpcHp =
             typeof (npcEntity as any).hp === "number"
               ? (npcEntity as any).hp
               : st.hp;
-
           const currentNpcMaxHp =
             typeof (npcEntity as any).maxHp === "number" &&
             (npcEntity as any).maxHp > 0
@@ -389,7 +400,6 @@ export class NpcManager {
           st.hp = currentNpcHp;
           st.maxHp = currentNpcMaxHp;
           st.alive = currentNpcHp > 0;
-
           (npcEntity as any).hp = currentNpcHp;
           (npcEntity as any).maxHp = currentNpcMaxHp;
           (npcEntity as any).alive = st.alive;
@@ -399,7 +409,7 @@ export class NpcManager {
             ? ` [npc_hp=${currentNpcHp}/${currentNpcMaxHp} beh=${behavior}]`
             : "";
 
-          // 🔒 HARD OVERRIDE:
+          // HARD OVERRIDE:
           // If this is a coward and it has taken any damage at all,
           // do NOT attack. Announce a flee instead and bail.
           if (
@@ -430,40 +440,34 @@ export class NpcManager {
           }
 
           // ---------- Normal attack path (non-cowards, or unharmed cowards) ----------
-          const maxHp =
+          const targetMaxHp =
             typeof target.maxHp === "number" && target.maxHp > 0
               ? target.maxHp
               : 100;
-          const hp =
-            typeof target.hp === "number" ? target.hp : maxHp;
+          const targetHp =
+            typeof target.hp === "number" ? target.hp : targetMaxHp;
 
-          if (hp <= 0) {
+          if (targetHp <= 0) {
             break;
           }
 
-          const base =
-            typeof npcEntity.attackPower === "number"
-              ? npcEntity.attackPower
-              : Math.max(1, Math.round(proto.maxHp * 0.03));
+          // Shared NPC melee damage math
+          const dmg = computeNpcMeleeDamage(npcEntity);
+          const { newHp, maxHp, killed } = applySimpleDamageToPlayer(
+            target,
+            dmg
+          );
 
-          const roll = 0.8 + Math.random() * 0.4;
-          const dmg = Math.max(1, Math.floor(base * roll));
-          const newHp = Math.max(0, hp - dmg);
-
-          target.hp = newHp;
-
-          markInCombat(target);
+          // Tag NPC as in combat as well
           markInCombat(npcEntity);
 
           let line: string;
-
-          if (newHp <= 0) {
-            killEntity(target);
+          if (killed) {
             line = `[combat][AIv2${npcHpDebug}] ${npcEntity.name} hits you for ${dmg} damage.
-You die. (0/${maxHp} HP) Use 'respawn' to return to safety or wait for someone to resurrect you.`;
+  You die. (0/${maxHp} HP) Use 'respawn' to return to safety or wait for someone to resurrect you.`;
           } else {
             line = `[combat][AIv2${npcHpDebug}] ${npcEntity.name} hits you for ${dmg} damage.
-(${newHp}/${maxHp} HP)`;
+  (${newHp}/${maxHp} HP)`;
           }
 
           if (sessions) {
@@ -483,6 +487,7 @@ You die. (0/${maxHp} HP) Use 'respawn' to return to safety or wait for someone t
 
           break;
         }
+
 
         default:
           // idle / say / move_to_room not yet implemented

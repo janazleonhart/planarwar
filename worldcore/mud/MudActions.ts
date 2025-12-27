@@ -6,7 +6,14 @@ import { Entity } from "../shared/Entity";
 import { computeEffectiveAttributes } from "../characters/Stats";
 import { Logger } from "../utils/logger";
 import { getNpcPrototype } from "../npc/NpcTypes";
-import { markInCombat, killEntity, findNpcTargetByName, findTargetPlayerEntityByName } from "./MudHelperFunctions";
+import {
+  markInCombat,
+  findNpcTargetByName,
+  findTargetPlayerEntityByName,
+  applySimpleDamageToPlayer,
+  isDeadEntity,
+  computeNpcMeleeDamage,
+} from "./MudHelperFunctions";
 import { getTrainingDummyForRoom, computeTrainingDummyDamage, startTrainingDummyAi,
        } from "./MudTrainingDummy";
 import { resolveItem } from "../items/resolveItem";
@@ -294,60 +301,19 @@ function applySimpleNpcCounterAttack(
   const p: any = player;
   const n: any = npc;
 
-  const maxHp =
-    typeof p.maxHp === "number" && p.maxHp > 0 ? p.maxHp : 100;
-  const hp = typeof p.hp === "number" ? p.hp : maxHp;
-  if (hp <= 0) return null; // already dead, nothing to do
-
-  // --- NEW: coward behavior gate for counterattacks ---
-  try {
-    if (ctx.npcs) {
-      const st = ctx.npcs.getNpcStateByEntityId(npc.id);
-      if (st) {
-        const proto =
-          getNpcPrototype(st.protoId) ??
-          getNpcPrototype(st.templateId);
-        const behavior = proto?.behavior ?? "aggressive";
-
-        const npcCurHp =
-          typeof n.hp === "number" ? n.hp : st.hp;
-        const npcMaxHp =
-          typeof n.maxHp === "number" && n.maxHp > 0
-            ? n.maxHp
-            : st.maxHp || proto?.maxHp || 1;
-
-        // If this is a coward and it has taken any damage at all,
-        // do NOT counterattack.
-        if (
-          behavior === "coward" &&
-          npcMaxHp > 0 &&
-          npcCurHp < npcMaxHp
-        ) {
-          return null;
-        }
-      }
-    }
-  } catch {
-    // don't let AI bugs break basic combat
+  // If the player is already dead, nothing to do.
+  if (isDeadEntity(p)) {
+    return null;
   }
 
-  // Super simple mob damage: 3–6-ish per hit at 100 HP, scales with max HP.
-  const base =
-    typeof (n as any).attackPower === "number"
-      ? (n as any).attackPower
-      : Math.max(1, Math.round(maxHp * 0.03)); // 3% of max HP baseline
+  // Use shared NPC melee damage formula.
+  const dmg = computeNpcMeleeDamage(npc);
+  const { newHp, maxHp, killed } = applySimpleDamageToPlayer(player, dmg);
 
-  const roll = 0.8 + Math.random() * 0.4; // ±20%
-  const dmg = Math.max(1, Math.floor(base * roll));
-  const newHp = Math.max(0, hp - dmg);
-
-  p.hp = newHp;
-  markInCombat(p);
+  // Tag NPC as "in combat" too (player is tagged inside applySimpleDamageToPlayer).
   markInCombat(n);
 
-  if (newHp <= 0) {
-    killEntity(p);
-
+  if (killed) {
     // Safety: stop any running melody when the player dies
     const deadChar = ctx.session.character;
     if (deadChar && (deadChar as any).melody) {
@@ -361,6 +327,7 @@ You die. (0/${maxHp} HP) Use 'respawn' to return to safety or wait for someone t
   return `[combat] ${npc.name} hits you for ${dmg} damage.
 (${newHp}/${maxHp} HP)`;
 }
+
 
 export function announceSpawnToRoom(ctx: MudContext, roomId: string, text: string): void {
     if (!ctx.rooms) return;
