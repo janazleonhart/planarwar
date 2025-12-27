@@ -7,6 +7,7 @@ import {
   NpcRuntimeState,
   NpcPrototype,
   getNpcPrototype,
+  DEFAULT_NPC_PROTOTYPES,
 } from "./NpcTypes";
 import {
   PerceivedPlayer,
@@ -111,13 +112,17 @@ export class NpcManager {
     variantId?: string | null
   ): NpcRuntimeState | null {
     const templateId =
-      variantId && variantId.trim().length > 0
-        ? `${protoId}@${variantId.trim()}`
-        : protoId;
+    variantId && variantId.trim().length > 0
+    ? `${protoId}@${variantId.trim()}`
+    : protoId;
 
-    // Try variant first, fall back to base
+    // Try variant first, then base, then fall back to defaults
     const proto =
-      getNpcPrototype(templateId) ?? getNpcPrototype(protoId);
+      getNpcPrototype(templateId) ??
+      getNpcPrototype(protoId) ??
+      DEFAULT_NPC_PROTOTYPES[templateId] ??
+      DEFAULT_NPC_PROTOTYPES[protoId];
+
     if (!proto) {
       log.warn("spawnNpcById: unknown proto", {
         protoId,
