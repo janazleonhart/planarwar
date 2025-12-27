@@ -1,16 +1,13 @@
 // worldcore/mud/commands/player/recoveryCommand.ts
 
 import type { MudContext } from "../../MudContext";
-
 import type { RecoveryContext } from "../../../systems/recovery/recoveryOps";
 import {
   respawnInPlace,
   restOrSleep,
 } from "../../../systems/recovery/recoveryOps";
-
 import { stopAutoAttack } from "../combat/autoattack/trainingDummyAutoAttack";
 import { stopTrainingDummyAi } from "../../MudTrainingDummy";
-
 import {
   getPrimaryPowerResourceForClass,
   getOrInitPowerResource,
@@ -27,7 +24,6 @@ type RespawnLike = {
 };
 
 // --- Respawn: shard/world-aware (with fallback to old HP-only behavior) ---
-
 export async function handleRespawnCommand(
   ctx: MudContext
 ): Promise<string> {
@@ -67,12 +63,7 @@ export async function handleRespawnCommand(
     ent && typeof (ent as any).alive === "boolean"
       ? (ent as any).alive
       : undefined;
-
-  const isDead =
-    !ent ||
-    hp === 0 ||
-    hp! < 0 ||
-    aliveFlag === false;
+  const isDead = !ent || hp === 0 || (hp as number) < 0 || aliveFlag === false;
 
   if (!isDead) {
     return "You are not dead enough to respawn.";
@@ -90,11 +81,32 @@ export async function handleRespawnCommand(
   return "You pull yourself back together and return to the waking world.";
 }
 
-// --- Rest: HP via recoveryOps + resource regen (mana/fury) ---
-
+// --- Rest: HP via recoveryOps + resource regen (mana only, no fury) ---
 export async function handleRestCommand(
   ctx: MudContext
 ): Promise<string> {
+  // 🔒 Combat gate: block full rest while recently in combat.
+  let inCombatRecently = false;
+
+  if (ctx.entities) {
+    try {
+      const ent: any = ctx.entities.getEntityByOwner(ctx.session.id);
+      if (ent) {
+        const inCombatUntil: number = ent.inCombatUntil ?? 0;
+        const now = Date.now();
+        if (inCombatUntil > now) {
+          inCombatRecently = true;
+        }
+      }
+    } catch {
+      // If this blows up, better to allow rest than crash the command.
+    }
+  }
+
+  if (inCombatRecently) {
+    return "[rest] You can’t rest while in combat! Wait a few seconds after the fighting dies down.";
+  }
+
   const recoveryCtx: RecoveryContext = {
     session: { id: ctx.session.id },
     entities: ctx.entities,
@@ -113,20 +125,22 @@ export async function handleRestCommand(
   }
 
   const primary = getPrimaryPowerResourceForClass(char.classId);
-  const pool = getOrInitPowerResource(char, primary);
 
-  const before = pool.current;
-  const gain = Math.max(10, Math.floor(pool.max * 0.25)); // 25% chunk
-
-  gainPowerResource(char, primary, gain);
-
-  const after = pool.current;
-  const label = primary === "fury" ? "fury" : "mana";
-
-  if (after === before) {
-    // Already full on resource
-    return `${baseMsg} Your ${label} is already full (${after}/${pool.max}).`;
+  // 🔕 Fury (and any non-mana primary) should NOT be restored by resting.
+  if (primary !== "mana") {
+    return baseMsg;
   }
 
-  return `${baseMsg} You also recover ${label} (${before} → ${after}/${pool.max}).`;
+  const pool = getOrInitPowerResource(char, primary);
+  const before = pool.current;
+  const gain = Math.max(10, Math.floor(pool.max * 0.25)); // 25% chunk
+  gainPowerResource(char, primary, gain);
+  const after = pool.current;
+
+  if (after === before) {
+    // Already full on mana
+    return `${baseMsg} Your mana is already full (${after}/${pool.max}).`;
+  }
+
+  return `${baseMsg} You also recover mana (${before} → ${after}/${pool.max}).`;
 }
