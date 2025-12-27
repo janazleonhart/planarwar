@@ -156,6 +156,7 @@ export class NpcManager {
     }
     return out;
   }
+  
 
   despawnNpc(entityId: string): void {
     const st = this.npcsByEntityId.get(entityId);
@@ -232,19 +233,13 @@ export class NpcManager {
 
       const behavior = proto.behavior ?? "aggressive";
       const tags = proto.tags ?? [];
-
       const isResource =
-        tags.includes("resource") ||
-        tags.some((t) => t.startsWith("resource_"));
-
-      const nonHostile =
-        tags.includes("non_hostile") || isResource;
+        tags.includes("resource") || tags.some((t) => t.startsWith("resource_"));
+      const nonHostile = tags.includes("non_hostile") || isResource;
 
       const hostile =
         !nonHostile &&
-        (behavior === "aggressive" ||
-          behavior === "guard" ||
-          behavior === "coward");
+        (behavior === "aggressive" || behavior === "guard" || behavior === "coward");
 
       // --- HARD RULE: coward rats flee once hurt, no matter what the brain says ---
     const isCoward =
@@ -507,4 +502,5 @@ export class NpcManager {
       }
     }
   }
+
 }

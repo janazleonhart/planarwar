@@ -96,7 +96,7 @@ export const DEFAULT_NPC_PROTOTYPES: Record<string, NpcPrototype> = {
     baseDamageMin: 1,
     baseDamageMax: 3,
     model: "rat_small",
-    tags: ["beast", "critter"],
+    tags: ["beast", "critter", "protected_town"],
     // 👇 no more spawn-camping: town rat is now neutral
     behavior: "neutral",
     xpReward: 8,
@@ -154,7 +154,7 @@ export const DEFAULT_NPC_PROTOTYPES: Record<string, NpcPrototype> = {
     baseDamageMax: 14,
     model: "human_guard",
     tags: ["humanoid", "guard", "town"],
-    behavior: "guard",
+    behavior: "aggressive",   // ← treat as a normal aggressive mob for now
     xpReward: 0,
     loot: [],
   },

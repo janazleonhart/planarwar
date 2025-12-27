@@ -2,7 +2,7 @@
 
 import type { Entity } from "../shared/Entity";
 
-const COMBAT_TAG_MS = 10_000; // 10s “in combat” after hit/damage
+const COMBAT_TAG_MS = 15_000; // 10s “in combat” after hit/damage
 
 export function markInCombat(ent: Entity | any): void {
   (ent as any).inCombatUntil = Date.now() + COMBAT_TAG_MS;
