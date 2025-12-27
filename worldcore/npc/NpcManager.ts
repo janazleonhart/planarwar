@@ -208,6 +208,21 @@ export class NpcManager {
 
       const roomId = st.roomId;
 
+      const proto =
+      getNpcPrototype(st.templateId) ?? getNpcPrototype(st.protoId);
+
+      const behavior = proto?.behavior ?? "aggressive";
+      const tags = proto?.tags ?? [];
+
+      const nonHostile =
+        tags.includes("non_hostile") ||
+        tags.includes("resource") ||
+        behavior === "neutral";
+
+      const hostile =
+        !nonHostile &&
+        (behavior === "aggressive" || behavior === "guard");
+
       // --- Build perception: players in same room ---
       const playersInRoom: PerceivedPlayer[] = [];
       try {
@@ -245,7 +260,7 @@ export class NpcManager {
         hp: st.hp,
         maxHp: st.maxHp,
         alive: st.alive,
-        hostile: npcEntity.type === "npc", // v1: all "npc" entities are hostile
+        hostile,
         currentTargetId: undefined,
         playersInRoom,
         sinceLastDecisionMs: deltaMs,
