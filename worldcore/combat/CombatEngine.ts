@@ -1,0 +1,210 @@
+// worldcore/combat/CombatEngine.ts
+
+import type { CharacterState } from "../characters/CharacterTypes";
+import type { Entity } from "../shared/Entity";
+import type { AttackChannel } from "../actions/ActionTypes";
+import { getWeaponSkillLevel, getSpellSchoolLevel } from "./CombatScaling";
+import { Logger } from "../utils/logger";
+
+const log = Logger.scope("COMBAT");
+
+// v1 enums: we keep these very small and expand later.
+export type WeaponSkillId =
+  | "unarmed"
+  | "one_handed"
+  | "two_handed"
+  | "ranged";
+
+export type SpellSchoolId =
+  | "arcane"
+  | "fire"
+  | "frost"
+  | "shadow"
+  | "holy"
+  | "nature"
+  | "song"; // for bards later
+
+export type DamageSchool =
+  | "physical"
+  | "arcane"
+  | "fire"
+  | "frost"
+  | "shadow"
+  | "holy"
+  | "nature"
+  | "pure";
+
+export interface CombatSource {
+  char: CharacterState;
+
+  // v1: “effective” stats from your existing computeEffectiveAttributes
+  effective: Record<string, number>;
+
+  channel: AttackChannel;
+
+  // Optional extra flavor for scaling
+  weaponSkill?: WeaponSkillId;
+  spellSchool?: SpellSchoolId;
+
+  // Later: talent modifiers, buffs, etc.
+  tags?: string[];
+}
+
+export interface CombatTarget {
+  entity: Entity;
+
+  // Later: armor and resists can be derived from proto / equipment
+  armor?: number;
+  resist?: Partial<Record<DamageSchool, number>>;
+}
+
+export interface CombatAttackParams {
+  // Base swing/spell “power” before stats
+  basePower?: number;
+
+  // Scalar multipliers for abilities/spells
+  damageMultiplier?: number;  // e.g. 1.5 = +50%
+  flatBonus?: number;         // e.g. +5 damage
+  damageSchool?: DamageSchool;
+}
+
+export interface CombatResult {
+  damage: number;
+  school: DamageSchool;
+  wasCrit: boolean;
+  wasGlancing: boolean;
+}
+
+/**
+ * v1 combat math:
+ * - channel = "weapon" | "spell" | "ability"
+ * - pull STR / INT from effective attributes
+ * - apply armor/resists very crudely (later we expand)
+ */
+export function computeDamage(
+  source: CombatSource,
+  target: CombatTarget,
+  params: CombatAttackParams = {}
+): CombatResult {
+    const school: DamageSchool =
+    params.damageSchool ??
+    (source.channel === "spell"
+      ? // If we know the spell school, map it; otherwise fall back to arcane
+        (source.spellSchool === "song" ? "pure" : (source.spellSchool as DamageSchool) ?? "arcane")
+      : "physical");
+
+  const eff = source.effective || {};
+  const str = eff.str ?? (source.char as any).attributes?.str ?? 10;
+  const int = eff.int ?? (source.char as any).attributes?.int ?? 10;
+  const level = source.char.level ?? 1;
+
+  const weaponSkillLevel = getWeaponSkillLevel(source.char, source.weaponSkill);
+  const spellSchoolLevel = getSpellSchoolLevel(source.char, source.spellSchool);
+
+  let base: number;
+
+  switch (source.channel) {
+    case "weapon": {
+      // v1: STR + small level + weapon skill
+      base =
+        2 +
+        Math.floor(str / 3) +
+        Math.floor(level / 3) +
+        Math.floor(weaponSkillLevel / 4);
+      break;
+    }
+    case "ability": {
+      // slightly better than a weapon swing, uses same weapon skill scaling
+      base =
+        3 +
+        Math.floor(str / 2) +
+        Math.floor(level / 2) +
+        Math.floor(weaponSkillLevel / 3);
+      break;
+    }
+    case "spell": {
+      // spells scale off INT + spell school
+      base =
+        4 +
+        Math.floor(int / 2) +
+        Math.floor(level / 2) +
+        Math.floor(spellSchoolLevel / 3);
+      break;
+    }
+    default:
+      base = 3 + Math.floor(level / 2);
+  }
+
+  // Apply caller-provided basePower override if present
+  if (typeof params.basePower === "number") {
+    base = params.basePower;
+  }
+
+  // Tiny random roll, same feel as your current mob damage
+  const roll = 0.8 + Math.random() * 0.4; // ±20%
+  let dmg = base * roll;
+
+  // Ability multipliers / flat bonus
+  if (params.damageMultiplier && params.damageMultiplier !== 1) {
+    dmg *= params.damageMultiplier;
+  }
+  if (params.flatBonus) {
+    dmg += params.flatBonus;
+  }
+
+  // Very simple crit system v1 (later: proper crit chance per class/weapon)
+  const critRoll = Math.random();
+  let wasCrit = false;
+  if (critRoll < 0.05) {
+    dmg *= 1.5;
+    wasCrit = true;
+  }
+
+  // Very simple glancing system for weapon swings, v1
+  let wasGlancing = false;
+  if (source.channel === "weapon" && Math.random() < 0.1) {
+    dmg *= 0.7;
+    wasGlancing = true;
+  }
+
+  // Apply target armor/resists (very rough v1)
+  const armor = target.armor ?? 0;
+  if (school === "physical" && armor > 0) {
+    const mitigation = Math.min(0.5, armor / (50 + armor)); // caps at 50%
+    dmg *= 1 - mitigation;
+  }
+
+  const resistPct = target.resist?.[school];
+  if (typeof resistPct === "number" && resistPct > 0) {
+    const mitigation = Math.min(0.75, resistPct / 200); // e.g. 100 res ~= 50% v1
+    dmg *= 1 - mitigation;
+  }
+
+  // Clamp and floor
+  if (!Number.isFinite(dmg) || dmg < 1) {
+    dmg = 1;
+  }
+
+  const final = Math.floor(dmg);
+
+  if (process.env.DEBUG_COMBAT === "1") {
+    log.debug("computeDamage", {
+      sourceClass: source.char.classId,
+      level,
+      channel: source.channel,
+      school,
+      base,
+      roll,
+      final,
+      wasCrit,
+      wasGlancing,
+    });
+  }
+
+  return {
+    damage: final,
+    school,
+    wasCrit,
+    wasGlancing,
+  };
+}

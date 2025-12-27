@@ -1,0 +1,1 @@
+//worldcore/utils/error.ts

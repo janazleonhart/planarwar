@@ -1,0 +1,99 @@
+[
+    {
+      "id": "grain_wheat",
+      "key": "food",
+      "name": "Golden Wheat",
+      "description": "Staple grain for bread, porridge, and army rations.",
+      "rarity": "common",
+      "specializationId": "spec_food_grain"
+    },
+    {
+      "id": "grain_rye",
+      "key": "food",
+      "name": "Rye Bushels",
+      "description": "Hardy grain that thrives in poor, rocky soil.",
+      "rarity": "common",
+      "specializationId": "spec_food_grain"
+    },
+    {
+      "id": "grain_barley",
+      "key": "food",
+      "name": "Barley Sheaves",
+      "description": "Versatile grain for stews, feed, and cheap ale.",
+      "rarity": "common",
+      "specializationId": "spec_food_grain"
+    },
+    {
+      "id": "root_potato",
+      "key": "food",
+      "name": "Sturdy Potatoes",
+      "description": "Reliable root crop that keeps through long winters.",
+      "rarity": "common",
+      "specializationId": "spec_food_grain"
+    },
+    {
+      "id": "veg_cabbage",
+      "key": "food",
+      "name": "Cabbage Heads",
+      "description": "Unfashionable but durable greens for common tables.",
+      "rarity": "common",
+      "specializationId": "spec_food_grain"
+    },
+    {
+      "id": "fruit_sunberry",
+      "key": "food",
+      "name": "Sunberries",
+      "description": "Sweet berries that lift morale in lean seasons.",
+      "rarity": "uncommon",
+      "specializationId": "spec_food_luxury"
+    },
+    {
+      "id": "fruit_nightfig",
+      "key": "food",
+      "name": "Nightfigs",
+      "description": "Dark, rich fruit favored by nobles and smugglers.",
+      "rarity": "uncommon",
+      "specializationId": "spec_food_luxury"
+    },
+    {
+      "id": "spice_emberpepper",
+      "key": "food",
+      "name": "Emberpepper Spice",
+      "description": "Fiery spice that turns bland stews into feasts.",
+      "rarity": "rare",
+      "specializationId": "spec_food_luxury"
+    },
+    {
+      "id": "spice_star_anise",
+      "key": "food",
+      "name": "Star Anise Seeds",
+      "description": "Fragrant seeds prized by chefs and apothecaries.",
+      "rarity": "rare",
+      "specializationId": "spec_food_luxury"
+    },
+    {
+      "id": "meat_salted_beef",
+      "key": "food",
+      "name": "Salted Beef",
+      "description": "Preserved meat, ideal for garrisons and expeditions.",
+      "rarity": "uncommon",
+      "specializationId": "spec_food_grain"
+    },
+    {
+      "id": "meat_smoked_game",
+      "key": "food",
+      "name": "Smoked Game",
+      "description": "Smoked venison and boar for officers and festivals.",
+      "rarity": "rare",
+      "specializationId": "spec_food_luxury"
+    },
+    {
+      "id": "feast_emperors_table",
+      "key": "food",
+      "name": "Emperor's Table Feast",
+      "description": "A legendary spread of delicacies that can sway entire courts.",
+      "rarity": "legendary",
+      "specializationId": "spec_food_luxury"
+    }
+  ]
+  

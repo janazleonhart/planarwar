@@ -1,0 +1,43 @@
+{
+    "tiers": [
+      {
+        "tier": 2,
+        "techRequirements": [],
+        "baseCost": { "wealth": 200, "materials": 180, "knowledge": 120, "unity": 60 }
+      },
+      {
+        "tier": 3,
+        "techRequirements": ["urban_planning_1"],
+        "baseCost": { "wealth": 260, "materials": 220, "knowledge": 160, "unity": 80 }
+      },
+      {
+        "tier": 4,
+        "techRequirements": ["urban_planning_2", "basic_sanitation"],
+        "baseCost": { "wealth": 340, "materials": 280, "knowledge": 210, "unity": 110 }
+      }
+    ],
+    "morph": {
+      "enabledFromTier": 10,
+      "options": [
+        {
+          "id": "food_star",
+          "label": "Granary Star",
+          "resourceFocus": "food",
+          "bonusPerStarPct": 10
+        },
+        {
+          "id": "materials_star",
+          "label": "Timber & Stone Star",
+          "resourceFocus": "materials",
+          "bonusPerStarPct": 10
+        },
+        {
+          "id": "wealth_star",
+          "label": "Trade Star",
+          "resourceFocus": "wealth",
+          "bonusPerStarPct": 10
+        }
+      ]
+    }
+  }
+  

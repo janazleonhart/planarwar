@@ -1,0 +1,67 @@
+[
+    {
+      "id": "wood_oak",
+      "key": "wood_common",
+      "name": "Oak Timber",
+      "description": "Reliable timber for houses, palisades, and wagons.",
+      "rarity": "common",
+      "specializationId": "spec_wood_timber"
+    },
+    {
+      "id": "wood_pine",
+      "key": "wood_common",
+      "name": "Pine Planks",
+      "description": "Light, resinous planks favored for scaffolds and cheap hulls.",
+      "rarity": "common",
+      "specializationId": "spec_wood_timber"
+    },
+    {
+      "id": "wood_birch",
+      "key": "wood_common",
+      "name": "Birch Logs",
+      "description": "Pale, easily worked wood for furniture and tools.",
+      "rarity": "common",
+      "specializationId": "spec_wood_timber"
+    },
+    {
+      "id": "wood_cedar",
+      "key": "wood_common",
+      "name": "Cedar Boards",
+      "description": "Naturally fragrant and rot-resistant, ideal for storage.",
+      "rarity": "uncommon",
+      "specializationId": "spec_wood_timber"
+    },
+    {
+      "id": "wood_ironwood",
+      "key": "wood_hard",
+      "name": "Ironwood Logs",
+      "description": "Dense timber used for rams, gates, and elite shields.",
+      "rarity": "uncommon",
+      "specializationId": "spec_wood_hardwood"
+    },
+    {
+      "id": "wood_heart_ebony",
+      "key": "wood_hard",
+      "name": "Heart Ebony",
+      "description": "Dark, finely grained wood favored for arcane foci.",
+      "rarity": "rare",
+      "specializationId": "spec_wood_hardwood"
+    },
+    {
+      "id": "wood_bloodoak",
+      "key": "wood_hard",
+      "name": "Bloodoak",
+      "description": "Crimson-streaked hardwood rumored to drink in battlefields.",
+      "rarity": "rare",
+      "specializationId": "spec_wood_hardwood"
+    },
+    {
+      "id": "wood_worldtree_splinter",
+      "key": "wood_hard",
+      "name": "Worldtree Splinter",
+      "description": "A mythic fragment of primordial wood that bends but never breaks.",
+      "rarity": "mythic",
+      "specializationId": "spec_wood_hardwood"
+    }
+  ]
+  

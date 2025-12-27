@@ -1,0 +1,152 @@
+[
+    {
+      "id": "mana_spark_arcane",
+      "key": "mana_arcane",
+      "name": "Arcane Sparks",
+      "description": "Raw arcane motes siphoned from leylines; basic fuel for spellwork and wards.",
+      "rarity": "common",
+      "specializationId": "spec_mana_arcane"
+    },
+    {
+      "id": "mana_crystal_runic",
+      "key": "mana_arcane",
+      "name": "Runic Focus Crystals",
+      "description": "Refined arcane crystals used in towers, portals and high-grade enchantments.",
+      "rarity": "uncommon",
+      "specializationId": "spec_mana_arcane"
+    },
+    {
+      "id": "mana_core_planar",
+      "key": "mana_arcane",
+      "name": "Planar Core Shard",
+      "description": "Condensed arcane singularity, dangerously efficient for large-scale rituals.",
+      "rarity": "legendary",
+      "specializationId": "spec_mana_arcane"
+    },
+  
+    {
+      "id": "mana_mote_radiant",
+      "key": "mana_radiant",
+      "name": "Radiant Motes",
+      "description": "Soft light aligned with healing, wards and morale-boosting blessings.",
+      "rarity": "common",
+      "specializationId": "spec_mana_radiant"
+    },
+    {
+      "id": "mana_shard_dawnfire",
+      "key": "mana_radiant",
+      "name": "Dawnfire Shards",
+      "description": "Concentrated light-and-fire essence, ideal for crusader orders and holy artillery.",
+      "rarity": "uncommon",
+      "specializationId": "spec_mana_radiant"
+    },
+    {
+      "id": "mana_heart_sun",
+      "key": "mana_radiant",
+      "name": "Sunheart Fragment",
+      "description": "A blazing core of pure light; cities that house one rarely fall to despair.",
+      "rarity": "mythic",
+      "specializationId": "spec_mana_radiant"
+    },
+  
+    {
+      "id": "mana_residue_umbral",
+      "key": "mana_shadow",
+      "name": "Umbral Residue",
+      "description": "Dark seepage from cursed places, used in hexes and fear-craft.",
+      "rarity": "common",
+      "specializationId": "spec_mana_shadow"
+    },
+    {
+      "id": "mana_glass_night",
+      "key": "mana_shadow",
+      "name": "Nightglass Splinters",
+      "description": "Shadow-infused glass favored by assassins and inquisitors.",
+      "rarity": "uncommon",
+      "specializationId": "spec_mana_shadow"
+    },
+    {
+      "id": "mana_core_corrupt",
+      "key": "mana_shadow",
+      "name": "Corruptive Void Core",
+      "description": "A knot of hunger and entropy; powerful, but steadily poisons what it powers.",
+      "rarity": "legendary",
+      "specializationId": "spec_mana_shadow"
+    },
+  
+    {
+      "id": "mana_ember_primordial",
+      "key": "mana_primal",
+      "name": "Primordial Embers",
+      "description": "Raw fire-aligned primal energy drawn from volcanic vents and battlefields.",
+      "rarity": "common",
+      "specializationId": "spec_mana_primal"
+    },
+    {
+      "id": "mana_stoneheart",
+      "key": "mana_primal",
+      "name": "Stoneheart Pulse",
+      "description": "Deep earth resonance used to anchor fortresses and empower golems.",
+      "rarity": "uncommon",
+      "specializationId": "spec_mana_primal"
+    },
+    {
+      "id": "mana_gale_whorl",
+      "key": "mana_primal",
+      "name": "Gale Whorl",
+      "description": "Captured wind-spirits, ideal for couriers, ships and rapid-response forces.",
+      "rarity": "rare",
+      "specializationId": "spec_mana_primal"
+    },
+    {
+      "id": "mana_verdant_core",
+      "key": "mana_primal",
+      "name": "Verdant Worldseed",
+      "description": "Living kernel of nature magic that can reshape entire biomes over time.",
+      "rarity": "mythic",
+      "specializationId": "spec_mana_primal"
+    },
+  
+    {
+      "id": "mana_shard_hoarfrost",
+      "key": "mana_ice",
+      "name": "Hoarfrost Shards",
+      "description": "Cold-bound mana harvested from glacier rifts; good for stasis wards and siege engines.",
+      "rarity": "uncommon",
+      "specializationId": "spec_mana_ice"
+    },
+    {
+      "id": "mana_core_everfrost",
+      "key": "mana_ice",
+      "name": "Everfrost Core",
+      "description": "Unmelting ice-heart that can freeze rivers or shield vaults for centuries.",
+      "rarity": "legendary",
+      "specializationId": "spec_mana_ice"
+    },
+  
+    {
+      "id": "mana_drop_tidal",
+      "key": "mana_tidal",
+      "name": "Tidal Droplets",
+      "description": "Water-aligned mana that rises and falls with the moonlit tides.",
+      "rarity": "common",
+      "specializationId": "spec_mana_tidal"
+    },
+    {
+      "id": "mana_vial_stormcurrent",
+      "key": "mana_tidal",
+      "name": "Stormcurrent Vial",
+      "description": "Bottled tempest power, prized by admirals and sea-magi.",
+      "rarity": "rare",
+      "specializationId": "spec_mana_tidal"
+    },
+    {
+      "id": "mana_heart_sea",
+      "key": "mana_tidal",
+      "name": "Heart of the Drowned Sea",
+      "description": "Ancient oceanic nexus, able to sway storms and shipping routes alike.",
+      "rarity": "mythic",
+      "specializationId": "spec_mana_tidal"
+    }
+  ]
+  

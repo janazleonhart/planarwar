@@ -1,0 +1,93 @@
+[
+    {
+      "id": "fish_river_trout",
+      "key": "fish_common",
+      "name": "River Trout",
+      "description": "Freshwater staple for inland towns.",
+      "rarity": "common",
+      "specializationId": "spec_fish_coastal"
+    },
+    {
+      "id": "fish_coastal_cod",
+      "key": "fish_common",
+      "name": "Coastal Cod",
+      "description": "Dependable white fish, easy to salt and store.",
+      "rarity": "common",
+      "specializationId": "spec_fish_coastal"
+    },
+    {
+      "id": "fish_estuary_salmon",
+      "key": "fish_common",
+      "name": "Estuary Salmon",
+      "description": "Fatty fish that sustains both peasants and nobles.",
+      "rarity": "uncommon",
+      "specializationId": "spec_fish_coastal"
+    },
+    {
+      "id": "fish_smokefin",
+      "key": "fish_common",
+      "name": "Smokefin",
+      "description": "Oily fish that smokes well for long voyages.",
+      "rarity": "uncommon",
+      "specializationId": "spec_fish_coastal"
+    },
+    {
+      "id": "fish_storm_tuna",
+      "key": "fish_rare",
+      "name": "Storm Tuna",
+      "description": "Massive ocean fish that can feed whole districts.",
+      "rarity": "uncommon",
+      "specializationId": "spec_fish_oceanic"
+    },
+    {
+      "id": "fish_abyssal_eel",
+      "key": "fish_rare",
+      "name": "Abyssal Eel",
+      "description": "Glowing deep-sea eel saturated with primal mana.",
+      "rarity": "rare",
+      "specializationId": "spec_fish_oceanic"
+    },
+    {
+      "id": "sea_salt",
+      "key": "salt",
+      "name": "Sea Salt",
+      "description": "Crystallized salt for preserving food and rituals.",
+      "rarity": "common"
+    },
+    {
+      "id": "sea_rock_salt",
+      "key": "salt",
+      "name": "Rock Salt",
+      "description": "Coarse salt quarried from old seabeds.",
+      "rarity": "uncommon"
+    },
+    {
+      "id": "coral_starlit",
+      "key": "coral_arcane",
+      "name": "Starlit Coral",
+      "description": "Gleaming coral used in tidal wards and focus arrays.",
+      "rarity": "rare"
+    },
+    {
+      "id": "coral_whispering",
+      "key": "coral_arcane",
+      "name": "Whispering Coral",
+      "description": "Faintly humming coral favored by sea shamans.",
+      "rarity": "legendary"
+    },
+    {
+      "id": "pearls_river",
+      "key": "pearls",
+      "name": "River Pearls",
+      "description": "Modest pearls that still fetch a decent price.",
+      "rarity": "uncommon"
+    },
+    {
+      "id": "pearls_moon",
+      "key": "pearls",
+      "name": "Moon Pearls",
+      "description": "Lustrous gems that glow softly under starlight.",
+      "rarity": "legendary"
+    }
+  ]
+  

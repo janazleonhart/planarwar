@@ -1,0 +1,83 @@
+[
+    {
+      "id": "herb_peacebloom",
+      "key": "herb_common",
+      "name": "Peacebloom",
+      "description": "Gentle herb used in basic salves and tonics.",
+      "rarity": "common",
+      "specializationId": "spec_herb_common"
+    },
+    {
+      "id": "herb_silverleaf",
+      "key": "herb_common",
+      "name": "Silverleaf",
+      "description": "Common herb that amplifies minor arcane workings.",
+      "rarity": "common",
+      "specializationId": "spec_herb_common"
+    },
+    {
+      "id": "herb_mageroyal",
+      "key": "herb_common",
+      "name": "Mageroyal",
+      "description": "Fragrant blossoms that steady apprentice spellcasters.",
+      "rarity": "common",
+      "specializationId": "spec_herb_common"
+    },
+    {
+      "id": "herb_kingsfoil",
+      "key": "herb_common",
+      "name": "Kingsfoil",
+      "description": "Bitter leaf used to treat fevers and infections.",
+      "rarity": "uncommon",
+      "specializationId": "spec_herb_common"
+    },
+    {
+      "id": "herb_sungrass",
+      "key": "herb_rare",
+      "name": "Sungrass",
+      "description": "Potent restorative herb that flourishes on high plains.",
+      "rarity": "uncommon",
+      "specializationId": "spec_herb_rare"
+    },
+    {
+      "id": "herb_ghost_mushroom",
+      "key": "herb_rare",
+      "name": "Ghost Mushroom",
+      "description": "Pale fungus that blurs the line between worlds.",
+      "rarity": "rare",
+      "specializationId": "spec_herb_rare"
+    },
+    {
+      "id": "herb_nightshade",
+      "key": "herb_rare",
+      "name": "Nightshade",
+      "description": "Deadly plant used in poisons and forbidden elixirs.",
+      "rarity": "rare",
+      "specializationId": "spec_herb_rare"
+    },
+    {
+      "id": "herb_dreamfoil",
+      "key": "herb_rare",
+      "name": "Dreamfoil",
+      "description": "Shimmering fronds that twist dreams and visions.",
+      "rarity": "rare",
+      "specializationId": "spec_herb_rare"
+    },
+    {
+      "id": "herb_dragons_breath",
+      "key": "herb_rare",
+      "name": "Dragon's Breath Bloom",
+      "description": "Blazing petals used in high-grade fire elixirs.",
+      "rarity": "legendary",
+      "specializationId": "spec_herb_rare"
+    },
+    {
+      "id": "herb_eternal_lotus",
+      "key": "herb_rare",
+      "name": "Eternal Lotus",
+      "description": "Mythic blossom said to bloom once per age, steeped in pure planar energy.",
+      "rarity": "mythic",
+      "specializationId": "spec_herb_rare"
+    }
+  ]
+  

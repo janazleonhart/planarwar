@@ -1,0 +1,59 @@
+[
+    {
+      "id": "stone_granite",
+      "key": "stone_common",
+      "name": "Granite Blocks",
+      "description": "Workhorse stone for long-lasting walls and towers.",
+      "rarity": "common",
+      "specializationId": "spec_stone_quarry"
+    },
+    {
+      "id": "stone_limestone",
+      "key": "stone_common",
+      "name": "Limestone Bricks",
+      "description": "Soft, easy-cut stone ideal for rapid expansion.",
+      "rarity": "common",
+      "specializationId": "spec_stone_quarry"
+    },
+    {
+      "id": "stone_sandstone",
+      "key": "stone_common",
+      "name": "Sandstone Slabs",
+      "description": "Sun-bleached stone used in warmer climates.",
+      "rarity": "common",
+      "specializationId": "spec_stone_quarry"
+    },
+    {
+      "id": "stone_basalt",
+      "key": "stone_common",
+      "name": "Basalt Columns",
+      "description": "Dark volcanic stone, strong but difficult to dress.",
+      "rarity": "uncommon",
+      "specializationId": "spec_stone_quarry"
+    },
+    {
+      "id": "stone_marble_veined",
+      "key": "stone_fine",
+      "name": "Veined Marble",
+      "description": "Decorative stone that raises the city's prestige.",
+      "rarity": "uncommon",
+      "specializationId": "spec_stone_fine"
+    },
+    {
+      "id": "stone_obsidian",
+      "key": "stone_fine",
+      "name": "Obsidian Glass",
+      "description": "Razor-sharp volcanic glass used in ritual blades.",
+      "rarity": "rare",
+      "specializationId": "spec_stone_fine"
+    },
+    {
+      "id": "stone_skyglass",
+      "key": "stone_fine",
+      "name": "Skyglass Crystal",
+      "description": "Translucent stone that hums faintly with planar echoes.",
+      "rarity": "legendary",
+      "specializationId": "spec_stone_fine"
+    }
+  ]
+  

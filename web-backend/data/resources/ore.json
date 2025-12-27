@@ -1,0 +1,83 @@
+[
+    {
+      "id": "ore_iron_hematite",
+      "key": "ore_iron",
+      "name": "Hematite Iron Ore",
+      "description": "Common iron ore used in most basic arms and tools.",
+      "rarity": "common",
+      "specializationId": "spec_ore_iron"
+    },
+    {
+      "id": "ore_iron_magnetite",
+      "key": "ore_iron",
+      "name": "Magnetite Iron Ore",
+      "description": "Rich iron ore ideal for high-quality steel.",
+      "rarity": "uncommon",
+      "specializationId": "spec_ore_iron"
+    },
+    {
+      "id": "ore_copper",
+      "key": "ore_iron",
+      "name": "Copper Ore",
+      "description": "Soft metal for coinage, wiring, and bronze alloys.",
+      "rarity": "common",
+      "specializationId": "spec_ore_iron"
+    },
+    {
+      "id": "ore_tin",
+      "key": "ore_iron",
+      "name": "Tin Ore",
+      "description": "Essential for bronze-working and fine alloys.",
+      "rarity": "uncommon",
+      "specializationId": "spec_ore_iron"
+    },
+    {
+      "id": "ore_zinc",
+      "key": "ore_iron",
+      "name": "Zinc Ore",
+      "description": "Useful for brass, plating, and alchemical reagents.",
+      "rarity": "uncommon",
+      "specializationId": "spec_ore_iron"
+    },
+    {
+      "id": "ore_silver",
+      "key": "ore_mithril",
+      "name": "Silver Ore",
+      "description": "Precious metal used in coinage and sanctified arms.",
+      "rarity": "rare",
+      "specializationId": "spec_ore_precious"
+    },
+    {
+      "id": "ore_gold",
+      "key": "ore_mithril",
+      "name": "Gold Ore",
+      "description": "Heavy, lustrous metal that underpins major trade.",
+      "rarity": "rare",
+      "specializationId": "spec_ore_precious"
+    },
+    {
+      "id": "ore_mithril_raw",
+      "key": "ore_mithril",
+      "name": "Raw Mithril",
+      "description": "Superlight, super-strong metal coveted by elites.",
+      "rarity": "legendary",
+      "specializationId": "spec_ore_precious"
+    },
+    {
+      "id": "ore_truesilver",
+      "key": "ore_mithril",
+      "name": "Truesilver Ore",
+      "description": "Luminous silver that conducts magic flawlessly.",
+      "rarity": "legendary",
+      "specializationId": "spec_ore_precious"
+    },
+    {
+      "id": "ore_starsteel",
+      "key": "ore_mithril",
+      "name": "Starsteel Fragment",
+      "description": "Meteoric alloy that can shrug off mundane blows.",
+      "rarity": "mythic",
+      "specializationId": "spec_ore_precious"
+    }
+  ]
+  
