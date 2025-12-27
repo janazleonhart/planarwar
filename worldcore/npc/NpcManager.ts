@@ -335,7 +335,7 @@ export class NpcManager {
 
       switch (decision.kind) {
         case "flee": {
-          // v0.2: actual behavior – coward runs away and despawns.
+          // v0.4: actual behavior – coward runs away and despawns.
           st.fleeing = true;
 
           // Try to send a one-line flavor message to whoever is here.
@@ -355,7 +355,7 @@ export class NpcManager {
                 }
               }
             } catch {
-              // If this explodes, fleeing still works, we just skip the text.
+              // if this explodes, fleeing still works; we just skip the flavor text
             }
           }
 
@@ -371,6 +371,7 @@ export class NpcManager {
           this.despawnNpc(entityId);
           break;
         }
+
 
 
         case "attack_entity": {
@@ -413,31 +414,42 @@ export class NpcManager {
           // If this is a coward and it has taken any damage at all,
           // do NOT attack. Announce a flee instead and bail.
           if (
-            isCoward &&
-            st.alive &&
-            currentNpcMaxHp > 0 &&
-            currentNpcHp < currentNpcMaxHp
-          ) {
-            st.fleeing = true;
+          isCoward &&
+          st.alive &&
+          currentNpcMaxHp > 0 &&
+          currentNpcHp < currentNpcMaxHp
+        ) {
+          st.fleeing = true;
 
-            if (sessions) {
-              const ownerSessionId = (target as any).ownerSessionId;
-              if (ownerSessionId) {
-                const s = sessions.get(ownerSessionId);
-                if (s) {
-                  sessions.send(s, "chat", {
-                    from: "[world]",
-                    sessionId: "system",
-                    text: `[combat] ${npcEntity.name} turns to flee! (movement TODO)${npcHpDebug}`,
-                    t: Date.now(),
-                  });
-                }
+          if (sessions) {
+            const ownerSessionId = (target as any).ownerSessionId;
+            if (ownerSessionId) {
+              const s = sessions.get(ownerSessionId);
+              if (s) {
+                sessions.send(s, "chat", {
+                  from: "[world]",
+                  sessionId: "system",
+                  text: `[combat] ${npcEntity.name} squeals and scurries away!${npcHpDebug}`,
+                  t: Date.now(),
+                });
               }
             }
-
-            // IMPORTANT: no damage dealt, no markInCombat, just bail.
-            break;
           }
+
+          // Log for sanity
+          log.info("Coward NPC fleeing and despawning (attack branch)", {
+            npcId: entityId,
+            roomId,
+            hp: currentNpcHp,
+            maxHp: currentNpcMaxHp,
+          });
+
+          // Remove from the world immediately; client gets entity_despawn.
+          this.despawnNpc(entityId);
+
+          // No damage dealt, no further actions.
+          break;
+        }
 
           // ---------- Normal attack path (non-cowards, or unharmed cowards) ----------
           const targetMaxHp =
