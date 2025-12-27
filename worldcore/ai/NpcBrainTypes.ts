@@ -6,6 +6,8 @@
  * if we move AI into its own service later.
  */
 
+import type { NpcBehavior } from "../npc/NpcTypes";
+
 export type NpcId = string;
 export type RoomId = string;
 export type EntityId = string;
@@ -34,8 +36,14 @@ export interface NpcPerception {
   alive: boolean;
 
   /**
-   * Simple hostility flag for now.
-   * Later: faction matrices / behavior profiles.
+   * High-level behavior profile from the prototype:
+   * "aggressive", "neutral", "coward", "guard"
+   */
+  behavior: NpcBehavior;
+
+  /**
+   * Simple “can I treat this as a hostile combatant?” flag.
+   * Derived from behavior + tags.
    */
   hostile: boolean;
 
@@ -45,7 +53,6 @@ export interface NpcPerception {
 
   /**
    * Milliseconds since last decision tick for this NPC.
-   * For now we’ll just feed the frame delta into this.
    */
   sinceLastDecisionMs: number;
 }

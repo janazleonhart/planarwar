@@ -200,6 +200,7 @@ export class NpcManager {
    * - Asks the brain for a decision
    * - For attack decisions, applies simple damage to the target player
    *   and sends them a combat line via SessionManager (if provided)
+   * - For flee decisions, just logs for now (MovementEngine hook later)
    */
   updateAll(deltaMs: number, sessions?: SessionManager): void {
     for (const [entityId, st] of this.npcsByEntityId.entries()) {
@@ -208,20 +209,24 @@ export class NpcManager {
 
       const roomId = st.roomId;
 
+      // Resolve prototype + behavior
       const proto =
-      getNpcPrototype(st.templateId) ?? getNpcPrototype(st.protoId);
-
+        getNpcPrototype(st.templateId) ?? getNpcPrototype(st.protoId);
       const behavior = proto?.behavior ?? "aggressive";
       const tags = proto?.tags ?? [];
 
-      const nonHostile =
-        tags.includes("non_hostile") ||
+      const isResource =
         tags.includes("resource") ||
-        behavior === "neutral";
+        tags.some((t) => t.startsWith("resource_"));
+
+      const nonHostile =
+        tags.includes("non_hostile") || isResource;
 
       const hostile =
         !nonHostile &&
-        (behavior === "aggressive" || behavior === "guard");
+        (behavior === "aggressive" ||
+          behavior === "guard" ||
+          behavior === "coward");
 
       // --- Build perception: players in same room ---
       const playersInRoom: PerceivedPlayer[] = [];
@@ -260,6 +265,7 @@ export class NpcManager {
         hp: st.hp,
         maxHp: st.maxHp,
         alive: st.alive,
+        behavior,
         hostile,
         currentTargetId: undefined,
         playersInRoom,
@@ -279,7 +285,6 @@ export class NpcManager {
             break;
           }
 
-          // Mirror the simple mob damage logic from MudActions.applySimpleNpcCounterAttack
           const maxHp =
             typeof target.maxHp === "number" && target.maxHp > 0
               ? target.maxHp
@@ -317,7 +322,6 @@ You die. (0/${maxHp} HP) Use 'respawn' to return to safety or wait for someone t
 (${newHp}/${maxHp} HP)`;
           }
 
-          // Send the combat line to the owning session, if we know it.
           if (sessions) {
             const ownerSessionId = (target as any).ownerSessionId;
             if (ownerSessionId) {
@@ -336,9 +340,22 @@ You die. (0/${maxHp} HP) Use 'respawn' to return to safety or wait for someone t
           break;
         }
 
+        case "flee": {
+          // v0: just log the intent; MovementEngine/RoomManager integration
+          // will eventually move the NPC to a neighboring room or towards
+          // some safe anchor.
+          log.debug("NPC is trying to flee", {
+            npcId: entityId,
+            roomId,
+            behavior,
+            hp: st.hp,
+            maxHp: st.maxHp,
+          });
+          break;
+        }
+
         case "say":
         case "move_to_room":
-        case "flee":
         case "idle":
         default:
           // No-op for now – these will be wired into higher-level
