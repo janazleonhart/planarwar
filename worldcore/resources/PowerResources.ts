@@ -7,7 +7,7 @@ const log = Logger.scope("RESOURCES");
 
 /**
  * v1 resource kinds.
- * We only *use* fury/mana right now, but this is where chi/energy/focus/song go later.
+ * We only use fury/mana right now, but this is where chi/energy/focus/song go later.
  */
 export type PowerResourceKind = "fury" | "mana";
 
@@ -23,10 +23,13 @@ export type PowerResourceMap = Record<PowerResourceKind, PowerResourcePool>;
  * No schema change needed.
  */
 export function ensurePowerResourceMap(char: CharacterState): PowerResourceMap {
-  const prog: any = char.progression as any;
+  const prog: any = (char.progression as any) || {};
+
   if (!prog.powerResources) {
     prog.powerResources = {};
+    char.progression = prog;
   }
+
   return prog.powerResources as PowerResourceMap;
 }
 
@@ -56,6 +59,7 @@ export function trySpendPowerResource(
   if (cost <= 0) return null;
 
   const pool = getOrInitPowerResource(char, kind);
+
   if (pool.current < cost) {
     const label = kind === "fury" ? "fury" : "mana";
     return `You don't have enough ${label} (${pool.current}/${cost} needed).`;
@@ -69,8 +73,9 @@ export function gainPowerResource(
   char: CharacterState,
   kind: PowerResourceKind,
   amount: number
-) {
+): void {
   if (amount <= 0) return;
+
   const pool = getOrInitPowerResource(char, kind);
   pool.current = Math.min(pool.max, pool.current + amount);
 }
@@ -78,29 +83,28 @@ export function gainPowerResource(
 /**
  * Global “default resource by class” profile.
  * This is where your big class list lives.
- * Abilities/spells can *override* this per-ability.
+ * Abilities/spells can override this per-ability.
  */
- export function getPrimaryPowerResourceForClass(
+export function getPrimaryPowerResourceForClass(
   classId: string | undefined | null
 ): PowerResourceKind {
   const id = (classId ?? "").toLowerCase();
 
   // --- Mana casters / hybrids ---
-
-  const manaClasses = new Set([
+  const manaClasses = new Set<string>([
     // PW caster / hybrid list
-    "virtuoso",    // bard-style -> later song/mana hybrid
+    "virtuoso", // bard-style -> later song/mana hybrid
     "illusionist", // enchanter
-    "prophet",     // shaman
-    "crusader",    // paladin archetype
-    "revenant",    // shadow knight archetype
-    "hierophant",  // druid
-    "templar",     // cleric
-    "defiler",     // necromancer
-    "conjuror",    // magician
-    "archmage",    // wizard
-    "primalist",   // beastlord
-    "outrider",    // ranger
+    "prophet", // shaman
+    "crusader", // paladin archetype
+    "revenant", // shadow knight archetype
+    "hierophant", // druid
+    "templar", // cleric
+    "defiler", // necromancer
+    "conjuror", // magician
+    "archmage", // wizard
+    "primalist", // beastlord
+    "outrider", // ranger
 
     // Current stub / vanilla-style classes
     "mage",
@@ -112,19 +116,16 @@ export function gainPowerResource(
     "shaman",
     "druid",
     "hunter",
-    "death_knight",
     "deathknight",
-    "dk",
   ]);
 
   // --- Fury / physical bruisers ---
-
-  const furyClasses = new Set([
+  const furyClasses = new Set<string>([
     // PW physicals
-    "warlord",   // warrior
-    "ravager",   // berserker
+    "warlord", // warrior
+    "ravager", // berserker
     "cutthroat", // rogue
-    "ascetic",   // monk
+    "ascetic", // monk
     "adventurer",
 
     // Current stub / vanilla-style classes

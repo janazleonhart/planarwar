@@ -10,9 +10,10 @@ export interface SpellDefinition {
   name: string;
   description: string;
 
-  classId: string;    // "mage", "cleric", "any", etc.
-  minLevel: number;
+  // "mage", "cleric", "virtuoso", "any", etc.
+  classId: string;
 
+  minLevel: number;
   kind: SpellKind;
 
   // Magic school, for damage spells
@@ -31,6 +32,10 @@ export interface SpellDefinition {
 
   // Simple cooldown in ms
   cooldownMs?: number;
+
+  // NEW: optional metadata for things like songs, archetypes, etc.
+  tags?: string[];
+  isSong?: boolean;
 }
 
 export const SPELLS: Record<string, SpellDefinition> = {
@@ -43,10 +48,8 @@ export const SPELLS: Record<string, SpellDefinition> = {
     minLevel: 1,
     kind: "damage_single_npc",
     school: "arcane",
-
     resourceType: "mana",
     resourceCost: 0, // free debug nuke for testing
-
     damageMultiplier: 1.4,
     flatBonus: 2,
     cooldownMs: 3000,
@@ -60,10 +63,8 @@ export const SPELLS: Record<string, SpellDefinition> = {
     minLevel: 1,
     kind: "damage_single_npc",
     school: "fire",
-
     resourceType: "mana",
     resourceCost: 15,
-
     damageMultiplier: 1.6,
     flatBonus: 3,
     cooldownMs: 2500,
@@ -76,15 +77,13 @@ export const SPELLS: Record<string, SpellDefinition> = {
     classId: "cleric",
     minLevel: 1,
     kind: "heal_self",
-
     resourceType: "mana",
     resourceCost: 10,
-
     healAmount: 20,
     cooldownMs: 5000,
   },
 
-   // ---------------------------
+  // ---------------------------
   // Virtuoso v0.1 song kit
   // ---------------------------
 
@@ -96,39 +95,37 @@ export const SPELLS: Record<string, SpellDefinition> = {
     classId: "virtuoso",
     minLevel: 1,
 
-    // For v0.1 we treat this as a self-heal so we can reuse the existing heal_self plumbing.
+    // v0.1: treat as a self-heal so we can reuse heal_self plumbing.
     kind: "heal_self",
     school: "holy",
-
     resourceType: "mana",
-    resourceCost: 8,
-
-    // Small, cheap heal. Later this will become a proper buff.
+    resourceCost: 8, // small, cheap heal; later this becomes a buff
     healAmount: 12,
-
-    // Short cooldown so it feels “songy” without being spammy.
+    // short cooldown so it feels “songy” without being spammy
     cooldownMs: 6000,
+
+    // NEW: mark as song
+    isSong: true,
+    tags: ["song", "virtuoso"],
   },
 
   virtuoso_hymn_woven_recovery: {
     id: "virtuoso_hymn_woven_recovery",
     name: "Hymn of Woven Recovery",
-    description:
-      "A soothing hymn that knits flesh and spirit back together.",
+    description: "A soothing hymn that knits flesh and spirit back together.",
     classId: "virtuoso",
     minLevel: 3,
 
-    // Also heal_self for v0.1 – think stronger personal hymn until we do group auras.
+    // v0.1: stronger personal hymn until we do group auras
     kind: "heal_self",
     school: "holy",
-
     resourceType: "mana",
-    resourceCost: 18,
-
-    // Bigger, slower heal – good between pulls.
+    resourceCost: 18, // bigger, slower heal – good between pulls
     healAmount: 35,
-
     cooldownMs: 12000,
+
+    isSong: true,
+    tags: ["song", "virtuoso"],
   },
 
   virtuoso_dissonant_battle_chant: {
@@ -139,24 +136,23 @@ export const SPELLS: Record<string, SpellDefinition> = {
     classId: "virtuoso",
     minLevel: 5,
 
-    // For v0.1 this is a straight single-target nuke.
-    // Later we can turn it into a debuff/DoT.
+    // v0.1: straight single-target nuke (later debuff/DoT)
     kind: "damage_single_npc",
     school: "shadow",
-
     resourceType: "mana",
-    resourceCost: 12,
-
-    // Slightly stronger than a basic mage bolt would be at the same level,
-    // but with higher cost and CD.
+    resourceCost: 12, // slightly stronger nuke, higher cost/CD
     damageMultiplier: 1.2,
     flatBonus: 4,
-
     cooldownMs: 8000,
+
+    isSong: true,
+    tags: ["song", "virtuoso"],
   },
 };
 
-export function findSpellByNameOrId(input: string): SpellDefinition | null {
+export function findSpellByNameOrId(
+  input: string
+): SpellDefinition | null {
   const needle = input.trim().toLowerCase();
   if (!needle) return null;
 
@@ -167,5 +163,6 @@ export function findSpellByNameOrId(input: string): SpellDefinition | null {
   const match = Object.values(SPELLS).find(
     (s) => s.name.toLowerCase() === needle
   );
+
   return match ?? null;
 }

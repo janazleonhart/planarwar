@@ -13,26 +13,32 @@ interface SkillRoot {
 
 function ensureSkillRoot(char: CharacterState): SkillRoot {
   const prog: any = char.progression || {};
+
   if (!prog.skills) {
     prog.skills = {};
     char.progression = prog;
   }
+
   return prog.skills as SkillRoot;
 }
 
 function ensureWeaponSkills(char: CharacterState): WeaponSkillMap {
   const root = ensureSkillRoot(char);
+
   if (!root.weapons) {
     root.weapons = {};
   }
+
   return root.weapons;
 }
 
 function ensureSpellSchools(char: CharacterState): SpellSchoolMap {
   const root = ensureSkillRoot(char);
+
   if (!root.spells) {
     root.spells = {};
   }
+
   return root.spells;
 }
 
@@ -44,9 +50,11 @@ export function getWeaponSkill(
 ): number {
   const map = ensureWeaponSkills(char);
   const value = map[skill];
+
   if (typeof value !== "number" || value < 0) {
     return 0; // v1: missing skill = 0
   }
+
   return value;
 }
 
@@ -56,6 +64,7 @@ export function gainWeaponSkill(
   amount: number
 ): void {
   if (amount <= 0) return;
+
   const map = ensureWeaponSkills(char);
   const current = getWeaponSkill(char, skill); // 0 if missing
 
@@ -76,9 +85,11 @@ export function getSpellSchoolSkill(
 ): number {
   const map = ensureSpellSchools(char);
   const value = map[school];
+
   if (typeof value !== "number" || value < 0) {
     return 0; // v1: missing skill = 0
   }
+
   return value;
 }
 
@@ -88,6 +99,7 @@ export function gainSpellSchoolSkill(
   amount: number
 ): void {
   if (amount <= 0) return;
+
   const map = ensureSpellSchools(char);
   const current = getSpellSchoolSkill(char, school); // 0 if missing
 
