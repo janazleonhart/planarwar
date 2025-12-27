@@ -1,7 +1,7 @@
 // worldcore/spells/SpellTypes.ts
 
 import type { SpellSchoolId } from "../combat/CombatEngine";
-import type { PowerResourceKind } from "../mud/MudResources";
+import type { PowerResourceKind } from "../resources/PowerResources";
 
 export type SpellKind = "damage_single_npc" | "heal_self";
 
@@ -33,7 +33,7 @@ export interface SpellDefinition {
   // Simple cooldown in ms
   cooldownMs?: number;
 
-  // NEW: optional metadata for things like songs, archetypes, etc.
+  // NEW: metadata so systems (SongEngine, class logic) can reason about the spell
   tags?: string[];
   isSong?: boolean;
 }
@@ -95,16 +95,13 @@ export const SPELLS: Record<string, SpellDefinition> = {
     classId: "virtuoso",
     minLevel: 1,
 
-    // v0.1: treat as a self-heal so we can reuse heal_self plumbing.
     kind: "heal_self",
     school: "holy",
     resourceType: "mana",
-    resourceCost: 8, // small, cheap heal; later this becomes a buff
+    resourceCost: 8, // small, cheap heal; later becomes a buff
     healAmount: 12,
-    // short cooldown so it feels “songy” without being spammy
     cooldownMs: 6000,
 
-    // NEW: mark as song
     isSong: true,
     tags: ["song", "virtuoso"],
   },
@@ -116,11 +113,10 @@ export const SPELLS: Record<string, SpellDefinition> = {
     classId: "virtuoso",
     minLevel: 3,
 
-    // v0.1: stronger personal hymn until we do group auras
     kind: "heal_self",
     school: "holy",
     resourceType: "mana",
-    resourceCost: 18, // bigger, slower heal – good between pulls
+    resourceCost: 18,
     healAmount: 35,
     cooldownMs: 12000,
 
@@ -136,11 +132,10 @@ export const SPELLS: Record<string, SpellDefinition> = {
     classId: "virtuoso",
     minLevel: 5,
 
-    // v0.1: straight single-target nuke (later debuff/DoT)
     kind: "damage_single_npc",
     school: "shadow",
     resourceType: "mana",
-    resourceCost: 12, // slightly stronger nuke, higher cost/CD
+    resourceCost: 12,
     damageMultiplier: 1.2,
     flatBonus: 4,
     cooldownMs: 8000,
@@ -150,9 +145,7 @@ export const SPELLS: Record<string, SpellDefinition> = {
   },
 };
 
-export function findSpellByNameOrId(
-  input: string
-): SpellDefinition | null {
+export function findSpellByNameOrId(input: string): SpellDefinition | null {
   const needle = input.trim().toLowerCase();
   if (!needle) return null;
 

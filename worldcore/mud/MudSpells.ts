@@ -1,26 +1,31 @@
 // worldcore/mud/MudSpells.ts
 
-import { MudContext } from "./MudContext";
-import { CharacterState, SpellbookState } from "../characters/CharacterTypes";
+import type { MudContext } from "./MudContext";
+import type {
+  CharacterState,
+  SpellbookState,
+} from "../characters/CharacterTypes";
+
 import {
   SPELLS,
   SpellDefinition,
   findSpellByNameOrId,
 } from "../spells/SpellTypes";
+
 import { performNpcAttack } from "./MudActions";
 import {
   findNpcTargetByName,
   isDeadEntity,
   resurrectEntity,
 } from "./MudHelperFunctions";
+
 import {
   getPrimaryPowerResourceForClass,
   trySpendPowerResource,
   gainPowerResource,
 } from "../resources/PowerResources";
-import {
-  checkAndStartCooldown,
-} from "../combat/Cooldowns";
+
+import { checkAndStartCooldown } from "../combat/Cooldowns";
 import { Logger } from "../utils/logger";
 
 const log = Logger.scope("MUD_SPELLS");
@@ -68,10 +73,12 @@ function canUseSpell(
   return null;
 }
 
-function startSpellCooldown(char: CharacterState, spell: SpellDefinition) {
+function startSpellCooldown(char: CharacterState, spell: SpellDefinition): void {
   if (!spell.cooldownMs || spell.cooldownMs <= 0) return;
+
   const sb = ensureSpellbook(char);
   const now = Date.now();
+
   if (!sb.cooldowns) sb.cooldowns = {};
   sb.cooldowns[spell.id] = now + spell.cooldownMs;
 }
@@ -91,19 +98,16 @@ export function listKnownSpellsForChar(
 }
 
 /**
- * Handle "cast <spell> [target]" from the MUD.
+ * Core spell-cast path used by both:
+ *  - MUD 'cast' command
+ *  - future backend-driven casts (e.g. SongEngine)
  */
-export async function handleCastCommand(
+export async function castSpellForCharacter(
   ctx: MudContext,
   char: CharacterState,
-  spellNameRaw: string,
+  spell: SpellDefinition,
   targetNameRaw?: string
 ): Promise<string> {
-  const spell = findSpellByNameOrId(spellNameRaw);
-  if (!spell) {
-    return `You don't know a spell called '${spellNameRaw}'.`;
-  }
-
   const err = canUseSpell(char, spell);
   if (err) return err;
 
@@ -145,25 +149,20 @@ export async function handleCastCommand(
 
   switch (spell.kind) {
     case "damage_single_npc": {
-      if (!ctx.entities) {
-        return "The world feels strangely empty; your magic fizzles.";
-      }
-    
-      // NOTE: target finder now wants an entity collection, not the whole ctx
       const npc = findNpcTargetByName(ctx.entities, roomId, targetRaw);
       if (!npc) {
         return `There is no '${targetRaw}' here to target with ${spell.name}.`;
       }
-    
+
       startSpellCooldown(char, spell);
-    
+
       return await performNpcAttack(ctx, char, selfEntity, npc, {
         abilityName: spell.name,
         tagPrefix: "spell",
         channel: "spell",
         damageMultiplier: spell.damageMultiplier,
         flatBonus: spell.flatBonus,
-        spellSchool: spell.school, // may be undefined for some spells, that's fine
+        spellSchool: spell.school, // may be undefined; that's fine
       });
     }
 
@@ -180,17 +179,37 @@ export async function handleCastCommand(
 
       if (isDeadEntity(selfEntity)) {
         resurrectEntity(selfEntity);
-        return `[spell:${spell.name}] You restore yourself to full health. (${maxHp}/${maxHp} HP)`;
+        return `[spell:${spell.name}] You restore yourself to full health.\n(${maxHp}/${maxHp} HP)`;
       }
 
       const newHp = Math.min(maxHp, hp + heal);
       (selfEntity as any).hp = newHp;
 
-      return `[spell:${spell.name}] You restore ${newHp - hp} health. (${newHp}/${maxHp} HP)`;
+      return `[spell:${spell.name}] You restore ${
+        newHp - hp
+      } health. (${newHp}/${maxHp} HP)`;
     }
 
-    default:
+    default: {
       log.warn("Unhandled spell kind", { spellId: spell.id, kind: spell.kind });
       return "That kind of spell is not implemented yet.";
+    }
   }
+}
+
+/**
+ * Handle "cast <spell> [target]" from the MUD.
+ */
+export async function handleCastCommand(
+  ctx: MudContext,
+  char: CharacterState,
+  spellNameRaw: string,
+  targetNameRaw?: string
+): Promise<string> {
+  const spell = findSpellByNameOrId(spellNameRaw);
+  if (!spell) {
+    return `You don't know a spell called '${spellNameRaw}'.`;
+  }
+
+  return castSpellForCharacter(ctx, char, spell, targetNameRaw);
 }
