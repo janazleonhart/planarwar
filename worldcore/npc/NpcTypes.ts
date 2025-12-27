@@ -2,6 +2,23 @@
 
 export type NpcId = string;
 
+/**
+ * High-level behavior profile for an NPC.
+ *
+ * - "aggressive": will happily attack valid targets on sight
+ * - "neutral": will not auto-attack; may only fight when provoked
+ * - "coward": will fight at high HP, but will try to flee when low
+ * - "guard": reserved for faction/defender logic later
+ */
+export type NpcBehavior = "neutral" | "aggressive" | "coward" | "guard";
+
+export interface NpcLootEntry {
+  itemId: string; // id in ItemCatalog
+  chance: number; // 0–1
+  minQty: number;
+  maxQty: number;
+}
+
 export interface NpcPrototype {
   id: NpcId;
   name: string;
@@ -11,8 +28,18 @@ export interface NpcPrototype {
   baseDamageMin: number;
   baseDamageMax: number;
 
-  model?: string;         // hook into art later
-  tags?: string[];        // "training", "beast", "undead", "elite", etc.
+  model?: string; // hook into art later
+
+  /**
+   * General tags:
+   *  - "training", "beast", "undead", "elite"
+   *  - "resource", "resource_ore", etc.
+   *  - "non_hostile" for things that should never attack
+   */
+  tags?: string[];
+
+  // NEW: high-level behavior profile for AI to read
+  behavior?: NpcBehavior;
 
   // NEW: reward & drop info
   xpReward?: number;
@@ -20,9 +47,10 @@ export interface NpcPrototype {
 }
 
 /**
- * Runtime NPC state tracked server-side. This is per-entity instance.
+ * Runtime NPC state tracked server-side.
+ * This is per-entity instance.
  */
- export interface NpcRuntimeState {
+export interface NpcRuntimeState {
   entityId: string;
 
   /** The canonical identity used by quests/progression ("sir_thaddeus") */
@@ -31,7 +59,10 @@ export interface NpcPrototype {
   /** Which incarnation/version ("epic_step_4") */
   variantId?: string | null;
 
-  /** The resolved prototype key actually used ("sir_thaddeus@epic_step_4" or "sir_thaddeus") */
+  /**
+   * The resolved prototype key actually used
+   * ("sir_thaddeus@epic_step_4" or "sir_thaddeus")
+   */
   templateId: NpcId;
 
   roomId: string;
@@ -45,19 +76,12 @@ export interface NpcPrototype {
   lastAttackerEntityId?: string;
 }
 
-export interface NpcLootEntry {
-  itemId: string;   // id in ItemCatalog
-  chance: number;   // 0–1
-  minQty: number;
-  maxQty: number;
-}
-
 // ---------------------------------------------------------------------------
 // v1 prototype catalog (hard-coded default seed)
 // ---------------------------------------------------------------------------
-
 // Keep these as dev/test seed data only.
-export const DEFAULT_NPC_PROTOTYPES: Record<string, NpcPrototype> = {
+
+export const DEFAULT_NPC_PROTOTYPES: Record<NpcId, NpcPrototype> = {
   training_dummy: {
     id: "training_dummy",
     name: "Training Dummy",
@@ -67,6 +91,7 @@ export const DEFAULT_NPC_PROTOTYPES: Record<string, NpcPrototype> = {
     baseDamageMax: 0,
     model: "training_dummy",
     tags: ["training", "non_hostile"],
+    behavior: "neutral",
     xpReward: 0,
     loot: [],
   },
@@ -80,6 +105,7 @@ export const DEFAULT_NPC_PROTOTYPES: Record<string, NpcPrototype> = {
     baseDamageMax: 3,
     model: "rat_small",
     tags: ["beast", "critter"],
+    behavior: "aggressive",
     xpReward: 8,
     loot: [
       {
@@ -106,6 +132,7 @@ export const DEFAULT_NPC_PROTOTYPES: Record<string, NpcPrototype> = {
     baseDamageMax: 0,
     model: "ore_vein_small",
     tags: ["resource", "resource_ore"],
+    behavior: "neutral", // non-hostile node, even if someone misuses it later
     xpReward: 0,
     loot: [
       {
@@ -119,13 +146,17 @@ export const DEFAULT_NPC_PROTOTYPES: Record<string, NpcPrototype> = {
 };
 
 // Live registry (starts from defaults; can be replaced with DB data)
-let npcPrototypes: Record<string, NpcPrototype> = { ...DEFAULT_NPC_PROTOTYPES };
+let npcPrototypes: Record<NpcId, NpcPrototype> = {
+  ...DEFAULT_NPC_PROTOTYPES,
+};
 
 export function setNpcPrototypes(list: NpcPrototype[]): void {
-  const bag: Record<string, NpcPrototype> = {};
+  const bag: Record<NpcId, NpcPrototype> = {};
+
   for (const proto of list) {
     bag[proto.id] = proto;
   }
+
   // If DB is empty, keep defaults instead of nuking everything
   npcPrototypes =
     Object.keys(bag).length > 0 ? bag : { ...DEFAULT_NPC_PROTOTYPES };

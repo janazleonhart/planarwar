@@ -1,9 +1,9 @@
 // worldcore/ai/NpcBrainTypes.ts
 
 /**
- * Minimal, engine-agnostic IDs and types for NPC AI.
- * These are intentionally generic so the same contracts
- * can be used in-process or over the wire (JSON).
+ * Minimal engine-agnostic types for NPC AI.
+ * These can be used in-process or over the wire (JSON)
+ * if we move AI into its own service later.
  */
 
 export type NpcId = string;
@@ -12,8 +12,7 @@ export type EntityId = string;
 export type CharacterId = string;
 
 /**
- * A very small view of a player for AI purposes.
- * We don't expose full character state here – just what AI needs.
+ * Minimal view of a player for AI purposes.
  */
 export interface PerceivedPlayer {
   entityId: EntityId;
@@ -23,8 +22,7 @@ export interface PerceivedPlayer {
 }
 
 /**
- * What the AI “sees” about an NPC this tick.
- * This should be built by NpcManager or a dedicated perception layer.
+ * What the AI “sees” about an NPC at decision time.
  */
 export interface NpcPerception {
   npcId: NpcId;
@@ -36,34 +34,25 @@ export interface NpcPerception {
   alive: boolean;
 
   /**
-   * Simple hostility flag for now. Later this can become
-   * a faction/friend-or-foe matrix or behavior profile.
+   * Simple hostility flag for now.
+   * Later: faction matrices / behavior profiles.
    */
   hostile: boolean;
 
-  /**
-   * Current target the NPC is focused on, if any.
-   */
   currentTargetId?: EntityId;
 
-  /**
-   * All players currently in the same room that are
-   * valid combat targets.
-   */
   playersInRoom: PerceivedPlayer[];
 
   /**
    * Milliseconds since last decision tick for this NPC.
-   * NpcManager can derive this from deltaMs and internal state.
+   * For now we’ll just feed the frame delta into this.
    */
   sinceLastDecisionMs: number;
 }
 
 /**
- * AI decision types. These are high-level intentions,
- * not low-level instructions (no direct damage numbers here).
+ * High-level AI intentions – not raw damage numbers.
  */
-
 export type NpcDecisionKind =
   | "idle"
   | "attack_entity"
@@ -78,11 +67,6 @@ export interface NpcDecisionIdle {
 export interface NpcDecisionAttackEntity {
   kind: "attack_entity";
   targetEntityId: EntityId;
-
-  /**
-   * Optional hint: is this a melee swing, ranged shot,
-   * or something else? For now just “melee”.
-   */
   attackStyle?: "melee" | "ranged" | "spell";
 }
 
@@ -109,13 +93,9 @@ export type NpcDecision =
   | NpcDecisionFlee;
 
 /**
- * NpcBrain is a pure decision function.
- * Given a perception for a single NPC and dt, return a decision or null.
+ * Pure NPC brain interface: given a perception and dt, return a decision.
  *
- * This can live:
- *  - in-process (LocalSimpleNpcBrain),
- *  - in a separate service (RemoteNpcBrainClient),
- *  - or be swapped per-NPC-type later.
+ * This is what an in-process brain OR a remote AI service both implement.
  */
 export interface NpcBrain {
   decide(perception: NpcPerception, dtMs: number): NpcDecision | null;

@@ -14,11 +14,12 @@ export interface TickEngineConfig {
    * Optional hook invoked once per tick with:
    *  - nowMs: Date.now() for this tick
    *  - tick: current tick count (starting at 1)
-   *  - deltaMs: time elapsed since the previous tick (ms)
+   *  - deltaMs: elapsed time since previous tick (ms)
    *
-   * This is where we hang SongEngine, world events, etc.
+   * Existing handlers that only take (nowMs) or (nowMs, tick)
+   * will still type-check because deltaMs is optional.
    */
-  onTick?: (nowMs: number, tick: number, deltaMs: number) => void;
+  onTick?: (nowMs: number, tick: number, deltaMs?: number) => void;
 }
 
 /**
@@ -27,7 +28,7 @@ export interface TickEngineConfig {
  * For now it:
  *  - ticks on a fixed interval
  *  - runs NPC update ticks (NpcManager.updateAll)
- *  - exposes a global onTick hook for systems like SongEngine
+ *  - calls an onTick hook for things like SongEngine
  *  - logs basic room/session stats every N ticks
  */
 export class TickEngine {
@@ -39,7 +40,6 @@ export class TickEngine {
   private handle: NodeJS.Timeout | null = null;
   private tickCount = 0;
 
-  // For delta-time calculations
   private lastTickAt: number | null = null;
 
   constructor(
@@ -48,7 +48,6 @@ export class TickEngine {
     private readonly sessions: SessionManager,
     private readonly world: ServerWorldManager,
     cfg: TickEngineConfig,
-    // Optional NPC manager; if provided, we’ll tick NPCs each frame.
     private readonly npcs?: NpcManager
   ) {
     this.cfg = cfg;
@@ -93,10 +92,10 @@ export class TickEngine {
       this.lastTickAt !== null ? now - this.lastTickAt : this.intervalMs;
     this.lastTickAt = now;
 
-    // --- NPC updates (v0 AI hook) ---
+    // NPCs get a chance to think each tick.
     if (this.npcs) {
       try {
-        this.npcs.updateAll(deltaMs);
+        this.npcs.updateAll(deltaMs, this.sessions);
       } catch (err: any) {
         this.log.warn("Error during NpcManager.updateAll", {
           error: String(err),
@@ -104,18 +103,16 @@ export class TickEngine {
       }
     }
 
-    // --- Global onTick hook (SongEngine, world events, etc.) ---
-    if (this.cfg.onTick) {
-      try {
-        this.cfg.onTick(now, this.tickCount, deltaMs);
-      } catch (err: any) {
-        this.log.warn("Error in TickEngine onTick hook", {
-          error: String(err),
-        });
-      }
+    // Global hook for systems that want a heartbeat (SongEngine, etc.)
+    try {
+      this.cfg.onTick?.(now, this.tickCount, deltaMs);
+    } catch (err: any) {
+      this.log.warn("Error in TickEngine onTick hook", {
+        error: String(err),
+      });
     }
 
-    // Basic metrics / debug
+    // Basic metrics
     let roomCount = 0;
     for (const _ of this.rooms.listRooms()) {
       roomCount++;
@@ -124,7 +121,6 @@ export class TickEngine {
     const sessionCount = this.sessions.count();
     const entityCount = this.entities.getAll().length;
 
-    // Light debug every N ticks so we don't drown in logs
     if (this.tickCount % 20 === 0) {
       this.log.debug("Tick summary", {
         tick: this.tickCount,
