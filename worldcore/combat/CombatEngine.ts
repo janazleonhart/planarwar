@@ -3,17 +3,16 @@
 import type { CharacterState } from "../characters/CharacterTypes";
 import type { Entity } from "../shared/Entity";
 import type { AttackChannel } from "../actions/ActionTypes";
+
 import { getWeaponSkillLevel, getSpellSchoolLevel } from "./CombatScaling";
 import { Logger } from "../utils/logger";
+
+import { getSongSchoolSkill, type SongSchoolId } from "../skills/SkillProgression";
 
 const log = Logger.scope("COMBAT");
 
 // v1 enums: we keep these very small and expand later.
-export type WeaponSkillId =
-  | "unarmed"
-  | "one_handed"
-  | "two_handed"
-  | "ranged";
+export type WeaponSkillId = "unarmed" | "one_handed" | "two_handed" | "ranged";
 
 export type SpellSchoolId =
   | "arcane"
@@ -22,7 +21,7 @@ export type SpellSchoolId =
   | "shadow"
   | "holy"
   | "nature"
-  | "song"; // for bards later
+  | "song"; // used to flag bard songs as a special case
 
 export type DamageSchool =
   | "physical"
@@ -32,7 +31,7 @@ export type DamageSchool =
   | "shadow"
   | "holy"
   | "nature"
-  | "pure";
+  | "pure"; // “pure” = generally unresistable unless bosses say otherwise
 
 export interface CombatSource {
   char: CharacterState;
@@ -45,6 +44,9 @@ export interface CombatSource {
   // Optional extra flavor for scaling
   weaponSkill?: WeaponSkillId;
   spellSchool?: SpellSchoolId;
+
+  // For songs: which instrument/vocal school to use for scaling
+  songSchool?: SongSchoolId;
 
   // Later: talent modifiers, buffs, etc.
   tags?: string[];
@@ -63,8 +65,10 @@ export interface CombatAttackParams {
   basePower?: number;
 
   // Scalar multipliers for abilities/spells
-  damageMultiplier?: number;  // e.g. 1.5 = +50%
-  flatBonus?: number;         // e.g. +5 damage
+  damageMultiplier?: number; // e.g. 1.5 = +50%
+
+  flatBonus?: number; // e.g. +5 damage
+
   damageSchool?: DamageSchool;
 }
 
@@ -77,20 +81,21 @@ export interface CombatResult {
 
 /**
  * v1 combat math:
- * - channel = "weapon" | "spell" | "ability"
- * - pull STR / INT from effective attributes
- * - apply armor/resists very crudely (later we expand)
+ *  - channel = "weapon" | "spell" | "ability"
+ *  - spells normally scale off INT + spell school
+ *  - songs scale off instrument (songSchool) instead of spell school
  */
 export function computeDamage(
   source: CombatSource,
   target: CombatTarget,
   params: CombatAttackParams = {}
 ): CombatResult {
-    const school: DamageSchool =
+  const school: DamageSchool =
     params.damageSchool ??
     (source.channel === "spell"
-      ? // If we know the spell school, map it; otherwise fall back to arcane
-        (source.spellSchool === "song" ? "pure" : (source.spellSchool as DamageSchool) ?? "arcane")
+      ? source.spellSchool === "song"
+        ? "pure"
+        : ((source.spellSchool as DamageSchool) ?? "arcane")
       : "physical");
 
   const eff = source.effective || {};
@@ -100,6 +105,17 @@ export function computeDamage(
 
   const weaponSkillLevel = getWeaponSkillLevel(source.char, source.weaponSkill);
   const spellSchoolLevel = getSpellSchoolLevel(source.char, source.spellSchool);
+
+  // For normal spells, use spell school level.
+  // For songs, prefer instrument skill from songSchool.
+  let magicSkillLevel = spellSchoolLevel;
+  if (source.songSchool) {
+    try {
+      magicSkillLevel = getSongSchoolSkill(source.char, source.songSchool);
+    } catch {
+      // If anything goes sideways, fall back to spell school level.
+    }
+  }
 
   let base: number;
 
@@ -113,6 +129,7 @@ export function computeDamage(
         Math.floor(weaponSkillLevel / 4);
       break;
     }
+
     case "ability": {
       // slightly better than a weapon swing, uses same weapon skill scaling
       base =
@@ -122,15 +139,17 @@ export function computeDamage(
         Math.floor(weaponSkillLevel / 3);
       break;
     }
+
     case "spell": {
-      // spells scale off INT + spell school
+      // spells & songs scale off INT + “magic” skill
       base =
         4 +
         Math.floor(int / 2) +
         Math.floor(level / 2) +
-        Math.floor(spellSchoolLevel / 3);
+        Math.floor(magicSkillLevel / 3);
       break;
     }
+
     default:
       base = 3 + Math.floor(level / 2);
   }
@@ -201,10 +220,5 @@ export function computeDamage(
     });
   }
 
-  return {
-    damage: final,
-    school,
-    wasCrit,
-    wasGlancing,
-  };
+  return { damage: final, school, wasCrit, wasGlancing };
 }

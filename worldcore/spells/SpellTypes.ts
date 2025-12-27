@@ -1,7 +1,7 @@
 // worldcore/spells/SpellTypes.ts
 
 import type { SpellSchoolId } from "../combat/CombatEngine";
-import type { PowerResourceKind } from "../resources/PowerResources";
+import type { PowerResourceKind } from "../mud/MudResources";
 import type { SongSchoolId } from "../skills/SkillProgression";
 
 export type SpellKind = "damage_single_npc" | "heal_self";
@@ -17,7 +17,7 @@ export interface SpellDefinition {
   minLevel: number;
   kind: SpellKind;
 
-  // Magic school, for spells
+  // Elemental school (for damage type / flavor / resists)
   school?: SpellSchoolId;
 
   // Resource usage
@@ -34,11 +34,18 @@ export interface SpellDefinition {
   // Simple cooldown in ms
   cooldownMs?: number;
 
-  // Metadata for systems
-  tags?: string[];
+  // --- Song-specific metadata ---
+
+  /**
+   * True if this spell is a “song” and should scale from instrument skills
+   * instead of traditional spell schools.
+   */
   isSong?: boolean;
 
-  // For songs: instrument / vocal “school”
+  /**
+   * Instrument / vocal school this song uses for power scaling.
+   * e.g. "voice", "strings", "winds", "Percussion", "Brass"
+   */
   songSchool?: SongSchoolId;
 }
 
@@ -53,7 +60,7 @@ export const SPELLS: Record<string, SpellDefinition> = {
     kind: "damage_single_npc",
     school: "arcane",
     resourceType: "mana",
-    resourceCost: 0,
+    resourceCost: 0, // free debug nuke for testing
     damageMultiplier: 1.4,
     flatBonus: 2,
     cooldownMs: 3000,
@@ -108,7 +115,6 @@ export const SPELLS: Record<string, SpellDefinition> = {
 
     isSong: true,
     songSchool: "voice",
-    tags: ["song", "virtuoso"],
   },
 
   virtuoso_hymn_woven_recovery: {
@@ -127,7 +133,6 @@ export const SPELLS: Record<string, SpellDefinition> = {
 
     isSong: true,
     songSchool: "voice",
-    tags: ["song", "virtuoso"],
   },
 
   virtuoso_dissonant_battle_chant: {
@@ -148,7 +153,6 @@ export const SPELLS: Record<string, SpellDefinition> = {
 
     isSong: true,
     songSchool: "voice",
-    tags: ["song", "virtuoso"],
   },
 };
 
@@ -156,8 +160,10 @@ export function findSpellByNameOrId(input: string): SpellDefinition | null {
   const needle = input.trim().toLowerCase();
   if (!needle) return null;
 
+  // id first
   if (SPELLS[needle]) return SPELLS[needle];
 
+  // then by exact name
   const match = Object.values(SPELLS).find(
     (s) => s.name.toLowerCase() === needle
   );

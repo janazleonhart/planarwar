@@ -7,12 +7,6 @@ import {
   getSongSchoolSkill,
 } from "../../../skills/SkillProgression";
 
-/**
- * Show the character's trained skills:
- *  - Weapon skills
- *  - Spell schools
- *  - Song (instrument/vocal) schools
- */
 export async function handleSkillsCommand(
   ctx: MudContext
 ): Promise<string> {
@@ -22,7 +16,13 @@ export async function handleSkillsCommand(
     return "You do not have an active character.";
   }
 
-  // Weapon skills
+  const classId = (char.classId ?? "").toLowerCase();
+
+  // v0 rule: Virtuoso is a pure song/instrument class, so we hide spell schools
+  const isSongOnlyClass = classId === "virtuoso";
+
+  // --- Weapon skills ---
+
   const weaponLines: string[] = [
     `- Unarmed: ${getWeaponSkill(char, "unarmed")}`,
     `- One-handed: ${getWeaponSkill(char, "one_handed")}`,
@@ -30,7 +30,8 @@ export async function handleSkillsCommand(
     `- Ranged: ${getWeaponSkill(char, "ranged")}`,
   ];
 
-  // Spell schools (classic elemental/holy/etc.)
+  // --- Spell schools (elemental/holy/etc.) ---
+
   const spellLines: string[] = [
     `- Arcane: ${getSpellSchoolSkill(char, "arcane")}`,
     `- Fire: ${getSpellSchoolSkill(char, "fire")}`,
@@ -40,13 +41,14 @@ export async function handleSkillsCommand(
     `- Nature: ${getSpellSchoolSkill(char, "nature")}`,
   ];
 
-  // Song schools (instrument / vocal lines)
+  // --- Song / instrument schools ---
+
   const songLines: string[] = [
     `- Voice: ${getSongSchoolSkill(char, "voice")}`,
     `- Strings: ${getSongSchoolSkill(char, "strings")}`,
     `- Winds: ${getSongSchoolSkill(char, "winds")}`,
-    `- Percussion: ${getSongSchoolSkill(char, "Percussion")}`,
-    `- Brass: ${getSongSchoolSkill(char, "Brass")}`,
+    `- Percussion: ${getSongSchoolSkill(char, "percussion")}`,
+    `- Brass: ${getSongSchoolSkill(char, "brass")}`,
   ];
 
   let out = "Skills:\n";
@@ -54,8 +56,10 @@ export async function handleSkillsCommand(
   out += "Weapon Skills:\n";
   out += weaponLines.map((l) => ` ${l}`).join("\n");
 
-  out += "\nSpell Schools:\n";
-  out += spellLines.map((l) => ` ${l}`).join("\n");
+  if (!isSongOnlyClass) {
+    out += "\nSpell Schools:\n";
+    out += spellLines.map((l) => ` ${l}`).join("\n");
+  }
 
   out += "\nSong Schools:\n";
   out += songLines.map((l) => ` ${l}`).join("\n");

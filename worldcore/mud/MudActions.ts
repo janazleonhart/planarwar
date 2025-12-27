@@ -28,7 +28,10 @@ import {
 import {
   gainWeaponSkill,
   gainSpellSchoolSkill,
+  gainSongSchoolSkill,
 } from "../skills/SkillProgression";
+
+import type { SongSchoolId } from "../skills/SkillProgression";
 
 const log = Logger.scope("MUD");
 
@@ -45,6 +48,11 @@ export async function performNpcAttack(
     channel?: AttackChannel; // NEW: default "weapon"
     weaponSkill?: WeaponSkillId; // NEW: plumb through later
     spellSchool?: SpellSchoolId; // NEW: plumb through later
+
+    // For songs
+    songSchool?: SongSchoolId;
+    isSong?: boolean;
+
   }
 ): Promise<string> {
     // --- Build combat source/target for CombatEngine ---
@@ -56,6 +64,7 @@ export async function performNpcAttack(
       channel: opts?.channel ?? "weapon",
       weaponSkill: opts?.weaponSkill,
       spellSchool: opts?.spellSchool,
+      songSchool: opts?.songSchool,
     };
 
     const target: CombatTarget = {
@@ -66,9 +75,9 @@ export async function performNpcAttack(
     };
 
     const result = computeDamage(source, target, {
-      damageMultiplier: opts?.damageMultiplier,
-      flatBonus: opts?.flatBonus,
-      damageSchool: opts?.spellSchool ? "arcane" : "physical", // v1 heuristic
+    damageMultiplier: opts?.damageMultiplier,
+    flatBonus: opts?.flatBonus,
+    // Let CombatEngine choose the school based on channel/spellSchool/songSchool.
     });
 
     let dmg = result.damage;
@@ -79,6 +88,7 @@ export async function performNpcAttack(
 
     // --- Skill progression + resource gain for the attacker ---
 
+    // --- Skill progression for the attacker ---
     try {
       const channel = opts?.channel ?? "weapon";
 
@@ -88,16 +98,15 @@ export async function performNpcAttack(
         gainWeaponSkill(char, "one_handed", 1);
       }
 
-      // Spell → bump its school if known
-      if (channel === "spell" && opts?.spellSchool) {
-        gainSpellSchoolSkill(char, opts.spellSchool, 1);
-      }
-
-      // Fury gain stays as before
-      const primaryRes = getPrimaryPowerResourceForClass(char.classId);
-      if (primaryRes === "fury" && dmg > 0) {
-        const gain = 5 + Math.floor(dmg / 5);
-        gainPowerResource(char, "fury", gain);
+      // Spells:
+      if (channel === "spell") {
+        if (opts?.songSchool) {
+          // Songs train their instrument/vocal school only
+          gainSongSchoolSkill(char, opts.songSchool, 1);
+        } else if (opts?.spellSchool && opts.spellSchool !== "song") {
+          // Normal spells train their magic school
+          gainSpellSchoolSkill(char, opts.spellSchool, 1);
+        }
       }
     } catch {
       // never let progression break combat

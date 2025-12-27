@@ -7,6 +7,14 @@ import type {
 } from "../characters/CharacterTypes";
 
 import {
+  computeDamage,
+  CombatSource,
+  CombatTarget,
+  WeaponSkillId,
+  SpellSchoolId,
+} from "../combat/CombatEngine";
+
+import {
   SPELLS,
   SpellDefinition,
   findSpellByNameOrId,
@@ -25,10 +33,13 @@ import {
 } from "../resources/PowerResources";
 
 import {
+  gainWeaponSkill,
   gainSpellSchoolSkill,
   gainSongSchoolSkill,
+  getSongSchoolSkill,
 } from "../skills/SkillProgression";
 
+import type { SongSchoolId } from "../skills/SkillProgression";
 import { checkAndStartCooldown } from "../combat/Cooldowns";
 import { Logger } from "../utils/logger";
 
@@ -115,6 +126,9 @@ export async function castSpellForCharacter(
   const err = canUseSpell(char, spell);
   if (err) return err;
 
+  const isSong = (spell as any).isSong === true;
+  const songSchool = isSong ? (spell as any).songSchool : undefined;
+
   const spellCooldownMs = spell.cooldownMs ?? 0;
   if (spellCooldownMs > 0) {
     const cdErr = checkAndStartCooldown(
@@ -151,12 +165,15 @@ export async function castSpellForCharacter(
   const targetRaw = (targetNameRaw && targetNameRaw.trim()) || "rat";
 
   const applySchoolGains = () => {
-    if (spell.school) {
-      gainSpellSchoolSkill(char, spell.school, 1);
-    }
+  if (spell.isSong && spell.songSchool) {
+    // Songs: train only instrument/vocal school
+    gainSongSchoolSkill(char, spell.songSchool as SongSchoolId, 1);
+    return;
+  }
 
-    if (spell.isSong && spell.songSchool) {
-      gainSongSchoolSkill(char, spell.songSchool, 1);
+  // Non-song spells: train traditional magic schools
+  if (spell.school) {
+    gainSpellSchoolSkill(char, spell.school, 1);
     }
   };
 
@@ -175,7 +192,12 @@ export async function castSpellForCharacter(
         channel: "spell",
         damageMultiplier: spell.damageMultiplier,
         flatBonus: spell.flatBonus,
-        spellSchool: spell.school,
+        // For songs: treat magic school as "song" so they hit as pure damage.
+        spellSchool: isSong ? "song" : spell.school,
+
+        // For songs: carry instrument school through to CombatEngine + progression.
+        songSchool: songSchool,
+        isSong,
       });
 
       applySchoolGains();
@@ -183,9 +205,18 @@ export async function castSpellForCharacter(
     }
 
     case "heal_self": {
-      const hp = (selfEntity as any).hp ?? 0;
-      const maxHp = (selfEntity as any).maxHp ?? 0;
-      const heal = spell.healAmount ?? 10;
+       const hp = (selfEntity as any).hp ?? 0;
+        const maxHp = (selfEntity as any).maxHp ?? 0;
+
+        const baseHeal = spell.healAmount ?? 10;
+        let heal = baseHeal;
+
+        // Songs: scale healing from instrument/vocal skill
+        if (isSong && songSchool) {
+          const skill = getSongSchoolSkill(char, songSchool);
+          const factor = 1 + skill / 100; // 100 skill ~= 2x base, tune later
+          heal = Math.floor(baseHeal * factor);
+        }
 
       if (maxHp <= 0) {
         return "Your body has no measurable health to heal.";
