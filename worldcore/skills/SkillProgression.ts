@@ -7,7 +7,7 @@ export type WeaponSkillMap = Partial<Record<WeaponSkillId, number>>;
 export type SpellSchoolMap = Partial<Record<SpellSchoolId, number>>;
 
 // v1 song “instrument” schools – expand later as needed
-export type SongSchoolId = "voice" | "strings" | "winds";
+export type SongSchoolId = "voice" | "strings" | "winds" | "Brass" | "Percussion";
 
 export type SongSchoolMap = Partial<Record<SongSchoolId, number>>;
 
