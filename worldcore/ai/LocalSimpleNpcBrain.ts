@@ -1,11 +1,18 @@
 // worldcore/ai/LocalSimpleNpcBrain.ts
 
+import { type NpcBehavior } from "../npc/NpcTypes";
 import {
-  NpcBrain,
-  NpcPerception,
-  NpcDecision,
-  NpcDecisionAttackEntity,
+  type NpcBrain,
+  type NpcPerception,
+  type NpcDecision,
 } from "./NpcBrainTypes";
+import {
+  decideAggressiveBehavior,
+} from "./brains/AggressiveBrain";
+import { type BehaviorHandler } from "./brains/BehaviorContext";
+import { decideCowardBehavior } from "./brains/CowardBrain";
+import { decideGuardBehavior } from "./brains/GuardBrain";
+import { decideNeutralBehavior } from "./brains/NeutralBrain";
 
 const DEFAULT_COOLDOWN_MS = 2000;
 
@@ -20,6 +27,16 @@ const DEFAULT_COOLDOWN_MS = 2000;
 export class LocalSimpleAggroBrain implements NpcBrain {
   private readonly attackCooldownMs: number;
   private readonly cooldowns = new Map<string, number>();
+
+  private readonly behaviorHandlers: Partial<
+    Record<NpcBehavior, BehaviorHandler>
+  > = {
+    aggressive: decideAggressiveBehavior,
+    guard: decideGuardBehavior,
+    coward: decideCowardBehavior,
+    neutral: decideNeutralBehavior,
+    testing: decideAggressiveBehavior,
+  };
 
   constructor(attackCooldownMs: number = DEFAULT_COOLDOWN_MS) {
     this.attackCooldownMs = attackCooldownMs;
@@ -43,37 +60,16 @@ export class LocalSimpleAggroBrain implements NpcBrain {
       return null;
     }
 
-    // Cowards: once hurt at all, they flee instead of attacking.
-    if (
-      perception.behavior === "coward" &&
-      perception.maxHp > 0 &&
-      perception.hp < perception.maxHp
-    ) {
-      return {
-        kind: "flee",
-        fromEntityId: players[0]?.entityId,
-      };
-    }
+    const behavior = perception.behavior ?? "aggressive";
+    const handler =
+      this.behaviorHandlers[behavior] ?? decideAggressiveBehavior;
 
-    // If still on cooldown, do nothing this tick
-    if (newCd > 0) {
-      return null;
-    }
-
-    const target = players[0];
-    if (!target) {
-      this.cooldowns.set(npcKey, 0);
-      return null;
-    }
-
-    const decision: NpcDecisionAttackEntity = {
-      kind: "attack_entity",
-      targetEntityId: target.entityId,
-      attackStyle: "melee",
-    };
-
-    this.cooldowns.set(npcKey, this.attackCooldownMs);
-
-    return decision;
+    return handler({
+      perception,
+      players,
+      cooldownMs: newCd,
+      attackCooldownMs: this.attackCooldownMs,
+      setCooldownMs: (value: number) => this.cooldowns.set(npcKey, value),
+    });
   }
 }
