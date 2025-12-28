@@ -1,3 +1,5 @@
+// worldcore/ai/brains/GuardBrain.ts
+
 import { type NpcDecision, type PerceivedPlayer } from "../NpcBrainTypes";
 import { decideAggressiveBehavior } from "./AggressiveBrain";
 import { type BehaviorContext } from "./BehaviorContext";

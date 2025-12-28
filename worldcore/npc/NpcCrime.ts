@@ -1,3 +1,5 @@
+// worldcore/npc/NpcCrime.ts
+
 import type { CharacterState } from "../characters/CharacterTypes";
 import type { NpcPrototype, NpcRuntimeState } from "./NpcTypes";
 import { getGuardCallRadius, DEFAULT_GUARD_CALL_RADIUS } from "./NpcTypes";
@@ -8,14 +10,31 @@ const CRIME_SEVERE_MS = 90_000;
 
 export type CrimeSeverity = "minor" | "severe";
 
-export function isProtectedNpc(proto?: NpcPrototype | null): boolean {
-  const tags = proto?.tags ?? [];
-  return (
-    tags.includes("protected_town") ||
-    tags.includes("civilian") ||
-    tags.includes("town_npc") ||
-    tags.includes("non_hostile")
-  );
+export function isProtectedNpc(
+  proto: NpcPrototype | null | undefined
+): boolean {
+  if (!proto) return false;
+
+  const tags = new Set(proto.tags ?? []);
+
+  // Guards themselves are enforcers, not protected citizens
+  if (tags.has("guard")) return false;
+
+  // Tags that count as "citizens / protected things" the guards will defend
+  const PROTECTED_TAGS = new Set<string>([
+    "civilian",        // generic townfolk / dummies
+    "protected",       // generic future hook
+    "protected_town",  // town rats, pigeons, etc
+    "vendor",
+    "questgiver",
+    "non_hostile",     // safe fluff NPCs
+  ]);
+
+  for (const t of tags) {
+    if (PROTECTED_TAGS.has(t)) return true;
+  }
+
+  return false;
 }
 
 export function recordNpcCrimeAgainst(

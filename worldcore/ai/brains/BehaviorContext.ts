@@ -1,3 +1,5 @@
+// worldcore/ai/brains/BehaviorContext.ts
+
 import {
   type NpcDecision,
   type NpcPerception,
