@@ -1,4 +1,4 @@
-// worldcore/index.ts
+// worldcore/index.ts  -- Just a test!
 
 // Config
 export * from "./config/config";
