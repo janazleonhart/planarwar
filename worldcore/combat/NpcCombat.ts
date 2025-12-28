@@ -99,11 +99,33 @@ export async function performNpcAttack(
   });
 
   let dmg = result.damage;
+
+  // Snapshot HP before damage for messaging
   const prevHp = (npc as any).hp ?? (npc as any).maxHp ?? 1;
   const maxHp = (npc as any).maxHp ?? prevHp;
-  const newHp = Math.max(0, prevHp - dmg);
-  (npc as any).hp = newHp;
-  ctx.npcs?.recordDamage(npc.id, selfEntity.id);
+
+  // Let NpcManager own HP + crime + pack calls when available
+  let newHp = Math.max(0, prevHp - dmg);
+
+  if (ctx.npcs) {
+    const appliedHp = ctx.npcs.applyDamage(npc.id, dmg, {
+      character: char,
+      entityId: selfEntity.id,
+    });
+
+    if (appliedHp !== null) {
+      newHp = appliedHp;
+    } else {
+      // Fallback if manager couldn’t find the NPC for some reason
+      (npc as any).hp = newHp;
+    }
+
+    // Always update threat so brains see the attacker
+    ctx.npcs.recordDamage(npc.id, selfEntity.id);
+  } else {
+    // Legacy / test fallback with no NpcManager
+    (npc as any).hp = newHp;
+  }
 
   // --- Skill progression for the attacker ---
   try {
@@ -138,6 +160,7 @@ export async function performNpcAttack(
     // Ditto
   }
 
+  // --- Build combat line ---
   let tag = "[combat]";
   if (opts.abilityName) {
     const prefix = opts.tagPrefix ?? "ability";
@@ -145,6 +168,7 @@ export async function performNpcAttack(
   }
 
   let line = `${tag} You hit ${npc.name} for ${dmg} damage. (${newHp}/${maxHp} HP)`;
+
   if (result.wasCrit) {
     line += " (Critical hit!)";
   } else if (result.wasGlancing) {
@@ -165,12 +189,7 @@ export async function performNpcAttack(
   // Resolve prototype for rewards
   let xpReward = 10;
   let lootEntries:
-    | {
-        itemId: string;
-        chance: number;
-        minQty: number;
-        maxQty: number;
-      }[]
+    | { itemId: string; chance: number; minQty: number; maxQty: number }[]
     | [] = [];
 
   try {
@@ -204,7 +223,11 @@ export async function performNpcAttack(
     const userId = ctx.session.identity?.userId;
     if (userId) {
       try {
-        const updated = await ctx.characters.grantXp(userId, char.id, xpReward);
+        const updated = await ctx.characters.grantXp(
+          userId,
+          char.id,
+          xpReward,
+        );
         if (updated) {
           ctx.session.character = updated;
           char.level = updated.level;
@@ -246,6 +269,7 @@ export async function performNpcAttack(
       const maxStack = tpl.maxStack ?? 1;
       const leftover = addItemToBags(inventory, entry.itemId, qty, maxStack);
       const added = qty - leftover;
+
       let mailed = 0;
       const overflow = leftover;
 
@@ -261,17 +285,22 @@ export async function performNpcAttack(
       }
 
       if (added > 0) {
-        lootLines.push(describeLootLine(entry.itemId, added, tpl.name));
+        lootLines.push(
+          describeLootLine(entry.itemId, added, tpl.name),
+        );
       }
+
       if (mailed > 0) {
         lootLines.push(
-          describeLootLine(entry.itemId, mailed, tpl.name) + " (via mail)",
+          describeLootLine(entry.itemId, mailed, tpl.name) +
+            " (via mail)",
         );
       }
     }
 
     if (lootLines.length > 0) {
       ctx.session.character = char;
+
       if (ctx.characters) {
         try {
           await ctx.characters.saveCharacter(char);
@@ -282,11 +311,14 @@ export async function performNpcAttack(
           });
         }
       }
+
       line += ` You loot ${lootLines.join(", ")}.`;
     }
   }
 
+  // Corpse + respawn handling (unchanged behavior)
   scheduleNpcCorpseAndRespawn(ctx, npc.id);
+
   return line;
 }
 
