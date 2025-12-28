@@ -37,6 +37,10 @@ declare module "jsonwebtoken" {
   export = jwt;
 }
 
+declare module "crypto" {
+  export function randomUUID(): string;
+}
+
 declare module "node:test" {
   interface TestFn {
     (name: string, fn: () => any | Promise<any>): Promise<any>;
