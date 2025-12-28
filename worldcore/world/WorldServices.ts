@@ -1,50 +1,60 @@
-// worldcore/world/WorldServices.ts
-// ------------------------------------------------------------
-// Purpose:
-// Complete initialization layer for the Planar War Runtime Environment (WRE)
-// with shard-aware injection, fully aligned constructors, and
-// structured logger outputs for boot diagnostics.
-// ------------------------------------------------------------
+/**
+ * WorldServices is the composition root for shard runtime wiring.
+ * It constructs and connects the world/core services listed in the registry
+ * (sessions, entities, world manager, movement/streams, NPCs, economy facades)
+ * so the MMO server can reuse a single bootstrap for each shard.
+ */
 
+import { GuildService } from "../guilds/GuildService";
+import { PostgresCharacterService } from "../characters/PostgresCharacterService";
+import { ItemService } from "../items/ItemService";
+import { PostgresVendorService } from "../vendors/PostgresVendorService";
+import { PostgresBankService } from "../bank/PostgresBankService";
+import { PostgresAuctionService } from "../auction/PostgresAuctionService";
+import { PostgresMailService } from "../mail/PostgresMailService";
+import { InMemoryTradeService } from "../trade/InMemoryTradeService";
 import { Logger } from "../utils/logger";
-
-// Core Systems
-import { SessionManager } from "../core/SessionManager";
-import { EntityManager } from "../core/EntityManager";
-import { RoomManager } from "../core/RoomManager";
+import { NpcManager } from "../npc/NpcManager";
 import { CombatSystem } from "../core/CombatSystem";
+import { EntityManager } from "../core/EntityManager";
+import { MessageRouter } from "../core/MessageRouter";
 import { MovementEngine } from "../core/MovementEngine";
 import { ObjectStream } from "../core/ObjectStream";
+import { RoomManager } from "../core/RoomManager";
+import { SessionManager } from "../core/SessionManager";
 import { TerrainStream } from "../core/TerrainStream";
-import { MessageRouter } from "../core/MessageRouter";
 import { TickEngine } from "../core/TickEngine";
-
-// World Systems
-import { ServerWorldManager } from "./ServerWorldManager";
-import { RegionManager } from "./RegionManager";
-import { SpawnService } from "./SpawnService";
-import { RespawnService } from "./RespawnService";
-import { SpawnPointService } from "./SpawnPointService";
+import { DomeBoundary } from "./Boundary";
 import { NavGridManager } from "./NavGridManager";
-import { Boundary } from "./Boundary";
+import { RegionManager } from "./RegionManager";
+import { RespawnService } from "./RespawnService";
+import { ServerWorldManager } from "./ServerWorldManager";
+import { SpawnPointService } from "./SpawnPointService";
+import { SpawnService } from "./SpawnService";
+import { NpcSpawnController } from "../npc/NpcSpawnController";
 import { WorldEventBus } from "./WorldEventBus";
-
-// Optional NPC and world-level managers
-import { NpcManager } from "../npc/NpcManager";
+import type { AuctionService } from "../auction/AuctionService";
+import type { BankService } from "../bank/BankService";
+import type { MailService } from "../mail/MailService";
+import type { TradeService } from "../trade/TradeService";
+import type { VendorService } from "../vendors/VendorService";
 
 const log = Logger.scope("WRE");
 
 export interface WorldServices {
-  shardId?: number;
+  seed: number;
+  shardId: string;
   events: WorldEventBus;
   sessions: SessionManager;
   entities: EntityManager;
   rooms: RoomManager;
   regions: RegionManager;
+  spawnPoints: SpawnPointService;
   spawns: SpawnService;
   respawns: RespawnService;
   navGrid: NavGridManager;
-  boundary: Boundary;
+  boundary?: DomeBoundary;
+  npcSpawns: NpcSpawnController;
   npcs: NpcManager;
   world: ServerWorldManager;
   movement: MovementEngine;
@@ -52,55 +62,108 @@ export interface WorldServices {
   objectStream: ObjectStream;
   terrainStream: TerrainStream;
   ticks: TickEngine;
+  guilds: GuildService;
+  characters: PostgresCharacterService;
+  items: ItemService;
+  trades: TradeService;
+  vendors: VendorService;
+  bank: BankService;
+  auctions: AuctionService;
+  mail: MailService;
   router: MessageRouter;
 }
 
-/** Bootstraps and wires all world systems into a fully operational runtime. */
-export function createWorldServices(shardId?: number): WorldServices {
-  log.info(`Initializing Planar War WRE (Shard ${shardId ?? 0})...`);
+export interface WorldServicesOptions {
+  seed?: number;
+  tickIntervalMs?: number;
+}
 
-  // --- Core Base Managers ---
+/**
+ * Bootstraps and wires all world systems into a fully operational runtime.
+ * Returns a dependency bag that other layers (MessageRouter, Mud, world ticks)
+ * can share instead of re-instantiating individual services.
+ */
+export async function createWorldServices(
+  seedOrOptions?: number | WorldServicesOptions
+): Promise<WorldServices> {
+  const options: WorldServicesOptions =
+    typeof seedOrOptions === "number" ? { seed: seedOrOptions } : seedOrOptions ?? {};
+  const seed = options.seed ?? 0x1234abcd;
+  const tickIntervalMs = options.tickIntervalMs ?? 200;
+
+  log.info(`Initializing Planar War world services (seed=${seed})...`);
+
   const events = new WorldEventBus();
-  log.info("WorldEventBus created.");
-
   const sessions = new SessionManager();
-  log.success("SessionManager initialized.");
-
   const entities = new EntityManager();
-  log.success("EntityManager initialized.");
 
-  const rooms = new RoomManager(sessions, entities);
-  log.success("RoomManager linked to SessionManager and EntityManager.");
+  const world = new ServerWorldManager(seed);
+  const shardId = world.getWorldBlueprint().shardId ?? "prime_shard";
 
-  // --- World Layer ---
-  const world = new ServerWorldManager(shardId ?? 0, events);
-  log.success("ServerWorldManager online.");
+  const rooms = new RoomManager(sessions, entities, world);
 
-  const regions = new RegionManager(world, events);
-  const boundary = new Boundary(regions);
-  const navGrid = new NavGridManager(regions);
-  log.success("RegionManager, Boundary, and NavGridManager linked.");
+  const spawnPoints = new SpawnPointService();
+  const characters = new PostgresCharacterService();
+  const respawns = new RespawnService(world, spawnPoints, characters, entities);
 
-  const respawns = new RespawnService(entities, rooms, regions, world);
-  const spawns = new SpawnService(entities, rooms, respawns, world);
-  const spawnPoints = new SpawnPointService(world, spawns);
-  log.success("Spawn and Respawn services registered.");
+  const regions = new RegionManager({
+    entityManager: entities,
+    roomManager: rooms,
+    respawnService: respawns,
+  });
+  const navGrid = new NavGridManager(world);
 
-  // --- NPCs and World Entities ---
-  const npcs = new NpcManager(events, entities, regions);
-  log.success("NpcManager ready.");
+  const spawns = new SpawnService({
+    entityManager: entities,
+    roomManager: rooms,
+    regionManager: regions,
+    respawnService: respawns,
+  });
 
-  // --- Core Systems Integration ---
+  const boundaryState = world.getWorldBlueprint().boundary;
+  const boundary = boundaryState
+    ? DomeBoundary.fromState({
+        centerX: boundaryState.centerX,
+        centerZ: boundaryState.centerZ,
+        radius: boundaryState.radius,
+        softRadius: boundaryState.softRadius,
+      })
+    : undefined;
+
+  const npcs = new NpcManager(entities, sessions);
+  const npcSpawns = new NpcSpawnController({
+    spawnPoints,
+    npcs,
+    entities,
+  });
+
+  const items = new ItemService();
+  try {
+    await items.loadAll();
+  } catch (err) {
+    log.warn("ItemService loadAll failed; continuing with empty cache", { err });
+  }
+
+  const guilds = new GuildService();
+  const mail = new PostgresMailService();
+  const trades = new InMemoryTradeService();
+  const vendors = new PostgresVendorService();
+  const bank = new PostgresBankService();
+  const auctions = new PostgresAuctionService();
+
   const movement = new MovementEngine(world);
   const combat = new CombatSystem(entities, rooms, sessions);
-  log.success("MovementEngine and CombatSystem initialized.");
-
   const objectStream = new ObjectStream(world, sessions);
   const terrainStream = new TerrainStream(world, sessions);
-  log.success("Object and Terrain streams activated.");
 
-  const ticks = new TickEngine(entities, rooms, sessions, world, { intervalMs: 200 }, npcs);
-  log.success("TickEngine running (200ms interval).");
+  const ticks = new TickEngine(
+    entities,
+    rooms,
+    sessions,
+    world,
+    { intervalMs: tickIntervalMs },
+    npcs
+  );
 
   const router = new MessageRouter(
     sessions,
@@ -111,24 +174,34 @@ export function createWorldServices(shardId?: number): WorldServices {
     objectStream,
     terrainStream,
     world,
-    spawns,
-    npcs
+    guilds,
+    characters,
+    items,
+    npcs,
+    mail,
+    trades,
+    vendors,
+    bank,
+    auctions,
+    npcSpawns
   );
-  log.success("MessageRouter operational.");
 
-  log.success(`✅ World Runtime Environment initialized for Shard ${shardId ?? 0}.`);
+  log.success(`✅ World runtime services initialized for shard ${shardId}`);
 
   return {
+    seed,
     shardId,
     events,
     sessions,
     entities,
     rooms,
     regions,
+    spawnPoints,
     spawns,
     respawns,
     navGrid,
     boundary,
+    npcSpawns,
     npcs,
     world,
     movement,
@@ -136,6 +209,14 @@ export function createWorldServices(shardId?: number): WorldServices {
     objectStream,
     terrainStream,
     ticks,
+    guilds,
+    characters,
+    items,
+    trades,
+    vendors,
+    bank,
+    auctions,
+    mail,
     router,
   };
 }

@@ -1,8 +1,15 @@
 // worldcore/npc/NpcManager.ts
 
+/**
+ * Owns runtime NPC state and threat tables, bridges EntityManager ↔ AI brains,
+ * and coordinates guard/pack help plus crime tagging. Driven by TickEngine and
+ * constructed via WorldServices.
+ */
+
 import { EntityManager } from "../core/EntityManager";
 import { SessionManager } from "../core/SessionManager";
 import { Logger } from "../utils/logger";
+import type { Entity } from "../shared/Entity";
 
 import {
   NpcRuntimeState,
@@ -51,7 +58,10 @@ export class NpcManager {
 
   private readonly brain = new LocalSimpleAggroBrain();
 
-  constructor(private readonly entities: EntityManager) {}
+  constructor(
+    private readonly entities: EntityManager,
+    private readonly sessions?: SessionManager,
+  ) {}
 
   private isGuardProtectedRoom(proto?: NpcPrototype | null): boolean {
     const tags = proto?.tags ?? [];
@@ -164,6 +174,10 @@ export class NpcManager {
 
   getNpcStateByEntityId(entityId: string): NpcRuntimeState | undefined {
     return this.npcsByEntityId.get(entityId);
+  }
+
+  getEntity(entityId: string): Entity | undefined {
+    return this.entities.get(entityId);
   }
 
   listNpcsInRoom(roomId: string): NpcRuntimeState[] {
@@ -327,7 +341,11 @@ export class NpcManager {
     attackerEntityId: string,
     st: NpcRuntimeState,
     proto: NpcPrototype,
-    opts: { snapAllies: boolean; forceRoomId?: string; sessions?: SessionManager },
+    opts: {
+      snapAllies: boolean;
+      forceRoomId?: string;
+      sessions?: SessionManager;
+    },
   ): void {
     if (!proto.groupId || !proto.canCallHelp) return;
     const attacker = this.entities.get(attackerEntityId);
@@ -372,8 +390,10 @@ export class NpcManager {
     guardCallRadius: number | undefined,
     sessions?: SessionManager,
   ): void {
+    const sessionManager = sessions ?? this.sessions;
+
     const offenderKey =
-      sessions?.get(target.ownerSessionId)?.character?.id ?? target.id;
+      sessionManager?.get(target.ownerSessionId)?.character?.id ?? target.id;
     if (this.hasCalledGuardHelp(npcId, offenderKey)) return;
 
     this.markGuardHelp(npcId, offenderKey);
@@ -382,7 +402,7 @@ export class NpcManager {
     const shout =
       `[guard] ${npcEntity.name ?? "Guard"} yells: ` +
       "To me! Defend the town!";
-    this.handleSayDecision(roomId, shout, sessions);
+    this.handleSayDecision(roomId, shout, sessionManager);
 
     const allies = this.listNpcsInRoom(roomId).filter((ally) => {
       if (ally.entityId === npcId) return false;
@@ -424,6 +444,8 @@ export class NpcManager {
     npcEntity: any,
     sessions?: SessionManager,
   ): boolean {
+    const sessionManager = sessions ?? this.sessions;
+
     if (!proto.canGate) return false;
     const maxHp =
       typeof st.maxHp === "number" && st.maxHp > 0
@@ -441,7 +463,7 @@ export class NpcManager {
     this.handleSayDecision(
       st.roomId,
       `[combat] ${npcEntity.name ?? proto.name} begins casting a gate!`,
-      sessions,
+      sessionManager,
     );
 
     this.despawnNpc(st.entityId);
@@ -467,7 +489,7 @@ export class NpcManager {
     this.notifyPackAllies(attackerEntityId, spawned, proto, {
       snapAllies: true,
       forceRoomId: attackerRoomId,
-      sessions,
+      sessions: sessionManager,
     });
 
     if (attackerRoomId !== spawnRoomId) {
@@ -486,6 +508,7 @@ export class NpcManager {
   // -------------------------------------------------------------------------
 
   updateAll(deltaMs: number, sessions?: SessionManager): void {
+    const activeSessions = sessions ?? this.sessions;
     for (const [entityId, st] of this.npcsByEntityId.entries()) {
       const npcEntity: any = this.entities.get(entityId);
       if (!npcEntity) continue;
@@ -589,13 +612,7 @@ export class NpcManager {
       };
 
       if (
-        this.maybeGateAndCallHelp(
-          st,
-          proto,
-          threat,
-          npcEntity,
-          sessions,
-        )
+        this.maybeGateAndCallHelp(st, proto, threat, npcEntity, activeSessions)
       ) {
         continue;
       }
@@ -611,12 +628,12 @@ export class NpcManager {
             npcEntity,
             roomId,
             behavior,
-            sessions,
+            activeSessions,
           );
           break;
 
         case "say":
-          this.handleSayDecision(roomId, decision.text, sessions);
+          this.handleSayDecision(roomId, decision.text, activeSessions);
           break;
 
         case "attack_entity":
@@ -629,7 +646,7 @@ export class NpcManager {
             decision.targetEntityId,
             guardProfile,
             guardCallRadius,
-            sessions,
+            activeSessions,
           );
           break;
 
@@ -652,16 +669,18 @@ export class NpcManager {
     behavior: string,
     sessions?: SessionManager,
   ): void {
+    const sessionManager = sessions ?? this.sessions;
+
     st.fleeing = true;
 
-    if (sessions) {
+    if (sessionManager) {
       try {
         const ents = this.entities.getEntitiesInRoom(roomId) as any[];
         const player = ents.find((e) => e.type === "player");
         if (player && player.ownerSessionId) {
-          const s = sessions.get(player.ownerSessionId);
+          const s = sessionManager.get(player.ownerSessionId);
           if (s) {
-            sessions.send(s, "chat", {
+            sessionManager.send(s, "chat", {
               from: "[world]",
               sessionId: "system",
               text: `[combat] ${npcEntity.name} squeals and scurries away!`,
@@ -691,16 +710,17 @@ export class NpcManager {
     text: string,
     sessions?: SessionManager,
   ): void {
-    if (!sessions) return;
+    const sessionManager = sessions ?? this.sessions;
+    if (!sessionManager) return;
     try {
       const ents = this.entities.getEntitiesInRoom(roomId) as any[];
       for (const e of ents) {
         if (e.type !== "player") continue;
         const ownerSessionId = e.ownerSessionId;
         if (!ownerSessionId) continue;
-        const s = sessions.get(ownerSessionId);
+        const s = sessionManager.get(ownerSessionId);
         if (s) {
-          sessions.send(s, "chat", {
+          sessionManager.send(s, "chat", {
             from: "[world]",
             sessionId: "system",
             text,
@@ -724,6 +744,7 @@ export class NpcManager {
     guardCallRadius?: number,
     sessions?: SessionManager,
   ): void {
+    const sessionManager = sessions ?? this.sessions;
     const target = this.entities.get(targetEntityId) as any;
     if (!target || target.type !== "player") {
       return;
@@ -815,7 +836,7 @@ export class NpcManager {
         target,
         guardProfile,
         guardCallRadius,
-        sessions,
+        sessionManager,
       );
     }
 
@@ -836,12 +857,12 @@ export class NpcManager {
         `(${newHp}/${maxHp} HP)`;
     }
 
-    if (sessions) {
+    if (sessionManager) {
       const ownerSessionId = (target as any).ownerSessionId;
       if (ownerSessionId) {
-        const s = sessions.get(ownerSessionId);
+        const s = sessionManager.get(ownerSessionId);
         if (s) {
-          sessions.send(s, "chat", {
+          sessionManager.send(s, "chat", {
             from: "[world]",
             sessionId: "system",
             text: line,

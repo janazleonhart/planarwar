@@ -1,13 +1,18 @@
 // worldcore/npc/NpcSpawnController.ts
 
-import { NpcManager } from "./NpcManager";
-import { SpawnPointService, DbSpawnPoint } from "../world/SpawnPointService";
-import { Logger } from "../utils/logger";
-import { isNodeAvailable } from "../progression/ProgressionCore";
-import { getNpcPrototype } from "./NpcTypes";
-import { EntityManager } from "../core/EntityManager";
+/**
+ * Coordinates shared NPC spawns and personal resource nodes from DB-backed
+ * spawn_points. Keeps per-scope dedupe and relies on NpcManager for actual
+ * entity creation.
+ */
 
+import { EntityManager } from "../core/EntityManager";
 import type { CharacterState } from "../characters/CharacterTypes";
+import { isNodeAvailable } from "../progression/ProgressionCore";
+import { Logger } from "../utils/logger";
+import { DbSpawnPoint, SpawnPointService } from "../world/SpawnPointService";
+import { getNpcPrototype } from "./NpcTypes";
+import { NpcManager } from "./NpcManager";
 
 const log = Logger.scope("NPC_SPAWN");
 
@@ -19,9 +24,11 @@ function isResourceProto(protoId: string): boolean {
 
 export class NpcSpawnController {
   constructor(
-    private readonly spawnPoints: SpawnPointService,
-    private readonly npcs: NpcManager,
-    private readonly entities: EntityManager
+    private readonly deps: {
+      spawnPoints: SpawnPointService;
+      npcs: NpcManager;
+      entities: EntityManager;
+    },
   ) {}
 
   // Dedupe must be scoped:
@@ -39,7 +46,7 @@ export class NpcSpawnController {
   }
 
   async spawnFromRegion(shardId: string, regionId: string, roomId: string): Promise<number> {
-    const points = await this.spawnPoints.getSpawnPointsForRegion(shardId, regionId);
+    const points = await this.deps.spawnPoints.getSpawnPointsForRegion(shardId, regionId);
     return this.spawnSharedNpcsFromPoints(points, roomId);
   }
 
@@ -50,7 +57,7 @@ export class NpcSpawnController {
     radius: number,
     roomId: string
   ): Promise<number> {
-    const points = await this.spawnPoints.getSpawnPointsNear(shardId, x, z, radius);
+    const points = await this.deps.spawnPoints.getSpawnPointsNear(shardId, x, z, radius);
     return this.spawnSharedNpcsFromPoints(points, roomId);
   }
 
@@ -66,7 +73,7 @@ export class NpcSpawnController {
 
     this.personalSpawnInFlight.add(key);
     try {
-      const points = await this.spawnPoints.getSpawnPointsForRegion(shardId, regionId);
+      const points = await this.deps.spawnPoints.getSpawnPointsForRegion(shardId, regionId);
       return this.spawnPersonalNodesFromPoints(points, roomId, ownerSessionId, char);
     } finally {
       this.personalSpawnInFlight.delete(key);
@@ -96,7 +103,7 @@ export class NpcSpawnController {
       const py = p.y ?? 0;
       const pz = p.z ?? 0;
 
-      const state = this.npcs.spawnNpcById(p.protoId, roomId, px, py, pz, p.variantId);
+      const state = this.deps.npcs.spawnNpcById(p.protoId, roomId, px, py, pz, p.variantId);
       if (!state) {
         log.warn("Failed to spawn NPC from spawn point", {
           spawnPointId: p.id,
@@ -126,8 +133,7 @@ export class NpcSpawnController {
   
     // Build a fast lookup of already-present personal nodes in this room for this owner
     const existing = new Set<number>();
-    // NEW v0.9: use EntityManager directly
-    const ents = this.entities.getEntitiesInRoom(roomId);
+    const ents = this.deps.entities.getEntitiesInRoom(roomId);
     for (const e of ents) {
       if (!e) continue;
       if (e.type !== "node" && e.type !== "object") continue;
@@ -152,12 +158,10 @@ export class NpcSpawnController {
       const py = p.y ?? 0;
       const pz = p.z ?? 0;
   
-      const st = this.npcs.spawnNpcById(p.protoId, roomId, px, py, pz, p.variantId);
+      const st = this.deps.npcs.spawnNpcById(p.protoId, roomId, px, py, pz, p.variantId);
       if (!st) continue;
-  
-      const e =
-        (this.npcs as any).getEntity?.(st.entityId) ??
-        (this.npcs as any).entities?.get?.(st.entityId);
+
+      const e = this.deps.npcs.getEntity(st.entityId);
   
       // Absolute paranoia: never tag a player as a node
       if (e && e.type === "player") {
@@ -169,7 +173,7 @@ export class NpcSpawnController {
           entityName: e.name,
         });
         // Clean up the spawned npc/entity to avoid corrupt state
-        this.npcs.despawnNpc(st.entityId);
+        this.deps.npcs.despawnNpc(st.entityId);
         continue;
       }
   

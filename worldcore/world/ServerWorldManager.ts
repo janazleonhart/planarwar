@@ -1,5 +1,11 @@
 //worldcore/world/ServerWorldManager.ts
 
+/**
+ * Server-side world authority for the shard. Owns the Heightmap and RegionMap,
+ * builds the shard WorldBlueprint via ScaledWorldgen, and implements
+ * WorldBlueprintProvider so rooms and streams can fetch the canonical layout.
+ */
+
 import { Logger } from "../utils/logger";
 import { Heightmap } from "../terrain/height/Heightmap";
 import { RegionMap } from "../terrain/regions/RegionMap";
@@ -12,17 +18,6 @@ import { buildWorldBlueprint } from "../terrain/worldgen/ScaledWorldgen";
 
 import type { WorldBlueprintProvider } from "../core/RoomManager";
 
-/**
- * ServerWorldManager v1
- *
- * Responsibilities (for now):
- *  - Own the Heightmap + RegionMap for the main shard
- *  - Hold a WorldBlueprint and hand it to RoomManager (world_blueprint op)
- *  - Provide simple helpers for other systems (terrain / AI later)
- *
- * This is intentionally MUCH simpler than the old Redis / storage monster.
- * We treat a single WorldBlueprint as the live shard (prime_shard).
- */
 export class ServerWorldManager implements WorldBlueprintProvider {
   private readonly log = Logger.scope("WORLD");
 

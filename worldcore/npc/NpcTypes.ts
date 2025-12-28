@@ -1,5 +1,10 @@
 // worldcore/npc/NpcTypes.ts
 
+/**
+ * NPC prototype/runtime types and the default prototype registry used by
+ * in-memory AI. Includes guard call radius helpers and built-in test NPCs.
+ */
+
 export type NpcId = string;
 export type GuardProfile = "village" | "town" | "city";
 
