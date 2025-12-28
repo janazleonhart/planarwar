@@ -121,6 +121,8 @@ export interface CharacterState {
   shardId: string;
   name: string;
   classId: string;
+  recentCrimeUntil?: number;
+  recentCrimeSeverity?: "minor" | "severe";
 
   level: number;
   xp: number;

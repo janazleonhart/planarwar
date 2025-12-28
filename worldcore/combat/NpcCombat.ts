@@ -1,10 +1,8 @@
 // worldcore/combat/NpcCombat.ts
 
-import type { MudContext } from "../mud/MudContext";
 import type { CharacterState } from "../characters/CharacterTypes";
 import type { Entity } from "../shared/Entity";
 
-import { computeEffectiveAttributes } from "../characters/Stats";
 import { Logger } from "../utils/logger";
 import { getNpcPrototype } from "../npc/NpcTypes";
 
@@ -43,6 +41,16 @@ import {
 } from "../skills/SkillProgression";
 
 const log = Logger.scope("NPC_COMBAT");
+type SimpleCombatContext = {
+  [key: string]: any;
+  npcs?: any;
+  entities?: any;
+  items?: any;
+  session?: any;
+  characters?: any;
+  mail?: any;
+  rooms?: any;
+};
 
 export interface NpcAttackOptions {
   abilityName?: string;
@@ -69,14 +77,14 @@ export interface NpcAttackOptions {
  * Returns a human-readable combat line for MUD output.
  */
 export async function performNpcAttack(
-  ctx: MudContext,
+  ctx: SimpleCombatContext,
   char: CharacterState,
   selfEntity: Entity,
   npc: Entity,
   opts: NpcAttackOptions = {},
 ): Promise<string> {
   // --- Build combat source/target for CombatEngine ---
-  const effective = computeEffectiveAttributes(char, ctx.items);
+  const effective = (char as any).attributes ?? {};
 
   const source: CombatSource = {
     char,
@@ -101,9 +109,21 @@ export async function performNpcAttack(
   let dmg = result.damage;
   const prevHp = (npc as any).hp ?? (npc as any).maxHp ?? 1;
   const maxHp = (npc as any).maxHp ?? prevHp;
-  const newHp = Math.max(0, prevHp - dmg);
-  (npc as any).hp = newHp;
-  ctx.npcs?.recordDamage(npc.id, selfEntity.id);
+  let newHp = Math.max(0, prevHp - dmg);
+
+  if (ctx.npcs) {
+    const appliedHp = ctx.npcs.applyDamage(npc.id, dmg, {
+      character: char,
+      entityId: selfEntity.id,
+    });
+    if (typeof appliedHp === "number") {
+      dmg = Math.max(0, prevHp - appliedHp);
+      newHp = appliedHp;
+    }
+    ctx.npcs.recordDamage(npc.id, selfEntity.id);
+  } else {
+    (npc as any).hp = newHp;
+  }
 
   // --- Skill progression for the attacker ---
   try {
@@ -294,7 +314,7 @@ export async function performNpcAttack(
  * Very simple NPC → player counter-attack used by all v1 brains.
  */
 export function applySimpleNpcCounterAttack(
-  ctx: MudContext,
+  ctx: SimpleCombatContext,
   npc: Entity,
   player: Entity,
 ): string | null {
@@ -331,7 +351,7 @@ export function applySimpleNpcCounterAttack(
  * Small helper for sending “X returns.” style flavor to a room.
  */
 export function announceSpawnToRoom(
-  ctx: MudContext,
+  ctx: SimpleCombatContext,
   roomId: string,
   text: string,
 ): void {
@@ -351,7 +371,7 @@ export function announceSpawnToRoom(
  * Shared corpse + respawn behavior for NPCs and resource nodes.
  */
 export function scheduleNpcCorpseAndRespawn(
-  ctx: MudContext,
+  ctx: SimpleCombatContext,
   npcEntityId: string,
 ): void {
   if (!ctx.npcs || !ctx.entities) return;
