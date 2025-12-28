@@ -1,3 +1,5 @@
+// worldcore/ai/brains/AggressiveBrain.ts
+
 import { type NpcDecisionAttackEntity } from "../NpcBrainTypes";
 import { type BehaviorContext } from "./BehaviorContext";
 

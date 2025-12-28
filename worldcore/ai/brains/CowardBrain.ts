@@ -1,3 +1,5 @@
+// worldcore/ai/brains/CowardBrain.ts
+
 import { type NpcDecision } from "../NpcBrainTypes";
 import { decideAggressiveBehavior } from "./AggressiveBrain";
 import { type BehaviorContext } from "./BehaviorContext";

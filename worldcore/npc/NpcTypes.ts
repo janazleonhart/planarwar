@@ -135,7 +135,7 @@ export const DEFAULT_NPC_PROTOTYPES: Record<string, NpcPrototype> = {
     baseDamageMin: 1,
     baseDamageMax: 3,
     model: "rat_small",
-    tags: ["beast", "critter", "coward_test"],
+    tags: ["beast", "critter", "coward_test", "protected_town", "civilian"],
     behavior: "coward",
     groupId: "rat_pack",
     canCallHelp: true,
