@@ -2,6 +2,7 @@
 
 import { db } from "../db/Database";
 import { Logger } from "../utils/logger";
+
 import type { ItemStack } from "../characters/CharacterTypes";
 import type { BankService, BankState } from "./BankService";
 import type { BankOwnerKind } from "./BankTypes";
@@ -29,19 +30,21 @@ export class PostgresBankService implements BankService {
     ownerId: string,
     ownerKind: BankOwnerKind = "character"
   ): Promise<BankState> {
-    const slotRes = await db.query<BankSlotRow>(
+    const slotRes = await db.query(
       `
       SELECT owner_id, owner_kind, slot_index, item_id, qty, meta
       FROM bank_slots
       WHERE owner_id = $1 AND owner_kind = $2
       ORDER BY slot_index ASC
-      `,
+    `,
       [ownerId, ownerKind]
     );
 
-    const slots: Array<ItemStack | null> = Array(BANK_SLOT_COUNT).fill(null);
+    const slotRows = slotRes.rows as BankSlotRow[];
 
-    for (const row of slotRes.rows) {
+    const slots: BankState["slots"] = Array(BANK_SLOT_COUNT).fill(null);
+
+    for (const row of slotRows) {
       if (row.slot_index < 0 || row.slot_index >= BANK_SLOT_COUNT) {
         log.warn("Ignoring out-of-range bank slot", {
           ownerId,
@@ -50,6 +53,7 @@ export class PostgresBankService implements BankService {
         });
         continue;
       }
+
       slots[row.slot_index] = {
         itemId: row.item_id,
         qty: row.qty,
@@ -57,19 +61,18 @@ export class PostgresBankService implements BankService {
       };
     }
 
-    // Load gold balance (if any) from bank_accounts
-    const goldRes = await db.query<BankAccountRow>(
+    const goldRes = await db.query(
       `
       SELECT gold
       FROM bank_accounts
       WHERE owner_id = $1 AND owner_kind = $2
-      `,
+    `,
       [ownerId, ownerKind]
     );
-    
-    const rows = goldRes?.rows ?? [];
-    const gold = rows.length > 0 ? Number(rows[0].gold) : 0;
-    
+
+    const goldRows = (goldRes?.rows ?? []) as BankAccountRow[];
+    const gold = goldRows.length > 0 ? Number(goldRows[0].gold) : 0;
+
     return { ownerId, ownerKind, slots, gold };
   }
 
@@ -80,18 +83,16 @@ export class PostgresBankService implements BankService {
     try {
       await db.query("BEGIN");
 
-      // Upsert the bank gold balance
       await db.query(
         `
         INSERT INTO bank_accounts (owner_id, owner_kind, gold)
         VALUES ($1, $2, $3)
         ON CONFLICT (owner_id, owner_kind)
         DO UPDATE SET gold = EXCLUDED.gold
-        `,
+      `,
         [ownerId, ownerKind, gold]
       );
 
-      // Replace slot rows for this owner
       await db.query(
         `DELETE FROM bank_slots WHERE owner_id = $1 AND owner_kind = $2`,
         [ownerId, ownerKind]
@@ -112,7 +113,7 @@ export class PostgresBankService implements BankService {
             meta
           )
           VALUES ($1, $2, $3, $4, $5, $6)
-          `,
+        `,
           [
             ownerId,
             ownerKind,
@@ -125,7 +126,7 @@ export class PostgresBankService implements BankService {
       }
 
       await db.query("COMMIT");
-    } catch (err) {
+    } catch (err: any) {
       await db.query("ROLLBACK");
       log.warn("Failed to save bank state", {
         ownerId,

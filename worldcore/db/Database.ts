@@ -1,15 +1,9 @@
-//worldcore/db/Database.ts
-
+// worldcore/db/Database.ts
 // Planar War – DB & Redis connection layer (legacy v1, parked)
-//
-// This is a direct port of the old Database.ts into the new worldcore tree.
-// We are NOT wiring it into the MMO yet; it's here so that when we turn on
-// Postgres/Redis-backed shard storage, the shape is already in place.
 
 import { Pool } from "pg";
 import { createClient } from "redis";
 import dotenv from "dotenv";
-
 import { Logger } from "../utils/logger";
 
 dotenv.config();
@@ -31,17 +25,18 @@ export const db = new Pool({
   connectionTimeoutMillis: 5_000,
 });
 
-db.on("error", (err: any) => {
-  log.error("Postgres pool error", err);
+db.on("error", (err: unknown) => {
+  log.error("Postgres pool error", { err });
 });
 
 // Optional: tiny helper to test connectivity on startup if/when we wire it.
 export async function testDbConnection(): Promise<void> {
   try {
     const r = await db.query("SELECT 1 AS ok");
-    log.success("Postgres connected", { ok: r.rows[0]?.ok });
+    const ok = (r.rows[0] as any)?.ok;
+    log.success("Postgres connected", { ok });
   } catch (err) {
-    log.error("Postgres connection test failed", err);
+    log.error("Postgres connection test failed", { err });
   }
 }
 
@@ -56,11 +51,11 @@ export const redis = createClient({
 });
 
 redis.on("ready", () => redisLog.success("Redis connected"));
-redis.on("error", (err) => redisLog.error("Redis error", err));
+redis.on("error", (err: unknown) => redisLog.error("Redis error", { err }));
 
 // IMPORTANT:
-// We don't force this to run at process startup yet. When some future
-// subsystem *actually* needs Redis, it can call `ensureRedisConnected()`.
+// We don't force this to run at process startup yet.
+// When some future subsystem actually needs Redis, it can call ensureRedisConnected().
 // That avoids “random connection attempt on import” issues during early dev.
 
 let redisConnecting = false;
@@ -72,7 +67,7 @@ export async function ensureRedisConnected(): Promise<void> {
   try {
     await redis.connect();
   } catch (err) {
-    redisLog.error("Redis connect failed", err);
+    redisLog.error("Redis connect failed", { err });
     redisConnecting = false;
     throw err;
   }

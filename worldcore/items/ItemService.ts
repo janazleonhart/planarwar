@@ -21,10 +21,11 @@ export class ItemService {
   async loadAll(): Promise<void> {
     this.log.info("Loading item definitions from DB...");
 
-    const res = await db.query<ItemRow>(`SELECT * FROM items`);
+    const res = await db.query(`SELECT * FROM items`);
+    const rows = res.rows as ItemRow[];
     const map = new Map<string, ItemDefinition>();
 
-    for (const row of res.rows) {
+    for (const row of res.rows as ItemRow[]) {
       const def = rowToItemDefinition(row);
       map.set(def.id, def);
     }
