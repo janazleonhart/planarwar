@@ -38,9 +38,12 @@ import { PostgresQuestService } from "../worldcore/quests/PostgresQuestService";
 import { setQuestDefinitions } from "../worldcore/quests/QuestRegistry";
 import { PostgresNpcService } from "../worldcore/npc/PostgresNpcService";
 import { setNpcPrototypes } from "../worldcore/npc/NpcTypes";
+import { installFileLogTap } from "./FileLogTap";
 
 import type { MudContext } from "../worldcore/mud/MudContext";
 import { tickSongsForCharacter } from "../worldcore/songs/SongEngine";
+
+installFileLogTap();
 
 const log = Logger.scope("SERVER");
 
