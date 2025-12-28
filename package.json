@@ -6,7 +6,7 @@
         "worldcore",
         "mmo-backend",
         "web-backend",
-        "web-frontend"
+        "web-frontend" 
     ],
     "scripts": {
         "dev:web-frontend": "npm run dev --workspace web-frontend",
