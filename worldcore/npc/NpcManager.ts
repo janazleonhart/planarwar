@@ -47,6 +47,7 @@ export class NpcManager {
   private npcsByRoom = new Map<string, Set<string>>();
   private npcThreat = new Map<string, NpcThreatState>();
   private guardHelpCalled = new Map<string, Set<string>>();
+  private packHelpCalled = new Map<string, Set<string>>();
 
   private readonly brain = new LocalSimpleAggroBrain();
 
@@ -101,6 +102,7 @@ export class NpcManager {
       templateId: proto.id,
       variantId: variantId ?? null,
       roomId,
+      spawnRoomId: roomId,
       hp: proto.maxHp,
       maxHp: proto.maxHp,
       alive: true,
@@ -203,7 +205,7 @@ export class NpcManager {
   applyDamage(
     entityId: string,
     amount: number,
-    attacker?: { character?: CharacterState },
+    attacker?: { character?: CharacterState; entityId?: string },
   ): number | null {
     const st = this.npcsByEntityId.get(entityId);
     if (!st) return null;
@@ -224,11 +226,18 @@ export class NpcManager {
     e.hp = newHp;
     e.alive = newHp > 0;
 
-    if (attacker?.character && proto && isProtectedNpc(proto)) {
-      recordNpcCrimeAgainst(st, attacker.character, {
-        lethal: newHp <= 0,
-        proto,
-      });
+    if (attacker?.character && proto) {
+      if (isProtectedNpc(proto)) {
+        recordNpcCrimeAgainst(st, attacker.character, {
+          lethal: newHp <= 0,
+          proto,
+        });
+      }
+      if (proto.canCallHelp && proto.groupId && attacker.entityId) {
+        this.notifyPackAllies(attacker.entityId, st, proto, {
+          snapAllies: false,
+        });
+      }
     }
 
     if (st.alive && st.maxHp > 0 && st.hp < st.maxHp) {
@@ -252,7 +261,220 @@ export class NpcManager {
     if (st) {
       st.lastAggroAt = threat.lastAggroAt;
       st.lastAttackerEntityId = threat.lastAttackerEntityId;
+      const proto =
+        getNpcPrototype(st.templateId) ??
+        getNpcPrototype(st.protoId) ??
+        DEFAULT_NPC_PROTOTYPES[st.templateId] ??
+        DEFAULT_NPC_PROTOTYPES[st.protoId];
+      if (proto?.canCallHelp && proto.groupId) {
+        this.notifyPackAllies(attackerEntityId, st, proto, {
+          snapAllies: false,
+        });
+      }
     }
+  }
+
+  private hasCalledGuardHelp(npcId: string, offenderId: string): boolean {
+    return this.guardHelpCalled.get(npcId)?.has(offenderId) ?? false;
+  }
+
+  private markGuardHelp(npcId: string, offenderId: string): void {
+    let set = this.guardHelpCalled.get(npcId);
+    if (!set) {
+      set = new Set<string>();
+      this.guardHelpCalled.set(npcId, set);
+    }
+    set.add(offenderId);
+  }
+
+  private markPackHelp(npcId: string, offenderId: string): void {
+    let set = this.packHelpCalled.get(npcId);
+    if (!set) {
+      set = new Set<string>();
+      this.packHelpCalled.set(npcId, set);
+    }
+    set.add(offenderId);
+  }
+
+  private hasMarkedPackHelp(npcId: string, offenderId: string): boolean {
+    return this.packHelpCalled.get(npcId)?.has(offenderId) ?? false;
+  }
+
+  private moveNpcToRoom(state: NpcRuntimeState, entityId: string, roomId: string): void {
+    if (state.roomId === roomId) return;
+
+    const prevSet = this.npcsByRoom.get(state.roomId);
+    if (prevSet) {
+      prevSet.delete(entityId);
+      if (prevSet.size === 0) this.npcsByRoom.delete(state.roomId);
+    }
+
+    let nextSet = this.npcsByRoom.get(roomId);
+    if (!nextSet) {
+      nextSet = new Set<string>();
+      this.npcsByRoom.set(roomId, nextSet);
+    }
+    nextSet.add(entityId);
+
+    state.roomId = roomId;
+    const ent = this.entities.get(entityId);
+    if (ent) {
+      ent.roomId = roomId;
+    }
+  }
+
+  private notifyPackAllies(
+    attackerEntityId: string,
+    st: NpcRuntimeState,
+    proto: NpcPrototype,
+    opts: { snapAllies: boolean; forceRoomId?: string; sessions?: SessionManager },
+  ): void {
+    if (!proto.groupId || !proto.canCallHelp) return;
+    const attacker = this.entities.get(attackerEntityId);
+    const targetRoomId = opts.forceRoomId ?? attacker?.roomId ?? st.roomId;
+
+    const considerRooms = new Set<string>([st.roomId, targetRoomId]);
+    for (const room of considerRooms) {
+      const allies = this.listNpcsInRoom(room).filter((ally) => {
+        if (ally.entityId === st.entityId) return false;
+        if (this.hasMarkedPackHelp(ally.entityId, attackerEntityId)) return false;
+        const allyProto =
+          getNpcPrototype(ally.templateId) ??
+          getNpcPrototype(ally.protoId) ??
+          DEFAULT_NPC_PROTOTYPES[ally.templateId] ??
+          DEFAULT_NPC_PROTOTYPES[ally.protoId];
+        return allyProto?.groupId === proto.groupId;
+      });
+
+      for (const ally of allies) {
+        const threat = updateThreatFromDamage(
+          this.npcThreat.get(ally.entityId),
+          attackerEntityId,
+        );
+        this.npcThreat.set(ally.entityId, threat);
+        ally.lastAggroAt = threat.lastAggroAt;
+        ally.lastAttackerEntityId = threat.lastAttackerEntityId;
+        this.markPackHelp(ally.entityId, attackerEntityId);
+
+        if (opts.snapAllies && targetRoomId) {
+          this.moveNpcToRoom(ally, ally.entityId, targetRoomId);
+        }
+      }
+    }
+  }
+
+  private maybeCallGuardHelp(
+    npcId: string,
+    npcEntity: any,
+    roomId: string,
+    target: any,
+    guardProfile: GuardProfile | undefined,
+    guardCallRadius: number | undefined,
+    sessions?: SessionManager,
+  ): void {
+    const offenderKey =
+      sessions?.get(target.ownerSessionId)?.character?.id ?? target.id;
+    if (this.hasCalledGuardHelp(npcId, offenderKey)) return;
+
+    this.markGuardHelp(npcId, offenderKey);
+    this.brain.markCalledHelp(npcId, offenderKey);
+
+    const shout =
+      `[guard] ${npcEntity.name ?? "Guard"} yells: ` +
+      "To me! Defend the town!";
+    this.handleSayDecision(roomId, shout, sessions);
+
+    const allies = this.listNpcsInRoom(roomId).filter((ally) => {
+      if (ally.entityId === npcId) return false;
+      const proto =
+        getNpcPrototype(ally.templateId) ??
+        getNpcPrototype(ally.protoId) ??
+        DEFAULT_NPC_PROTOTYPES[ally.templateId] ??
+        DEFAULT_NPC_PROTOTYPES[ally.protoId];
+      return proto?.guardProfile !== undefined;
+    });
+
+    for (const ally of allies) {
+      const threat = updateThreatFromDamage(
+        this.npcThreat.get(ally.entityId),
+        target.id,
+      );
+      this.npcThreat.set(ally.entityId, threat);
+      const allyProto =
+        getNpcPrototype(ally.templateId) ??
+        getNpcPrototype(ally.protoId) ??
+        DEFAULT_NPC_PROTOTYPES[ally.templateId] ??
+        DEFAULT_NPC_PROTOTYPES[ally.protoId];
+      const allyGuardProfile = allyProto?.guardProfile;
+      const radiusOk =
+        guardCallRadius === undefined ||
+        allyGuardProfile === undefined ||
+        guardCallRadius >= 0;
+      if (radiusOk && offenderKey) {
+        this.brain.markWarnedTarget(ally.entityId, offenderKey);
+        this.brain.markCalledHelp(ally.entityId, offenderKey);
+      }
+    }
+  }
+
+  private maybeGateAndCallHelp(
+    st: NpcRuntimeState,
+    proto: NpcPrototype,
+    threat: NpcThreatState | undefined,
+    npcEntity: any,
+    sessions?: SessionManager,
+  ): boolean {
+    if (!proto.canGate) return false;
+    const maxHp =
+      typeof st.maxHp === "number" && st.maxHp > 0
+        ? st.maxHp
+        : proto.maxHp || 1;
+    const hpPct = st.hp / maxHp;
+    const attackerEntityId = threat?.lastAttackerEntityId;
+    if (hpPct > 0.3 || !attackerEntityId) return false;
+    if (Math.random() > 0.5) return false;
+
+    const spawnRoomId = st.spawnRoomId ?? st.roomId;
+    const attackerRoomId =
+      this.entities.get(attackerEntityId)?.roomId ?? st.roomId;
+
+    this.handleSayDecision(
+      st.roomId,
+      `[combat] ${npcEntity.name ?? proto.name} begins casting a gate!`,
+      sessions,
+    );
+
+    this.despawnNpc(st.entityId);
+
+    const spawned = this.spawnNpcById(
+      st.templateId,
+      spawnRoomId,
+      npcEntity.x,
+      npcEntity.y,
+      npcEntity.z,
+      st.variantId,
+    );
+    if (!spawned) return true;
+
+    const threatState = updateThreatFromDamage(
+      this.npcThreat.get(spawned.entityId),
+      attackerEntityId,
+    );
+    this.npcThreat.set(spawned.entityId, threatState);
+    spawned.lastAggroAt = threatState.lastAggroAt;
+    spawned.lastAttackerEntityId = threatState.lastAttackerEntityId;
+
+    this.notifyPackAllies(attackerEntityId, spawned, proto, {
+      snapAllies: true,
+      forceRoomId: attackerRoomId,
+      sessions,
+    });
+
+    if (attackerRoomId !== spawnRoomId) {
+      this.moveNpcToRoom(spawned, spawned.entityId, attackerRoomId);
+    }
+
+    return true;
   }
 
   private hasCalledGuardHelp(npcId: string, offenderId: string): boolean {
@@ -424,6 +646,18 @@ export class NpcManager {
         lastAggroAt: threat?.lastAggroAt,
         lastAttackerId: threat?.lastAttackerEntityId,
       };
+
+      if (
+        this.maybeGateAndCallHelp(
+          st,
+          proto,
+          threat,
+          npcEntity,
+          sessions,
+        )
+      ) {
+        continue;
+      }
 
       const decision = this.brain.decide(perception, deltaMs);
       if (!decision) continue;

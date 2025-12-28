@@ -46,6 +46,10 @@ export interface NpcPrototype {
   behavior?: NpcBehavior;
   guardProfile?: GuardProfile;
   guardCallRadius?: number;
+  groupId?: string;
+  canCallHelp?: boolean;
+  socialRange?: number;
+  canGate?: boolean;
   xpReward?: number;
   loot?: NpcLootEntry[];
 }
@@ -70,6 +74,20 @@ export interface NpcRuntimeState {
 
   // For simple behavior flags; coward only uses this for now
   fleeing?: boolean;
+  spawnRoomId?: string;
+  gating?: boolean;
+}
+
+export const DEFAULT_GUARD_CALL_RADIUS: Record<GuardProfile, number> = {
+  village: 12,
+  town: 18,
+  city: 24,
+};
+
+export function getGuardCallRadius(profile?: GuardProfile, override?: number): number | undefined {
+  if (typeof override === "number") return override;
+  if (!profile) return undefined;
+  return DEFAULT_GUARD_CALL_RADIUS[profile];
 }
 
 export const DEFAULT_GUARD_CALL_RADIUS: Record<GuardProfile, number> = {
@@ -131,6 +149,9 @@ export const DEFAULT_NPC_PROTOTYPES: Record<string, NpcPrototype> = {
     model: "rat_small",
     tags: ["beast", "critter", "coward_test"],
     behavior: "coward",
+    groupId: "rat_pack",
+    canCallHelp: true,
+    socialRange: 10,
     xpReward: 10,
     loot: [
       { itemId: "rat_tail", chance: 0.7, minQty: 1, maxQty: 2 },
@@ -173,6 +194,41 @@ export const DEFAULT_NPC_PROTOTYPES: Record<string, NpcPrototype> = {
     guardProfile: "town",
     guardCallRadius: DEFAULT_GUARD_CALL_RADIUS.town,
     xpReward: 0,
+    loot: [],
+  },
+
+  rat_pack_raider: {
+    id: "rat_pack_raider",
+    name: "Pack Rat",
+    level: 2,
+    maxHp: 60,
+    baseDamageMin: 3,
+    baseDamageMax: 6,
+    model: "rat_small",
+    tags: ["beast", "critter", "rat_pack"],
+    behavior: "aggressive",
+    groupId: "rat_pack",
+    canCallHelp: true,
+    socialRange: 12,
+    xpReward: 12,
+    loot: [{ itemId: "rat_tail", chance: 0.7, minQty: 1, maxQty: 2 }],
+  },
+
+  bandit_caster: {
+    id: "bandit_caster",
+    name: "Blackrock Warlock",
+    level: 8,
+    maxHp: 160,
+    baseDamageMin: 6,
+    baseDamageMax: 10,
+    model: "human_bandit_caster",
+    tags: ["humanoid", "bandit", "aggressive"],
+    behavior: "aggressive",
+    groupId: "blackrock_bandits",
+    canCallHelp: true,
+    canGate: true,
+    socialRange: 18,
+    xpReward: 45,
     loot: [],
   },
 };
