@@ -192,6 +192,9 @@ export function setMelodyActive(
  *
  * Returns the result string from casting (or null if no cast happened).
  */
+// CRITICAL PATH: TickEngine -> SongEngine -> melody auto-cast.
+// This function is called from the MMO backend via TickEngine.onTick.
+// Do not rename or change its input/output contract in bulk refactors.
 export async function tickSongsForCharacter(
   ctx: MudContext,
   char: CharacterState,

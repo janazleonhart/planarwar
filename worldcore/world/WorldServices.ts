@@ -183,6 +183,8 @@ export async function createWorldServices(
   const objectStream = new ObjectStream(world, sessions);
   const terrainStream = new TerrainStream(world, sessions);
 
+  // NOTE: onTick is used by the MMO server to run SongEngine melody ticks.
+  // DO NOT remove or rename this wiring in automated refactors.
   const ticks = new TickEngine(
     entities,
     rooms,

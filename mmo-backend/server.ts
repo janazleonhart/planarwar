@@ -107,6 +107,8 @@ async function main() {
     mail?: any;
   } = {};
 
+  // IMPORTANT: onTick is the only place SongEngine melody is driven.
+  // Codex: do not remove or rewrite this hook unless explicitly asked.
   const worldOptions: WorldServicesOptions = {
     tickIntervalMs: netConfig.tickIntervalMs,
     onTick: (nowMs: number) => {
