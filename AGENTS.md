@@ -62,6 +62,33 @@ When changing code in these areas:
 - Keep behavior consistent with existing commands and flows unless the prompt explicitly asks to change it.
 - If you split a large file (e.g. `MudActions.ts`), update all imports and keep backwards-compatible exports where possible.
 
+### Combat & NPC damage plumbing (worldcore)
+
+**Important invariants:**
+
+- Whenever code applies damage on behalf of a **player character** to an NPC via `NpcManager.applyDamage`, it MUST include the `CharacterState` in the attacker info:
+
+  ```ts
+  npcManager.applyDamage(npcId, amount, {
+    entityId: playerEntityId,
+    character: playerChar, // required for crime + threat
+  });
+
+Never call NpcManager.applyDamage with only entityId for player-origin attacks. That will bypass:
+crime tracking (recordNpcCrimeAgainst),
+guard AI responses,
+any future systems that inspect recentCrimeUntil / recentCrimeSeverity.
+
+Integration tests that exercise guard / crime behavior should prefer:
+calling NpcCombat.performNpcAttack(...), or
+explicitly passing a real CharacterState into NpcManager.applyDamage(...).
+
+Testing guidelines:
+Slice/unit tests for brains (e.g. GuardBrain, CowardBrain, pack AI) may construct PerceivedPlayer directly.
+At least one test in worldcore/test must:
+attack a protected NPC via NpcCombat.performNpcAttack,
+and assert that the attacker’s CharacterState gets recentCrimeUntil set.
+
 ## Safe tasks for Codex
 
 Examples of tasks that are safe and encouraged:
