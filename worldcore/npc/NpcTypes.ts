@@ -90,6 +90,18 @@ export function getGuardCallRadius(profile?: GuardProfile, override?: number): n
   return DEFAULT_GUARD_CALL_RADIUS[profile];
 }
 
+export const DEFAULT_GUARD_CALL_RADIUS: Record<GuardProfile, number> = {
+  village: 12,
+  town: 18,
+  city: 24,
+};
+
+export function getGuardCallRadius(profile?: GuardProfile, override?: number): number | undefined {
+  if (typeof override === "number") return override;
+  if (!profile) return undefined;
+  return DEFAULT_GUARD_CALL_RADIUS[profile];
+}
+
 // ---------------------------------------------------------------------------
 // Hard-coded defaults (dev seed / fallback)
 // ---------------------------------------------------------------------------

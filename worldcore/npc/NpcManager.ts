@@ -477,6 +477,73 @@ export class NpcManager {
     return true;
   }
 
+  private hasCalledGuardHelp(npcId: string, offenderId: string): boolean {
+    return this.guardHelpCalled.get(npcId)?.has(offenderId) ?? false;
+  }
+
+  private markGuardHelp(npcId: string, offenderId: string): void {
+    let set = this.guardHelpCalled.get(npcId);
+    if (!set) {
+      set = new Set<string>();
+      this.guardHelpCalled.set(npcId, set);
+    }
+    set.add(offenderId);
+  }
+
+  private maybeCallGuardHelp(
+    npcId: string,
+    npcEntity: any,
+    roomId: string,
+    target: any,
+    guardProfile: GuardProfile | undefined,
+    guardCallRadius: number | undefined,
+    sessions?: SessionManager,
+  ): void {
+    const offenderKey =
+      sessions?.get(target.ownerSessionId)?.character?.id ?? target.id;
+    if (this.hasCalledGuardHelp(npcId, offenderKey)) return;
+
+    this.markGuardHelp(npcId, offenderKey);
+    this.brain.markCalledHelp(npcId, offenderKey);
+
+    const shout =
+      `[guard] ${npcEntity.name ?? "Guard"} yells: ` +
+      "To me! Defend the town!";
+    this.handleSayDecision(roomId, shout, sessions);
+
+    const allies = this.listNpcsInRoom(roomId).filter((ally) => {
+      if (ally.entityId === npcId) return false;
+      const proto =
+        getNpcPrototype(ally.templateId) ??
+        getNpcPrototype(ally.protoId) ??
+        DEFAULT_NPC_PROTOTYPES[ally.templateId] ??
+        DEFAULT_NPC_PROTOTYPES[ally.protoId];
+      return proto?.guardProfile !== undefined;
+    });
+
+    for (const ally of allies) {
+      const threat = updateThreatFromDamage(
+        this.npcThreat.get(ally.entityId),
+        target.id,
+      );
+      this.npcThreat.set(ally.entityId, threat);
+      const allyProto =
+        getNpcPrototype(ally.templateId) ??
+        getNpcPrototype(ally.protoId) ??
+        DEFAULT_NPC_PROTOTYPES[ally.templateId] ??
+        DEFAULT_NPC_PROTOTYPES[ally.protoId];
+      const allyGuardProfile = allyProto?.guardProfile;
+      const radiusOk =
+        guardCallRadius === undefined ||
+        allyGuardProfile === undefined ||
+        guardCallRadius >= 0;
+      if (radiusOk && offenderKey) {
+        this.brain.markWarnedTarget(ally.entityId, offenderKey);
+        this.brain.markCalledHelp(ally.entityId, offenderKey);
+      }
+    }
+  }
+
   getLastAttacker(targetEntityId: string): string | undefined {
     return getLastAttackerFromThreat(this.npcThreat.get(targetEntityId));
   }
