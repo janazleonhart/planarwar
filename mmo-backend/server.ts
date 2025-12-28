@@ -4,44 +4,24 @@ import http from "http";
 import { WebSocketServer, WebSocket } from "ws";
 
 import { Logger } from "../worldcore/utils/logger";
-import { SessionManager } from "../worldcore/core/SessionManager";
-import { RoomManager } from "../worldcore/core/RoomManager";
-import { EntityManager } from "../worldcore/core/EntityManager";
-import { MessageRouter } from "../worldcore/core/MessageRouter";
-import { CombatSystem } from "../worldcore/core/CombatSystem";
-import { ServerWorldManager } from "../worldcore/world/ServerWorldManager";
 import { startHeartbeat } from "../worldcore/core/Heartbeat";
-import { TickEngine } from "../worldcore/core/TickEngine";
-import { TerrainStream } from "../worldcore/core/TerrainStream";
-import { ObjectStream } from "../worldcore/core/ObjectStream";
-import { MovementEngine } from "../worldcore/core/MovementEngine";
-import { NavGridManager } from "../worldcore/world/NavGridManager";
 import { PostgresAuthService } from "../worldcore/auth/PostgresAuthService";
 import { AttachedIdentity } from "../worldcore/shared/AuthTypes";
 import { PostgresCharacterService } from "../worldcore/characters/PostgresCharacterService";
 import { CharacterState } from "../worldcore/characters/CharacterTypes";
-import { GuildService } from "../worldcore/guilds/GuildService";
 import { hydrateCharacterRegion } from "../worldcore/characters/CharacterStateGuard";
-import { ItemService } from "../worldcore/items/ItemService";
-import { NpcManager } from "../worldcore/npc/NpcManager";
-import { SpawnPointService } from "../worldcore/world/SpawnPointService";
-import { NpcSpawnController } from "../worldcore/npc/NpcSpawnController";
-import { RespawnService } from "../worldcore/world/RespawnService";
-import { PostgresMailService } from "../worldcore/mail/PostgresMailService";
-import { TradeService } from "../worldcore/trade/TradeService";
-import { PostgresVendorService } from "../worldcore/vendors/PostgresVendorService";
-import { PostgresBankService } from "../worldcore/bank/PostgresBankService";
-import { PostgresAuctionService } from "../worldcore/auction/PostgresAuctionService";
 import { netConfig } from "./config";
-import { InMemoryTradeService } from "../worldcore/trade/InMemoryTradeService";
 import { PostgresQuestService } from "../worldcore/quests/PostgresQuestService";
 import { setQuestDefinitions } from "../worldcore/quests/QuestRegistry";
 import { PostgresNpcService } from "../worldcore/npc/PostgresNpcService";
 import { setNpcPrototypes } from "../worldcore/npc/NpcTypes";
 import { installFileLogTap } from "./FileLogTap";
-
 import type { MudContext } from "../worldcore/mud/MudContext";
 import { tickSongsForCharacter } from "../worldcore/songs/SongEngine";
+import {
+  createWorldServices,
+  type WorldServicesOptions,
+} from "../worldcore/world/WorldServices";
 
 installFileLogTap();
 
@@ -54,74 +34,16 @@ function describeSocket(ws: WebSocket): string {
   return `${r.remoteAddress || "?"}:${r.remotePort || "?"}`;
 }
 
-function main() {
+async function main() {
   log.info("Starting MMO shard server...", {
     host: netConfig.host,
     port: netConfig.port,
     path: netConfig.path,
   });
 
-  // Core managers
-  const sessions = new SessionManager();
-  const entities = new EntityManager();
-  const world = new ServerWorldManager(); // uses prime shard demo for now
-  const rooms = new RoomManager(sessions, entities, world);
-
-  // Nav grid manager (stub for now)
-  const navGrid = new NavGridManager(world);
-  navGrid.init().catch((err) => {
-    log.warn("NavGridManager init failed", { err });
-  });
-
-  // Combat system (stub, but wired)
-  const combat = new CombatSystem(entities, rooms, sessions);
-
-  // Movement engine (server-authoritative Y)
-  const movement = new MovementEngine(world);
-
-  // Terrain + object streams
-  const terrainStream = new TerrainStream(world, sessions);
-  const objectStream = new ObjectStream(world, sessions);
-
-  // Auth service
+  // Auth + character services (server-owned)
   const auth = new PostgresAuthService();
-
-  // Character service (Postgres-backed)
   const characters = new PostgresCharacterService();
-
-  // Guild Service (Postgres-backed)
-  const guilds = new GuildService();
-
-  // Items (Postgres-backed, shared between MMO + city builder later)
-  const items = new ItemService();
-  items.loadAll().catch((err) => {
-    log.error("ItemService loadAll failed", { err });
-  });
-
-  // NPC manager
-  const npcs = new NpcManager(entities);
-
-  // DB-driven spawn points + controller
-  const spawnPoints = new SpawnPointService();
-  const npcSpawns = new NpcSpawnController(spawnPoints, npcs, entities);
-
-  // Respawn service
-  const respawnService = new RespawnService(world, spawnPoints, characters, entities);
-
-  // Mail Service
-  const mailService = new PostgresMailService();
-
-  // Trade Service
-  const tradeService: TradeService = new InMemoryTradeService();
-
-  // Vendor Service
-  const vendorService = new PostgresVendorService();
-
-  // Bank Service
-  const bankService = new PostgresBankService();
-
-  // Auction Service
-  const auctionService = new PostgresAuctionService();
 
   // Quest Service (Postgres-backed, shared across MUD / 2.5D / city builder)
   const questService = new PostgresQuestService();
@@ -133,14 +55,14 @@ function main() {
         log.success("Loaded quests from Postgres", { count: defs.length });
       } else {
         log.info(
-          "No quests found in Postgres; using hardcoded quest definitions."
+          "No quests found in Postgres; using hardcoded quest definitions.",
         );
       }
     })
     .catch((err) => {
       log.warn(
         "Failed to load quests from Postgres; falling back to hardcoded quest definitions.",
-        { err }
+        { err },
       );
     });
 
@@ -156,15 +78,149 @@ function main() {
         });
       } else {
         log.info(
-          "No NPC prototypes found in Postgres; using hardcoded defaults."
+          "No NPC prototypes found in Postgres; using hardcoded defaults.",
         );
       }
     })
     .catch((err) => {
       log.warn(
         "Failed to load NPC prototypes from Postgres; using hardcoded defaults.",
-        { err }
+        { err },
       );
+    });
+
+  // World runtime services (composition root)
+  const tickContext: {
+    sessions?: any;
+    guilds?: any;
+    world?: any;
+    characters?: any;
+    entities?: any;
+    items?: any;
+    rooms?: any;
+    npcs?: any;
+    trades?: any;
+    vendors?: any;
+    bank?: any;
+    auctions?: any;
+    respawns?: any;
+    mail?: any;
+  } = {};
+
+  const worldOptions: WorldServicesOptions = {
+    tickIntervalMs: netConfig.tickIntervalMs,
+    onTick: (nowMs: number) => {
+      const {
+        sessions,
+        guilds,
+        world,
+        characters: charSvc,
+        entities,
+        items,
+        rooms,
+        npcs,
+        trades,
+        vendors,
+        bank,
+        auctions,
+        respawns,
+        mail,
+      } = tickContext;
+
+      if (!sessions || !world) return;
+
+      // Virtuoso song auto-cast tick
+      for (const s of sessions.values() as Iterable<any>) {
+        const ch = (s as any).character as CharacterState | undefined;
+        if (!ch) continue;
+        if (!s.roomId) continue; // only tick songs when actually in a room
+
+        const ctx: MudContext = {
+          sessions,
+          guilds,
+          session: s,
+          world,
+          characters: charSvc,
+          entities,
+          items,
+          rooms,
+          npcs,
+          trades,
+          vendors,
+          bank,
+          auctions,
+          mail,
+          respawns,
+        };
+
+        tickSongsForCharacter(ctx, ch, nowMs)
+          .then((result) => {
+            if (!result || !result.trim()) return;
+
+            // Send result back as a normal world chat line
+            sessions.send(s, "chat", {
+              from: "[world]",
+              sessionId: "system",
+              text: result,
+              t: nowMs,
+            });
+          })
+          .catch((err) => {
+            log.warn("Song tick failed for session", {
+              sessionId: s.id,
+              charId: ch.id,
+              err: String(err),
+            });
+          });
+      }
+    },
+  };
+
+  const services = await createWorldServices(worldOptions);
+  const {
+    sessions,
+    entities,
+    world,
+    rooms,
+    navGrid,
+    movement,
+    combat,
+    terrainStream,
+    objectStream,
+    npcs,
+    npcSpawns,
+    respawns,
+    items,
+    guilds,
+    bank,
+    auctions,
+    trades,
+    vendors,
+    mail,
+    ticks,
+    router,
+  } = services;
+
+  tickContext.sessions = sessions;
+  tickContext.guilds = guilds;
+  tickContext.world = world;
+  tickContext.characters = characters;
+  tickContext.entities = entities;
+  tickContext.items = items;
+  tickContext.rooms = rooms;
+  tickContext.npcs = npcs;
+  tickContext.trades = trades;
+  tickContext.vendors = vendors;
+  tickContext.bank = bank;
+  tickContext.auctions = auctions;
+  tickContext.respawns = respawns;
+  tickContext.mail = mail;
+
+  // Nav grid manager (stub for now)
+  navGrid
+    .init()
+    .catch((err) => {
+      log.warn("NavGridManager init failed", { err });
     });
 
   // Personal resource respawn loop (ore/herbs/etc.)
@@ -192,20 +248,19 @@ function main() {
             .filter(
               (e: any) =>
                 e.ownerSessionId === s.id &&
-                (e.type === "node" || e.type === "object")
+                (e.type === "node" || e.type === "object"),
             )
-            .map((e: any) => e.id)
+            .map((e: any) => e.id),
         );
 
         // Attempt to spawn any nodes whose timers are ready
-        const spawnedCount =
-          await (npcSpawns as any).spawnPersonalNodesFromRegion?.(
-            shardId,
-            regionId,
-            roomId,
-            s.id,
-            ch
-          );
+        const spawnedCount = await npcSpawns.spawnPersonalNodesFromRegion(
+          shardId,
+          regionId,
+          roomId,
+          s.id,
+          ch,
+        );
 
         if (spawnedCount > 0) {
           // Diff: send entity_spawn for newly created nodes (to owner only)
@@ -214,7 +269,7 @@ function main() {
             .filter(
               (e: any) =>
                 e.ownerSessionId === s.id &&
-                (e.type === "node" || e.type === "object")
+                (e.type === "node" || e.type === "object"),
             );
 
           for (const e of after) {
@@ -232,79 +287,8 @@ function main() {
     }
   }, 1500);
 
-  const router = new MessageRouter(
-    sessions,
-    rooms,
-    entities,
-    movement,
-    combat,
-    objectStream,
-    terrainStream,
-    world,
-    guilds,
-    characters,
-    items,
-    npcs,
-    mailService,
-    tradeService,
-    vendorService,
-    bankService,
-    auctionService,
-  );
-
   // World tick engine + SongEngine hook
-  const tickEngine = new TickEngine(entities, rooms, sessions, world, {
-  intervalMs: netConfig.tickIntervalMs,
-
-  onTick: (nowMs) => {
-    // Virtuoso song auto-cast tick
-    for (const s of sessions.values() as Iterable<any>) {
-      const ch = (s as any).character as CharacterState | undefined;
-      if (!ch) continue;
-      if (!s.roomId) continue; // only tick songs when actually in a room
-
-      const ctx: MudContext = {
-        sessions,
-        guilds,
-        session: s,
-        world,
-        characters,
-        entities,
-        items,
-        rooms,
-        npcs,
-        trades: tradeService,
-        vendors: vendorService,
-        bank: bankService,
-        auctions: auctionService,
-        mail: mailService,
-        respawns: respawnService,
-      };
-
-      tickSongsForCharacter(ctx, ch, nowMs)
-        .then((result) => {
-          if (!result || !result.trim()) return;
-
-          // Send result back as a normal world chat line
-          sessions.send(s, "chat", {
-            from: "[world]",
-            sessionId: "system",
-            text: result,
-            t: nowMs,
-          });
-        })
-        .catch((err) => {
-          log.warn("Song tick failed for session", {
-            sessionId: s.id,
-            charId: ch.id,
-            err: String(err),
-          });
-        });
-    }
-  },
-}, npcs);
-
-  tickEngine.start();
+  ticks.start();
 
   // Heartbeat / idle session cleanup
   startHeartbeat(sessions, rooms, {
@@ -449,7 +433,7 @@ function main() {
           const spawnedCount = await npcSpawns.spawnFromRegion(
             shardId,
             regionId,
-            roomId
+            roomId,
           );
           log.info("Auto-seeded NPCs from DB on character attach (pre-join)", {
             sessionId: session.id,
@@ -460,17 +444,14 @@ function main() {
             spawnedCount,
           });
         } catch (err: any) {
-          log.warn(
-            "Failed to auto-seed NPCs from spawn_points (pre-join)",
-            {
-              err,
-              sessionId: session.id,
-              characterId: characterState.id,
-              shardId,
-              roomId,
-              regionId,
-            }
-          );
+          log.warn("Failed to auto-seed NPCs from spawn_points (pre-join)", {
+            err,
+            sessionId: session.id,
+            characterId: characterState.id,
+            shardId,
+            roomId,
+            regionId,
+          });
         }
       }
 
@@ -478,34 +459,30 @@ function main() {
       // (Only if we have a regionId; personal nodes are region-scoped)
       if (regionId) {
         try {
-          const spawnedNodes =
-            await (npcSpawns as any).spawnPersonalNodesFromRegion?.(
-              shardId,
-              regionId,
-              roomId,
-              session.id,
-              characterState
-            );
+          const spawnedNodes = await npcSpawns.spawnPersonalNodesFromRegion(
+            shardId,
+            regionId,
+            roomId,
+            session.id,
+            characterState,
+          );
 
           if (typeof spawnedNodes === "number") {
-            log.info(
-              "Seeded personal nodes on character attach (pre-join)",
-              {
-                sessionId: session.id,
-                characterId: characterState.id,
-                shardId,
-                roomId,
-                regionId,
-                spawnedNodes,
-              }
-            );
+            log.info("Seeded personal nodes on character attach (pre-join)", {
+              sessionId: session.id,
+              characterId: characterState.id,
+              shardId,
+              roomId,
+              regionId,
+              spawnedNodes,
+            });
           } else {
             log.warn(
               "npcSpawns.spawnPersonalNodesFromRegion missing (ore will not spawn)",
               {
                 sessionId: session.id,
                 characterId: characterState.id,
-              }
+              },
             );
           }
         } catch (err: any) {
@@ -607,9 +584,7 @@ function main() {
 }
 
 // Entry point
-try {
-  main();
-} catch (err: unknown) {
+main().catch((err: unknown) => {
   log.error("Fatal error in MMO server", { err });
   process.exit(1);
-}
+});
