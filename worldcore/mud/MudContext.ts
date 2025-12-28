@@ -14,7 +14,6 @@ import type { GuildService } from "../guilds/GuildService";
 import type { ItemService } from "../items/ItemService";
 import type { MailService } from "../mail/MailService";
 import type { NpcManager } from "../npc/NpcManager";
-import type { NpcSpawnController } from "../npc/NpcSpawnController";
 import type { ServerWorldManager } from "../world/ServerWorldManager";
 import type { RespawnService } from "../world/RespawnService";
 import type { TradeService } from "../trade/TradeService";
@@ -31,7 +30,6 @@ export interface MudContextServices {
   items?: ItemService;
   rooms?: RoomManager;
   npcs?: NpcManager;
-  npcSpawns?: NpcSpawnController;
   mail?: MailService;
   trades?: TradeService;
   vendors?: VendorService;

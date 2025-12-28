@@ -31,7 +31,6 @@ import { RespawnService } from "./RespawnService";
 import { ServerWorldManager } from "./ServerWorldManager";
 import { SpawnPointService } from "./SpawnPointService";
 import { SpawnService } from "./SpawnService";
-import { NpcSpawnController } from "../npc/NpcSpawnController";
 import { WorldEventBus } from "./WorldEventBus";
 import type { AuctionService } from "../auction/AuctionService";
 import type { BankService } from "../bank/BankService";
@@ -54,7 +53,6 @@ export interface WorldServices {
   respawns: RespawnService;
   navGrid: NavGridManager;
   boundary?: DomeBoundary;
-  npcSpawns: NpcSpawnController;
   npcs: NpcManager;
   world: ServerWorldManager;
   movement: MovementEngine;
@@ -76,7 +74,6 @@ export interface WorldServices {
 export interface WorldServicesOptions {
   seed?: number;
   tickIntervalMs?: number;
-  onTick?: (nowMs: number) => void;
 }
 
 /**
@@ -131,12 +128,7 @@ export async function createWorldServices(
       })
     : undefined;
 
-  const npcs = new NpcManager(entities, sessions);
-  const npcSpawns = new NpcSpawnController({
-    spawnPoints,
-    npcs,
-    entities,
-  });
+  const npcs = new NpcManager(entities);
 
   const items = new ItemService();
   try {
@@ -162,7 +154,7 @@ export async function createWorldServices(
     rooms,
     sessions,
     world,
-    { intervalMs: tickIntervalMs, onTick: options.onTick },
+    { intervalMs: tickIntervalMs },
     npcs
   );
 
@@ -183,8 +175,7 @@ export async function createWorldServices(
     trades,
     vendors,
     bank,
-    auctions,
-    npcSpawns
+    auctions
   );
 
   log.success(`✅ World runtime services initialized for shard ${shardId}`);
