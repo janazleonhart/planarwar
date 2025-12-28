@@ -27,7 +27,7 @@ import {
   markInCombat,
   applySimpleDamageToPlayer,
   computeNpcMeleeDamage,
-} from "../mud/MudHelperFunctions";
+} from "../combat/entityCombat";
 
 const log = Logger.scope("NPC");
 
