@@ -197,9 +197,7 @@ export async function tickSongsForCharacter(
   char: CharacterState,
   nowMs: number
 ): Promise<string | null> {
-
   // --- Hard safety guard: no songs without a living entity ---
-
   const ent = ctx.entities?.getEntityByOwner(ctx.session.id);
   const hp =
     ent && typeof (ent as any).hp === "number" ? (ent as any).hp : undefined;
@@ -209,25 +207,18 @@ export async function tickSongsForCharacter(
       : undefined;
 
   if (!ent || hp === 0 || (typeof hp === "number" && hp < 0) || aliveFlag === false) {
-    // Kill melody runtime flag on this character if present
-    const m = (char as any).melody;
-    if (m) {
-      m.active = false;
-    }
+    // Kill melody if the character is effectively dead
+    setMelodyActive(char, false);
     return null;
   }
 
   const classId = (char.classId ?? "").toLowerCase();
   if (classId !== "virtuoso") return null;
 
-  const melody = (char as any).melody;
+  // Canonical melody state (progression-backed)
+  const melody = getMelody(char);
 
-  if (
-    !melody ||
-    melody.active !== true ||
-    !Array.isArray(melody.spellIds) ||
-    melody.spellIds.length === 0
-  ) {
+  if (!melody.isActive || !Array.isArray(melody.spellIds) || melody.spellIds.length === 0) {
     // Nothing to do; either no playlist, inactive, or empty
     return null;
   }
@@ -237,7 +228,7 @@ export async function tickSongsForCharacter(
 
   // Resolve melody spell list to actual, valid Virtuoso songs
   const rawIds =
-    (Array.isArray((melody as any).spellIds) && (melody as any).spellIds) ||
+    (Array.isArray(melody.spellIds) && melody.spellIds) ||
     (Array.isArray((melody as any).songIds) && (melody as any).songIds) ||
     [];
 
@@ -247,20 +238,19 @@ export async function tickSongsForCharacter(
     .map((id: string): SpellDefinition | undefined => SPELLS[id])
     .filter(
       (s: SpellDefinition | undefined): s is SpellDefinition =>
-        !!s &&
-        s.isSong === true &&
-        (s.classId ?? "").toLowerCase() === "virtuoso"
+        !!s && s.isSong === true && (s.classId ?? "").toLowerCase() === "virtuoso"
     );
 
-  // Optional: normalize back onto spellIds so everyone agrees going forward
-  (melody as any).spellIds = ids;
-  (melody as any).songIds = ids;
+  // Normalize playlist back onto the melody state
+  melody.spellIds = songSpells.map((s) => s.id);
+  (melody as any).songIds = melody.spellIds;
 
   if (songSpells.length === 0) {
     // Nothing valid left; clean up
     melody.spellIds = [];
     melody.currentIndex = 0;
     melody.isActive = false;
+    melody.nextCastAtMs = 0;
     return null;
   }
 
@@ -280,7 +270,7 @@ export async function tickSongsForCharacter(
     // Schedule next cast
     melody.nextCastAtMs = nowMs + melody.intervalMs;
 
-    return result;
+    return result as string | null;
   } catch (err: any) {
     log.warn("Error during song tick cast", {
       charId: char.id,
@@ -294,3 +284,4 @@ export async function tickSongsForCharacter(
     return null;
   }
 }
+

@@ -17,7 +17,7 @@ import { PostgresNpcService } from "../worldcore/npc/PostgresNpcService";
 import { setNpcPrototypes } from "../worldcore/npc/NpcTypes";
 import { installFileLogTap } from "./FileLogTap";
 import type { MudContext } from "../worldcore/mud/MudContext";
-import { tickSongsForCharacter } from "../worldcore/songs/SongEngine";
+import { tickSongsForCharacter, setMelodyActive, } from "../worldcore/songs/SongEngine";
 import {
   createWorldServices,
   type WorldServicesOptions,
@@ -312,7 +312,7 @@ async function main() {
     });
   });
 
-  wss.on("connection", async (socket: WebSocket, req) => {
+  wss.on("connection", async (socket: WebSocket, req: http.IncomingMessage) => {
     const session = sessions.createSession(socket, "Anon");
 
     // ---- auth + character attach state ----
@@ -384,12 +384,13 @@ async function main() {
             attachedIdentity.characterId = requestedCharacterId;
             session.identity = attachedIdentity;
 
-            // Hydrate region BEFORE choosing room
             characterState = hydrateCharacterRegion(characterState, world);
             (session as any).character = characterState;
 
-            const m = (session.character as any).melody;
-            if (m) m.active = false;
+            // Ensure any lingering melody from a previous session is stopped
+            if (session.character) {
+              setMelodyActive(session.character as CharacterState, false);
+            }
 
             log.info("Character loaded for session", {
               sessionId: session.id,
@@ -557,15 +558,18 @@ async function main() {
     }
 
     // ---- Existing message handling ----
-    socket.on("message", (data) => {
-      router.handleRawMessage(session, data);
-    });
+    socket.on(
+      "message",
+      (data: string | Buffer | ArrayBuffer | Buffer[]) => {
+        router.handleRawMessage(session, data);
+      }
+    );
 
     socket.on("close", () => {
       // Safety: stop any running melody on logout/disconnect
       const char = session.character;
-      if (char && (char as any).melody) {
-        (char as any).melody.active = false;
+      if (char) {
+        setMelodyActive(char as CharacterState, false);
       }
 
       // Ensure we leave room so despawn broadcasts and membership doesn't leak

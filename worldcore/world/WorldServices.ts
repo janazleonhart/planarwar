@@ -1,3 +1,5 @@
+// worldcore/world/WorldServices.ts
+
 /**
  * WorldServices is the composition root for shard runtime wiring.
  * It constructs and connects the world/core services listed in the registry
@@ -14,7 +16,7 @@ import { PostgresAuctionService } from "../auction/PostgresAuctionService";
 import { PostgresMailService } from "../mail/PostgresMailService";
 import { InMemoryTradeService } from "../trade/InMemoryTradeService";
 import { Logger } from "../utils/logger";
-import { NpcManager } from "../npc/NpcManager";
+
 import { CombatSystem } from "../core/CombatSystem";
 import { EntityManager } from "../core/EntityManager";
 import { MessageRouter } from "../core/MessageRouter";
@@ -24,6 +26,7 @@ import { RoomManager } from "../core/RoomManager";
 import { SessionManager } from "../core/SessionManager";
 import { TerrainStream } from "../core/TerrainStream";
 import { TickEngine } from "../core/TickEngine";
+
 import { DomeBoundary } from "./Boundary";
 import { NavGridManager } from "./NavGridManager";
 import { RegionManager } from "./RegionManager";
@@ -32,6 +35,10 @@ import { ServerWorldManager } from "./ServerWorldManager";
 import { SpawnPointService } from "./SpawnPointService";
 import { SpawnService } from "./SpawnService";
 import { WorldEventBus } from "./WorldEventBus";
+
+import { NpcManager } from "../npc/NpcManager";
+import { NpcSpawnController } from "../npc/NpcSpawnController";
+
 import type { AuctionService } from "../auction/AuctionService";
 import type { BankService } from "../bank/BankService";
 import type { MailService } from "../mail/MailService";
@@ -43,23 +50,34 @@ const log = Logger.scope("WRE");
 export interface WorldServices {
   seed: number;
   shardId: string;
+
   events: WorldEventBus;
+
   sessions: SessionManager;
   entities: EntityManager;
   rooms: RoomManager;
   regions: RegionManager;
+
   spawnPoints: SpawnPointService;
   spawns: SpawnService;
   respawns: RespawnService;
+
   navGrid: NavGridManager;
   boundary?: DomeBoundary;
+
+  // NPC runtime
   npcs: NpcManager;
+  // DB-backed spawn coordinator (spawn_points → NPCs / personal nodes)
+  npcSpawns: NpcSpawnController;
+
   world: ServerWorldManager;
   movement: MovementEngine;
   combat: CombatSystem;
   objectStream: ObjectStream;
   terrainStream: TerrainStream;
   ticks: TickEngine;
+
+  // Economy / meta
   guilds: GuildService;
   characters: PostgresCharacterService;
   items: ItemService;
@@ -68,12 +86,18 @@ export interface WorldServices {
   bank: BankService;
   auctions: AuctionService;
   mail: MailService;
+
   router: MessageRouter;
 }
 
 export interface WorldServicesOptions {
   seed?: number;
   tickIntervalMs?: number;
+  /**
+   * Optional hook invoked once per world tick.
+   * The signature matches TickEngineConfig.onTick.
+   */
+  onTick?: (nowMs: number, tick: number, deltaMs?: number) => void;
 }
 
 /**
@@ -85,7 +109,10 @@ export async function createWorldServices(
   seedOrOptions?: number | WorldServicesOptions
 ): Promise<WorldServices> {
   const options: WorldServicesOptions =
-    typeof seedOrOptions === "number" ? { seed: seedOrOptions } : seedOrOptions ?? {};
+    typeof seedOrOptions === "number"
+      ? { seed: seedOrOptions }
+      : seedOrOptions ?? {};
+
   const seed = options.seed ?? 0x1234abcd;
   const tickIntervalMs = options.tickIntervalMs ?? 200;
 
@@ -109,6 +136,7 @@ export async function createWorldServices(
     roomManager: rooms,
     respawnService: respawns,
   });
+
   const navGrid = new NavGridManager(world);
 
   const spawns = new SpawnService({
@@ -128,7 +156,13 @@ export async function createWorldServices(
       })
     : undefined;
 
-  const npcs = new NpcManager(entities);
+  const npcs = new NpcManager(entities, sessions);
+
+  const npcSpawns = new NpcSpawnController({
+    spawnPoints,
+    npcs,
+    entities,
+  });
 
   const items = new ItemService();
   try {
@@ -154,7 +188,10 @@ export async function createWorldServices(
     rooms,
     sessions,
     world,
-    { intervalMs: tickIntervalMs },
+    {
+      intervalMs: tickIntervalMs,
+      onTick: options.onTick,
+    },
     npcs
   );
 
@@ -175,7 +212,8 @@ export async function createWorldServices(
     trades,
     vendors,
     bank,
-    auctions
+    auctions,
+    npcSpawns
   );
 
   log.success(`✅ World runtime services initialized for shard ${shardId}`);
@@ -193,8 +231,8 @@ export async function createWorldServices(
     respawns,
     navGrid,
     boundary,
-    npcSpawns,
     npcs,
+    npcSpawns,
     world,
     movement,
     combat,

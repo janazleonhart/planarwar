@@ -1,3 +1,5 @@
+// worldcore/mud/MudContext.ts
+
 /**
  * Shared dependency bag for all MUD handlers (commands, actions, progression).
  * Constructed from the running WorldServices so command modules can access
@@ -14,6 +16,7 @@ import type { GuildService } from "../guilds/GuildService";
 import type { ItemService } from "../items/ItemService";
 import type { MailService } from "../mail/MailService";
 import type { NpcManager } from "../npc/NpcManager";
+import type { NpcSpawnController } from "../npc/NpcSpawnController";
 import type { ServerWorldManager } from "../world/ServerWorldManager";
 import type { RespawnService } from "../world/RespawnService";
 import type { TradeService } from "../trade/TradeService";
@@ -24,17 +27,22 @@ import type { WorldServices } from "../world/WorldServices";
 export interface MudContextServices {
   sessions: SessionManager;
   guilds: GuildService;
+
   world?: ServerWorldManager;
   characters?: PostgresCharacterService;
   entities?: EntityManager;
   items?: ItemService;
   rooms?: RoomManager;
   npcs?: NpcManager;
+  npcSpawns?: NpcSpawnController;
+
   mail?: MailService;
   trades?: TradeService;
   vendors?: VendorService;
   bank?: BankService;
   auctions?: AuctionService;
+
+  // v0: wired from server/router so commands like /respawn can use shard-aware respawns
   respawns?: RespawnService;
 }
 
@@ -43,8 +51,30 @@ export interface MudContext extends MudContextServices {
 }
 
 export function buildMudContext(
-  services: MudContextServices | Pick<WorldServices, keyof MudContextServices>,
+  services:
+    | MudContextServices
+    | Pick<
+        WorldServices,
+        | "sessions"
+        | "guilds"
+        | "world"
+        | "characters"
+        | "entities"
+        | "items"
+        | "rooms"
+        | "npcs"
+        | "npcSpawns"
+        | "mail"
+        | "trades"
+        | "vendors"
+        | "bank"
+        | "auctions"
+        | "respawns"
+      >,
   session: Session
 ): MudContext {
-  return { session, ...services };
+  return {
+    session,
+    ...services,
+  };
 }
