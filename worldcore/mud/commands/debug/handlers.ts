@@ -245,14 +245,13 @@ export async function handleDebugSpawnsHere(
 
   const radius = 64;
 
-  // v1: instantiate each call (debug-only).
-  // If this becomes “real”, we’ll move it to ctx.
+  // v1: instantiate each call (debug-only). If this becomes “real”, we’ll move it to ctx.
   const spawnService = new SpawnPointService();
-  const controller = new NpcSpawnController(
-    spawnService,
-    ctx.entities,
-    ctx.npcs
-  );
+  const controller = new NpcSpawnController({
+    spawnPoints: spawnService,
+    npcs: ctx.npcs,
+    entities: ctx.entities,
+  });
 
   const count = await controller.spawnNear(
     shardId,

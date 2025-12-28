@@ -1,5 +1,10 @@
 // worldcore/world/WorldQueryService.ts
 
+/**
+ * DB-only read model for shard/world inspection (used by MUD look/inspect and
+ * admin tooling). Does not mutate live world state.
+ */
+
 import { db } from "../db/Database";
 import { Logger } from "../utils/logger";
 
