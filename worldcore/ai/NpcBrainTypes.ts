@@ -39,6 +39,8 @@ export interface NpcPerception {
   hostile: boolean;
 
   currentTargetId?: EntityId;
+  lastAttackerId?: EntityId;
+  lastAggroAt?: number;
 
   playersInRoom: PerceivedPlayer[];
 

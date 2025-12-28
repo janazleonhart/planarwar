@@ -17,6 +17,11 @@ import {
 } from "../ai/NpcBrainTypes";
 
 import { LocalSimpleAggroBrain } from "../ai/LocalSimpleNpcBrain";
+import {
+  getLastAttackerFromThreat,
+  type NpcThreatState,
+  updateThreatFromDamage,
+} from "./NpcThreat";
 
 import {
   markInCombat,
@@ -35,6 +40,7 @@ const log = Logger.scope("NPC");
 export class NpcManager {
   private npcsByEntityId = new Map<string, NpcRuntimeState>();
   private npcsByRoom = new Map<string, Set<string>>();
+  private npcThreat = new Map<string, NpcThreatState>();
 
   private readonly brain = new LocalSimpleAggroBrain();
 
@@ -86,6 +92,7 @@ export class NpcManager {
     };
 
     this.npcsByEntityId.set(e.id, state);
+    this.npcThreat.set(e.id, {});
 
     let set = this.npcsByRoom.get(roomId);
     if (!set) {
@@ -158,6 +165,7 @@ export class NpcManager {
     if (!st) return;
 
     this.npcsByEntityId.delete(entityId);
+    this.npcThreat.delete(entityId);
 
     const set = this.npcsByRoom.get(st.roomId);
     if (set) {
@@ -197,6 +205,25 @@ export class NpcManager {
     }
 
     return newHp;
+  }
+
+  recordDamage(targetEntityId: string, attackerEntityId: string): void {
+    if (!this.npcsByEntityId.has(targetEntityId)) return;
+    const threat = updateThreatFromDamage(
+      this.npcThreat.get(targetEntityId),
+      attackerEntityId,
+    );
+    this.npcThreat.set(targetEntityId, threat);
+
+    const st = this.npcsByEntityId.get(targetEntityId);
+    if (st) {
+      st.lastAggroAt = threat.lastAggroAt;
+      st.lastAttackerEntityId = threat.lastAttackerEntityId;
+    }
+  }
+
+  getLastAttacker(targetEntityId: string): string | undefined {
+    return getLastAttackerFromThreat(this.npcThreat.get(targetEntityId));
   }
 
   // -------------------------------------------------------------------------
@@ -261,6 +288,8 @@ export class NpcManager {
         continue;
       }
 
+      const threat = this.npcThreat.get(entityId);
+
       const perception: NpcPerception = {
         npcId: entityId,
         entityId,
@@ -273,6 +302,8 @@ export class NpcManager {
         currentTargetId: undefined,
         playersInRoom,
         sinceLastDecisionMs: deltaMs,
+        lastAggroAt: threat?.lastAggroAt,
+        lastAttackerId: threat?.lastAttackerEntityId,
       };
 
       const decision = this.brain.decide(perception, deltaMs);

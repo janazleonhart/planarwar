@@ -103,6 +103,7 @@ export async function performNpcAttack(
   const maxHp = (npc as any).maxHp ?? prevHp;
   const newHp = Math.max(0, prevHp - dmg);
   (npc as any).hp = newHp;
+  ctx.npcs?.recordDamage(npc.id, selfEntity.id);
 
   // --- Skill progression for the attacker ---
   try {
