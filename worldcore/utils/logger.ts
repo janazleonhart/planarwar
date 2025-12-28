@@ -70,7 +70,7 @@ export class Logger {
 
     const tag = colorize(
       `[${this.scope}:${level.toUpperCase()}]`,
-      color
+      color,
     );
 
     // If first arg is string, show it inline; otherwise just tag + data.

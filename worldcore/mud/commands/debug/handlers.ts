@@ -1,5 +1,6 @@
 // worldcore/mud/commands/debug/handlers.ts
 
+// worldcore/mud/commands/debug/handlers.ts
 import { Logger } from "../../../utils/logger";
 import { getStaffRole } from "../../../shared/AuthTypes";
 import { logStaffAction } from "../../../auth/StaffAuditLog";
@@ -13,6 +14,13 @@ import { SpawnPointService } from "../../../world/SpawnPointService";
 import { NpcSpawnController } from "../../../npc/NpcSpawnController";
 import { announceSpawnToRoom } from "../../MudActions";
 import { getSelfEntity } from "../../runtime/mudRuntime";
+
+import { LocalSimpleAggroBrain } from "../../../ai/LocalSimpleNpcBrain";
+import type { NpcPerception } from "../../../ai/NpcBrainTypes";
+import {
+  getNpcPrototype,
+  DEFAULT_NPC_PROTOTYPES,
+} from "../../../npc/NpcTypes";
 
 const log = Logger.scope("MudDebug");
 
@@ -574,4 +582,179 @@ export async function handleDebugMailTest(
   );
 
   return "Test mail sent.";
+}
+
+export async function handleDebugNpcAi(
+  ctx: any,
+  char: any,
+  input: MudInput,
+): Promise<string> {
+  if (!ctx.entities || !ctx.npcs) {
+    return "NPC/Entity system not available.";
+  }
+
+  const roomId = ctx.session.roomId ?? char.shardId;
+  if (!roomId) {
+    return "You are not in a shard room.";
+  }
+
+  const entitiesInRoom = ctx.entities.getEntitiesInRoom(roomId) as any[];
+  const npcEntities = entitiesInRoom.filter(
+    (e) => e.type === "npc" || e.type === "node",
+  );
+
+  if (npcEntities.length === 0) {
+    return "[ai] No NPCs or nodes in this room.";
+  }
+
+  const query = (input.args[0] ?? "").toLowerCase().trim();
+
+  let npcEntity: any | undefined;
+
+  if (query) {
+    // If user supplied a filter, prefer that
+    npcEntity =
+      npcEntities.find((e) =>
+        String(e.name ?? "")
+          .toLowerCase()
+          .includes(query),
+      ) ??
+      npcEntities.find((e) =>
+        String((e as any).protoId ?? "")
+          .toLowerCase()
+          .includes(query),
+      );
+  } else {
+    // No filter: prefer an NPC that is currently in combat
+    npcEntity =
+      npcEntities.find((e) => (e as any).inCombat) ?? npcEntities[0];
+  }
+
+  if (!npcEntity) {
+    return query
+      ? `[ai] No NPC matching '${query}' in this room.`
+      : "[ai] No suitable NPC found in this room.";
+  }
+
+  const npcState =
+    ctx.npcs.getNpcStateByEntityId?.(npcEntity.id) ??
+    ctx.npcs.getNpcStateByEntityId?.(npcEntity.entityId);
+
+  if (!npcState) {
+    return "[ai] NPC runtime state not found for that entity.";
+  }
+
+  let proto =
+    getNpcPrototype(npcState.templateId) ??
+    getNpcPrototype(npcState.protoId) ??
+    DEFAULT_NPC_PROTOTYPES[npcState.templateId] ??
+    DEFAULT_NPC_PROTOTYPES[npcState.protoId];
+
+  if (!proto) {
+    return "[ai] No NPC prototype found (DB + defaults).";
+  }
+
+  const tags = proto.tags ?? [];
+  const isResource =
+    tags.includes("resource") ||
+    tags.some((t: string) => t.startsWith("resource_"));
+  const nonHostile = tags.includes("non_hostile") || isResource;
+  const behavior = proto.behavior ?? "aggressive";
+  const hostile =
+    !nonHostile &&
+    (behavior === "aggressive" ||
+      behavior === "guard" ||
+      behavior === "coward");
+
+  const playersInRoom: {
+    entityId: string;
+    characterId?: string;
+    hp: number;
+    maxHp: number;
+  }[] = [];
+
+  for (const ent of entitiesInRoom as any[]) {
+    if (ent.type !== "player") continue;
+
+    const maxHp =
+      typeof ent.maxHp === "number" && ent.maxHp > 0 ? ent.maxHp : 100;
+    const hp =
+      typeof ent.hp === "number" && ent.hp >= 0 ? ent.hp : maxHp;
+
+    playersInRoom.push({
+      entityId: ent.id,
+      characterId: ent.characterId,
+      hp,
+      maxHp,
+    });
+  }
+
+  const perception: NpcPerception = {
+    npcId: npcState.entityId,
+    entityId: npcState.entityId,
+    roomId,
+    hp: npcState.hp,
+    maxHp: npcState.maxHp,
+    alive: npcState.alive,
+    behavior,
+    hostile,
+    currentTargetId: undefined,
+    playersInRoom,
+    sinceLastDecisionMs: 0,
+  };
+
+  const brain = new LocalSimpleAggroBrain();
+  const decision = brain.decide(perception, 0);
+
+  const lines: string[] = [];
+
+  lines.push(
+    `[ai] NPC: ${proto.name} (${npcState.protoId} / template=${npcState.templateId})`,
+  );
+  lines.push(
+    `[ai] Room: ${roomId} HP: ${npcState.hp}/${npcState.maxHp} alive=${npcState.alive} fleeing=${!!npcState.fleeing}`,
+  );
+  lines.push(
+    `[ai] Behavior: ${behavior} hostile=${hostile} tags=[${tags.join(", ")}]`,
+  );
+  lines.push(
+    `[ai] Players in room: ${playersInRoom.length}${
+      playersInRoom.length > 0
+        ? ` (first=${playersInRoom[0].entityId} hp=${playersInRoom[0].hp}/${playersInRoom[0].maxHp})`
+        : ""
+    }`,
+  );
+
+  if (!decision) {
+    lines.push("[ai] Decision: none (idle / on cooldown / non-hostile).");
+  } else {
+    switch (decision.kind) {
+      case "attack_entity":
+        lines.push(
+          `[ai] Decision: attack_entity → ${decision.targetEntityId} (style=${
+            decision.attackStyle ?? "melee"
+          })`,
+        );
+        break;
+      case "flee":
+        lines.push(
+          `[ai] Decision: flee${
+            decision.fromEntityId ? ` from ${decision.fromEntityId}` : ""
+          }`,
+        );
+        break;
+      case "move_to_room":
+        lines.push(`[ai] Decision: move_to_room → ${decision.roomId}`);
+        break;
+      case "say":
+        lines.push(`[ai] Decision: say → "${decision.text}"`);
+        break;
+      case "idle":
+      default:
+        lines.push("[ai] Decision: idle.");
+        break;
+    }
+  }
+
+  return lines.join("\n");
 }

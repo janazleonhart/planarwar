@@ -75,6 +75,7 @@ import {
   handleDebugSpawnsHere,
   handleDebugTake,
   handleDebugMailTest,
+  handleDebugNpcAi,
 } from "./debug/handlers";
 
 import type { MudCommandHandlerFn } from "./types";
@@ -189,6 +190,7 @@ export const COMMANDS: Record<string, MudCommandHandlerFn> = {
   debug_spawns_here: withDebugGate(handleDebugSpawnsHere, "gm"),
   debug_take: withDebugGate(handleDebugTake, "dev"),
   debug_mail_test: withDebugGate(handleDebugMailTest, "dev"),
+  debug_npc_ai: withDebugGate(handleDebugNpcAi, "gm"),
   event_give_any: withDebugGate(handleEventGiveAny, "owner"),
   event_mail_reward: withDebugGate(handleEventMailReward, "gm"),
 };
