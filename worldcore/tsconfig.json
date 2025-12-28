@@ -1,0 +1,48 @@
+{
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "rootDir": "./",
+    "outDir": "../dist/worldcore",
+    "baseUrl": "./",
+    "types": []
+  },
+  "include": [
+    "./ai/LocalSimpleNpcBrain.ts",
+    "./ai/NpcBrainTypes.ts",
+    "./ai/brains/AggressiveBrain.ts",
+    "./ai/brains/BehaviorContext.ts",
+    "./ai/brains/CowardBrain.ts",
+    "./ai/brains/GuardBrain.ts",
+    "./ai/brains/NeutralBrain.ts",
+    "./classes/ClassDefinitions.ts",
+    "./combat/entityCombat.ts",
+    "./core/EntityManager.ts",
+    "./core/SessionManager.ts",
+    "./characters/CharacterTypes.ts",
+    "./npc/NpcManager.ts",
+    "./npc/NpcThreat.ts",
+    "./npc/NpcTypes.ts",
+    "./npc/NpcCrime.ts",
+    "./utils/uuid.ts",
+    "./shared/Entity.ts",
+    "./shared/Session.ts",
+    "./shared/messages.ts",
+    "./types/**/*",
+    "./test/**/*"
+  ],
+  "exclude": [
+    "../node_modules",
+    "../dist",
+    "./config/**/*",
+    "./db/**/*",
+    "./actions/**/*",
+    "./db/ChunkCache.ts",
+    "./core/ObjectStream.ts",
+    "./core/MessageRouter.ts",
+    "./items/**/*",
+    "./npc/PostgresNpcService.ts",
+    "./strategy/**/*",
+    "./terrain/biomes/**/*",
+    "./world/**/*"
+  ]
+}
