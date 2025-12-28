@@ -13,6 +13,11 @@ import {
   getOrInitPowerResource,
   gainPowerResource,
 } from "../../../resources/PowerResources";
+import type { CharacterState } from "../../../characters/CharacterTypes";
+import {
+  hasActiveCrimeHeat,
+  getCrimeHeatLabel,
+} from "../../../characters/CharacterTypes";
 
 // Minimal structural type for the RespawnService we threaded in via ctx.
 // We don't import the actual class here to avoid extra compile coupling.
@@ -24,10 +29,11 @@ type RespawnLike = {
 };
 
 // --- Respawn: shard/world-aware (with fallback to old HP-only behavior) ---
+
 export async function handleRespawnCommand(
   ctx: MudContext
 ): Promise<string> {
-  const char = ctx.session.character;
+  const char = ctx.session.character as CharacterState | undefined;
 
   // No character attached? Fallback to old behavior (or just shrug).
   if (!char) {
@@ -63,17 +69,29 @@ export async function handleRespawnCommand(
     ent && typeof (ent as any).alive === "boolean"
       ? (ent as any).alive
       : undefined;
+
   const isDead = !ent || hp === 0 || (hp as number) < 0 || aliveFlag === false;
 
   if (!isDead) {
     return "You are not dead enough to respawn.";
   }
 
-  // v0: ask RespawnService to put you at a sensible spawn and stand you up.
+  // Snapshot crime heat before respawn; guards + AI care, but hub should not auto-aggro.
+  const now = Date.now();
+  const crimeHeatLabel = getCrimeHeatLabel(char, now);
+  const crimeHeatActive = hasActiveCrimeHeat(char, now);
+
+  // v1: ask RespawnService to put you at a sensible spawn and stand you up.
   const { spawn } = await respawns.respawnCharacter(ctx.session, char);
 
   if (spawn && spawn.regionId) {
     // Later we can include pretty region/settlement names.
+
+    if (crimeHeatActive && crimeHeatLabel !== "none") {
+      // Same hub-safe mechanics, but flavor text hints the law is watching.
+      return "You feel your spirit pulled back to safety. You awaken in a guarded sanctuary, under the wary gaze of the law.";
+    }
+
     return "You feel your spirit pulled back to safety. You awaken at a safe place in this region.";
   }
 
@@ -82,10 +100,11 @@ export async function handleRespawnCommand(
 }
 
 // --- Rest: HP via recoveryOps + resource regen (mana only, no fury) ---
+
 export async function handleRestCommand(
   ctx: MudContext
 ): Promise<string> {
-  // 🔒 Combat gate: block full rest while recently in combat.
+  // Combat gate: block full rest while recently in combat.
   let inCombatRecently = false;
 
   if (ctx.entities) {
@@ -118,7 +137,7 @@ export async function handleRestCommand(
   const baseMsg = restOrSleep(recoveryCtx);
 
   // 2) Resource handling (needs character on the session)
-  const char = ctx.session.character;
+  const char = ctx.session.character as CharacterState | undefined;
   if (!char) {
     // No character attached (shouldn’t happen in normal play)
     return baseMsg;
@@ -126,7 +145,7 @@ export async function handleRestCommand(
 
   const primary = getPrimaryPowerResourceForClass(char.classId);
 
-  // 🔕 Fury (and any non-mana primary) should NOT be restored by resting.
+  // Fury (and any non-mana primary) should NOT be restored by resting.
   if (primary !== "mana") {
     return baseMsg;
   }
@@ -134,7 +153,9 @@ export async function handleRestCommand(
   const pool = getOrInitPowerResource(char, primary);
   const before = pool.current;
   const gain = Math.max(10, Math.floor(pool.max * 0.25)); // 25% chunk
+
   gainPowerResource(char, primary, gain);
+
   const after = pool.current;
 
   if (after === before) {

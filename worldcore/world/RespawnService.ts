@@ -2,6 +2,10 @@
 
 import { Logger } from "../utils/logger";
 import type { CharacterState } from "../characters/CharacterTypes";
+import {
+  hasActiveCrimeHeat,
+  getCrimeHeatLabel,
+} from "../characters/CharacterTypes";
 import type { ServerWorldManager } from "./ServerWorldManager";
 import { SpawnPointService, DbSpawnPoint } from "./SpawnPointService";
 import { EntityManager } from "../core/EntityManager";
@@ -18,11 +22,11 @@ const log = Logger.scope("RESPAWN");
  * Handles picking a spawn point and resetting runtime + persisted state.
  *
  * v1:
- *  - Picks a reasonably near spawn point for the character.
- *  - Teleports entity there, full-heals, clears combat.
- *  - Saves CharacterState with the new position + lastRegionId.
+ * - Picks a reasonably near spawn point for the character.
+ * - Teleports entity there, full-heals, clears combat.
+ * - Saves CharacterState with the new position + lastRegionId.
  *
- * Later, this is where shard death rules + sanctuary logic will plug in.
+ * Later, this is where shard death rules + sanctuary / safe-hub logic plug in.
  */
 export class RespawnService {
   constructor(
@@ -86,8 +90,12 @@ export class RespawnService {
         e.hp = 100;
       }
 
+      // Clear combat heat on the *entity*; crime heat stays on CharacterState.
       e.inCombatUntil = 0;
     }
+
+    const now = Date.now();
+    const crimeHeat = getCrimeHeatLabel(nextChar, now);
 
     log.info("Character respawned", {
       charId: nextChar.id,
@@ -98,6 +106,8 @@ export class RespawnService {
       z: targetZ,
       spawnId: spawn?.spawnId,
       regionId: targetRegionId,
+      crimeHeat, // "none" | "minor" | "severe"
+      hasCrimeHeat: hasActiveCrimeHeat(nextChar, now),
     });
 
     return { character: nextChar, spawn: spawn ?? null };
@@ -121,7 +131,8 @@ export class RespawnService {
         );
 
         if (regionSpawns.length > 0) {
-          // v1: just take the first; later we can weight by type/priority.
+          // v1: just take the first; later we can weight by type/priority
+          // (including hub/sanctuary tags) if we want.
           return regionSpawns[0];
         }
       } catch (err) {
@@ -203,7 +214,12 @@ export class RespawnService {
     return null;
   }
 
-  private distSq(ax: number, az: number, bx: number, bz: number): number {
+  private distSq(
+    ax: number,
+    az: number,
+    bx: number,
+    bz: number
+  ): number {
     const dx = ax - bx;
     const dz = az - bz;
     return dx * dx + dz * dz;
