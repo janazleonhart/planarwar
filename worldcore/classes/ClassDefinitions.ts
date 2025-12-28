@@ -2,6 +2,8 @@
 
 import type { Attributes } from "../characters/CharacterTypes";
 
+export type CombatRole = "tank" | "healer" | "dps";
+
 export type ClassId =
   | "virtuoso"
   | "illusionist"
@@ -53,6 +55,7 @@ export interface ClassDefinition {
   shortName?: string; // e.g. "Warlord"
   description: string;
   archetype: ClassArchetype;
+  combatRole?: CombatRole;
 
   primaryResource: PrimaryResourceId;
   secondaryResource?: PrimaryResourceId | null;
@@ -167,6 +170,7 @@ const CLASS_DEFINITIONS: Record<ClassId, ClassDefinition> = {
     displayName: "Virtuoso",
     description: "Agile battle-bard weaving songs and steel.",
     archetype: "hybrid",
+    combatRole: "dps",
     primaryResource: "mana", // later: song meter + mana?
     secondaryResource: null,
     baseAttributes: BASE_10,
@@ -186,6 +190,7 @@ const CLASS_DEFINITIONS: Record<ClassId, ClassDefinition> = {
     displayName: "Illusionist",
     description: "Control, charm, and disable with mind magic.",
     archetype: "support",
+    combatRole: "dps",
     primaryResource: "mana",
     secondaryResource: null,
     baseAttributes: BASE_10,
@@ -200,6 +205,7 @@ const CLASS_DEFINITIONS: Record<ClassId, ClassDefinition> = {
     displayName: "Ascetic",
     description: "Monk-style martial artist; fists and focus.",
     archetype: "melee_dps",
+    combatRole: "dps",
     primaryResource: "fury", // later could split to “chi”
     secondaryResource: null,
     baseAttributes: BASE_10,
@@ -213,6 +219,7 @@ const CLASS_DEFINITIONS: Record<ClassId, ClassDefinition> = {
     displayName: "Prophet",
     description: "Elemental shaman / spiritual caster hybrid.",
     archetype: "hybrid",
+    combatRole: "healer",
     primaryResource: "mana",
     secondaryResource: null,
     baseAttributes: BASE_10,
@@ -227,6 +234,7 @@ const CLASS_DEFINITIONS: Record<ClassId, ClassDefinition> = {
     displayName: "Crusader",
     description: "Paladin analogue: holy plate tank/support.",
     archetype: "tank",
+    combatRole: "tank",
     primaryResource: "mana", // you explicitly wanted pal/sk using mana
     secondaryResource: null,
     baseAttributes: BASE_10,
@@ -241,6 +249,7 @@ const CLASS_DEFINITIONS: Record<ClassId, ClassDefinition> = {
     displayName: "Revenant",
     description: "Shadow knight: decay knight with curses.",
     archetype: "tank",
+    combatRole: "tank",
     primaryResource: "mana",
     secondaryResource: null,
     baseAttributes: BASE_10,
@@ -255,6 +264,7 @@ const CLASS_DEFINITIONS: Record<ClassId, ClassDefinition> = {
     displayName: "Hierophant",
     description: "Nature priest; druid-flavored healer/caster.",
     archetype: "healer",
+    combatRole: "healer",
     primaryResource: "mana",
     secondaryResource: null,
     baseAttributes: BASE_10,
@@ -269,6 +279,7 @@ const CLASS_DEFINITIONS: Record<ClassId, ClassDefinition> = {
     displayName: "Warlord",
     description: "Front-line plate brawler; lives on fury.",
     archetype: "tank",
+    combatRole: "tank",
     primaryResource: "fury",
     secondaryResource: null,
     baseAttributes: BASE_10,
@@ -292,6 +303,7 @@ const CLASS_DEFINITIONS: Record<ClassId, ClassDefinition> = {
     displayName: "Templar",
     description: "Heavy-armor cleric; heals while armored up.",
     archetype: "healer",
+    combatRole: "healer",
     primaryResource: "mana",
     secondaryResource: null,
     baseAttributes: BASE_10,
@@ -306,6 +318,7 @@ const CLASS_DEFINITIONS: Record<ClassId, ClassDefinition> = {
     displayName: "Defiler",
     description: "Necromancer analogue; pets and rot.",
     archetype: "ranged_dps",
+    combatRole: "dps",
     primaryResource: "mana",
     secondaryResource: null,
     baseAttributes: BASE_10,
@@ -320,6 +333,7 @@ const CLASS_DEFINITIONS: Record<ClassId, ClassDefinition> = {
     displayName: "Conjuror",
     description: "Elemental pet mage; summons friends and fire.",
     archetype: "ranged_dps",
+    combatRole: "dps",
     primaryResource: "mana",
     secondaryResource: null,
     baseAttributes: BASE_10,
@@ -334,6 +348,7 @@ const CLASS_DEFINITIONS: Record<ClassId, ClassDefinition> = {
     displayName: "Archmage",
     description: "Classic glass cannon wizard.",
     archetype: "ranged_dps",
+    combatRole: "dps",
     primaryResource: "mana",
     secondaryResource: null,
     baseAttributes: BASE_10,
@@ -348,6 +363,7 @@ const CLASS_DEFINITIONS: Record<ClassId, ClassDefinition> = {
     displayName: "Cutthroat",
     description: "Stabby rogue; high agility and charisma.",
     archetype: "melee_dps",
+    combatRole: "dps",
     primaryResource: "fury",
     secondaryResource: null,
     baseAttributes: BASE_10,
@@ -361,6 +377,7 @@ const CLASS_DEFINITIONS: Record<ClassId, ClassDefinition> = {
     displayName: "Ravager",
     description: "Berserker who loves crits more than life.",
     archetype: "melee_dps",
+    combatRole: "dps",
     primaryResource: "fury",
     secondaryResource: null,
     baseAttributes: BASE_10,
@@ -374,6 +391,7 @@ const CLASS_DEFINITIONS: Record<ClassId, ClassDefinition> = {
     displayName: "Primalist",
     description: "Beastlord-style pet brawler.",
     archetype: "hybrid",
+    combatRole: "dps",
     primaryResource: "mana",
     secondaryResource: null,
     baseAttributes: BASE_10,
@@ -387,6 +405,7 @@ const CLASS_DEFINITIONS: Record<ClassId, ClassDefinition> = {
     displayName: "Outrider",
     description: "Ranger; agile ranged hybrid.",
     archetype: "ranged_dps",
+    combatRole: "dps",
     primaryResource: "mana",
     secondaryResource: null,
     baseAttributes: BASE_10,
@@ -400,6 +419,7 @@ const CLASS_DEFINITIONS: Record<ClassId, ClassDefinition> = {
     displayName: "Adventurer",
     description: "Chaos wildcard class; gains random stuff.",
     archetype: "hybrid",
+    combatRole: "dps",
     primaryResource: "mana",
     // later: both mana + fury special-case
     secondaryResource: "fury",
@@ -418,6 +438,7 @@ const CLASS_DEFINITIONS: Record<ClassId, ClassDefinition> = {
     displayName: "Warlock",
     description: "Demon pact caster with damage-over-time.",
     archetype: "ranged_dps",
+    combatRole: "dps",
     primaryResource: "mana",
     secondaryResource: null,
     baseAttributes: BASE_10,
@@ -432,6 +453,7 @@ const CLASS_DEFINITIONS: Record<ClassId, ClassDefinition> = {
     displayName: "Hunter",
     description: "Ranged pet class; bows and beasts.",
     archetype: "ranged_dps",
+    combatRole: "dps",
     primaryResource: "fury", // could swap to mana later if we prefer
     secondaryResource: null,
     baseAttributes: BASE_10,
@@ -446,6 +468,7 @@ const CLASS_DEFINITIONS: Record<ClassId, ClassDefinition> = {
     displayName: "Death Knight",
     description: "Decay knight; plate + dark magic.",
     archetype: "tank",
+    combatRole: "tank",
     primaryResource: "fury", // using fury-ish resource for now
     secondaryResource: "mana", // for spellcasting hooks later
     baseAttributes: BASE_10,
@@ -472,6 +495,7 @@ const CLASS_DEFINITIONS: Record<ClassId, ClassDefinition> = {
     displayName: "Warrior (Legacy)",
     description: "Debug warrior archetype.",
     archetype: "tank",
+    combatRole: "tank",
     primaryResource: "fury",
     secondaryResource: null,
     baseAttributes: BASE_10,
@@ -493,6 +517,7 @@ const CLASS_DEFINITIONS: Record<ClassId, ClassDefinition> = {
     displayName: "Mage (Legacy)",
     description: "Debug mage archetype.",
     archetype: "ranged_dps",
+    combatRole: "dps",
     primaryResource: "mana",
     secondaryResource: null,
     baseAttributes: BASE_10,
@@ -507,6 +532,7 @@ const CLASS_DEFINITIONS: Record<ClassId, ClassDefinition> = {
     displayName: "Rogue (Legacy)",
     description: "Debug rogue archetype.",
     archetype: "melee_dps",
+    combatRole: "dps",
     primaryResource: "fury",
     secondaryResource: null,
     baseAttributes: BASE_10,
@@ -521,6 +547,7 @@ const CLASS_DEFINITIONS: Record<ClassId, ClassDefinition> = {
     displayName: "Priest (Legacy)",
     description: "Debug priest archetype.",
     archetype: "healer",
+    combatRole: "healer",
     primaryResource: "mana",
     secondaryResource: null,
     baseAttributes: BASE_10,
@@ -535,6 +562,7 @@ const CLASS_DEFINITIONS: Record<ClassId, ClassDefinition> = {
     displayName: "Unknown",
     description: "Fallback class definition.",
     archetype: "hybrid",
+    combatRole: "dps",
     primaryResource: "mana",
     secondaryResource: null,
     baseAttributes: BASE_10,
@@ -546,9 +574,25 @@ const CLASS_DEFINITIONS: Record<ClassId, ClassDefinition> = {
 
 // ---- Public helpers ----
 
+function inferCombatRoleFromArchetype(archetype: ClassArchetype): CombatRole | undefined {
+  switch (archetype) {
+    case "tank":
+      return "tank";
+    case "healer":
+      return "healer";
+    default:
+      return "dps";
+  }
+}
+
 export function getClassDefinition(id: string): ClassDefinition {
   const key = ((id || "default").toLowerCase() as ClassId) || "default";
   return CLASS_DEFINITIONS[key] ?? CLASS_DEFINITIONS.default;
+}
+
+export function getCombatRoleForClass(id: string): CombatRole | undefined {
+  const def = getClassDefinition(id);
+  return def.combatRole ?? inferCombatRoleFromArchetype(def.archetype);
 }
 
 export function getPerLevelAttributesForClass(id: string): Attributes {

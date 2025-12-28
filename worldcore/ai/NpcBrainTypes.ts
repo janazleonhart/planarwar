@@ -21,6 +21,9 @@ export interface PerceivedPlayer {
   characterId?: CharacterId;
   hp: number;
   maxHp: number;
+  recentCrimeUntil?: number;
+  recentCrimeSeverity?: "minor" | "severe";
+  combatRole?: "tank" | "healer" | "dps";
 }
 
 /**
@@ -43,6 +46,10 @@ export interface NpcPerception {
   lastAggroAt?: number;
 
   playersInRoom: PerceivedPlayer[];
+  guardProfile?: "village" | "town" | "city";
+  guardCallRadius?: number;
+  roomIsSafeHub?: boolean;
+  npcName?: string;
 
   /** Milliseconds since last decision for this NPC. */
   sinceLastDecisionMs: number;

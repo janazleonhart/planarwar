@@ -1,6 +1,7 @@
 // worldcore/npc/NpcTypes.ts
 
 export type NpcId = string;
+export type GuardProfile = "village" | "town" | "city";
 
 /**
  * High-level behavior profile for an NPC.
@@ -43,6 +44,8 @@ export interface NpcPrototype {
   tags?: string[];
 
   behavior?: NpcBehavior;
+  guardProfile?: GuardProfile;
+  guardCallRadius?: number;
   xpReward?: number;
   loot?: NpcLootEntry[];
 }
@@ -69,6 +72,18 @@ export interface NpcRuntimeState {
   fleeing?: boolean;
 }
 
+export const DEFAULT_GUARD_CALL_RADIUS: Record<GuardProfile, number> = {
+  village: 12,
+  town: 18,
+  city: 24,
+};
+
+export function getGuardCallRadius(profile?: GuardProfile, override?: number): number | undefined {
+  if (typeof override === "number") return override;
+  if (!profile) return undefined;
+  return DEFAULT_GUARD_CALL_RADIUS[profile];
+}
+
 // ---------------------------------------------------------------------------
 // Hard-coded defaults (dev seed / fallback)
 // ---------------------------------------------------------------------------
@@ -82,7 +97,7 @@ export const DEFAULT_NPC_PROTOTYPES: Record<string, NpcPrototype> = {
     baseDamageMin: 0,
     baseDamageMax: 0,
     model: "training_dummy",
-    tags: ["training", "non_hostile"],
+    tags: ["training", "non_hostile", "civilian"],
     behavior: "neutral",
     xpReward: 0,
     loot: [],
@@ -154,7 +169,9 @@ export const DEFAULT_NPC_PROTOTYPES: Record<string, NpcPrototype> = {
     baseDamageMax: 14,
     model: "human_guard",
     tags: ["humanoid", "guard", "town"],
-    behavior: "aggressive",   // ← treat as a normal aggressive mob for now
+    behavior: "guard",
+    guardProfile: "town",
+    guardCallRadius: DEFAULT_GUARD_CALL_RADIUS.town,
     xpReward: 0,
     loot: [],
   },

@@ -27,6 +27,8 @@ const DEFAULT_COOLDOWN_MS = 2000;
 export class LocalSimpleAggroBrain implements NpcBrain {
   private readonly attackCooldownMs: number;
   private readonly cooldowns = new Map<string, number>();
+  private readonly guardWarnings = new Map<string, Set<string>>();
+  private readonly guardHelpCalls = new Map<string, Set<string>>();
 
   private readonly behaviorHandlers: Partial<
     Record<NpcBehavior, BehaviorHandler>
@@ -40,6 +42,32 @@ export class LocalSimpleAggroBrain implements NpcBrain {
 
   constructor(attackCooldownMs: number = DEFAULT_COOLDOWN_MS) {
     this.attackCooldownMs = attackCooldownMs;
+  }
+
+  hasWarnedTarget(npcId: string, characterId: string): boolean {
+    return this.guardWarnings.get(npcId)?.has(characterId) ?? false;
+  }
+
+  markWarnedTarget(npcId: string, characterId: string): void {
+    let set = this.guardWarnings.get(npcId);
+    if (!set) {
+      set = new Set<string>();
+      this.guardWarnings.set(npcId, set);
+    }
+    set.add(characterId);
+  }
+
+  hasCalledHelp(npcId: string, characterId: string): boolean {
+    return this.guardHelpCalls.get(npcId)?.has(characterId) ?? false;
+  }
+
+  markCalledHelp(npcId: string, characterId: string): void {
+    let set = this.guardHelpCalls.get(npcId);
+    if (!set) {
+      set = new Set<string>();
+      this.guardHelpCalls.set(npcId, set);
+    }
+    set.add(characterId);
   }
 
   decide(perception: NpcPerception, dtMs: number): NpcDecision | null {
@@ -70,6 +98,16 @@ export class LocalSimpleAggroBrain implements NpcBrain {
       cooldownMs: newCd,
       attackCooldownMs: this.attackCooldownMs,
       setCooldownMs: (value: number) => this.cooldowns.set(npcKey, value),
+      guardMemory: {
+        hasWarned: (npcId: string, characterId: string) =>
+          this.hasWarnedTarget(npcId, characterId),
+        markWarned: (npcId: string, characterId: string) =>
+          this.markWarnedTarget(npcId, characterId),
+        hasCalledHelp: (npcId: string, characterId: string) =>
+          this.hasCalledHelp(npcId, characterId),
+        markCalledHelp: (npcId: string, characterId: string) =>
+          this.markCalledHelp(npcId, characterId),
+      },
     });
   }
 }
