@@ -12,6 +12,7 @@ import { buildMudContext } from "../mud/MudContext";
 import { GuildService } from "../guilds/GuildService";
 import { PostgresCharacterService } from "../characters/PostgresCharacterService";
 import { NpcManager } from "../npc/NpcManager";
+import { NpcSpawnController } from "../npc/NpcSpawnController";
 import { performAction } from "../actions/WorldActionService";
 import { PostgresMailService } from "../mail/PostgresMailService";
 import { MailService } from "../mail/MailService";
@@ -74,6 +75,7 @@ export class MessageRouter {
     private readonly vendors?: VendorService,
     private readonly bank?: BankService,
     private readonly auctions?: AuctionService,
+    private readonly npcSpawns?: NpcSpawnController,
   ) {}
 
   async handleRawMessage(session: Session, data: any): Promise<void> {
@@ -528,6 +530,7 @@ export class MessageRouter {
             items: this.items,
             rooms: this.rooms,
             npcs: this.npcs,
+            npcSpawns: this.npcSpawns,
             mail: this.mail,
             trades: this.trades,
             vendors: this.vendors,

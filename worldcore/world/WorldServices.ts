@@ -193,6 +193,7 @@ export async function createWorldServices(
     respawns,
     navGrid,
     boundary,
+    npcSpawns,
     npcs,
     world,
     movement,

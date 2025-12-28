@@ -1,48 +1,50 @@
 //worldcore/movement/moveOps.ts
 
-import { Logger } from "../utils/logger";
-import type { CharacterState } from "../characters/CharacterTypes";
-import type { ServerWorldManager } from "../world/ServerWorldManager";
-import { tryMoveCharacter } from "./MovementCommands";
+/**
+ * High-level movement helper that applies a move, syncs the in-memory entity,
+ * and best-effort persists the character position without blocking gameplay.
+ */
 
-import type { MoveDir } from "./MovementCommands";
+import type { CharacterState } from "../characters/CharacterTypes";
+import type { EntityManager } from "../core/EntityManager";
+import type { Session } from "../shared/Session";
+import { Logger } from "../utils/logger";
+import type { ServerWorldManager } from "../world/ServerWorldManager";
+import type { PostgresCharacterService } from "../characters/PostgresCharacterService";
+import { tryMoveCharacter, type MoveDir } from "./MovementCommands";
 
 const log = Logger.scope("MoveOps");
 
+type CharacterStore = Pick<PostgresCharacterService, "patchCharacter">;
+
 export type MoveOpsContext = {
-  session: { id: string; identity?: { userId: string } };
-  entities?: { getEntityByOwner(ownerId: string): any | null | undefined };
-  characters?: {
-    patchCharacter(userId: string, charId: string, patch: any): Promise<any>;
-  };
+  session: Pick<Session, "id" | "identity">;
+  entities?: Pick<EntityManager, "getEntityByOwner">;
+  characters?: CharacterStore;
 };
 
-export type MoveOpsResult =
-  | { ok: true }
-  | { ok: false; reason: string };
+export type MoveOpsResult = { ok: true } | { ok: false; reason: string };
 
 export async function moveCharacterAndSync(
   ctx: MoveOpsContext,
   char: CharacterState,
   dir: MoveDir,
-  world: ServerWorldManager | undefined
+  world: ServerWorldManager | undefined,
 ): Promise<MoveOpsResult> {
   const result = tryMoveCharacter(char, dir, world);
   if (!result.ok) {
     return { ok: false, reason: result.reason ?? "You cannot move that way." };
   }
 
-  // Sync entity position in memory, if present
-  if (ctx.entities) {
-    const ent = ctx.entities.getEntityByOwner(ctx.session.id);
-    if (ent) {
-      ent.x = char.posX;
-      ent.y = char.posY;
-      ent.z = char.posZ;
-    }
+  // Sync entity position in memory, if present.
+  const entity = ctx.entities?.getEntityByOwner(ctx.session.id) as any;
+  if (entity) {
+    entity.x = char.posX;
+    entity.y = char.posY;
+    entity.z = char.posZ;
   }
 
-  // Persist movement best-effort (don’t block movement on DB)
+  // Persist movement best-effort (don’t block movement on DB).
   const userId = ctx.session.identity?.userId;
   if (ctx.characters && userId) {
     ctx.characters
