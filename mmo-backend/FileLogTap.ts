@@ -1,16 +1,29 @@
+// mmo-backend/FileLogTap.ts
+
 import fs from "fs";
 import util from "util";
 
 type ConsoleMethod = (...args: unknown[]) => void;
 
-function serializeArg(arg: unknown): string {
-  if (typeof arg === "string") return arg;
-  if (arg instanceof Error) return arg.stack ?? arg.message;
+// Matches ANSI color codes like \u001b[32m, \u001b[0m, etc.
+const ANSI_REGEX = /\u001b\[[0-9;]*m/g;
 
+function stripAnsi(input: string): string {
+  return input.replace(ANSI_REGEX, "");
+}
+
+function serializeArg(arg: unknown): string {
+  if (typeof arg === "string") {
+    return stripAnsi(arg);
+  }
+  if (arg instanceof Error) {
+    const msg = arg.stack ?? arg.message;
+    return stripAnsi(msg);
+  }
   try {
-    return JSON.stringify(arg);
+    return stripAnsi(JSON.stringify(arg));
   } catch {
-    return util.inspect(arg);
+    return stripAnsi(util.inspect(arg));
   }
 }
 
@@ -25,7 +38,7 @@ function createTimestamp(): string {
 function wrapMethod(
   level: string,
   original: ConsoleMethod,
-  writer: (level: string, args: unknown[]) => void
+  writer: (level: string, args: unknown[]) => void,
 ): ConsoleMethod {
   return (...args: unknown[]): void => {
     writer(level, args);
@@ -41,6 +54,7 @@ export function installFileLogTap(): void {
   try {
     stream = fs.createWriteStream(filePath, { flags: "a" });
   } catch {
+    // If we can't open the file, just silently bail; console still works.
     return;
   }
 
@@ -50,9 +64,9 @@ export function installFileLogTap(): void {
 
   const writeLine = (level: string, args: unknown[]): void => {
     try {
-      stream.write(
-        `[${createTimestamp()}] [${level}] ${formatLine(args)}\n`
-      );
+      const payload = formatLine(args);
+      const line = `[${createTimestamp()}] [${level}] ${payload}\n`;
+      stream.write(line);
     } catch {
       // Ignore write errors to keep the server running.
     }
