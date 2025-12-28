@@ -8,6 +8,7 @@ import { ClientMessage } from "../shared/messages";
 import { Logger } from "../utils/logger";
 import { ServerWorldManager } from "../world/ServerWorldManager"
 import { handleMudCommand } from "../mud/MudCommandHandler"
+import { buildMudContext } from "../mud/MudContext";
 import { GuildService } from "../guilds/GuildService";
 import { PostgresCharacterService } from "../characters/PostgresCharacterService";
 import { NpcManager } from "../npc/NpcManager";
@@ -516,27 +517,31 @@ export class MessageRouter {
         if (!char) return;
       
         const text = String(msg.payload?.text ?? "");
-      
-        handleMudCommand(
-          char,
-          text,
-          this.world,
+
+        const mudCtx = buildMudContext(
           {
-            session,
             sessions: this.sessions,
-            rooms: this.rooms,
-            entities: this.entities,
+            guilds: this.guilds,
             world: this.world,
             characters: this.characters,
+            entities: this.entities,
             items: this.items,
-            guilds: this.guilds,
+            rooms: this.rooms,
             npcs: this.npcs,
             mail: this.mail,
             trades: this.trades,
             vendors: this.vendors,
-            bank: this.bank, 
-            auctions: this.auctions,  
-          }
+            bank: this.bank,
+            auctions: this.auctions,
+          },
+          session
+        );
+
+        handleMudCommand(
+          char,
+          text,
+          this.world,
+          mudCtx
         )
           .then(reply => {
             if (reply !== null) {
