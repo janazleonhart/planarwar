@@ -278,7 +278,14 @@ export class NpcManager {
     return this.guardHelpCalled.get(npcId)?.has(offenderId) ?? false;
   }
 
-  
+  private markGuardHelp(npcId: string, offenderId: string): void {
+    let set = this.guardHelpCalled.get(npcId);
+    if (!set) {
+      set = new Set<string>();
+      this.guardHelpCalled.set(npcId, set);
+    }
+    set.add(offenderId);
+  }
 
   private markPackHelp(npcId: string, offenderId: string): void {
     let set = this.packHelpCalled.get(npcId);
@@ -356,6 +363,60 @@ export class NpcManager {
     }
   }
 
+  private maybeCallGuardHelp(
+    npcId: string,
+    npcEntity: any,
+    roomId: string,
+    target: any,
+    guardProfile: GuardProfile | undefined,
+    guardCallRadius: number | undefined,
+    sessions?: SessionManager,
+  ): void {
+    const offenderKey =
+      sessions?.get(target.ownerSessionId)?.character?.id ?? target.id;
+    if (this.hasCalledGuardHelp(npcId, offenderKey)) return;
+
+    this.markGuardHelp(npcId, offenderKey);
+    this.brain.markCalledHelp(npcId, offenderKey);
+
+    const shout =
+      `[guard] ${npcEntity.name ?? "Guard"} yells: ` +
+      "To me! Defend the town!";
+    this.handleSayDecision(roomId, shout, sessions);
+
+    const allies = this.listNpcsInRoom(roomId).filter((ally) => {
+      if (ally.entityId === npcId) return false;
+      const proto =
+        getNpcPrototype(ally.templateId) ??
+        getNpcPrototype(ally.protoId) ??
+        DEFAULT_NPC_PROTOTYPES[ally.templateId] ??
+        DEFAULT_NPC_PROTOTYPES[ally.protoId];
+      return proto?.guardProfile !== undefined;
+    });
+
+    for (const ally of allies) {
+      const threat = updateThreatFromDamage(
+        this.npcThreat.get(ally.entityId),
+        target.id,
+      );
+      this.npcThreat.set(ally.entityId, threat);
+      const allyProto =
+        getNpcPrototype(ally.templateId) ??
+        getNpcPrototype(ally.protoId) ??
+        DEFAULT_NPC_PROTOTYPES[ally.templateId] ??
+        DEFAULT_NPC_PROTOTYPES[ally.protoId];
+      const allyGuardProfile = allyProto?.guardProfile;
+      const radiusOk =
+        guardCallRadius === undefined ||
+        allyGuardProfile === undefined ||
+        guardCallRadius >= 0;
+      if (radiusOk && offenderKey) {
+        this.brain.markWarnedTarget(ally.entityId, offenderKey);
+        this.brain.markCalledHelp(ally.entityId, offenderKey);
+      }
+    }
+  }
+
   private maybeGateAndCallHelp(
     st: NpcRuntimeState,
     proto: NpcPrototype,
@@ -416,71 +477,6 @@ export class NpcManager {
     return true;
   }
 
- 
-
-  private markGuardHelp(npcId: string, offenderId: string): void {
-    let set = this.guardHelpCalled.get(npcId);
-    if (!set) {
-      set = new Set<string>();
-      this.guardHelpCalled.set(npcId, set);
-    }
-    set.add(offenderId);
-  }
-
-  private maybeCallGuardHelp(
-    npcId: string,
-    npcEntity: any,
-    roomId: string,
-    target: any,
-    guardProfile: GuardProfile | undefined,
-    guardCallRadius: number | undefined,
-    sessions?: SessionManager,
-  ): void {
-    const offenderKey =
-      sessions?.get(target.ownerSessionId)?.character?.id ?? target.id;
-    if (this.hasCalledGuardHelp(npcId, offenderKey)) return;
-
-    this.markGuardHelp(npcId, offenderKey);
-    this.brain.markCalledHelp(npcId, offenderKey);
-
-    const shout =
-      `[guard] ${npcEntity.name ?? "Guard"} yells: ` +
-      "To me! Defend the town!";
-    this.handleSayDecision(roomId, shout, sessions);
-
-    const allies = this.listNpcsInRoom(roomId).filter((ally) => {
-      if (ally.entityId === npcId) return false;
-      const proto =
-        getNpcPrototype(ally.templateId) ??
-        getNpcPrototype(ally.protoId) ??
-        DEFAULT_NPC_PROTOTYPES[ally.templateId] ??
-        DEFAULT_NPC_PROTOTYPES[ally.protoId];
-      return proto?.guardProfile !== undefined;
-    });
-
-    for (const ally of allies) {
-      const threat = updateThreatFromDamage(
-        this.npcThreat.get(ally.entityId),
-        target.id,
-      );
-      this.npcThreat.set(ally.entityId, threat);
-      const allyProto =
-        getNpcPrototype(ally.templateId) ??
-        getNpcPrototype(ally.protoId) ??
-        DEFAULT_NPC_PROTOTYPES[ally.templateId] ??
-        DEFAULT_NPC_PROTOTYPES[ally.protoId];
-      const allyGuardProfile = allyProto?.guardProfile;
-      const radiusOk =
-        guardCallRadius === undefined ||
-        allyGuardProfile === undefined ||
-        guardCallRadius >= 0;
-      if (radiusOk && offenderKey) {
-        this.brain.markWarnedTarget(ally.entityId, offenderKey);
-        this.brain.markCalledHelp(ally.entityId, offenderKey);
-      }
-    }
-  }
-
   getLastAttacker(targetEntityId: string): string | undefined {
     return getLastAttackerFromThreat(this.npcThreat.get(targetEntityId));
   }
@@ -530,6 +526,8 @@ export class NpcManager {
           behavior === "guard" ||
           behavior === "coward");
 
+      const threat = this.npcThreat.get(entityId);
+
       // Build perception
       const playersInRoom: PerceivedPlayer[] = [];
 
@@ -557,12 +555,18 @@ export class NpcManager {
             combatRole: char ? getCombatRoleForClass(char.classId) : undefined,
           });
         }
+
+        if (threat?.lastAttackerEntityId) {
+          playersInRoom.sort((a, b) => {
+            if (a.entityId === threat.lastAttackerEntityId) return -1;
+            if (b.entityId === threat.lastAttackerEntityId) return 1;
+            return 0;
+          });
+        }
       } catch (err) {
         log.warn("Failed to build NPC perception", { entityId, err });
         continue;
       }
-
-      const threat = this.npcThreat.get(entityId);
 
       const perception: NpcPerception = {
         npcId: entityId,

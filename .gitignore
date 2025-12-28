@@ -37,6 +37,7 @@ web-frontend/.env
 planarwar-directory-setup.txt
 .vscode/settings.json
 .gitignore
+<<<<<<< HEAD
 docs/PLANARWAR_APEX_CREATOR_ECONOMY_CATASTROPHE.md
 docs/PLANARWAR_MASTER_ROADMAP.md
 docs/PLANARWAR_MASTER_SYSTEMS_REFERENCE.md
@@ -61,3 +62,5 @@ web-frontend.zip
 worldcore.zip
 gen_raw_links.py
 raw_links.txt
+=======
+>>>>>>> 05f627d17184a522c6dd9640640349702e625064

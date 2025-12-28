@@ -78,8 +78,11 @@ export class LocalSimpleAggroBrain implements NpcBrain {
     const newCd = Math.max(0, prevCd - dtMs);
     this.cooldowns.set(npcKey, newCd);
 
+    const behavior = perception.behavior ?? "aggressive";
+    const isGuard = behavior === "guard";
+
     // Dead / non-hostile → nothing
-    if (!perception.alive || !perception.hostile) {
+    if (!perception.alive || (!perception.hostile && !isGuard)) {
       return null;
     }
 
@@ -88,7 +91,6 @@ export class LocalSimpleAggroBrain implements NpcBrain {
       return null;
     }
 
-    const behavior = perception.behavior ?? "aggressive";
     const handler =
       this.behaviorHandlers[behavior] ?? decideAggressiveBehavior;
 
