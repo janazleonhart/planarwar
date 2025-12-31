@@ -1,25 +1,21 @@
 // worldcore/mud/actions/MudCombatActions.ts
 
-import { MudContext } from "../MudContext";
-import { CharacterState } from "../../characters/CharacterTypes";
-import { Entity } from "../../shared/Entity";
+import type { MudContext } from "../MudContext";
+import type { CharacterState } from "../../characters/CharacterTypes";
+import type { Entity } from "../../shared/Entity";
 import { computeEffectiveAttributes } from "../../characters/Stats";
-
 import {
   findNpcTargetByName,
   findTargetPlayerEntityByName,
   markInCombat,
 } from "../MudHelperFunctions";
-
 import {
   getTrainingDummyForRoom,
   computeTrainingDummyDamage,
   startTrainingDummyAi,
 } from "../MudTrainingDummy";
-
 import { applyProgressionForEvent } from "../MudProgressionHooks";
 import { applyProgressionEvent } from "../../progression/ProgressionCore";
-
 import {
   performNpcAttack as performNpcAttackCore,
   scheduleNpcCorpseAndRespawn as scheduleNpcCorpseAndRespawnCore,
@@ -96,7 +92,8 @@ export async function handleAttackAction(
     // If this line indicates a kill, emit the event then let the hook react.
     if (result.includes("You slay")) {
       const protoId =
-        ctx.npcs?.getNpcStateByEntityId(npcTarget.id)?.protoId ?? npcTarget.name;
+        ctx.npcs?.getNpcStateByEntityId(npcTarget.id)?.protoId ??
+        npcTarget.name;
 
       // 1) record the kill in progression
       applyProgressionEvent(char, {
@@ -111,6 +108,7 @@ export async function handleAttackAction(
         "kills",
         protoId,
       );
+
       if (snippets.length > 0) {
         result += " " + snippets.join(" ");
       }
@@ -125,6 +123,7 @@ export async function handleAttackAction(
     roomId,
     targetNameRaw,
   );
+
   if (playerTarget) {
     return "You can't attack other players here (PvP zones will come later).";
   }
@@ -154,6 +153,7 @@ export async function handleAttackAction(
     dummyInstance.hp = Math.max(0, dummyInstance.hp - dmg);
 
     let line: string;
+
     if (dummyInstance.hp > 0) {
       line =
         `[combat] You hit the Training Dummy for ${dmg} damage. ` +

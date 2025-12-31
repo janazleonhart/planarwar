@@ -1,6 +1,6 @@
 // worldcore/actions/WorldActionService.ts
 
-import { ActionRequest } from "./ActionTypes";
+import type { ActionRequest } from "./ActionTypes";
 import { handleAttackAction, handleGatherAction } from "../mud/MudActions";
 import type { MudContext } from "../mud/MudContext";
 import type { CharacterState } from "../characters/CharacterTypes";
@@ -32,7 +32,7 @@ export interface ActionResult {
  * GatheringKind + resource tag used by Progression + NPC tags.
  */
 function resolveGatheringKindAndTag(
-  resourceType?: "ore" | "herb" | "wood" | "fish"
+  resourceType?: "ore" | "herb" | "wood" | "fish",
 ): { kind: GatheringKind; tag: string } {
   switch (resourceType) {
     case "herb":
@@ -56,13 +56,12 @@ function resolveGatheringKindAndTag(
 export async function performAction(
   ctx: WorldActionContext & MudContext,
   char: CharacterState,
-  req: ActionRequest
+  req: ActionRequest,
 ): Promise<ActionResult> {
   switch (req.kind) {
     case "attack": {
       // v1 behavior: prefer targetName, fall back to targetId if present.
       const target = req.targetName ?? req.targetId ?? "";
-
       if (!target) {
         return { messages: ["Usage: attack <target>"] };
       }
@@ -70,29 +69,25 @@ export async function performAction(
       const msg = await handleAttackAction(
         ctx as unknown as MudContext,
         char,
-        target
+        target,
       );
-
       return { messages: [msg] };
     }
 
     case "harvest": {
       const targetName = req.targetName ?? req.targetId ?? "";
-
       if (!targetName) {
         return { messages: ["Usage: harvest <target>"] };
       }
 
       const { kind, tag } = resolveGatheringKindAndTag(req.resourceType);
-
       const msg = await handleGatherAction(
         ctx as unknown as MudContext,
         char,
         targetName,
         kind,
-        tag
+        tag,
       );
-
       return { messages: [msg] };
     }
 

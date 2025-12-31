@@ -1,20 +1,17 @@
 // worldcore/mud/actions/MudWorldActions.ts
 
-import { MudContext } from "../MudContext";
-import { CharacterState } from "../../characters/CharacterTypes";
-
+import type { MudContext } from "../MudContext";
+import type { CharacterState } from "../../characters/CharacterTypes";
 import { getNpcPrototype } from "../../npc/NpcTypes";
 import { resolveTargetInRoom } from "../../targeting/TargetResolver";
-
 import { applyProgressionForEvent } from "../MudProgressionHooks";
-import { applyProgressionEvent, setNodeDepletedUntil } from "../../progression/ProgressionCore";
-
+import {
+  applyProgressionEvent,
+  setNodeDepletedUntil,
+} from "../../progression/ProgressionCore";
 import { resolveItem } from "../../items/resolveItem";
-
 import { describeLootLine, rollInt } from "../MudHelperFunctions";
-
 import type { GatheringKind } from "../../progression/ProgressEvents";
-
 import { Logger } from "../../utils/logger";
 import { scheduleNpcCorpseAndRespawn } from "./MudCombatActions";
 
@@ -40,9 +37,9 @@ export async function handleGatherAction(
   const npcs = ctx.npcs;
   const entities = ctx.entities;
 
-  const selfEntity = ctx.entities.getEntityByOwner(ctx.session.id);
+  const selfEntity = entities.getEntityByOwner(ctx.session.id);
   if (!selfEntity) {
-    return "You don’t have a world entity yet.";
+    return "You don't have a world entity yet.";
   }
 
   const roomId = selfEntity.roomId ?? char.shardId;
@@ -52,9 +49,9 @@ export async function handleGatherAction(
     filter: (e) => {
       if (e.type === "player") return false;
       if (e.type !== "node" && e.type !== "object") return false;
-
       if (typeof (e as any).spawnPointId !== "number") return false;
 
+      // Per-player resource nodes (e.g. ore veins) honor ownership.
       if (
         (e as any).ownerSessionId &&
         (e as any).ownerSessionId !== ctx.session.id
@@ -70,7 +67,9 @@ export async function handleGatherAction(
     },
   });
 
-  if (!target) return `There is no '${what}' here to gather.`;
+  if (!target) {
+    return `There is no '${what}' here to gather.`;
+  }
 
   if (typeof (target as any).spawnPointId !== "number") {
     return "That isn't a real resource node.";
@@ -78,12 +77,12 @@ export async function handleGatherAction(
 
   const npcState = ctx.npcs.getNpcStateByEntityId(target.id);
   if (!npcState) {
-    return "You can’t gather that.";
+    return "You can't gather that.";
   }
 
   const proto = getNpcPrototype(npcState.protoId);
   if (!proto || !proto.tags || !proto.tags.includes(resourceTag)) {
-    return "That doesn’t look gatherable.";
+    return "That doesn't look gatherable.";
   }
 
   // ---- NEW: generic progression event ----
@@ -105,7 +104,7 @@ export async function handleGatherAction(
   // Chip away one HP/charge
   const newHp = ctx.npcs.applyDamage(target.id, 1);
   if (newHp === null) {
-    return "You can’t gather that.";
+    return "You can't gather that.";
   }
 
   const lootLines: string[] = [];
@@ -153,6 +152,7 @@ export async function handleGatherAction(
   }
 
   let line = `[harvest] You chip away at ${target.name}.`;
+
   if (lootLines.length > 0) {
     line += ` You gather ${lootLines.join(", ")}.`;
   }
@@ -165,8 +165,8 @@ export async function handleGatherAction(
         gatheringKind === "mining"
           ? 120
           : gatheringKind === "herbalism"
-          ? 90
-          : 120;
+            ? 90
+            : 120;
 
       setNodeDepletedUntil(
         char,

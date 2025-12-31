@@ -12,7 +12,7 @@ export interface MailSummary {
   id: number;
   senderName: string;
   subject: string;
-  sentAt: string;   // ISO
+  sentAt: string; // ISO
   read: boolean;
   hasAttachments: boolean;
 }

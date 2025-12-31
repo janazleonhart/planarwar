@@ -133,13 +133,12 @@ let redisConnecting = false;
  * - If the connection later closes, redisConnecting remains true; additional
  *   calls to ensureRedisConnected() will no-op. If you need automatic
  *   reconnect-on-demand semantics, consider:
- *     - Checking redis.isOpen before returning, and
- *     - Tracking a shared Promise instead of a boolean (single-flight).
+ *   - Checking redis.isOpen before returning, and
+ *   - Tracking a shared Promise instead of a boolean (single-flight).
  */
 export async function ensureRedisConnected(): Promise<void> {
   if (redisConnecting) return;
   redisConnecting = true;
-
   try {
     await redis.connect();
   } catch (err) {

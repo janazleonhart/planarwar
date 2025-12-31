@@ -1,15 +1,15 @@
 // worldcore/ai/LocalSimpleNpcBrain.ts
 
-import { type NpcBehavior } from "../npc/NpcTypes";
-import {
-  type NpcBrain,
-  type NpcPerception,
-  type NpcDecision,
+import type { NpcBehavior } from "../npc/NpcTypes";
+import type {
+  NpcBrain,
+  NpcPerception,
+  NpcDecision,
 } from "./NpcBrainTypes";
 import {
   decideAggressiveBehavior,
 } from "./brains/AggressiveBrain";
-import { type BehaviorHandler } from "./brains/BehaviorContext";
+import type { BehaviorHandler } from "./brains/BehaviorContext";
 import { decideCowardBehavior } from "./brains/CowardBrain";
 import { decideGuardBehavior } from "./brains/GuardBrain";
 import { decideNeutralBehavior } from "./brains/NeutralBrain";
@@ -21,11 +21,12 @@ const DEFAULT_COOLDOWN_MS = 2000;
  *
  * - If not hostile → does nothing
  * - If no players → does nothing
- * - If behavior === "coward" and HP < maxHP → emits flee
- * - Otherwise: attack the first player in the room on cooldown
+ * - Behavior is delegated to per-profile brains (aggressive/guard/coward/neutral)
+ * - Cooldowns are tracked per-NPC
  */
 export class LocalSimpleAggroBrain implements NpcBrain {
   private readonly attackCooldownMs: number;
+
   private readonly cooldowns = new Map<string, number>();
   private readonly guardWarnings = new Map<string, Set<string>>();
   private readonly guardHelpCalls = new Map<string, Set<string>>();
@@ -44,17 +45,32 @@ export class LocalSimpleAggroBrain implements NpcBrain {
     this.attackCooldownMs = attackCooldownMs;
   }
 
-  hasWarnedTarget(npcId: string, characterId: string): boolean {
-    return this.guardWarnings.get(npcId)?.has(characterId) ?? false;
-  }
+  // --- Guard memory helpers -------------------------------------------------
 
-  markWarnedTarget(npcId: string, characterId: string): void {
+  private getWarnedSet(npcId: string): Set<string> {
     let set = this.guardWarnings.get(npcId);
     if (!set) {
       set = new Set<string>();
       this.guardWarnings.set(npcId, set);
     }
-    set.add(characterId);
+    return set;
+  }
+
+  private getHelpSet(npcId: string): Set<string> {
+    let set = this.guardHelpCalls.get(npcId);
+    if (!set) {
+      set = new Set<string>();
+      this.guardHelpCalls.set(npcId, set);
+    }
+    return set;
+  }
+
+  hasWarnedTarget(npcId: string, characterId: string): boolean {
+    return this.guardWarnings.get(npcId)?.has(characterId) ?? false;
+  }
+
+  markWarnedTarget(npcId: string, characterId: string): void {
+    this.getWarnedSet(npcId).add(characterId);
   }
 
   hasCalledHelp(npcId: string, characterId: string): boolean {
@@ -62,13 +78,19 @@ export class LocalSimpleAggroBrain implements NpcBrain {
   }
 
   markCalledHelp(npcId: string, characterId: string): void {
-    let set = this.guardHelpCalls.get(npcId);
-    if (!set) {
-      set = new Set<string>();
-      this.guardHelpCalls.set(npcId, set);
-    }
-    set.add(characterId);
+    this.getHelpSet(npcId).add(characterId);
   }
+
+  /**
+   * Clear all guard memory (warnings/help) for a specific guard NPC.
+   * Used when the guard "stands down" after no criminals remain.
+   */
+  clearGuardMemoryForNpc(npcId: string): void {
+    this.guardWarnings.delete(npcId);
+    this.guardHelpCalls.delete(npcId);
+  }
+
+  // --- Core brain dispatch --------------------------------------------------
 
   decide(perception: NpcPerception, dtMs: number): NpcDecision | null {
     const npcKey = perception.npcId;
@@ -78,10 +100,10 @@ export class LocalSimpleAggroBrain implements NpcBrain {
     const newCd = Math.max(0, prevCd - dtMs);
     this.cooldowns.set(npcKey, newCd);
 
-    const behavior = perception.behavior ?? "aggressive";
+    const behavior = (perception.behavior ?? "aggressive") as NpcBehavior;
     const isGuard = behavior === "guard";
 
-    // Dead / non-hostile → nothing
+    // Dead / non-hostile (except guards, which still react to crime) → nothing
     if (!perception.alive || (!perception.hostile && !isGuard)) {
       return null;
     }
@@ -101,14 +123,15 @@ export class LocalSimpleAggroBrain implements NpcBrain {
       attackCooldownMs: this.attackCooldownMs,
       setCooldownMs: (value: number) => this.cooldowns.set(npcKey, value),
       guardMemory: {
-        hasWarned: (npcId: string, characterId: string) =>
+        hasWarned: (npcId, characterId) =>
           this.hasWarnedTarget(npcId, characterId),
-        markWarned: (npcId: string, characterId: string) =>
+        markWarned: (npcId, characterId) =>
           this.markWarnedTarget(npcId, characterId),
-        hasCalledHelp: (npcId: string, characterId: string) =>
+        hasCalledHelp: (npcId, characterId) =>
           this.hasCalledHelp(npcId, characterId),
-        markCalledHelp: (npcId: string, characterId: string) =>
+        markCalledHelp: (npcId, characterId) =>
           this.markCalledHelp(npcId, characterId),
+        clearForNpc: (npcId) => this.clearGuardMemoryForNpc(npcId),
       },
     });
   }

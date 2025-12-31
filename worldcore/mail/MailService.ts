@@ -1,24 +1,34 @@
 // worldcore/mail/MailService.ts
 
-import type { InventoryState, CharacterState } from "../characters/CharacterTypes";
-import type { ItemService } from "../items/ItemService";
-import type { MailOwnerKind, MailSummary, MailDetail, MailAttachment } from "./MailTypes";
+import type { CharacterState } from "../characters/CharacterTypes";
+import type {
+  MailOwnerKind,
+  MailSummary,
+  MailDetail,
+  MailAttachment,
+} from "./MailTypes";
 
 export interface MailService {
-  getOrCreateMailbox(ownerId: string, ownerKind: MailOwnerKind): Promise<number>;
+  getOrCreateMailbox(
+    ownerId: string,
+    ownerKind: MailOwnerKind,
+  ): Promise<number>;
 
-  listMail(ownerId: string, ownerKind: MailOwnerKind): Promise<MailSummary[]>;
+  listMail(
+    ownerId: string,
+    ownerKind: MailOwnerKind,
+  ): Promise<MailSummary[]>;
 
   getMail(
     ownerId: string,
     ownerKind: MailOwnerKind,
-    mailId: number
+    mailId: number,
   ): Promise<MailDetail | null>;
 
   markRead(
     ownerId: string,
     ownerKind: MailOwnerKind,
-    mailId: number
+    mailId: number,
   ): Promise<void>;
 
   sendSystemMail(
@@ -27,7 +37,7 @@ export interface MailService {
     subject: string,
     body: string,
     attachments?: MailAttachment[],
-    expiresAt?: Date
+    expiresAt?: Date,
   ): Promise<void>;
 
   /**
@@ -39,7 +49,6 @@ export interface MailService {
     ownerId: string,
     ownerKind: MailOwnerKind,
     mailId: number,
-    char: CharacterState
+    char: CharacterState,
   ): Promise<{ claimed: number; leftover: number }>;
 }
-
