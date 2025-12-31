@@ -17,7 +17,8 @@ import { AuthService } from "./AuthService";
 const log = Logger.scope("AUTH");
 
 // JWT secret + lifetime
-const JWT_SECRET = process.env.PW_AUTH_JWT_SECRET || "99-weee99reee99-weeree99-reewee99";
+const JWT_SECRET =
+  process.env.PW_AUTH_JWT_SECRET || "99-weee99reee99-weeree99-reewee99";
 const JWT_LIFETIME_SECONDS = Number(
   process.env.PW_AUTH_JWT_LIFETIME || 60 * 60 * 24 * 7
 ); // default 7 days
@@ -127,7 +128,9 @@ export class PostgresAuthService implements AuthService {
 
     const flagsJson = JSON.stringify(effectiveFlags);
 
-    const result = await db.query<AccountRow>(
+    // NOTE: db.query is treated as "untyped" in this project, so we do not pass
+    // generic type args (db.query<AccountRow>) to avoid TS2347.
+    const result = await db.query(
       `
       INSERT INTO accounts (email, display_name, password_hash, password_salt, flags)
       VALUES ($1, $2, $3, $4, $5::jsonb)
@@ -136,7 +139,9 @@ export class PostgresAuthService implements AuthService {
       [trimmedEmail, trimmedName, hash, salt, flagsJson]
     );
 
-    const row = result.rows[0];
+    const row = (result.rows[0] as AccountRow) ?? null;
+    if (!row) throw new Error("register_failed");
+
     const profile = rowToProfile(row);
     const payload = makeTokenPayload(profile);
     const token = signToken(payload);
@@ -158,18 +163,29 @@ export class PostgresAuthService implements AuthService {
     emailOrName: string,
     password: string
   ): Promise<AuthResult> {
-    const query = emailOrName.includes("@")
+    // Critical fix:
+    // - If the identifier is an email, normalize to lower-case to match
+    //   registerAccount() behavior (which stores emails as lower-case).
+    const raw = emailOrName.trim();
+    const isEmail = raw.includes("@");
+    const lookup = isEmail ? raw.toLowerCase() : raw;
+
+    const query = isEmail
       ? "SELECT * FROM accounts WHERE email = $1"
       : "SELECT * FROM accounts WHERE display_name = $1";
 
-    const result = await db.query<AccountRow>(query, [emailOrName.trim()]);
+    const result = await db.query(query, [lookup]);
 
-    if (result.rowCount === 0) {
-      log.warn("Login failed: account not found", { emailOrName });
+    if (!result || result.rowCount === 0) {
+      log.warn("Login failed: account not found", { emailOrName: raw });
       throw new Error("invalid_credentials");
     }
 
-    const row = result.rows[0];
+    const row = (result.rows[0] as AccountRow) ?? null;
+    if (!row) {
+      log.warn("Login failed: missing row despite rowCount", { emailOrName: raw });
+      throw new Error("invalid_credentials");
+    }
 
     if (!verifyPassword(password, row.password_salt, row.password_hash)) {
       log.warn("Login failed: bad password", { userId: row.id });
@@ -203,11 +219,12 @@ export class PostgresAuthService implements AuthService {
   }
 
   async getAccountById(id: UserId): Promise<AccountProfile | null> {
-    const result = await db.query<AccountRow>(
-      "SELECT * FROM accounts WHERE id = $1",
-      [id]
-    );
-    if (result.rowCount === 0) return null;
-    return rowToProfile(result.rows[0]);
+    const result = await db.query("SELECT * FROM accounts WHERE id = $1", [id]);
+    if (!result || result.rowCount === 0) return null;
+
+    const row = (result.rows[0] as AccountRow) ?? null;
+    if (!row) return null;
+
+    return rowToProfile(row);
   }
 }

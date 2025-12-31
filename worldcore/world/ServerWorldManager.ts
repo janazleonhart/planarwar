@@ -1,4 +1,4 @@
-//worldcore/world/ServerWorldManager.ts
+// worldcore/world/ServerWorldManager.ts
 
 /**
  * Server-side world authority for the shard. Owns the Heightmap and RegionMap,
@@ -10,24 +10,27 @@ import { Logger } from "../utils/logger";
 import { Heightmap } from "../terrain/height/Heightmap";
 import { RegionMap } from "../terrain/regions/RegionMap";
 import type { Region } from "../terrain/regions/RegionTypes";
+import { WorldBlueprint } from "../shards/WorldBlueprint";
+import { buildWorldBlueprint } from "../terrain/worldgen/ScaledWorldgen";
+import type { WorldBlueprintProvider } from "../core/RoomManager";
 
 import {
-  WorldBlueprint,
-} from "../shards/WorldBlueprint";
-import { buildWorldBlueprint } from "../terrain/worldgen/ScaledWorldgen";
-
-import type { WorldBlueprintProvider } from "../core/RoomManager";
+  PRIME_SHARD_REGIONS,
+  buildRegionSemanticIndex,
+  flagsToSemanticTags,
+  type RegionSemanticDefinition,
+} from "./PrimeShardRegions";
 
 export class ServerWorldManager implements WorldBlueprintProvider {
   private readonly log = Logger.scope("WORLD");
 
   private readonly seed: number;
-
   private readonly heightmap: Heightmap;
   private readonly regionMap: RegionMap;
-
   private readonly world: WorldBlueprint;
   private readonly shardId: string;
+
+  private regionSemanticById: Map<string, RegionSemanticDefinition>;
 
   constructor(seed: number = 0x1234abcd) {
     this.seed = seed;
@@ -39,16 +42,16 @@ export class ServerWorldManager implements WorldBlueprintProvider {
       shardId: "prime_shard",
       seed,
     });
+
     this.world = bp;
     this.shardId = bp.shardId ?? "prime_shard";
 
     const worldRadius =
-      (bp.boundary && typeof bp.boundary.radius === "number"
+      bp.boundary && typeof bp.boundary.radius === "number"
         ? bp.boundary.radius
-        : 2048);
+        : 2048;
 
     // --- Heightmap / RegionMap setup ---------------------------------------
-
     // Heightmap is the continuous terrain function
     this.heightmap = new Heightmap(this.seed);
 
@@ -60,6 +63,11 @@ export class ServerWorldManager implements WorldBlueprintProvider {
       cellSize: 64,
     });
 
+    // --- Region semantics overlay ------------------------------------------
+    // This is the “MMO meaning” layer: names/flags/law/tier for key regions.
+    // (kept separate from terrain generation)
+    this.regionSemanticById = buildRegionSemanticIndex(PRIME_SHARD_REGIONS);
+
     this.log.info("ServerWorldManager initialized", {
       worldId: this.world.id,
       worldName: this.world.name,
@@ -68,6 +76,7 @@ export class ServerWorldManager implements WorldBlueprintProvider {
       regionCount: this.world.regions?.length ?? 0,
       worldRadius,
       cellSize: this.regionMap.cellSize,
+      semanticRegions: this.regionSemanticById.size,
     });
   }
 
@@ -101,10 +110,42 @@ export class ServerWorldManager implements WorldBlueprintProvider {
   }
 
   /**
+   * Allow the composition root (or future shard loader) to replace region defs.
+   */
+  setRegionDefinitions(defs: RegionSemanticDefinition[]): void {
+    this.regionSemanticById = buildRegionSemanticIndex(defs);
+  }
+
+  /**
    * Convenience: fetch the Region summary at world-space (x, z).
+   * This returns the terrain Region, optionally enriched with semantic metadata.
    */
   getRegionAt(x: number, z: number): Region | undefined {
-    return this.regionMap.getRegionAt(x, z);
+    const base = this.regionMap.getRegionAt(x, z);
+    if (!base) return undefined;
+
+    const meta = this.regionSemanticById.get(base.id);
+    if (!meta) return base;
+
+    const semanticTags = [
+      ...(meta.tags ?? []),
+      ...flagsToSemanticTags(meta.flags),
+    ];
+
+    const mergedTags = Array.from(
+      new Set([...(base.tags ?? []), ...semanticTags]),
+    );
+
+    // We intentionally return an object that is *wider* than Region.
+    // TS is fine with this at runtime; consumers can opt into these fields.
+    return {
+      ...base,
+      name: meta.name,
+      tier: meta.tier,
+      lawLevel: meta.lawLevel,
+      flags: meta.flags,
+      tags: mergedTags,
+    } as any;
   }
 
   /**

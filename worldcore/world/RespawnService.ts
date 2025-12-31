@@ -2,12 +2,10 @@
 
 import { Logger } from "../utils/logger";
 import type { CharacterState } from "../characters/CharacterTypes";
-import {
-  hasActiveCrimeHeat,
-  getCrimeHeatLabel,
-} from "../characters/CharacterTypes";
+import { hasActiveCrimeHeat, getCrimeHeatLabel } from "../characters/CharacterTypes";
 import type { ServerWorldManager } from "./ServerWorldManager";
-import { SpawnPointService, DbSpawnPoint } from "./SpawnPointService";
+import type { DbSpawnPoint } from "./SpawnPointService";
+import { SpawnPointService } from "./SpawnPointService";
 import { EntityManager } from "../core/EntityManager";
 import type { Session } from "../shared/Session";
 
@@ -21,18 +19,15 @@ const log = Logger.scope("RESPAWN");
 /**
  * Handles picking a spawn point and resetting runtime + persisted state.
  *
- * v1:
- *  - Picks a reasonably near spawn point for the character.
- *  - Teleports entity there, full-heals, clears combat.
- *  - Saves CharacterState with the new position + lastRegionId.
+ * v3 (this pass):
+ * - Graveyards are no longer always preferred.
+ * - If a town/hub/city is closer than the nearest graveyard (and eligible),
+ *   we respawn at the closer settlement instead.
  *
- * v2 (this pass):
- *  - Prefers "graveyard" / "hub" spawn types where available, so
- *    death returns you to a proper graveyard / safe hub instead of
- *    an arbitrary spawn row.
- *
- * Later, this is where shard death rules + sanctuary / safe-hub
- * logic plug in.
+ * Eligibility hook:
+ * - In the future: town/hub respawn is only allowed if the player isn't KOS there.
+ * - For now: all settlements are allowed unless spawn.variantId is "kos" or "hostile"
+ *   (tiny placeholder so we can test behavior immediately).
  */
 export class RespawnService {
   constructor(
@@ -126,23 +121,20 @@ export class RespawnService {
   // -------------------------------------------------------------------------
 
   /**
-   * v2 spawn selection:
+   * Spawn selection:
    *
    * 1) If we know lastRegionId:
    *    - Get region spawns for that region.
-   *    - Prefer type "graveyard" first, then hub-like types.
+   *    - Pick best respawn spawn using distance+policy:
+   *      settlement if closer than graveyard (and eligible), else graveyard.
    *
-   * 2) Otherwise, look for nearby spawns in world-space and again
-   *    prefer graveyard / hub types when possible.
+   * 2) Otherwise, look for nearby spawns in world-space and pick best respawn spawn.
    *
    * 3) Fallback to the region at world origin (0,0).
    *
-   * 4) Absolute last resort: no spawn – stand the character up where
-   *    they died.
+   * 4) Absolute last resort: no spawn – stand the character up where they died.
    */
-  private async pickSpawnPointFor(
-    char: CharacterState,
-  ): Promise<DbSpawnPoint | null> {
+  private async pickSpawnPointFor(char: CharacterState): Promise<DbSpawnPoint | null> {
     const shardId = char.shardId;
 
     // 1) Try by lastRegionId first (strongest hint about where they belong).
@@ -154,13 +146,8 @@ export class RespawnService {
         );
 
         if (regionSpawns.length > 0) {
-          const best = this.chooseBestSpawn(regionSpawns);
-          if (best) {
-            return best;
-          }
-
-          // Fallback within region: just return the first row.
-          return regionSpawns[0];
+          const best = this.chooseBestRespawnSpawn(char, regionSpawns);
+          return best ?? regionSpawns[0];
         }
       } catch (err) {
         log.warn("getSpawnPointsForRegion failed", {
@@ -173,7 +160,7 @@ export class RespawnService {
 
     // 2) Try nearby spawns in world-space around current position.
     try {
-      const radius = 500; // meters; v1 “graveyard radius” placeholder.
+      const radius = 500; // placeholder "coverage radius"
       const nearby = await this.spawnPoints.getSpawnPointsNear(
         shardId,
         char.posX,
@@ -182,37 +169,8 @@ export class RespawnService {
       );
 
       if (nearby.length > 0) {
-        // Prefer graveyard / hub types if any exist in the nearby set.
-        const preferred = this.chooseBestSpawn(nearby);
-        if (preferred) {
-          return preferred;
-        }
-
-        // Otherwise: choose the closest one by x/z distance (existing behavior).
-        let best = nearby[0];
-        let bestDistSq = this.distSq(
-          char.posX,
-          char.posZ,
-          nearby[0].x ?? char.posX,
-          nearby[0].z ?? char.posZ,
-        );
-
-        for (let i = 1; i < nearby.length; i++) {
-          const sp = nearby[i];
-          const d2 = this.distSq(
-            char.posX,
-            char.posZ,
-            sp.x ?? char.posX,
-            sp.z ?? char.posZ,
-          );
-
-          if (d2 < bestDistSq) {
-            best = sp;
-            bestDistSq = d2;
-          }
-        }
-
-        return best;
+        const best = this.chooseBestRespawnSpawn(char, nearby);
+        return best ?? this.chooseClosestByDistance(char, nearby) ?? nearby[0];
       }
     } catch (err) {
       log.warn("getSpawnPointsNear failed", {
@@ -226,7 +184,6 @@ export class RespawnService {
     // 3) Fallback: world origin region if it exists and has spawns.
     try {
       const region = this.world.getRegionAt(0, 0);
-
       if (region) {
         const originSpawns = await this.spawnPoints.getSpawnPointsForRegion(
           shardId,
@@ -234,60 +191,139 @@ export class RespawnService {
         );
 
         if (originSpawns.length > 0) {
-          const best = this.chooseBestSpawn(originSpawns);
-          if (best) {
-            return best;
-          }
-
-          return originSpawns[0];
+          const best = this.chooseBestRespawnSpawn(char, originSpawns);
+          return best ?? originSpawns[0];
         }
       }
     } catch (err) {
       log.warn("Fallback spawn lookup failed", { err, shardId });
     }
 
-    // 4) Absolute last resort: “no spawn”, we’ll stand the character up
-    // where they died.
+    // 4) Absolute last resort: “no spawn”, we’ll stand the character up where they died.
     return null;
   }
 
   /**
-   * Choose the "best" spawn from a set, based purely on type hints.
+   * Best respawn rule:
+   * - Let settlement spawns (town/hub/city/etc) "win" if they are closer than the nearest graveyard,
+   *   AND the settlement is eligible for this character.
+   * - Otherwise choose nearest graveyard.
+   * - Otherwise choose nearest spawn of any type.
    *
-   * This does NOT consider distance – the caller is expected to
-   * provide a relevant subset (region-only, nearby-only, etc.).
-   *
-   * Priority:
-   *  1) type in GRAVEYARD_TYPES
-   *  2) type in HUB_TYPES
-   *  3) otherwise: no opinion (caller falls back to first/closest)
+   * NOTE: This relies on distance, so it gracefully handles cross-region spawns too.
    */
-  private chooseBestSpawn(spawns: DbSpawnPoint[]): DbSpawnPoint | null {
+  private chooseBestRespawnSpawn(char: CharacterState, spawns: DbSpawnPoint[]): DbSpawnPoint | null {
     if (!spawns.length) return null;
 
-    const GRAVEYARD_TYPES = new Set([
-      "graveyard",
-      "graveyard_player",
-      "graveyard_safe",
-    ]);
+    let nearestAny: DbSpawnPoint | null = null;
+    let nearestAnyD2 = Number.POSITIVE_INFINITY;
 
-    const HUB_TYPES = new Set([
-      "hub",
-      "town",
-      "city",
-      "safe_hub",
-      "player_start",
-    ]);
+    let nearestGy: DbSpawnPoint | null = null;
+    let nearestGyD2 = Number.POSITIVE_INFINITY;
 
-    // 1) Hard graveyard preference.
-    const graveyard = spawns.find((sp) => GRAVEYARD_TYPES.has(sp.type));
+    let nearestSettlement: DbSpawnPoint | null = null;
+    let nearestSettlementD2 = Number.POSITIVE_INFINITY;
+
+    for (const sp of spawns) {
+      const sx = sp.x;
+      const sz = sp.z;
+      if (typeof sx !== "number" || typeof sz !== "number") continue;
+
+      const d2 = this.distSq(char.posX, char.posZ, sx, sz);
+
+      if (d2 < nearestAnyD2) {
+        nearestAny = sp;
+        nearestAnyD2 = d2;
+      }
+
+      if (this.isGraveyardType(sp.type)) {
+        if (d2 < nearestGyD2) {
+          nearestGy = sp;
+          nearestGyD2 = d2;
+        }
+        continue;
+      }
+
+      if (this.isSettlementType(sp.type) && this.isSettlementEligibleFor(char, sp)) {
+        if (d2 < nearestSettlementD2) {
+          nearestSettlement = sp;
+          nearestSettlementD2 = d2;
+        }
+      }
+    }
+
+    // If settlement is closer than graveyard (or there is no graveyard), pick settlement.
+    if (nearestSettlement && (!nearestGy || nearestSettlementD2 < nearestGyD2)) {
+      return nearestSettlement;
+    }
+
+    // Otherwise pick graveyard if any.
+    if (nearestGy) return nearestGy;
+
+    // Otherwise pick closest of any type.
+    if (nearestAny) return nearestAny;
+
+    // No coordinate-bearing spawns; fall back to "type-only" preference.
+    return this.chooseBestSpawnByTypeOnly(spawns);
+  }
+
+  private chooseClosestByDistance(char: CharacterState, spawns: DbSpawnPoint[]): DbSpawnPoint | null {
+    let best: DbSpawnPoint | null = null;
+    let bestD2 = Number.POSITIVE_INFINITY;
+
+    for (const sp of spawns) {
+      if (typeof sp.x !== "number" || typeof sp.z !== "number") continue;
+      const d2 = this.distSq(char.posX, char.posZ, sp.x, sp.z);
+      if (d2 < bestD2) {
+        best = sp;
+        bestD2 = d2;
+      }
+    }
+
+    return best;
+  }
+
+  /**
+   * Placeholder settlement eligibility.
+   *
+   * Future: check faction standings / KOS / sanctuary rules.
+   * For now:
+   * - allow by default
+   * - BUT if the spawn carries variantId "kos" or "hostile", treat it as not eligible.
+   *   (This gives you an immediate on/off lever for testing before faction is built.)
+   */
+  private isSettlementEligibleFor(_char: CharacterState, spawn: DbSpawnPoint): boolean {
+    const v = spawn.variantId;
+    if (v === "kos" || v === "hostile") return false;
+    return true;
+  }
+
+  private isGraveyardType(type: string): boolean {
+    return type === "graveyard" || type === "graveyard_player" || type === "graveyard_safe";
+  }
+
+  private isSettlementType(type: string): boolean {
+    // Settlement-ish spawn types
+    return (
+      type === "hub" ||
+      type === "town" ||
+      type === "city" ||
+      type === "safe_hub" ||
+      type === "player_start"
+    );
+  }
+
+  /**
+   * Type-only preference used only when no spawns have x/z (rare).
+   * Kept to avoid breaking behavior in edge data states.
+   */
+  private chooseBestSpawnByTypeOnly(spawns: DbSpawnPoint[]): DbSpawnPoint | null {
+    const graveyard = spawns.find((sp) => this.isGraveyardType(sp.type));
     if (graveyard) return graveyard;
 
-    // 2) Otherwise, hub-like safe areas.
-    const hub = spawns.find((sp) => HUB_TYPES.has(sp.type));
-    if (hub) return hub;
+    const settlement = spawns.find((sp) => this.isSettlementType(sp.type));
+    if (settlement) return settlement;
 
-    // 3) No strong preference within this set.
     return null;
   }
 
