@@ -108,7 +108,7 @@ export interface WorldServicesOptions {
  * can share instead of re-instantiating individual services.
  */
 export async function createWorldServices(
-  seedOrOptions?: number | WorldServicesOptions
+  seedOrOptions?: number | WorldServicesOptions,
 ): Promise<WorldServices> {
   const options: WorldServicesOptions =
     typeof seedOrOptions === "number"
@@ -176,7 +176,9 @@ export async function createWorldServices(
   try {
     await items.loadAll();
   } catch (err) {
-    log.warn("ItemService loadAll failed; continuing with empty cache", { err });
+    log.warn("ItemService loadAll failed; continuing with empty cache", {
+      err,
+    });
   }
 
   const guilds = new GuildService();
@@ -202,7 +204,7 @@ export async function createWorldServices(
       intervalMs: tickIntervalMs,
       onTick: options.onTick,
     },
-    npcs
+    npcs,
   );
 
   const router = new MessageRouter(

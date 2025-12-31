@@ -2,22 +2,18 @@
 
 import type { CharacterState } from "../characters/CharacterTypes";
 import type { Entity } from "../shared/Entity";
-
 import { Logger } from "../utils/logger";
 import { getNpcPrototype } from "../npc/NpcTypes";
-
 import {
   markInCombat,
   isDeadEntity,
   applySimpleDamageToPlayer,
   computeNpcMeleeDamage,
 } from "./entityCombat";
-
 import { describeLootLine } from "../loot/lootText";
 import { rollInt } from "../utils/random";
 import { getItemTemplate } from "../items/ItemCatalog";
 import { addItemToBags } from "../items/InventoryHelpers";
-
 import {
   computeDamage,
   type CombatSource,
@@ -25,14 +21,11 @@ import {
   type WeaponSkillId,
   type SpellSchoolId,
 } from "./CombatEngine";
-
 import type { AttackChannel } from "../actions/ActionTypes";
-
 import {
   gainPowerResource,
   getPrimaryPowerResourceForClass,
 } from "../resources/PowerResources";
-
 import {
   gainWeaponSkill,
   gainSpellSchoolSkill,
@@ -41,6 +34,7 @@ import {
 } from "../skills/SkillProgression";
 
 const log = Logger.scope("NPC_COMBAT");
+
 type SimpleCombatContext = {
   [key: string]: any;
   npcs?: any;
@@ -56,11 +50,10 @@ export interface NpcAttackOptions {
   abilityName?: string;
   damageMultiplier?: number;
   flatBonus?: number;
-  tagPrefix?: string;        // "ability" | "spell" etc.
-  channel?: AttackChannel;   // default: "weapon"
+  tagPrefix?: string; // "ability" | "spell" etc.
+  channel?: AttackChannel; // default: "weapon"
   weaponSkill?: WeaponSkillId;
   spellSchool?: SpellSchoolId;
-
   // For Virtuoso songs
   songSchool?: SongSchoolId;
   isSong?: boolean;
@@ -121,14 +114,15 @@ export async function performNpcAttack(
       entityId: selfEntity.id,
     });
 
-  // If manager returns an authoritative HP value, correct dmg to actual delta.
-  if (typeof appliedHp === "number") {
-    dmg = Math.max(0, prevHp - appliedHp);
-    newHp = appliedHp;
-  } else {
-    // Fallback if manager couldn't find the NPC or returned null/undefined
-    (npc as any).hp = newHp;
-  }
+    // If manager returns an authoritative HP value, correct dmg to actual delta.
+    if (typeof appliedHp === "number") {
+      dmg = Math.max(0, prevHp - appliedHp);
+      newHp = appliedHp;
+    } else {
+      // Fallback if manager couldn't find the NPC or returned null/undefined
+      (npc as any).hp = newHp;
+    }
+
     // Always update threat so brains see the attacker
     ctx.npcs.recordDamage(npc.id, selfEntity.id);
   } else {
@@ -198,7 +192,12 @@ export async function performNpcAttack(
   // Resolve prototype for rewards
   let xpReward = 10;
   let lootEntries:
-    | { itemId: string; chance: number; minQty: number; maxQty: number }[]
+    | {
+        itemId: string;
+        chance: number;
+        minQty: number;
+        maxQty: number;
+      }[]
     | [] = [];
 
   try {
@@ -294,15 +293,12 @@ export async function performNpcAttack(
       }
 
       if (added > 0) {
-        lootLines.push(
-          describeLootLine(entry.itemId, added, tpl.name),
-        );
+        lootLines.push(describeLootLine(entry.itemId, added, tpl.name));
       }
 
       if (mailed > 0) {
         lootLines.push(
-          describeLootLine(entry.itemId, mailed, tpl.name) +
-            " (via mail)",
+          describeLootLine(entry.itemId, mailed, tpl.name) + " (via mail)",
         );
       }
     }
@@ -333,6 +329,9 @@ export async function performNpcAttack(
 
 /**
  * Very simple NPC → player counter-attack used by all v1 brains.
+ *
+ * Cowards are special-cased: they never get this free swing.
+ * Their only reaction should be “run away” on the next brain tick.
  */
 export function applySimpleNpcCounterAttack(
   ctx: SimpleCombatContext,
@@ -344,6 +343,32 @@ export function applySimpleNpcCounterAttack(
 
   if (isDeadEntity(p)) {
     return null;
+  }
+
+  // --- Coward special-case: no reactive counter-attacks ---
+  try {
+    if (ctx.npcs) {
+      const st = ctx.npcs.getNpcStateByEntityId(npc.id);
+      if (st) {
+        const proto =
+          getNpcPrototype(st.templateId) ?? getNpcPrototype(st.protoId);
+        const behavior = proto?.behavior ?? "aggressive";
+        const tags = proto?.tags ?? [];
+
+        const isCowardProto =
+          behavior === "coward" ||
+          st.protoId === "coward_rat" ||
+          st.templateId === "coward_rat" ||
+          tags.includes("coward_test");
+
+        if (isCowardProto) {
+          // Cowards will flee on their AI tick instead of swinging back.
+          return null;
+        }
+      }
+    }
+  } catch {
+    // Best-effort; fall through to normal behavior on failure.
   }
 
   const dmg = computeNpcMeleeDamage(npc);
@@ -406,6 +431,7 @@ export function scheduleNpcCorpseAndRespawn(
 
   // Resource detection: prefer prototype tags if available.
   const proto = getNpcPrototype(templateId) ?? getNpcPrototype(protoId);
+
   const isResource =
     proto?.tags?.includes("resource") ||
     proto?.tags?.some((t) => t.startsWith("resource_")) ||
@@ -453,6 +479,7 @@ export function scheduleNpcCorpseAndRespawn(
 
     const ent = ctx.entities?.get(spawned.entityId);
     const room = ctx.rooms?.get(roomId);
+
     if (ent && room) {
       room.broadcast("entity_spawn", ent);
     }
