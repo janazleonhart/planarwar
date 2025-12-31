@@ -6,7 +6,8 @@
   "types": "../dist/worldcore/index.d.ts",
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "test": "npm run build && node --test ../dist/worldcore/test/*.js"
+    "test": "npm run build && node --test ../dist/worldcore/test/*.js",
+    "sim:brain": "npm run build && node ../dist/worldcore/tools/simBrain.js"
   },
   "dependencies": {
     "dotenv": "^16.4.5",

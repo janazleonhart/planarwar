@@ -14,6 +14,7 @@
     "./ai/brains/CowardBrain.ts",
     "./ai/brains/GuardBrain.ts",
     "./ai/brains/NeutralBrain.ts",
+
     "./classes/ClassDefinitions.ts",
     "./combat/entityCombat.ts",
     "./core/EntityManager.ts",
@@ -23,11 +24,15 @@
     "./npc/NpcThreat.ts",
     "./npc/NpcTypes.ts",
     "./npc/NpcCrime.ts",
+
     "./utils/uuid.ts",
     "./shared/Entity.ts",
     "./shared/Session.ts",
     "./shared/messages.ts",
+
     "./types/**/*",
+    "./sim/**/*",
+    "./tools/**/*",
     "./test/**/*"
   ],
   "exclude": [
