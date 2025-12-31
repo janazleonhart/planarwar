@@ -5,17 +5,17 @@ import { db } from "../db/Database";
 /**
  * Raw row shape from the spawn_points table.
  *
- * id SERIAL PRIMARY KEY,
- * shard_id TEXT,
- * spawn_id TEXT,
- * type TEXT,
- * archetype TEXT,
- * proto_id TEXT NULL,
- * variant_id TEXT NULL,
- * x REAL,
- * y REAL,
- * z REAL,
- * region_id TEXT
+ *  id SERIAL PRIMARY KEY,
+ *  shard_id TEXT,
+ *  spawn_id TEXT,
+ *  type TEXT,
+ *  archetype TEXT,
+ *  proto_id TEXT NULL,
+ *  variant_id TEXT NULL,
+ *  x REAL,
+ *  y REAL,
+ *  z REAL,
+ *  region_id TEXT
  */
 export interface SpawnPointRow {
   id: number;
@@ -39,13 +39,14 @@ export interface SpawnPointRow {
  */
 export interface DbSpawnPoint {
   id: number;
+
   shardId: string;
   spawnId: string;
   type: string;
 
   // NEW (future-proof identity)
-  protoId: string;         // canonical identity
-  variantId: string | null; // optional incarnation/version
+  protoId: string;           // canonical identity
+  variantId: string | null;  // optional incarnation/version
 
   // Legacy (keep for now; useful for resources)
   archetype: string;
@@ -91,7 +92,7 @@ export class SpawnPointService {
    */
   async getSpawnPointsForRegion(
     shardId: string,
-    regionId: string
+    regionId: string,
   ): Promise<DbSpawnPoint[]> {
     const res = await db.query(
       `
@@ -108,15 +109,14 @@ export class SpawnPointService {
         z,
         region_id
       FROM spawn_points
-      WHERE shard_id = $1
-        AND region_id = $2
+      WHERE shard_id = $1 AND region_id = $2
       ORDER BY id
     `,
-      [shardId, regionId]
+      [shardId, regionId],
     );
 
     return (res.rows as SpawnPointRow[]).map((row) =>
-      rowToSpawnPoint(row as SpawnPointRow)
+      rowToSpawnPoint(row as SpawnPointRow),
     );
   }
 
@@ -124,13 +124,13 @@ export class SpawnPointService {
    * Get all spawn points near a given world-space (x, z) within a radius.
    *
    * Uses a simple x/z circle:
-   * (x - cx)^2 + (z - cz)^2 <= radius^2
+   *   (x - cx)^2 + (z - cz)^2 <= radius^2
    */
   async getSpawnPointsNear(
     shardId: string,
     x: number,
     z: number,
-    radius: number
+    radius: number,
   ): Promise<DbSpawnPoint[]> {
     const safeRadius = Math.max(0, Math.min(radius, 10_000));
     const r2 = safeRadius * safeRadius;
@@ -150,17 +150,18 @@ export class SpawnPointService {
         z,
         region_id
       FROM spawn_points
-      WHERE shard_id = $1
+      WHERE
+        shard_id = $1
         AND x IS NOT NULL
         AND z IS NOT NULL
         AND ((x - $2) * (x - $2) + (z - $3) * (z - $3)) <= $4
       ORDER BY id
     `,
-      [shardId, x, z, r2]
+      [shardId, x, z, r2],
     );
 
     return (res.rows as SpawnPointRow[]).map((row) =>
-      rowToSpawnPoint(row as SpawnPointRow)
+      rowToSpawnPoint(row as SpawnPointRow),
     );
   }
 }

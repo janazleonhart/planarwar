@@ -16,10 +16,12 @@ function serializeArg(arg: unknown): string {
   if (typeof arg === "string") {
     return stripAnsi(arg);
   }
+
   if (arg instanceof Error) {
     const msg = arg.stack ?? arg.message;
     return stripAnsi(msg);
   }
+
   try {
     return stripAnsi(JSON.stringify(arg));
   } catch {
@@ -35,6 +37,36 @@ function createTimestamp(): string {
   return new Date().toISOString();
 }
 
+/**
+ * Extract logger scope from a formatted payload line.
+ *
+ * Logger prints tags like: "[NPC:INFO]" or "[WORLD:DEBUG]".
+ * We scan for that pattern and return the SCOPE part.
+ */
+function extractScopeFromPayload(payload: string): string | null {
+  const match = payload.match(/\[([A-Z0-9_]+):[A-Z]+\]/);
+  if (!match) return null;
+  return match[1] ?? null;
+}
+
+/**
+ * Normalize a scope name into a safe filename fragment.
+ *
+ * Examples:
+ *   "NPC"          -> "npc"
+ *   "WORLD_EVENT"  -> "world_event"
+ *   "Main-Loop"    -> "main_loop"
+ */
+function normalizeScopeForFilename(scope: string): string {
+  return (
+    scope
+      .toLowerCase()
+      .replace(/[^a-z0-9_.-]+/g, "_")
+      .replace(/^_+/, "")
+      .replace(/_+$/, "") || "main"
+  );
+}
+
 function wrapMethod(
   level: string,
   original: ConsoleMethod,
@@ -47,28 +79,72 @@ function wrapMethod(
 }
 
 export function installFileLogTap(): void {
-  const filePath = process.env.PW_FILELOG;
-  if (!filePath) return;
+  const envPattern = process.env.PW_FILELOG;
+  if (!envPattern) return;
 
-  let stream: fs.WriteStream;
-  try {
-    stream = fs.createWriteStream(filePath, { flags: "a" });
-  } catch {
-    // If we can't open the file, just silently bail; console still works.
-    return;
+  // From here on, `pattern` is definitely a string (no undefined).
+  const pattern: string = envPattern;
+
+  const hasScopeToken = pattern.includes("{scope}");
+
+  // Single-file stream (no {scope} in PW_FILELOG)
+  let singleStream: fs.WriteStream | null = null;
+
+  // Multi-file streams (per scope) when {scope} is present
+  const streamsByScope = new Map<string, fs.WriteStream>();
+
+  function getSingleStream(): fs.WriteStream | null {
+    if (singleStream) return singleStream;
+    try {
+      singleStream = fs.createWriteStream(pattern, { flags: "a" });
+    } catch {
+      // If we can't open the file, just silently bail; console still works.
+      return null;
+    }
+
+    // Ignore write errors to keep the server running.
+    singleStream.on("error", () => {});
+    return singleStream;
   }
 
-  stream.on("error", () => {
-    // Ignore write errors to keep the server running.
-  });
+  function getScopedStream(rawScope: string | null): fs.WriteStream | null {
+    if (!hasScopeToken) {
+      return getSingleStream();
+    }
+
+    const scopeKey = normalizeScopeForFilename(rawScope ?? "main");
+    const existing = streamsByScope.get(scopeKey);
+    if (existing) return existing;
+
+    const filePath = pattern.replace("{scope}", scopeKey);
+
+    let stream: fs.WriteStream;
+    try {
+      stream = fs.createWriteStream(filePath, { flags: "a" });
+    } catch {
+      // If we can't open the file, just skip file logging for this scope.
+      return null;
+    }
+
+    stream.on("error", () => {
+      // Ignore write errors to keep the server running.
+    });
+
+    streamsByScope.set(scopeKey, stream);
+    return stream;
+  }
 
   const writeLine = (level: string, args: unknown[]): void => {
     try {
       const payload = formatLine(args);
+      const scope = extractScopeFromPayload(payload);
+      const stream = getScopedStream(scope);
+      if (!stream) return;
+
       const line = `[${createTimestamp()}] [${level}] ${payload}\n`;
       stream.write(line);
     } catch {
-      // Ignore write errors to keep the server running.
+      // Ignore file logging errors to keep the server running.
     }
   };
 

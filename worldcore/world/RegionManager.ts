@@ -2,13 +2,13 @@
 
 // ------------------------------------------------------------
 // Purpose:
-// Governs world regions, zones, and shard-aware spatial ownership.
-// Serves as the authoritative registry connecting RoomManager,
-// EntityManager, and higher-level MMO services (persistence,
-// respawn, and shard routing).
+//   Governs world regions, zones, and shard-aware spatial ownership.
+//   Serves as the authoritative registry connecting RoomManager,
+//   EntityManager, and higher-level MMO services (persistence,
+//   respawn, and shard routing).
 //
-// This module ensures region-based control of entities, room
-// clusters, and cross-zone transitions.
+//   This module ensures region-based control of entities, room
+//   clusters, and cross-zone transitions.
 // ------------------------------------------------------------
 
 import { RoomManager } from "../core/RoomManager";
@@ -28,10 +28,10 @@ const log = Logger.scope("REGION");
  * These are *soft* MMO meanings layered on top of whatever the
  * terrain / WGE / city-builder does:
  *
- * - isTown:        Civ space; guards + law expected.
- * - isSafeHub:     Strong sanctuary; primary "home" style area.
- * - isGraveyard:   Primary death-return area for this region.
- * - isLawless:     Reduced or no guard / crime enforcement.
+ *  - isTown:     Civ space; guards + law expected.
+ *  - isSafeHub:  Strong sanctuary; primary "home" style area.
+ *  - isGraveyard: Primary death-return area for this region.
+ *  - isLawless:  Reduced or no guard / crime enforcement.
  */
 export interface RegionFlags {
   isTown?: boolean;
@@ -107,6 +107,7 @@ export class RegionManager {
   private readonly entityManager: EntityManager;
   private readonly roomManager: RoomManager;
   private readonly respawnService?: RespawnService;
+
   private shardService?: RegionShardService;
 
   constructor(opts: {
@@ -128,6 +129,7 @@ export class RegionManager {
   async initialize(regions: RegionDefinition[]): Promise<void> {
     for (const def of regions) {
       this.regions.set(def.id, def);
+
       log.info(`Loaded region: ${def.name} [${def.id}]`, {
         zoneCount: def.zoneIds.length,
         flags: def.flags,
@@ -135,7 +137,7 @@ export class RegionManager {
     }
 
     log.success(
-      `Initialized RegionManager with ${regions.length} region(s).`
+      `Initialized RegionManager with ${regions.length} region(s).`,
     );
   }
 
@@ -153,7 +155,7 @@ export class RegionManager {
 
   private hasFlag(
     region: RegionDefinition | undefined,
-    flag: keyof RegionFlags
+    flag: keyof RegionFlags,
   ): boolean {
     if (!region || !region.flags) return false;
     return region.flags[flag] === true;
@@ -164,13 +166,15 @@ export class RegionManager {
    * "safe hub" – a strong sanctuary / hub space.
    */
   isSafeHubRegion(
-    regionOrId: string | RegionDefinition | undefined | null
+    regionOrId: string | RegionDefinition | undefined | null,
   ): boolean {
     if (!regionOrId) return false;
+
     const region =
       typeof regionOrId === "string"
         ? this.regions.get(regionOrId)
         : regionOrId;
+
     return this.hasFlag(region, "isSafeHub");
   }
 
@@ -179,13 +183,15 @@ export class RegionManager {
    * This is a semantic hint for death/respawn logic.
    */
   isGraveyardRegion(
-    regionOrId: string | RegionDefinition | undefined | null
+    regionOrId: string | RegionDefinition | undefined | null,
   ): boolean {
     if (!regionOrId) return false;
+
     const region =
       typeof regionOrId === "string"
         ? this.regions.get(regionOrId)
         : regionOrId;
+
     return this.hasFlag(region, "isGraveyard");
   }
 
@@ -194,22 +200,22 @@ export class RegionManager {
    * weak or no guard enforcement, looser crime rules, etc.
    */
   isLawlessRegion(
-    regionOrId: string | RegionDefinition | undefined | null
+    regionOrId: string | RegionDefinition | undefined | null,
   ): boolean {
     if (!regionOrId) return false;
+
     const region =
       typeof regionOrId === "string"
         ? this.regions.get(regionOrId)
         : regionOrId;
+
     return this.hasFlag(region, "isLawless");
   }
 
   /**
    * Convenience: resolve the region for a room and return its flags.
    */
-  getFlagsForRoom(
-    roomId: string
-  ): RegionFlags | undefined {
+  getFlagsForRoom(roomId: string): RegionFlags | undefined {
     const region = this.findRegionByRoom(roomId);
     return region?.flags;
   }
@@ -226,7 +232,7 @@ export class RegionManager {
     const region = this.regions.get(regionId);
     if (!region) {
       log.warn(
-        `Cannot assign entity ${entityId}: region ${regionId} not found`
+        `Cannot assign entity ${entityId}: region ${regionId} not found`,
       );
       return false;
     }
@@ -234,12 +240,13 @@ export class RegionManager {
     const entity = this.entityManager.get(entityId);
     if (!entity) {
       log.warn(
-        `Cannot assign region ${regionId}: entity ${entityId} not found`
+        `Cannot assign region ${regionId}: entity ${entityId} not found`,
       );
       return false;
     }
 
     (entity as any).region = regionId;
+
     log.debug(`Entity ${entityId} assigned to region ${regionId}`);
     return true;
   }
@@ -251,7 +258,7 @@ export class RegionManager {
   handleEntityTransfer(
     entityId: string,
     fromRoomId: string,
-    toRoomId: string
+    toRoomId: string,
   ): void {
     const fromRegion = this.findRegionByRoom(fromRoomId);
     const toRegion = this.findRegionByRoom(toRoomId);
@@ -264,14 +271,14 @@ export class RegionManager {
         {
           fromFlags: fromRegion?.flags,
           toFlags: toRegion?.flags,
-        }
+        },
       );
 
       // TODO: Hook law/weather/respawn triggers here later.
       // Example:
-      // - apply lawless/town rules
-      // - switch ambient weather
-      // - track region heat for warfronts, etc.
+      //  - apply lawless/town rules
+      //  - switch ambient weather
+      //  - track region heat for warfronts, etc.
     }
   }
 
@@ -316,7 +323,7 @@ export class RegionManager {
     if (!region) {
       log.warn(
         `Respawn request for entity ${entityId} has no known region; ` +
-          `call RespawnService.respawnCharacter(...) directly instead.`
+          `call RespawnService.respawnCharacter(...) directly instead.`,
       );
       return;
     }
@@ -324,14 +331,14 @@ export class RegionManager {
     const respawnPoint = region.respawnPoint;
     if (!respawnPoint) {
       log.warn(
-        `Region ${region.id} lacks a respawn point for entity ${entityId}`
+        `Region ${region.id} lacks a respawn point for entity ${entityId}`,
       );
       return;
     }
 
     if (!this.respawnService) {
       log.warn(
-        `RespawnService not initialized; cannot respawn ${entityId} at ${respawnPoint}`
+        `RespawnService not initialized; cannot respawn ${entityId} at ${respawnPoint}`,
       );
       return;
     }
@@ -339,7 +346,7 @@ export class RegionManager {
     // NOTE: We deliberately do NOT try to synthesize a Session/Character
     // here; that logic now lives inside RespawnService + the MUD layer.
     log.info(
-      `handleRespawnRequest is deprecated; region=${region.id}, respawnPoint=${respawnPoint}, entity=${entityId}`
+      `handleRespawnRequest is deprecated; region=${region.id}, respawnPoint=${respawnPoint}, entity=${entityId}`,
     );
   }
 
@@ -347,20 +354,17 @@ export class RegionManager {
   // MMO Backend / Shard Integration
   // ------------------------------------------------------------
 
-  async registerShardLink(
-    shardService: RegionShardService
-  ): Promise<void> {
+  async registerShardLink(shardService: RegionShardService): Promise<void> {
     this.shardService = shardService;
     log.info("Linked RegionManager to shard service");
   }
 
-  async getShardForRegion(
-    regionId: string
-  ): Promise<string | undefined> {
+  async getShardForRegion(regionId: string): Promise<string | undefined> {
     const region = this.regions.get(regionId);
     if (!region) return undefined;
 
     if (region.shard) return region.shard;
+
     return this.shardService?.getDefaultShard() ?? "default";
   }
 }

@@ -7,10 +7,7 @@ import {
   getCrimeHeatLabel,
 } from "../characters/CharacterTypes";
 import type { ServerWorldManager } from "./ServerWorldManager";
-import {
-  SpawnPointService,
-  DbSpawnPoint,
-} from "./SpawnPointService";
+import { SpawnPointService, DbSpawnPoint } from "./SpawnPointService";
 import { EntityManager } from "../core/EntityManager";
 import type { Session } from "../shared/Session";
 
@@ -25,14 +22,14 @@ const log = Logger.scope("RESPAWN");
  * Handles picking a spawn point and resetting runtime + persisted state.
  *
  * v1:
- * - Picks a reasonably near spawn point for the character.
- * - Teleports entity there, full-heals, clears combat.
- * - Saves CharacterState with the new position + lastRegionId.
+ *  - Picks a reasonably near spawn point for the character.
+ *  - Teleports entity there, full-heals, clears combat.
+ *  - Saves CharacterState with the new position + lastRegionId.
  *
  * v2 (this pass):
- * - Prefers "graveyard" / "hub" spawn types where available, so
- *   death returns you to a proper graveyard / safe hub instead of
- *   an arbitrary spawn row.
+ *  - Prefers "graveyard" / "hub" spawn types where available, so
+ *    death returns you to a proper graveyard / safe hub instead of
+ *    an arbitrary spawn row.
  *
  * Later, this is where shard death rules + sanctuary / safe-hub
  * logic plug in.
@@ -42,7 +39,7 @@ export class RespawnService {
     private readonly world: ServerWorldManager,
     private readonly spawnPoints: SpawnPointService,
     private readonly characters: RespawnCharacterStore,
-    private readonly entities: EntityManager
+    private readonly entities: EntityManager,
   ) {}
 
   /**
@@ -51,7 +48,7 @@ export class RespawnService {
    */
   async respawnCharacter(
     session: Session,
-    char: CharacterState
+    char: CharacterState,
   ): Promise<{ character: CharacterState; spawn: DbSpawnPoint | null }> {
     const shardId = char.shardId;
 
@@ -63,8 +60,7 @@ export class RespawnService {
     const targetX = spawn?.x ?? char.posX;
     const targetY = spawn?.y ?? char.posY;
     const targetZ = spawn?.z ?? char.posZ;
-    const targetRegionId =
-      spawn?.regionId ?? char.lastRegionId ?? null;
+    const targetRegionId = spawn?.regionId ?? char.lastRegionId ?? null;
 
     const nextChar: CharacterState = {
       ...char,
@@ -92,6 +88,7 @@ export class RespawnService {
       // v1: simple full-heal + reset flags.
       const e: any = ent;
       e.alive = true;
+
       if (typeof e.maxHp === "number" && e.maxHp > 0) {
         e.hp = e.maxHp;
       } else {
@@ -144,24 +141,24 @@ export class RespawnService {
    *    they died.
    */
   private async pickSpawnPointFor(
-    char: CharacterState
+    char: CharacterState,
   ): Promise<DbSpawnPoint | null> {
     const shardId = char.shardId;
 
     // 1) Try by lastRegionId first (strongest hint about where they belong).
     if (char.lastRegionId) {
       try {
-        const regionSpawns =
-          await this.spawnPoints.getSpawnPointsForRegion(
-            shardId,
-            char.lastRegionId
-          );
+        const regionSpawns = await this.spawnPoints.getSpawnPointsForRegion(
+          shardId,
+          char.lastRegionId,
+        );
 
         if (regionSpawns.length > 0) {
           const best = this.chooseBestSpawn(regionSpawns);
           if (best) {
             return best;
           }
+
           // Fallback within region: just return the first row.
           return regionSpawns[0];
         }
@@ -181,7 +178,7 @@ export class RespawnService {
         shardId,
         char.posX,
         char.posZ,
-        radius
+        radius,
       );
 
       if (nearby.length > 0) {
@@ -197,7 +194,7 @@ export class RespawnService {
           char.posX,
           char.posZ,
           nearby[0].x ?? char.posX,
-          nearby[0].z ?? char.posZ
+          nearby[0].z ?? char.posZ,
         );
 
         for (let i = 1; i < nearby.length; i++) {
@@ -206,8 +203,9 @@ export class RespawnService {
             char.posX,
             char.posZ,
             sp.x ?? char.posX,
-            sp.z ?? char.posZ
+            sp.z ?? char.posZ,
           );
+
           if (d2 < bestDistSq) {
             best = sp;
             bestDistSq = d2;
@@ -228,28 +226,28 @@ export class RespawnService {
     // 3) Fallback: world origin region if it exists and has spawns.
     try {
       const region = this.world.getRegionAt(0, 0);
+
       if (region) {
-        const originSpawns =
-          await this.spawnPoints.getSpawnPointsForRegion(
-            shardId,
-            region.id
-          );
+        const originSpawns = await this.spawnPoints.getSpawnPointsForRegion(
+          shardId,
+          region.id,
+        );
+
         if (originSpawns.length > 0) {
           const best = this.chooseBestSpawn(originSpawns);
           if (best) {
             return best;
           }
+
           return originSpawns[0];
         }
       }
     } catch (err) {
-      log.warn("Fallback spawn lookup failed", {
-        err,
-        shardId,
-      });
+      log.warn("Fallback spawn lookup failed", { err, shardId });
     }
 
-    // 4) Absolute last resort: “no spawn”, we’ll stand them up where they died.
+    // 4) Absolute last resort: “no spawn”, we’ll stand the character up
+    // where they died.
     return null;
   }
 
@@ -260,22 +258,20 @@ export class RespawnService {
    * provide a relevant subset (region-only, nearby-only, etc.).
    *
    * Priority:
-   *   1) type in GRAVEYARD_TYPES
-   *   2) type in HUB_TYPES
-   *   3) otherwise: no opinion (caller falls back to first/closest)
+   *  1) type in GRAVEYARD_TYPES
+   *  2) type in HUB_TYPES
+   *  3) otherwise: no opinion (caller falls back to first/closest)
    */
-  private chooseBestSpawn(
-    spawns: DbSpawnPoint[]
-  ): DbSpawnPoint | null {
+  private chooseBestSpawn(spawns: DbSpawnPoint[]): DbSpawnPoint | null {
     if (!spawns.length) return null;
 
-    const GRAVEYARD_TYPES = new Set<string>([
+    const GRAVEYARD_TYPES = new Set([
       "graveyard",
       "graveyard_player",
       "graveyard_safe",
     ]);
 
-    const HUB_TYPES = new Set<string>([
+    const HUB_TYPES = new Set([
       "hub",
       "town",
       "city",
@@ -284,9 +280,7 @@ export class RespawnService {
     ]);
 
     // 1) Hard graveyard preference.
-    const graveyard = spawns.find((sp) =>
-      GRAVEYARD_TYPES.has(sp.type)
-    );
+    const graveyard = spawns.find((sp) => GRAVEYARD_TYPES.has(sp.type));
     if (graveyard) return graveyard;
 
     // 2) Otherwise, hub-like safe areas.
@@ -297,12 +291,7 @@ export class RespawnService {
     return null;
   }
 
-  private distSq(
-    ax: number,
-    az: number,
-    bx: number,
-    bz: number
-  ): number {
+  private distSq(ax: number, az: number, bx: number, bz: number): number {
     const dx = ax - bx;
     const dz = az - bz;
     return dx * dx + dz * dz;
