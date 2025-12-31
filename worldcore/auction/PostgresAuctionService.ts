@@ -23,6 +23,8 @@ interface AuctionRow {
   sold_at: Date | null;
   proceeds_gold: number | null;
   proceeds_claimed: boolean;
+  expires_at?: Date | null;
+  items_reclaimed?: boolean | null;
 }
 
 function rowToListing(row: AuctionRow): AuctionListing {
@@ -55,7 +57,7 @@ export class PostgresAuctionService implements AuctionService {
     const search = opts.search?.trim();
 
     if (search) {
-      const res = await db.query<AuctionRow>(
+      const res = await db.query(
         `
         SELECT *
         FROM auctions
@@ -64,13 +66,14 @@ export class PostgresAuctionService implements AuctionService {
           AND item_id ILIKE $2
         ORDER BY created_at DESC
         LIMIT $3 OFFSET $4
-        `,
+      `,
         [shardId, `%${search}%`, limit, offset]
       );
-      return res.rows.map(rowToListing);
+
+      return (res.rows as AuctionRow[]).map(rowToListing);
     }
 
-    const res = await db.query<AuctionRow>(
+    const res = await db.query(
       `
       SELECT *
       FROM auctions
@@ -78,19 +81,21 @@ export class PostgresAuctionService implements AuctionService {
         AND status = 'active'
       ORDER BY created_at DESC
       LIMIT $2 OFFSET $3
-      `,
+    `,
       [shardId, limit, offset]
     );
-    return res.rows.map(rowToListing);
+
+    return (res.rows as AuctionRow[]).map(rowToListing);
   }
 
   async get(id: number): Promise<AuctionListing | null> {
-    const res = await db.query<AuctionRow>(
+    const res = await db.query(
       `SELECT * FROM auctions WHERE id = $1`,
       [id]
     );
+
     if (res.rowCount === 0) return null;
-    return rowToListing(res.rows[0]);
+    return rowToListing(res.rows[0] as AuctionRow);
   }
 
   async createListing(args: {
@@ -104,9 +109,9 @@ export class PostgresAuctionService implements AuctionService {
     const total = args.qty * args.unitPriceGold;
     const ttlDays = 3; // tune this later
 
-    const res = await db.query<AuctionRow>(
-    `
-    INSERT INTO auctions (
+    const res = await db.query(
+      `
+      INSERT INTO auctions (
         shard_id,
         seller_char_id,
         seller_char_name,
@@ -116,10 +121,11 @@ export class PostgresAuctionService implements AuctionService {
         total_price_gold,
         status,
         expires_at
-    ) VALUES ($1,$2,$3,$4,$5,$6,$7,'active', now() + $8::interval)
-    RETURNING *
+      )
+      VALUES ($1,$2,$3,$4,$5,$6,$7,'active', now() + $8::interval)
+      RETURNING *
     `,
-    [
+      [
         args.shardId,
         args.sellerCharId,
         args.sellerCharName,
@@ -128,9 +134,10 @@ export class PostgresAuctionService implements AuctionService {
         args.unitPriceGold,
         total,
         `${ttlDays} days`,
-    ]
+      ]
     );
-    return rowToListing(res.rows[0]);
+
+    return rowToListing(res.rows[0] as AuctionRow);
   }
 
   async buyout(args: {
@@ -139,8 +146,7 @@ export class PostgresAuctionService implements AuctionService {
     buyerCharId: string;
     buyerCharName: string;
   }): Promise<AuctionListing | null> {
-    // One-shot update: only active, correct shard.
-    const res = await db.query<AuctionRow>(
+    const res = await db.query(
       `
       UPDATE auctions
       SET status = 'sold',
@@ -152,18 +158,19 @@ export class PostgresAuctionService implements AuctionService {
         AND shard_id = $2
         AND status = 'active'
       RETURNING *
-      `,
-      [args.id, args.shardId, args.buyerCharId, args.buyerCharName]
+    `,
+    [args.id, args.shardId, args.buyerCharId, args.buyerCharName]
     );
+
     if (res.rowCount === 0) return null;
-    return rowToListing(res.rows[0]);
+    return rowToListing(res.rows[0] as AuctionRow);
   }
 
   async cancelListing(args: {
     id: number;
     sellerCharId: string;
   }): Promise<AuctionListing | null> {
-    const res = await db.query<AuctionRow>(
+    const res = await db.query(
       `
       UPDATE auctions
       SET status = 'cancelled'
@@ -171,36 +178,37 @@ export class PostgresAuctionService implements AuctionService {
         AND seller_char_id = $2
         AND status = 'active'
       RETURNING *
-      `,
+    `,
       [args.id, args.sellerCharId]
     );
+
     if (res.rowCount === 0) return null;
-    return rowToListing(res.rows[0]);
+    return rowToListing(res.rows[0] as AuctionRow);
   }
 
   async listBySeller(args: {
     shardId: string;
     sellerCharId: string;
   }): Promise<AuctionListing[]> {
-    const res = await db.query<AuctionRow>(
+    const res = await db.query(
       `
       SELECT *
       FROM auctions
       WHERE shard_id = $1
         AND seller_char_id = $2
       ORDER BY created_at DESC
-      `,
+    `,
       [args.shardId, args.sellerCharId]
     );
-    return res.rows.map(rowToListing);
+
+    return (res.rows as AuctionRow[]).map(rowToListing);
   }
 
   async claimProceeds(args: {
     shardId: string;
     sellerCharId: string;
   }): Promise<number> {
-    // Sum unclaimed proceeds first
-    const sumRes = await db.query<{ sum: string | null }>(
+    const sumRes = await db.query(
       `
       SELECT SUM(proceeds_gold) AS sum
       FROM auctions
@@ -209,13 +217,17 @@ export class PostgresAuctionService implements AuctionService {
         AND status = 'sold'
         AND proceeds_gold IS NOT NULL
         AND proceeds_claimed = false
-      `,
+    `,
       [args.shardId, args.sellerCharId]
     );
 
-    const sumStr = sumRes.rows[0]?.sum;
+    const sumRow = sumRes.rows[0] as { sum: string | null } | undefined;
+    const sumStr = sumRow?.sum;
     const total = sumStr ? Number(sumStr) : 0;
-    if (!total || total <= 0) return 0;
+
+    if (!total || total <= 0) {
+      return 0;
+    }
 
     await db.query(
       `
@@ -226,7 +238,7 @@ export class PostgresAuctionService implements AuctionService {
         AND status = 'sold'
         AND proceeds_gold IS NOT NULL
         AND proceeds_claimed = false
-      `,
+    `,
       [args.shardId, args.sellerCharId]
     );
 
@@ -234,7 +246,7 @@ export class PostgresAuctionService implements AuctionService {
   }
 
   async expireOld(shardId: string, now: Date): Promise<number> {
-    const res = await db.query<{ count: string }>(
+    const res = await db.query(
       `
       UPDATE auctions
       SET status = 'expired'
@@ -242,10 +254,11 @@ export class PostgresAuctionService implements AuctionService {
         AND status = 'active'
         AND expires_at IS NOT NULL
         AND expires_at <= $2
-      `,
+    `,
       [shardId, now]
     );
-    // pg's rowCount is fine too; using it directly is simpler:
+
+    // rowCount is the simplest here.
     return res.rowCount ?? 0;
   }
 
@@ -253,7 +266,7 @@ export class PostgresAuctionService implements AuctionService {
     shardId: string;
     sellerCharId: string;
   }): Promise<AuctionListing[]> {
-    const res = await db.query<AuctionRow>(
+    const res = await db.query(
       `
       UPDATE auctions
       SET items_reclaimed = true
@@ -262,10 +275,10 @@ export class PostgresAuctionService implements AuctionService {
         AND status = 'expired'
         AND items_reclaimed = false
       RETURNING *
-      `,
+    `,
       [args.shardId, args.sellerCharId]
     );
 
-    return res.rows.map(rowToListing);
+    return (res.rows as AuctionRow[]).map(rowToListing);
   }
 }

@@ -117,3 +117,5 @@ docs/knowledge/PLANARWAR_REPO_LAYOUT_AND_LINKS.md
 docs/knowledge/PLANARWAR_TASKS_PHASES_AND_MILESTONES.md
 docs/knowledge/handoffs/Mud+AI_Handoff.md
 docs/knowledge/handoffs/Mud+Corev0.9_Handoff.md
+docs/knowledge/handoffs/Worldcore+MMObackendrefactor+testscaffolding.md
+.gitignore

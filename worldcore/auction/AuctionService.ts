@@ -25,7 +25,7 @@ export interface AuctionService {
     unitPriceGold: number;
   }): Promise<AuctionListing>;
 
-  /** Mark listing as sold + record proceeds. Returns updated listing or null if not available. */
+  /** Mark listing as sold + record proceeds. Returns updated listing or null. */
   buyout(args: {
     id: number;
     shardId: string;
@@ -33,7 +33,7 @@ export interface AuctionService {
     buyerCharName: string;
   }): Promise<AuctionListing | null>;
 
-  /** Seller cancels their own active listing, returns listing or null if not allowed. */
+  /** Seller cancels their own active listing, returns listing or null. */
   cancelListing(args: {
     id: number;
     sellerCharId: string;
@@ -53,15 +53,12 @@ export interface AuctionService {
   /** Expire old active auctions for a shard; returns how many rows were affected. */
   expireOld(shardId: string, now: Date): Promise<number>;
 
-  /** 
+  /**
    * Mark all expired, unreclaimed auctions for this seller as reclaimed and
    * return the listings. Items should then be granted back to the seller.
    */
-   reclaimExpiredForSeller(args: {
+  reclaimExpiredForSeller(args: {
     shardId: string;
     sellerCharId: string;
   }): Promise<AuctionListing[]>;
-
 }
-
-

@@ -10,7 +10,6 @@
 import { EntityManager } from "../core/EntityManager";
 import { RoomManager } from "../core/RoomManager";
 import { Logger } from "../utils/logger";
-
 import type { RegionManager } from "./RegionManager";
 import type { RespawnService } from "./RespawnService";
 
@@ -21,11 +20,11 @@ const log = Logger.scope("SPAWN");
 // ------------------------------------------------------------
 
 export type SpawnOptions = {
-  templateId: string;    // Base entity template
-  roomId: string;        // Target room
-  regionId?: string;     // Optional region override
-  persistent?: boolean;  // Keep across restarts
-  delayMs?: number;      // Optional delayed spawn
+  templateId: string;  // Base entity template id (for now, just a label)
+  roomId: string;      // Target room
+  regionId?: string;   // Optional region override
+  persistent?: boolean; // Keep across restarts (stubbed)
+  delayMs?: number;    // Optional delayed spawn
 };
 
 export type DespawnOptions = {
@@ -38,10 +37,10 @@ export type DespawnOptions = {
 // ------------------------------------------------------------
 
 export class SpawnService {
-  private entityManager: EntityManager;
-  private roomManager: RoomManager;
-  private regionManager?: RegionManager;
-  private respawnService?: RespawnService;
+  private readonly entityManager: EntityManager;
+  private readonly roomManager: RoomManager;
+  private readonly regionManager?: RegionManager;
+  private readonly respawnService?: RespawnService;
 
   constructor(opts: {
     entityManager: EntityManager;
@@ -55,46 +54,58 @@ export class SpawnService {
     this.respawnService = opts.respawnService;
   }
 
-  // ------------------------------------------------------------
+  // ----------------------------------------------------------
   // Spawning
-  // ------------------------------------------------------------
+  // ----------------------------------------------------------
 
+  /**
+   * Spawn an entity into a room.
+   *
+   * v1 implementation:
+   * - Uses EntityManager.createNpcEntity(roomId, templateId) as a generic
+   *   way to get a runtime entity.
+   * - Optional delay uses setTimeout and re-calls spawnEntity.
+   */
   async spawnEntity(opts: SpawnOptions): Promise<string | undefined> {
     const { templateId, roomId, regionId, persistent, delayMs } = opts;
 
     if (delayMs && delayMs > 0) {
       setTimeout(() => {
-        this.spawnEntity({ ...opts, delayMs: 0 });
+        // Fire-and-forget follow-up with delay cleared
+        void this.spawnEntity({ ...opts, delayMs: 0 });
       }, delayMs).unref?.();
+
       return;
     }
 
-    const template = this.loadTemplate(templateId);
-    if (!template) {
-      log.warn(`Spawn failed: missing template ${templateId}`);
-      return;
-    }
+    // For now, the "template" is just a model/name label.
+    const entity = this.entityManager.createNpcEntity(roomId, templateId);
+    const entityId = entity.id;
 
-    const entityId = this.entityManager.createEntity(template);
-    if (!entityId) {
-      log.error(`Entity creation failed for template ${templateId}`);
-      return;
-    }
-
-    const room = this.roomManager.getRoom(roomId);
+    const room = this.roomManager.get(roomId);
     if (!room) {
-      log.warn(`Room ${roomId} not found for entity ${entityId}`);
-      this.entityManager.unregister(entityId);
+      log.warn("Spawn failed: room not found", { roomId, entityId });
+      this.entityManager.removeEntity(entityId);
       return;
     }
 
-    this.roomManager.placeEntityInRoom(entityId, roomId);
+    // Room membership is session-based; entities are attached to a roomId
+    // directly on the entity. We've already set entity.roomId above.
 
     if (regionId && this.regionManager) {
-      this.regionManager.assignEntityToRegion(entityId, regionId);
+      try {
+        this.regionManager.assignEntityToRegion(entityId, regionId);
+      } catch (err) {
+        log.warn("Failed to assign entity to region", {
+          entityId,
+          regionId,
+          err,
+        });
+      }
     }
 
-    log.success(`Spawned entity ${entityId} in room ${roomId}`);
+    log.info("Spawned entity", { entityId, roomId, templateId });
+
     if (persistent) {
       this.persistSpawn(templateId, roomId, regionId);
     }
@@ -102,40 +113,53 @@ export class SpawnService {
     return entityId;
   }
 
-  // ------------------------------------------------------------
+  // ----------------------------------------------------------
   // Despawning
-  // ------------------------------------------------------------
+  // ----------------------------------------------------------
 
+  /**
+   * Despawn an entity from the world.
+   *
+   * v1:
+   * - Simply removes the entity from EntityManager.
+   * - Does not yet integrate with RespawnService; that logic currently
+   *   lives in NPC / combat flows (RespawnService.respawnCharacter).
+   */
   async despawnEntity(opts: DespawnOptions): Promise<void> {
     const { entityId, immediate } = opts;
+
     const entity = this.entityManager.get(entityId);
     if (!entity) {
-      log.warn(`Despawn failed: entity ${entityId} not found`);
+      log.warn("Despawn failed: entity not found", { entityId });
       return;
     }
 
+    // Future hook for respawn scheduling per-entity.
     if (!immediate && this.respawnService) {
-      // Mark for respawn or cleanup
-      await this.respawnService.scheduleRespawn(entity);
+      // No generic schedule API yet; RespawnService is focused on characters.
+      log.debug("RespawnService present but not used for generic despawn", {
+        entityId,
+      });
     }
 
-    this.roomManager.removeEntityFromRoom(entityId);
-    this.entityManager.unregister(entityId);
-
-    log.info(`Entity ${entityId} despawned`);
+    this.entityManager.removeEntity(entityId);
+    log.info("Entity despawned", { entityId });
   }
 
   // ------------------------------------------------------------
-  // Internal Helpers
+  // Internal helpers
   // ------------------------------------------------------------
 
-  private loadTemplate(templateId: string): any {
-    // TODO: Integrate with ItemService / NpcTemplateService
-    return { id: templateId, name: `Entity:${templateId}` };
-  }
-
-  private persistSpawn(templateId: string, roomId: string, regionId?: string): void {
-    // TODO: Implement persistent spawn storage (DB or JSON)
-    log.debug(`Persisted spawn: ${templateId} @ ${roomId} [${regionId ?? "no-region"}]`);
+  private persistSpawn(
+    templateId: string,
+    roomId: string,
+    regionId?: string
+  ): void {
+    // TODO: Implement persistent spawn storage (DB or JSON).
+    log.debug("Persisted spawn (stub)", {
+      templateId,
+      roomId,
+      regionId: regionId ?? null,
+    });
   }
 }

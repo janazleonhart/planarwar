@@ -6,8 +6,8 @@ import { EntityManager } from "./EntityManager";
 import { Session } from "../shared/Session";
 import { ClientMessage } from "../shared/messages";
 import { Logger } from "../utils/logger";
-import { ServerWorldManager } from "../world/ServerWorldManager"
-import { handleMudCommand } from "../mud/MudCommandHandler"
+import { ServerWorldManager } from "../world/ServerWorldManager";
+import { handleMudCommand } from "../mud/MudCommandHandler";
 import { buildMudContext } from "../mud/MudContext";
 import { GuildService } from "../guilds/GuildService";
 import { PostgresCharacterService } from "../characters/PostgresCharacterService";
@@ -21,6 +21,7 @@ import { TradeService } from "../trade/TradeService";
 import { PostgresVendorService } from "../vendors/PostgresVendorService";
 import { PostgresBankService } from "../bank/PostgresBankService";
 import { PostgresAuctionService } from "../auction/PostgresAuctionService";
+import { RespawnService } from "../world/RespawnService";
 
 import type { ActionRequest } from "../actions/ActionTypes";
 import type { WhereAmIResultPayload } from "../shared/messages";
@@ -32,7 +33,6 @@ import type { AuctionService } from "../auction/AuctionService";
 
 // Light-weight facades so world/network systems can plug in without
 // worldcore importing their concrete implementations.
-
 export interface CombatFacade {
   setTarget?(session: Session, targetId: string): void;
   handleCast?(session: Session, payload: any): void;
@@ -76,16 +76,18 @@ export class MessageRouter {
     private readonly bank?: BankService,
     private readonly auctions?: AuctionService,
     private readonly npcSpawns?: NpcSpawnController,
+    // NEW: shard-aware respawn service (graveyards / hubs)
+    private readonly respawns?: RespawnService,
   ) {}
 
-  async handleRawMessage(session: Session, data: any): Promise<void> {
+  async handleRawMessage(session: Session, data: any): Promise<any> {
     const rawType = typeof data;
     const rawPreview =
       rawType === "string"
         ? (data as string).slice(0, 256)
         : Buffer.isBuffer(data)
-        ? data.toString("utf8", 0, Math.min(256, data.length))
-        : String(data);
+          ? data.toString("utf8", 0, Math.min(256, data.length))
+          : String(data);
 
     log.debug("handleRawMessage: received", {
       sessionId: session.id,
@@ -98,8 +100,7 @@ export class MessageRouter {
     let msg: ClientMessage;
 
     try {
-      const raw =
-        typeof data === "string" ? data : data.toString("utf8" as any);
+      const raw = typeof data === "string" ? data : data.toString("utf8" as any);
       msg = JSON.parse(raw);
     } catch (err) {
       log.warn("Failed to parse client message", {
@@ -169,6 +170,7 @@ export class MessageRouter {
           targetRoom: id,
           requested,
         });
+
         this.rooms.joinRoom(session, id);
         this.sessions.send(session, "room_joined", { roomId: id });
         break;
@@ -201,48 +203,44 @@ export class MessageRouter {
       // ---------------------------------------------------------
       // OBJECT / TERRAIN STREAMING
       // ---------------------------------------------------------
-
       case "object_request": {
-        log.debug("object_request", {
-          sessionId: session.id,
-          payload,
-        });
+        log.debug("object_request", { sessionId: session.id, payload });
+
         if (!this.objectStream) {
           this.sessions.send(session, "error", {
             code: "object_stream_unavailable",
           });
           break;
         }
+
         this.objectStream.handleObjectRequest(session, payload);
         break;
       }
 
       case "terrain_request": {
-        log.debug("terrain_request", {
-          sessionId: session.id,
-          payload,
-        });
+        log.debug("terrain_request", { sessionId: session.id, payload });
+
         if (!this.terrainStream) {
           this.sessions.send(session, "error", {
             code: "terrain_stream_unavailable",
           });
           break;
         }
+
         this.terrainStream.handleChunkRequest(session, payload);
         break;
       }
 
       case "terrain": {
-        log.debug("terrain envelope", {
-          sessionId: session.id,
-          payload,
-        });
+        log.debug("terrain envelope", { sessionId: session.id, payload });
+
         if (!this.terrainStream) {
           this.sessions.send(session, "error", {
             code: "terrain_stream_unavailable",
           });
           break;
         }
+
         this.terrainStream.handleTerrainEnvelope(session, payload);
         break;
       }
@@ -250,10 +248,9 @@ export class MessageRouter {
       // ---------------------------------------------------------
       // MOVEMENT
       // ---------------------------------------------------------
-
       case "move":
       case "walk":
-      case "go":  {
+      case "go": {
         if (!this.movement) {
           this.sessions.send(session, "error", {
             code: "unimplemented_op",
@@ -268,9 +265,7 @@ export class MessageRouter {
         );
 
         if (!resolved) {
-          this.sessions.send(session, "error", {
-            code: "bad_move",
-          });
+          this.sessions.send(session, "error", { code: "bad_move" });
           break;
         }
 
@@ -280,9 +275,7 @@ export class MessageRouter {
             sessionId: session.id,
             resolved,
           });
-          this.sessions.send(session, "error", {
-            code: "no_entity",
-          });
+          this.sessions.send(session, "error", { code: "no_entity" });
           break;
         }
 
@@ -306,6 +299,7 @@ export class MessageRouter {
             sessionId: session.id,
             roomId: roomIdEffective,
           });
+          this.sessions.send(session, "error", { code: "room_not_found" });
           break;
         }
 
@@ -329,7 +323,6 @@ export class MessageRouter {
       // ---------------------------------------------------------
       // GENERIC WORLD ACTIONS (attack, harvest, etc.)
       // ---------------------------------------------------------
-
       case "action": {
         const char = session.character;
         if (!char) {
@@ -357,8 +350,7 @@ export class MessageRouter {
           kind === "attack"
             ? {
                 kind: "attack",
-                channel:
-                  (payload.channel as any) || "weapon", // default
+                channel: (payload.channel as any) || "weapon",
                 targetId:
                   typeof payload.targetId === "string"
                     ? payload.targetId
@@ -401,7 +393,7 @@ export class MessageRouter {
             trades: this.trades,
             vendors: this.vendors,
             bank: this.bank,
-            auctions: this.auctions, 
+            auctions: this.auctions,
           },
           char,
           actionReq
@@ -435,6 +427,7 @@ export class MessageRouter {
           sessionId: session.id,
           payload,
         });
+
         if (this.combat?.setTarget) {
           this.combat.setTarget(session, payload.targetId);
         } else {
@@ -451,6 +444,7 @@ export class MessageRouter {
           sessionId: session.id,
           payload,
         });
+
         if (this.combat?.handleCast) {
           this.combat.handleCast(session, payload);
         } else {
@@ -465,24 +459,19 @@ export class MessageRouter {
       // ---------------------------------------------------------
       // CHAT
       // ---------------------------------------------------------
-
       case "chat": {
         const text = String(payload.text ?? "").slice(0, 512);
         if (!text) break;
 
         const roomIdEffective = session.roomId;
         if (!roomIdEffective) {
-          this.sessions.send(session, "error", {
-            code: "not_in_room",
-          });
+          this.sessions.send(session, "error", { code: "not_in_room" });
           break;
         }
 
         const room = this.rooms.get(roomIdEffective);
         if (!room) {
-          this.sessions.send(session, "error", {
-            code: "room_not_found",
-          });
+          this.sessions.send(session, "error", { code: "room_not_found" });
           break;
         }
 
@@ -492,13 +481,13 @@ export class MessageRouter {
           text,
           t: Date.now(),
         });
+
         break;
       }
 
       // ---------------------------------------------------------
       // HEARTBEAT
       // ---------------------------------------------------------
-
       case "heartbeat": {
         session.lastSeen = Date.now();
         this.sessions.send(session, "pong", { t: Date.now() });
@@ -508,7 +497,6 @@ export class MessageRouter {
       // ---------------------------------------------------------
       // MUD
       // ---------------------------------------------------------
-
       case "whereami": {
         this.handleWhereAmI(session);
         break;
@@ -517,7 +505,7 @@ export class MessageRouter {
       case "mud": {
         const char = session.character;
         if (!char) return;
-      
+
         const text = String(msg.payload?.text ?? "");
 
         const mudCtx = buildMudContext(
@@ -536,58 +524,64 @@ export class MessageRouter {
             vendors: this.vendors,
             bank: this.bank,
             auctions: this.auctions,
+            // NEW: wire RespawnService into the MUD context
+            respawns: this.respawns,
           },
           session
         );
 
-        handleMudCommand(
-          char,
-          text,
-          this.world,
-          mudCtx
-        )
-          .then(reply => {
+        handleMudCommand(char, text, this.world, mudCtx)
+          .then((reply) => {
             if (reply !== null) {
               this.sessions.send(session, "mud_result", { text: reply });
             }
           })
-          .catch(err => {
-            log.error("MUD command failed", { err, sessionId: session.id, input: text });
-            this.sessions.send(session, "mud_result", { text: "An error occurred." });
+          .catch((err) => {
+            log.error("MUD command failed", {
+              err,
+              sessionId: session.id,
+              input: text,
+            });
+            this.sessions.send(session, "mud_result", {
+              text: "An error occurred.",
+            });
           });
-      
+
         break;
       }
 
       // ---------------------------------------------------------
       // GUILD
       // ---------------------------------------------------------
-
       case "gchat": {
         const char = session.character;
         if (!char) {
           this.sessions.send(session, "error", { code: "not_in_guild" });
           break;
         }
-      
+
         const text = String(payload.text ?? "").slice(0, 512);
         if (!text) break;
-        
-        this.guilds.getGuildForCharacter(char.id)
-        .then(guild => {
-          log.info("Sending guild chat", {
-            guildId: guild.id,
-            from: char.name,
-            text,
+
+        this.guilds
+          .getGuildForCharacter(char.id)
+          .then((guild) => {
+            log.info("Sending guild chat", {
+              guildId: guild.id,
+              from: char.name,
+              text,
             });
+
             if (!guild) {
-              this.sessions.send(session, "error", { code: "not_in_guild" });
+              this.sessions.send(session, "error", {
+                code: "not_in_guild",
+              });
               return;
             }
-          
-            // 🔑 CRITICAL: hydrate cached character state
+
+            // CRITICAL: hydrate cached character state
             char.guildId = guild.id;
-          
+
             for (const s of this.sessions.getAllSessions()) {
               if (s.character?.guildId === guild.id) {
                 this.sessions.send(s, "chat", {
@@ -598,11 +592,11 @@ export class MessageRouter {
               }
             }
           })
-          .catch(err => {
+          .catch((err) => {
             log.error("gchat failed", { err, charId: char.id });
             this.sessions.send(session, "error", { code: "guild_error" });
           });
-      
+
         break;
       }
 
@@ -620,7 +614,6 @@ export class MessageRouter {
   handleWhereAmI(session: Session) {
     // Start from the session's view of the world
     let roomId: string | null = session.roomId ?? null;
-
     let x = 0;
     let y = 0;
     let z = 0;
@@ -630,6 +623,7 @@ export class MessageRouter {
       x = session.character.posX ?? 0;
       y = session.character.posY ?? 0;
       z = session.character.posZ ?? 0;
+
       if (!roomId && (session.character as any).roomId) {
         roomId = (session.character as any).roomId;
       }
@@ -640,6 +634,7 @@ export class MessageRouter {
         x = (entity as any).x ?? 0;
         y = (entity as any).y ?? 0;
         z = (entity as any).z ?? 0;
+
         if (!roomId && (entity as any).roomId) {
           roomId = (entity as any).roomId;
         }
@@ -655,8 +650,7 @@ export class MessageRouter {
 
     // Prefer the actual world id if we have a world manager; otherwise
     // fall back to the prototype shard id.
-    const shardId =
-      this.world?.getWorldBlueprint().id ?? "prime_shard";
+    const shardId = this.world?.getWorldBlueprint().id ?? "prime_shard";
 
     const payload: WhereAmIResultPayload = {
       shardId,
@@ -669,5 +663,4 @@ export class MessageRouter {
 
     this.sessions.send(session, "whereami_result", payload);
   }
-
 }

@@ -1,4 +1,4 @@
-//worldcore/core/ObjectStream.ts
+// worldcore/core/ObjectStream.ts
 
 import { SessionManager } from "./SessionManager";
 import { ObjectStreamFacade } from "./MessageRouter";
@@ -26,12 +26,12 @@ export class ObjectStream implements ObjectStreamFacade {
     private readonly sessions: SessionManager
   ) {}
 
-  handleObjectRequest(session: Session, _payload: any): void {
-    // For v1, we always use the primary shard blueprint.
-    const shard = this.world.getShardBlueprint();
+  handleObjectRequest(session: Session, _payload: unknown): void {
+    // v1: always use the prime world blueprint.
+    const shard = this.world.getWorldBlueprint();
 
     if (!shard) {
-      this.log.warn("Object request but no shard blueprint", {
+      this.log.warn("Object request but no world blueprint", {
         sessionId: session.id,
       });
 
@@ -40,6 +40,7 @@ export class ObjectStream implements ObjectStreamFacade {
         spawns: [],
         done: true,
       });
+
       return;
     }
 

@@ -7,7 +7,10 @@ import {
   getCrimeHeatLabel,
 } from "../characters/CharacterTypes";
 import type { ServerWorldManager } from "./ServerWorldManager";
-import { SpawnPointService, DbSpawnPoint } from "./SpawnPointService";
+import {
+  SpawnPointService,
+  DbSpawnPoint,
+} from "./SpawnPointService";
 import { EntityManager } from "../core/EntityManager";
 import type { Session } from "../shared/Session";
 
@@ -26,7 +29,13 @@ const log = Logger.scope("RESPAWN");
  * - Teleports entity there, full-heals, clears combat.
  * - Saves CharacterState with the new position + lastRegionId.
  *
- * Later, this is where shard death rules + sanctuary / safe-hub logic plug in.
+ * v2 (this pass):
+ * - Prefers "graveyard" / "hub" spawn types where available, so
+ *   death returns you to a proper graveyard / safe hub instead of
+ *   an arbitrary spawn row.
+ *
+ * Later, this is where shard death rules + sanctuary / safe-hub
+ * logic plug in.
  */
 export class RespawnService {
   constructor(
@@ -54,7 +63,8 @@ export class RespawnService {
     const targetX = spawn?.x ?? char.posX;
     const targetY = spawn?.y ?? char.posY;
     const targetZ = spawn?.z ?? char.posZ;
-    const targetRegionId = spawn?.regionId ?? char.lastRegionId ?? null;
+    const targetRegionId =
+      spawn?.regionId ?? char.lastRegionId ?? null;
 
     const nextChar: CharacterState = {
       ...char,
@@ -82,7 +92,6 @@ export class RespawnService {
       // v1: simple full-heal + reset flags.
       const e: any = ent;
       e.alive = true;
-
       if (typeof e.maxHp === "number" && e.maxHp > 0) {
         e.hp = e.maxHp;
       } else {
@@ -105,6 +114,8 @@ export class RespawnService {
       y: targetY,
       z: targetZ,
       spawnId: spawn?.spawnId,
+      spawnDbId: spawn?.id,
+      spawnType: spawn?.type,
       regionId: targetRegionId,
       crimeHeat, // "none" | "minor" | "severe"
       hasCrimeHeat: hasActiveCrimeHeat(nextChar, now),
@@ -113,10 +124,25 @@ export class RespawnService {
     return { character: nextChar, spawn: spawn ?? null };
   }
 
-  // ---------------------------------------------------------------------------
+  // -------------------------------------------------------------------------
   // Spawn selection
-  // ---------------------------------------------------------------------------
+  // -------------------------------------------------------------------------
 
+  /**
+   * v2 spawn selection:
+   *
+   * 1) If we know lastRegionId:
+   *    - Get region spawns for that region.
+   *    - Prefer type "graveyard" first, then hub-like types.
+   *
+   * 2) Otherwise, look for nearby spawns in world-space and again
+   *    prefer graveyard / hub types when possible.
+   *
+   * 3) Fallback to the region at world origin (0,0).
+   *
+   * 4) Absolute last resort: no spawn – stand the character up where
+   *    they died.
+   */
   private async pickSpawnPointFor(
     char: CharacterState
   ): Promise<DbSpawnPoint | null> {
@@ -125,14 +151,18 @@ export class RespawnService {
     // 1) Try by lastRegionId first (strongest hint about where they belong).
     if (char.lastRegionId) {
       try {
-        const regionSpawns = await this.spawnPoints.getSpawnPointsForRegion(
-          shardId,
-          char.lastRegionId
-        );
+        const regionSpawns =
+          await this.spawnPoints.getSpawnPointsForRegion(
+            shardId,
+            char.lastRegionId
+          );
 
         if (regionSpawns.length > 0) {
-          // v1: just take the first; later we can weight by type/priority
-          // (including hub/sanctuary tags) if we want.
+          const best = this.chooseBestSpawn(regionSpawns);
+          if (best) {
+            return best;
+          }
+          // Fallback within region: just return the first row.
           return regionSpawns[0];
         }
       } catch (err) {
@@ -155,7 +185,13 @@ export class RespawnService {
       );
 
       if (nearby.length > 0) {
-        // Choose the closest one by x/z distance.
+        // Prefer graveyard / hub types if any exist in the nearby set.
+        const preferred = this.chooseBestSpawn(nearby);
+        if (preferred) {
+          return preferred;
+        }
+
+        // Otherwise: choose the closest one by x/z distance (existing behavior).
         let best = nearby[0];
         let bestDistSq = this.distSq(
           char.posX,
@@ -172,7 +208,6 @@ export class RespawnService {
             sp.x ?? char.posX,
             sp.z ?? char.posZ
           );
-
           if (d2 < bestDistSq) {
             best = sp;
             bestDistSq = d2;
@@ -194,12 +229,16 @@ export class RespawnService {
     try {
       const region = this.world.getRegionAt(0, 0);
       if (region) {
-        const originSpawns = await this.spawnPoints.getSpawnPointsForRegion(
-          shardId,
-          region.id
-        );
-
+        const originSpawns =
+          await this.spawnPoints.getSpawnPointsForRegion(
+            shardId,
+            region.id
+          );
         if (originSpawns.length > 0) {
+          const best = this.chooseBestSpawn(originSpawns);
+          if (best) {
+            return best;
+          }
           return originSpawns[0];
         }
       }
@@ -211,6 +250,50 @@ export class RespawnService {
     }
 
     // 4) Absolute last resort: “no spawn”, we’ll stand them up where they died.
+    return null;
+  }
+
+  /**
+   * Choose the "best" spawn from a set, based purely on type hints.
+   *
+   * This does NOT consider distance – the caller is expected to
+   * provide a relevant subset (region-only, nearby-only, etc.).
+   *
+   * Priority:
+   *   1) type in GRAVEYARD_TYPES
+   *   2) type in HUB_TYPES
+   *   3) otherwise: no opinion (caller falls back to first/closest)
+   */
+  private chooseBestSpawn(
+    spawns: DbSpawnPoint[]
+  ): DbSpawnPoint | null {
+    if (!spawns.length) return null;
+
+    const GRAVEYARD_TYPES = new Set<string>([
+      "graveyard",
+      "graveyard_player",
+      "graveyard_safe",
+    ]);
+
+    const HUB_TYPES = new Set<string>([
+      "hub",
+      "town",
+      "city",
+      "safe_hub",
+      "player_start",
+    ]);
+
+    // 1) Hard graveyard preference.
+    const graveyard = spawns.find((sp) =>
+      GRAVEYARD_TYPES.has(sp.type)
+    );
+    if (graveyard) return graveyard;
+
+    // 2) Otherwise, hub-like safe areas.
+    const hub = spawns.find((sp) => HUB_TYPES.has(sp.type));
+    if (hub) return hub;
+
+    // 3) No strong preference within this set.
     return null;
   }
 

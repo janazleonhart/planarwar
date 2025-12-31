@@ -1,4 +1,5 @@
 // worldcore/world/RegionManager.ts
+
 // ------------------------------------------------------------
 // Purpose:
 // Governs world regions, zones, and shard-aware spatial ownership.
@@ -21,14 +22,71 @@ const log = Logger.scope("REGION");
 // Types
 // ------------------------------------------------------------
 
+/**
+ * Optional semantic flags for a region.
+ *
+ * These are *soft* MMO meanings layered on top of whatever the
+ * terrain / WGE / city-builder does:
+ *
+ * - isTown:        Civ space; guards + law expected.
+ * - isSafeHub:     Strong sanctuary; primary "home" style area.
+ * - isGraveyard:   Primary death-return area for this region.
+ * - isLawless:     Reduced or no guard / crime enforcement.
+ */
+export interface RegionFlags {
+  isTown?: boolean;
+  isSafeHub?: boolean;
+  isGraveyard?: boolean;
+  isLawless?: boolean;
+}
+
+/**
+ * High-level region definition used by the MMO layer.
+ *
+ * NOTE: This is *not* the same as the terrain Region produced by
+ * RegionMap; this type is allowed to reference roomIds, shard
+ * routing, and other MMO-only concepts.
+ */
 export type RegionDefinition = {
   id: string;
   name: string;
+
+  /**
+   * Room ids that belong to this region.
+   * Example: ["prime:elwynn_north_1", "prime:elwynn_north_2"]
+   */
   zoneIds: string[];
-  shard?: string; // Optional for multi-shard deployments
-  lawLevel?: number; // Law intensity / enforcement index
-  respawnPoint?: string; // Default respawn roomId
-  weather?: string; // Optional visual/environmental flavor
+
+  /**
+   * Explicit shard override. If omitted, RegionManager will ask the
+   * attached RegionShardService for a default shard.
+   */
+  shard?: string;
+
+  /**
+   * Law intensity / enforcement index.
+   * Higher = more strict; 0 or undefined = minimal enforcement.
+   */
+  lawLevel?: number;
+
+  /**
+   * Legacy respawn room id for MUD-style room respawns.
+   * The modern respawn pipeline uses SpawnPointService instead,
+   * but this remains for admin tooling and transitional logic.
+   */
+  respawnPoint?: string;
+
+  /**
+   * Optional visual/environmental flavor token.
+   * Example: "rainy", "foggy", "stormy".
+   */
+  weather?: string;
+
+  /**
+   * Optional semantic flags (safe hub, graveyard, town, lawless).
+   * These are purely MMO semantics layered on top of the raw map.
+   */
+  flags?: RegionFlags;
 };
 
 /**
@@ -45,6 +103,7 @@ export interface RegionShardService {
 
 export class RegionManager {
   private readonly regions: Map<string, RegionDefinition> = new Map();
+
   private readonly entityManager: EntityManager;
   private readonly roomManager: RoomManager;
   private readonly respawnService?: RespawnService;
@@ -69,10 +128,15 @@ export class RegionManager {
   async initialize(regions: RegionDefinition[]): Promise<void> {
     for (const def of regions) {
       this.regions.set(def.id, def);
-      log.info(`Loaded region: ${def.name} [${def.id}]`);
+      log.info(`Loaded region: ${def.name} [${def.id}]`, {
+        zoneCount: def.zoneIds.length,
+        flags: def.flags,
+      });
     }
 
-    log.success(`Initialized RegionManager with ${regions.length} region(s).`);
+    log.success(
+      `Initialized RegionManager with ${regions.length} region(s).`
+    );
   }
 
   getRegion(id: string): RegionDefinition | undefined {
@@ -81,6 +145,73 @@ export class RegionManager {
 
   getAllRegions(): RegionDefinition[] {
     return Array.from(this.regions.values());
+  }
+
+  // ------------------------------------------------------------
+  // Flag helpers
+  // ------------------------------------------------------------
+
+  private hasFlag(
+    region: RegionDefinition | undefined,
+    flag: keyof RegionFlags
+  ): boolean {
+    if (!region || !region.flags) return false;
+    return region.flags[flag] === true;
+  }
+
+  /**
+   * Return true if the given region (or region id) is marked as a
+   * "safe hub" – a strong sanctuary / hub space.
+   */
+  isSafeHubRegion(
+    regionOrId: string | RegionDefinition | undefined | null
+  ): boolean {
+    if (!regionOrId) return false;
+    const region =
+      typeof regionOrId === "string"
+        ? this.regions.get(regionOrId)
+        : regionOrId;
+    return this.hasFlag(region, "isSafeHub");
+  }
+
+  /**
+   * Return true if the region is marked as a primary graveyard.
+   * This is a semantic hint for death/respawn logic.
+   */
+  isGraveyardRegion(
+    regionOrId: string | RegionDefinition | undefined | null
+  ): boolean {
+    if (!regionOrId) return false;
+    const region =
+      typeof regionOrId === "string"
+        ? this.regions.get(regionOrId)
+        : regionOrId;
+    return this.hasFlag(region, "isGraveyard");
+  }
+
+  /**
+   * Return true if the region should be treated as "lawless":
+   * weak or no guard enforcement, looser crime rules, etc.
+   */
+  isLawlessRegion(
+    regionOrId: string | RegionDefinition | undefined | null
+  ): boolean {
+    if (!regionOrId) return false;
+    const region =
+      typeof regionOrId === "string"
+        ? this.regions.get(regionOrId)
+        : regionOrId;
+    return this.hasFlag(region, "isLawless");
+  }
+
+  /**
+   * Convenience: resolve the region for a room and return its flags.
+   */
+  getFlagsForRoom(
+    roomId: string
+  ): RegionFlags | undefined {
+    const region = this.findRegionByRoom(roomId);
+    return region?.flags;
   }
 
   // ------------------------------------------------------------
@@ -94,13 +225,17 @@ export class RegionManager {
   assignEntityToRegion(entityId: string, regionId: string): boolean {
     const region = this.regions.get(regionId);
     if (!region) {
-      log.warn(`Cannot assign entity ${entityId}: region ${regionId} not found`);
+      log.warn(
+        `Cannot assign entity ${entityId}: region ${regionId} not found`
+      );
       return false;
     }
 
     const entity = this.entityManager.get(entityId);
     if (!entity) {
-      log.warn(`Cannot assign region ${regionId}: entity ${entityId} not found`);
+      log.warn(
+        `Cannot assign region ${regionId}: entity ${entityId} not found`
+      );
       return false;
     }
 
@@ -116,7 +251,7 @@ export class RegionManager {
   handleEntityTransfer(
     entityId: string,
     fromRoomId: string,
-    toRoomId: string,
+    toRoomId: string
   ): void {
     const fromRegion = this.findRegionByRoom(fromRoomId);
     const toRegion = this.findRegionByRoom(toRoomId);
@@ -126,8 +261,17 @@ export class RegionManager {
         `Entity ${entityId} crossed from region ${
           fromRegion?.id ?? "unknown"
         } → ${toRegion?.id ?? "unknown"}`,
+        {
+          fromFlags: fromRegion?.flags,
+          toFlags: toRegion?.flags,
+        }
       );
+
       // TODO: Hook law/weather/respawn triggers here later.
+      // Example:
+      // - apply lawless/town rules
+      // - switch ambient weather
+      // - track region heat for warfronts, etc.
     }
   }
 
@@ -150,8 +294,10 @@ export class RegionManager {
   }
 
   /**
-   * Legacy hook kept for compatibility. The old version called
-   * RespawnService.respawnEntity(entity, roomId).
+   * Legacy hook kept for compatibility.
+   *
+   * The old version called
+   *   RespawnService.respawnEntity(entity, roomId).
    *
    * The new RespawnService works in terms of (session, character),
    * so this method is now just a thin logging shim — higher layers
@@ -170,7 +316,7 @@ export class RegionManager {
     if (!region) {
       log.warn(
         `Respawn request for entity ${entityId} has no known region; ` +
-          `call RespawnService.respawnCharacter(...) directly instead.`,
+          `call RespawnService.respawnCharacter(...) directly instead.`
       );
       return;
     }
@@ -178,14 +324,14 @@ export class RegionManager {
     const respawnPoint = region.respawnPoint;
     if (!respawnPoint) {
       log.warn(
-        `Region ${region.id} lacks a respawn point for entity ${entityId}`,
+        `Region ${region.id} lacks a respawn point for entity ${entityId}`
       );
       return;
     }
 
     if (!this.respawnService) {
       log.warn(
-        `RespawnService not initialized; cannot respawn ${entityId} at ${respawnPoint}`,
+        `RespawnService not initialized; cannot respawn ${entityId} at ${respawnPoint}`
       );
       return;
     }
@@ -193,7 +339,7 @@ export class RegionManager {
     // NOTE: We deliberately do NOT try to synthesize a Session/Character
     // here; that logic now lives inside RespawnService + the MUD layer.
     log.info(
-      `handleRespawnRequest is deprecated; region=${region.id}, respawnPoint=${respawnPoint}, entity=${entityId}`,
+      `handleRespawnRequest is deprecated; region=${region.id}, respawnPoint=${respawnPoint}, entity=${entityId}`
     );
   }
 
@@ -201,12 +347,16 @@ export class RegionManager {
   // MMO Backend / Shard Integration
   // ------------------------------------------------------------
 
-  async registerShardLink(shardService: RegionShardService): Promise<void> {
+  async registerShardLink(
+    shardService: RegionShardService
+  ): Promise<void> {
     this.shardService = shardService;
     log.info("Linked RegionManager to shard service");
   }
 
-  async getShardForRegion(regionId: string): Promise<string | undefined> {
+  async getShardForRegion(
+    regionId: string
+  ): Promise<string | undefined> {
     const region = this.regions.get(regionId);
     if (!region) return undefined;
 

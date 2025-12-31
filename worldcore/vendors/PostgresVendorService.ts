@@ -21,29 +21,34 @@ interface VendorItemRow {
 
 export class PostgresVendorService implements VendorService {
   async getVendor(id: string): Promise<VendorDefinition | null> {
-    const vRes = await db.query<VendorRow>(
+    const vRes = await db.query(
       `SELECT * FROM vendors WHERE id = $1`,
       [id]
     );
 
-    if (vRes.rowCount === 0) return null;
-    const v = vRes.rows[0];
+    if (vRes.rowCount === 0) {
+      return null;
+    }
 
-    const iRes = await db.query<VendorItemRow>(
+    const v = vRes.rows[0] as VendorRow;
+
+    const iRes = await db.query(
       `
       SELECT *
       FROM vendor_items
       WHERE vendor_id = $1
       ORDER BY id ASC
-      `,
+    `,
       [v.id]
     );
 
-    const items: VendorItem[] = iRes.rows.map((row) => ({
-      id: row.id,
-      itemId: row.item_id,
-      priceGold: row.price_gold,
-    }));
+    const items: VendorItem[] = (iRes.rows as VendorItemRow[]).map(
+      (row: VendorItemRow) => ({
+        id: row.id,
+        itemId: row.item_id,
+        priceGold: row.price_gold,
+      })
+    );
 
     return {
       id: v.id,
@@ -53,9 +58,13 @@ export class PostgresVendorService implements VendorService {
   }
 
   async listVendors(): Promise<{ id: string; name: string }[]> {
-    const res = await db.query<VendorRow>(
+    const res = await db.query(
       `SELECT id, name FROM vendors ORDER BY id ASC`
     );
-    return res.rows.map((r) => ({ id: r.id, name: r.name }));
+
+    return (res.rows as VendorRow[]).map((r: VendorRow) => ({
+      id: r.id,
+      name: r.name,
+    }));
   }
 }

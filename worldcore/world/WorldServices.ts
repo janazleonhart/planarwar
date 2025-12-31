@@ -16,9 +16,7 @@ import { PostgresBankService } from "../bank/PostgresBankService";
 import { PostgresAuctionService } from "../auction/PostgresAuctionService";
 import { PostgresMailService } from "../mail/PostgresMailService";
 import { InMemoryTradeService } from "../trade/InMemoryTradeService";
-
 import { Logger } from "../utils/logger";
-
 import { CombatSystem } from "../core/CombatSystem";
 import { EntityManager } from "../core/EntityManager";
 import { MessageRouter } from "../core/MessageRouter";
@@ -28,7 +26,6 @@ import { RoomManager } from "../core/RoomManager";
 import { SessionManager } from "../core/SessionManager";
 import { TerrainStream } from "../core/TerrainStream";
 import { TickEngine } from "../core/TickEngine";
-
 import { DomeBoundary } from "./Boundary";
 import { NavGridManager } from "./NavGridManager";
 import { RegionManager } from "./RegionManager";
@@ -37,7 +34,6 @@ import { ServerWorldManager } from "./ServerWorldManager";
 import { SpawnPointService } from "./SpawnPointService";
 import { SpawnService } from "./SpawnService";
 import { WorldEventBus } from "./WorldEventBus";
-
 import { NpcManager } from "../npc/NpcManager";
 import { NpcSpawnController } from "../npc/NpcSpawnController";
 
@@ -98,6 +94,7 @@ export interface WorldServices {
 export interface WorldServicesOptions {
   seed?: number;
   tickIntervalMs?: number;
+
   /**
    * Optional hook invoked once per world tick.
    * Signature matches TickEngineConfig.onTick.
@@ -225,7 +222,9 @@ export async function createWorldServices(
     trades,
     vendors,
     bank,
-    auctions
+    auctions,
+    npcSpawns,
+    respawns,
   );
 
   log.success(`✅ World runtime services initialized for shard ${shardId}`);
