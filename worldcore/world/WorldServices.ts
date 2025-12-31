@@ -2,6 +2,7 @@
 
 /**
  * WorldServices is the composition root for shard runtime wiring.
+ *
  * It constructs and connects the world/core services listed in the registry
  * (sessions, entities, world manager, movement/streams, NPCs, economy facades)
  * so the MMO server can reuse a single bootstrap for each shard.
@@ -15,6 +16,7 @@ import { PostgresBankService } from "../bank/PostgresBankService";
 import { PostgresAuctionService } from "../auction/PostgresAuctionService";
 import { PostgresMailService } from "../mail/PostgresMailService";
 import { InMemoryTradeService } from "../trade/InMemoryTradeService";
+
 import { Logger } from "../utils/logger";
 
 import { CombatSystem } from "../core/CombatSystem";
@@ -51,25 +53,27 @@ export interface WorldServices {
   seed: number;
   shardId: string;
 
+  // Event bus (future use)
   events: WorldEventBus;
 
+  // Core runtime
   sessions: SessionManager;
   entities: EntityManager;
   rooms: RoomManager;
   regions: RegionManager;
 
+  // Spawns / nav / respawn
   spawnPoints: SpawnPointService;
   spawns: SpawnService;
   respawns: RespawnService;
-
   navGrid: NavGridManager;
   boundary?: DomeBoundary;
 
-  // NPC runtime
+  // NPC runtime + DB-backed spawn controller
   npcs: NpcManager;
-  // DB-backed spawn coordinator (spawn_points → NPCs / personal nodes)
   npcSpawns: NpcSpawnController;
 
+  // World simulation
   world: ServerWorldManager;
   movement: MovementEngine;
   combat: CombatSystem;
@@ -87,6 +91,7 @@ export interface WorldServices {
   auctions: AuctionService;
   mail: MailService;
 
+  // Network entry point
   router: MessageRouter;
 }
 
@@ -95,14 +100,14 @@ export interface WorldServicesOptions {
   tickIntervalMs?: number;
   /**
    * Optional hook invoked once per world tick.
-   * The signature matches TickEngineConfig.onTick.
+   * Signature matches TickEngineConfig.onTick.
    */
   onTick?: (nowMs: number, tick: number, deltaMs?: number) => void;
 }
 
 /**
  * Bootstraps and wires all world systems into a fully operational runtime.
- * Returns a dependency bag that other layers (MessageRouter, Mud, world ticks)
+ * Returns a dependency bag that other layers (MessageRouter, MUD, world ticks)
  * can share instead of re-instantiating individual services.
  */
 export async function createWorldServices(
@@ -118,15 +123,20 @@ export async function createWorldServices(
 
   log.info(`Initializing Planar War world services (seed=${seed})...`);
 
+  // Event bus (kept minimal for now)
   const events = new WorldEventBus();
+
+  // Core managers
   const sessions = new SessionManager();
   const entities = new EntityManager();
-
   const world = new ServerWorldManager(seed);
-  const shardId = world.getWorldBlueprint().shardId ?? "prime_shard";
+
+  const blueprint = world.getWorldBlueprint();
+  const shardId = blueprint.shardId ?? blueprint.id ?? "prime_shard";
 
   const rooms = new RoomManager(sessions, entities, world);
 
+  // Spawns / regions / respawns
   const spawnPoints = new SpawnPointService();
   const characters = new PostgresCharacterService();
   const respawns = new RespawnService(world, spawnPoints, characters, entities);
@@ -146,7 +156,7 @@ export async function createWorldServices(
     respawnService: respawns,
   });
 
-  const boundaryState = world.getWorldBlueprint().boundary;
+  const boundaryState = blueprint.boundary;
   const boundary = boundaryState
     ? DomeBoundary.fromState({
         centerX: boundaryState.centerX,
@@ -156,14 +166,15 @@ export async function createWorldServices(
       })
     : undefined;
 
+  // NPC runtime
   const npcs = new NpcManager(entities, sessions);
-
   const npcSpawns = new NpcSpawnController({
     spawnPoints,
     npcs,
     entities,
   });
 
+  // Items / economy
   const items = new ItemService();
   try {
     await items.loadAll();
@@ -172,19 +183,19 @@ export async function createWorldServices(
   }
 
   const guilds = new GuildService();
-  const mail = new PostgresMailService();
-  const trades = new InMemoryTradeService();
-  const vendors = new PostgresVendorService();
-  const bank = new PostgresBankService();
-  const auctions = new PostgresAuctionService();
+  const mail: MailService = new PostgresMailService();
+  const trades: TradeService = new InMemoryTradeService();
+  const vendors: VendorService = new PostgresVendorService();
+  const bank: BankService = new PostgresBankService();
+  const auctions: AuctionService = new PostgresAuctionService();
 
+  // Simulation engines
   const movement = new MovementEngine(world);
   const combat = new CombatSystem(entities, rooms, sessions);
   const objectStream = new ObjectStream(world, sessions);
   const terrainStream = new TerrainStream(world, sessions);
 
   // NOTE: onTick is used by the MMO server to run SongEngine melody ticks.
-  // DO NOT remove or rename this wiring in automated refactors.
   const ticks = new TickEngine(
     entities,
     rooms,
@@ -214,8 +225,7 @@ export async function createWorldServices(
     trades,
     vendors,
     bank,
-    auctions,
-    npcSpawns
+    auctions
   );
 
   log.success(`✅ World runtime services initialized for shard ${shardId}`);
