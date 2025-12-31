@@ -28,10 +28,10 @@ const log = Logger.scope("REGION");
  * These are *soft* MMO meanings layered on top of whatever the
  * terrain / WGE / city-builder does:
  *
- *  - isTown:     Civ space; guards + law expected.
- *  - isSafeHub:  Strong sanctuary; primary "home" style area.
- *  - isGraveyard: Primary death-return area for this region.
- *  - isLawless:  Reduced or no guard / crime enforcement.
+ * - isTown: Civ space; guards + law expected.
+ * - isSafeHub: Strong sanctuary; primary "home" style area.
+ * - isGraveyard: Primary death-return area for this region.
+ * - isLawless: Reduced or no guard / crime enforcement.
  */
 export interface RegionFlags {
   isTown?: boolean;
@@ -53,7 +53,7 @@ export type RegionDefinition = {
 
   /**
    * Room ids that belong to this region.
-   * Example: ["prime:elwynn_north_1", "prime:elwynn_north_2"]
+   * Example: ["prime_shard:0,0", "prime_shard:0,1"]
    */
   zoneIds: string[];
 
@@ -102,12 +102,10 @@ export interface RegionShardService {
 // ------------------------------------------------------------
 
 export class RegionManager {
-  private readonly regions: Map<string, RegionDefinition> = new Map();
-
+  private readonly regions = new Map<string, RegionDefinition>();
   private readonly entityManager: EntityManager;
   private readonly roomManager: RoomManager;
   private readonly respawnService?: RespawnService;
-
   private shardService?: RegionShardService;
 
   constructor(opts: {
@@ -122,9 +120,9 @@ export class RegionManager {
     this.shardService = opts.shardService;
   }
 
-  // ------------------------------------------------------------
+  // ----------------------------------------------------------
   // Initialization
-  // ------------------------------------------------------------
+  // ----------------------------------------------------------
 
   async initialize(regions: RegionDefinition[]): Promise<void> {
     for (const def of regions) {
@@ -149,9 +147,9 @@ export class RegionManager {
     return Array.from(this.regions.values());
   }
 
-  // ------------------------------------------------------------
+  // ----------------------------------------------------------
   // Flag helpers
-  // ------------------------------------------------------------
+  // ----------------------------------------------------------
 
   private hasFlag(
     region: RegionDefinition | undefined,
@@ -169,12 +167,10 @@ export class RegionManager {
     regionOrId: string | RegionDefinition | undefined | null,
   ): boolean {
     if (!regionOrId) return false;
-
     const region =
       typeof regionOrId === "string"
         ? this.regions.get(regionOrId)
         : regionOrId;
-
     return this.hasFlag(region, "isSafeHub");
   }
 
@@ -186,12 +182,10 @@ export class RegionManager {
     regionOrId: string | RegionDefinition | undefined | null,
   ): boolean {
     if (!regionOrId) return false;
-
     const region =
       typeof regionOrId === "string"
         ? this.regions.get(regionOrId)
         : regionOrId;
-
     return this.hasFlag(region, "isGraveyard");
   }
 
@@ -203,12 +197,10 @@ export class RegionManager {
     regionOrId: string | RegionDefinition | undefined | null,
   ): boolean {
     if (!regionOrId) return false;
-
     const region =
       typeof regionOrId === "string"
         ? this.regions.get(regionOrId)
         : regionOrId;
-
     return this.hasFlag(region, "isLawless");
   }
 
@@ -220,9 +212,9 @@ export class RegionManager {
     return region?.flags;
   }
 
-  // ------------------------------------------------------------
+  // ----------------------------------------------------------
   // Entity & Room Integration
-  // ------------------------------------------------------------
+  // ----------------------------------------------------------
 
   /**
    * Attach a region id to an entity's runtime state.
@@ -246,7 +238,6 @@ export class RegionManager {
     }
 
     (entity as any).region = regionId;
-
     log.debug(`Entity ${entityId} assigned to region ${regionId}`);
     return true;
   }
@@ -276,9 +267,9 @@ export class RegionManager {
 
       // TODO: Hook law/weather/respawn triggers here later.
       // Example:
-      //  - apply lawless/town rules
-      //  - switch ambient weather
-      //  - track region heat for warfronts, etc.
+      //   - apply lawless/town rules
+      //   - switch ambient weather
+      //   - track region heat for warfronts, etc.
     }
   }
 
@@ -287,14 +278,16 @@ export class RegionManager {
    */
   findRegionByRoom(roomId: string): RegionDefinition | undefined {
     for (const region of this.regions.values()) {
-      if (region.zoneIds.includes(roomId)) return region;
+      if (region.zoneIds.includes(roomId)) {
+        return region;
+      }
     }
     return undefined;
   }
 
-  // ------------------------------------------------------------
+  // ----------------------------------------------------------
   // Respawn Integration
-  // ------------------------------------------------------------
+  // ----------------------------------------------------------
 
   getRespawnPoint(regionId: string): string | undefined {
     return this.regions.get(regionId)?.respawnPoint;
@@ -304,7 +297,7 @@ export class RegionManager {
    * Legacy hook kept for compatibility.
    *
    * The old version called
-   *   RespawnService.respawnEntity(entity, roomId).
+   *   RespawnService.respawnCharacter(...) directly instead.
    *
    * The new RespawnService works in terms of (session, character),
    * so this method is now just a thin logging shim — higher layers
@@ -346,13 +339,14 @@ export class RegionManager {
     // NOTE: We deliberately do NOT try to synthesize a Session/Character
     // here; that logic now lives inside RespawnService + the MUD layer.
     log.info(
-      `handleRespawnRequest is deprecated; region=${region.id}, respawnPoint=${respawnPoint}, entity=${entityId}`,
+      `handleRespawnRequest is deprecated; region=${region.id}, ` +
+        `respawnPoint=${respawnPoint}, entity=${entityId}`,
     );
   }
 
-  // ------------------------------------------------------------
+  // ----------------------------------------------------------
   // MMO Backend / Shard Integration
-  // ------------------------------------------------------------
+  // ----------------------------------------------------------
 
   async registerShardLink(shardService: RegionShardService): Promise<void> {
     this.shardService = shardService;
