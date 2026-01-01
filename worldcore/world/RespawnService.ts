@@ -225,7 +225,8 @@ export class RespawnService {
       t === "hub" ||
       t === "village" ||
       t === "city" ||
-      t === "settlement"
+      t === "settlement" ||
+      t === "outpost"
     );
   }
 

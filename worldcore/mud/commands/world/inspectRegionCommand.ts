@@ -1,152 +1,144 @@
 // worldcore/mud/commands/world/inspectRegionCommand.ts
 
-function fmt(n: unknown, digits: number = 2): string {
-  return typeof n === "number" && Number.isFinite(n) ? n.toFixed(digits) : "?";
+import type { MudContext } from "../../MudContext";
+import type { CharacterState } from "../../../characters/CharacterTypes";
+import { SpawnPointService } from "../../../world/SpawnPointService";
+
+type CommandInput = {
+  cmd: string;
+  args: string[];
+  parts: string[];
+  world?: any;
+};
+
+function parseCoords(args: string[]): { x: number; z: number } | null {
+  if (!args.length) return null;
+
+  // supports:
+  //   inspect_region 96 0
+  //   inspect_region 96, 0
+  //   inspect_region 96,0
+  const joined = args.join(" ").trim();
+  const m = joined.match(/^\s*(-?\d+(?:\.\d+)?)\s*(?:,|\s)\s*(-?\d+(?:\.\d+)?)\s*$/);
+  if (!m) return null;
+
+  const x = Number(m[1]);
+  const z = Number(m[2]);
+  if (!Number.isFinite(x) || !Number.isFinite(z)) return null;
+  return { x, z };
 }
 
-function parseNumToken(s: string | undefined): number | undefined {
-  if (!s) return undefined;
-  const cleaned = s.trim().replace(/,+$/, ""); // "128," -> "128"
-  const n = Number(cleaned);
-  return Number.isFinite(n) ? n : undefined;
+function parseCellFromRegionId(regionId: string): { shardId: string; cx: number; cz: number } | null {
+  // prime_shard:3,2
+  const idx = regionId.indexOf(":");
+  if (idx <= 0) return null;
+  const shardId = regionId.slice(0, idx);
+  const rest = regionId.slice(idx + 1);
+  const m = rest.match(/^(-?\d+),(-?\d+)$/);
+  if (!m) return null;
+  return { shardId, cx: Number(m[1]), cz: Number(m[2]) };
 }
 
-function parseCellToken(token: string): { cx: number; cz: number } | undefined {
-  // Accept:
-  //  - "0,0"
-  //  - "prime_shard:0,0"
-  const t = token.includes(":") ? token.split(":").slice(1).join(":") : token;
-  const parts = t.split(",");
-  if (parts.length !== 2) return undefined;
-
-  const cx = parseNumToken(parts[0]);
-  const cz = parseNumToken(parts[1]);
-  if (cx === undefined || cz === undefined) return undefined;
-
-  return { cx: Math.trunc(cx), cz: Math.trunc(cz) };
+function fmtNum(n: unknown, digits = 2): string {
+  const v = typeof n === "number" ? n : Number(n);
+  if (!Number.isFinite(v)) return "?";
+  return v.toFixed(digits);
 }
 
-function extractCellFromRegionId(id: string | undefined): { cx: number; cz: number } | undefined {
-  if (!id) return undefined;
-  const idx = id.indexOf(":");
-  const tail = idx >= 0 ? id.slice(idx + 1) : id;
-  const parts = tail.split(",");
-  if (parts.length !== 2) return undefined;
-  const cx = parseNumToken(parts[0]);
-  const cz = parseNumToken(parts[1]);
-  if (cx === undefined || cz === undefined) return undefined;
-  return { cx: Math.trunc(cx), cz: Math.trunc(cz) };
-}
-
-function listSemantic(flags: any, tags: string[]): string[] {
-  const out: string[] = [];
-  const isTown = !!flags?.isTown || tags.includes("town") || tags.includes("city");
-  const isSafeHub = !!flags?.isSafeHub || tags.includes("safe_hub") || tags.includes("sanctuary");
-  const isGraveyard = !!flags?.isGraveyard || tags.includes("graveyard") || tags.includes("gy");
-  const isLawless = !!flags?.isLawless || tags.includes("lawless");
-
-  if (isTown) out.push("town");
-  if (isSafeHub) out.push("safe hub");
-  if (isGraveyard) out.push("graveyard");
-  if (isLawless) out.push("lawless");
-  return out;
+function fmtList(list: unknown): string {
+  if (!Array.isArray(list)) return "none";
+  const items = list.map((x) => String(x)).filter(Boolean);
+  return items.length ? items.join(", ") : "none";
 }
 
 export async function handleInspectRegionCommand(
-  _ctx: any,
-  char: any,
-  input: { cmd: string; args: string[]; parts: string[]; world?: any },
+  ctx: MudContext,
+  char: CharacterState,
+  input: CommandInput,
 ): Promise<string> {
-  const world = input.world;
+  const world = input.world ?? ctx.world;
   if (!world) return "The world is unavailable.";
 
-  const args: string[] = Array.isArray(input.args) ? input.args : [];
+  const query = parseCoords(input.args);
+  const qx = query?.x ?? (char as any).posX ?? 0;
+  const qz = query?.z ?? (char as any).posZ ?? 0;
 
-  // Default to character position.
-  const charX = typeof char?.posX === "number" ? char.posX : 0;
-  const charZ = typeof char?.posZ === "number" ? char.posZ : 0;
+  const cx = (char as any).posX ?? 0;
+  const cz = (char as any).posZ ?? 0;
 
-  let x = charX;
-  let z = charZ;
-  let queryMode = "character";
+  const region = typeof world.getRegionAt === "function" ? world.getRegionAt(qx, qz) : null;
+  if (!region) return "You are nowhere.";
 
-  // inspect_region <x> <z>  (also supports: inspect_region 128, 0)
-  if (args.length >= 2) {
-    const nx = parseNumToken(args[0]);
-    const nz = parseNumToken(args[1]);
-    if (nx !== undefined && nz !== undefined) {
-      x = nx;
-      z = nz;
-      queryMode = "coords";
-    }
-  }
+  const regionId: string = region.id ?? region.regionId ?? "unknown";
+  const parsed = typeof regionId === "string" ? parseCellFromRegionId(regionId) : null;
 
-  // inspect_region <cell>  (ex: 0,0 or prime_shard:0,0)
-  if (args.length === 1) {
-    const cell = parseCellToken(args[0]);
-    if (cell) {
-      const cellSize =
-        typeof world.getRegionMap?.().cellSize === "number" ? world.getRegionMap().cellSize : 64;
+  const shardId = parsed?.shardId ?? (char as any).shardId ?? "prime_shard";
+  const cellStr = parsed ? `Cell: ${parsed.cx},${parsed.cz} | ` : "";
 
-      // center of the cell
-      x = cell.cx * cellSize + cellSize / 2;
-      z = cell.cz * cellSize + cellSize / 2;
-      queryMode = `cell ${cell.cx},${cell.cz}`;
-    }
-  }
+  const name = region.name ?? region.displayName ?? `Region ${parsed?.cx ?? "?"},${parsed?.cz ?? "?"}`;
+  const biome = region.biome ?? region.biomeId ?? "?";
+  const tier = region.tier ?? region.difficultyTier ?? "?";
+  const law = region.law ?? region.lawScore ?? "?";
 
-  const region = typeof world.getRegionAt === "function" ? world.getRegionAt(x, z) : null;
-  if (!region) {
-    return `No region at (${fmt(x)}, ${fmt(z)}). (Likely outside world bounds.)`;
-  }
-
-  const id: string = region.id ?? "unknown";
-  const cellFromId = extractCellFromRegionId(id);
-  const fallbackName =
-    cellFromId ? `Region ${cellFromId.cx},${cellFromId.cz}` : "Unnamed region";
-
-  const name: string = typeof region.name === "string" ? region.name : fallbackName;
-
-  const tier =
-    typeof (region as any).tier === "number"
-      ? (region as any).tier
-      : typeof (region as any).level === "number"
-        ? (region as any).level
-        : undefined;
-
-  const lawLevel = typeof (region as any).lawLevel === "number" ? (region as any).lawLevel : undefined;
-
-  const biome = (region as any).biome ?? "?";
-  const tags: string[] = Array.isArray((region as any).tags) ? (region as any).tags : [];
-  const flags = ((region as any).flags ?? {}) as any;
-
-  const semantic = listSemantic(flags, tags);
-
-  // Sample detail (if RegionMap exposes it)
-  let sampleLine = `Sample: ?`;
+  // Optional: sample terrain if the world exposes something
+  let sampleHeight: string = "?";
+  let sampleSlope: string = "?";
   try {
-    const rm = world.getRegionMap?.();
-    const sample = rm?.sampleAt?.(x, z);
-    if (sample) {
-      sampleLine = `Sample: height=${fmt(sample.height)} slope=${fmt(sample.slope)}`;
+    if (typeof world.sampleTerrain === "function") {
+      const s = world.sampleTerrain(qx, qz);
+      sampleHeight = fmtNum(s?.height);
+      sampleSlope = fmtNum(s?.slope);
+    } else if (region && typeof region.sample === "function") {
+      const s = region.sample(qx, qz);
+      sampleHeight = fmtNum(s?.height);
+      sampleSlope = fmtNum(s?.slope);
     }
   } catch {
-    // ignore
+    // ignore sampling failures
   }
 
-  const tagsText = tags.length ? tags.join(", ") : "none";
-  const semanticText = semantic.length ? semantic.join(", ") : "none";
-  const cellText = cellFromId ? `${cellFromId.cx},${cellFromId.cz}` : "?";
+  const tags = fmtList(region.tags);
+  const semantic = fmtList(region.semantic ?? region.semantics ?? region.labels);
 
-  return [
-    `Region: ${name} [${id}]`,
-    `Cell: ${cellText} | Biome: ${biome}${tier !== undefined ? ` | Tier: ${tier}` : ""}${
-      lawLevel !== undefined ? ` | Law: ${lawLevel}` : ""
-    }`,
-    `Query: ${queryMode} @ (${fmt(x)}, ${fmt(z)})`,
-    `Char: (${fmt(charX)}, ${fmt(charZ)}) lastRegionId=${char?.lastRegionId ?? "null"}`,
-    sampleLine,
-    `Tags: ${tagsText}`,
-    `Semantic: ${semanticText}`,
-  ].join("\n");
+  const queryLabel = query ? `coords @ (${fmtNum(qx)}, ${fmtNum(qz)})` : `character @ (${fmtNum(cx)}, ${fmtNum(cz)})`;
+
+  let out =
+    `Region: ${name} [${regionId}]\n` +
+    `${cellStr}Biome: ${biome} | Tier: ${tier} | Law: ${law}\n` +
+    `Query: ${queryLabel}\n` +
+    `Char: (${fmtNum(cx)}, ${fmtNum(cz)}) lastRegionId=${(char as any).lastRegionId ?? "?"}\n` +
+    `Sample: height=${sampleHeight} slope=${sampleSlope}\n` +
+    `Tags: ${tags}\n` +
+    `Semantic: ${semantic}`;
+
+  // NEW: show spawn_points that live in this region (and near the query point)
+  try {
+    const sp = new SpawnPointService();
+
+    const regionSpawns = await sp.getSpawnPointsForRegion(shardId, regionId);
+    const nearSpawns = await sp.getSpawnPointsNear(shardId, qx, qz, 10);
+
+    const lines: string[] = [];
+    lines.push("");
+    lines.push(`SpawnPoints: region=${regionSpawns.length} near(10)=${nearSpawns.length}`);
+
+    const top = regionSpawns.slice(0, 12);
+    for (const s of top) {
+      lines.push(
+        `- ${s.spawnId} type=${s.type} proto=${s.protoId}` +
+          (s.variantId ? ` variant=${s.variantId}` : "") +
+          ` @ (${fmtNum(s.x)}, ${fmtNum(s.z)})`,
+      );
+    }
+
+    if (regionSpawns.length > top.length) {
+      lines.push(`(… ${regionSpawns.length - top.length} more)`);
+    }
+
+    out += "\n" + lines.join("\n");
+  } catch (e: any) {
+    out += `\n\nSpawnPoints: (query failed) ${e?.message ?? String(e)}`;
+  }
+
+  return out;
 }
