@@ -22,6 +22,8 @@ type Cmd =
   | "era"
   | "wipe-placements"
   | "trim-outposts"
+  | "snapshot-spawns"
+  | "restore-spawns"
   | "help";
 
 type PlaceSpawnAction = {
@@ -57,6 +59,8 @@ Usage:
   node dist/worldcore/tools/simBrain.js era [options] [--commit]
   node dist/worldcore/tools/simBrain.js wipe-placements [options] [--commit]
   node dist/worldcore/tools/simBrain.js trim-outposts [options] [--commit]
+  node dist/worldcore/tools/simBrain.js snapshot-spawns [options]
+  node dist/worldcore/tools/simBrain.js restore-spawns [options] [--commit]
 
 Common options:
   --shard       shard id (default: prime_shard)
@@ -126,6 +130,21 @@ Trim-outposts options:
   --artifactDir    default: ./artifacts/brain
   --noArtifact     don't write artifact file
   --json           print artifact JSON (still writes unless --noArtifact)
+
+Snapshot-spawns options:
+  --types          comma list of spawn_points.type to export
+                  (default: outpost,checkpoint,graveyard,town,npc)
+  --pad            world-units expansion of bounds box (default: 0)
+  --artifactDir    default: ./artifacts/brain
+  --out            override output path (optional)
+  --noArtifact     don't write artifact file (still prints with --json)
+  --json           print snapshot JSON
+
+Restore-spawns options:
+  --in             path to snapshot JSON (required)
+  --shard           override target shard_id (optional; default from snapshot)
+  --commit          apply to DB (otherwise rollback)
+  --updateExisting  allow updating existing spawn_ids (default: insert-only)
 
 Examples:
   node dist/worldcore/tools/simBrain.js status --bounds -8..8,-8..8 --topGaps 5
@@ -211,9 +230,10 @@ function assertNoEllipsisArgs(argv: string[]): void {
   }
 }
 
-function assertCommitHasExplicitBounds(argv: string[], commit: boolean): void {
+function assertCommitHasExplicitBounds(argv: string[], commit: boolean, cmd: Cmd): void {
   if (!commit) return;
   if (hasFlag(argv, "--allowDefaultBounds")) return;
+  if (cmd === "restore-spawns") return; // restore uses explicit --in snapshot file
   if (!hasFlag(argv, "--bounds")) {
     throw new Error(`Refusing to --commit without explicit --bounds. (Add --bounds or use --allowDefaultBounds)`);
   }
@@ -284,8 +304,11 @@ async function applyToDb(
       }
     }
 
-    if (opts.commit) await client.query("COMMIT");
-    else await client.query("ROLLBACK");
+    if (opts.commit) {
+      await client.query("COMMIT");
+    } else {
+      await client.query("ROLLBACK");
+    }
 
     return { inserted, updated, skipped };
   } catch (err) {
@@ -509,11 +532,11 @@ async function runStatus(args: {
   bounds: Bounds;
   cellSize: number;
   respawnRadius: number;
-  topGaps?: number; // ✅ optional
+  topGaps?: number;
 }): Promise<void> {
   const cellSize = Math.max(1, Math.floor(args.cellSize));
   const radius = Math.max(0, args.respawnRadius);
-  const topGaps = Math.max(0, Math.floor(args.topGaps ?? 0)); // ✅ default 0
+  const topGaps = Math.max(0, Math.floor(args.topGaps ?? 0));
 
   const spawns = await loadSpawnsForArea({
     shardId: args.shardId,
@@ -860,6 +883,203 @@ async function runEra(args: {
 }
 
 // ---------------------------------------------------------------------------
+// Spawn snapshot / restore
+// ---------------------------------------------------------------------------
+
+type SpawnSnapshotRow = {
+  spawnId: string;
+  type: string;
+  archetype: string;
+  protoId: string;
+  variantId: string | null;
+  x: number;
+  y: number;
+  z: number;
+  regionId: string;
+};
+
+type SpawnSnapshotFile = {
+  kind: "simBrain.spawn_snapshot";
+  version: 1;
+  createdAt: string;
+  shardId: string;
+  bounds: Bounds;
+  cellSize: number;
+  pad: number;
+  types: string[];
+  rows: SpawnSnapshotRow[];
+};
+
+async function loadSpawnPointsForSnapshot(args: {
+  shardId: string;
+  bounds: Bounds;
+  cellSize: number;
+  pad: number;
+  types: string[];
+}): Promise<SpawnSnapshotRow[]> {
+  const cellSize = Math.max(1, Math.floor(args.cellSize));
+  const pad = Math.max(0, Math.floor(args.pad));
+
+  const minX = args.bounds.minCx * cellSize - pad;
+  const maxX = (args.bounds.maxCx + 1) * cellSize + pad;
+  const minZ = args.bounds.minCz * cellSize - pad;
+  const maxZ = (args.bounds.maxCz + 1) * cellSize + pad;
+
+  type Row = {
+    spawn_id: string;
+    type: string;
+    archetype: string;
+    proto_id: string;
+    variant_id: string | null;
+    x: number;
+    y: number;
+    z: number;
+    region_id: string;
+  };
+
+  const client = await db.connect();
+  try {
+    const res = await client.query(
+      `
+      SELECT spawn_id, type, archetype, proto_id, variant_id, x, y, z, region_id
+      FROM spawn_points
+      WHERE shard_id = $1
+        AND type = ANY($2::text[])
+        AND x >= $3 AND x <= $4
+        AND z >= $5 AND z <= $6
+      ORDER BY type, spawn_id
+    `,
+      [args.shardId, args.types, minX, maxX, minZ, maxZ],
+    );
+
+    const rows = res.rows as Row[];
+    return rows.map((r: Row) => ({
+      spawnId: String(r.spawn_id),
+      type: String(r.type),
+      archetype: String(r.archetype),
+      protoId: String(r.proto_id),
+      variantId: r.variant_id == null ? null : String(r.variant_id),
+      x: Number(r.x),
+      y: Number(r.y),
+      z: Number(r.z),
+      regionId: String(r.region_id),
+    }));
+  } finally {
+    client.release();
+  }
+}
+
+async function runSnapshotSpawns(args: {
+  shardId: string;
+  bounds: Bounds;
+  cellSize: number;
+  pad: number;
+  types: string[];
+  artifactDir: string;
+  outPath: string | null;
+  noArtifact: boolean;
+  json: boolean;
+}): Promise<void> {
+  const rows = await loadSpawnPointsForSnapshot({
+    shardId: args.shardId,
+    bounds: args.bounds,
+    cellSize: args.cellSize,
+    pad: args.pad,
+    types: args.types,
+  });
+
+  const snapshot: SpawnSnapshotFile = {
+    kind: "simBrain.spawn_snapshot",
+    version: 1,
+    createdAt: new Date().toISOString(),
+    shardId: args.shardId,
+    bounds: args.bounds,
+    cellSize: Math.max(1, Math.floor(args.cellSize)),
+    pad: Math.max(0, Math.floor(args.pad)),
+    types: args.types,
+    rows,
+  };
+
+  console.log(
+    `[snapshot] shard=${args.shardId} bounds=${boundsSlug(args.bounds)} cellSize=${snapshot.cellSize} pad=${snapshot.pad} types=${args.types.join(
+      ",",
+    )}`,
+  );
+  console.log(`[snapshot] rows=${rows.length}`);
+
+  if (args.json) console.log(JSON.stringify(snapshot, null, 2));
+
+  if (args.noArtifact) return;
+
+  const filename = `snapshot_${isoSlug()}_${args.shardId}_${boundsSlug(args.bounds)}.json`;
+  const outPath = args.outPath ? args.outPath : path.join(args.artifactDir, filename);
+
+  await fs.mkdir(path.dirname(outPath), { recursive: true });
+  await fs.writeFile(outPath, JSON.stringify(snapshot, null, 2), "utf8");
+  console.log(`[snapshot] file=${outPath}`);
+}
+
+function isSpawnSnapshotFile(x: unknown): x is SpawnSnapshotFile {
+  if (!x || typeof x !== "object") return false;
+  const o = x as Record<string, unknown>;
+  return o.kind === "simBrain.spawn_snapshot" && o.version === 1 && Array.isArray(o.rows);
+}
+
+async function runRestoreSpawns(args: {
+  inputPath: string;
+  shardOverride: string | null;
+  commit: boolean;
+  updateExisting: boolean;
+}): Promise<void> {
+  const raw = await fs.readFile(args.inputPath, "utf8");
+  const parsed: unknown = JSON.parse(raw);
+
+  if (!isSpawnSnapshotFile(parsed)) {
+    throw new Error(`restore-spawns: invalid snapshot file (expected kind=simBrain.spawn_snapshot version=1)`);
+  }
+
+  const snapshot = parsed as SpawnSnapshotFile;
+  const targetShard = args.shardOverride ?? snapshot.shardId;
+
+  const actions: BrainAction[] = snapshot.rows.map((r) => ({
+    kind: "place_spawn",
+    spawn: {
+      shardId: targetShard,
+      spawnId: r.spawnId,
+      type: r.type,
+      protoId: r.protoId,
+      archetype: r.archetype,
+      variantId: r.variantId,
+      x: r.x,
+      y: r.y,
+      z: r.z,
+      regionId: r.regionId,
+    },
+  }));
+
+  console.log(`[restore] in=${args.inputPath}`);
+  console.log(
+    `[restore] snapshot_shard=${snapshot.shardId} target_shard=${targetShard} rows=${snapshot.rows.length} commit=${String(
+      args.commit,
+    )} updateExisting=${String(args.updateExisting)}`,
+  );
+
+  if (actions.length === 0) {
+    console.log("[restore] nothing to apply.");
+    return;
+  }
+
+  const res = await applyToDb(actions, { commit: args.commit, updateExisting: args.updateExisting });
+  if (args.commit) {
+    console.log(`[restore] committed.\ninserted=${res.inserted} updated=${res.updated} skipped=${res.skipped}`);
+  } else {
+    console.log(
+      `[restore] rolled back (dry-run).\ninserted=${res.inserted} updated=${res.updated} skipped=${res.skipped} (use --commit)`,
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Wipe placements
 // ---------------------------------------------------------------------------
 
@@ -1172,14 +1392,16 @@ async function main(argv: string[]): Promise<void> {
     cmd !== "fill-gaps" &&
     cmd !== "era" &&
     cmd !== "wipe-placements" &&
-    cmd !== "trim-outposts"
+    cmd !== "trim-outposts" &&
+    cmd !== "snapshot-spawns" &&
+    cmd !== "restore-spawns"
   ) {
     usage();
     return;
   }
 
   const commit = hasFlag(argv, "--commit");
-  assertCommitHasExplicitBounds(argv, commit);
+  assertCommitHasExplicitBounds(argv, commit, cmd);
 
   const shardId = getFlag(argv, "--shard") ?? "prime_shard";
   const bounds = parseBounds(getFlag(argv, "--bounds") ?? "-4..4,-4..4");
@@ -1195,11 +1417,47 @@ async function main(argv: string[]): Promise<void> {
   }
 
   if (cmd === "status") {
-  const respawnRadius = parseIntFlag(argv, "--respawnRadius", 500) || 500;
-  const topGaps = parseIntFlag(argv, "--topGaps", 0) || 0; // ✅ add
-  await runStatus({ shardId, bounds, cellSize, respawnRadius, topGaps }); // ✅ pass
-  return;
-}
+    const respawnRadius = parseIntFlag(argv, "--respawnRadius", 500) || 500;
+    const topGaps = parseIntFlag(argv, "--topGaps", 0) || 0;
+    await runStatus({ shardId, bounds, cellSize, respawnRadius, topGaps });
+    return;
+  }
+
+  if (cmd === "snapshot-spawns") {
+    const types = parseTypes(getFlag(argv, "--types"), ["outpost", "checkpoint", "graveyard", "town", "npc"]);
+    const pad = parseIntFlag(argv, "--pad", 0) || 0;
+
+    const artifactDir = getFlag(argv, "--artifactDir") ?? "./artifacts/brain";
+    const outPath = getFlag(argv, "--out");
+    const noArtifact = hasFlag(argv, "--noArtifact");
+    const json = hasFlag(argv, "--json");
+
+    await runSnapshotSpawns({
+      shardId,
+      bounds,
+      cellSize,
+      pad,
+      types,
+      artifactDir,
+      outPath,
+      noArtifact,
+      json,
+    });
+    return;
+  }
+
+  if (cmd === "restore-spawns") {
+    const inputPath = getFlag(argv, "--in");
+    if (!inputPath) throw new Error(`restore-spawns requires --in <snapshot.json>`);
+    const shardOverride = getFlag(argv, "--shard"); // if provided, overrides snapshot shard
+    await runRestoreSpawns({
+      inputPath,
+      shardOverride,
+      commit,
+      updateExisting,
+    });
+    return;
+  }
 
   if (cmd === "wipe-placements") {
     const types = parseTypes(getFlag(argv, "--types"), ["outpost", "checkpoint", "graveyard"]);

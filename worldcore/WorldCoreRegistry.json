@@ -3589,7 +3589,9 @@
             "status: quick counts (types + outposts by faction) + coverage summary for bounds",
             "safety: refuses --commit without explicit --bounds (unless --allowDefaultBounds); refuses literal ... args",
             "default insert-only apply (no updates) unless --updateExisting",
-            "trim-outposts: enforces max outposts per faction by deleting extra outposts within bounds (dry-run unless --commit), writes an artifact"
+            "trim-outposts: enforces max outposts per faction by deleting extra outposts within bounds (dry-run unless --commit), writes an artifact",
+            "snapshot-spawns: export spawn_points in bounds to JSON (local artifact)",
+            "restore-spawns: import snapshot JSON (dry-run unless --commit; insert-only unless --updateExisting)"
          ],
          "notes": [
             "Dev Simulation Harness CLI entrypoint (worldcore/tools/simBrain.ts).",
