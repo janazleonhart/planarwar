@@ -13,7 +13,15 @@ import type { CellCoverageRow, CoverageSummary, SpawnForCoverage } from "../sim/
 import { planGapFillSpawns } from "../sim/GapFiller";
 import type { GapFillPlanConfig } from "../sim/GapFiller";
 
-type Cmd = "preview" | "apply" | "report" | "fill-gaps" | "era" | "wipe-placements" | "help";
+type Cmd =
+  | "preview"
+  | "apply"
+  | "report"
+  | "status"
+  | "fill-gaps"
+  | "era"
+  | "wipe-placements"
+  | "help";
 
 type PlaceSpawnAction = {
   kind: "place_spawn";
@@ -43,6 +51,7 @@ Usage:
   node dist/worldcore/tools/simBrain.js preview [options]
   node dist/worldcore/tools/simBrain.js apply [options] [--commit]
   node dist/worldcore/tools/simBrain.js report [options]
+  node dist/worldcore/tools/simBrain.js status [options]
   node dist/worldcore/tools/simBrain.js fill-gaps [options] [--commit]
   node dist/worldcore/tools/simBrain.js era [options] [--commit]
   node dist/worldcore/tools/simBrain.js wipe-placements [options] [--commit]
@@ -51,6 +60,11 @@ Common options:
   --shard       shard id (default: prime_shard)
   --bounds      cell bounds (default: -4..4,-4..4)
   --cellSize    cell size in world units (default: 64)
+
+Safety:
+  --commit                commit to DB (otherwise rollback)
+  --updateExisting        allow updating existing spawn_ids (default: insert-only)
+  --allowDefaultBounds    allow --commit without explicitly passing --bounds (default: false)
 
 Planner options (preview/apply/era):
   --seed        deterministic seed (default: seed:alpha)
@@ -69,6 +83,9 @@ Report options:
   --respawnRadius  world units radius for "covered" (default: 500)
   --top            show worst N gaps (default: 25)
 
+Status options:
+  --respawnRadius  (default: 500)
+
 Fill-gaps options:
   --seed           deterministic seed (default: seed:gapfill)
   --respawnRadius  coverage radius (default: 500)
@@ -78,7 +95,6 @@ Fill-gaps options:
   --protoId        default: checkpoint
   --archetype      default: checkpoint
   --borderMargin   in-cell border margin (default: 16)
-  --commit         write changes (otherwise rollback)
   --json           print planned actions JSON
 
 Era options (orchestrated run):
@@ -100,13 +116,9 @@ Wipe-placements options:
   --artifactDir    default: ./artifacts/brain
   --noArtifact     don't write artifact file
   --json           print artifact JSON (still writes unless --noArtifact)
-  --commit         actually delete (otherwise rollback)
-
-Common flags:
-  --commit      commit to DB (otherwise rollback)
 
 Examples:
-  # IMPORTANT: do not use "..." in the command; it triggers defaults.
+  # ✅ Correct commit (explicit bounds + safe caps)
   node dist/worldcore/tools/simBrain.js era \
     --bounds -8..8,-8..8 \
     --factions emberfall:2,oathbound:2 \
@@ -122,8 +134,15 @@ Examples:
 
   # Wipe + commit
   node dist/worldcore/tools/simBrain.js wipe-placements --bounds -8..8,-8..8 --commit
+
+  # Quick status for a region
+  node dist/worldcore/tools/simBrain.js status --bounds -8..8,-8..8
 `.trim(),
   );
+}
+
+function hasFlag(argv: string[], name: string): boolean {
+  return argv.includes(name);
 }
 
 function getFlag(argv: string[], name: string): string | null {
@@ -182,10 +201,53 @@ function parseTypes(input: string | null, fallback: string[]): string[] {
     .filter(Boolean);
 }
 
-async function applyToDb(actions: BrainAction[], commit: boolean): Promise<{ inserted: number; updated: number }> {
+function isoSlug(d = new Date()): string {
+  return d.toISOString().replace(/[:.]/g, "-");
+}
+
+function boundsSlug(b: Bounds): string {
+  return `${b.minCx}..${b.maxCx},${b.minCz}..${b.maxCz}`;
+}
+
+function sanitizeId(s: string): string {
+  return s.replace(/[^a-zA-Z0-9_]+/g, "_").replace(/^_+|_+$/g, "");
+}
+
+function assertNoEllipsisArgs(argv: string[]): void {
+  // People type `...` as a placeholder; shells pass it through as a literal arg.
+  // That is *not* a harmless placeholder here.
+  if (argv.includes("...") || argv.includes("…")) {
+    throw new Error(`Refusing to run: found literal "..." argument. (Remove it; it triggers defaults.)`);
+  }
+}
+
+function assertCommitHasExplicitBounds(argv: string[], commit: boolean): void {
+  if (!commit) return;
+  if (hasFlag(argv, "--allowDefaultBounds")) return;
+  if (!hasFlag(argv, "--bounds")) {
+    throw new Error(`Refusing to --commit without explicit --bounds. (Add --bounds or use --allowDefaultBounds)`);
+  }
+}
+
+async function writeArtifactFile(dir: string, filename: string, json: unknown): Promise<string> {
+  await fs.mkdir(dir, { recursive: true });
+  const filePath = path.join(dir, filename);
+  await fs.writeFile(filePath, JSON.stringify(json, null, 2), "utf8");
+  return filePath;
+}
+
+// ---------------------------------------------------------------------------
+// DB helpers
+// ---------------------------------------------------------------------------
+
+async function applyToDb(
+  actions: BrainAction[],
+  opts: { commit: boolean; updateExisting: boolean },
+): Promise<{ inserted: number; updated: number; skipped: number }> {
   const client = await db.connect();
   let inserted = 0;
   let updated = 0;
+  let skipped = 0;
 
   try {
     await client.query("BEGIN");
@@ -201,6 +263,11 @@ async function applyToDb(actions: BrainAction[], commit: boolean): Promise<{ ins
       );
 
       if (existing.rowCount && existing.rows[0]) {
+        if (!opts.updateExisting) {
+          skipped++;
+          continue;
+        }
+
         const id = (existing.rows[0] as { id: number }).id;
 
         await client.query(
@@ -227,13 +294,13 @@ async function applyToDb(actions: BrainAction[], commit: boolean): Promise<{ ins
       }
     }
 
-    if (commit) {
+    if (opts.commit) {
       await client.query("COMMIT");
     } else {
       await client.query("ROLLBACK");
     }
 
-    return { inserted, updated };
+    return { inserted, updated, skipped };
   } catch (err) {
     try {
       await client.query("ROLLBACK");
@@ -295,10 +362,6 @@ async function loadSpawnsForArea(args: {
 // ---------------------------------------------------------------------------
 
 type OutpostStats = { count: number; maxIndex: number };
-
-function sanitizeId(s: string): string {
-  return s.replace(/[^a-zA-Z0-9_]+/g, "_").replace(/^_+|_+$/g, "");
-}
 
 async function loadExistingOutpostStats(shardId: string): Promise<Map<string, OutpostStats>> {
   const re = /^outpost_(.+)_([0-9]+)_(-?[0-9]+)_(-?[0-9]+)$/;
@@ -379,7 +442,7 @@ function clampOutpostPlan(args: {
 }
 
 // ---------------------------------------------------------------------------
-// Coverage report helpers
+// Coverage helpers
 // ---------------------------------------------------------------------------
 
 function computeGaps(rows: readonly CellCoverageRow[]): CellCoverageRow[] {
@@ -412,10 +475,8 @@ async function runReport(args: {
   });
 
   console.log(
-    `[report] shard=${args.shardId} bounds=${args.bounds.minCx}..${args.bounds.maxCx},${args.bounds.minCz}..${args.bounds.maxCz} ` +
-      `cellSize=${cellSize} radius=${radius} spawns_scanned=${spawns.length}`,
+    `[report] shard=${args.shardId} bounds=${boundsSlug(args.bounds)} cellSize=${cellSize} radius=${radius} spawns_scanned=${spawns.length}`,
   );
-
   console.log(
     `[report] cells=${report.summary.totalCells} covered=${report.summary.coveredCells} gaps=${report.summary.gapCells} coverage=${report.summary.coveragePct.toFixed(
       2,
@@ -442,6 +503,75 @@ async function runReport(args: {
   }
 }
 
+function countOutpostsByFactionFromSpawnId(spawns: readonly SpawnForCoverage[]): Map<string, number> {
+  const re = /^outpost_(.+)_([0-9]+)_(-?[0-9]+)_(-?[0-9]+)$/;
+  const m = new Map<string, number>();
+
+  for (const s of spawns) {
+    if (s.type !== "outpost") continue;
+    const mm = re.exec(s.spawnId);
+    const faction = mm?.[1] ?? "__unknown__";
+    m.set(faction, (m.get(faction) ?? 0) + 1);
+  }
+
+  return m;
+}
+
+async function runStatus(args: {
+  shardId: string;
+  bounds: Bounds;
+  cellSize: number;
+  respawnRadius: number;
+}): Promise<void> {
+  const cellSize = Math.max(1, Math.floor(args.cellSize));
+  const radius = Math.max(0, args.respawnRadius);
+
+  const spawns = await loadSpawnsForArea({
+    shardId: args.shardId,
+    bounds: args.bounds,
+    cellSize,
+    radiusPad: radius,
+  });
+
+  const countsByType = new Map<string, number>();
+  for (const s of spawns) {
+    countsByType.set(s.type, (countsByType.get(s.type) ?? 0) + 1);
+  }
+
+  const outpostsByFaction = countOutpostsByFactionFromSpawnId(spawns);
+
+  const cov = computeRespawnCoverage(spawns, {
+    bounds: args.bounds,
+    cellSize,
+    respawnRadius: radius,
+  });
+
+  console.log(
+    `[status] shard=${args.shardId} bounds=${boundsSlug(args.bounds)} cellSize=${cellSize} respawnRadius=${radius}`,
+  );
+
+  const typesSorted = [...countsByType.entries()].sort((a, b) => b[1] - a[1]);
+  console.log(`[status] spawn types in scan area:`);
+  for (const [t, n] of typesSorted) {
+    console.log(`  - ${t}: ${n}`);
+  }
+
+  const factionsSorted = [...outpostsByFaction.entries()].sort((a, b) => b[1] - a[1]);
+  if (factionsSorted.length) {
+    console.log(`[status] outposts by faction:`);
+    for (const [f, n] of factionsSorted) console.log(`  - ${f}: ${n}`);
+  } else {
+    console.log(`[status] outposts by faction: (none)`);
+  }
+
+  const s = cov.summary as CoverageSummary;
+  console.log(
+    `[status] coverage: cells=${s.totalCells} covered=${s.coveredCells} gaps=${s.gapCells} pct=${s.coveragePct.toFixed(
+      2,
+    )}%`,
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Fill gaps
 // ---------------------------------------------------------------------------
@@ -460,6 +590,7 @@ async function runFillGaps(args: {
   borderMargin: number;
   json: boolean;
   commit: boolean;
+  updateExisting: boolean;
 }): Promise<void> {
   const cellSize = Math.max(1, Math.floor(args.cellSize));
   const radius = Math.max(0, args.respawnRadius);
@@ -495,9 +626,6 @@ async function runFillGaps(args: {
     console.log(
       `[fill-gaps] planned=${planned.length} seed=${args.seed} shard=${args.shardId} radius=${args.respawnRadius} minDist=${args.minDistance} maxPlace=${args.maxPlace}`,
     );
-    for (const p of planned) {
-      console.log(`- ${p.spawnId} type=${p.type} @ (${p.x.toFixed(2)},${p.z.toFixed(2)}) region=${p.regionId}`);
-    }
   }
 
   if (planned.length === 0) {
@@ -505,25 +633,19 @@ async function runFillGaps(args: {
     return;
   }
 
-  const res = await applyToDb(actions, args.commit);
+  const res = await applyToDb(actions, { commit: args.commit, updateExisting: args.updateExisting });
   if (args.commit) {
-    console.log(`[simBrain] committed.\ninserted=${res.inserted} updated=${res.updated}`);
+    console.log(`[simBrain] committed.\ninserted=${res.inserted} updated=${res.updated} skipped=${res.skipped}`);
   } else {
-    console.log(`[simBrain] rolled back (dry-run).\ninserted=${res.inserted} updated=${res.updated} (use --commit)`);
+    console.log(
+      `[simBrain] rolled back (dry-run).\ninserted=${res.inserted} updated=${res.updated} skipped=${res.skipped} (use --commit)`,
+    );
   }
 }
 
 // ---------------------------------------------------------------------------
 // Era: orchestrated run + artifact
 // ---------------------------------------------------------------------------
-
-function isoSlug(d = new Date()): string {
-  return d.toISOString().replace(/[:.]/g, "-");
-}
-
-function boundsSlug(b: Bounds): string {
-  return `${b.minCx}..${b.maxCx},${b.minCz}..${b.maxCz}`;
-}
 
 function mergePlannedSpawns(existing: SpawnForCoverage[], actions: BrainAction[]): SpawnForCoverage[] {
   const map = new Map<string, SpawnForCoverage>();
@@ -545,19 +667,11 @@ function mergePlannedSpawns(existing: SpawnForCoverage[], actions: BrainAction[]
   return [...map.values()];
 }
 
-async function writeArtifactFile(dir: string, filename: string, json: unknown): Promise<string> {
-  await fs.mkdir(dir, { recursive: true });
-  const filePath = path.join(dir, filename);
-  await fs.writeFile(filePath, JSON.stringify(json, null, 2), "utf8");
-  return filePath;
-}
-
 async function runEra(args: {
   shardId: string;
   bounds: Bounds;
   cellSize: number;
 
-  // outposts
   seed: string;
   borderMargin: number;
   minCellDistance: number;
@@ -570,7 +684,6 @@ async function runEra(args: {
   appendFlag: boolean;
   maxOutpostsPerFaction: number | null;
 
-  // coverage + gap fill
   respawnRadius: number;
   gapSeed: string;
   minDistance: number;
@@ -580,13 +693,12 @@ async function runEra(args: {
   gapArchetype: string;
   gapBorderMargin: number;
 
-  // artifact
   artifactDir: string;
   noArtifact: boolean;
   json: boolean;
 
-  // db
   commit: boolean;
+  updateExisting: boolean;
 }): Promise<void> {
   const cellSize = Math.max(1, Math.floor(args.cellSize));
   const radius = Math.max(0, args.respawnRadius);
@@ -672,12 +784,13 @@ async function runEra(args: {
 
   const artifact = {
     kind: "simBrain.era",
-    version: 1,
+    version: 2,
     createdAt: new Date().toISOString(),
     shardId: args.shardId,
     bounds: args.bounds,
     cellSize,
     commit: args.commit,
+    updateExisting: args.updateExisting,
 
     outposts: {
       safeMode: append,
@@ -715,7 +828,7 @@ async function runEra(args: {
   console.log(
     `[era] outposts_planned=${artifact.outposts.plannedCount} gapfills_planned=${artifact.gapFill.plannedCount} commit=${String(
       args.commit,
-    )}`,
+    )} updateExisting=${String(args.updateExisting)}`,
   );
   console.log(
     `[era] coverage before=${artifact.coverage.before.coveragePct.toFixed(2)}% after=${artifact.coverage.after.coveragePct.toFixed(2)}%`,
@@ -723,10 +836,7 @@ async function runEra(args: {
 
   const filename = `era_${isoSlug()}_${args.shardId}_${boundsSlug(args.bounds)}.json`;
 
-  if (args.json) {
-    console.log(JSON.stringify(artifact, null, 2));
-  }
-
+  if (args.json) console.log(JSON.stringify(artifact, null, 2));
   if (!args.noArtifact) {
     const outPath = await writeArtifactFile(args.artifactDir, filename, artifact);
     console.log(`[era] artifact=${outPath}`);
@@ -738,16 +848,18 @@ async function runEra(args: {
     return;
   }
 
-  const res = await applyToDb(actionsToApply, args.commit);
+  const res = await applyToDb(actionsToApply, { commit: args.commit, updateExisting: args.updateExisting });
   if (args.commit) {
-    console.log(`[simBrain] committed.\ninserted=${res.inserted} updated=${res.updated}`);
+    console.log(`[simBrain] committed.\ninserted=${res.inserted} updated=${res.updated} skipped=${res.skipped}`);
   } else {
-    console.log(`[simBrain] rolled back (dry-run).\ninserted=${res.inserted} updated=${res.updated} (use --commit)`);
+    console.log(
+      `[simBrain] rolled back (dry-run).\ninserted=${res.inserted} updated=${res.updated} skipped=${res.skipped} (use --commit)`,
+    );
   }
 }
 
 // ---------------------------------------------------------------------------
-// Wipe placements (outpost/checkpoint/graveyard by default)
+// Wipe placements
 // ---------------------------------------------------------------------------
 
 async function runWipePlacements(args: {
@@ -792,17 +904,9 @@ async function runWipePlacements(args: {
     client.release();
   }
 
-  const sample = rows.slice(0, 50).map((r) => ({
-    spawnId: r.spawn_id,
-    type: r.type,
-    x: Number(r.x),
-    z: Number(r.z),
-    regionId: r.region_id,
-  }));
-
   const artifact = {
     kind: "simBrain.wipe-placements",
-    version: 1,
+    version: 2,
     createdAt: new Date().toISOString(),
     shardId: args.shardId,
     bounds: args.bounds,
@@ -811,7 +915,13 @@ async function runWipePlacements(args: {
     types: args.types,
     matched: rows.length,
     commit: args.commit,
-    sample,
+    sample: rows.slice(0, 50).map((r) => ({
+      spawnId: r.spawn_id,
+      type: r.type,
+      x: Number(r.x),
+      z: Number(r.z),
+      regionId: r.region_id,
+    })),
   };
 
   console.log(
@@ -821,10 +931,7 @@ async function runWipePlacements(args: {
   );
   console.log(`[wipe] matched=${rows.length} commit=${String(args.commit)}`);
 
-  if (args.json) {
-    console.log(JSON.stringify(artifact, null, 2));
-  }
-
+  if (args.json) console.log(JSON.stringify(artifact, null, 2));
   if (!args.noArtifact) {
     const filename = `wipe_${isoSlug()}_${args.shardId}_${boundsSlug(args.bounds)}.json`;
     const outPath = await writeArtifactFile(args.artifactDir, filename, artifact);
@@ -873,11 +980,14 @@ async function runWipePlacements(args: {
 // ---------------------------------------------------------------------------
 
 async function main(argv: string[]): Promise<void> {
+  assertNoEllipsisArgs(argv);
+
   const cmd = ((argv[0] || "help").toLowerCase() as Cmd) ?? "help";
   if (
     cmd !== "preview" &&
     cmd !== "apply" &&
     cmd !== "report" &&
+    cmd !== "status" &&
     cmd !== "fill-gaps" &&
     cmd !== "era" &&
     cmd !== "wipe-placements"
@@ -886,18 +996,35 @@ async function main(argv: string[]): Promise<void> {
     return;
   }
 
+  const commit = hasFlag(argv, "--commit");
+  assertCommitHasExplicitBounds(argv, commit);
+
   const shardId = getFlag(argv, "--shard") ?? "prime_shard";
   const bounds = parseBounds(getFlag(argv, "--bounds") ?? "-4..4,-4..4");
   const cellSize = parseIntFlag(argv, "--cellSize", 64) || 64;
+
+  const updateExisting = hasFlag(argv, "--updateExisting");
+
+  if (cmd === "report") {
+    const respawnRadius = parseIntFlag(argv, "--respawnRadius", 500) || 500;
+    const top = parseIntFlag(argv, "--top", 25) || 25;
+    await runReport({ shardId, bounds, cellSize, respawnRadius, top });
+    return;
+  }
+
+  if (cmd === "status") {
+    const respawnRadius = parseIntFlag(argv, "--respawnRadius", 500) || 500;
+    await runStatus({ shardId, bounds, cellSize, respawnRadius });
+    return;
+  }
 
   if (cmd === "wipe-placements") {
     const types = parseTypes(getFlag(argv, "--types"), ["outpost", "checkpoint", "graveyard"]);
     const pad = parseIntFlag(argv, "--pad", 0) || 0;
 
     const artifactDir = getFlag(argv, "--artifactDir") ?? "./artifacts/brain";
-    const noArtifact = argv.includes("--noArtifact");
-    const json = argv.includes("--json");
-    const commit = argv.includes("--commit");
+    const noArtifact = hasFlag(argv, "--noArtifact");
+    const json = hasFlag(argv, "--json");
 
     await runWipePlacements({
       shardId,
@@ -913,13 +1040,6 @@ async function main(argv: string[]): Promise<void> {
     return;
   }
 
-  if (cmd === "report") {
-    const respawnRadius = parseIntFlag(argv, "--respawnRadius", 500) || 500;
-    const top = parseIntFlag(argv, "--top", 25) || 25;
-    await runReport({ shardId, bounds, cellSize, respawnRadius, top });
-    return;
-  }
-
   if (cmd === "fill-gaps") {
     const seed = getFlag(argv, "--seed") ?? "seed:gapfill";
     const respawnRadius = parseIntFlag(argv, "--respawnRadius", 500) || 500;
@@ -932,8 +1052,7 @@ async function main(argv: string[]): Promise<void> {
     const protoId = getFlag(argv, "--protoId") ?? spawnType;
     const archetype = getFlag(argv, "--archetype") ?? spawnType;
     const borderMargin = parseIntFlag(argv, "--borderMargin", 16) || 16;
-    const json = argv.includes("--json");
-    const commit = argv.includes("--commit");
+    const json = hasFlag(argv, "--json");
 
     await runFillGaps({
       shardId,
@@ -949,6 +1068,7 @@ async function main(argv: string[]): Promise<void> {
       borderMargin,
       json,
       commit,
+      updateExisting,
     });
     return;
   }
@@ -964,8 +1084,8 @@ async function main(argv: string[]): Promise<void> {
 
   const requestedFactions = parseFactions(getFlag(argv, "--factions") ?? "emberfall:2,oathbound:2");
 
-  const factionsAreTotal = argv.includes("--factionsAreTotal");
-  const appendFlag = argv.includes("--append");
+  const factionsAreTotal = hasFlag(argv, "--factionsAreTotal");
+  const appendFlag = hasFlag(argv, "--append");
   const maxOutpostsRaw = getFlag(argv, "--maxOutpostsPerFaction");
   const maxOutpostsPerFaction = maxOutpostsRaw == null ? null : Math.max(0, parseInt(maxOutpostsRaw, 10) || 0);
 
@@ -1008,7 +1128,7 @@ async function main(argv: string[]): Promise<void> {
   const outpostActions = planInitialOutposts(factions, cfg) as BrainAction[];
 
   if (cmd === "preview") {
-    if (argv.includes("--json")) {
+    if (hasFlag(argv, "--json")) {
       console.log(JSON.stringify(outpostActions, null, 2));
       return;
     }
@@ -1027,12 +1147,13 @@ async function main(argv: string[]): Promise<void> {
   }
 
   if (cmd === "apply") {
-    const commit = argv.includes("--commit");
-    const res = await applyToDb(outpostActions, commit);
+    const res = await applyToDb(outpostActions, { commit, updateExisting });
     if (commit) {
-      console.log(`[simBrain] committed.\ninserted=${res.inserted} updated=${res.updated}`);
+      console.log(`[simBrain] committed.\ninserted=${res.inserted} updated=${res.updated} skipped=${res.skipped}`);
     } else {
-      console.log(`[simBrain] rolled back (dry-run).\ninserted=${res.inserted} updated=${res.updated} (use --commit)`);
+      console.log(
+        `[simBrain] rolled back (dry-run).\ninserted=${res.inserted} updated=${res.updated} skipped=${res.skipped} (use --commit)`,
+      );
     }
     return;
   }
@@ -1050,9 +1171,8 @@ async function main(argv: string[]): Promise<void> {
   const gapBorderMargin = parseIntFlag(argv, "--gapBorderMargin", borderMargin) || borderMargin;
 
   const artifactDir = getFlag(argv, "--artifactDir") ?? "./artifacts/brain";
-  const noArtifact = argv.includes("--noArtifact");
-  const json = argv.includes("--json");
-  const commit = argv.includes("--commit");
+  const noArtifact = hasFlag(argv, "--noArtifact");
+  const json = hasFlag(argv, "--json");
 
   await runEra({
     shardId,
@@ -1085,6 +1205,7 @@ async function main(argv: string[]): Promise<void> {
     json,
 
     commit,
+    updateExisting,
   });
 }
 

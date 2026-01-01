@@ -3585,7 +3585,10 @@
             "report: respawn coverage audit across bounds",
             "fill-gaps: place checkpoints/graveyards to patch coverage gaps (dry-run vs --commit)",
             "era: orchestrated run (outposts + gap-fill + coverage before/after) and writes a JSON artifact (default: ./artifacts/brain)",
-            "wipe-placements: deletes placement spawn types (default outpost/checkpoint/graveyard) inside bounds (dry-run unless --commit), writes an artifact"
+            "wipe-placements: deletes placement spawn types (default outpost/checkpoint/graveyard) inside bounds (dry-run unless --commit), writes an artifact",
+            "status: quick counts (types + outposts by faction) + coverage summary for bounds",
+            "safety: refuses --commit without explicit --bounds (unless --allowDefaultBounds); refuses literal ... args",
+            "default insert-only apply (no updates) unless --updateExisting"
          ],
          "notes": [
             "Dev Simulation Harness CLI entrypoint (worldcore/tools/simBrain.ts).",
