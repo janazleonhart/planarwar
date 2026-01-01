@@ -17,6 +17,9 @@ import type { CellCoverageRow, CoverageSummary, SpawnForCoverage } from "../sim/
 import { planGapFillSpawns } from "../sim/GapFiller";
 import type { GapFillPlanConfig, GapFillSpawn } from "../sim/GapFiller";
 
+import { planTownBaselines } from "../sim/TownBaselinePlanner";
+import type { TownBaselinePlanOptions, TownLikeSpawnRow } from "../sim/TownBaselinePlanner";
+
 // Prefer the canonical action types if present in your repo.
 // If your BrainActions.ts exports these, keep this import.
 // If it doesn't (older branch), you can remove it and fallback to local types.
@@ -29,6 +32,7 @@ type Cmd =
   | "apply"
   | "report"
   | "status"
+  | "town-baseline"
   | "fill-gaps"
   | "era"
   | "trim-outposts"
@@ -47,6 +51,7 @@ Usage:
   node dist/worldcore/tools/simBrain.js apply [options] [--commit]
   node dist/worldcore/tools/simBrain.js report [options]
   node dist/worldcore/tools/simBrain.js status [options]
+  node dist/worldcore/tools/simBrain.js town-baseline [options] [--commit]
   node dist/worldcore/tools/simBrain.js fill-gaps [options] [--commit]
   node dist/worldcore/tools/simBrain.js era [options] [--commit]
   node dist/worldcore/tools/simBrain.js trim-outposts [options] [--commit]
@@ -58,6 +63,18 @@ Common options:
   --shard       shard id (default: prime_shard)
   --bounds      cell bounds (default: -4..4,-4..4)
   --cellSize    cell size in world units (default: 64)
+
+Town baseline options (town-baseline):
+  --townTypes       comma list (default: town,outpost,hub,village,city,settlement,camp)
+  --noMailbox       do not seed mailbox baseline
+  --mailboxProtoId  (default: mailbox_basic)
+  --mailboxRadius   (default: 8)
+  --noRest          do not seed rest baseline
+  --restProtoId     (default: rest_spot_basic)
+  --restRadius      (default: 10)
+  --guardCount      NPC guards per town (default: 2)
+  --guardProtoId    (default: town_guard)
+  --guardRadius     (default: 12)
 
 Safety:
   --commit                commit to DB (otherwise rollback)
@@ -579,6 +596,109 @@ async function runStatus(args: {
       );
     }
   }
+}
+
+// ---------------------------------------------------------------------------
+// Town baseline seeding
+// ---------------------------------------------------------------------------
+
+async function runTownBaseline(args: {
+  shardId: string;
+  bounds: Bounds;
+  cellSize: number;
+
+  townTypes: string[];
+
+  seedMailbox: boolean;
+  mailboxProtoId: string;
+  mailboxRadius: number;
+
+  seedRest: boolean;
+  restProtoId: string;
+  restRadius: number;
+
+  guardCount: number;
+  guardProtoId: string;
+  guardRadius: number;
+
+  commit: boolean;
+  updateExisting: boolean;
+}): Promise<void> {
+  const cellSize = Math.max(1, Math.floor(args.cellSize));
+
+  const minX = args.bounds.minCx * cellSize;
+  const maxX = (args.bounds.maxCx + 1) * cellSize;
+  const minZ = args.bounds.minCz * cellSize;
+  const maxZ = (args.bounds.maxCz + 1) * cellSize;
+
+  const types = (args.townTypes ?? []).map((t) => String(t).trim()).filter(Boolean);
+  if (!types.length) throw new Error("town-baseline requires --townTypes to resolve at least one type");
+
+  const client = await db.connect();
+  let rows: any[] = [];
+  try {
+    const res = await client.query(
+      `
+      SELECT shard_id, spawn_id, type, x, y, z, region_id
+      FROM spawn_points
+      WHERE shard_id = $1
+        AND x >= $2 AND x < $3
+        AND z >= $4 AND z < $5
+        AND type = ANY($6::text[])
+      ORDER BY spawn_id
+    `,
+      [args.shardId, minX, maxX, minZ, maxZ, types],
+    );
+
+    rows = res.rows ?? [];
+  } finally {
+    client.release();
+  }
+
+  const towns: TownLikeSpawnRow[] = rows.map((r: any) => ({
+    shardId: String(r.shard_id),
+    spawnId: String(r.spawn_id),
+    type: String(r.type),
+    x: Number(r.x ?? 0),
+    y: Number(r.y ?? 0),
+    z: Number(r.z ?? 0),
+    regionId: r.region_id ? String(r.region_id) : null,
+  }));
+
+  const opts: TownBaselinePlanOptions = {
+    bounds: args.bounds,
+    cellSize,
+
+    townTypes: types,
+
+    seedMailbox: args.seedMailbox,
+    mailboxType: "mailbox",
+    mailboxProtoId: args.mailboxProtoId,
+    mailboxRadius: Math.max(0, args.mailboxRadius),
+
+    seedRest: args.seedRest,
+    restType: "rest",
+    restProtoId: args.restProtoId,
+    restRadius: Math.max(0, args.restRadius),
+
+    guardCount: Math.max(0, Math.floor(args.guardCount)),
+    guardProtoId: args.guardProtoId,
+    guardRadius: Math.max(0, args.guardRadius),
+  };
+
+  const plan = planTownBaselines(towns, opts);
+
+  console.log(
+    `[town-baseline] shard=${args.shardId} bounds=${boundsSlug(args.bounds)} towns=${plan.townsConsidered} actions=${plan.actions.length} mailbox=${opts.seedMailbox ? "on" : "off"} rest=${opts.seedRest ? "on" : "off"} guards=${opts.guardCount}`,
+  );
+
+  const res = await applyToDb(plan.actions as unknown as BrainAction[], {
+    commit: args.commit,
+    updateExisting: args.updateExisting,
+  });
+
+  if (args.commit) console.log(`[town-baseline] committed. inserted=${res.inserted} updated=${res.updated} skipped=${res.skipped}`);
+  else console.log(`[town-baseline] dry-run rolled back. inserted=${res.inserted} updated=${res.updated} skipped=${res.skipped} (use --commit)`);
 }
 
 // ---------------------------------------------------------------------------
@@ -1349,6 +1469,7 @@ async function main(argv: string[]): Promise<void> {
     "apply",
     "report",
     "status",
+    "town-baseline",
     "fill-gaps",
     "era",
     "trim-outposts",
@@ -1387,6 +1508,51 @@ async function main(argv: string[]): Promise<void> {
     const respawnRadius = parseIntFlag(argv, "--respawnRadius", 500) || 500;
     const topGaps = parseIntFlag(argv, "--topGaps", 0) || 0;
     await runStatus({ shardId, bounds, cellSize, respawnRadius, topGaps });
+    return;
+  }
+
+  if (cmd === "town-baseline") {
+
+    const townTypes = parseTypes(getFlag(argv, "--townTypes"), [
+      "town",
+      "outpost",
+      "hub",
+      "village",
+      "city",
+      "settlement",
+      "camp",
+    ]);
+
+    const seedMailbox = !hasFlag(argv, "--noMailbox");
+    const mailboxProtoId = getFlag(argv, "--mailboxProtoId") ?? "mailbox_basic";
+    const mailboxRadius = parseIntFlag(argv, "--mailboxRadius", 8) || 8;
+
+    const seedRest = !hasFlag(argv, "--noRest");
+    const restProtoId = getFlag(argv, "--restProtoId") ?? "rest_spot_basic";
+    const restRadius = parseIntFlag(argv, "--restRadius", 10) || 10;
+
+    const guardCount = parseIntFlag(argv, "--guardCount", 2) || 2;
+    const guardProtoId = getFlag(argv, "--guardProtoId") ?? "town_guard";
+    const guardRadius = parseIntFlag(argv, "--guardRadius", 12) || 12;
+
+    await runTownBaseline({
+      shardId,
+      bounds,
+      cellSize,
+      townTypes,
+      seedMailbox,
+      mailboxProtoId,
+      mailboxRadius,
+      seedRest,
+      restProtoId,
+      restRadius,
+      guardCount,
+      guardProtoId,
+      guardRadius,
+      commit,
+      updateExisting,
+    });
+
     return;
   }
 

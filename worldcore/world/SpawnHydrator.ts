@@ -77,6 +77,11 @@ function normalizeType(t: string): string {
 const DEFAULT_ALLOWED_TYPES = [
   "checkpoint",
   "graveyard",
+
+  // Town/service anchors (inert POIs; safe by default)
+  "mailbox",
+  "rest",
+
   "outpost",
   "town",
   "hub",

@@ -27,7 +27,7 @@ import type { WeaponSkillId } from "../combat/CombatEngine";
 
 const log = Logger.scope("MUD_ABILITIES");
 
-function listKnownAbilitiesForChar(char: CharacterState): AbilityDefinition[] {
+export function listKnownAbilitiesForChar(char: CharacterState): AbilityDefinition[] {
   const cls = (char.classId ?? "").toLowerCase();
   const level = char.level ?? 1;
 
