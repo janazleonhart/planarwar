@@ -76,7 +76,9 @@ import {
   handleDebugTake,
   handleDebugMailTest,
   handleDebugNpcAi,
+  handleDebugHydrateHere
 } from "./debug/handlers";
+import { handleWalkToCommand } from "./world/walktoCommand";
 
 import type { MudCommandHandlerFn } from "./types";
 
@@ -127,6 +129,9 @@ export const COMMANDS: Record<string, MudCommandHandlerFn> = {
   talk: handleTalkCommand,
   interact: handleInteractCommand,
   use: handleInteractCommand,
+  walkto: handleWalkToCommand,
+  wt: handleWalkToCommand,
+
 
   // Social
   who: handleWhoCommand,
@@ -203,6 +208,7 @@ export const COMMANDS: Record<string, MudCommandHandlerFn> = {
   debug_take: withDebugGate(handleDebugTake, "dev"),
   debug_mail_test: withDebugGate(handleDebugMailTest, "dev"),
   debug_npc_ai: withDebugGate(handleDebugNpcAi, "gm"),
+  debug_hydrate_here: withDebugGate(handleDebugHydrateHere, "gm"),
 
   event_give_any: withDebugGate(handleEventGiveAny, "owner"),
   event_mail_reward: withDebugGate(handleEventMailReward, "gm"),

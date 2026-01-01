@@ -22,6 +22,8 @@ import {
   getNpcPrototype,
   DEFAULT_NPC_PROTOTYPES,
 } from "../../../npc/NpcTypes";
+export { handleDebugHydrateHere } from "./hydrateHere";
+
 
 const log = Logger.scope("MudDebug");
 

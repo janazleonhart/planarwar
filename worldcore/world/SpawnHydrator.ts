@@ -11,12 +11,16 @@
 //   WORLD_SPAWNS_ENABLED=1
 // Optional filter:
 //   WORLD_SPAWNS_TYPES=outpost,checkpoint,graveyard,town
+
+// Optional town baselines:
+//   PW_TOWN_BASELINES=1 (or WORLD_TOWN_BASELINES=1)
 // -----------------------------------------------------------------------------
 
 import { Logger } from "../utils/logger";
 import type { EntityManager } from "../core/EntityManager";
 import type { Entity } from "../shared/Entity";
 import type { DbSpawnPoint, SpawnPointService } from "./SpawnPointService";
+import { TownBaselines } from "./TownBaselines";
 
 const log = Logger.scope("SpawnHydrator");
 
@@ -128,6 +132,8 @@ export class SpawnHydrator {
   private hydratedRegionKeys = new Set<string>();
 
   private allowTypes: string[];
+  private townBaselines: TownBaselines;
+
 
   constructor(
     private spawnPoints: SpawnPointService,
@@ -137,6 +143,9 @@ export class SpawnHydrator {
     const envAllow = parseCsvEnv(process.env.WORLD_SPAWNS_TYPES);
     const initial = envAllow ?? opts?.allowTypes ?? DEFAULT_ALLOWED_TYPES;
     this.allowTypes = initial.map(normalizeType).filter(Boolean);
+
+    // Optional: town service baselines (e.g., mailbox anchors)
+    this.townBaselines = new TownBaselines(this.entities);
   }
 
   /**
@@ -148,6 +157,18 @@ export class SpawnHydrator {
 
     const key = `${shardId}:${regionId}`;
     if (!force && this.hydratedRegionKeys.has(key)) {
+      // Even if we skip POI rehydration (cached), still allow town baselines
+      // to run so hot reloads / data changes can take effect without restart.
+      if (this.townBaselines.enabled) {
+        try {
+          const rows = await this.spawnPoints.getSpawnPointsForRegion(shardId, regionId);
+          for (const sp of rows) {
+            this.townBaselines.ensureTownBaseline({ shardId, regionId, roomId, townSpawn: sp, dryRun });
+          }
+        } catch {
+          // ignore
+        }
+      }
       return {
         shardId,
         regionId,
@@ -193,6 +214,10 @@ export class SpawnHydrator {
     let wouldSpawn = 0;
 
     for (const sp of eligibleRows) {
+      // Town baselines (mailbox anchors, etc.) run regardless of whether we spawn the POI this call.
+      if (this.townBaselines.enabled) {
+        this.townBaselines.ensureTownBaseline({ shardId, regionId, roomId, townSpawn: sp, dryRun });
+      }
       const already = inRoom.some((e) => entityAlreadyRepresentsSpawnPoint(e, sp));
       if (already) {
         skippedExisting++;
