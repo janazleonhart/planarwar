@@ -3263,7 +3263,9 @@
          ],
          "notes": [
             "Deterministic outpost placement with spacing constraints inside cell bounds.",
-            "Uses faction seed counts as requested placements; adds deterministic jitter within a cell border margin."
+            "SpawnId format: outpost_<factionKey>_<index>_<cx>_<cz>.",
+            "Supports FactionSeedSpec.startIndex to avoid spawnId collisions in append-only (safe) runs.",
+            "Adds deterministic jitter within a cell border margin."
          ]
       },
       "skills.progression": {
@@ -3578,12 +3580,15 @@
          ],
          "provides": [
             "preview/apply: deterministic settlement/outpost planning (dry-run vs --commit)",
+            "apply safe mode: append-only outposts via --append (auto-enabled when using caps/total-mode)",
+            "apply caps: --factionsAreTotal and --maxOutpostsPerFaction constrain total outposts per faction (existing+new)",
             "report: respawn coverage audit across bounds",
             "fill-gaps: place checkpoints/graveyards to patch coverage gaps (dry-run vs --commit)"
          ],
          "notes": [
             "Dev Simulation Harness CLI entrypoint (worldcore/tools/simBrain.ts).",
-            "Follows audit \u2192 plan \u2192 apply pattern with safe default rollback unless --commit."
+            "Follows audit → plan → apply pattern with safe default rollback unless --commit.",
+            "In safe mode, the planner reads existing outpost_* spawnIds, computes per-faction counts/maxIndex, and only adds new spawnIds starting at maxIndex+1."
          ]
       },
       "trade.auditLog": {

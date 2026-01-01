@@ -9,6 +9,17 @@ import type { BrainAction, PlaceSpawnAction } from "./BrainActions";
 export type FactionSeedSpec = {
   factionId: string;
   count: number;
+
+  /**
+   * Optional starting index for spawnId generation.
+   *
+   * Why this exists:
+   * - By default, the planner uses indices 0..count-1 per faction, which is great for deterministic re-runs
+   *   (same inputs => same spawnIds => DB upserts update in place).
+   * - In "append / safe mode", we want to *only add* new outposts without touching existing outpost_* spawns.
+   *   The harness can set startIndex to (maxExistingIndex + 1) per faction to avoid collisions.
+   */
+  startIndex?: number;
 };
 
 export type SettlementPlanConfig = {
@@ -46,14 +57,15 @@ export function planInitialOutposts(
   const candidates = rng.shuffle(allCells);
 
   const chosen: { cell: Cell; factionId: string; index: number }[] = [];
-
   const queue: { factionId: string; index: number }[] = [];
+
   for (const f of factions) {
     const n = Math.max(0, Math.trunc(f.count));
-    for (let i = 0; i < n; i++) queue.push({ factionId: f.factionId, index: i });
+    const start = Math.max(0, Math.trunc(f.startIndex ?? 0));
+    for (let i = 0; i < n; i++) queue.push({ factionId: f.factionId, index: start + i });
   }
-  const placementOrder = rng.shuffle(queue);
 
+  const placementOrder = rng.shuffle(queue);
   for (const req of placementOrder) {
     const best = pickBestCell(candidates, chosen, cfg.minCellDistance);
     if (!best) break;
@@ -75,7 +87,6 @@ function pickBestCell(
 
   for (const cell of candidates) {
     const dMin = minDistanceToChosen(cell, chosen);
-
     if (chosen.length > 0 && dMin < minCellDistance) continue;
 
     const score = dMin;
@@ -111,7 +122,6 @@ function toPlaceSpawnAction(
   const bounds = cellBounds(cell, cfg.cellSize);
 
   const maxJitter = Math.max(0, Math.floor(cfg.cellSize / 2 - cfg.borderMargin));
-
   const hx = SimRng.hash32(`sx:${cfg.shardId}:${factionId}:${index}:${cell.cx},${cell.cz}`);
   const hz = SimRng.hash32(`sz:${cfg.shardId}:${factionId}:${index}:${cell.cx},${cell.cz}`);
 

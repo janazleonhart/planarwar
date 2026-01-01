@@ -2,68 +2,78 @@
 /* eslint-disable no-console */
 
 import { db } from "../db/Database";
-
 import { planInitialOutposts } from "../sim/SettlementPlanner";
 import type { FactionSeedSpec, SettlementPlanConfig } from "../sim/SettlementPlanner";
 import type { Bounds } from "../sim/SimGrid";
-
 import { computeRespawnCoverage } from "../sim/RespawnCoverage";
 import type { SpawnForCoverage } from "../sim/RespawnCoverage";
-
 import { planGapFillSpawns } from "../sim/GapFiller";
 import type { GapFillPlanConfig } from "../sim/GapFiller";
 
 type Cmd = "preview" | "apply" | "report" | "fill-gaps" | "help";
 
 function usage(): void {
-  console.log(`
+  console.log(
+    `
 Planar War — Dev Simulation Harness (WorldCore)
 
 Usage:
-  node dist/worldcore/tools/simBrain.js preview   [options]
-  node dist/worldcore/tools/simBrain.js apply     [options] [--commit]
-  node dist/worldcore/tools/simBrain.js report    [options]
+  node dist/worldcore/tools/simBrain.js preview [options]
+  node dist/worldcore/tools/simBrain.js apply [options] [--commit]
+  node dist/worldcore/tools/simBrain.js report [options]
   node dist/worldcore/tools/simBrain.js fill-gaps [options] [--commit]
 
 Common options:
-  --shard <shardId>             shard id (default: prime_shard)
-  --bounds <cx..cx,cz..cz>      cell bounds (default: -4..4,-4..4)
-  --cellSize <n>                cell size in world units (default: 64)
+  --shard       shard id (default: prime_shard)
+  --bounds      cell bounds (default: -4..4,-4..4)
+  --cellSize    cell size in world units (default: 64)
 
 Planner options (preview/apply):
-  --seed <seed>                 deterministic seed (default: seed:alpha)
-  --minCellDistance <n>         spacing in CELLS (default: 3)
-  --borderMargin <n>            in-cell border margin (default: 16)
-  --factions <list>             e.g. emberfall:2,oathbound:3
-  --spawnType <type>            default: outpost
-  --protoId <protoId>           default: outpost
-  --archetype <archetype>       default: outpost
-  --commit                      apply only: commit to DB (otherwise rollback)
-  --json                        preview only: print JSON actions
+  --seed        deterministic seed (default: seed:alpha)
+  --minCellDistance spacing in CELLS (default: 3)
+  --borderMargin   in-cell border margin (default: 16)
+  --factions    e.g. emberfall:2,oathbound:3
+  --spawnType   default: outpost
+  --protoId     default: outpost
+  --archetype   default: outpost
+  --append      SAFE MODE: only ADD new outposts (never touch existing outpost_* spawns)
+  --factionsAreTotal  interpret --factions counts as TOTAL desired per faction (existing+new)
+  --maxOutpostsPerFaction N  clamp total outposts per faction to N (existing+new)
+
+  --commit      apply only: commit to DB (otherwise rollback)
+  --json        preview only: print JSON actions
 
 Report options:
-  --respawnRadius <n>           world units radius for "covered" (default: 500)
-  --top <n>                     show worst N gaps (default: 25)
+  --respawnRadius  world units radius for "covered" (default: 500)
+  --top            show worst N gaps (default: 25)
 
 Fill-gaps options:
-  --seed <seed>                 deterministic seed (default: seed:gapfill)
-  --respawnRadius <n>           coverage radius (default: 500)
-  --minDistance <n>             min distance between checkpoints/graveyards (default: 300)
-  --maxPlace <n>                max new spawns to place (default: 50)
-  --spawnType <checkpoint|graveyard>  default: checkpoint
-  --protoId <protoId>           default: checkpoint
-  --archetype <archetype>       default: checkpoint
-  --borderMargin <n>            in-cell border margin (default: 16)
-  --commit                      fill-gaps only: commit to DB (otherwise rollback)
-  --json                        print planned actions as JSON
+  --seed           deterministic seed (default: seed:gapfill)
+  --respawnRadius  coverage radius (default: 500)
+  --minDistance    min distance between checkpoints/graveyards (default: 300)
+  --maxPlace       max new spawns to place (default: 50)
+  --spawnType      default: checkpoint
+  --protoId        default: checkpoint
+  --archetype      default: checkpoint
+  --borderMargin   in-cell border margin (default: 16)
+  --commit         fill-gaps only: commit to DB (otherwise rollback)
+  --json           print planned actions as JSON
 
 Examples:
   node dist/worldcore/tools/simBrain.js preview --seed seed:alpha --bounds -4..4,-4..4 --factions emberfall:2,oathbound:2
-  node dist/worldcore/tools/simBrain.js apply   --seed seed:alpha --bounds -4..4,-4..4 --factions emberfall:2,oathbound:2 --commit
-  node dist/worldcore/tools/simBrain.js report  --bounds -8..8,-8..8 --respawnRadius 500 --top 25
+
+  node dist/worldcore/tools/simBrain.js apply --seed seed:alpha --bounds -4..4,-4..4 --factions emberfall:2,oathbound:2 --commit
+
+  # SAFE MODE: keep existing outposts, only add new up to totals
+  node dist/worldcore/tools/simBrain.js apply --bounds -8..8,-8..8 --factions emberfall:2,oathbound:2 --factionsAreTotal --maxOutpostsPerFaction 2 --append --commit
+
+  node dist/worldcore/tools/simBrain.js report --bounds -8..8,-8..8 --respawnRadius 500 --top 25
+
   node dist/worldcore/tools/simBrain.js fill-gaps --bounds -8..8,-8..8 --respawnRadius 500 --minDistance 300 --maxPlace 50
+
   node dist/worldcore/tools/simBrain.js fill-gaps --bounds -8..8,-8..8 --respawnRadius 500 --commit
-`.trim());
+`.trim(),
+  );
 }
 
 function getFlag(argv: string[], name: string): string | null {
@@ -74,9 +84,11 @@ function getFlag(argv: string[], name: string): string | null {
   return v;
 }
 
-function hasFlag(argv: string[], name: boolean | string): boolean {
-  if (typeof name === "boolean") return name;
-  return (process.argv.slice(2) ?? []).includes(name);
+function parseIntFlag(argv: string[], name: string, fallback: number): number {
+  const raw = getFlag(argv, name);
+  if (raw == null) return fallback;
+  const n = parseInt(raw, 10);
+  return Number.isFinite(n) ? n : fallback;
 }
 
 function parseBounds(input: string): Bounds {
@@ -130,45 +142,33 @@ async function applyToDb(actions: any[], commit: boolean): Promise<void> {
 
       if (existing.rowCount && existing.rows[0]) {
         const id = (existing.rows[0] as any).id as number;
-
         await client.query(
           `
           UPDATE spawn_points
-          SET type = $2,
-              archetype = $3,
-              proto_id = $4,
-              variant_id = $5,
-              x = $6,
-              y = $7,
-              z = $8,
-              region_id = $9
+          SET type = $2, archetype = $3, proto_id = $4, variant_id = $5, x = $6, y = $7, z = $8, region_id = $9
           WHERE id = $1
-          `,
+        `,
           [id, s.type, s.archetype, s.protoId, s.variantId, s.x, s.y, s.z, s.regionId],
         );
-
         updated++;
       } else {
         await client.query(
           `
-          INSERT INTO spawn_points
-            (shard_id, spawn_id, type, archetype, proto_id, variant_id, x, y, z, region_id)
-          VALUES
-            ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
-          `,
+          INSERT INTO spawn_points (shard_id, spawn_id, type, archetype, proto_id, variant_id, x, y, z, region_id)
+          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+        `,
           [s.shardId, s.spawnId, s.type, s.archetype, s.protoId, s.variantId, s.x, s.y, s.z, s.regionId],
         );
-
         inserted++;
       }
     }
 
     if (commit) {
       await client.query("COMMIT");
-      console.log(`[simBrain] committed. inserted=${inserted} updated=${updated}`);
+      console.log(`[simBrain] committed.\ninserted=${inserted} updated=${updated}`);
     } else {
       await client.query("ROLLBACK");
-      console.log(`[simBrain] rolled back (dry-run). inserted=${inserted} updated=${updated} (use --commit)`);
+      console.log(`[simBrain] rolled back (dry-run).\ninserted=${inserted} updated=${updated} (use --commit)`);
     }
   } catch (err) {
     try {
@@ -200,10 +200,8 @@ async function loadSpawnsForArea(args: {
       `
       SELECT spawn_id, type, x, z, variant_id
       FROM spawn_points
-      WHERE shard_id = $1
-        AND x >= $2 AND x <= $3
-        AND z >= $4 AND z <= $5
-      `,
+      WHERE shard_id = $1 AND x >= $2 AND x <= $3 AND z >= $4 AND z <= $5
+    `,
       [args.shardId, minX, maxX, minZ, maxZ],
     );
 
@@ -217,6 +215,89 @@ async function loadSpawnsForArea(args: {
   } finally {
     client.release();
   }
+}
+
+type OutpostStats = { count: number; maxIndex: number };
+
+function sanitizeId(s: string): string {
+  return s.replace(/[^a-zA-Z0-9_]+/g, "_").replace(/^_+|_+$/g, "");
+}
+
+async function loadExistingOutpostStats(shardId: string): Promise<Map<string, OutpostStats>> {
+  // Note: we parse spawn_id rather than relying on columns because factionId can contain underscores.
+  // Format: outpost_<factionKey>_<index>_<cx>_<cz>
+  const re = /^outpost_(.+)_([0-9]+)_(-?[0-9]+)_(-?[0-9]+)$/;
+
+  const client = await db.connect();
+  try {
+    const res = await client.query(
+      `
+      SELECT spawn_id
+      FROM spawn_points
+      WHERE shard_id = $1 AND spawn_id LIKE 'outpost_%'
+    `,
+      [shardId],
+    );
+
+    const map = new Map<string, OutpostStats>();
+    for (const row of res.rows as any[]) {
+      const id = String(row.spawn_id ?? "");
+      const m = re.exec(id);
+      if (!m) continue;
+
+      const factionKey = m[1];
+      const index = parseInt(m[2], 10);
+      if (!Number.isFinite(index)) continue;
+
+      const cur = map.get(factionKey) ?? { count: 0, maxIndex: -1 };
+      cur.count++;
+      if (index > cur.maxIndex) cur.maxIndex = index;
+      map.set(factionKey, cur);
+    }
+
+    return map;
+  } finally {
+    client.release();
+  }
+}
+
+function clampOutpostPlan(args: {
+  requested: readonly FactionSeedSpec[];
+  factionsAreTotal: boolean;
+  maxOutpostsPerFaction: number | null;
+  append: boolean;
+  existing: Map<string, OutpostStats> | null;
+}): FactionSeedSpec[] {
+  // When not in append/safe mode, we just pass through (legacy deterministic behavior).
+  if (!args.append) return [...args.requested];
+
+  const existing = args.existing ?? new Map<string, OutpostStats>();
+
+  const out: FactionSeedSpec[] = [];
+  for (const f of args.requested) {
+    const key = sanitizeId(f.factionId);
+    const st = existing.get(key) ?? { count: 0, maxIndex: -1 };
+
+    const cap =
+      args.maxOutpostsPerFaction == null ? Number.POSITIVE_INFINITY : Math.max(0, args.maxOutpostsPerFaction);
+
+    let newCount: number;
+    if (args.factionsAreTotal) {
+      const desiredTotal = Math.min(Math.max(0, Math.trunc(f.count)), cap);
+      newCount = Math.max(0, desiredTotal - st.count);
+    } else {
+      const requestedNew = Math.max(0, Math.trunc(f.count));
+      const allowedNew = Math.max(0, cap - st.count);
+      newCount = Math.min(requestedNew, allowedNew);
+    }
+
+    if (newCount <= 0) continue;
+
+    const startIndex = Math.max(0, st.maxIndex + 1);
+    out.push({ factionId: f.factionId, count: newCount, startIndex });
+  }
+
+  return out;
 }
 
 async function runReport(args: {
@@ -246,6 +327,7 @@ async function runReport(args: {
     `[report] shard=${args.shardId} bounds=${args.bounds.minCx}..${args.bounds.maxCx},${args.bounds.minCz}..${args.bounds.maxCz} ` +
       `cellSize=${cellSize} radius=${radius} spawns_scanned=${spawns.length}`,
   );
+
   console.log(
     `[report] cells=${summary.totalCells} covered=${summary.coveredCells} gaps=${summary.gapCells} coverage=${summary.coveragePct.toFixed(2)}%`,
   );
@@ -275,18 +357,14 @@ async function runFillGaps(args: {
   shardId: string;
   bounds: Bounds;
   cellSize: number;
-
   seed: string;
   respawnRadius: number;
   minDistance: number;
   maxPlace: number;
-
   spawnType: "checkpoint" | "graveyard";
   protoId: string;
   archetype: string;
-
   borderMargin: number;
-
   json: boolean;
   commit: boolean;
 }): Promise<void> {
@@ -316,7 +394,6 @@ async function runFillGaps(args: {
   };
 
   const planned = planGapFillSpawns(existing, cfg);
-
   const actions = planned.map((p) => ({
     kind: "place_spawn",
     spawn: p,
@@ -350,29 +427,27 @@ async function main(argv: string[]): Promise<void> {
 
   const shardId = getFlag(argv, "--shard") ?? "prime_shard";
   const bounds = parseBounds(getFlag(argv, "--bounds") ?? "-4..4,-4..4");
-  const cellSize = parseInt(getFlag(argv, "--cellSize") ?? "64", 10) || 64;
+  const cellSize = parseIntFlag(argv, "--cellSize", 64) || 64;
 
   if (cmd === "report") {
-    const respawnRadius = parseInt(getFlag(argv, "--respawnRadius") ?? "500", 10) || 500;
-    const top = parseInt(getFlag(argv, "--top") ?? "25", 10) || 25;
+    const respawnRadius = parseIntFlag(argv, "--respawnRadius", 500) || 500;
+    const top = parseIntFlag(argv, "--top", 25) || 25;
     await runReport({ shardId, bounds, cellSize, respawnRadius, top });
     return;
   }
 
   if (cmd === "fill-gaps") {
     const seed = getFlag(argv, "--seed") ?? "seed:gapfill";
-    const respawnRadius = parseInt(getFlag(argv, "--respawnRadius") ?? "500", 10) || 500;
-    const minDistance = parseInt(getFlag(argv, "--minDistance") ?? "300", 10) || 300;
-    const maxPlace = parseInt(getFlag(argv, "--maxPlace") ?? "50", 10) || 50;
+    const respawnRadius = parseIntFlag(argv, "--respawnRadius", 500) || 500;
+    const minDistance = parseIntFlag(argv, "--minDistance", 300) || 300;
+    const maxPlace = parseIntFlag(argv, "--maxPlace", 50) || 50;
 
     const spawnTypeRaw = (getFlag(argv, "--spawnType") ?? "checkpoint").toLowerCase();
     const spawnType = (spawnTypeRaw === "graveyard" ? "graveyard" : "checkpoint") as "checkpoint" | "graveyard";
 
     const protoId = getFlag(argv, "--protoId") ?? spawnType;
     const archetype = getFlag(argv, "--archetype") ?? spawnType;
-
-    const borderMargin = parseInt(getFlag(argv, "--borderMargin") ?? "16", 10) || 16;
-
+    const borderMargin = parseIntFlag(argv, "--borderMargin", 16) || 16;
     const json = argv.includes("--json");
     const commit = argv.includes("--commit");
 
@@ -394,23 +469,54 @@ async function main(argv: string[]): Promise<void> {
     return;
   }
 
+  // ---------------------------------------------------------------------------
   // preview/apply planner args
+  // ---------------------------------------------------------------------------
   const seed = getFlag(argv, "--seed") ?? "seed:alpha";
-
   const cfg: SettlementPlanConfig = {
     seed,
     shardId,
     bounds,
     cellSize,
     baseY: 0,
-    borderMargin: parseInt(getFlag(argv, "--borderMargin") ?? "16", 10) || 16,
-    minCellDistance: parseInt(getFlag(argv, "--minCellDistance") ?? "3", 10) || 3,
+    borderMargin: parseIntFlag(argv, "--borderMargin", 16) || 16,
+    minCellDistance: parseIntFlag(argv, "--minCellDistance", 3) || 3,
     spawnType: getFlag(argv, "--spawnType") ?? "outpost",
     protoId: getFlag(argv, "--protoId") ?? "outpost",
     archetype: getFlag(argv, "--archetype") ?? "outpost",
   };
 
-  const factions = parseFactions(getFlag(argv, "--factions") ?? "emberfall:2,oathbound:2");
+  const requestedFactions = parseFactions(getFlag(argv, "--factions") ?? "emberfall:2,oathbound:2");
+
+  const factionsAreTotal = argv.includes("--factionsAreTotal");
+  const appendFlag = argv.includes("--append");
+  const maxOutpostsRaw = getFlag(argv, "--maxOutpostsPerFaction");
+  const maxOutpostsPerFaction = maxOutpostsRaw == null ? null : Math.max(0, parseInt(maxOutpostsRaw, 10) || 0);
+
+  // If you set *either* total-mode or a cap, we automatically enter SAFE MODE.
+  const append = appendFlag || factionsAreTotal || maxOutpostsPerFaction != null;
+
+  const existingStats = append ? await loadExistingOutpostStats(shardId) : null;
+  const factions = clampOutpostPlan({
+    requested: requestedFactions,
+    factionsAreTotal,
+    maxOutpostsPerFaction,
+    append,
+    existing: existingStats,
+  });
+
+  if (append) {
+    const want = requestedFactions.map((f) => `${f.factionId}:${f.count}`).join(",") || "(none)";
+    const eff = factions.map((f) => `${f.factionId}:${f.count}@${f.startIndex ?? 0}`).join(",") || "(none)";
+    console.log(
+      `[planner] safeMode=on factionsAreTotal=${String(factionsAreTotal)} maxOutpostsPerFaction=${
+        maxOutpostsPerFaction == null ? "∞" : String(maxOutpostsPerFaction)
+      }`,
+    );
+    console.log(`[planner] requested=${want}`);
+    console.log(`[planner] effective=${eff}`);
+  }
+
   const actions = planInitialOutposts(factions, cfg);
 
   if (cmd === "preview") {
@@ -419,7 +525,7 @@ async function main(argv: string[]): Promise<void> {
     } else {
       console.log(`[simBrain] actions=${actions.length} seed=${seed} shard=${shardId}`);
       for (const a of actions) {
-        const s = a.spawn;
+        const s = (a as any).spawn;
         console.log(
           `- ${s.spawnId} type=${s.type} proto=${s.protoId} @ (${s.x.toFixed(2)},${s.z.toFixed(2)}) region=${s.regionId}`,
         );
