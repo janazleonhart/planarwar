@@ -3576,23 +3576,26 @@
             "sim.settlementPlanner",
             "sim.respawnCoverage",
             "sim.gapFiller",
+            "sim.brainActions",
             "world.spawnPoints"
          ],
          "provides": [
-            "preview/apply: deterministic settlement/outpost planning (dry-run vs --commit)",
-            "status: spawn type counts + outposts by faction + coverage summary (supports --topGaps N)",
-            "report: respawn coverage audit across bounds (worst gaps via --top N)",
+            "preview/apply: deterministic outpost planning (dry-run vs --commit)",
+            "report/status: respawn coverage audit across bounds (status supports --topGaps)",
             "fill-gaps: place checkpoints/graveyards to patch coverage gaps (dry-run vs --commit)",
-            "era: orchestrated outposts planning + gap-fill + artifact output (dry-run vs --commit)",
-            "wipe-placements: delete spawn_points by type within bounds (dry-run vs --commit)",
-            "trim-outposts: enforce per-faction cap by deleting extras (dry-run vs --commit)",
-            "snapshot-spawns: export spawn_points within bounds to JSON (local artifact)",
-            "restore-spawns: import snapshot JSON into spawn_points (dry-run vs --commit; insert-only unless --updateExisting)"
+            "era: orchestrated outposts + gapfill run with safe-mode caps + artifact output",
+            "trim-outposts: enforce per-faction cap by deleting extras within bounds",
+            "snapshot-spawns/restore-spawns: export + reapply spawn_points slices",
+            "wipe-placements: delete spawn_points of selected types within bounds"
+         ],
+         "owns": [
+            "artifacts/brain/*"
          ],
          "notes": [
-            "Dev Simulation Harness CLI entrypoint (worldcore/tools/simBrain.ts).",
+            "Dev Simulation Harness CLI entrypoint.",
             "Follows audit → plan → apply pattern with safe default rollback unless --commit.",
-            "Artifacts are generated to ./artifacts/brain by default; keep them local (gitignored)."
+            "Safety rails: refuses literal '...' arg; refuses --commit without explicit --bounds (unless --allowDefaultBounds).",
+            "Artifacts are dev-only outputs; keep them gitignored."
          ]
       },
       "trade.auditLog": {
