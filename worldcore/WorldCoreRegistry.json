@@ -3583,12 +3583,13 @@
             "apply safe mode: append-only outposts via --append (auto-enabled when using caps/total-mode)",
             "apply caps: --factionsAreTotal and --maxOutpostsPerFaction constrain total outposts per faction (existing+new)",
             "report: respawn coverage audit across bounds",
-            "fill-gaps: place checkpoints/graveyards to patch coverage gaps (dry-run vs --commit)"
+            "fill-gaps: place checkpoints/graveyards to patch coverage gaps (dry-run vs --commit)",
+            "era: orchestrated run (outposts + gap-fill + coverage before/after) and writes a JSON artifact (default: ./artifacts/brain)"
          ],
          "notes": [
             "Dev Simulation Harness CLI entrypoint (worldcore/tools/simBrain.ts).",
             "Follows audit → plan → apply pattern with safe default rollback unless --commit.",
-            "In safe mode, the planner reads existing outpost_* spawnIds, computes per-faction counts/maxIndex, and only adds new spawnIds starting at maxIndex+1."
+            "era produces a durable artifact describing the planned/applied changes for handoffs and reproducibility."
          ]
       },
       "trade.auditLog": {

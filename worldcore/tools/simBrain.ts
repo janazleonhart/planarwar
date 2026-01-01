@@ -1,16 +1,39 @@
 // worldcore/tools/simBrain.ts
 /* eslint-disable no-console */
 
+import * as fs from "fs/promises";
+import * as path from "path";
+
 import { db } from "../db/Database";
 import { planInitialOutposts } from "../sim/SettlementPlanner";
 import type { FactionSeedSpec, SettlementPlanConfig } from "../sim/SettlementPlanner";
 import type { Bounds } from "../sim/SimGrid";
 import { computeRespawnCoverage } from "../sim/RespawnCoverage";
+import type { CellCoverageRow, CoverageSummary } from "../sim/RespawnCoverage";
 import type { SpawnForCoverage } from "../sim/RespawnCoverage";
 import { planGapFillSpawns } from "../sim/GapFiller";
 import type { GapFillPlanConfig } from "../sim/GapFiller";
 
-type Cmd = "preview" | "apply" | "report" | "fill-gaps" | "help";
+type Cmd = "preview" | "apply" | "report" | "fill-gaps" | "era" | "help";
+
+type PlaceSpawnAction = {
+  kind: "place_spawn";
+  spawn: {
+    shardId: string;
+    spawnId: string;
+    type: string;
+    protoId: string;
+    archetype: string;
+    variantId: string | null;
+    x: number;
+    y: number;
+    z: number;
+    regionId: string;
+    meta?: unknown;
+  };
+};
+
+type BrainAction = PlaceSpawnAction | { kind: string; [k: string]: unknown };
 
 function usage(): void {
   console.log(
@@ -22,13 +45,14 @@ Usage:
   node dist/worldcore/tools/simBrain.js apply [options] [--commit]
   node dist/worldcore/tools/simBrain.js report [options]
   node dist/worldcore/tools/simBrain.js fill-gaps [options] [--commit]
+  node dist/worldcore/tools/simBrain.js era [options] [--commit]
 
 Common options:
   --shard       shard id (default: prime_shard)
   --bounds      cell bounds (default: -4..4,-4..4)
   --cellSize    cell size in world units (default: 64)
 
-Planner options (preview/apply):
+Planner options (preview/apply/era):
   --seed        deterministic seed (default: seed:alpha)
   --minCellDistance spacing in CELLS (default: 3)
   --borderMargin   in-cell border margin (default: 16)
@@ -36,12 +60,10 @@ Planner options (preview/apply):
   --spawnType   default: outpost
   --protoId     default: outpost
   --archetype   default: outpost
+
   --append      SAFE MODE: only ADD new outposts (never touch existing outpost_* spawns)
   --factionsAreTotal  interpret --factions counts as TOTAL desired per faction (existing+new)
   --maxOutpostsPerFaction N  clamp total outposts per faction to N (existing+new)
-
-  --commit      apply only: commit to DB (otherwise rollback)
-  --json        preview only: print JSON actions
 
 Report options:
   --respawnRadius  world units radius for "covered" (default: 500)
@@ -56,22 +78,42 @@ Fill-gaps options:
   --protoId        default: checkpoint
   --archetype      default: checkpoint
   --borderMargin   in-cell border margin (default: 16)
-  --commit         fill-gaps only: commit to DB (otherwise rollback)
-  --json           print planned actions as JSON
+  --commit         write changes (otherwise rollback)
+  --json           print planned actions JSON
+
+Era options (orchestrated run):
+  --respawnRadius       (default: 500)
+  --gapSeed            (default: seed:gapfill)
+  --minDistance        (default: 300)
+  --maxPlace           (default: 50)
+  --gapSpawnType       checkpoint|graveyard (default: checkpoint)
+  --gapProtoId         default: (gapSpawnType)
+  --gapArchetype       default: (gapSpawnType)
+  --gapBorderMargin    default: --borderMargin
+  --artifactDir        default: ./artifacts/brain
+  --noArtifact         don't write artifact file
+  --json               print artifact JSON (still writes unless --noArtifact)
+
+Common flags:
+  --commit      commit to DB (otherwise rollback)
 
 Examples:
-  node dist/worldcore/tools/simBrain.js preview --seed seed:alpha --bounds -4..4,-4..4 --factions emberfall:2,oathbound:2
+  node dist/worldcore/tools/simBrain.js apply \
+    --bounds -8..8,-8..8 \
+    --factions emberfall:2,oathbound:2 \
+    --factionsAreTotal \
+    --maxOutpostsPerFaction 2 \
+    --commit
 
-  node dist/worldcore/tools/simBrain.js apply --seed seed:alpha --bounds -4..4,-4..4 --factions emberfall:2,oathbound:2 --commit
-
-  # SAFE MODE: keep existing outposts, only add new up to totals
-  node dist/worldcore/tools/simBrain.js apply --bounds -8..8,-8..8 --factions emberfall:2,oathbound:2 --factionsAreTotal --maxOutpostsPerFaction 2 --append --commit
-
-  node dist/worldcore/tools/simBrain.js report --bounds -8..8,-8..8 --respawnRadius 500 --top 25
-
-  node dist/worldcore/tools/simBrain.js fill-gaps --bounds -8..8,-8..8 --respawnRadius 500 --minDistance 300 --maxPlace 50
-
-  node dist/worldcore/tools/simBrain.js fill-gaps --bounds -8..8,-8..8 --respawnRadius 500 --commit
+  node dist/worldcore/tools/simBrain.js era \
+    --bounds -8..8,-8..8 \
+    --factions emberfall:2,oathbound:2 \
+    --factionsAreTotal \
+    --maxOutpostsPerFaction 2 \
+    --respawnRadius 500 \
+    --minDistance 300 \
+    --maxPlace 50 \
+    --commit
 `.trim(),
   );
 }
@@ -123,7 +165,7 @@ function parseFactions(input: string): FactionSeedSpec[] {
   return out;
 }
 
-async function applyToDb(actions: any[], commit: boolean): Promise<void> {
+async function applyToDb(actions: BrainAction[], commit: boolean): Promise<{ inserted: number; updated: number }> {
   const client = await db.connect();
   let inserted = 0;
   let updated = 0;
@@ -132,8 +174,9 @@ async function applyToDb(actions: any[], commit: boolean): Promise<void> {
     await client.query("BEGIN");
 
     for (const a of actions) {
-      if (a.kind !== "place_spawn") continue;
-      const s = a.spawn;
+      if (!a || (a as PlaceSpawnAction).kind !== "place_spawn") continue;
+
+      const s = (a as PlaceSpawnAction).spawn;
 
       const existing = await client.query(
         `SELECT id FROM spawn_points WHERE shard_id = $1 AND spawn_id = $2 LIMIT 1`,
@@ -141,15 +184,18 @@ async function applyToDb(actions: any[], commit: boolean): Promise<void> {
       );
 
       if (existing.rowCount && existing.rows[0]) {
-        const id = (existing.rows[0] as any).id as number;
+        const id = (existing.rows[0] as { id: number }).id;
+
         await client.query(
           `
           UPDATE spawn_points
-          SET type = $2, archetype = $3, proto_id = $4, variant_id = $5, x = $6, y = $7, z = $8, region_id = $9
+          SET type = $2, archetype = $3, proto_id = $4, variant_id = $5,
+              x = $6, y = $7, z = $8, region_id = $9
           WHERE id = $1
         `,
           [id, s.type, s.archetype, s.protoId, s.variantId, s.x, s.y, s.z, s.regionId],
         );
+
         updated++;
       } else {
         await client.query(
@@ -159,17 +205,18 @@ async function applyToDb(actions: any[], commit: boolean): Promise<void> {
         `,
           [s.shardId, s.spawnId, s.type, s.archetype, s.protoId, s.variantId, s.x, s.y, s.z, s.regionId],
         );
+
         inserted++;
       }
     }
 
     if (commit) {
       await client.query("COMMIT");
-      console.log(`[simBrain] committed.\ninserted=${inserted} updated=${updated}`);
     } else {
       await client.query("ROLLBACK");
-      console.log(`[simBrain] rolled back (dry-run).\ninserted=${inserted} updated=${updated} (use --commit)`);
     }
+
+    return { inserted, updated };
   } catch (err) {
     try {
       await client.query("ROLLBACK");
@@ -194,6 +241,14 @@ async function loadSpawnsForArea(args: {
   const minZ = args.bounds.minCz * cellSize - radius;
   const maxZ = (args.bounds.maxCz + 1) * cellSize + radius;
 
+  type SpawnRow = {
+    spawn_id: string;
+    type: string;
+    x: number;
+    z: number;
+    variant_id: string | null;
+  };
+
   const client = await db.connect();
   try {
     const res = await client.query(
@@ -205,7 +260,8 @@ async function loadSpawnsForArea(args: {
       [args.shardId, minX, maxX, minZ, maxZ],
     );
 
-    return res.rows.map((r: any) => ({
+    const rows = res.rows as SpawnRow[];
+    return rows.map((r: SpawnRow) => ({
       spawnId: String(r.spawn_id),
       type: String(r.type),
       x: Number(r.x),
@@ -217,6 +273,10 @@ async function loadSpawnsForArea(args: {
   }
 }
 
+// ---------------------------------------------------------------------------
+// SAFE MODE (append-only) outpost caps
+// ---------------------------------------------------------------------------
+
 type OutpostStats = { count: number; maxIndex: number };
 
 function sanitizeId(s: string): string {
@@ -224,9 +284,9 @@ function sanitizeId(s: string): string {
 }
 
 async function loadExistingOutpostStats(shardId: string): Promise<Map<string, OutpostStats>> {
-  // Note: we parse spawn_id rather than relying on columns because factionId can contain underscores.
-  // Format: outpost_<factionKey>_<index>_<cx>_<cz>
   const re = /^outpost_(.+)_([0-9]+)_(-?[0-9]+)_(-?[0-9]+)$/;
+
+  type OutpostRow = { spawn_id: string };
 
   const client = await db.connect();
   try {
@@ -240,7 +300,9 @@ async function loadExistingOutpostStats(shardId: string): Promise<Map<string, Ou
     );
 
     const map = new Map<string, OutpostStats>();
-    for (const row of res.rows as any[]) {
+    const rows = res.rows as OutpostRow[];
+
+    for (const row of rows) {
       const id = String(row.spawn_id ?? "");
       const m = re.exec(id);
       if (!m) continue;
@@ -268,12 +330,11 @@ function clampOutpostPlan(args: {
   append: boolean;
   existing: Map<string, OutpostStats> | null;
 }): FactionSeedSpec[] {
-  // When not in append/safe mode, we just pass through (legacy deterministic behavior).
   if (!args.append) return [...args.requested];
 
   const existing = args.existing ?? new Map<string, OutpostStats>();
-
   const out: FactionSeedSpec[] = [];
+
   for (const f of args.requested) {
     const key = sanitizeId(f.factionId);
     const st = existing.get(key) ?? { count: 0, maxIndex: -1 };
@@ -300,6 +361,16 @@ function clampOutpostPlan(args: {
   return out;
 }
 
+// ---------------------------------------------------------------------------
+// Coverage report helpers
+// ---------------------------------------------------------------------------
+
+function computeGaps(rows: readonly CellCoverageRow[]): CellCoverageRow[] {
+  return rows
+    .filter((r: CellCoverageRow) => !r.covered)
+    .sort((a: CellCoverageRow, b: CellCoverageRow) => (b.nearestDistance ?? 0) - (a.nearestDistance ?? 0));
+}
+
 async function runReport(args: {
   shardId: string;
   bounds: Bounds;
@@ -317,7 +388,7 @@ async function runReport(args: {
     radiusPad: radius,
   });
 
-  const { rows, summary } = computeRespawnCoverage(spawns, {
+  const report = computeRespawnCoverage(spawns, {
     bounds: args.bounds,
     cellSize,
     respawnRadius: radius,
@@ -329,13 +400,12 @@ async function runReport(args: {
   );
 
   console.log(
-    `[report] cells=${summary.totalCells} covered=${summary.coveredCells} gaps=${summary.gapCells} coverage=${summary.coveragePct.toFixed(2)}%`,
+    `[report] cells=${report.summary.totalCells} covered=${report.summary.coveredCells} gaps=${report.summary.gapCells} coverage=${report.summary.coveragePct.toFixed(
+      2,
+    )}%`,
   );
 
-  const gaps = rows
-    .filter((r) => !r.covered)
-    .sort((a, b) => b.nearestDistance - a.nearestDistance);
-
+  const gaps = computeGaps(report.rows);
   const top = Math.max(0, Math.min(args.top, gaps.length));
   if (top === 0) {
     console.log("[report] no gaps found (within radius).");
@@ -348,10 +418,16 @@ async function runReport(args: {
     const near = g.nearestSpawnId ? `${g.nearestSpawnId} (${g.nearestSpawnType})` : "none";
     const dist = Number.isFinite(g.nearestDistance) ? g.nearestDistance.toFixed(2) : "Infinity";
     console.log(
-      `- cell=${g.cx},${g.cz} center=(${g.centerX.toFixed(2)},${g.centerZ.toFixed(2)}) nearest=${near} dist=${dist}`,
+      `- cell=${g.cx},${g.cz} center=(${g.centerX.toFixed(2)},${g.centerZ.toFixed(
+        2,
+      )}) nearest=${near} dist=${dist}`,
     );
   }
 }
+
+// ---------------------------------------------------------------------------
+// Fill gaps
+// ---------------------------------------------------------------------------
 
 async function runFillGaps(args: {
   shardId: string;
@@ -394,10 +470,7 @@ async function runFillGaps(args: {
   };
 
   const planned = planGapFillSpawns(existing, cfg);
-  const actions = planned.map((p) => ({
-    kind: "place_spawn",
-    spawn: p,
-  }));
+  const actions: BrainAction[] = planned.map((p) => ({ kind: "place_spawn", spawn: p }));
 
   if (args.json) {
     console.log(JSON.stringify(actions, null, 2));
@@ -415,12 +488,254 @@ async function runFillGaps(args: {
     return;
   }
 
-  await applyToDb(actions as any[], args.commit);
+  const res = await applyToDb(actions, args.commit);
+  if (args.commit) {
+    console.log(`[simBrain] committed.\ninserted=${res.inserted} updated=${res.updated}`);
+  } else {
+    console.log(`[simBrain] rolled back (dry-run).\ninserted=${res.inserted} updated=${res.updated} (use --commit)`);
+  }
 }
+
+// ---------------------------------------------------------------------------
+// Era: orchestrated run + artifact
+// ---------------------------------------------------------------------------
+
+function isoSlug(d = new Date()): string {
+  return d.toISOString().replace(/[:.]/g, "-");
+}
+
+function boundsSlug(b: Bounds): string {
+  return `${b.minCx}..${b.maxCx},${b.minCz}..${b.maxCz}`;
+}
+
+function mergePlannedSpawns(existing: SpawnForCoverage[], actions: BrainAction[]): SpawnForCoverage[] {
+  const map = new Map<string, SpawnForCoverage>();
+  for (const s of existing) map.set(s.spawnId, s);
+
+  for (const a of actions) {
+    if (!a || (a as PlaceSpawnAction).kind !== "place_spawn") continue;
+    const sp = (a as PlaceSpawnAction).spawn;
+
+    map.set(sp.spawnId, {
+      spawnId: sp.spawnId,
+      type: sp.type,
+      x: sp.x,
+      z: sp.z,
+      variantId: sp.variantId,
+    });
+  }
+
+  return [...map.values()];
+}
+
+async function writeArtifactFile(dir: string, filename: string, json: unknown): Promise<string> {
+  await fs.mkdir(dir, { recursive: true });
+  const filePath = path.join(dir, filename);
+  await fs.writeFile(filePath, JSON.stringify(json, null, 2), "utf8");
+  return filePath;
+}
+
+async function runEra(args: {
+  shardId: string;
+  bounds: Bounds;
+  cellSize: number;
+
+  // outposts
+  seed: string;
+  borderMargin: number;
+  minCellDistance: number;
+  spawnType: string;
+  protoId: string;
+  archetype: string;
+
+  requestedFactions: FactionSeedSpec[];
+  factionsAreTotal: boolean;
+  appendFlag: boolean;
+  maxOutpostsPerFaction: number | null;
+
+  // coverage + gap fill
+  respawnRadius: number;
+  gapSeed: string;
+  minDistance: number;
+  maxPlace: number;
+  gapSpawnType: "checkpoint" | "graveyard";
+  gapProtoId: string;
+  gapArchetype: string;
+  gapBorderMargin: number;
+
+  // artifact
+  artifactDir: string;
+  noArtifact: boolean;
+  json: boolean;
+
+  // db
+  commit: boolean;
+}): Promise<void> {
+  const cellSize = Math.max(1, Math.floor(args.cellSize));
+  const radius = Math.max(0, args.respawnRadius);
+
+  const baselineSpawns = await loadSpawnsForArea({
+    shardId: args.shardId,
+    bounds: args.bounds,
+    cellSize,
+    radiusPad: radius,
+  });
+
+  const before = computeRespawnCoverage(baselineSpawns, {
+    bounds: args.bounds,
+    cellSize,
+    respawnRadius: radius,
+  });
+
+  const append = args.appendFlag || args.factionsAreTotal || args.maxOutpostsPerFaction != null;
+
+  const existingStats = append ? await loadExistingOutpostStats(args.shardId) : null;
+  const effectiveFactions = clampOutpostPlan({
+    requested: args.requestedFactions,
+    factionsAreTotal: args.factionsAreTotal,
+    maxOutpostsPerFaction: args.maxOutpostsPerFaction,
+    append,
+    existing: existingStats,
+  });
+
+  if (append) {
+    const want = args.requestedFactions.map((f) => `${f.factionId}:${f.count}`).join(",") || "(none)";
+    const eff =
+      effectiveFactions.map((f) => `${f.factionId}:${f.count}@${f.startIndex ?? 0}`).join(",") || "(none)";
+    console.log(
+      `[planner] safeMode=on factionsAreTotal=${String(args.factionsAreTotal)} maxOutpostsPerFaction=${
+        args.maxOutpostsPerFaction == null ? "∞" : String(args.maxOutpostsPerFaction)
+      }`,
+    );
+    console.log(`[planner] requested=${want}`);
+    console.log(`[planner] effective=${eff}`);
+  }
+
+  const outpostCfg: SettlementPlanConfig = {
+    seed: args.seed,
+    shardId: args.shardId,
+    bounds: args.bounds,
+    cellSize,
+    baseY: 0,
+    borderMargin: args.borderMargin,
+    minCellDistance: args.minCellDistance,
+    spawnType: args.spawnType,
+    protoId: args.protoId,
+    archetype: args.archetype,
+  };
+
+  const outpostActions = planInitialOutposts(effectiveFactions, outpostCfg) as BrainAction[];
+  const spawnsAfterOutposts = mergePlannedSpawns(baselineSpawns, outpostActions);
+
+  const gapCfg: GapFillPlanConfig = {
+    seed: args.gapSeed,
+    shardId: args.shardId,
+    bounds: args.bounds,
+    cellSize,
+    baseY: 0,
+    borderMargin: args.gapBorderMargin,
+    respawnRadius: radius,
+    minDistance: args.minDistance,
+    maxPlace: args.maxPlace,
+    spawnType: args.gapSpawnType,
+    protoId: args.gapProtoId,
+    archetype: args.gapArchetype,
+  };
+
+  const plannedGapSpawns = planGapFillSpawns(spawnsAfterOutposts, gapCfg);
+  const gapActions: BrainAction[] = plannedGapSpawns.map((p) => ({ kind: "place_spawn", spawn: p }));
+
+  const spawnsAfterAll = mergePlannedSpawns(spawnsAfterOutposts, gapActions);
+
+  const after = computeRespawnCoverage(spawnsAfterAll, {
+    bounds: args.bounds,
+    cellSize,
+    respawnRadius: radius,
+  });
+
+  const artifact = {
+    kind: "simBrain.era",
+    version: 1,
+    createdAt: new Date().toISOString(),
+    shardId: args.shardId,
+    bounds: args.bounds,
+    cellSize,
+    commit: args.commit,
+
+    outposts: {
+      safeMode: append,
+      seed: args.seed,
+      borderMargin: args.borderMargin,
+      minCellDistance: args.minCellDistance,
+      requested: args.requestedFactions,
+      effective: effectiveFactions,
+      plannedCount: outpostActions.filter((a) => (a as PlaceSpawnAction).kind === "place_spawn").length,
+    },
+
+    gapFill: {
+      seed: args.gapSeed,
+      respawnRadius: radius,
+      minDistance: args.minDistance,
+      maxPlace: args.maxPlace,
+      spawnType: args.gapSpawnType,
+      protoId: args.gapProtoId,
+      archetype: args.gapArchetype,
+      borderMargin: args.gapBorderMargin,
+      plannedCount: plannedGapSpawns.length,
+    },
+
+    coverage: {
+      before: before.summary as CoverageSummary,
+      after: after.summary as CoverageSummary,
+    },
+
+    actions: [...outpostActions, ...gapActions],
+  };
+
+  console.log(
+    `[era] shard=${args.shardId} bounds=${boundsSlug(args.bounds)} cellSize=${cellSize} respawnRadius=${radius}`,
+  );
+  console.log(
+    `[era] outposts_planned=${artifact.outposts.plannedCount} gapfills_planned=${artifact.gapFill.plannedCount} commit=${String(
+      args.commit,
+    )}`,
+  );
+  console.log(
+    `[era] coverage before=${artifact.coverage.before.coveragePct.toFixed(2)}% after=${artifact.coverage.after.coveragePct.toFixed(2)}%`,
+  );
+
+  const filename = `era_${isoSlug()}_${args.shardId}_${boundsSlug(args.bounds)}.json`;
+
+  if (args.json) {
+    console.log(JSON.stringify(artifact, null, 2));
+  }
+
+  if (!args.noArtifact) {
+    const outPath = await writeArtifactFile(args.artifactDir, filename, artifact);
+    console.log(`[era] artifact=${outPath}`);
+  }
+
+  const actionsToApply = [...outpostActions, ...gapActions];
+  if (actionsToApply.length === 0) {
+    console.log("[era] nothing to apply.");
+    return;
+  }
+
+  const res = await applyToDb(actionsToApply, args.commit);
+  if (args.commit) {
+    console.log(`[simBrain] committed.\ninserted=${res.inserted} updated=${res.updated}`);
+  } else {
+    console.log(`[simBrain] rolled back (dry-run).\ninserted=${res.inserted} updated=${res.updated} (use --commit)`);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Main
+// ---------------------------------------------------------------------------
 
 async function main(argv: string[]): Promise<void> {
   const cmd = ((argv[0] || "help").toLowerCase() as Cmd) ?? "help";
-  if (cmd !== "preview" && cmd !== "apply" && cmd !== "report" && cmd !== "fill-gaps") {
+  if (cmd !== "preview" && cmd !== "apply" && cmd !== "report" && cmd !== "fill-gaps" && cmd !== "era") {
     usage();
     return;
   }
@@ -469,22 +784,14 @@ async function main(argv: string[]): Promise<void> {
     return;
   }
 
-  // ---------------------------------------------------------------------------
-  // preview/apply planner args
-  // ---------------------------------------------------------------------------
+  // planner shared args (preview/apply/era)
   const seed = getFlag(argv, "--seed") ?? "seed:alpha";
-  const cfg: SettlementPlanConfig = {
-    seed,
-    shardId,
-    bounds,
-    cellSize,
-    baseY: 0,
-    borderMargin: parseIntFlag(argv, "--borderMargin", 16) || 16,
-    minCellDistance: parseIntFlag(argv, "--minCellDistance", 3) || 3,
-    spawnType: getFlag(argv, "--spawnType") ?? "outpost",
-    protoId: getFlag(argv, "--protoId") ?? "outpost",
-    archetype: getFlag(argv, "--archetype") ?? "outpost",
-  };
+  const borderMargin = parseIntFlag(argv, "--borderMargin", 16) || 16;
+  const minCellDistance = parseIntFlag(argv, "--minCellDistance", 3) || 3;
+
+  const spawnType = getFlag(argv, "--spawnType") ?? "outpost";
+  const protoId = getFlag(argv, "--protoId") ?? "outpost";
+  const archetype = getFlag(argv, "--archetype") ?? "outpost";
 
   const requestedFactions = parseFactions(getFlag(argv, "--factions") ?? "emberfall:2,oathbound:2");
 
@@ -493,7 +800,6 @@ async function main(argv: string[]): Promise<void> {
   const maxOutpostsRaw = getFlag(argv, "--maxOutpostsPerFaction");
   const maxOutpostsPerFaction = maxOutpostsRaw == null ? null : Math.max(0, parseInt(maxOutpostsRaw, 10) || 0);
 
-  // If you set *either* total-mode or a cap, we automatically enter SAFE MODE.
   const append = appendFlag || factionsAreTotal || maxOutpostsPerFaction != null;
 
   const existingStats = append ? await loadExistingOutpostStats(shardId) : null;
@@ -517,25 +823,100 @@ async function main(argv: string[]): Promise<void> {
     console.log(`[planner] effective=${eff}`);
   }
 
-  const actions = planInitialOutposts(factions, cfg);
+  const cfg: SettlementPlanConfig = {
+    seed,
+    shardId,
+    bounds,
+    cellSize,
+    baseY: 0,
+    borderMargin,
+    minCellDistance,
+    spawnType,
+    protoId,
+    archetype,
+  };
+
+  const outpostActions = planInitialOutposts(factions, cfg) as BrainAction[];
 
   if (cmd === "preview") {
     if (argv.includes("--json")) {
-      console.log(JSON.stringify(actions, null, 2));
-    } else {
-      console.log(`[simBrain] actions=${actions.length} seed=${seed} shard=${shardId}`);
-      for (const a of actions) {
-        const s = (a as any).spawn;
-        console.log(
-          `- ${s.spawnId} type=${s.type} proto=${s.protoId} @ (${s.x.toFixed(2)},${s.z.toFixed(2)}) region=${s.regionId}`,
-        );
-      }
+      console.log(JSON.stringify(outpostActions, null, 2));
+      return;
+    }
+
+    console.log(`[simBrain] actions=${outpostActions.length} seed=${seed} shard=${shardId}`);
+    for (const a of outpostActions) {
+      if ((a as PlaceSpawnAction).kind !== "place_spawn") continue;
+      const s = (a as PlaceSpawnAction).spawn;
+      console.log(
+        `- ${s.spawnId} type=${s.type} proto=${s.protoId} @ (${s.x.toFixed(2)},${s.z.toFixed(
+          2,
+        )}) region=${s.regionId}`,
+      );
     }
     return;
   }
 
+  if (cmd === "apply") {
+    const commit = argv.includes("--commit");
+    const res = await applyToDb(outpostActions, commit);
+    if (commit) {
+      console.log(`[simBrain] committed.\ninserted=${res.inserted} updated=${res.updated}`);
+    } else {
+      console.log(`[simBrain] rolled back (dry-run).\ninserted=${res.inserted} updated=${res.updated} (use --commit)`);
+    }
+    return;
+  }
+
+  // cmd === era
+  const respawnRadius = parseIntFlag(argv, "--respawnRadius", 500) || 500;
+  const gapSeed = getFlag(argv, "--gapSeed") ?? "seed:gapfill";
+  const minDistance = parseIntFlag(argv, "--minDistance", 300) || 300;
+  const maxPlace = parseIntFlag(argv, "--maxPlace", 50) || 50;
+
+  const gapSpawnTypeRaw = (getFlag(argv, "--gapSpawnType") ?? "checkpoint").toLowerCase();
+  const gapSpawnType = (gapSpawnTypeRaw === "graveyard" ? "graveyard" : "checkpoint") as "checkpoint" | "graveyard";
+  const gapProtoId = getFlag(argv, "--gapProtoId") ?? gapSpawnType;
+  const gapArchetype = getFlag(argv, "--gapArchetype") ?? gapSpawnType;
+  const gapBorderMargin = parseIntFlag(argv, "--gapBorderMargin", borderMargin) || borderMargin;
+
+  const artifactDir = getFlag(argv, "--artifactDir") ?? "./artifacts/brain";
+  const noArtifact = argv.includes("--noArtifact");
+  const json = argv.includes("--json");
   const commit = argv.includes("--commit");
-  await applyToDb(actions as any[], commit);
+
+  await runEra({
+    shardId,
+    bounds,
+    cellSize,
+
+    seed,
+    borderMargin,
+    minCellDistance,
+    spawnType,
+    protoId,
+    archetype,
+
+    requestedFactions,
+    factionsAreTotal,
+    appendFlag,
+    maxOutpostsPerFaction,
+
+    respawnRadius,
+    gapSeed,
+    minDistance,
+    maxPlace,
+    gapSpawnType,
+    gapProtoId,
+    gapArchetype,
+    gapBorderMargin,
+
+    artifactDir,
+    noArtifact,
+    json,
+
+    commit,
+  });
 }
 
 void (async () => {
@@ -545,7 +926,6 @@ void (async () => {
     console.error(err);
     process.exitCode = 1;
   } finally {
-    // IMPORTANT: only end the pool once, at process end.
     await db.end().catch(() => {});
   }
 })();
