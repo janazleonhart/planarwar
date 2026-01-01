@@ -121,7 +121,4 @@ docs/knowledge/handoffs/Worldcore+MMObackendrefactor+testscaffolding.md
 .gitignore
 docs/knowledge/handoffs/Worldcore+RegionFlags+GraveyardRespawn_Checkpoint.md
 docs/knowledge/handoffs/DevSimulationHarnessHandoff.md
-artifacts/brain/era_2026-01-01T02-21-46-867Z_prime_shard_-8..8,-8..8.json
-artifacts/brain/era_2026-01-01T02-22-01-795Z_prime_shard_-4..4,-4..4.json
-artifacts/brain/trim_2026-01-01T02-54-17-399Z_prime_shard_-8..8,-8..8.json
-artifacts/brain/trim_2026-01-01T02-54-37-525Z_prime_shard_-8..8,-8..8.json
+artifacts/

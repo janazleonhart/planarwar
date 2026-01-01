@@ -87,6 +87,7 @@ Report options:
 
 Status options:
   --respawnRadius  (default: 500)
+  --topGaps        show worst N uncovered cells inline (default: 0)
 
 Fill-gaps options:
   --seed           deterministic seed (default: seed:gapfill)
@@ -127,10 +128,7 @@ Trim-outposts options:
   --json           print artifact JSON (still writes unless --noArtifact)
 
 Examples:
-  node dist/worldcore/tools/simBrain.js status --bounds -8..8,-8..8
-
-  node dist/worldcore/tools/simBrain.js trim-outposts --bounds -8..8,-8..8 --maxPerFaction 2
-  node dist/worldcore/tools/simBrain.js trim-outposts --bounds -8..8,-8..8 --maxPerFaction 2 --commit
+  node dist/worldcore/tools/simBrain.js status --bounds -8..8,-8..8 --topGaps 5
 `.trim(),
   );
 }
@@ -286,11 +284,8 @@ async function applyToDb(
       }
     }
 
-    if (opts.commit) {
-      await client.query("COMMIT");
-    } else {
-      await client.query("ROLLBACK");
-    }
+    if (opts.commit) await client.query("COMMIT");
+    else await client.query("ROLLBACK");
 
     return { inserted, updated, skipped };
   } catch (err) {
@@ -514,9 +509,11 @@ async function runStatus(args: {
   bounds: Bounds;
   cellSize: number;
   respawnRadius: number;
+  topGaps?: number; // ✅ optional
 }): Promise<void> {
   const cellSize = Math.max(1, Math.floor(args.cellSize));
   const radius = Math.max(0, args.respawnRadius);
+  const topGaps = Math.max(0, Math.floor(args.topGaps ?? 0)); // ✅ default 0
 
   const spawns = await loadSpawnsForArea({
     shardId: args.shardId,
@@ -560,6 +557,22 @@ async function runStatus(args: {
       2,
     )}%`,
   );
+
+  if (topGaps > 0 && s.gapCells > 0) {
+    const gaps = computeGaps(cov.rows);
+    const n = Math.min(topGaps, gaps.length);
+    console.log(`[status] worst gaps (top ${n}):`);
+    for (let i = 0; i < n; i++) {
+      const g = gaps[i];
+      const near = g.nearestSpawnId ? `${g.nearestSpawnId} (${g.nearestSpawnType})` : "none";
+      const dist = Number.isFinite(g.nearestDistance) ? g.nearestDistance.toFixed(2) : "Infinity";
+      console.log(
+        `  - cell=${g.cx},${g.cz} center=(${g.centerX.toFixed(2)},${g.centerZ.toFixed(
+          2,
+        )}) nearest=${near} dist=${dist}`,
+      );
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -1182,10 +1195,11 @@ async function main(argv: string[]): Promise<void> {
   }
 
   if (cmd === "status") {
-    const respawnRadius = parseIntFlag(argv, "--respawnRadius", 500) || 500;
-    await runStatus({ shardId, bounds, cellSize, respawnRadius });
-    return;
-  }
+  const respawnRadius = parseIntFlag(argv, "--respawnRadius", 500) || 500;
+  const topGaps = parseIntFlag(argv, "--topGaps", 0) || 0; // ✅ add
+  await runStatus({ shardId, bounds, cellSize, respawnRadius, topGaps }); // ✅ pass
+  return;
+}
 
   if (cmd === "wipe-placements") {
     const types = parseTypes(getFlag(argv, "--types"), ["outpost", "checkpoint", "graveyard"]);
