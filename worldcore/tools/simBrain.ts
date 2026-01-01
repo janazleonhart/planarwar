@@ -9,12 +9,11 @@ import { planInitialOutposts } from "../sim/SettlementPlanner";
 import type { FactionSeedSpec, SettlementPlanConfig } from "../sim/SettlementPlanner";
 import type { Bounds } from "../sim/SimGrid";
 import { computeRespawnCoverage } from "../sim/RespawnCoverage";
-import type { CellCoverageRow, CoverageSummary } from "../sim/RespawnCoverage";
-import type { SpawnForCoverage } from "../sim/RespawnCoverage";
+import type { CellCoverageRow, CoverageSummary, SpawnForCoverage } from "../sim/RespawnCoverage";
 import { planGapFillSpawns } from "../sim/GapFiller";
 import type { GapFillPlanConfig } from "../sim/GapFiller";
 
-type Cmd = "preview" | "apply" | "report" | "fill-gaps" | "era" | "help";
+type Cmd = "preview" | "apply" | "report" | "fill-gaps" | "era" | "wipe-placements" | "help";
 
 type PlaceSpawnAction = {
   kind: "place_spawn";
@@ -46,6 +45,7 @@ Usage:
   node dist/worldcore/tools/simBrain.js report [options]
   node dist/worldcore/tools/simBrain.js fill-gaps [options] [--commit]
   node dist/worldcore/tools/simBrain.js era [options] [--commit]
+  node dist/worldcore/tools/simBrain.js wipe-placements [options] [--commit]
 
 Common options:
   --shard       shard id (default: prime_shard)
@@ -94,17 +94,19 @@ Era options (orchestrated run):
   --noArtifact         don't write artifact file
   --json               print artifact JSON (still writes unless --noArtifact)
 
+Wipe-placements options:
+  --types          comma list of spawn_points.type to delete (default: outpost,checkpoint,graveyard)
+  --pad            world-units expansion of bounds box (default: 0)
+  --artifactDir    default: ./artifacts/brain
+  --noArtifact     don't write artifact file
+  --json           print artifact JSON (still writes unless --noArtifact)
+  --commit         actually delete (otherwise rollback)
+
 Common flags:
   --commit      commit to DB (otherwise rollback)
 
 Examples:
-  node dist/worldcore/tools/simBrain.js apply \
-    --bounds -8..8,-8..8 \
-    --factions emberfall:2,oathbound:2 \
-    --factionsAreTotal \
-    --maxOutpostsPerFaction 2 \
-    --commit
-
+  # IMPORTANT: do not use "..." in the command; it triggers defaults.
   node dist/worldcore/tools/simBrain.js era \
     --bounds -8..8,-8..8 \
     --factions emberfall:2,oathbound:2 \
@@ -114,6 +116,12 @@ Examples:
     --minDistance 300 \
     --maxPlace 50 \
     --commit
+
+  # Wipe placements inside bounds (dry-run)
+  node dist/worldcore/tools/simBrain.js wipe-placements --bounds -8..8,-8..8
+
+  # Wipe + commit
+  node dist/worldcore/tools/simBrain.js wipe-placements --bounds -8..8,-8..8 --commit
 `.trim(),
   );
 }
@@ -163,6 +171,15 @@ function parseFactions(input: string): FactionSeedSpec[] {
     out.push({ factionId, count });
   }
   return out;
+}
+
+function parseTypes(input: string | null, fallback: string[]): string[] {
+  const raw = (input ?? "").trim();
+  if (!raw) return [...fallback];
+  return raw
+    .split(",")
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean);
 }
 
 async function applyToDb(actions: BrainAction[], commit: boolean): Promise<{ inserted: number; updated: number }> {
@@ -730,12 +747,141 @@ async function runEra(args: {
 }
 
 // ---------------------------------------------------------------------------
+// Wipe placements (outpost/checkpoint/graveyard by default)
+// ---------------------------------------------------------------------------
+
+async function runWipePlacements(args: {
+  shardId: string;
+  bounds: Bounds;
+  cellSize: number;
+  pad: number;
+  types: string[];
+  artifactDir: string;
+  noArtifact: boolean;
+  json: boolean;
+  commit: boolean;
+}): Promise<void> {
+  const cellSize = Math.max(1, Math.floor(args.cellSize));
+  const pad = Math.max(0, Math.floor(args.pad));
+
+  const minX = args.bounds.minCx * cellSize - pad;
+  const maxX = (args.bounds.maxCx + 1) * cellSize + pad;
+  const minZ = args.bounds.minCz * cellSize - pad;
+  const maxZ = (args.bounds.maxCz + 1) * cellSize + pad;
+
+  type Row = { spawn_id: string; type: string; x: number; z: number; region_id: string | null };
+
+  const client = await db.connect();
+  let rows: Row[] = [];
+  try {
+    const res = await client.query(
+      `
+      SELECT spawn_id, type, x, z, region_id
+      FROM spawn_points
+      WHERE shard_id = $1
+        AND type = ANY($2::text[])
+        AND x >= $3 AND x <= $4
+        AND z >= $5 AND z <= $6
+      ORDER BY type, spawn_id
+    `,
+      [args.shardId, args.types, minX, maxX, minZ, maxZ],
+    );
+
+    rows = res.rows as Row[];
+  } finally {
+    client.release();
+  }
+
+  const sample = rows.slice(0, 50).map((r) => ({
+    spawnId: r.spawn_id,
+    type: r.type,
+    x: Number(r.x),
+    z: Number(r.z),
+    regionId: r.region_id,
+  }));
+
+  const artifact = {
+    kind: "simBrain.wipe-placements",
+    version: 1,
+    createdAt: new Date().toISOString(),
+    shardId: args.shardId,
+    bounds: args.bounds,
+    cellSize,
+    pad,
+    types: args.types,
+    matched: rows.length,
+    commit: args.commit,
+    sample,
+  };
+
+  console.log(
+    `[wipe] shard=${args.shardId} bounds=${boundsSlug(args.bounds)} cellSize=${cellSize} pad=${pad} types=${args.types.join(
+      ",",
+    )}`,
+  );
+  console.log(`[wipe] matched=${rows.length} commit=${String(args.commit)}`);
+
+  if (args.json) {
+    console.log(JSON.stringify(artifact, null, 2));
+  }
+
+  if (!args.noArtifact) {
+    const filename = `wipe_${isoSlug()}_${args.shardId}_${boundsSlug(args.bounds)}.json`;
+    const outPath = await writeArtifactFile(args.artifactDir, filename, artifact);
+    console.log(`[wipe] artifact=${outPath}`);
+  }
+
+  if (rows.length === 0) {
+    console.log("[wipe] nothing to delete.");
+    return;
+  }
+
+  const spawnIds = rows.map((r) => r.spawn_id);
+
+  const delClient = await db.connect();
+  try {
+    await delClient.query("BEGIN");
+
+    const delRes = await delClient.query(
+      `
+      DELETE FROM spawn_points
+      WHERE shard_id = $1
+        AND spawn_id = ANY($2::text[])
+    `,
+      [args.shardId, spawnIds],
+    );
+
+    if (args.commit) {
+      await delClient.query("COMMIT");
+      console.log(`[wipe] committed. deleted=${delRes.rowCount}`);
+    } else {
+      await delClient.query("ROLLBACK");
+      console.log(`[wipe] rolled back (dry-run). would_delete=${delRes.rowCount} (use --commit)`);
+    }
+  } catch (err) {
+    try {
+      await delClient.query("ROLLBACK");
+    } catch {}
+    throw err;
+  } finally {
+    delClient.release();
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Main
 // ---------------------------------------------------------------------------
 
 async function main(argv: string[]): Promise<void> {
   const cmd = ((argv[0] || "help").toLowerCase() as Cmd) ?? "help";
-  if (cmd !== "preview" && cmd !== "apply" && cmd !== "report" && cmd !== "fill-gaps" && cmd !== "era") {
+  if (
+    cmd !== "preview" &&
+    cmd !== "apply" &&
+    cmd !== "report" &&
+    cmd !== "fill-gaps" &&
+    cmd !== "era" &&
+    cmd !== "wipe-placements"
+  ) {
     usage();
     return;
   }
@@ -743,6 +889,29 @@ async function main(argv: string[]): Promise<void> {
   const shardId = getFlag(argv, "--shard") ?? "prime_shard";
   const bounds = parseBounds(getFlag(argv, "--bounds") ?? "-4..4,-4..4");
   const cellSize = parseIntFlag(argv, "--cellSize", 64) || 64;
+
+  if (cmd === "wipe-placements") {
+    const types = parseTypes(getFlag(argv, "--types"), ["outpost", "checkpoint", "graveyard"]);
+    const pad = parseIntFlag(argv, "--pad", 0) || 0;
+
+    const artifactDir = getFlag(argv, "--artifactDir") ?? "./artifacts/brain";
+    const noArtifact = argv.includes("--noArtifact");
+    const json = argv.includes("--json");
+    const commit = argv.includes("--commit");
+
+    await runWipePlacements({
+      shardId,
+      bounds,
+      cellSize,
+      pad,
+      types,
+      artifactDir,
+      noArtifact,
+      json,
+      commit,
+    });
+    return;
+  }
 
   if (cmd === "report") {
     const respawnRadius = parseIntFlag(argv, "--respawnRadius", 500) || 500;

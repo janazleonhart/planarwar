@@ -3584,7 +3584,8 @@
             "apply caps: --factionsAreTotal and --maxOutpostsPerFaction constrain total outposts per faction (existing+new)",
             "report: respawn coverage audit across bounds",
             "fill-gaps: place checkpoints/graveyards to patch coverage gaps (dry-run vs --commit)",
-            "era: orchestrated run (outposts + gap-fill + coverage before/after) and writes a JSON artifact (default: ./artifacts/brain)"
+            "era: orchestrated run (outposts + gap-fill + coverage before/after) and writes a JSON artifact (default: ./artifacts/brain)",
+            "wipe-placements: deletes placement spawn types (default outpost/checkpoint/graveyard) inside bounds (dry-run unless --commit), writes an artifact"
          ],
          "notes": [
             "Dev Simulation Harness CLI entrypoint (worldcore/tools/simBrain.ts).",
