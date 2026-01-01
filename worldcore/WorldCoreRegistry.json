@@ -3580,23 +3580,19 @@
          ],
          "provides": [
             "preview/apply: deterministic settlement/outpost planning (dry-run vs --commit)",
-            "apply safe mode: append-only outposts via --append (auto-enabled when using caps/total-mode)",
-            "apply caps: --factionsAreTotal and --maxOutpostsPerFaction constrain total outposts per faction (existing+new)",
-            "report: respawn coverage audit across bounds",
+            "status: spawn type counts + outposts by faction + coverage summary (supports --topGaps N)",
+            "report: respawn coverage audit across bounds (worst gaps via --top N)",
             "fill-gaps: place checkpoints/graveyards to patch coverage gaps (dry-run vs --commit)",
-            "era: orchestrated run (outposts + gap-fill + coverage before/after) and writes a JSON artifact (default: ./artifacts/brain)",
-            "wipe-placements: deletes placement spawn types (default outpost/checkpoint/graveyard) inside bounds (dry-run unless --commit), writes an artifact",
-            "status: quick counts (types + outposts by faction) + coverage summary for bounds",
-            "safety: refuses --commit without explicit --bounds (unless --allowDefaultBounds); refuses literal ... args",
-            "default insert-only apply (no updates) unless --updateExisting",
-            "trim-outposts: enforces max outposts per faction by deleting extra outposts within bounds (dry-run unless --commit), writes an artifact",
-            "snapshot-spawns: export spawn_points in bounds to JSON (local artifact)",
-            "restore-spawns: import snapshot JSON (dry-run unless --commit; insert-only unless --updateExisting)"
+            "era: orchestrated outposts planning + gap-fill + artifact output (dry-run vs --commit)",
+            "wipe-placements: delete spawn_points by type within bounds (dry-run vs --commit)",
+            "trim-outposts: enforce per-faction cap by deleting extras (dry-run vs --commit)",
+            "snapshot-spawns: export spawn_points within bounds to JSON (local artifact)",
+            "restore-spawns: import snapshot JSON into spawn_points (dry-run vs --commit; insert-only unless --updateExisting)"
          ],
          "notes": [
             "Dev Simulation Harness CLI entrypoint (worldcore/tools/simBrain.ts).",
             "Follows audit → plan → apply pattern with safe default rollback unless --commit.",
-            "era produces a durable artifact describing the planned/applied changes for handoffs and reproducibility."
+            "Artifacts are generated to ./artifacts/brain by default; keep them local (gitignored)."
          ]
       },
       "trade.auditLog": {
