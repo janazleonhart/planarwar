@@ -17,6 +17,8 @@ import { handleMoveCommand } from "./world/moveCommand";
 import { handleInteractCommand } from "./world/interactCommand";
 import { handleTalkCommand } from "./world/talkCommand";
 
+import { requireTownService } from "./world/serviceGates";
+
 import {
   handleWhoCommand,
   handleWhoAllCommand,
@@ -33,9 +35,10 @@ import { handleStatsCommand } from "./player/statsCommand";
 import { handleRespawnCommand, handleRestCommand } from "./player/recoveryCommand";
 import { handleResourcesCommand } from "./player/resourcesCommand";
 import { handleSkillsCommand } from "./player/skillsCommand";
+
 import { handleGuildBankCommand } from "./guildBankCommand";
 
-// NEW: Virtuoso melody command
+// Virtuoso
 import { handleMelodyCommand } from "./player/melodyCommand";
 import { handleSongsCommand } from "./player/songsCommand";
 
@@ -49,10 +52,7 @@ import { handleAutoAttackCommand } from "./combat/autoAttackCommand";
 import { handlePickingCommand } from "./gathering/pickingCommand";
 import { handleMiningCommand } from "./gathering/miningCommand";
 
-import {
-  handleQuestsCommand,
-  handleQuestCommand,
-} from "./progression/questsCommand";
+import { handleQuestsCommand, handleQuestCommand } from "./progression/questsCommand";
 import { handleProgressCommand } from "./progression/progressCommand";
 import {
   handleTitleCommand,
@@ -81,99 +81,111 @@ import {
 import type { MudCommandHandlerFn } from "./types";
 
 export const COMMANDS: Record<string, MudCommandHandlerFn> = {
-  bank: async (ctx, char, input) => handleBankCommand(ctx, char, input.args),
+  // Economy / Services
+  bank: async (ctx, char, input) =>
+    requireTownService(ctx, char, "bank", () => handleBankCommand(ctx, char, input.args)) as any,
 
-  gbank: async (ctx, char, input) => handleGuildBankCommand(ctx, char, input.args),
+  gbank: async (ctx, char, input) =>
+    requireTownService(ctx, char, "guildbank", () => handleGuildBankCommand(ctx, char, input.args)) as any,
   guildbank: async (ctx, char, input) =>
-    handleGuildBankCommand(ctx, char, input.args),
+    requireTownService(ctx, char, "guildbank", () => handleGuildBankCommand(ctx, char, input.args)) as any,
 
   trade: async (ctx, char, input) => handleTradeCommand(ctx, char, input.args),
-  vendor: async (ctx, char, input) => handleVendorCommand(ctx, char, input.args),
+
+  vendor: async (ctx, char, input) =>
+    requireTownService(ctx, char, "vendor", () => handleVendorCommand(ctx, char, input.args)) as any,
   buy: async (ctx, char, input) =>
-    handleVendorCommand(ctx, char, ["buy", ...input.args]),
+    requireTownService(ctx, char, "vendor", () =>
+      handleVendorCommand(ctx, char, ["buy", ...input.args])
+    ) as any,
   sell: async (ctx, char, input) =>
-    handleVendorCommand(ctx, char, ["sell", ...input.args]),
+    requireTownService(ctx, char, "vendor", () =>
+      handleVendorCommand(ctx, char, ["sell", ...input.args])
+    ) as any,
 
   auction: async (ctx, char, input) =>
-    handleAuctionCommand(ctx, char, input.parts),
-  ah: async (ctx, char, input) => handleAuctionCommand(ctx, char, input.parts),
+    requireTownService(ctx, char, "auction", () => handleAuctionCommand(ctx, char, input.parts)) as any,
+  ah: async (ctx, char, input) =>
+    requireTownService(ctx, char, "auction", () => handleAuctionCommand(ctx, char, input.parts)) as any,
 
-  mail: async (ctx, _char, input) => handleMailCommand(ctx, input.args),
+  mail: async (ctx, char, input) =>
+    requireTownService(ctx, char, "mail", () => Promise.resolve(handleMailCommand(ctx, input.args) as any)) as any,
 
-  craft: async (ctx, char, input) =>
-    handleCraftCommand(ctx, char, input.parts),
+  // Crafting
+  craft: async (ctx, char, input) => handleCraftCommand(ctx, char, input.parts),
 
-  look: async (ctx, char, input) =>
-    handleLookCommand(ctx, char, input, ctx.world ?? undefined),
+  // World
+  look: async (ctx, char, input) => handleLookCommand(ctx, char, input, (ctx as any).world ?? undefined),
   examine: handleExamineCommand,
   inspect_region: handleInspectRegionCommand,
   nearby: handleNearbyCommand,
   map: handleMapCommand,
   save: handleSaveCommand,
-
   move: handleMoveCommand,
   walk: handleMoveCommand,
   go: handleMoveCommand,
+  talk: handleTalkCommand,
+  interact: handleInteractCommand,
+  use: handleInteractCommand,
 
+  // Social
+  who: handleWhoCommand,
+  whoall: handleWhoAllCommand,
+  whois: handleWhoIsCommand,
   say: handleSayCommand,
   tell: handleTellCommand,
   whisper: handleTellCommand,
   gchat: handleGuildChatCommand,
 
-  talk: handleTalkCommand,
-  interact: handleInteractCommand,
-  use: handleInteractCommand,
-
+  // Player
   inv: async (ctx, char) => handleInventoryCommand(ctx, char),
   inventory: async (ctx, char) => handleInventoryCommand(ctx, char),
   item: handleItemInfoCommand,
   iteminfo: handleItemInfoCommand,
-
   equip: handleEquipCommand,
   unequip: handleUnequipCommand,
-
   resources: handleResourcesCommand,
   res: handleResourcesCommand,
+  skills: async (ctx) => handleSkillsCommand(ctx),
+  skill: async (ctx) => handleSkillsCommand(ctx),
 
-  skills: async (ctx, char, input) => handleSkillsCommand(ctx),
-  skill: async (ctx, char, input) => handleSkillsCommand(ctx),
-
-  // NEW: melody management for Virtuoso
   melody: async (ctx, char, input) => handleMelodyCommand(ctx, char, input),
-
-  stats: handleStatsCommand,
-  sheet: handleStatsCommand,
-
-  cast: handleCastMudCommand,
-  ability: handleAbilityMudCommand,
-  use_ability: handleAbilityMudCommand,
-
-  abilities: async (ctx, char) => handleAbilitiesCommand(ctx, char),
-  spell: async (ctx, char) => handleSpellsCommand(ctx),
-  spells: async (ctx, char) => handleSpellsCommand(ctx),
   song: handleSongsCommand,
   songs: handleSongsCommand,
 
+  stats: handleStatsCommand,
+  sheet: handleStatsCommand,
+  status: handleStatsCommand, // ✅ QoL alias
+
+  // Combat
+  cast: handleCastMudCommand,
+  ability: handleAbilityMudCommand,
+  use_ability: handleAbilityMudCommand,
+  abilities: async (ctx, char) => handleAbilitiesCommand(ctx, char),
+  spell: async (ctx, char) => handleSpellsCommand(ctx),
+  spells: async (ctx, char) => handleSpellsCommand(ctx),
   attack: handleAttackCommand,
   autoattack: handleAutoAttackCommand,
 
+  // Gathering
   pick: handlePickingCommand,
   mine: handleMiningCommand,
 
+  // Progression
   quests: async (ctx, char) => handleQuestsCommand(ctx, char),
   questlog: async (ctx, char) => handleQuestsCommand(ctx, char),
   quest: handleQuestCommand,
-
   progress: async (ctx, char) => handleProgressCommand(ctx, char),
-
   title: async (ctx, char) => handleTitleCommand(ctx, char),
   titles: async (ctx, char) => handleTitlesCommand(ctx, char),
   settitle: handleSetTitleCommand,
 
+  // Recovery
   respawn: async (ctx) => handleRespawnCommand(ctx),
   rest: async (ctx) => handleRestCommand(ctx),
   sleep: async (ctx) => handleRestCommand(ctx),
 
+  // Meta
   help: async (ctx) => handleHelpCommand(ctx),
   "?": async (ctx) => handleHelpCommand(ctx),
 
@@ -191,6 +203,7 @@ export const COMMANDS: Record<string, MudCommandHandlerFn> = {
   debug_take: withDebugGate(handleDebugTake, "dev"),
   debug_mail_test: withDebugGate(handleDebugMailTest, "dev"),
   debug_npc_ai: withDebugGate(handleDebugNpcAi, "gm"),
+
   event_give_any: withDebugGate(handleEventGiveAny, "owner"),
   event_mail_reward: withDebugGate(handleEventMailReward, "gm"),
 };

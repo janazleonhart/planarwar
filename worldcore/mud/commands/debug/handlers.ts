@@ -11,6 +11,7 @@ import {
   isDeadEntity,
 } from "../../../combat/entityCombat";
 import { SpawnPointService } from "../../../world/SpawnPointService";
+import { SpawnHydrator } from "../../../world/SpawnHydrator";
 import { NpcSpawnController } from "../../../npc/NpcSpawnController";
 import { announceSpawnToRoom } from "../../MudActions";
 import { getSelfEntity } from "../../runtime/mudRuntime";
@@ -271,6 +272,61 @@ export async function handleDebugSpawnsHere(
   );
 
   return `Spawned ${count} NPCs/nodes from spawn_points.`;
+}
+
+// Rehydrate POI-like spawn_points for your current room/region (dev-safe).
+// Usage:
+//   debug_rehydrate_pois            -> spawn POI placeholders
+//   debug_rehydrate_pois --dry      -> show what would spawn (no changes)
+export async function handleDebugRehydratePois(
+  ctx: any,
+  char: any,
+  input: MudInput
+): Promise<string> {
+  const world = requireWorld(input);
+  if (!world) return "The world is unavailable.";
+
+  if (!ctx.entities) return "Entity system not available.";
+
+  const selfEntity = getSelfEntity(ctx);
+  const roomId = selfEntity?.roomId ?? ctx.session.roomId ?? char.shardId;
+  if (!roomId) return "You are not in a shard room.";
+
+  const shardId = char.shardId;
+  const region = world.getRegionAt(char.posX, char.posZ);
+  const regionId = region?.id ?? roomId;
+
+  const isDry = input.args.includes("--dry") || input.args.includes("--dry-run") || input.args.includes("dry");
+
+  const spawnService = new SpawnPointService();
+  const hydrator = new SpawnHydrator(spawnService, ctx.entities);
+
+  const res = await hydrator.rehydrateRoom({
+    shardId,
+    regionId,
+    roomId,
+    dryRun: isDry,
+    force: true,
+  });
+
+  if (isDry) {
+    if (res.eligible === 0) return "No POI spawn_points found for this region.";
+    return `[debug] Would spawn ${res.wouldSpawn} POI(s) from spawn_points (eligible=${res.eligible}, total=${res.total}).`;
+  }
+
+  if (res.spawned === 0) {
+    return res.eligible === 0
+      ? "No POI spawn_points found for this region."
+      : `[debug] No new POIs spawned (eligible=${res.eligible}, skippedExisting=${res.skippedExisting}).`;
+  }
+
+  announceSpawnToRoom(
+    ctx,
+    roomId,
+    `Landmarks take shape… (${res.spawned} POI(s) rehydrated.)`
+  );
+
+  return `[debug] Rehydrated ${res.spawned} POI(s) from spawn_points (eligible=${res.eligible}, total=${res.total}).`;
 }
 
 // ---------------------------------------------------------------------------

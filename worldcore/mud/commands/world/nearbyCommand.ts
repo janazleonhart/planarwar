@@ -30,7 +30,23 @@ export async function handleNearbyCommand(
         char
       );
     }
-  } catch (err) {
+  
+      // --- v1: refresh POI placeholders (shared) on-demand ---
+      // This is gated by WORLD_SPAWNS_ENABLED so prod can keep it off.
+      const spawnsEnabled = String(process.env.WORLD_SPAWNS_ENABLED ?? "")
+        .trim()
+        .toLowerCase();
+      if (
+        spawnsEnabled === "1" ||
+        spawnsEnabled === "true" ||
+        spawnsEnabled === "yes" ||
+        spawnsEnabled === "on"
+      ) {
+        if (ctx.spawnHydrator?.rehydrateRoom) {
+          await ctx.spawnHydrator.rehydrateRoom({ shardId, regionId, roomId });
+        }
+      }
+} catch (err) {
     // silent-ish; nearby should still work even if refresh fails
   }
 

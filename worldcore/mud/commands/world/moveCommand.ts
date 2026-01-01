@@ -26,6 +26,25 @@ function clampSteps(raw: number | undefined, min: number, max: number): number {
   return i;
 }
 
+function envFlag(name: string, defaultValue = false): boolean {
+  const v = String(process.env[name] ?? "").trim().toLowerCase();
+  if (!v) return defaultValue;
+  return v === "1" || v === "true" || v === "yes" || v === "on";
+}
+
+function envInt(name: string, defaultValue: number): number {
+  const raw = String(process.env[name] ?? "").trim();
+  if (!raw) return defaultValue;
+  const n = Number(raw);
+  if (!Number.isFinite(n)) return defaultValue;
+  return Math.trunc(n);
+}
+
+function getShardId(world: ServerWorldManager): string {
+  const bp: any = (world as any).getWorldBlueprint?.() ?? {};
+  return bp.shardId ?? bp.id ?? "prime_shard";
+}
+
 export async function handleMoveCommand(
   ctx: any,
   char: CharacterState,
@@ -41,7 +60,7 @@ export async function handleMoveCommand(
 
   const dir = parseMoveDir(input.args[0]);
   if (!dir) {
-    return "Usage: move <n|s|e|w|ne|nw|se|sw> [steps]";
+    return "Usage: move <dir> [steps]";
   }
 
   const requestedSteps = parseStepsToken(input.args[1]) ?? 1;
@@ -56,8 +75,50 @@ export async function handleMoveCommand(
     }
   }
 
+  const prevRegionId = (char as any).lastRegionId;
+
   const res = await moveCharacterAndSync(ctx, char, dir, world, steps);
   if (!res.ok) return res.reason;
+
+  // --- Region-crossing hooks (dev-safe) ---
+  try {
+    const newRegionId = (char as any).lastRegionId ?? prevRegionId;
+    const regionChanged = !!newRegionId && newRegionId !== prevRegionId;
+
+    if (regionChanged) {
+      const roomId = ctx?.session?.roomId;
+      const shardId = getShardId(world);
+
+      // 1) POI hydration (DB -> inert POI entities)
+      if (envFlag("WORLD_SPAWNS_ENABLED", false)) {
+        const hydrator = ctx?.spawnHydrator;
+        if (hydrator?.rehydrateRoom && roomId) {
+          await hydrator.rehydrateRoom({
+            shardId,
+            regionId: newRegionId,
+            roomId,
+          });
+        }
+      }
+
+      // 2) Optional: spawn shared NPCs near you (kept OFF by default)
+      if (envFlag("WORLD_NPC_SPAWNS_ENABLED", false)) {
+        const npcSpawns = ctx?.npcSpawns;
+        if (npcSpawns?.spawnNear && roomId) {
+          const radius = envInt("WORLD_NPC_SPAWN_RADIUS", 80);
+          await npcSpawns.spawnNear(
+            shardId,
+            (char as any).posX ?? 0,
+            (char as any).posZ ?? 0,
+            radius,
+            roomId,
+          );
+        }
+      }
+    }
+  } catch {
+    // Movement should never fail because spawn hydration/spawning failed.
+  }
 
   const label = DIR_LABELS[dir] ?? (input.args[0] ?? dir).toLowerCase();
   if (steps === 1) return `You move ${label}.`;

@@ -33,6 +33,7 @@ import { RespawnService } from "./RespawnService";
 import { ServerWorldManager } from "./ServerWorldManager";
 import { SpawnPointService } from "./SpawnPointService";
 import { SpawnService } from "./SpawnService";
+import { SpawnHydrator } from "./SpawnHydrator";
 import { WorldEventBus } from "./WorldEventBus";
 import { NpcManager } from "../npc/NpcManager";
 import { NpcSpawnController } from "../npc/NpcSpawnController";
@@ -62,6 +63,7 @@ export interface WorldServices {
   spawnPoints: SpawnPointService;
   spawns: SpawnService;
   respawns: RespawnService;
+  spawnHydrator: SpawnHydrator;
   navGrid: NavGridManager;
   boundary?: DomeBoundary;
 
@@ -102,6 +104,12 @@ export interface WorldServicesOptions {
   onTick?: (nowMs: number, tick: number, deltaMs?: number) => void;
 }
 
+function envFlag(name: string, defaultValue = false): boolean {
+  const v = String(process.env[name] ?? "").trim().toLowerCase();
+  if (!v) return defaultValue;
+  return v === "1" || v === "true" || v === "yes" || v === "on";
+}
+
 /**
  * Bootstraps and wires all world systems into a fully operational runtime.
  * Returns a dependency bag that other layers (MessageRouter, MUD, world ticks)
@@ -118,7 +126,11 @@ export async function createWorldServices(
   const seed = options.seed ?? 0x1234abcd;
   const tickIntervalMs = options.tickIntervalMs ?? 200;
 
-  log.info(`Initializing Planar War world services (seed=${seed})...`);
+  const autoHydrateSpawns = envFlag("WORLD_SPAWNS_ENABLED", false);
+
+  log.info(
+    `Initializing Planar War world services (seed=${seed}, WORLD_SPAWNS_ENABLED=${autoHydrateSpawns ? "1" : "0"})...`,
+  );
 
   // Event bus (kept minimal for now)
   const events = new WorldEventBus();
@@ -131,10 +143,33 @@ export async function createWorldServices(
   const blueprint = world.getWorldBlueprint();
   const shardId = blueprint.shardId ?? blueprint.id ?? "prime_shard";
 
-  const rooms = new RoomManager(sessions, entities, world);
-
-  // Spawns / regions / respawns
+  // Spawns
   const spawnPoints = new SpawnPointService();
+  const spawnHydrator = new SpawnHydrator(spawnPoints, entities);
+
+  const rooms = new RoomManager(sessions, entities, world, {
+    onWorldRoomJoined: async (session, roomId) => {
+      if (!autoHydrateSpawns) return;
+
+      // Hydrate POI placeholders for the region the character is *actually* in.
+      // Note: session.roomId is a shard/world room, not a region id once the player starts moving.
+      const char: any = (session as any).character;
+      if (!char) return;
+
+      const region = world.getRegionAt(char.posX ?? 0, char.posZ ?? 0);
+      const regionId = char.lastRegionId ?? region?.id ?? roomId;
+
+      // NOTE: hook expects void | Promise<void>; rehydrateRoom returns a result object.
+      await spawnHydrator.rehydrateRoom({
+        shardId,
+        regionId,
+        roomId,
+        // no force; per-region cache avoids rehydrating on every join
+      });
+},
+  });
+
+  // Respawns / regions
   const characters = new PostgresCharacterService();
   const respawns = new RespawnService(world, spawnPoints, characters, entities);
 
@@ -226,6 +261,7 @@ export async function createWorldServices(
     bank,
     auctions,
     npcSpawns,
+    spawnHydrator,
     respawns,
   );
 
@@ -242,6 +278,7 @@ export async function createWorldServices(
     spawnPoints,
     spawns,
     respawns,
+    spawnHydrator,
     navGrid,
     boundary,
     npcs,

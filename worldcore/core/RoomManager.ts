@@ -13,6 +13,24 @@ export interface WorldBlueprintProvider {
   getWorldBlueprintForRoom(roomId: string): WorldBlueprint;
 }
 
+export type RoomManagerHooks = {
+  /**
+   * Fired only when a room is first created.
+   * Intended for lightweight initialization (no awaits required).
+   */
+  onRoomCreated?: (roomId: string, room: Room) => void | Promise<void>;
+
+  /**
+   * Fired after a session joins a *world* room (not lobby/auth/select_character).
+   * Intended for "region load" hooks, e.g. dev-safe spawn rehydration.
+   */
+  onWorldRoomJoined?: (
+    session: Session,
+    roomId: string,
+    room: Room
+  ) => void | Promise<void>;
+};
+
 export class RoomManager {
   private log = Logger.scope("ROOMS");
   private rooms = new Map<string, Room>();
@@ -20,8 +38,27 @@ export class RoomManager {
   constructor(
     private sessions: SessionManager,
     private entities: EntityManager,
-    private world?: WorldBlueprintProvider
+    private world?: WorldBlueprintProvider,
+    private hooks?: RoomManagerHooks
   ) {}
+
+  private isWorldRoom(roomId: string): boolean {
+    return (
+      roomId !== "lobby" && roomId !== "auth" && roomId !== "select_character"
+    );
+  }
+
+  private runHook(
+    name: string,
+    fn?: () => void | Promise<void>
+  ): void {
+    if (!fn) return;
+    Promise.resolve()
+      .then(fn)
+      .catch((err) => {
+        this.log.warn("RoomManager hook failed", { name, err });
+      });
+  }
 
   ensureRoom(roomId: string): Room {
     let r = this.rooms.get(roomId);
@@ -29,6 +66,8 @@ export class RoomManager {
       r = new Room(roomId, this.sessions, this.entities);
       this.rooms.set(roomId, r);
       this.log.info("Created room", { roomId });
+
+      this.runHook("onRoomCreated", () => this.hooks?.onRoomCreated?.(roomId, r!));
     }
     return r;
   }
@@ -63,9 +102,7 @@ export class RoomManager {
     session.roomId = roomId;
 
     // Hand world blueprint to the joining session if we have a provider
-    const isWorldRoom =
-    roomId !== "lobby" && roomId !== "auth" && roomId !== "select_character";
-    if (this.world && isWorldRoom) {
+    if (this.world && this.isWorldRoom(roomId)) {
       try {
         const bp = this.world.getWorldBlueprintForRoom(roomId);
         this.sessions.send(session, "world_blueprint", { world: bp });
@@ -77,18 +114,24 @@ export class RoomManager {
         });
       }
     }
+
+    // Post-join hooks (do not block join)
+    if (this.isWorldRoom(roomId)) {
+      this.runHook("onWorldRoomJoined", () =>
+        this.hooks?.onWorldRoomJoined?.(session, roomId, room)
+      );
+    }
   }
 
   leaveRoom(session: Session): void {
     const roomId = session.roomId;
     if (!roomId) return;
-  
+
     const room = this.rooms.get(roomId);
     if (room) {
       room.leave(session);
     }
-  
+
     session.roomId = null;
   }
-  
 }

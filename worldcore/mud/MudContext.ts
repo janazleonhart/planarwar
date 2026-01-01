@@ -19,6 +19,7 @@ import type { NpcManager } from "../npc/NpcManager";
 import type { NpcSpawnController } from "../npc/NpcSpawnController";
 import type { ServerWorldManager } from "../world/ServerWorldManager";
 import type { RespawnService } from "../world/RespawnService";
+import type { SpawnHydrator } from "../world/SpawnHydrator";
 import type { TradeService } from "../trade/TradeService";
 import type { VendorService } from "../vendors/VendorService";
 import type { Session } from "../shared/Session";
@@ -44,6 +45,8 @@ export interface MudContextServices {
 
   // v0: wired from server/router so commands like /respawn can use shard-aware respawns
   respawns?: RespawnService;
+  // Dev harness: rehydrate POI placeholders from spawn_points
+  spawnHydrator?: SpawnHydrator;
 }
 
 export interface MudContext extends MudContextServices {
@@ -70,6 +73,7 @@ export function buildMudContext(
         | "bank"
         | "auctions"
         | "respawns"
+        | "spawnHydrator"
       >,
   session: Session
 ): MudContext {

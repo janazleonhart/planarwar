@@ -22,6 +22,7 @@ import { PostgresVendorService } from "../vendors/PostgresVendorService";
 import { PostgresBankService } from "../bank/PostgresBankService";
 import { PostgresAuctionService } from "../auction/PostgresAuctionService";
 import { RespawnService } from "../world/RespawnService";
+import type { SpawnHydrator } from "../world/SpawnHydrator";
 
 import type { ActionRequest } from "../actions/ActionTypes";
 import type { WhereAmIResultPayload } from "../shared/messages";
@@ -76,6 +77,8 @@ export class MessageRouter {
     private readonly bank?: BankService,
     private readonly auctions?: AuctionService,
     private readonly npcSpawns?: NpcSpawnController,
+    // Dev harness: POI hydration from spawn_points
+    private readonly spawnHydrator?: SpawnHydrator,
     // NEW: shard-aware respawn service (graveyards / hubs)
     private readonly respawns?: RespawnService,
   ) {}
@@ -526,6 +529,7 @@ export class MessageRouter {
             auctions: this.auctions,
             // NEW: wire RespawnService into the MUD context
             respawns: this.respawns,
+            spawnHydrator: this.spawnHydrator,
           },
           session
         );
