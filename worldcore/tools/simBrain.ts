@@ -21,6 +21,7 @@ type Cmd =
   | "fill-gaps"
   | "era"
   | "wipe-placements"
+  | "trim-outposts"
   | "help";
 
 type PlaceSpawnAction = {
@@ -55,6 +56,7 @@ Usage:
   node dist/worldcore/tools/simBrain.js fill-gaps [options] [--commit]
   node dist/worldcore/tools/simBrain.js era [options] [--commit]
   node dist/worldcore/tools/simBrain.js wipe-placements [options] [--commit]
+  node dist/worldcore/tools/simBrain.js trim-outposts [options] [--commit]
 
 Common options:
   --shard       shard id (default: prime_shard)
@@ -117,26 +119,18 @@ Wipe-placements options:
   --noArtifact     don't write artifact file
   --json           print artifact JSON (still writes unless --noArtifact)
 
+Trim-outposts options:
+  --maxPerFaction  required. keep at most N outposts per faction (within bounds)
+  --pad            world-units expansion of bounds box (default: 0)
+  --artifactDir    default: ./artifacts/brain
+  --noArtifact     don't write artifact file
+  --json           print artifact JSON (still writes unless --noArtifact)
+
 Examples:
-  # ✅ Correct commit (explicit bounds + safe caps)
-  node dist/worldcore/tools/simBrain.js era \
-    --bounds -8..8,-8..8 \
-    --factions emberfall:2,oathbound:2 \
-    --factionsAreTotal \
-    --maxOutpostsPerFaction 2 \
-    --respawnRadius 500 \
-    --minDistance 300 \
-    --maxPlace 50 \
-    --commit
-
-  # Wipe placements inside bounds (dry-run)
-  node dist/worldcore/tools/simBrain.js wipe-placements --bounds -8..8,-8..8
-
-  # Wipe + commit
-  node dist/worldcore/tools/simBrain.js wipe-placements --bounds -8..8,-8..8 --commit
-
-  # Quick status for a region
   node dist/worldcore/tools/simBrain.js status --bounds -8..8,-8..8
+
+  node dist/worldcore/tools/simBrain.js trim-outposts --bounds -8..8,-8..8 --maxPerFaction 2
+  node dist/worldcore/tools/simBrain.js trim-outposts --bounds -8..8,-8..8 --maxPerFaction 2 --commit
 `.trim(),
   );
 }
@@ -214,8 +208,6 @@ function sanitizeId(s: string): string {
 }
 
 function assertNoEllipsisArgs(argv: string[]): void {
-  // People type `...` as a placeholder; shells pass it through as a literal arg.
-  // That is *not* a harmless placeholder here.
   if (argv.includes("...") || argv.includes("…")) {
     throw new Error(`Refusing to run: found literal "..." argument. (Remove it; it triggers defaults.)`);
   }
@@ -552,9 +544,7 @@ async function runStatus(args: {
 
   const typesSorted = [...countsByType.entries()].sort((a, b) => b[1] - a[1]);
   console.log(`[status] spawn types in scan area:`);
-  for (const [t, n] of typesSorted) {
-    console.log(`  - ${t}: ${n}`);
-  }
+  for (const [t, n] of typesSorted) console.log(`  - ${t}: ${n}`);
 
   const factionsSorted = [...outpostsByFaction.entries()].sort((a, b) => b[1] - a[1]);
   if (factionsSorted.length) {
@@ -620,13 +610,11 @@ async function runFillGaps(args: {
   const planned = planGapFillSpawns(existing, cfg);
   const actions: BrainAction[] = planned.map((p) => ({ kind: "place_spawn", spawn: p }));
 
-  if (args.json) {
-    console.log(JSON.stringify(actions, null, 2));
-  } else {
+  if (args.json) console.log(JSON.stringify(actions, null, 2));
+  else
     console.log(
       `[fill-gaps] planned=${planned.length} seed=${args.seed} shard=${args.shardId} radius=${args.respawnRadius} minDist=${args.minDistance} maxPlace=${args.maxPlace}`,
     );
-  }
 
   if (planned.length === 0) {
     console.log("[fill-gaps] nothing to place.");
@@ -644,7 +632,7 @@ async function runFillGaps(args: {
 }
 
 // ---------------------------------------------------------------------------
-// Era: orchestrated run + artifact
+// Era
 // ---------------------------------------------------------------------------
 
 function mergePlannedSpawns(existing: SpawnForCoverage[], actions: BrainAction[]): SpawnForCoverage[] {
@@ -976,6 +964,186 @@ async function runWipePlacements(args: {
 }
 
 // ---------------------------------------------------------------------------
+// Trim outposts (enforce cap by deleting extras, deterministic keep lowest indices)
+// ---------------------------------------------------------------------------
+
+type OutpostParsed = {
+  spawnId: string;
+  type: string;
+  x: number;
+  z: number;
+  regionId: string | null;
+  faction: string;
+  index: number;
+};
+
+function parseOutpostSpawnId(spawnId: string): { faction: string; index: number } | null {
+  const re = /^outpost_(.+)_([0-9]+)_(-?[0-9]+)_(-?[0-9]+)$/;
+  const m = re.exec(spawnId);
+  if (!m) return null;
+  const faction = m[1] || "__unknown__";
+  const idx = parseInt(m[2], 10);
+  if (!Number.isFinite(idx)) return null;
+  return { faction, index: idx };
+}
+
+async function runTrimOutposts(args: {
+  shardId: string;
+  bounds: Bounds;
+  cellSize: number;
+  pad: number;
+  maxPerFaction: number;
+  artifactDir: string;
+  noArtifact: boolean;
+  json: boolean;
+  commit: boolean;
+}): Promise<void> {
+  const cellSize = Math.max(1, Math.floor(args.cellSize));
+  const pad = Math.max(0, Math.floor(args.pad));
+  const maxPerFaction = Math.max(0, Math.floor(args.maxPerFaction));
+
+  const minX = args.bounds.minCx * cellSize - pad;
+  const maxX = (args.bounds.maxCx + 1) * cellSize + pad;
+  const minZ = args.bounds.minCz * cellSize - pad;
+  const maxZ = (args.bounds.maxCz + 1) * cellSize + pad;
+
+  type Row = { spawn_id: string; type: string; x: number; z: number; region_id: string | null };
+
+  const client = await db.connect();
+  let rows: Row[] = [];
+  try {
+    const res = await client.query(
+      `
+      SELECT spawn_id, type, x, z, region_id
+      FROM spawn_points
+      WHERE shard_id = $1
+        AND type = 'outpost'
+        AND x >= $2 AND x <= $3
+        AND z >= $4 AND z <= $5
+      ORDER BY spawn_id
+    `,
+      [args.shardId, minX, maxX, minZ, maxZ],
+    );
+
+    rows = res.rows as Row[];
+  } finally {
+    client.release();
+  }
+
+  const parsed: OutpostParsed[] = [];
+  for (const r of rows) {
+    const sid = String(r.spawn_id ?? "");
+    const p = parseOutpostSpawnId(sid);
+    if (!p) continue;
+    parsed.push({
+      spawnId: sid,
+      type: String(r.type),
+      x: Number(r.x),
+      z: Number(r.z),
+      regionId: r.region_id,
+      faction: p.faction,
+      index: p.index,
+    });
+  }
+
+  const byFaction = new Map<string, OutpostParsed[]>();
+  for (const o of parsed) {
+    const key = o.faction || "__unknown__";
+    const arr = byFaction.get(key) ?? [];
+    arr.push(o);
+    byFaction.set(key, arr);
+  }
+
+  const plan: {
+    faction: string;
+    total: number;
+    keep: string[];
+    delete: string[];
+  }[] = [];
+
+  const toDelete: string[] = [];
+
+  for (const [faction, list] of [...byFaction.entries()].sort((a, b) => a[0].localeCompare(b[0]))) {
+    // deterministic: lowest indices survive
+    const sorted = [...list].sort((a, b) => a.index - b.index || a.spawnId.localeCompare(b.spawnId));
+    const keep = sorted.slice(0, maxPerFaction).map((x) => x.spawnId);
+    const del = sorted.slice(maxPerFaction).map((x) => x.spawnId);
+    plan.push({ faction, total: sorted.length, keep, delete: del });
+    toDelete.push(...del);
+  }
+
+  const artifact = {
+    kind: "simBrain.trim-outposts",
+    version: 1,
+    createdAt: new Date().toISOString(),
+    shardId: args.shardId,
+    bounds: args.bounds,
+    cellSize,
+    pad,
+    maxPerFaction,
+    matched: parsed.length,
+    plannedDelete: toDelete.length,
+    commit: args.commit,
+    plan: plan.map((p) => ({
+      faction: p.faction,
+      total: p.total,
+      keepCount: p.keep.length,
+      deleteCount: p.delete.length,
+      deleteSample: p.delete.slice(0, 20),
+    })),
+  };
+
+  console.log(
+    `[trim] shard=${args.shardId} bounds=${boundsSlug(args.bounds)} cellSize=${cellSize} pad=${pad} maxPerFaction=${maxPerFaction}`,
+  );
+  console.log(`[trim] outposts_matched=${parsed.length} planned_delete=${toDelete.length} commit=${String(args.commit)}`);
+
+  for (const p of plan) {
+    if (p.total <= maxPerFaction) continue;
+    console.log(`  - ${p.faction}: total=${p.total} keep=${p.keep.length} delete=${p.delete.length}`);
+  }
+  if (toDelete.length === 0) console.log("[trim] nothing to delete (already within caps).");
+
+  if (args.json) console.log(JSON.stringify(artifact, null, 2));
+  if (!args.noArtifact) {
+    const filename = `trim_${isoSlug()}_${args.shardId}_${boundsSlug(args.bounds)}.json`;
+    const outPath = await writeArtifactFile(args.artifactDir, filename, artifact);
+    console.log(`[trim] artifact=${outPath}`);
+  }
+
+  if (toDelete.length === 0) return;
+
+  const delClient = await db.connect();
+  try {
+    await delClient.query("BEGIN");
+
+    const delRes = await delClient.query(
+      `
+      DELETE FROM spawn_points
+      WHERE shard_id = $1
+        AND spawn_id = ANY($2::text[])
+    `,
+      [args.shardId, toDelete],
+    );
+
+    if (args.commit) {
+      await delClient.query("COMMIT");
+      console.log(`[trim] committed. deleted=${delRes.rowCount}`);
+    } else {
+      await delClient.query("ROLLBACK");
+      console.log(`[trim] rolled back (dry-run). would_delete=${delRes.rowCount} (use --commit)`);
+    }
+  } catch (err) {
+    try {
+      await delClient.query("ROLLBACK");
+    } catch {}
+    throw err;
+  } finally {
+    delClient.release();
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Main
 // ---------------------------------------------------------------------------
 
@@ -990,7 +1158,8 @@ async function main(argv: string[]): Promise<void> {
     cmd !== "status" &&
     cmd !== "fill-gaps" &&
     cmd !== "era" &&
-    cmd !== "wipe-placements"
+    cmd !== "wipe-placements" &&
+    cmd !== "trim-outposts"
   ) {
     usage();
     return;
@@ -1032,6 +1201,30 @@ async function main(argv: string[]): Promise<void> {
       cellSize,
       pad,
       types,
+      artifactDir,
+      noArtifact,
+      json,
+      commit,
+    });
+    return;
+  }
+
+  if (cmd === "trim-outposts") {
+    const maxPerFactionRaw = getFlag(argv, "--maxPerFaction");
+    if (!maxPerFactionRaw) throw new Error(`trim-outposts requires --maxPerFaction N`);
+    const maxPerFaction = Math.max(0, parseInt(maxPerFactionRaw, 10) || 0);
+
+    const pad = parseIntFlag(argv, "--pad", 0) || 0;
+    const artifactDir = getFlag(argv, "--artifactDir") ?? "./artifacts/brain";
+    const noArtifact = hasFlag(argv, "--noArtifact");
+    const json = hasFlag(argv, "--json");
+
+    await runTrimOutposts({
+      shardId,
+      bounds,
+      cellSize,
+      pad,
+      maxPerFaction,
       artifactDir,
       noArtifact,
       json,

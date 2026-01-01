@@ -3588,7 +3588,8 @@
             "wipe-placements: deletes placement spawn types (default outpost/checkpoint/graveyard) inside bounds (dry-run unless --commit), writes an artifact",
             "status: quick counts (types + outposts by faction) + coverage summary for bounds",
             "safety: refuses --commit without explicit --bounds (unless --allowDefaultBounds); refuses literal ... args",
-            "default insert-only apply (no updates) unless --updateExisting"
+            "default insert-only apply (no updates) unless --updateExisting",
+            "trim-outposts: enforces max outposts per faction by deleting extra outposts within bounds (dry-run unless --commit), writes an artifact"
          ],
          "notes": [
             "Dev Simulation Harness CLI entrypoint (worldcore/tools/simBrain.ts).",
