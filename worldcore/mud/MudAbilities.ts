@@ -1,144 +1,137 @@
 // worldcore/mud/MudAbilities.ts
 
-import { MudContext } from "./MudContext";
-import { CharacterState } from "../characters/CharacterTypes";
-import { findNpcTargetByName } from "./MudHelperFunctions";
+import type { MudContext } from "./MudContext";
+import type { CharacterState } from "../characters/CharacterTypes";
+
+import { Logger } from "../utils/logger";
+import { checkAndStartCooldown } from "../combat/Cooldowns";
+
+import { ABILITIES, AbilityDefinition, findAbilityByNameOrId } from "../abilities/AbilityTypes";
 import { performNpcAttack } from "./MudActions";
+import { findNpcTargetByName } from "./MudHelperFunctions";
+
+import { getNpcPrototype } from "../npc/NpcTypes";
 import {
-  ABILITIES,
-  findAbilityByNameOrId,
-  AbilityDefinition,
-} from "../abilities/AbilityTypes";
+  isServiceProtectedEntity,
+  isServiceProtectedNpcProto,
+  serviceProtectedCombatLine,
+} from "../combat/ServiceProtection";
+
 import {
+  gainPowerResource,
   getPrimaryPowerResourceForClass,
   trySpendPowerResource,
-  gainPowerResource,
 } from "../resources/PowerResources";
-import {
-  checkAndStartCooldown,
-} from "../combat/Cooldowns";
-import { Logger } from "../utils/logger";
+import { gainWeaponSkill } from "../skills/SkillProgression";
+import type { WeaponSkillId } from "../combat/CombatEngine";
 
-const log = Logger.scope("MUD");
+const log = Logger.scope("MUD_ABILITIES");
 
-function canUseAbility(
-  char: CharacterState,
-  ability: AbilityDefinition
-): string | null {
+function listKnownAbilitiesForChar(char: CharacterState): AbilityDefinition[] {
   const cls = (char.classId ?? "").toLowerCase();
-
-  if (cls && cls !== ability.classId.toLowerCase()) {
-    return `You cannot use ${ability.name} (class restricted to ${ability.classId}).`;
-  }
-
   const level = char.level ?? 1;
-  if (level < ability.minLevel) {
-    return `${ability.name} requires level ${ability.minLevel}.`;
-  }
 
-  return null;
+  return Object.values(ABILITIES).filter((a) => {
+    const abilityClass = a.classId.toLowerCase();
+    if (abilityClass !== "any" && cls && abilityClass !== cls) return false;
+    if (level < a.minLevel) return false;
+    return true;
+  });
 }
 
-/**
- * Handle "ability <name> [target]" from the MUD.
- * For now only melee_single vs NPCs is supported.
- */
+function isServiceProtectedNpcTarget(ctx: MudContext, npc: any): boolean {
+  if (isServiceProtectedEntity(npc)) return true;
+
+  if (!ctx.npcs) return false;
+  const st = ctx.npcs.getNpcStateByEntityId(npc.id);
+  if (!st) return false;
+
+  const proto = getNpcPrototype(st.templateId) ?? getNpcPrototype(st.protoId);
+  return isServiceProtectedNpcProto(proto);
+}
+
 export async function handleAbilityCommand(
   ctx: MudContext,
   char: CharacterState,
   abilityNameRaw: string,
-  targetNameRaw?: string
+  targetNameRaw?: string,
 ): Promise<string> {
-  if (!abilityNameRaw.trim()) {
-    return "Usage: ability <name> [target]";
-  }
-
   const ability = findAbilityByNameOrId(abilityNameRaw);
   if (!ability) {
     return `You don't know an ability called '${abilityNameRaw}'.`;
   }
 
-  const error = canUseAbility(char, ability);
-  if (error) return error;
-
-  // --- Cooldown gate ---
-  const abilityCooldownMs = ability.cooldownMs ?? 0;
-  if (abilityCooldownMs > 0) {
-    const cdErr = checkAndStartCooldown(
-      char,
-      "abilities",
-      ability.id,
-      abilityCooldownMs,
-      ability.name
-    );
-    if (cdErr) return cdErr;
-  } 
-
-  // --- Resource gate (fury/mana/etc.) ---
-  const abilityResourceType =
-  ability.resourceType ?? getPrimaryPowerResourceForClass(char.classId);
-  const abilityResourceCost = ability.resourceCost ?? 0;
-
-  const resourceErr = trySpendPowerResource(
-    char,
-    abilityResourceType,
-    abilityResourceCost
-  );
-  if (resourceErr) return resourceErr;
-
-  if (!ctx.entities) {
-    return "The world is strangely empty right now.";
+  const known = listKnownAbilitiesForChar(char);
+  if (!known.some((a) => a.id === ability.id)) {
+    return `You do not know ${ability.name}.`;
   }
 
-  const selfEntity = ctx.entities.getEntityByOwner(ctx.session.id);
-  if (!selfEntity) {
+  if (!ctx.entities) {
+    return "The world feels empty; you can't act.";
+  }
+
+  const self = ctx.entities.getEntityByOwner(ctx.session.id);
+  if (!self) {
     return "You have no physical form here.";
   }
 
-  // Default target if none provided (still handy for dummy/rats during testing)
-  const targetRaw = (targetNameRaw && targetNameRaw.trim()) || "rat";
   const roomId = ctx.session.roomId ?? char.shardId;
+  const targetRaw = (targetNameRaw && targetNameRaw.trim()) || "rat";
+
+  const resourceType = ability.resourceType ?? getPrimaryPowerResourceForClass(char.classId);
+  const resourceCost = ability.resourceCost ?? 0;
+
+  const cooldownGate = (): string | null => {
+    const ms = ability.cooldownMs ?? 0;
+    if (ms <= 0) return null;
+
+    return checkAndStartCooldown(char, "abilities", ability.id, ms, ability.name);
+  };
+
+  const resourceGate = (): string | null => {
+    return trySpendPowerResource(char, resourceType, resourceCost);
+  };
 
   switch (ability.kind) {
     case "melee_single": {
       const npc = findNpcTargetByName(ctx.entities, roomId, targetRaw);
       if (!npc) {
-        return `There is no '${targetRaw}' here to strike.`;
+        return `There is no '${targetRaw}' here to attack.`;
       }
 
-      // Decide channel/tagging for the combat log
-      const channel = ability.channel ?? "ability";
-      const tagPrefix = "ability";
+      // Early fail: do not consume cooldown/resource when the target is a protected service provider.
+      if (isServiceProtectedNpcTarget(ctx, npc)) {
+        return serviceProtectedCombatLine(npc.name);
+      }
 
-      return await performNpcAttack(ctx, char, selfEntity, npc, {
+      const cdErr = cooldownGate();
+      if (cdErr) return cdErr;
+
+      const resErr = resourceGate();
+      if (resErr) return resErr;
+
+      const result = await performNpcAttack(ctx, char, self, npc, {
         abilityName: ability.name,
-        tagPrefix,
-        channel,
+        tagPrefix: "ability",
+        channel: "weapon",
         damageMultiplier: ability.damageMultiplier,
         flatBonus: ability.flatBonus,
-        weaponSkill: ability.weaponSkill,
-        spellSchool: ability.spellSchool,
+        weaponSkill: ability.weaponSkill as WeaponSkillId | undefined,
       });
+
+      // Basic on-use progression scaffolding.
+      if (ability.weaponSkill) {
+        gainWeaponSkill(char, ability.weaponSkill as WeaponSkillId, 1);
+      }
+
+      // Default: small "feel good" resource drip back for melee abilities.
+      // (This is intentionally conservative; we'll rebalance later.)
+      gainPowerResource(char, resourceType, 1);
+
+      return result;
     }
 
     default:
-      log.warn("Unhandled ability kind", {
-        abilityId: ability.id,
-        kind: ability.kind,
-      });
-      return "That kind of ability is not implemented yet.";
+      return `Ability '${ability.name}' is not implemented yet.`;
   }
-}
-
-export function listKnownAbilitiesForChar(
-  char: CharacterState
-): AbilityDefinition[] {
-  const cls = (char.classId ?? "").toLowerCase();
-  const level = char.level ?? 1;
-
-  return Object.values(ABILITIES).filter((a) => {
-    if (cls && a.classId.toLowerCase() !== cls) return false;
-    if (level < a.minLevel) return false;
-    return true;
-  });
 }

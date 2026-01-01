@@ -1,47 +1,29 @@
 // worldcore/mud/MudSpells.ts
 
 import type { MudContext } from "./MudContext";
-import type {
-  CharacterState,
-  SpellbookState,
-} from "../characters/CharacterTypes";
+import type { CharacterState, SpellbookState } from "../characters/CharacterTypes";
 
-import {
-  computeDamage,
-  CombatSource,
-  CombatTarget,
-  WeaponSkillId,
-  SpellSchoolId,
-} from "../combat/CombatEngine";
+import { Logger } from "../utils/logger";
+import { checkAndStartCooldown } from "../combat/Cooldowns";
 
-import {
-  SPELLS,
-  SpellDefinition,
-  findSpellByNameOrId,
-} from "../spells/SpellTypes";
-
+import { SPELLS, SpellDefinition, findSpellByNameOrId } from "../spells/SpellTypes";
 import { performNpcAttack } from "./MudActions";
-import {
-  findNpcTargetByName,
-  isDeadEntity,
-  resurrectEntity,
-} from "./MudHelperFunctions";
+import { findNpcTargetByName, isDeadEntity, resurrectEntity } from "./MudHelperFunctions";
 
+import { getNpcPrototype } from "../npc/NpcTypes";
 import {
-  getPrimaryPowerResourceForClass,
-  trySpendPowerResource,
-} from "../resources/PowerResources";
+  isServiceProtectedEntity,
+  isServiceProtectedNpcProto,
+  serviceProtectedCombatLine,
+} from "../combat/ServiceProtection";
 
+import { getPrimaryPowerResourceForClass, trySpendPowerResource } from "../resources/PowerResources";
 import {
-  gainWeaponSkill,
   gainSpellSchoolSkill,
   gainSongSchoolSkill,
   getSongSchoolSkill,
 } from "../skills/SkillProgression";
-
 import type { SongSchoolId } from "../skills/SkillProgression";
-import { checkAndStartCooldown } from "../combat/Cooldowns";
-import { Logger } from "../utils/logger";
 
 const log = Logger.scope("MUD_SPELLS");
 
@@ -59,10 +41,7 @@ function ensureSpellbook(char: CharacterState): SpellbookState {
   return sb as SpellbookState;
 }
 
-function canUseSpell(
-  char: CharacterState,
-  spell: SpellDefinition
-): string | null {
+function canUseSpell(char: CharacterState, spell: SpellDefinition): string | null {
   const cls = (char.classId ?? "").toLowerCase();
   const spellClass = spell.classId.toLowerCase();
 
@@ -98,9 +77,7 @@ function startSpellCooldown(char: CharacterState, spell: SpellDefinition): void 
   sb.cooldowns[spell.id] = now + spell.cooldownMs;
 }
 
-export function listKnownSpellsForChar(
-  char: CharacterState
-): SpellDefinition[] {
+export function listKnownSpellsForChar(char: CharacterState): SpellDefinition[] {
   const cls = (char.classId ?? "").toLowerCase();
   const level = char.level ?? 1;
 
@@ -112,6 +89,17 @@ export function listKnownSpellsForChar(
   });
 }
 
+function isServiceProtectedNpcTarget(ctx: MudContext, npc: any): boolean {
+  if (isServiceProtectedEntity(npc)) return true;
+
+  if (!ctx.npcs) return false;
+  const st = ctx.npcs.getNpcStateByEntityId(npc.id);
+  if (!st) return false;
+
+  const proto = getNpcPrototype(st.templateId) ?? getNpcPrototype(st.protoId);
+  return isServiceProtectedNpcProto(proto);
+}
+
 /**
  * Core spell-cast path used by both:
  *  - MUD 'cast' command
@@ -121,36 +109,10 @@ export async function castSpellForCharacter(
   ctx: MudContext,
   char: CharacterState,
   spell: SpellDefinition,
-  targetNameRaw?: string
+  targetNameRaw?: string,
 ): Promise<string> {
   const err = canUseSpell(char, spell);
   if (err) return err;
-
-  const isSong = (spell as any).isSong === true;
-  const songSchool = isSong ? (spell as any).songSchool : undefined;
-
-  const spellCooldownMs = spell.cooldownMs ?? 0;
-  if (spellCooldownMs > 0) {
-    const cdErr = checkAndStartCooldown(
-      char,
-      "spells",
-      spell.id,
-      spellCooldownMs,
-      spell.name
-    );
-    if (cdErr) return cdErr;
-  }
-
-  const spellResourceType =
-    spell.resourceType ?? getPrimaryPowerResourceForClass(char.classId);
-  const spellResourceCost = spell.resourceCost ?? 0;
-
-  const resourceErr = trySpendPowerResource(
-    char,
-    spellResourceType,
-    spellResourceCost
-  );
-  if (resourceErr) return resourceErr;
 
   if (!ctx.entities) {
     return "The world feels strangely empty; your magic fizzles.";
@@ -164,17 +126,32 @@ export async function castSpellForCharacter(
   const roomId = ctx.session.roomId ?? char.shardId;
   const targetRaw = (targetNameRaw && targetNameRaw.trim()) || "rat";
 
-  const applySchoolGains = () => {
-  if (spell.isSong && spell.songSchool) {
-    // Songs: train only instrument/vocal school
-    gainSongSchoolSkill(char, spell.songSchool as SongSchoolId, 1);
-    return;
-  }
+  const isSong = (spell as any).isSong === true;
+  const songSchool = isSong ? ((spell as any).songSchool as SongSchoolId | undefined) : undefined;
 
-  // Non-song spells: train traditional magic schools
-  if (spell.school) {
-    gainSpellSchoolSkill(char, spell.school, 1);
+  const spellResourceType = spell.resourceType ?? getPrimaryPowerResourceForClass(char.classId);
+  const spellResourceCost = spell.resourceCost ?? 0;
+
+  const applySchoolGains = () => {
+    if (spell.isSong && spell.songSchool) {
+      gainSongSchoolSkill(char, spell.songSchool as SongSchoolId, 1);
+      return;
     }
+
+    if (spell.school) {
+      gainSpellSchoolSkill(char, spell.school, 1);
+    }
+  };
+
+  const cooldownGate = (): string | null => {
+    const ms = spell.cooldownMs ?? 0;
+    if (ms <= 0) return null;
+
+    return checkAndStartCooldown(char, "spells", spell.id, ms, spell.name);
+  };
+
+  const resourceGate = (): string | null => {
+    return trySpendPowerResource(char, spellResourceType, spellResourceCost);
   };
 
   switch (spell.kind) {
@@ -184,6 +161,17 @@ export async function castSpellForCharacter(
         return `There is no '${targetRaw}' here to target with ${spell.name}.`;
       }
 
+      // Early fail: do not consume cooldown/resource when the target is a protected service provider.
+      if (isServiceProtectedNpcTarget(ctx, npc)) {
+        return serviceProtectedCombatLine(npc.name);
+      }
+
+      const cdErr = cooldownGate();
+      if (cdErr) return cdErr;
+
+      const resErr = resourceGate();
+      if (resErr) return resErr;
+
       startSpellCooldown(char, spell);
 
       const result = await performNpcAttack(ctx, char, selfEntity, npc, {
@@ -192,11 +180,10 @@ export async function castSpellForCharacter(
         channel: "spell",
         damageMultiplier: spell.damageMultiplier,
         flatBonus: spell.flatBonus,
-        // For songs: treat magic school as "song" so they hit as pure damage.
-        spellSchool: isSong ? "song" : spell.school,
 
-        // For songs: carry instrument school through to CombatEngine + progression.
-        songSchool: songSchool,
+        // Songs: treat spellSchool as "song" so CombatEngine can apply appropriate scaling.
+        spellSchool: isSong ? "song" : spell.school,
+        songSchool,
         isSong,
       });
 
@@ -205,24 +192,30 @@ export async function castSpellForCharacter(
     }
 
     case "heal_self": {
-       const hp = (selfEntity as any).hp ?? 0;
-        const maxHp = (selfEntity as any).maxHp ?? 0;
-
-        const baseHeal = spell.healAmount ?? 10;
-        let heal = baseHeal;
-
-        // Songs: scale healing from instrument/vocal skill
-        if (isSong && songSchool) {
-          const skill = getSongSchoolSkill(char, songSchool);
-          const factor = 1 + skill / 100; // 100 skill ~= 2x base, tune later
-          heal = Math.floor(baseHeal * factor);
-        }
+      const hp = (selfEntity as any).hp ?? 0;
+      const maxHp = (selfEntity as any).maxHp ?? 0;
 
       if (maxHp <= 0) {
         return "Your body has no measurable health to heal.";
       }
 
+      const cdErr = cooldownGate();
+      if (cdErr) return cdErr;
+
+      const resErr = resourceGate();
+      if (resErr) return resErr;
+
       startSpellCooldown(char, spell);
+
+      const baseHeal = spell.healAmount ?? 10;
+      let heal = baseHeal;
+
+      // Songs: scale healing from instrument/vocal skill
+      if (isSong && songSchool) {
+        const skill = getSongSchoolSkill(char, songSchool);
+        const factor = 1 + skill / 100; // 100 skill ~= 2x base, tune later
+        heal = Math.floor(baseHeal * factor);
+      }
 
       let result: string;
 
@@ -233,9 +226,7 @@ export async function castSpellForCharacter(
       } else {
         const newHp = Math.min(maxHp, hp + heal);
         (selfEntity as any).hp = newHp;
-        result = `[spell:${spell.name}] You restore ${
-          newHp - hp
-        } health. (${newHp}/${maxHp} HP)`;
+        result = `[spell:${spell.name}] You restore ${newHp - hp} health. (${newHp}/${maxHp} HP)`;
       }
 
       applySchoolGains();
@@ -256,7 +247,7 @@ export async function handleCastCommand(
   ctx: MudContext,
   char: CharacterState,
   spellNameRaw: string,
-  targetNameRaw?: string
+  targetNameRaw?: string,
 ): Promise<string> {
   const spell = findSpellByNameOrId(spellNameRaw);
   if (!spell) {

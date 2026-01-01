@@ -5,6 +5,11 @@ import type { Entity } from "../shared/Entity";
 import { Logger } from "../utils/logger";
 import { getNpcPrototype } from "../npc/NpcTypes";
 import {
+  isServiceProtectedEntity,
+  isServiceProtectedNpcProto,
+  serviceProtectedCombatLine,
+} from "./ServiceProtection";
+import {
   markInCombat,
   isDeadEntity,
   applySimpleDamageToPlayer,
@@ -76,6 +81,29 @@ export async function performNpcAttack(
   npc: Entity,
   opts: NpcAttackOptions = {},
 ): Promise<string> {
+  // --- Service-provider protection: bankers/auctioneers/mailboxes etc are immune. ---
+  try {
+    if (isServiceProtectedEntity(npc)) {
+      return serviceProtectedCombatLine(npc.name);
+    }
+
+    if (ctx.npcs) {
+      const st = ctx.npcs.getNpcStateByEntityId(npc.id);
+      const proto = st
+        ? getNpcPrototype(st.templateId) ?? getNpcPrototype(st.protoId)
+        : null;
+
+      if (isServiceProtectedNpcProto(proto)) {
+        // Cache a runtime flag too, so other systems can short-circuit without a proto lookup.
+        (npc as any).invulnerable = true;
+        (npc as any).isServiceProvider = true;
+        return serviceProtectedCombatLine(npc.name);
+      }
+    }
+  } catch {
+    // Best-effort; fall through to normal combat on failure.
+  }
+
   // --- Build combat source/target for CombatEngine ---
   const effective = (char as any).attributes ?? {};
 

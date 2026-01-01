@@ -635,7 +635,8 @@
         "mail.service",
         "characters.service",
         "npc.manager",
-        "core.rooms"
+        "core.rooms",
+        "combat.serviceProtection"
       ],
       "functions": [
         "performNpcAttack",
@@ -665,6 +666,20 @@
         "If no skill is recorded, falls back to character level; otherwise uses skill/5 with a minimum of 1."
       ],
       "path": "worldcore/combat/CombatScaling.ts"
+    },
+    "combat.serviceProtection": {
+      "kind": "utility",
+      "path": "worldcore/combat/ServiceProtection.ts",
+      "functions": [
+        "isServiceProtectedNpcProto",
+        "isServiceProtectedEntity",
+        "serviceProtectedCombatLine"
+      ],
+      "dependsOn": [],
+      "notes": [
+        "Central rules for protecting critical town services (mailbox/banker/auctioneer/etc) from griefing.",
+        "Detection is tag-based (service_* / protected_service) and supports runtime flags on entities."
+      ]
     },
     "config.logconfig": {
       "functions": [
@@ -1367,7 +1382,8 @@
         "resources.power",
         "combat.cooldowns",
         "mud.actions.combat",
-        "mud.helpers"
+        "mud.helpers",
+        "combat.serviceProtection"
       ],
       "kind": "service",
       "lifecycle": "stateless",
@@ -2672,7 +2688,8 @@
         "combat.cooldowns",
         "mud.actions.combat",
         "mud.helpers",
-        "skills.progression"
+        "skills.progression",
+        "combat.serviceProtection"
       ],
       "kind": "service",
       "lifecycle": "stateless",
@@ -2734,7 +2751,8 @@
         "ai.localSimpleBrain",
         "combat.entityCombat",
         "classes.definitions",
-        "utils.logger"
+        "utils.logger",
+        "combat.serviceProtection"
       ],
       "kind": "service",
       "notes": [

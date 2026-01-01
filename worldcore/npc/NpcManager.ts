@@ -34,6 +34,7 @@ import {
 } from "./NpcThreat";
 
 import { recordNpcCrimeAgainst, isProtectedNpc } from "./NpcCrime";
+import { isServiceProtectedNpcProto } from "../combat/ServiceProtection";
 
 import {
   markInCombat,
@@ -110,6 +111,12 @@ export class NpcManager {
     e.maxHp = proto.maxHp;
     e.alive = true;
     e.name = proto.name;
+
+    // Service-provider NPCs are invulnerable (banker/mailbox/auctioneer, etc.)
+    if (isServiceProtectedNpcProto(proto)) {
+      (e as any).invulnerable = true;
+      (e as any).isServiceProvider = true;
+    }
 
     this.entities.setPosition(e.id, x, y, z);
 
@@ -240,6 +247,13 @@ export class NpcManager {
       DEFAULT_NPC_PROTOTYPES[st.templateId] ??
       DEFAULT_NPC_PROTOTYPES[st.protoId];
 
+    // Service-provider NPCs are immune to damage (banker/mailbox/auctioneer, etc.)
+    if (isServiceProtectedNpcProto(proto) || (e as any).invulnerable === true) {
+      (e as any).invulnerable = true;
+      (e as any).isServiceProvider = true;
+      return st.hp;
+    }
+
     const newHp = Math.max(0, st.hp - Math.max(0, amount));
     st.hp = newHp;
     st.alive = newHp > 0;
@@ -270,7 +284,22 @@ export class NpcManager {
   }
 
   recordDamage(targetEntityId: string, attackerEntityId: string): void {
-    if (!this.npcsByEntityId.has(targetEntityId)) return;
+    const st = this.npcsByEntityId.get(targetEntityId);
+    if (!st) return;
+
+    const e = this.entities.get(targetEntityId) as any;
+    const proto =
+      getNpcPrototype(st.templateId) ??
+      getNpcPrototype(st.protoId) ??
+      DEFAULT_NPC_PROTOTYPES[st.templateId] ??
+      DEFAULT_NPC_PROTOTYPES[st.protoId];
+
+    // Service-provider NPCs are not aggroable/tauntable.
+    if (isServiceProtectedNpcProto(proto) || (e as any)?.invulnerable === true) {
+      (e as any).invulnerable = true;
+      (e as any).isServiceProvider = true;
+      return;
+    }
 
     const threat = updateThreatFromDamage(
       this.npcThreat.get(targetEntityId),
@@ -278,22 +307,13 @@ export class NpcManager {
     );
     this.npcThreat.set(targetEntityId, threat);
 
-    const st = this.npcsByEntityId.get(targetEntityId);
-    if (st) {
-      st.lastAggroAt = threat.lastAggroAt;
-      st.lastAttackerEntityId = threat.lastAttackerEntityId;
+    st.lastAggroAt = threat.lastAggroAt;
+    st.lastAttackerEntityId = threat.lastAttackerEntityId;
 
-      const proto =
-        getNpcPrototype(st.templateId) ??
-        getNpcPrototype(st.protoId) ??
-        DEFAULT_NPC_PROTOTYPES[st.templateId] ??
-        DEFAULT_NPC_PROTOTYPES[st.protoId];
-
-      if (proto?.canCallHelp && proto.groupId) {
-        this.notifyPackAllies(attackerEntityId, st, proto, {
-          snapAllies: false,
-        });
-      }
+    if (proto?.canCallHelp && proto.groupId) {
+      this.notifyPackAllies(attackerEntityId, st, proto, {
+        snapAllies: false,
+      });
     }
   }
 
