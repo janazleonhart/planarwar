@@ -5,31 +5,31 @@ import type { CharacterState, SpellbookState } from "../characters/CharacterType
 
 import { Logger } from "../utils/logger";
 import { checkAndStartCooldown } from "../combat/Cooldowns";
-
 import { SPELLS, SpellDefinition, findSpellByNameOrId } from "../spells/SpellTypes";
 import { performNpcAttack } from "./MudActions";
 import { findNpcTargetByName, isDeadEntity, resurrectEntity } from "./MudHelperFunctions";
-
 import { getNpcPrototype } from "../npc/NpcTypes";
 import {
   isServiceProtectedEntity,
   isServiceProtectedNpcProto,
   serviceProtectedCombatLine,
 } from "../combat/ServiceProtection";
-
-import { getPrimaryPowerResourceForClass, trySpendPowerResource } from "../resources/PowerResources";
+import {
+  getPrimaryPowerResourceForClass,
+  trySpendPowerResource,
+} from "../resources/PowerResources";
 import {
   gainSpellSchoolSkill,
   gainSongSchoolSkill,
   getSongSchoolSkill,
 } from "../skills/SkillProgression";
 import type { SongSchoolId } from "../skills/SkillProgression";
+import { applyStatusEffect } from "../combat/StatusEffects";
 
 const log = Logger.scope("MUD_SPELLS");
 
 function ensureSpellbook(char: CharacterState): SpellbookState {
   let sb: any = char.spellbook as any;
-
   if (!sb || typeof sb !== "object") {
     sb = { known: {}, cooldowns: {} };
     (char as any).spellbook = sb;
@@ -37,7 +37,6 @@ function ensureSpellbook(char: CharacterState): SpellbookState {
     if (!sb.known) sb.known = {};
     if (!sb.cooldowns) sb.cooldowns = {};
   }
-
   return sb as SpellbookState;
 }
 
@@ -69,10 +68,8 @@ function canUseSpell(char: CharacterState, spell: SpellDefinition): string | nul
 
 function startSpellCooldown(char: CharacterState, spell: SpellDefinition): void {
   if (!spell.cooldownMs || spell.cooldownMs <= 0) return;
-
   const sb = ensureSpellbook(char);
   const now = Date.now();
-
   if (!sb.cooldowns) sb.cooldowns = {};
   sb.cooldowns[spell.id] = now + spell.cooldownMs;
 }
@@ -91,8 +88,8 @@ export function listKnownSpellsForChar(char: CharacterState): SpellDefinition[] 
 
 function isServiceProtectedNpcTarget(ctx: MudContext, npc: any): boolean {
   if (isServiceProtectedEntity(npc)) return true;
-
   if (!ctx.npcs) return false;
+
   const st = ctx.npcs.getNpcStateByEntityId(npc.id);
   if (!st) return false;
 
@@ -102,15 +99,15 @@ function isServiceProtectedNpcTarget(ctx: MudContext, npc: any): boolean {
 
 /**
  * Core spell-cast path used by both:
- *  - MUD 'cast' command
- *  - backend-driven casts (e.g. SongEngine)
+ * - MUD 'cast' command
+ * - backend-driven casts (e.g. SongEngine)
  */
 export async function castSpellForCharacter(
   ctx: MudContext,
   char: CharacterState,
   spell: SpellDefinition,
   targetNameRaw?: string,
-): Promise<string> {
+): Promise<any> {
   const err = canUseSpell(char, spell);
   if (err) return err;
 
@@ -127,9 +124,12 @@ export async function castSpellForCharacter(
   const targetRaw = (targetNameRaw && targetNameRaw.trim()) || "rat";
 
   const isSong = (spell as any).isSong === true;
-  const songSchool = isSong ? ((spell as any).songSchool as SongSchoolId | undefined) : undefined;
+  const songSchool = isSong
+    ? ((spell as any).songSchool as SongSchoolId | undefined)
+    : undefined;
 
-  const spellResourceType = spell.resourceType ?? getPrimaryPowerResourceForClass(char.classId);
+  const spellResourceType =
+    spell.resourceType ?? getPrimaryPowerResourceForClass(char.classId);
   const spellResourceCost = spell.resourceCost ?? 0;
 
   const applySchoolGains = () => {
@@ -137,7 +137,6 @@ export async function castSpellForCharacter(
       gainSongSchoolSkill(char, spell.songSchool as SongSchoolId, 1);
       return;
     }
-
     if (spell.school) {
       gainSpellSchoolSkill(char, spell.school, 1);
     }
@@ -146,7 +145,6 @@ export async function castSpellForCharacter(
   const cooldownGate = (): string | null => {
     const ms = spell.cooldownMs ?? 0;
     if (ms <= 0) return null;
-
     return checkAndStartCooldown(char, "spells", spell.id, ms, spell.name);
   };
 
@@ -180,7 +178,6 @@ export async function castSpellForCharacter(
         channel: "spell",
         damageMultiplier: spell.damageMultiplier,
         flatBonus: spell.flatBonus,
-
         // Songs: treat spellSchool as "song" so CombatEngine can apply appropriate scaling.
         spellSchool: isSong ? "song" : spell.school,
         songSchool,
@@ -226,7 +223,32 @@ export async function castSpellForCharacter(
       } else {
         const newHp = Math.min(maxHp, hp + heal);
         (selfEntity as any).hp = newHp;
-        result = `[spell:${spell.name}] You restore ${newHp - hp} health. (${newHp}/${maxHp} HP)`;
+        result = `[spell:${spell.name}] You restore ${newHp - hp} health.\n(${newHp}/${maxHp} HP)`;
+      }
+
+      // --- NEW: simple Virtuoso buff hook using StatusEffects ---
+      if (isSong && spell.id === "virtuoso_song_rising_courage") {
+        try {
+          applyStatusEffect(char, {
+            id: "buff_virtuoso_rising_courage_sta",
+            sourceKind: "song",
+            sourceId: spell.id,
+            name: "Rising Courage",
+            durationMs: 20_000, // 20s buff
+            maxStacks: 3,
+            initialStacks: 1,
+            modifiers: {
+              // +10% STA per stack (applied in computeEffectiveAttributes)
+              attributesPct: { sta: 0.1 },
+            },
+            tags: ["buff", "virtuoso", "song", "courage"],
+          });
+        } catch (err: any) {
+          log.warn("Error applying status effect for Virtuoso song", {
+            spellId: spell.id,
+            error: String(err),
+          });
+        }
       }
 
       applySchoolGains();
@@ -248,11 +270,10 @@ export async function handleCastCommand(
   char: CharacterState,
   spellNameRaw: string,
   targetNameRaw?: string,
-): Promise<string> {
+): Promise<any> {
   const spell = findSpellByNameOrId(spellNameRaw);
   if (!spell) {
     return `You don't know a spell called '${spellNameRaw}'.`;
   }
-
   return castSpellForCharacter(ctx, char, spell, targetNameRaw);
 }

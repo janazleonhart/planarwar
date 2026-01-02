@@ -613,7 +613,8 @@
       ],
       "notes": [
         "Shared entity HP helpers and NPC melee damage formula.",
-        "Tags entities in combat, handles simple kill/resurrect, applies HP changes, and computes NPC melee hits from attackPower or a percentage of npc max HP."
+        "Tags entities in combat, handles simple kill/resurrect, applies HP changes, and computes NPC melee hits from attackPower or a percentage of npc max HP.",
+        "Cowardice damage-taken multiplier + sets *_walktoCancelRequestedAtMs when hit during walk."
       ]
     },
     "combat.npc": {
@@ -2471,7 +2472,8 @@
       "notes": [
         "Implements 'walkto <handle|name|service>' auto-walk with per-step delay.",
         "Supports service keywords: bank/gbank/mail/ah/vendor by walking to nearest service anchor entity.",
-        "Includes persistent risk-mode + coward toggle (stored on CharacterState progression.flags) to allow walking through combat with penalties."
+        "Includes persistent risk-mode + coward toggle (stored on CharacterState progression.flags) to allow walking through combat with penalties.",
+        "Walk interrupted on hit unless risk, and that it mirrors flags to entity fields (_pw_walkto*)"
       ]
     },
     "mud.context": {
@@ -4185,6 +4187,28 @@
         "ensureTownBaseline(spawnPoint, roomId): ensures service anchors exist around town-like POIs (runtime fallback)"
       ],
       "owns": []
+    },
+    "world.townTierRules": {
+      "kind": "module",
+      "service": "world",
+      "path": "worldcore/world/TownTierRules.ts",
+      "class": "(functions)",
+      "lifecycle": "static",
+      "ctorArgs": [],
+      "dependsOn": [
+        "world.spawnPoints"
+      ],
+      "provides": [
+        "getTownTierRule(tier)",
+        "getServicesForTier(tier)",
+        "inferTownTierFromSpawn(spawn)",
+        "getServicesForTownSpawn(spawn)"
+      ],
+      "owns": [],
+      "notes": [
+        "Centralized design-time rules for town tiers and which service anchors each tier should provide.",
+        "Tier 1 = rest + mailbox + guards (current baseline). Higher tiers add vendor / bank / auction / guildbank once service gating is wired."
+      ]
     },
     "worldcore/data/items/ItemDatabase.ts": {
       "file": "worldcore/data/items/ItemDatabase.ts",

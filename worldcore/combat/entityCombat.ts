@@ -2,6 +2,42 @@
 
 import type { Entity } from "../shared/Entity";
 
+function envInt(name: string, fallback: number): number {
+  const raw = (process.env[name] ?? "").toString().trim();
+  if (!raw) return fallback;
+  const n = Number(raw);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.trunc(n);
+}
+
+/**
+ * Cowardice penalty (v1):
+ *  - Only applies while the debuff is active.
+ *  - Stored on the player entity as ephemeral fields (mirrored from CharacterState flags by walkto).
+ *
+ * Default tuning:
+ *  - +8% damage taken per stack, capped at +200%.
+ *
+ * Env overrides:
+ *  - PW_WALKTO_COWARDICE_DMG_TAKEN_PCT_PER_STACK
+ *  - PW_WALKTO_COWARDICE_DMG_TAKEN_PCT_MAX
+ */
+function getCowardiceDamageTakenMultiplier(ent: any): number {
+  const stacks = Number(ent?._pw_walktoCowardiceStacks ?? 0);
+  const until = Number(ent?._pw_walktoCowardiceUntilMs ?? 0);
+  if (!Number.isFinite(stacks) || stacks <= 0) return 1;
+  if (!Number.isFinite(until) || Date.now() > until) return 1;
+
+  const pctPerStack = envInt("PW_WALKTO_COWARDICE_DMG_TAKEN_PCT_PER_STACK", 8);
+  const pctMax = envInt("PW_WALKTO_COWARDICE_DMG_TAKEN_PCT_MAX", 200);
+
+  const pct = Math.min(
+    Math.max(0, pctMax),
+    Math.max(0, stacks) * Math.max(0, pctPerStack)
+  );
+  return 1 + pct / 100;
+}
+
 const COMBAT_TAG_MS = 15_000; // 10s “in combat” after hit/damage
 
 export function markInCombat(ent: Entity | any): void {
@@ -43,16 +79,23 @@ export function applySimpleDamageToPlayer(
   amount: number
 ): SimpleDamageResult {
   const e: any = target;
-  const maxHp =
-    typeof e.maxHp === "number" && e.maxHp > 0 ? e.maxHp : 100;
+  const maxHp = typeof e.maxHp === "number" && e.maxHp > 0 ? e.maxHp : 100;
   const oldHp = typeof e.hp === "number" ? e.hp : maxHp;
-  const dmg = Math.max(0, Math.floor(amount));
+
+  const mult = getCowardiceDamageTakenMultiplier(e);
+  const dmg = Math.max(0, Math.floor(amount * mult));
   const newHp = Math.max(0, oldHp - dmg);
 
   e.maxHp = maxHp;
   e.hp = newHp;
 
   markInCombat(e);
+
+  // Auto-walk interruption: taking damage cancels walkto unless risk mode is enabled.
+  // We don’t check risk mode here; walkto itself decides whether to honor cancellation.
+  if (dmg > 0 && e._pw_walktoActive) {
+    e._pw_walktoCancelRequestedAtMs = Date.now();
+  }
 
   let killed = false;
   if (newHp <= 0) {
@@ -73,8 +116,7 @@ export function applySimpleDamageToPlayer(
  */
 export function computeNpcMeleeDamage(npc: Entity): number {
   const n: any = npc;
-  const npcMaxHp =
-    typeof n.maxHp === "number" && n.maxHp > 0 ? n.maxHp : 100;
+  const npcMaxHp = typeof n.maxHp === "number" && n.maxHp > 0 ? n.maxHp : 100;
 
   const base =
     typeof n.attackPower === "number"
