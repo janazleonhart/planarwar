@@ -3,11 +3,10 @@
 import type { CharacterState } from "../characters/CharacterTypes";
 import type { Entity } from "../shared/Entity";
 import type { AttackChannel } from "../actions/ActionTypes";
-
 import { getWeaponSkillLevel, getSpellSchoolLevel } from "./CombatScaling";
 import { Logger } from "../utils/logger";
-
 import { getSongSchoolSkill, type SongSchoolId } from "../skills/SkillProgression";
+import { computeCombatStatusSnapshot } from "./StatusEffects";
 
 const log = Logger.scope("COMBAT");
 
@@ -36,8 +35,9 @@ export type DamageSchool =
 export interface CombatSource {
   char: CharacterState;
 
-  // v1: “effective” stats from your existing computeEffectiveAttributes
-  effective: Record<string, number>;
+  // v1: “effective” stats from computeEffectiveAttributes()
+  // (already includes gear, titles, and attribute-modifying status effects)
+  effective: Record<string, any>;
 
   channel: AttackChannel;
 
@@ -65,9 +65,11 @@ export interface CombatAttackParams {
   basePower?: number;
 
   // Scalar multipliers for abilities/spells
-  damageMultiplier?: number; // e.g. 1.5 = +50%
+  // e.g. 1.5 = +50%
+  damageMultiplier?: number;
 
-  flatBonus?: number; // e.g. +5 damage
+  // e.g. +5 damage
+  flatBonus?: number;
 
   damageSchool?: DamageSchool;
 }
@@ -81,14 +83,15 @@ export interface CombatResult {
 
 /**
  * v1 combat math:
- *  - channel = "weapon" | "spell" | "ability"
- *  - spells normally scale off INT + spell school
- *  - songs scale off instrument (songSchool) instead of spell school
+ * - channel = "weapon" | "spell" | "ability"
+ * - spells normally scale off INT + spell school
+ * - songs scale off instrument (songSchool) instead of spell school
+ * - status effects can add outgoing damage multipliers
  */
 export function computeDamage(
   source: CombatSource,
   target: CombatTarget,
-  params: CombatAttackParams = {}
+  params: CombatAttackParams = {},
 ): CombatResult {
   const school: DamageSchool =
     params.damageSchool ??
@@ -117,8 +120,8 @@ export function computeDamage(
     }
   }
 
+  // --- Base damage from stats/skills ---
   let base: number;
-
   switch (source.channel) {
     case "weapon": {
       // v1: STR + small level + weapon skill
@@ -129,7 +132,6 @@ export function computeDamage(
         Math.floor(weaponSkillLevel / 4);
       break;
     }
-
     case "ability": {
       // slightly better than a weapon swing, uses same weapon skill scaling
       base =
@@ -139,7 +141,6 @@ export function computeDamage(
         Math.floor(weaponSkillLevel / 3);
       break;
     }
-
     case "spell": {
       // spells & songs scale off INT + “magic” skill
       base =
@@ -149,7 +150,6 @@ export function computeDamage(
         Math.floor(magicSkillLevel / 3);
       break;
     }
-
     default:
       base = 3 + Math.floor(level / 2);
   }
@@ -169,6 +169,20 @@ export function computeDamage(
   }
   if (params.flatBonus) {
     dmg += params.flatBonus;
+  }
+
+  // --- Status-based outgoing damage modifiers (buffs/debuffs on the attacker) ---
+  let damageDealtPct = 0;
+  try {
+    const status = computeCombatStatusSnapshot(source.char);
+    damageDealtPct = status.damageDealtPct || 0;
+  } catch {
+    // Status effect math must never break combat; ignore on error.
+  }
+
+  if (damageDealtPct) {
+    // 0.10 => +10% damage, -0.10 => -10% damage
+    dmg *= 1 + damageDealtPct;
   }
 
   // Very simple crit system v1 (later: proper crit chance per class/weapon)
@@ -195,7 +209,8 @@ export function computeDamage(
 
   const resistPct = target.resist?.[school];
   if (typeof resistPct === "number" && resistPct > 0) {
-    const mitigation = Math.min(0.75, resistPct / 200); // e.g. 100 res ~= 50% v1
+    // e.g. 100 res ~= 50% v1 (tunable)
+    const mitigation = Math.min(0.75, resistPct / 200);
     dmg *= 1 - mitigation;
   }
 
@@ -203,7 +218,6 @@ export function computeDamage(
   if (!Number.isFinite(dmg) || dmg < 1) {
     dmg = 1;
   }
-
   const final = Math.floor(dmg);
 
   if (process.env.DEBUG_COMBAT === "1") {
@@ -217,6 +231,7 @@ export function computeDamage(
       final,
       wasCrit,
       wasGlancing,
+      damageDealtPct,
     });
   }
 

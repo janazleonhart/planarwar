@@ -574,7 +574,8 @@ export async function handleDebugHurt(
 
   const { newHp, maxHp, killed } = applySimpleDamageToPlayer(
     selfEntity,
-    amount
+    amount,
+    _char
   );
 
   if (killed) {

@@ -37,6 +37,7 @@ import {
   gainSongSchoolSkill,
   type SongSchoolId,
 } from "../skills/SkillProgression";
+import { computeEffectiveAttributes } from "../characters/Stats";
 
 const log = Logger.scope("NPC_COMBAT");
 
@@ -56,9 +57,11 @@ export interface NpcAttackOptions {
   damageMultiplier?: number;
   flatBonus?: number;
   tagPrefix?: string; // "ability" | "spell" etc.
+
   channel?: AttackChannel; // default: "weapon"
   weaponSkill?: WeaponSkillId;
   spellSchool?: SpellSchoolId;
+
   // For Virtuoso songs
   songSchool?: SongSchoolId;
   isSong?: boolean;
@@ -105,7 +108,8 @@ export async function performNpcAttack(
   }
 
   // --- Build combat source/target for CombatEngine ---
-  const effective = (char as any).attributes ?? {};
+  const itemService = ctx.items;
+  const effective = computeEffectiveAttributes(char, itemService);
 
   const source: CombatSource = {
     char,
@@ -127,7 +131,9 @@ export async function performNpcAttack(
     flatBonus: opts.flatBonus,
   });
 
-  let dmg = result.damage;
+  // rawDamage = what CombatEngine rolled
+  const rawDamage = result.damage;
+  let dmg = rawDamage;
 
   // Snapshot HP before damage for messaging
   const prevHp = (npc as any).hp ?? (npc as any).maxHp ?? 1;
@@ -144,7 +150,8 @@ export async function performNpcAttack(
 
     // If manager returns an authoritative HP value, correct dmg to actual delta.
     if (typeof appliedHp === "number") {
-      dmg = Math.max(0, prevHp - appliedHp);
+      const effectiveDamage = Math.max(0, prevHp - appliedHp);
+      dmg = effectiveDamage;
       newHp = appliedHp;
     } else {
       // Fallback if manager couldn't find the NPC or returned null/undefined
@@ -161,12 +168,10 @@ export async function performNpcAttack(
   // --- Skill progression for the attacker ---
   try {
     const channel = opts.channel ?? "weapon";
-
     if (channel === "weapon" || channel === "ability") {
       // v1: treat everything as one-handed until we track real weapon types
       gainWeaponSkill(char, "one_handed", 1);
     }
-
     if (channel === "spell") {
       if (opts.songSchool) {
         // Songs train their instrument/vocal school only
@@ -198,7 +203,13 @@ export async function performNpcAttack(
     tag = `[${prefix}:${opts.abilityName}]`;
   }
 
-  let line = `${tag} You hit ${npc.name} for ${dmg} damage. (${newHp}/${maxHp} HP)`;
+  const overkill = rawDamage > dmg ? rawDamage - dmg : 0;
+
+  let line = `${tag} You hit ${npc.name} for ${rawDamage} damage`;
+  if (overkill > 0) {
+    line += ` (${overkill} overkill)`;
+  }
+  line += `. (${newHp}/${maxHp} HP)`;
 
   if (result.wasCrit) {
     line += " (Critical hit!)";
@@ -239,7 +250,6 @@ export async function performNpcAttack(
           } else if (typeof proto.level === "number") {
             xpReward = 5 + proto.level * 3;
           }
-
           if (proto.loot && proto.loot.length > 0) {
             lootEntries = proto.loot;
           }
@@ -315,7 +325,8 @@ export async function performNpcAttack(
           ctx.session.identity.userId,
           "account",
           "Overflow loot",
-          `Your bags were full while looting ${npc.name}. Extra items were delivered to your mailbox.`,
+          `Your bags were full while looting ${npc.name}.
+Extra items were delivered to your mailbox.`,
           [{ itemId: entry.itemId, qty: overflow }],
         );
       }
@@ -323,7 +334,6 @@ export async function performNpcAttack(
       if (added > 0) {
         lootLines.push(describeLootLine(entry.itemId, added, tpl.name));
       }
-
       if (mailed > 0) {
         lootLines.push(
           describeLootLine(entry.itemId, mailed, tpl.name) + " (via mail)",
@@ -333,7 +343,6 @@ export async function performNpcAttack(
 
     if (lootLines.length > 0) {
       ctx.session.character = char;
-
       if (ctx.characters) {
         try {
           await ctx.characters.saveCharacter(char);
@@ -382,13 +391,11 @@ export function applySimpleNpcCounterAttack(
           getNpcPrototype(st.templateId) ?? getNpcPrototype(st.protoId);
         const behavior = proto?.behavior ?? "aggressive";
         const tags = proto?.tags ?? [];
-
         const isCowardProto =
           behavior === "coward" ||
           st.protoId === "coward_rat" ||
           st.templateId === "coward_rat" ||
           tags.includes("coward_test");
-
         if (isCowardProto) {
           // Cowards will flee on their AI tick instead of swinging back.
           return null;
@@ -400,7 +407,16 @@ export function applySimpleNpcCounterAttack(
   }
 
   const dmg = computeNpcMeleeDamage(npc);
-  const { newHp, maxHp, killed } = applySimpleDamageToPlayer(player, dmg);
+
+  // IMPORTANT: pass the CharacterState so damageTakenPct (cowardice, curses, etc.)
+  // can actually modify incoming damage.
+  const char = (ctx.session?.character ?? null) as CharacterState | null;
+
+  const { newHp, maxHp, killed } = applySimpleDamageToPlayer(
+    player,
+    dmg,
+    char ?? undefined,
+  );
 
   // Tag NPC as "in combat" too (player is tagged inside applySimpleDamageToPlayer).
   markInCombat(n);
@@ -410,7 +426,6 @@ export function applySimpleNpcCounterAttack(
     if (deadChar?.melody) {
       deadChar.melody.active = false;
     }
-
     return (
       `[combat] ${npc.name} hits you for ${dmg} damage. ` +
       `You die. (0/${maxHp} HP) ` +
@@ -432,7 +447,6 @@ export function announceSpawnToRoom(
   if (!ctx.rooms) return;
   const room = ctx.rooms.get(roomId);
   if (!room) return;
-
   room.broadcast("chat", {
     from: "[world]",
     sessionId: "system",
@@ -459,7 +473,6 @@ export function scheduleNpcCorpseAndRespawn(
 
   // Resource detection: prefer prototype tags if available.
   const proto = getNpcPrototype(templateId) ?? getNpcPrototype(protoId);
-
   const isResource =
     proto?.tags?.includes("resource") ||
     proto?.tags?.some((t) => t.startsWith("resource_")) ||
@@ -507,7 +520,6 @@ export function scheduleNpcCorpseAndRespawn(
 
     const ent = ctx.entities?.get(spawned.entityId);
     const room = ctx.rooms?.get(roomId);
-
     if (ent && room) {
       room.broadcast("entity_spawn", ent);
     }
@@ -515,7 +527,6 @@ export function scheduleNpcCorpseAndRespawn(
     const proto2 =
       getNpcPrototype(templateId) ?? getNpcPrototype(st.protoId);
     const npcName = (ent as any)?.name ?? proto2?.name ?? "Something";
-
     announceSpawnToRoom(ctx, roomId, `${npcName} returns.`);
   }, respawnMs);
 }

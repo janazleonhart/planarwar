@@ -45,7 +45,7 @@ function canUseSpell(char: CharacterState, spell: SpellDefinition): string | nul
   const spellClass = spell.classId.toLowerCase();
 
   if (spellClass !== "any" && cls && cls !== spellClass) {
-    return `You cannot cast ${spell.name} (class restricted to ${spell.classId}).`;
+    return `You cannot cast ${spell.name} (class restricted to ${spellClass}).`;
   }
 
   const level = char.level ?? 1;
@@ -68,6 +68,7 @@ function canUseSpell(char: CharacterState, spell: SpellDefinition): string | nul
 
 function startSpellCooldown(char: CharacterState, spell: SpellDefinition): void {
   if (!spell.cooldownMs || spell.cooldownMs <= 0) return;
+
   const sb = ensureSpellbook(char);
   const now = Date.now();
   if (!sb.cooldowns) sb.cooldowns = {};
@@ -184,6 +185,32 @@ export async function castSpellForCharacter(
         isSong,
       });
 
+      // --- Offensive Virtuoso buff: Dissonant Battle Chant ---
+      // Gives +10% outgoing damage per stack (up to 3) for 20s.
+      if (isSong && spell.id === "virtuoso_dissonant_battle_chant") {
+        try {
+          applyStatusEffect(char, {
+            id: "buff_virtuoso_battle_chant_damage",
+            sourceKind: "song",
+            sourceId: spell.id,
+            name: "Dissonant Battle Momentum",
+            durationMs: 20_000,
+            maxStacks: 3,
+            initialStacks: 1,
+            modifiers: {
+              // +10% outgoing damage per stack (read by CombatEngine via computeCombatStatusSnapshot)
+              damageDealtPct: 0.10,
+            },
+            tags: ["buff", "virtuoso", "song", "battle", "damage"],
+          });
+        } catch (err: any) {
+          log.warn("Error applying status effect for Virtuoso battle chant", {
+            spellId: spell.id,
+            error: String(err),
+          });
+        }
+      }
+
       applySchoolGains();
       return result;
     }
@@ -226,7 +253,7 @@ export async function castSpellForCharacter(
         result = `[spell:${spell.name}] You restore ${newHp - hp} health.\n(${newHp}/${maxHp} HP)`;
       }
 
-      // --- NEW: simple Virtuoso buff hook using StatusEffects ---
+      // Simple Virtuoso buff: Song of Rising Courage → STA% buff
       if (isSong && spell.id === "virtuoso_song_rising_courage") {
         try {
           applyStatusEffect(char, {

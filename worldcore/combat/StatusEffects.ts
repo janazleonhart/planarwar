@@ -28,7 +28,7 @@ export interface StatusEffectModifier {
   // Percent attribute bonuses, e.g. { str: 0.10 } = +10% STR
   attributesPct?: Partial<Attributes>;
 
-  // Global multipliers (additive in snapshot; interpret as fractions, e.g. 0.10 = +10%)
+  // Global multipliers (fractions; 0.10 = +10%)
   damageDealtPct?: number;
   damageTakenPct?: number;
 
@@ -44,7 +44,7 @@ export interface StatusEffectModifier {
 export interface StatusEffectInstance {
   id: StatusEffectId;
   sourceKind: StatusEffectSourceKind;
-  sourceId: string; // spellId, itemId, etc.
+  sourceId: string;
   name?: string;
 
   appliedAtMs: number;
@@ -89,10 +89,39 @@ function ensureStatusState(char: CharacterState): InternalStatusState {
 }
 
 /**
+ * Drop expired effects and clamp stack counts.
+ */
+export function tickStatusEffects(
+  char: CharacterState,
+  now: number = Date.now()
+): void {
+  const state = ensureStatusState(char);
+
+  for (const [id, inst] of Object.entries(state.active)) {
+    if (!inst) {
+      delete state.active[id];
+      continue;
+    }
+
+    const maxStacks = inst.maxStacks > 0 ? inst.maxStacks : 1;
+
+    if (inst.stackCount <= 0) {
+      delete state.active[id];
+      continue;
+    }
+
+    if (inst.stackCount > maxStacks) {
+      inst.stackCount = maxStacks;
+    }
+
+    if (inst.expiresAtMs > 0 && inst.expiresAtMs <= now) {
+      delete state.active[id];
+    }
+  }
+}
+
+/**
  * Apply or refresh a status effect on a character.
- *
- * - If the id already exists: refresh duration, merge stacks, update modifiers/name/tags.
- * - If new: create a fresh instance.
  */
 export function applyStatusEffect(
   char: CharacterState,
@@ -113,28 +142,32 @@ export function applyStatusEffect(
     const maxStacks =
       typeof input.maxStacks === "number" && input.maxStacks > 0
         ? input.maxStacks
-        : existing.maxStacks || 1;
+        : existing.maxStacks > 0
+        ? existing.maxStacks
+        : 1;
 
     const addStacks =
       typeof input.initialStacks === "number" && input.initialStacks > 0
         ? input.initialStacks
         : 1;
 
-    const stackCount = Math.min(
-      maxStacks,
-      (existing.stackCount || 1) + addStacks
-    );
+    const stackCount = Math.min(maxStacks, existing.stackCount + addStacks);
 
     const updated: StatusEffectInstance = {
       ...existing,
-      modifiers: input.modifiers || existing.modifiers,
+      sourceKind: input.sourceKind,
+      sourceId: input.sourceId,
       name: input.name ?? existing.name,
+      modifiers: input.modifiers ?? existing.modifiers,
       tags: input.tags ?? existing.tags,
       stackCount,
       maxStacks,
       appliedAtMs: now,
       // Keep the later expiry if one already existed
-      expiresAtMs: Math.max(existing.expiresAtMs, expiresAtMs),
+      expiresAtMs:
+        existing.expiresAtMs > 0
+          ? Math.max(existing.expiresAtMs, expiresAtMs)
+          : expiresAtMs,
     };
 
     state.active[input.id] = updated;
@@ -162,7 +195,7 @@ export function applyStatusEffect(
     expiresAtMs,
     stackCount,
     maxStacks,
-    modifiers: input.modifiers || {},
+    modifiers: input.modifiers ?? {},
     tags: input.tags,
   };
 
@@ -170,36 +203,27 @@ export function applyStatusEffect(
   return inst;
 }
 
-export function clearStatusEffect(
-  char: CharacterState,
-  id: StatusEffectId
-): void {
+export function clearStatusEffect(char: CharacterState, id: StatusEffectId): void {
   const state = ensureStatusState(char);
   delete state.active[id];
 }
 
-/**
- * Drop expired or zero-stack effects.
- */
-export function tickStatusEffects(
-  char: CharacterState,
-  now: number = Date.now()
-): void {
+export function clearAllStatusEffects(char: CharacterState): void {
   const state = ensureStatusState(char);
-  const active = state.active;
-  for (const [id, inst] of Object.entries(active)) {
-    if (!inst) continue;
-    if (inst.expiresAtMs <= now || inst.stackCount <= 0) {
-      delete active[id];
-    }
-  }
+  state.active = {};
 }
 
 export interface CombatStatusSnapshot {
+  // Flat attribute bonuses (additive)
   attributesFlat: Partial<Attributes>;
+  // Percent attribute bonuses (0.10 = +10%)
   attributesPct: Partial<Attributes>;
+
+  // Generic outgoing / incoming damage modifiers
   damageDealtPct: number;
   damageTakenPct: number;
+
+  // Armor/resists
   armorFlat: number;
   armorPct: number;
   resistFlat: Partial<Record<DamageSchool, number>>;
@@ -207,7 +231,21 @@ export interface CombatStatusSnapshot {
 }
 
 /**
- * Aggregated view of all active status effects for combat / stats.
+ * Convenience helper for UI: get a cleaned list of active effects.
+ */
+export function getActiveStatusEffects(
+  char: CharacterState,
+  now: number = Date.now()
+): StatusEffectInstance[] {
+  tickStatusEffects(char, now);
+  const state = ensureStatusState(char);
+  return Object.values(state.active).filter(
+    (inst): inst is StatusEffectInstance => !!inst
+  );
+}
+
+/**
+ * Aggregate active status effects for combat / stats.
  *
  * - Cleans up expired effects.
  * - Sums contributions (taking stacks into account).
@@ -259,6 +297,7 @@ export function computeCombatStatusSnapshot(
     if (typeof mods.damageDealtPct === "number") {
       damageDealtPct += mods.damageDealtPct * stacks;
     }
+
     if (typeof mods.damageTakenPct === "number") {
       damageTakenPct += mods.damageTakenPct * stacks;
     }
@@ -266,6 +305,7 @@ export function computeCombatStatusSnapshot(
     if (typeof mods.armorFlat === "number") {
       armorFlat += mods.armorFlat * stacks;
     }
+
     if (typeof mods.armorPct === "number") {
       armorPct += mods.armorPct * stacks;
     }
@@ -289,6 +329,51 @@ export function computeCombatStatusSnapshot(
         (resistPct as any)[key] = cur + val * stacks;
       }
     }
+  }
+
+  // v1: cowardice penalty from walkto risk mode (if present).
+  try {
+    const prog: any = (char as any).progression || {};
+    const flags: any = prog.flags || {};
+    const stacksRaw = Number(flags.walktoCowardiceStacks ?? 0);
+    const untilMs = Number(flags.walktoCowardiceUntilMs ?? 0);
+
+    if (
+      Number.isFinite(stacksRaw) &&
+      stacksRaw > 0 &&
+      Number.isFinite(untilMs) &&
+      untilMs > now
+    ) {
+      const stacks = Math.max(0, stacksRaw);
+
+      const perStackRaw = (
+        process.env.PW_WALKTO_COWARDICE_DMG_TAKEN_PCT_PER_STACK ?? ""
+      )
+        .toString()
+        .trim();
+      const maxRaw = (
+        process.env.PW_WALKTO_COWARDICE_DMG_TAKEN_PCT_MAX ?? ""
+      )
+        .toString()
+        .trim();
+
+      let pctPerStack = perStackRaw ? Number(perStackRaw) : 8;
+      let pctMax = maxRaw ? Number(maxRaw) : 200;
+
+      if (!Number.isFinite(pctPerStack)) pctPerStack = 8;
+      if (!Number.isFinite(pctMax)) pctMax = 200;
+
+      pctPerStack = Math.max(0, pctPerStack);
+      pctMax = Math.max(0, pctMax);
+
+      const rawPct = Math.min(pctMax, stacks * pctPerStack);
+      if (rawPct > 0) {
+        // Convert percentage points to fractional bonus, e.g. 8 -> 0.08.
+        damageTakenPct += rawPct / 100;
+      }
+    }
+  } catch {
+    // Best-effort only; cowardice flags should never break combat math.
   }
 
   return {

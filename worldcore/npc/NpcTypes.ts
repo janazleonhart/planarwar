@@ -6,6 +6,7 @@
  */
 
 export type NpcId = string;
+
 export type GuardProfile = "village" | "town" | "city";
 
 /**
@@ -25,8 +26,8 @@ export type NpcBehavior =
   | "testing";
 
 export interface NpcLootEntry {
-  itemId: string; // id in ItemCatalog
-  chance: number; // 0–1
+  itemId: string;      // id in ItemCatalog
+  chance: number;      // 0–1
   minQty: number;
   maxQty: number;
 }
@@ -51,10 +52,12 @@ export interface NpcPrototype {
   behavior?: NpcBehavior;
   guardProfile?: GuardProfile;
   guardCallRadius?: number;
+
   groupId?: string;
   canCallHelp?: boolean;
   socialRange?: number;
   canGate?: boolean;
+
   xpReward?: number;
   loot?: NpcLootEntry[];
 }
@@ -64,10 +67,14 @@ export interface NpcPrototype {
  */
 export interface NpcRuntimeState {
   entityId: string;
-  protoId: NpcId;      // identity – e.g. "coward_rat"
-  templateId: NpcId;   // actual prototype key used
-  variantId?: string | null;
 
+  // identity – e.g. "coward_rat"
+  protoId: NpcId;
+
+  // actual prototype key used
+  templateId: NpcId;
+
+  variantId?: string | null;
   roomId: string;
 
   hp: number;
@@ -79,6 +86,7 @@ export interface NpcRuntimeState {
 
   // For simple behavior flags; coward only uses this for now
   fleeing?: boolean;
+
   spawnRoomId?: string;
   gating?: boolean;
 }
@@ -89,7 +97,10 @@ export const DEFAULT_GUARD_CALL_RADIUS: Record<GuardProfile, number> = {
   city: 24,
 };
 
-export function getGuardCallRadius(profile?: GuardProfile, override?: number): number | undefined {
+export function getGuardCallRadius(
+  profile?: GuardProfile,
+  override?: number
+): number | undefined {
   if (typeof override === "number") return override;
   if (!profile) return undefined;
   return DEFAULT_GUARD_CALL_RADIUS[profile];
@@ -99,7 +110,7 @@ export function getGuardCallRadius(profile?: GuardProfile, override?: number): n
 // Hard-coded defaults (dev seed / fallback)
 // ---------------------------------------------------------------------------
 
-export const DEFAULT_NPC_PROTOTYPES: Record<string, NpcPrototype> = {
+export const DEFAULT_NPC_PROTOTYPES: Record<NpcId, NpcPrototype> = {
   training_dummy: {
     id: "training_dummy",
     name: "Training Dummy",
@@ -114,6 +125,21 @@ export const DEFAULT_NPC_PROTOTYPES: Record<string, NpcPrototype> = {
     loot: [],
   },
 
+  // Big immortal-ish dummy for DPS testing.
+  training_dummy_big: {
+    id: "training_dummy_big",
+    name: "Sturdy Training Dummy",
+    level: 1,
+    maxHp: 10000,
+    baseDamageMin: 0,
+    baseDamageMax: 0,
+    model: "training_dummy",
+    tags: ["training", "non_hostile", "civilian", "testing"],
+    behavior: "neutral",
+    xpReward: 0,
+    loot: [],
+  },
+
   town_rat: {
     id: "town_rat",
     name: "Town Rat",
@@ -123,7 +149,7 @@ export const DEFAULT_NPC_PROTOTYPES: Record<string, NpcPrototype> = {
     baseDamageMax: 3,
     model: "rat_small",
     tags: ["beast", "critter", "protected_town"],
-    // 👇 no more spawn-camping: town rat is now neutral
+    // no more spawn-camping: town rat is now neutral
     behavior: "neutral",
     xpReward: 8,
     loot: [
@@ -136,7 +162,8 @@ export const DEFAULT_NPC_PROTOTYPES: Record<string, NpcPrototype> = {
     id: "coward_rat",
     name: "Cowardly Rat",
     level: 1,
-    maxHp: 200, // chunky for testing; tune later
+    // chunky for testing; tune later
+    maxHp: 200,
     baseDamageMin: 1,
     baseDamageMax: 3,
     model: "rat_small",
@@ -204,7 +231,14 @@ export const DEFAULT_NPC_PROTOTYPES: Record<string, NpcPrototype> = {
     canCallHelp: true,
     socialRange: 12,
     xpReward: 12,
-    loot: [{ itemId: "rat_tail", chance: 0.7, minQty: 1, maxQty: 2 }],
+    loot: [
+      {
+        itemId: "rat_tail",
+        chance: 0.7,
+        minQty: 1,
+        maxQty: 2,
+      },
+    ],
   },
 
   bandit_caster: {
@@ -239,12 +273,10 @@ let npcPrototypes: Record<string, NpcPrototype> = {
  */
 export function setNpcPrototypes(list: NpcPrototype[]): void {
   const bag: Record<string, NpcPrototype> = { ...DEFAULT_NPC_PROTOTYPES };
-
   for (const proto of list) {
     const existing = bag[proto.id];
     bag[proto.id] = existing ? { ...existing, ...proto } : proto;
   }
-
   npcPrototypes = bag;
 }
 
