@@ -157,7 +157,7 @@
         "mud.context"
       ],
       "notes": [
-        "Builds a one-line MUD description for a listing like '#12 Hematite Iron Ore [common] x20 \u2013 3g each (total 60g) by Testing [active]'.",
+        "Builds a one-line MUD description for a listing like '#12 Hematite Iron Ore [common] x20 – 3g each (total 60g) by Testing [active]'.",
         "Looks up item definitions via ctx.items?.get to resolve item name and rarity."
       ]
     },
@@ -417,7 +417,7 @@
         "classes.definitions"
       ],
       "notes": [
-        "Postgres-backed character service using the characters table and CharacterRow \u2192 CharacterState mapping.",
+        "Postgres-backed character service using the characters table and CharacterRow → CharacterState mapping.",
         "Supports partial JSONB patching, XP/level gains with per-class attribute growth, and spell/equipment updates."
       ]
     },
@@ -578,29 +578,6 @@
         "Provides helpers to query remaining time and atomically check+start cooldowns with user-facing error strings."
       ]
     },
-    "combat.cowardice": {
-      "kind": "utility",
-      "path": "worldcore/combat/Cowardice.ts",
-      "dependsOn": [
-        "characters.types",
-        "world.regionDanger"
-      ],
-      "functions": [
-        "resolveCowardiceTier(char, nowMs?)",
-        "computeCowardiceDamageTakenMultiplier(char, nowMs?, config?)",
-        "getCowardiceInfo(char, nowMs?, config?)",
-        "formatCowardiceStatus(info)"
-      ],
-      "notes": [
-        "Centralized cowardice / risk-mode logic driven by CharacterState.progression.flags.* and RegionDanger tier.",
-        "Computes per-tier stack caps and per-stack damageTakenPct, returning a clamped multiplier (1 + totalPct).",
-        "Does not start/stop cowardice; commands/movement systems own writing the underlying flags."
-      ],
-      "provides": [
-        "CowardiceInfo snapshot (enabled, stacks, tier, totalPct, multiplier, remainingMs).",
-        "Incoming damage multiplier for combat damageTakenPct stacking."
-      ]
-    },
     "combat.engine": {
       "kind": "service",
       "path": "worldcore/combat/CombatEngine.ts",
@@ -608,14 +585,15 @@
         "computeDamage"
       ],
       "dependsOn": [
-        "characters.types",
-        "shared.entities",
         "actions.types",
-        "combat.scaling",
-        "skills.progression",
-        "utils.logger",
+        "characters.types",
         "combat.mitigation",
-        "combat.statusEffects"
+        "combat.resists",
+        "combat.scaling",
+        "combat.statusEffects",
+        "shared.entities",
+        "skills.progression",
+        "utils.logger"
       ],
       "notes": [
         "Core damage math for weapon, ability, spell, and song channels.",
@@ -634,10 +612,10 @@
         "computeNpcMeleeDamage"
       ],
       "dependsOn": [
-        "shared.entities",
         "characters.types",
-        "combat.statusEffects",
         "combat.cowardice",
+        "combat.statusEffects",
+        "shared.entities",
         "world.regionDanger"
       ],
       "notes": [
@@ -649,7 +627,10 @@
     "combat.mitigation": {
       "kind": "service",
       "path": "worldcore/combat/Mitigation.ts",
-      "functions": ["applyArmorMitigation", "armorMultiplier"],
+      "functions": [
+        "applyArmorMitigation",
+        "armorMultiplier"
+      ],
       "dependsOn": [],
       "notes": [
         "v1 armor mitigation helper for physical damage.",
@@ -666,24 +647,24 @@
         "scheduleNpcCorpseAndRespawn"
       ],
       "dependsOn": [
+        "actions.types",
+        "characters.service",
         "characters.types",
-        "shared.entities",
-        "utils.logger",
-        "npc.types",
+        "combat.engine",
         "combat.entityCombat",
-        "loot.text",
-        "utils.random",
+        "combat.serviceProtection",
+        "core.rooms",
         "items.catalog",
         "items.inventoryHelpers",
-        "combat.engine",
-        "actions.types",
-        "resources.power",
-        "skills.progression",
+        "loot.text",
         "mail.service",
-        "characters.service",
         "npc.manager",
-        "core.rooms",
-        "combat.serviceProtection"
+        "npc.types",
+        "resources.power",
+        "shared.entities",
+        "skills.progression",
+        "utils.logger",
+        "utils.random"
       ],
       "notes": [
         "High-level NPC attack executor and death handling used by v1 brains.",
@@ -724,25 +705,6 @@
         "If no skill is recorded, falls back to character level; otherwise uses skill/5 with a minimum of 1."
       ]
     },
-    "combat.serviceProtection": {
-      "kind": "utility",
-      "path": "worldcore/combat/ServiceProtection.ts",
-      "dependsOn": [],
-      "functions": [
-        "isServiceProtectedNpcProto(proto)",
-        "isServiceProtectedEntity(ent)",
-        "serviceProtectedCombatLine(protoOrEnt?)"
-      ],
-      "notes": [
-        "Gameplay rules to protect critical service providers (mailbox, banker, auctioneer, etc.) from being killed/griefed.",
-        "Detects protection via proto tags/id prefixes and optional runtime entity flags.",
-        "Intentionally has no imports to avoid circular dependencies."
-      ],
-      "provides": [
-        "Tag/prefix-based protection detection helpers.",
-        "Standard combat message line for protected-service interactions."
-      ]
-    },
     "combat.statusEffects": {
       "kind": "service",
       "path": "worldcore/combat/StatusEffects.ts",
@@ -759,12 +721,13 @@
       ],
       "provides": [
         "StatusEffect storage under char.progression.statusEffects.active",
-        "CombatStatusSnapshot aggregation (attributes, damageDealtPct, damageTakenPct, armor/resist bonuses)"
+        "CombatStatusSnapshot aggregation (attributes, damageDealtPct, damageTakenPct, damageDealtPctBySchool, damageTakenPctBySchool, armor/resist bonuses)"
       ],
       "notes": [
         "Status effect spine used by vulnerability, region peril auras, and outgoing/incoming damage modifiers.",
         "Imports DamageSchool as a type from CombatEngine (type-only); no runtime circular dependency.",
-        "damageTakenPct and damageDealtPct are FRACTIONS (0.05 = +5%)."
+        "damageTakenPct and damageDealtPct are FRACTIONS (0.05 = +5%).",
+        "damageDealtPctBySchool and damageTakenPctBySchool are FRACTIONS (0.05 = +5%)."
       ]
     },
     "combat.vulnerability": {
@@ -1907,7 +1870,7 @@
         "mud.handler"
       ],
       "notes": [
-        "Currently wired identically to mining (mining/resource_ore) \u2013 copy-paste placeholder.",
+        "Currently wired identically to mining (mining/resource_ore) – copy-paste placeholder.",
         "Conceptually represents 'farming' gather actions; future refactor will adjust resource tags."
       ]
     },
@@ -2158,7 +2121,7 @@
       "function": "handleRiskCommand",
       "dependsOn": [
         "mud.context",
-        "combat.cowardice",
+        "combat.cowardice?",
         "world.regionDanger"
       ],
       "invokedBy": [
@@ -2932,7 +2895,7 @@
         "utils.logger"
       ],
       "notes": [
-        "Owns runtime NPC state, per-room maps, threat tables, and bridges EntityManager \u2194 AI brain \u2194 sessions/chat.",
+        "Owns runtime NPC state, per-room maps, threat tables, and bridges EntityManager ↔ AI brain ↔ sessions/chat.",
         "Spawns/Despawns NPCs, applies damage, records threat, coordinates guard/pack help, coward fleeing, gating, and drives AI decisions each tick."
       ]
     },
@@ -3404,7 +3367,7 @@
       "kind": "types",
       "path": "worldcore/sim/BrainActions.ts",
       "notes": [
-        "Types for Mother-Brain style planning outputs (audit \u2192 plan actions \u2192 apply).",
+        "Types for Mother-Brain style planning outputs (audit → plan actions → apply).",
         "Includes PlaceSpawnAction used by SettlementPlanner + simBrain apply."
       ]
     },
@@ -3717,7 +3680,7 @@
       ],
       "notes": [
         "Computes difficulty tier by radial distance from world center.",
-        "Uses max world radius \u2248 2048 units for current prime shard."
+        "Uses max world radius ≈ 2048 units for current prime shard."
       ]
     },
     "terrain.regionDisplay": {
@@ -3852,7 +3815,7 @@
       ],
       "notes": [
         "Dev Simulation Harness CLI entrypoint.",
-        "Follows audit \u2192 plan \u2192 apply pattern with safe default rollback unless --commit.",
+        "Follows audit → plan → apply pattern with safe default rollback unless --commit.",
         "Safety rails: refuses literal '...' arg; refuses --commit without explicit --bounds (unless --allowDefaultBounds).",
         "Artifacts are dev-only outputs; keep them gitignored."
       ]
@@ -4616,7 +4579,7 @@
         "run(input:BiomeInput, ctx?:WorldGenContext):BiomeResult"
       ],
       "notes": [
-        "Stage 2.3.4 \u2013 biome assignment per cell + connected biome clusters.",
+        "Stage 2.3.4 – biome assignment per cell + connected biome clusters.",
         "Outputs biomeMap + cluster IDs + counts per biome."
       ]
     },
@@ -4635,7 +4598,7 @@
         "run(input:CivilizationInput, ctx?:WorldGenContext):CivilizationResult"
       ],
       "notes": [
-        "Stage 2.3.5 \u2013 settlements, roads, and POIs.",
+        "Stage 2.3.5 – settlements, roads, and POIs.",
         "Scores candidate cells, picks settlements with spacing, builds a road graph, scatters points of interest."
       ]
     },
@@ -4652,7 +4615,7 @@
         "run(input:ClimateInput, ctx?:WorldGenContext):ClimateResult"
       ],
       "notes": [
-        "Stage 2.3.3 \u2013 temperature, moisture, and compact climate zones.",
+        "Stage 2.3.3 – temperature, moisture, and compact climate zones.",
         "Can optionally use erosion outputs to bias humidity near rivers/lakes."
       ]
     },
@@ -4668,7 +4631,7 @@
         "run(input:{ landforms:LandformResult, params?:ErosionParams }, ctx?:WorldGenContext):ErosionResult"
       ],
       "notes": [
-        "Stage 2.3.2 \u2013 hydrology, erosion, rivers, lakes.",
+        "Stage 2.3.2 – hydrology, erosion, rivers, lakes.",
         "Outputs updated elevation, water, sediment, flow dirs, river/lake masks."
       ]
     },
@@ -4682,7 +4645,7 @@
         "run(input:ShardSeedInput, ctx?:WorldGenContext):LandformResult"
       ],
       "notes": [
-        "Stage 2.3.1 \u2013 base landforms: tectonics, continents, uplift, macro elevation.",
+        "Stage 2.3.1 – base landforms: tectonics, continents, uplift, macro elevation.",
         "First stage in the WGEv2 pipeline; everything else builds on its LandformResult."
       ]
     },
@@ -4702,8 +4665,53 @@
         "run(input:ResourceInput, ctx?:WorldGenContext):ResourceResult"
       ],
       "notes": [
-        "Stage 2.3.6 \u2013 resource node placement (ore/herb/wood/fish/rare) plus per-kind masks.",
+        "Stage 2.3.6 – resource node placement (ore/herb/wood/fish/rare) plus per-kind masks.",
         "Respects biome, elevation, climate, hydrology, and avoids city centers while tagging 'near settlement' nodes."
+      ]
+    },
+    "combat.resists": {
+      "kind": "utility",
+      "path": "worldcore/combat/Resists.ts",
+      "functions": [
+        "resistMultiplier",
+        "applyResistMitigation"
+      ],
+      "dependsOn": [],
+      "notes": [
+        "Resists v1 helper. Pure functions for non-physical damage mitigation.",
+        "Default curve: mitigation = min(0.75, resist/200). Resist values are 'rating-like' not percent."
+      ]
+    },
+    "combat.cowardice": {
+      "kind": "utility",
+      "path": "worldcore/combat/Cowardice.ts",
+      "functions": [
+        "resolveCowardiceTier",
+        "computeCowardiceDamageTakenMultiplier",
+        "getCowardiceInfo",
+        "formatCowardiceStatus"
+      ],
+      "dependsOn": [
+        "characters.types",
+        "world.regionDanger"
+      ],
+      "notes": [
+        "Cowardice/risk-mode incoming damage logic. Returns scalar multiplier applied to incoming damage.",
+        "Uses RegionDanger tier to scale cowardice impact."
+      ]
+    },
+    "combat.serviceProtection": {
+      "kind": "utility",
+      "path": "worldcore/combat/ServiceProtection.ts",
+      "functions": [
+        "isServiceProtectedNpcProto",
+        "isServiceProtectedEntity",
+        "serviceProtectedCombatLine"
+      ],
+      "dependsOn": [],
+      "notes": [
+        "Protects critical service NPCs (bank/mail/auction/etc.) from being killed/griefed.",
+        "Pure helpers; detection based on proto id/tags and optional runtime flags."
       ]
     }
   }

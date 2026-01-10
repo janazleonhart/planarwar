@@ -32,6 +32,10 @@ export interface StatusEffectModifier {
   damageDealtPct?: number;
   damageTakenPct?: number;
 
+  // School-specific multipliers (fractions; 0.10 = +10%)
+  damageDealtPctBySchool?: Partial<Record<DamageSchool, number>>;
+  damageTakenPctBySchool?: Partial<Record<DamageSchool, number>>;
+
   // Armor adjustments
   armorFlat?: number;
   armorPct?: number;
@@ -222,6 +226,10 @@ export interface CombatStatusSnapshot {
   damageDealtPct: number;
   damageTakenPct: number;
 
+  // School-specific outgoing / incoming damage modifiers
+  damageDealtPctBySchool: Partial<Record<DamageSchool, number>>;
+  damageTakenPctBySchool: Partial<Record<DamageSchool, number>>;
+
   // Armor/resists
   armorFlat: number;
   armorPct: number;
@@ -266,6 +274,8 @@ export function computeCombatStatusSnapshot(
 
   let damageDealtPct = 0;
   let damageTakenPct = 0;
+  const damageDealtPctBySchool: Partial<Record<DamageSchool, number>> = {};
+  const damageTakenPctBySchool: Partial<Record<DamageSchool, number>> = {};
   let armorFlat = 0;
   let armorPct = 0;
 
@@ -303,6 +313,26 @@ export function computeCombatStatusSnapshot(
       damageTakenPct += mods.damageTakenPct * stacks;
     }
 
+    if (mods.damageDealtPctBySchool) {
+      for (const [school, v] of Object.entries(mods.damageDealtPctBySchool)) {
+        const key = school as DamageSchool;
+        const val = Number(v);
+        if (!Number.isFinite(val) || val === 0) continue;
+        const cur = (damageDealtPctBySchool as any)[key] ?? 0;
+        (damageDealtPctBySchool as any)[key] = cur + val * stacks;
+      }
+    }
+
+    if (mods.damageTakenPctBySchool) {
+      for (const [school, v] of Object.entries(mods.damageTakenPctBySchool)) {
+        const key = school as DamageSchool;
+        const val = Number(v);
+        if (!Number.isFinite(val) || val === 0) continue;
+        const cur = (damageTakenPctBySchool as any)[key] ?? 0;
+        (damageTakenPctBySchool as any)[key] = cur + val * stacks;
+      }
+    }
+
     if (typeof mods.armorFlat === "number") {
       armorFlat += mods.armorFlat * stacks;
     }
@@ -337,6 +367,8 @@ export function computeCombatStatusSnapshot(
     attributesPct,
     damageDealtPct,
     damageTakenPct,
+    damageDealtPctBySchool,
+    damageTakenPctBySchool,
     armorFlat,
     armorPct,
     resistFlat,

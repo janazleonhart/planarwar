@@ -416,6 +416,7 @@ export function applySimpleNpcCounterAttack(
     player,
     dmg,
     char ?? undefined,
+    "physical",
   );
 
   // Tag NPC as "in combat" too (player is tagged inside applySimpleDamageToPlayer).

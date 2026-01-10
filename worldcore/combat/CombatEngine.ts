@@ -4,10 +4,10 @@ import type { CharacterState } from "../characters/CharacterTypes";
 import type { Entity } from "../shared/Entity";
 import type { AttackChannel } from "../actions/ActionTypes";
 import { getWeaponSkillLevel, getSpellSchoolLevel } from "./CombatScaling";
-import { armorMultiplier } from "./Mitigation";
 import { Logger } from "../utils/logger";
 import { getSongSchoolSkill, type SongSchoolId } from "../skills/SkillProgression";
 import { computeCombatStatusSnapshot } from "./StatusEffects";
+import { resistMultiplier } from "./Resists";
 
 const log = Logger.scope("COMBAT");
 
@@ -176,7 +176,11 @@ export function computeDamage(
   let damageDealtPct = 0;
   try {
     const status = computeCombatStatusSnapshot(source.char);
-    damageDealtPct = status.damageDealtPct || 0;
+    const global = status.damageDealtPct || 0;
+    const bySchool = (status.damageDealtPctBySchool && (status.damageDealtPctBySchool as any)[school]) || 0;
+
+    // Additive stacking: global + per-school
+    damageDealtPct = global + bySchool;
   } catch {
     // Status effect math must never break combat; ignore on error.
   }
@@ -204,15 +208,16 @@ export function computeDamage(
   // Apply target armor/resists (very rough v1)
   const armor = target.armor ?? 0;
   if (school === "physical" && armor > 0) {
-    // Armor mitigation v1: reduction = armor/(armor+K), capped (see Mitigation.ts)
-    dmg *= armorMultiplier(armor);
-  }
-
-  const resistPct = target.resist?.[school];
-  if (typeof resistPct === "number" && resistPct > 0) {
-    // e.g. 100 res ~= 50% v1 (tunable)
-    const mitigation = Math.min(0.75, resistPct / 200);
+    const mitigation = Math.min(0.5, armor / (50 + armor)); // caps at 50%
     dmg *= 1 - mitigation;
+  }
+  // Resist mitigation v1 (rating -> reduction)
+  // Applies to non-physical schools (physical uses armor) and not to "pure".
+  if (school !== "physical" && school !== "pure") {
+    const resistRating = target.resist?.[school];
+    if (typeof resistRating === "number" && resistRating > 0) {
+      dmg *= resistMultiplier(resistRating);
+    }
   }
 
   // Clamp and floor

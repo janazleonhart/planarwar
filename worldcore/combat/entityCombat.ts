@@ -2,6 +2,7 @@
 
 import type { Entity } from "../shared/Entity";
 import type { CharacterState } from "../characters/CharacterTypes";
+import type { DamageSchool } from "./CombatEngine";
 import { computeCombatStatusSnapshot } from "./StatusEffects";
 import { computeCowardiceDamageTakenMultiplier } from "./Cowardice";
 import { bumpRegionDanger } from "../world/RegionDanger";
@@ -59,6 +60,7 @@ export function applySimpleDamageToPlayer(
   target: Entity,
   amount: number,
   char?: CharacterState,
+  school?: DamageSchool,
 ): SimpleDamageResult {
   const e: any = target;
 
@@ -82,7 +84,9 @@ export function applySimpleDamageToPlayer(
   if (char) {
     try {
       const snapshot = computeCombatStatusSnapshot(char);
-      const takenPct = Number(snapshot.damageTakenPct ?? 0);
+      const globalTaken = Number(snapshot.damageTakenPct ?? 0);
+      const bySchoolTaken = school ? Number((snapshot.damageTakenPctBySchool as any)?.[school] ?? 0) : 0;
+      const takenPct = globalTaken + bySchoolTaken;
       if (Number.isFinite(takenPct) && takenPct !== 0) {
         const extraMult = 1 + takenPct;
         if (Number.isFinite(extraMult) && extraMult > 0) {
