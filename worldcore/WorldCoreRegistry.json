@@ -590,7 +590,8 @@
         "actions.types",
         "combat.scaling",
         "skills.progression",
-        "utils.logger"
+        "utils.logger",
+        "combat.mitigation"
       ],
       "notes": [
         "Core damage math for weapon, ability, spell, and song channels.",
@@ -615,6 +616,16 @@
         "Shared entity HP helpers and NPC melee damage formula.",
         "Tags entities in combat, handles simple kill/resurrect, applies simple damage with cowardice & status effect multipliers.",
         "On player death, bumps RegionDanger for the character's region to make that area temporarily more dangerous."
+      ]
+    },
+    "combat.mitigation": {
+      "kind": "service",
+      "path": "worldcore/combat/Mitigation.ts",
+      "functions": ["applyArmorMitigation", "armorMultiplier"],
+      "dependsOn": [],
+      "notes": [
+        "v1 armor mitigation helper for physical damage.",
+        "Pure functions: no world state. Used by CombatEngine computeDamage/applyDamage pipeline."
       ]
     },
     "combat.npc": {
@@ -3722,6 +3733,25 @@
       ],
       "notes": [
         "Shared region data model for MMO, strategy layer, and tools."
+      ]
+    },
+    "tools.resourceBaseline": {
+      "kind": "dev_script",
+      "path": "worldcore/tools/resourceBaseline.ts",
+      "dependsOn": [
+        "db.main",
+        "world.spawnPoints",
+        "worldgen.v2.resources"
+      ],
+      "provides": [
+        "plan/commit: deterministic baseline resource spawn_points (ore/herb/wood/fish/rare) within --bounds",
+        "dry-run preview: prints planned inserts/updates with seed + density controls (use --commit to write)",
+        "audit mode: summarize resource node coverage by bounds / proto kinds"
+      ],
+      "notes": [
+        "Baseline seeding tool for v1 gathering; complements tools.simBrain town-baseline + coverage workflows.",
+        "Writes to spawn_points (authoritative spawn metadata). Safe by default (dry-run) unless --commit.",
+        "Keep seed inputs stable for reproducible dev environments and deterministic tests."
       ]
     },
     "tools.simBrain": {

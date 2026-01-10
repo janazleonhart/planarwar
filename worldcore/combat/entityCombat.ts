@@ -8,6 +8,12 @@ import { bumpRegionDanger } from "../world/RegionDanger";
 
 const COMBAT_TAG_MS = 15_000; // 15s “in combat” after hit/damage
 
+export type SimpleDamageResult = {
+  newHp: number;
+  maxHp: number;
+  killed: boolean;
+};
+
 export function markInCombat(ent: Entity | any): void {
   const e: any = ent;
   const now = Date.now();
@@ -38,22 +44,16 @@ export function resurrectEntity(ent: Entity | any): void {
     e.hp = 100;
   }
   e.alive = true;
-  e.inCombatUntil = 0;
-  e.inCombat = false;
-}
-
-export interface SimpleDamageResult {
-  newHp: number;
-  maxHp: number;
-  killed: boolean;
 }
 
 /**
- * Core “take damage” helper for players.
+ * Apply a simple, unconditional chunk of damage to a player entity.
  *
- * - Still works fine when called with just (target, amount)
- * - If you pass CharacterState, cowardice stacks and status effects
- *   can increase damage taken.
+ * - Updates entity hp/maxHp/alive.
+ * - Marks both attacker + victim “in combat”.
+ * - Applies incoming modifiers:
+ *   - cowardice damage taken multiplier
+ *   - status snapshot `damageTakenPct` (vulnerability, region peril, etc.)
  */
 export function applySimpleDamageToPlayer(
   target: Entity,
@@ -107,7 +107,14 @@ export function applySimpleDamageToPlayer(
     killed = true;
   }
 
-  if (killed && char) bumpRegionDanger(((char as any).lastRegionId as string) ?? `${char.shardId}:0,0`, 25, `death:${(char as any).name ?? "player"}`, Date.now());
+  if (killed && char) {
+    bumpRegionDanger(
+      char.lastRegionId ?? `${char.shardId}:0,0`,
+      25,
+      `death:${char.name ?? "player"}`,
+      Date.now(),
+    );
+  }
 
   return { newHp, maxHp, killed };
 }

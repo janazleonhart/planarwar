@@ -4,6 +4,7 @@ import type { CharacterState } from "../characters/CharacterTypes";
 import type { Entity } from "../shared/Entity";
 import type { AttackChannel } from "../actions/ActionTypes";
 import { getWeaponSkillLevel, getSpellSchoolLevel } from "./CombatScaling";
+import { armorMultiplier } from "./Mitigation";
 import { Logger } from "../utils/logger";
 import { getSongSchoolSkill, type SongSchoolId } from "../skills/SkillProgression";
 import { computeCombatStatusSnapshot } from "./StatusEffects";
@@ -203,8 +204,8 @@ export function computeDamage(
   // Apply target armor/resists (very rough v1)
   const armor = target.armor ?? 0;
   if (school === "physical" && armor > 0) {
-    const mitigation = Math.min(0.5, armor / (50 + armor)); // caps at 50%
-    dmg *= 1 - mitigation;
+    // Armor mitigation v1: reduction = armor/(armor+K), capped (see Mitigation.ts)
+    dmg *= armorMultiplier(armor);
   }
 
   const resistPct = target.resist?.[school];
