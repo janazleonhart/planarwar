@@ -578,6 +578,29 @@
         "Provides helpers to query remaining time and atomically check+start cooldowns with user-facing error strings."
       ]
     },
+    "combat.cowardice": {
+      "kind": "utility",
+      "path": "worldcore/combat/Cowardice.ts",
+      "dependsOn": [
+        "characters.types",
+        "world.regionDanger"
+      ],
+      "functions": [
+        "resolveCowardiceTier(char, nowMs?)",
+        "computeCowardiceDamageTakenMultiplier(char, nowMs?, config?)",
+        "getCowardiceInfo(char, nowMs?, config?)",
+        "formatCowardiceStatus(info)"
+      ],
+      "notes": [
+        "Centralized cowardice / risk-mode logic driven by CharacterState.progression.flags.* and RegionDanger tier.",
+        "Computes per-tier stack caps and per-stack damageTakenPct, returning a clamped multiplier (1 + totalPct).",
+        "Does not start/stop cowardice; commands/movement systems own writing the underlying flags."
+      ],
+      "provides": [
+        "CowardiceInfo snapshot (enabled, stacks, tier, totalPct, multiplier, remainingMs).",
+        "Incoming damage multiplier for combat damageTakenPct stacking."
+      ]
+    },
     "combat.engine": {
       "kind": "service",
       "path": "worldcore/combat/CombatEngine.ts",
@@ -591,7 +614,8 @@
         "combat.scaling",
         "skills.progression",
         "utils.logger",
-        "combat.mitigation"
+        "combat.mitigation",
+        "combat.statusEffects"
       ],
       "notes": [
         "Core damage math for weapon, ability, spell, and song channels.",
@@ -610,7 +634,11 @@
         "computeNpcMeleeDamage"
       ],
       "dependsOn": [
-        "shared.entities"
+        "shared.entities",
+        "characters.types",
+        "combat.statusEffects",
+        "combat.cowardice",
+        "world.regionDanger"
       ],
       "notes": [
         "Shared entity HP helpers and NPC melee damage formula.",
@@ -654,7 +682,8 @@
         "mail.service",
         "characters.service",
         "npc.manager",
-        "core.rooms"
+        "core.rooms",
+        "combat.serviceProtection"
       ],
       "notes": [
         "High-level NPC attack executor and death handling used by v1 brains.",
@@ -671,7 +700,7 @@
       "dependsOn": [
         "world.regionDanger",
         "characters.types",
-        "combat.statusEffects?"
+        "combat.statusEffects"
       ],
       "notes": [
         "Converts RegionDanger tier into an ambient debuff aura ('Region Peril').",
@@ -695,6 +724,49 @@
         "If no skill is recorded, falls back to character level; otherwise uses skill/5 with a minimum of 1."
       ]
     },
+    "combat.serviceProtection": {
+      "kind": "utility",
+      "path": "worldcore/combat/ServiceProtection.ts",
+      "dependsOn": [],
+      "functions": [
+        "isServiceProtectedNpcProto(proto)",
+        "isServiceProtectedEntity(ent)",
+        "serviceProtectedCombatLine(protoOrEnt?)"
+      ],
+      "notes": [
+        "Gameplay rules to protect critical service providers (mailbox, banker, auctioneer, etc.) from being killed/griefed.",
+        "Detects protection via proto tags/id prefixes and optional runtime entity flags.",
+        "Intentionally has no imports to avoid circular dependencies."
+      ],
+      "provides": [
+        "Tag/prefix-based protection detection helpers.",
+        "Standard combat message line for protected-service interactions."
+      ]
+    },
+    "combat.statusEffects": {
+      "kind": "service",
+      "path": "worldcore/combat/StatusEffects.ts",
+      "functions": [
+        "tickStatusEffects",
+        "applyStatusEffect",
+        "clearStatusEffect",
+        "clearAllStatusEffects",
+        "getActiveStatusEffects",
+        "computeCombatStatusSnapshot"
+      ],
+      "dependsOn": [
+        "characters.types"
+      ],
+      "provides": [
+        "StatusEffect storage under char.progression.statusEffects.active",
+        "CombatStatusSnapshot aggregation (attributes, damageDealtPct, damageTakenPct, armor/resist bonuses)"
+      ],
+      "notes": [
+        "Status effect spine used by vulnerability, region peril auras, and outgoing/incoming damage modifiers.",
+        "Imports DamageSchool as a type from CombatEngine (type-only); no runtime circular dependency.",
+        "damageTakenPct and damageDealtPct are FRACTIONS (0.05 = +5%)."
+      ]
+    },
     "combat.vulnerability": {
       "kind": "utility",
       "path": "worldcore/combat/Vulnerability.ts",
@@ -703,7 +775,7 @@
       ],
       "dependsOn": [
         "characters.types",
-        "combat.statusEffects?"
+        "combat.statusEffects"
       ],
       "notes": [
         "Defines a generic incoming-damage debuff effect ('Exposed Weakness').",
@@ -2086,7 +2158,7 @@
       "function": "handleRiskCommand",
       "dependsOn": [
         "mud.context",
-        "combat.cowardice?",
+        "combat.cowardice",
         "world.regionDanger"
       ],
       "invokedBy": [
