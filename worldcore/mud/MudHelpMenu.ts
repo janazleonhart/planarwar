@@ -25,6 +25,8 @@ export const HELP_ENTRIES: { cmd: string; desc: string; debug?: boolean }[] = [
 
   // Character
   { cmd: "stats / sheet", desc: "Show your character sheet and attributes." },
+  { cmd: "risk / cowardice", desc: "Show cowardice stacks and region danger for your current region." },
+  { cmd: "effects / buffs", desc: "Show your active temporary effects (buffs and debuffs)." },
   { cmd: "inv / inventory", desc: "Show your inventory and bags." },
   { cmd: "iteminfo <idOrName>", desc: "Inspect an item (DB or static)." },
   { cmd: "equip <slot>", desc: "Equip the first matching item from bags into a slot." },
@@ -48,7 +50,7 @@ export const HELP_ENTRIES: { cmd: string; desc: string; debug?: boolean }[] = [
   { cmd: "mail", desc: "Mail (list/read/claim)." },
 
   // Crafting / Gathering
-  { cmd: "craft", desc: "List or craft recipes (craft list | craft <id|name> [count])." },
+  { cmd: "craft", desc: "List or craft recipes (craft list | craft <id> [count])." },
   { cmd: "harvest <what>", desc: "Harvest nearby resources (e.g. ore)." },
 
   // Progression

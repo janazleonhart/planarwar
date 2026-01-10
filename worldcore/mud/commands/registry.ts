@@ -6,6 +6,7 @@ import { handleVendorCommand } from "./economy/vendorCommand";
 import { handleAuctionCommand } from "./economy/auctionCommand";
 import { handleMailCommand } from "./social/mailCommand";
 import { handleCraftCommand } from "./craftCommand";
+
 import { handleLookCommand } from "./world/lookCommand";
 import { handleExamineCommand } from "./world/examineCommand";
 import { handleInspectRegionCommand } from "./world/inspectRegionCommand";
@@ -16,6 +17,8 @@ import { handleMoveCommand } from "./world/moveCommand";
 import { handleInteractCommand } from "./world/interactCommand";
 import { handleTalkCommand } from "./world/talkCommand";
 import { requireTownService } from "./world/serviceGates";
+import { handleWalkToCommand } from "./world/walktoCommand";
+
 import {
   handleWhoCommand,
   handleWhoAllCommand,
@@ -23,6 +26,7 @@ import {
 } from "./social/whoCommand";
 import { handleSayCommand, handleTellCommand } from "./social/chatCommand";
 import { handleGuildChatCommand } from "./social/guildChatCommand";
+
 import { handleHelpCommand } from "./meta/helpCommand";
 
 import { handleInventoryCommand } from "./player/inventoryCommand";
@@ -32,7 +36,10 @@ import {
   handleUnequipCommand,
 } from "./player/equipmentCommand";
 import { handleStatsCommand } from "./player/statsCommand";
-import { handleRespawnCommand, handleRestCommand } from "./player/recoveryCommand";
+import {
+  handleRespawnCommand,
+  handleRestCommand,
+} from "./player/recoveryCommand";
 import { handleResourcesCommand } from "./player/resourcesCommand";
 import { handleSkillsCommand } from "./player/skillsCommand";
 import { handleGuildBankCommand } from "./guildBankCommand";
@@ -65,6 +72,10 @@ import {
   handleSetTitleCommand,
 } from "./progression/titlesCommand";
 
+// Player status / effects
+import { handleEffectsCommand } from "./player/effectsCommand";
+import { handleRiskCommand } from "./player/riskCommand";
+
 // Debug / meta
 import { withDebugGate } from "./debug/withDebugGate";
 import {
@@ -84,10 +95,13 @@ import {
   handleDebugNpcAi,
   handleDebugHydrateHere,
 } from "./debug/handlers";
+import {
+  handleDebugRegionDanger,
+  handleDebugBumpRegionDanger,
+} from "./debug/regionDangerCommands";
+import { handleDebugVulnerability } from "./debug/vulnerabilityCommands";
 
-import { handleWalkToCommand } from "./world/walktoCommand";
 import type { MudCommandHandlerFn } from "./types";
-import { handleEffectsCommand } from "./player/effectsCommand";
 
 export const COMMANDS: Record<string, MudCommandHandlerFn> = {
   // Economy / Services
@@ -178,6 +192,12 @@ export const COMMANDS: Record<string, MudCommandHandlerFn> = {
   stats: handleStatsCommand,
   sheet: handleStatsCommand,
   status: handleStatsCommand, // QoL alias for stats
+
+  risk: async (ctx, char, input) =>
+    handleRiskCommand(ctx, char, input),
+  cowardice: async (ctx, char, input) =>
+    handleRiskCommand(ctx, char, input),
+
   effects: handleEffectsCommand,
   buffs: handleEffectsCommand,
 
@@ -228,6 +248,15 @@ export const COMMANDS: Record<string, MudCommandHandlerFn> = {
   debug_mail_test: withDebugGate(handleDebugMailTest, "dev"),
   debug_npc_ai: withDebugGate(handleDebugNpcAi, "gm"),
   debug_hydrate_here: withDebugGate(handleDebugHydrateHere, "gm"),
+
+  debug_region_danger: withDebugGate(handleDebugRegionDanger, "dev"),
+  debug_bump_region_danger: withDebugGate(
+    handleDebugBumpRegionDanger,
+    "dev",
+  ),
+
+  debug_vuln: withDebugGate(handleDebugVulnerability, "dev"),
+
   event_give_any: withDebugGate(handleEventGiveAny, "owner"),
   event_mail_reward: withDebugGate(handleEventMailReward, "gm"),
 };

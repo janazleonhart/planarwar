@@ -22,6 +22,7 @@ import {
   createWorldServices,
   type WorldServicesOptions,
 } from "../worldcore/world/WorldServices";
+import { updateRegionDangerAuraForCharacter } from "../worldcore/combat/RegionDangerAuras";
 
 installFileLogTap();
 
@@ -154,6 +155,8 @@ async function main() {
           mail,
           respawns,
         };
+
+        updateRegionDangerAuraForCharacter(ch, nowMs);
 
         tickSongsForCharacter(ctx, ch, nowMs)
           .then((result) => {

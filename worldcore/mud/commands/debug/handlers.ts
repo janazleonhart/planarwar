@@ -553,8 +553,8 @@ export async function handleDebugResetLevel(
 
 export async function handleDebugHurt(
   ctx: any,
-  _char: any,
-  input: MudInput
+  char: any,
+  input: MudInput,
 ): Promise<string> {
   const amountRaw = input.args[0];
   const amount = Number(amountRaw ?? "0");
@@ -572,20 +572,34 @@ export async function handleDebugHurt(
     return "[debug] You are already dead.\nTry 'rest' or 'respawn' to recover.";
   }
 
+  // Capture HP before the hit so we can report the *actual* damage
+  const hpBefore =
+    typeof (selfEntity as any).hp === "number" && (selfEntity as any).hp >= 0
+      ? (selfEntity as any).hp
+      : typeof (selfEntity as any).maxHp === "number" &&
+          (selfEntity as any).maxHp > 0
+      ? (selfEntity as any).maxHp
+      : 100;
+
   const { newHp, maxHp, killed } = applySimpleDamageToPlayer(
     selfEntity,
     amount,
-    _char
+    char,
   );
 
+  const actualDamage = Math.max(0, hpBefore - newHp);
+
   if (killed) {
-    return `[combat] You take ${amount} damage and die. (0/${
+    return `[combat] You take ${actualDamage} damage and die.\n(0/${
       maxHp || 0
     } HP)\n[hint] You can type 'respawn' or 'rest' to return to life.`;
   }
 
-  return `[combat] You take ${amount} damage.\n(${newHp}/${maxHp || "?"} HP)`;
+  return `[combat] You take ${actualDamage} damage.\n(${newHp}/${
+    maxHp || "?"
+  } HP)`;
 }
+
 
 export async function handleDebugTake(
   ctx: any,

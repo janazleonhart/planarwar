@@ -1,9 +1,16 @@
 // worldcore/npc/NpcCrime.ts
 
 import type { CharacterState } from "../characters/CharacterTypes";
-import type { NpcPrototype, NpcRuntimeState } from "./NpcTypes";
-import { getGuardCallRadius, DEFAULT_GUARD_CALL_RADIUS } from "./NpcTypes";
-import { getNpcPrototype } from "./NpcTypes";
+import type {
+  GuardProfile,
+  NpcPrototype,
+  NpcRuntimeState,
+} from "./NpcTypes";
+import {
+  DEFAULT_GUARD_CALL_RADIUS,
+  getGuardCallRadius,
+  getNpcPrototype,
+} from "./NpcTypes";
 import { Logger } from "../utils/logger";
 
 const crimeLog = Logger.scope("NPCCRIME");
@@ -13,17 +20,27 @@ const CRIME_SEVERE_MS = 90_000;
 
 export type CrimeSeverity = "minor" | "severe";
 
+/**
+ * Decide whether an NPC counts as a "protected" target for crime purposes.
+ *
+ * Protected = town civs, vendors, quest givers, etc.
+ * Not protected = beasts, bandits, resource nodes, guards themselves, etc.
+ */
 export function isProtectedNpc(
-  proto: NpcPrototype | null | undefined
+  proto: NpcPrototype | null | undefined,
 ): boolean {
   if (!proto) return false;
 
   const tags = new Set(proto.tags ?? []);
 
-  // Guards themselves are enforcers, not protected citizens
+  // Resource nodes are world objects, not citizens.
+  // Hitting a Peacebloom patch or ore vein should never be a crime.
+  if (tags.has("resource")) return false;
+
+  // Guards are enforcers, not protected civilians.
   if (tags.has("guard")) return false;
 
-  // Tags that count as "citizens / protected things" the guards will defend
+  // Tags that count as "citizens / protected things" the guards will defend.
   const PROTECTED_TAGS = new Set<string>([
     "civilian",        // generic townfolk / dummies
     "protected",       // generic future hook
@@ -34,16 +51,21 @@ export function isProtectedNpc(
   ]);
 
   for (const t of tags) {
-    if (PROTECTED_TAGS.has(t)) return true;
+    if (PROTECTED_TAGS.has(t)) {
+      return true;
+    }
   }
 
   return false;
 }
 
+/**
+ * Mark a crime on the attacker for hitting a protected NPC.
+ */
 export function recordNpcCrimeAgainst(
   npc: NpcRuntimeState,
   attacker: CharacterState,
-  opts: { lethal: boolean; proto?: NpcPrototype | null }
+  opts: { lethal: boolean; proto?: NpcPrototype | null },
 ): void {
   const proto =
     opts.proto ??
@@ -60,9 +82,13 @@ export function recordNpcCrimeAgainst(
     return;
   }
 
+  // Skip anything that isn't a protected citizen (including resource nodes).
   if (!isProtectedNpc(proto)) {
-    // Optional debug spam; you can remove this if it’s noisy.
-    // crimeLog.debug("NPC is not protected; no crime recorded", { protoId: proto.id, tags: proto.tags ?? [] });
+    // Optional debug spam if we ever need it:
+    // crimeLog.debug("NPC is not protected; no crime recorded", {
+    //   protoId: proto.id,
+    //   tags: proto.tags ?? [],
+    // });
     return;
   }
 
@@ -73,8 +99,8 @@ export function recordNpcCrimeAgainst(
 
   const severity: CrimeSeverity =
     lethal || alreadyWanted ? "severe" : "minor";
-  const duration =
-    severity === "severe" ? CRIME_SEVERE_MS : CRIME_GRACE_MS;
+
+  const duration = severity === "severe" ? CRIME_SEVERE_MS : CRIME_GRACE_MS;
 
   attacker.recentCrimeUntil = now + duration;
   attacker.recentCrimeSeverity = severity;
@@ -90,9 +116,14 @@ export function recordNpcCrimeAgainst(
   });
 }
 
+/**
+ * Helper for resolving the actual guard call radius with a fallback.
+ */
 export function resolveGuardCallRadius(
-  profile: NonNullable<NpcPrototype["guardProfile"]> | undefined,
+  profile: GuardProfile | undefined,
   override?: number,
 ): number | undefined {
-  return getGuardCallRadius(profile, override) ?? DEFAULT_GUARD_CALL_RADIUS.town;
+  return (
+    getGuardCallRadius(profile, override) ?? DEFAULT_GUARD_CALL_RADIUS.town
+  );
 }

@@ -1,6 +1,6 @@
 // worldcore/mud/actions/MudCombatActions.ts
 
-import type { MudContext } from "../MudContext";
+import { MudContext } from "../MudContext";
 import type { CharacterState } from "../../characters/CharacterTypes";
 import type { Entity } from "../../shared/Entity";
 import { computeEffectiveAttributes } from "../../characters/Stats";
@@ -84,21 +84,56 @@ export async function handleAttackAction(
 
   const roomId = selfEntity.roomId ?? char.shardId;
 
-  // 1) Try NPC target first (rats, ore, etc.)
+  // 1) Try NPC target first (rats, ore, dummies, etc.)
   const npcTarget = findNpcTargetByName(ctx.entities, roomId, targetNameRaw);
   if (npcTarget) {
+    const npcState = ctx.npcs?.getNpcStateByEntityId(npcTarget.id);
+    const protoId = npcState?.protoId;
+
+    const isTrainingDummy = protoId === "training_dummy_big";
+
+    if (isTrainingDummy) {
+      // Training dummy: use the non-lethal dummy HP pool and NEVER call
+      // performNpcAttack (so the dummy itself never hits the player).
+      const dummyInstance = getTrainingDummyForRoom(roomId);
+
+      // Tag as "in combat" for regen / bookkeeping.
+      markInCombat(selfEntity);
+      markInCombat(dummyInstance as any);
+      startTrainingDummyAi(ctx, ctx.session.id, roomId);
+
+      const effective = computeEffectiveAttributes(char, ctx.items);
+      const dmg = computeTrainingDummyDamage(effective);
+
+      dummyInstance.hp = Math.max(0, dummyInstance.hp - dmg);
+
+      if (dummyInstance.hp > 0) {
+        return (
+          `[combat] You hit the Training Dummy for ${dmg} damage. ` +
+          `(${dummyInstance.hp}/${dummyInstance.maxHp} HP)`
+        );
+      } else {
+        const line =
+          `[combat] You obliterate the Training Dummy for ${dmg} damage! ` +
+          `(0/${dummyInstance.maxHp} HP – it quickly knits itself back together.)`;
+        dummyInstance.hp = dummyInstance.maxHp;
+        return line;
+      }
+    }
+
+    // Normal NPC attack flow
     let result = await performNpcAttack(ctx, char, selfEntity, npcTarget);
 
     // If this line indicates a kill, emit the event then let the hook react.
     if (result.includes("You slay")) {
-      const protoId =
+      const protoIdForProgress =
         ctx.npcs?.getNpcStateByEntityId(npcTarget.id)?.protoId ??
         npcTarget.name;
 
       // 1) record the kill in progression
       applyProgressionEvent(char, {
         kind: "kill",
-        targetProtoId: protoId,
+        targetProtoId: protoIdForProgress,
       });
 
       // 2) react: tasks, quests, titles, xp, DB patch
@@ -106,9 +141,8 @@ export async function handleAttackAction(
         ctx,
         char,
         "kills",
-        protoId,
+        protoIdForProgress,
       );
-
       if (snippets.length > 0) {
         result += " " + snippets.join(" ");
       }
@@ -123,28 +157,16 @@ export async function handleAttackAction(
     roomId,
     targetNameRaw,
   );
-
   if (playerTarget) {
     return "You can't attack other players here (PvP zones will come later).";
   }
 
-  // 3) Training dummy logic
-  const dummy = getTrainingDummyForRoom(roomId);
-  if (!dummy) {
-    return "[combat] There is nothing here to train on.";
-  }
-
+  // 3) Fallback: name-only training dummy (if no NPC entity was matched)
   if (targetName.includes("dummy")) {
     const dummyInstance = getTrainingDummyForRoom(roomId);
-    if (!dummyInstance) {
-      return "[combat] There is nothing here to train on.";
-    }
 
-    // Tag both sides as "in combat"
     markInCombat(selfEntity);
-    markInCombat(dummyInstance);
-
-    // Start dummy AI for this player
+    markInCombat(dummyInstance as any);
     startTrainingDummyAi(ctx, ctx.session.id, roomId);
 
     const effective = computeEffectiveAttributes(char, ctx.items);
@@ -152,20 +174,18 @@ export async function handleAttackAction(
 
     dummyInstance.hp = Math.max(0, dummyInstance.hp - dmg);
 
-    let line: string;
-
     if (dummyInstance.hp > 0) {
-      line =
+      return (
         `[combat] You hit the Training Dummy for ${dmg} damage. ` +
-        `(${dummyInstance.hp}/${dummyInstance.maxHp} HP)`;
+        `(${dummyInstance.hp}/${dummyInstance.maxHp} HP)`
+      );
     } else {
-      line =
+      const line =
         `[combat] You obliterate the Training Dummy for ${dmg} damage! ` +
         `(0/${dummyInstance.maxHp} HP – it quickly knits itself back together.)`;
       dummyInstance.hp = dummyInstance.maxHp;
+      return line;
     }
-
-    return line;
   }
 
   // 4) No valid target.

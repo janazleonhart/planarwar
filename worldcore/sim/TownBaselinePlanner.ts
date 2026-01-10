@@ -1,14 +1,15 @@
 // worldcore/sim/TownBaselinePlanner.ts
+
 // -----------------------------------------------------------------------------
 // Purpose:
-// Deterministically seed "baseline" spawn_points around town-like POIs.
+//   Deterministically seed "baseline" spawn_points around town-like POIs.
 //
 // Why:
-// - Towns/outposts should have minimal services without hand-placing NPCs.
-// - We can seed DB-backed spawn_points so hydration + tools can reason about them.
+//   - Towns/outposts should have minimal services without hand-placing NPCs.
+//   - We seed DB-backed spawn_points so hydration + tools can reason about them.
 //
 // Output:
-// - PlaceSpawnAction[] suitable for simBrain applyToDb()
+//   - PlaceSpawnAction[] suitable for simBrain applyToDb()
 // -----------------------------------------------------------------------------
 
 import type { PlaceSpawnAction } from "./BrainActions";
@@ -27,25 +28,29 @@ export type TownLikeSpawnRow = {
 export type TownBaselinePlanOptions = {
   bounds: Bounds;
   cellSize: number;
-
   townTypes: string[];
 
   // Mailbox baseline (POI placeholder)
   seedMailbox: boolean;
-  mailboxType: string; // default: "mailbox"
-  mailboxProtoId: string; // default: "mailbox_basic"
-  mailboxRadius: number; // default: 8
+  mailboxType: string;     // default: "mailbox"
+  mailboxProtoId: string;  // default: "mailbox_basic"
+  mailboxRadius: number;   // default: 8
 
   // Rest baseline (POI placeholder)
   seedRest: boolean;
-  restType: string; // default: "rest"
-  restProtoId: string; // default: "rest_spot_basic"
-  restRadius: number; // default: 10
+  restType: string;        // default: "rest"
+  restProtoId: string;     // default: "rest_spot_basic"
+  restRadius: number;      // default: 10
 
   // Guard baseline (real NPC spawns)
-  guardCount: number; // default: 2
-  guardProtoId: string; // default: "town_guard"
-  guardRadius: number; // default: 12
+  guardCount: number;      // default: 2
+  guardProtoId: string;    // default: "town_guard"
+  guardRadius: number;     // default: 12
+
+  // Training dummy baseline (DPS testing)
+  dummyCount: number;      // default: 1
+  dummyProtoId: string;    // default: "training_dummy_big"
+  dummyRadius: number;     // default: 10
 };
 
 export type TownBaselinePlanResult = {
@@ -74,10 +79,18 @@ function hash01(seed: string): number {
 
 function polarOffset(seed: string, radius: number): { dx: number; dz: number } {
   const a = hash01(seed) * Math.PI * 2;
-  return { dx: Math.cos(a) * radius, dz: Math.sin(a) * radius };
+  return {
+    dx: Math.cos(a) * radius,
+    dz: Math.sin(a) * radius,
+  };
 }
 
-function computeRegionId(shardId: string, x: number, z: number, cellSize: number): string {
+function computeRegionId(
+  shardId: string,
+  x: number,
+  z: number,
+  cellSize: number,
+): string {
   const cx = Math.floor(x / cellSize);
   const cz = Math.floor(z / cellSize);
   return `${shardId}:${cx},${cz}`;
@@ -87,7 +100,12 @@ function round2(n: number): number {
   return Math.round((n + Number.EPSILON) * 100) / 100;
 }
 
-function inWorldBounds(x: number, z: number, bounds: Bounds, cellSize: number): boolean {
+function inWorldBounds(
+  x: number,
+  z: number,
+  bounds: Bounds,
+  cellSize: number,
+): boolean {
   const minX = bounds.minCx * cellSize;
   const maxX = (bounds.maxCx + 1) * cellSize;
   const minZ = bounds.minCz * cellSize;
@@ -116,13 +134,15 @@ export function planTownBaselines(
     const baseX = Number(t.x ?? 0);
     const baseY = Number(t.y ?? 0);
     const baseZ = Number(t.z ?? 0);
-    const regionId = t.regionId || computeRegionId(shardId, baseX, baseZ, opts.cellSize);
+    const regionId =
+      t.regionId || computeRegionId(shardId, baseX, baseZ, opts.cellSize);
 
     // Mailbox
     if (opts.seedMailbox) {
       const off = polarOffset(`${townSpawnId}:mailbox`, opts.mailboxRadius);
       const x = round2(baseX + off.dx);
       const z = round2(baseZ + off.dz);
+
       if (inWorldBounds(x, z, opts.bounds, opts.cellSize)) {
         actions.push({
           kind: "place_spawn",
@@ -147,6 +167,7 @@ export function planTownBaselines(
       const off = polarOffset(`${townSpawnId}:rest`, opts.restRadius);
       const x = round2(baseX + off.dx);
       const z = round2(baseZ + off.dz);
+
       if (inWorldBounds(x, z, opts.bounds, opts.cellSize)) {
         actions.push({
           kind: "place_spawn",
@@ -173,15 +194,47 @@ export function planTownBaselines(
         const off = polarOffset(`${townSpawnId}:guard:${i}`, opts.guardRadius);
         const x = round2(baseX + off.dx);
         const z = round2(baseZ + off.dz);
+
         if (!inWorldBounds(x, z, opts.bounds, opts.cellSize)) continue;
+
+        const protoId = opts.guardProtoId || "town_guard";
         actions.push({
           kind: "place_spawn",
           spawn: {
             shardId,
             spawnId: makeSpawnId(`svc_guard${i + 1}`, townSpawnId),
             type: "npc",
-            archetype: opts.guardProtoId || "town_guard",
-            protoId: opts.guardProtoId || "town_guard",
+            archetype: protoId,
+            protoId,
+            variantId: null,
+            x,
+            y: baseY,
+            z,
+            regionId,
+          },
+        });
+      }
+    }
+
+    // Training dummies (neutral high-HP targets)
+    const dummyCount = Math.max(0, Math.floor(opts.dummyCount ?? 0));
+    if (dummyCount > 0) {
+      for (let i = 0; i < dummyCount; i++) {
+        const off = polarOffset(`${townSpawnId}:dummy:${i}`, opts.dummyRadius);
+        const x = round2(baseX + off.dx);
+        const z = round2(baseZ + off.dz);
+
+        if (!inWorldBounds(x, z, opts.bounds, opts.cellSize)) continue;
+
+        const protoId = opts.dummyProtoId || "training_dummy_big";
+        actions.push({
+          kind: "place_spawn",
+          spawn: {
+            shardId,
+            spawnId: makeSpawnId(`svc_dummy${i + 1}`, townSpawnId),
+            type: "npc",
+            archetype: protoId,
+            protoId,
             variantId: null,
             x,
             y: baseY,

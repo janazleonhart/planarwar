@@ -601,38 +601,39 @@ async function runStatus(args: {
 // ---------------------------------------------------------------------------
 // Town baseline seeding
 // ---------------------------------------------------------------------------
-
 async function runTownBaseline(args: {
   shardId: string;
   bounds: Bounds;
   cellSize: number;
-
   townTypes: string[];
-
   seedMailbox: boolean;
   mailboxProtoId: string;
   mailboxRadius: number;
-
   seedRest: boolean;
   restProtoId: string;
   restRadius: number;
-
   guardCount: number;
   guardProtoId: string;
   guardRadius: number;
-
+  // Training dummy options (optional; defaults kick in below)
+  dummyCount?: number;
+  dummyProtoId?: string;
+  dummyRadius?: number;
   commit: boolean;
   updateExisting: boolean;
 }): Promise<void> {
   const cellSize = Math.max(1, Math.floor(args.cellSize));
-
   const minX = args.bounds.minCx * cellSize;
   const maxX = (args.bounds.maxCx + 1) * cellSize;
   const minZ = args.bounds.minCz * cellSize;
   const maxZ = (args.bounds.maxCz + 1) * cellSize;
 
-  const types = (args.townTypes ?? []).map((t) => String(t).trim()).filter(Boolean);
-  if (!types.length) throw new Error("town-baseline requires --townTypes to resolve at least one type");
+  const types = (args.townTypes ?? [])
+    .map((t) => String(t).trim())
+    .filter(Boolean);
+  if (!types.length) {
+    throw new Error("town-baseline requires --townTypes to resolve at least one type");
+  }
 
   const client = await db.connect();
   let rows: any[] = [];
@@ -646,10 +647,9 @@ async function runTownBaseline(args: {
         AND z >= $4 AND z < $5
         AND type = ANY($6::text[])
       ORDER BY spawn_id
-    `,
+      `,
       [args.shardId, minX, maxX, minZ, maxZ, types],
     );
-
     rows = res.rows ?? [];
   } finally {
     client.release();
@@ -665,10 +665,14 @@ async function runTownBaseline(args: {
     regionId: r.region_id ? String(r.region_id) : null,
   }));
 
+  // Defaults: 1 big dummy per town, radius ~10 units
+  const dummyCount = Math.max(0, Math.floor(args.dummyCount ?? 1));
+  const dummyProtoId = args.dummyProtoId ?? "training_dummy_big";
+  const dummyRadius = Math.max(0, args.dummyRadius ?? 10);
+
   const opts: TownBaselinePlanOptions = {
     bounds: args.bounds,
     cellSize,
-
     townTypes: types,
 
     seedMailbox: args.seedMailbox,
@@ -684,12 +688,22 @@ async function runTownBaseline(args: {
     guardCount: Math.max(0, Math.floor(args.guardCount)),
     guardProtoId: args.guardProtoId,
     guardRadius: Math.max(0, args.guardRadius),
+
+    dummyCount,
+    dummyProtoId,
+    dummyRadius,
   };
 
   const plan = planTownBaselines(towns, opts);
 
   console.log(
-    `[town-baseline] shard=${args.shardId} bounds=${boundsSlug(args.bounds)} towns=${plan.townsConsidered} actions=${plan.actions.length} mailbox=${opts.seedMailbox ? "on" : "off"} rest=${opts.seedRest ? "on" : "off"} guards=${opts.guardCount}`,
+    `[town-baseline] shard=${args.shardId} bounds=${boundsSlug(
+      args.bounds,
+    )} towns=${plan.townsConsidered} actions=${plan.actions.length} mailbox=${
+      opts.seedMailbox ? "on" : "off"
+    } rest=${opts.seedRest ? "on" : "off"} guards=${opts.guardCount} dummies=${
+      opts.dummyCount
+    }`,
   );
 
   const res = await applyToDb(plan.actions as unknown as BrainAction[], {
@@ -697,8 +711,15 @@ async function runTownBaseline(args: {
     updateExisting: args.updateExisting,
   });
 
-  if (args.commit) console.log(`[town-baseline] committed. inserted=${res.inserted} updated=${res.updated} skipped=${res.skipped}`);
-  else console.log(`[town-baseline] dry-run rolled back. inserted=${res.inserted} updated=${res.updated} skipped=${res.skipped} (use --commit)`);
+  if (args.commit) {
+    console.log(
+      `[town-baseline] committed.\ninserted=${res.inserted} updated=${res.updated} skipped=${res.skipped}`,
+    );
+  } else {
+    console.log(
+      `[town-baseline] dry-run rolled back.\ninserted=${res.inserted} updated=${res.updated} skipped=${res.skipped} (use --commit)`,
+    );
+  }
 }
 
 // ---------------------------------------------------------------------------

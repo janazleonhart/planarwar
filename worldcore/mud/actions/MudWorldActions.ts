@@ -17,6 +17,72 @@ import { scheduleNpcCorpseAndRespawn } from "./MudCombatActions";
 
 const log = Logger.scope("MUD");
 
+/**
+ * Fallback generic resource loot for nodes that don't yet have
+ * explicit proto.loot definitions.
+ *
+ * For now, each successful gather yields a random 2–5 of a
+ * representative resource item based on the gatheringKind.
+ *
+ * This is intentionally simple so we can lock the system in; later
+ * Mother Brain / region-aware tables will take over.
+ */
+export function applyGenericResourceLoot(
+  ctx: MudContext,
+  char: CharacterState,
+  gatheringKind: GatheringKind,
+  resourceTag: string,
+  lootLines: string[]
+): void {
+  if (!ctx.items) return;
+
+  let itemId: string | null = null;
+
+  switch (gatheringKind) {
+    case "mining":
+      itemId = "ore_iron_hematite";
+      break;
+    case "herbalism":
+      itemId = "herb_peacebloom";
+      break;
+    case "logging":
+      itemId = "wood_oak";
+      break;
+    case "quarrying":
+      itemId = "stone_granite";
+      break;
+    case "fishing":
+      itemId = "fish_river_trout";
+      break;
+    case "farming":
+      itemId = "grain_wheat";
+      break;
+    default:
+      // Unknown/unsupported gathering kind for now.
+      return;
+  }
+
+  if (!itemId) return;
+
+  const tpl = resolveItem(ctx.items, itemId);
+  if (!tpl) {
+    log.warn("Generic resource loot template missing", {
+      itemId,
+      gatheringKind,
+      resourceTag,
+    });
+    return;
+  }
+
+  const qty = rollInt(2, 5);
+  if (qty <= 0) return;
+
+  const res = ctx.items.addToInventory(char.inventory, tpl.id, qty);
+  if (res.added > 0) {
+    lootLines.push(describeLootLine(tpl.id, res.added, tpl.name));
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Gathering / harvesting
 // ---------------------------------------------------------------------------
@@ -26,7 +92,7 @@ export async function handleGatherAction(
   char: CharacterState,
   targetNameRaw: string,
   gatheringKind: GatheringKind,
-  resourceTag: string, // e.g. "resource_ore", "resource_herb"
+  resourceTag: string // e.g. "resource_ore", "resource_herb"
 ): Promise<string> {
   const what = (targetNameRaw || "").trim() || "ore";
 
@@ -49,6 +115,7 @@ export async function handleGatherAction(
     filter: (e) => {
       if (e.type === "player") return false;
       if (e.type !== "node" && e.type !== "object") return false;
+
       if (typeof (e as any).spawnPointId !== "number") return false;
 
       // Per-player resource nodes (e.g. ore veins) honor ownership.
@@ -61,7 +128,6 @@ export async function handleGatherAction(
 
       const st = npcs.getNpcStateByEntityId(e.id);
       if (!st) return false;
-
       const proto = getNpcPrototype(st.protoId);
       return (proto?.tags ?? []).includes(resourceTag);
     },
@@ -85,7 +151,7 @@ export async function handleGatherAction(
     return "That doesn't look gatherable.";
   }
 
-  // ---- NEW: generic progression event ----
+  // ---- generic progression event ----
   applyProgressionEvent(char, {
     kind: "harvest",
     nodeProtoId: proto.id,
@@ -93,12 +159,12 @@ export async function handleGatherAction(
     amount: 1,
   });
 
-  // ---- EXISTING: MUD-side tasks/quests/titles ----
+  // ---- MUD-side tasks/quests/titles ----
   const { snippets: progressionSnippets } = await applyProgressionForEvent(
     ctx,
     char,
     "harvests",
-    proto.id,
+    proto.id
   );
 
   // Chip away one HP/charge
@@ -111,7 +177,7 @@ export async function handleGatherAction(
 
   if (!ctx.items) {
     log.warn("Gather loot skipped: ctx.items missing", {
-      target: target.name,
+      target: (target as any).name,
       protoId: proto.id,
     });
   } else if (proto.loot && proto.loot.length > 0) {
@@ -136,6 +202,9 @@ export async function handleGatherAction(
         lootLines.push(describeLootLine(tpl.id, res.added, tpl.name));
       }
     }
+  } else {
+    // Fallback: generic resource loot so gathering always feels rewarding
+    applyGenericResourceLoot(ctx, char, gatheringKind, resourceTag, lootLines);
   }
 
   // Persist inventory + progression changes
@@ -151,27 +220,27 @@ export async function handleGatherAction(
     }
   }
 
-  let line = `[harvest] You chip away at ${target.name}.`;
+  let line = `[harvest] You chip away at ${(target as any).name}.`;
 
   if (lootLines.length > 0) {
     line += ` You gather ${lootLines.join(", ")}.`;
   }
 
   if (newHp <= 0) {
-    line += ` The ${target.name} is exhausted.`;
+    line += ` The ${(target as any).name} is exhausted.`;
 
-    if (target.type === "node" && typeof target.spawnPointId === "number") {
+    if (target.type === "node" && typeof (target as any).spawnPointId === "number") {
       const respawnSeconds =
         gatheringKind === "mining"
           ? 120
           : gatheringKind === "herbalism"
-            ? 90
-            : 120;
+          ? 90
+          : 120;
 
       setNodeDepletedUntil(
         char,
-        target.spawnPointId,
-        Date.now() + respawnSeconds * 1000,
+        (target as any).spawnPointId,
+        Date.now() + respawnSeconds * 1000
       );
 
       if (ctx.characters) {

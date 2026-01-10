@@ -119,7 +119,7 @@ export const DEFAULT_NPC_PROTOTYPES: Record<NpcId, NpcPrototype> = {
     baseDamageMin: 0,
     baseDamageMax: 0,
     model: "training_dummy",
-    tags: ["training", "non_hostile", "civilian"],
+    tags: ["training", "non_hostile"],
     behavior: "neutral",
     xpReward: 0,
     loot: [],
@@ -134,7 +134,7 @@ export const DEFAULT_NPC_PROTOTYPES: Record<NpcId, NpcPrototype> = {
     baseDamageMin: 0,
     baseDamageMax: 0,
     model: "training_dummy",
-    tags: ["training", "non_hostile", "civilian", "testing"],
+    tags: ["training", "non_hostile", "testing"],
     behavior: "neutral",
     xpReward: 0,
     loot: [],
@@ -178,25 +178,139 @@ export const DEFAULT_NPC_PROTOTYPES: Record<NpcId, NpcPrototype> = {
     ],
   },
 
-  ore_vein_small: {
-    id: "ore_vein_small",
-    name: "Hematite Ore Vein",
+  // ---------------------------------------------------------------------------
+  // Codex Goblin – dedicated combat test mob
+  // ---------------------------------------------------------------------------
+  codex_goblin: {
+    id: "codex_goblin",
+    name: "Codex Goblin",
+    level: 5,
+    maxHp: 400,                 // ~12 base damage via 3% maxHp
+    baseDamageMin: 0,
+    baseDamageMax: 0,           // we use computeNpcMeleeDamage instead
+    model: "goblin_melee",      // placeholder; client can map this however
+    tags: ["hostile", "codex", "test_mob"],
+    behavior: "neutral",
+    xpReward: 25,
+    loot: [],                   // no real loot yet; pure test dummy
+  },
+
+  // ---------------------------------------------------------------------------
+  // Resource nodes (gatherable world objects)
+  // These are inert, non-hostile “node NPCs” placed by the ResourceBaseline
+  // planner. Gathering logic (mine/pick/etc.) uses the resource_* tags below.
+  // ---------------------------------------------------------------------------
+
+  herb_peacebloom: {
+    id: "herb_peacebloom",
+    name: "Peacebloom Patch",
     level: 1,
-    maxHp: 3,
+    maxHp: 1,
     baseDamageMin: 0,
     baseDamageMax: 0,
-    model: "ore_vein_small",
-    tags: ["resource", "resource_ore"],
+    model: "node_herb_peacebloom", // placeholder / client-side model
+    // 'resource_herb' is what the 'pick' command looks for.
+    tags: ["resource", "resource_herb", "herb", "gatherable", "non_hostile"],
     behavior: "neutral",
     xpReward: 0,
-    loot: [
-      {
-        itemId: "ore_iron_hematite",
-        chance: 1.0,
-        minQty: 1,
-        maxQty: 2,
-      },
+    loot: [], // gathering decides what item(s) you actually get
+  },
+
+  ore_iron_hematite: {
+    id: "ore_iron_hematite",
+    name: "Hematite Iron Vein",
+    level: 1,
+    maxHp: 1,
+    baseDamageMin: 0,
+    baseDamageMax: 0,
+    model: "node_ore_iron_hematite",
+    // 'resource_ore' is what mine/farm/fish/lumber/quarry look for right now.
+    tags: ["resource", "resource_ore", "ore", "gatherable", "non_hostile"],
+    behavior: "neutral",
+    xpReward: 0,
+    loot: [],
+  },
+
+  stone_granite: {
+    id: "stone_granite",
+    name: "Granite Outcrop",
+    level: 1,
+    maxHp: 1,
+    baseDamageMin: 0,
+    baseDamageMax: 0,
+    model: "node_stone_granite",
+    // For now granite is also treated as 'resource_ore' so quarrying/mining see it.
+    tags: ["resource", "resource_ore", "stone", "gatherable", "non_hostile"],
+    behavior: "neutral",
+    xpReward: 0,
+    loot: [],
+  },
+
+  wood_oak: {
+    id: "wood_oak",
+    name: "Oak Timber Stand",
+    level: 1,
+    maxHp: 1,
+    baseDamageMin: 0,
+    baseDamageMax: 0,
+    model: "node_wood_oak",
+    // Lumbering is currently wired through mining/resource_ore as well.
+    tags: ["resource", "resource_ore", "wood", "gatherable", "non_hostile"],
+    behavior: "neutral",
+    xpReward: 0,
+    loot: [],
+  },
+
+  fish_river_trout: {
+    id: "fish_river_trout",
+    name: "River Trout Pool",
+    level: 1,
+    maxHp: 1,
+    baseDamageMin: 0,
+    baseDamageMax: 0,
+    model: "node_fish_river_trout",
+    // Fishing command currently reuses mining/resource_ore under the hood.
+    tags: ["resource", "resource_ore", "fish", "gatherable", "non_hostile"],
+    behavior: "neutral",
+    xpReward: 0,
+    loot: [],
+  },
+
+  grain_wheat: {
+    id: "grain_wheat",
+    name: "Wild Wheat Patch",
+    level: 1,
+    maxHp: 1,
+    baseDamageMin: 0,
+    baseDamageMax: 0,
+    model: "node_grain_wheat",
+    // Farming also goes through mining/resource_ore placeholder for now.
+    tags: ["resource", "resource_ore", "grain", "gatherable", "non_hostile"],
+    behavior: "neutral",
+    xpReward: 0,
+    loot: [],
+  },
+
+  mana_spark_arcane: {
+    id: "mana_spark_arcane",
+    name: "Arcane Spark Cluster",
+    level: 1,
+    maxHp: 1,
+    baseDamageMin: 0,
+    baseDamageMax: 0,
+    model: "node_mana_spark_arcane",
+    // Mana crystals ride the same 'resource_ore' rail until we split them out.
+    tags: [
+      "resource",
+      "resource_ore",
+      "mana",
+      "arcane",
+      "gatherable",
+      "non_hostile",
     ],
+    behavior: "neutral",
+    xpReward: 0,
+    loot: [],
   },
 
   // Simple guard stub – currently behaves like an aggressive NPC,
