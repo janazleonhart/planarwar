@@ -1,7 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { applyStatusEffect, clearAllStatusEffects } from "../combat/StatusEffects";
+import {
+  applyStatusEffect,
+  clearAllStatusEffects,
+  computeCombatStatusSnapshot,
+} from "../combat/StatusEffects";
 import { applySimpleDamageToPlayer } from "../combat/entityCombat";
 import { computeDamage } from "../combat/CombatEngine";
 
@@ -105,6 +109,59 @@ test("ordering is floor-sensitive: mitigation first, then incoming per-school", 
 
     // Correct ordering: floor(2.5)=2, then *1.25 => 2.5 floored => 2
     assert.equal(target.entity.hp, 98);
+  } finally {
+    (Math as any).random = rnd;
+  }
+});
+
+test("computeDamage can optionally apply defender incoming modifiers from defenderStatus", () => {
+  const rnd = Math.random;
+  try {
+    // deterministic roll => roll=1.0, no crit
+    (Math as any).random = () => 0.5;
+
+    const attackerChar = makeChar("attacker");
+    const targetChar = makeChar("target");
+    clearAllStatusEffects(attackerChar);
+    clearAllStatusEffects(targetChar);
+
+    applyStatusEffect(targetChar, {
+      id: "global_vuln",
+      sourceKind: "spell",
+      sourceId: "test",
+      durationMs: 60_000,
+      modifiers: { damageTakenPct: 0.25 },
+    });
+
+    applyStatusEffect(targetChar, {
+      id: "fire_vuln",
+      sourceKind: "spell",
+      sourceId: "test",
+      durationMs: 60_000,
+      modifiers: { damageTakenPctBySchool: { fire: 0.5 } },
+    });
+
+    const source: any = {
+      char: attackerChar,
+      effective: {},
+      channel: "spell",
+    };
+
+    const target: any = {
+      entity: makeEntity(100),
+      armor: 0,
+      resist: {},
+      defenderStatus: computeCombatStatusSnapshot(targetChar),
+    };
+
+    const r = computeDamage(source, target, {
+      basePower: 100,
+      damageSchool: "fire",
+      applyDefenderDamageTakenMods: true,
+    });
+
+    // 100 * (1 + 0.25 + 0.5) = 175
+    assert.equal(r.damage, 175);
   } finally {
     (Math as any).random = rnd;
   }

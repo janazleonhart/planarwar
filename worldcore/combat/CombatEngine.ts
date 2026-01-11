@@ -79,6 +79,17 @@ export interface CombatAttackParams {
   flatBonus?: number;
 
   damageSchool?: DamageSchool;
+
+  /**
+   * Optional: apply defender status-based *incoming* damage modifiers
+   * (damageTakenPct + damageTakenPctBySchool[school]) inside computeDamage.
+   *
+   * Default is false because many call-sites apply incoming modifiers later
+   * (e.g. applySimpleDamageToPlayer). Turn this on only when you are using
+   * CombatTarget.defenderStatus as the authoritative defender snapshot and
+   * you are NOT going to re-apply incoming multipliers elsewhere.
+   */
+  applyDefenderDamageTakenMods?: boolean;
 }
 
 export interface CombatResult {
@@ -86,6 +97,15 @@ export interface CombatResult {
   school: DamageSchool;
   wasCrit: boolean;
   wasGlancing: boolean;
+
+  /**
+   * True when computeDamage() already applied defender incoming multipliers
+   * (damageTakenPct + damageTakenPctBySchool) using target.defenderStatus.
+   *
+   * This is a safety rail to prevent accidental “double-dipping” when some
+   * call sites apply incoming multipliers later (e.g. applySimpleDamageToPlayer).
+   */
+  includesDefenderTakenMods?: boolean;
 }
 
 function clampNonNegativeInt(n: number): number {
@@ -244,6 +264,9 @@ export function computeDamage(
   // --- Mitigation (armor/resists) ---
   // Defender snapshot (optional) lets armor/resist buffs modify mitigation.
   const defenderStatus = target.defenderStatus;
+  const includesDefenderTakenMods = !!(
+    params.applyDefenderDamageTakenMods && defenderStatus
+  );
 
   // Armor applies only to physical
   const armorBase = target.armor ?? 0;
@@ -264,11 +287,32 @@ export function computeDamage(
     dmg *= resistMultiplier(resistRating);
   }
 
-  // Clamp and floor
-  if (!Number.isFinite(dmg) || dmg < 1) {
-    dmg = 1;
+  // --- Optional defender *incoming* modifiers (post-mitigation) ---
+  // IMPORTANT: we intentionally floor after mitigation before applying incoming
+  // modifiers. This keeps ordering consistent with existing tests and with
+  // applySimpleDamageToPlayer's v1 semantics.
+  let damageTakenPct = 0;
+
+  // Clamp + floor after mitigation.
+  if (!Number.isFinite(dmg) || dmg < 1) dmg = 1;
+  let final = Math.floor(dmg);
+
+  if (params.applyDefenderDamageTakenMods && defenderStatus) {
+    const globalTaken =
+      typeof defenderStatus.damageTakenPct === "number" ? defenderStatus.damageTakenPct : 0;
+    const bySchoolTaken = (defenderStatus.damageTakenPctBySchool as any)?.[school];
+    const bySchoolN = typeof bySchoolTaken === "number" ? bySchoolTaken : 0;
+
+    damageTakenPct =
+      (Number.isFinite(globalTaken) ? globalTaken : 0) +
+      (Number.isFinite(bySchoolN) ? bySchoolN : 0);
+
+    if (damageTakenPct) {
+      let afterTaken = final * (1 + damageTakenPct);
+      if (!Number.isFinite(afterTaken) || afterTaken < 1) afterTaken = 1;
+      final = Math.floor(afterTaken);
+    }
   }
-  const final = Math.floor(dmg);
 
   if (process.env.DEBUG_COMBAT === "1") {
     log.debug("computeDamage", {
@@ -282,8 +326,10 @@ export function computeDamage(
       wasCrit,
       wasGlancing,
       damageDealtPct,
+      damageTakenPct,
+      includesDefenderTakenMods,
     });
   }
 
-  return { damage: final, school, wasCrit, wasGlancing };
+  return { damage: final, school, wasCrit, wasGlancing, includesDefenderTakenMods };
 }
