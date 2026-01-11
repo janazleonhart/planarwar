@@ -2,12 +2,11 @@
 //
 // v1 status-effect spine for combat.
 //
-// Goals:
-// - Give spells/songs/items a place to attach temporary buffs/debuffs.
-// - Keep storage on CharacterState.progression (JSONB) so we don't need a DB migration.
-// - Provide one aggregated "snapshot" for combat/stat code to consult.
+// Storage: CharacterState.progression.statusEffects (JSON-ish)
+// Snapshot: computeCombatStatusSnapshot() returns a pure aggregated view.
 //
-// Nothing actually uses this yet until we explicitly call applyStatusEffect(...).
+// NOTE: sourceKind/sourceId are OPTIONAL so tests/tools can apply ad-hoc effects
+// without needing to invent provenance every time.
 
 import type { CharacterState, Attributes } from "../characters/CharacterTypes";
 import type { DamageSchool } from "./CombatEngine";
@@ -32,7 +31,7 @@ export interface StatusEffectModifier {
   damageDealtPct?: number;
   damageTakenPct?: number;
 
-  // School-specific multipliers (fractions; 0.10 = +10%)
+  // Per-school multipliers (fractions; 0.10 = +10%)
   damageDealtPctBySchool?: Partial<Record<DamageSchool, number>>;
   damageTakenPctBySchool?: Partial<Record<DamageSchool, number>>;
 
@@ -60,13 +59,19 @@ export interface StatusEffectInstance {
 
 export interface NewStatusEffectInput {
   id: StatusEffectId;
-  sourceKind: StatusEffectSourceKind;
-  sourceId: string;
+  sourceKind?: StatusEffectSourceKind;
+  sourceId?: string;
   name?: string;
+
   // How long this effect should last; <=0 means "until cleared".
   durationMs: number;
+
   maxStacks?: number;
+
+  // How many stacks to apply with this application (defaults to 1).
+  // If effect already exists, this is how many stacks are added.
   initialStacks?: number;
+
   modifiers: StatusEffectModifier;
   tags?: string[];
 }
@@ -130,6 +135,9 @@ export function applyStatusEffect(
 ): StatusEffectInstance {
   const state = ensureStatusState(char);
 
+  const sourceKind: StatusEffectSourceKind = input.sourceKind ?? "environment";
+  const sourceId = input.sourceId ?? "unknown";
+
   const durationMs =
     typeof input.durationMs === "number" && input.durationMs > 0
       ? input.durationMs
@@ -145,8 +153,8 @@ export function applyStatusEffect(
       typeof input.maxStacks === "number" && input.maxStacks > 0
         ? input.maxStacks
         : existing.maxStacks > 0
-        ? existing.maxStacks
-        : 1;
+          ? existing.maxStacks
+          : 1;
 
     const addStacks =
       typeof input.initialStacks === "number" && input.initialStacks > 0
@@ -157,8 +165,8 @@ export function applyStatusEffect(
 
     const updated: StatusEffectInstance = {
       ...existing,
-      sourceKind: input.sourceKind,
-      sourceId: input.sourceId,
+      sourceKind,
+      sourceId,
       name: input.name ?? existing.name,
       modifiers: input.modifiers ?? existing.modifiers,
       tags: input.tags ?? existing.tags,
@@ -180,8 +188,8 @@ export function applyStatusEffect(
     typeof input.maxStacks === "number" && input.maxStacks > 0
       ? input.maxStacks
       : input.initialStacks && input.initialStacks > 0
-      ? input.initialStacks
-      : 1;
+        ? input.initialStacks
+        : 1;
 
   const stackCount =
     typeof input.initialStacks === "number" && input.initialStacks > 0
@@ -190,8 +198,8 @@ export function applyStatusEffect(
 
   const inst: StatusEffectInstance = {
     id: input.id,
-    sourceKind: input.sourceKind,
-    sourceId: input.sourceId,
+    sourceKind,
+    sourceId,
     name: input.name,
     appliedAtMs: now,
     expiresAtMs,
@@ -226,7 +234,7 @@ export interface CombatStatusSnapshot {
   damageDealtPct: number;
   damageTakenPct: number;
 
-  // School-specific outgoing / incoming damage modifiers
+  // Per-school outgoing / incoming damage modifiers
   damageDealtPctBySchool: Partial<Record<DamageSchool, number>>;
   damageTakenPctBySchool: Partial<Record<DamageSchool, number>>;
 
@@ -252,6 +260,21 @@ export function getActiveStatusEffects(
   );
 }
 
+function addSchoolMap(
+  dst: Partial<Record<DamageSchool, number>>,
+  src: Partial<Record<DamageSchool, number>> | undefined,
+  stacks: number,
+): void {
+  if (!src) return;
+  for (const [k, v] of Object.entries(src)) {
+    const key = k as DamageSchool;
+    const val = Number(v);
+    if (!Number.isFinite(val) || val === 0) continue;
+    const cur = (dst as any)[key] ?? 0;
+    (dst as any)[key] = cur + val * stacks;
+  }
+}
+
 /**
  * Aggregate active status effects for combat / stats.
  *
@@ -272,10 +295,11 @@ export function computeCombatStatusSnapshot(
   const resistFlat: Partial<Record<DamageSchool, number>> = {};
   const resistPct: Partial<Record<DamageSchool, number>> = {};
 
-  let damageDealtPct = 0;
-  let damageTakenPct = 0;
   const damageDealtPctBySchool: Partial<Record<DamageSchool, number>> = {};
   const damageTakenPctBySchool: Partial<Record<DamageSchool, number>> = {};
+
+  let damageDealtPct = 0;
+  let damageTakenPct = 0;
   let armorFlat = 0;
   let armorPct = 0;
 
@@ -305,60 +329,31 @@ export function computeCombatStatusSnapshot(
       }
     }
 
-    if (typeof mods.damageDealtPct === "number") {
+    if (typeof mods.damageDealtPct === "number" && Number.isFinite(mods.damageDealtPct)) {
       damageDealtPct += mods.damageDealtPct * stacks;
     }
 
-    if (typeof mods.damageTakenPct === "number") {
+    if (typeof mods.damageTakenPct === "number" && Number.isFinite(mods.damageTakenPct)) {
       damageTakenPct += mods.damageTakenPct * stacks;
     }
 
-    if (mods.damageDealtPctBySchool) {
-      for (const [school, v] of Object.entries(mods.damageDealtPctBySchool)) {
-        const key = school as DamageSchool;
-        const val = Number(v);
-        if (!Number.isFinite(val) || val === 0) continue;
-        const cur = (damageDealtPctBySchool as any)[key] ?? 0;
-        (damageDealtPctBySchool as any)[key] = cur + val * stacks;
-      }
-    }
+    addSchoolMap(damageDealtPctBySchool, mods.damageDealtPctBySchool, stacks);
+    addSchoolMap(damageTakenPctBySchool, mods.damageTakenPctBySchool, stacks);
 
-    if (mods.damageTakenPctBySchool) {
-      for (const [school, v] of Object.entries(mods.damageTakenPctBySchool)) {
-        const key = school as DamageSchool;
-        const val = Number(v);
-        if (!Number.isFinite(val) || val === 0) continue;
-        const cur = (damageTakenPctBySchool as any)[key] ?? 0;
-        (damageTakenPctBySchool as any)[key] = cur + val * stacks;
-      }
-    }
-
-    if (typeof mods.armorFlat === "number") {
+    if (typeof mods.armorFlat === "number" && Number.isFinite(mods.armorFlat)) {
       armorFlat += mods.armorFlat * stacks;
     }
 
-    if (typeof mods.armorPct === "number") {
+    if (typeof mods.armorPct === "number" && Number.isFinite(mods.armorPct)) {
       armorPct += mods.armorPct * stacks;
     }
 
     if (mods.resistFlat) {
-      for (const [school, v] of Object.entries(mods.resistFlat)) {
-        const key = school as DamageSchool;
-        const val = Number(v);
-        if (!Number.isFinite(val) || val === 0) continue;
-        const cur = (resistFlat as any)[key] ?? 0;
-        (resistFlat as any)[key] = cur + val * stacks;
-      }
+      addSchoolMap(resistFlat, mods.resistFlat, stacks);
     }
 
     if (mods.resistPct) {
-      for (const [school, v] of Object.entries(mods.resistPct)) {
-        const key = school as DamageSchool;
-        const val = Number(v);
-        if (!Number.isFinite(val) || val === 0) continue;
-        const cur = (resistPct as any)[key] ?? 0;
-        (resistPct as any)[key] = cur + val * stacks;
-      }
+      addSchoolMap(resistPct, mods.resistPct, stacks);
     }
   }
 

@@ -1,89 +1,111 @@
-// worldcore/test/statusDamageTakenBySchool.test.ts
 import test from "node:test";
 import assert from "node:assert/strict";
 
+import { applyStatusEffect, clearAllStatusEffects } from "../combat/StatusEffects";
 import { applySimpleDamageToPlayer } from "../combat/entityCombat";
-import { applyStatusEffect } from "../combat/StatusEffects";
+import { computeDamage } from "../combat/CombatEngine";
 
-test("status damageTakenPctBySchool affects only matching school when provided", () => {
-  const char: any = {
-    id: "char_taken_school",
-    name: "Taken School Tester",
-    classId: "warrior",
+function makeChar(id: string): any {
+  return {
+    id,
     level: 1,
     progression: {},
+    attributes: { str: 10, int: 10 },
   };
+}
 
-  const selfEntity: any = {
-    id: "e_taken_school",
-    type: "player",
-    maxHp: 1000,
-    hp: 1000,
-  };
+function makeEntity(hp: number): any {
+  return { id: "ent", hp, maxHp: hp, alive: true };
+}
 
-  // +25% fire damage taken
-  applyStatusEffect(char, {
-    id: "debuff_fire_vuln",
+test("incoming damageTakenPctBySchool increases only that school (not physical)", () => {
+  const targetChar = makeChar("target");
+  clearAllStatusEffects(targetChar);
+
+  applyStatusEffect(targetChar, {
+    id: "oiled",
     sourceKind: "environment",
     sourceId: "test",
-    name: "Fire Vulnerability",
     durationMs: 60_000,
-    maxStacks: 1,
-    initialStacks: 1,
-    modifiers: { damageTakenPctBySchool: { fire: 0.25 } },
+    modifiers: {
+      damageTakenPctBySchool: { fire: 0.5 },
+    },
   });
 
-  // Fire hit gets increased
-  let r = applySimpleDamageToPlayer(selfEntity, 100, char, "fire");
-  assert.equal(r.newHp, 875);
+  const fireTarget = makeEntity(1000);
+  applySimpleDamageToPlayer(fireTarget, 100, targetChar, "fire");
+  assert.equal(fireTarget.hp, 850);
 
-  // Reset
-  selfEntity.hp = 1000;
-
-  // Physical hit unchanged (no school modifier applied)
-  r = applySimpleDamageToPlayer(selfEntity, 100, char, "physical");
-  assert.equal(r.newHp, 900);
+  const physTarget = makeEntity(1000);
+  applySimpleDamageToPlayer(physTarget, 100, targetChar, "physical");
+  assert.equal(physTarget.hp, 900);
 });
 
-test("status damageTakenPct stacks additively with damageTakenPctBySchool", () => {
-  const char: any = {
-    id: "char_taken_add",
-    name: "Taken Add Tester",
-    classId: "warrior",
-    level: 1,
-    progression: {},
-  };
+test("incoming damageTakenPctBySchool stacks additively with global damageTakenPct", () => {
+  const targetChar = makeChar("target");
+  clearAllStatusEffects(targetChar);
 
-  const selfEntity: any = {
-    id: "e_taken_add",
-    type: "player",
-    maxHp: 1000,
-    hp: 1000,
-  };
-
-  // Global +10% and fire-only +25% => total +35%
-  applyStatusEffect(char, {
-    id: "debuff_global",
-    sourceKind: "environment",
+  applyStatusEffect(targetChar, {
+    id: "global_vuln",
+    sourceKind: "spell",
     sourceId: "test",
-    name: "Global Incoming",
     durationMs: 60_000,
-    maxStacks: 1,
-    initialStacks: 1,
-    modifiers: { damageTakenPct: 0.10 },
+    modifiers: { damageTakenPct: 0.25 },
   });
 
-  applyStatusEffect(char, {
-    id: "debuff_fire",
-    sourceKind: "environment",
+  applyStatusEffect(targetChar, {
+    id: "fire_vuln",
+    sourceKind: "spell",
     sourceId: "test",
-    name: "Fire Vulnerability",
     durationMs: 60_000,
-    maxStacks: 1,
-    initialStacks: 1,
-    modifiers: { damageTakenPctBySchool: { fire: 0.25 } },
+    modifiers: { damageTakenPctBySchool: { fire: 0.5 } },
   });
 
-  const r = applySimpleDamageToPlayer(selfEntity, 100, char, "fire");
-  assert.equal(r.newHp, 865, "Expected 100 * 1.35 => 135 damage => hp=865");
+  const target = makeEntity(1000);
+  applySimpleDamageToPlayer(target, 100, targetChar, "fire");
+  // 100 * (1 + 0.25 + 0.5) = 175
+  assert.equal(target.hp, 825);
+});
+
+test("ordering is floor-sensitive: mitigation first, then incoming per-school", () => {
+  const rnd = Math.random;
+  try {
+    // deterministic roll => roll=1.0
+    (Math as any).random = () => 0.5;
+
+    const attackerChar = makeChar("attacker");
+    const targetChar = makeChar("target");
+    clearAllStatusEffects(attackerChar);
+    clearAllStatusEffects(targetChar);
+
+    // +25% incoming fire only
+    applyStatusEffect(targetChar, {
+      id: "fire_vuln",
+      sourceKind: "spell",
+      sourceId: "test",
+      durationMs: 60_000,
+      modifiers: { damageTakenPctBySchool: { fire: 0.25 } },
+    });
+
+    const source: any = {
+      char: attackerChar,
+      effective: {},
+      channel: "spell",
+    };
+
+    const target: any = {
+      entity: makeEntity(100),
+      resist: { fire: 100 }, // 100 => resistMultiplier(100)=0.5 (expected by v1 tests)
+    };
+
+    // basePower=5 => after resists => floor(2.5)=2
+    const roll = computeDamage(source, target, { basePower: 5, damageSchool: "fire" });
+
+    applySimpleDamageToPlayer(target.entity, roll.damage, targetChar, roll.school);
+
+    // Correct ordering: floor(2.5)=2, then *1.25 => 2.5 floored => 2
+    assert.equal(target.entity.hp, 98);
+  } finally {
+    (Math as any).random = rnd;
+  }
 });

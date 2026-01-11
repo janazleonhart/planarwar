@@ -1,0 +1,74 @@
+
+> worldcore@1.0.0 test
+> npm run build && node --test ../dist/worldcore/test/*.js
+
+
+> worldcore@1.0.0 build
+> tsc -p tsconfig.json
+
+abilities/AbilityTypes.ts(4,15): error TS2305: Module '"../combat/CombatEngine"' has no exported member 'WeaponSkillId'.
+abilities/AbilityTypes.ts(4,30): error TS2305: Module '"../combat/CombatEngine"' has no exported member 'SpellSchoolId'.
+combat/NpcCombat.ts(26,8): error TS2305: Module '"./CombatEngine"' has no exported member 'WeaponSkillId'.
+combat/NpcCombat.ts(27,8): error TS2305: Module '"./CombatEngine"' has no exported member 'SpellSchoolId'.
+combat/NpcCombat.ts(117,5): error TS2322: Type 'AttackChannel' is not assignable to type 'DamageChannel'.
+  Type '"ability"' is not assignable to type 'DamageChannel'.
+combat/NpcCombat.ts(131,5): error TS2353: Object literal may only specify known properties, and 'flatBonus' does not exist in type 'CombatAttackParams'.
+combat/NpcCombat.ts(135,28): error TS2339: Property 'damage' does not exist on type 'number'.
+combat/NpcCombat.ts(214,14): error TS2339: Property 'wasCrit' does not exist on type 'number'.
+combat/NpcCombat.ts(216,21): error TS2339: Property 'wasGlancing' does not exist on type 'number'.
+combat/RegionDangerAuras.ts(150,7): error TS2353: Object literal may only specify known properties, and 'initialStacks' does not exist in type 'NewStatusEffectInput'.
+combat/Vulnerability.ts(69,7): error TS2353: Object literal may only specify known properties, and 'initialStacks' does not exist in type 'NewStatusEffectInput'.
+mud/MudHelperFunctions.ts(13,3): error TS2305: Module '"../combat/entityCombat"' has no exported member 'resurrectEntity'.
+mud/MudSpells.ts(193,13): error TS2353: Object literal may only specify known properties, and 'initialStacks' does not exist in type 'NewStatusEffectInput'.
+mud/MudSpells.ts(289,9): error TS2353: Object literal may only specify known properties, and 'effective' does not exist in type 'CombatSource'.
+mud/MudSpells.ts(303,9): error TS2353: Object literal may only specify known properties, and 'flatBonus' does not exist in type 'CombatAttackParams'.
+mud/MudSpells.ts(314,17): error TS2339: Property 'damage' does not exist on type 'number'.
+mud/MudSpells.ts(316,17): error TS2339: Property 'school' does not exist on type 'number'.
+mud/MudSpells.ts(400,13): error TS2353: Object literal may only specify known properties, and 'initialStacks' does not exist in type 'NewStatusEffectInput'.
+skills/SkillProgression.ts(4,15): error TS2305: Module '"../combat/CombatEngine"' has no exported member 'WeaponSkillId'.
+skills/SkillProgression.ts(4,30): error TS2305: Module '"../combat/CombatEngine"' has no exported member 'SpellSchoolId'.
+spells/SpellTypes.ts(3,15): error TS2305: Module '"../combat/CombatEngine"' has no exported member 'SpellSchoolId'.
+systems/recovery/recoveryOps.ts(3,24): error TS2305: Module '"../../combat/entityCombat"' has no exported member 'resurrectEntity'.
+test/minDamageRule.test.ts(67,5): error TS2353: Object literal may only specify known properties, and 'initialStacks' does not exist in type 'NewStatusEffectInput'.
+test/riskStackingCodex.test.ts(62,5): error TS2353: Object literal may only specify known properties, and 'initialStacks' does not exist in type 'NewStatusEffectInput'.
+test/riskStackingCodex.test.ts(77,5): error TS2353: Object literal may only specify known properties, and 'initialStacks' does not exist in type 'NewStatusEffectInput'.
+test/riskStackingCodex.test.ts(92,5): error TS2353: Object literal may only specify known properties, and 'initialStacks' does not exist in type 'NewStatusEffectInput'.
+test/riskStackingCodex.test.ts(156,5): error TS2353: Object literal may only specify known properties, and 'initialStacks' does not exist in type 'NewStatusEffectInput'.
+test/statusDamageDealt.test.ts(97,63): error TS2345: Argument of type '{ basePower: number; }' is not assignable to parameter of type 'CombatAttackParams'.
+  Property 'channel' is missing in type '{ basePower: number; }' but required in type 'CombatAttackParams'.
+test/statusDamageDealt.test.ts(103,12): error TS2339: Property 'damage' does not exist on type 'number'.
+test/statusDamageDealt.test.ts(119,7): error TS2353: Object literal may only specify known properties, and 'initialStacks' does not exist in type 'NewStatusEffectInput'.
+test/statusDamageDealt.test.ts(140,65): error TS2345: Argument of type '{ basePower: number; }' is not assignable to parameter of type 'CombatAttackParams'.
+  Property 'channel' is missing in type '{ basePower: number; }' but required in type 'CombatAttackParams'.
+test/statusDamageDealt.test.ts(145,14): error TS2339: Property 'damage' does not exist on type 'number'.
+test/statusDamageDealt.test.ts(150,14): error TS2339: Property 'damage' does not exist on type 'number'.
+test/statusDamageDealt.test.ts(150,28): error TS2339: Property 'damage' does not exist on type 'number'.
+test/statusDamageDealt.test.ts(181,55): error TS2345: Argument of type '{ basePower: number; }' is not assignable to parameter of type 'CombatAttackParams'.
+  Property 'channel' is missing in type '{ basePower: number; }' but required in type 'CombatAttackParams'.
+test/statusDamageDealt.test.ts(183,12): error TS2339: Property 'damage' does not exist on type 'number'.
+test/statusDamageDealt.test.ts(196,7): error TS2353: Object literal may only specify known properties, and 'initialStacks' does not exist in type 'NewStatusEffectInput'.
+test/statusDamageDealt.test.ts(202,59): error TS2345: Argument of type '{ basePower: number; }' is not assignable to parameter of type 'CombatAttackParams'.
+  Property 'channel' is missing in type '{ basePower: number; }' but required in type 'CombatAttackParams'.
+test/statusDamageDealt.test.ts(204,16): error TS2339: Property 'damage' does not exist on type 'number'.
+test/statusDamageDealt.test.ts(217,7): error TS2353: Object literal may only specify known properties, and 'initialStacks' does not exist in type 'NewStatusEffectInput'.
+test/statusDamageDealt.test.ts(223,60): error TS2345: Argument of type '{ basePower: number; }' is not assignable to parameter of type 'CombatAttackParams'.
+  Property 'channel' is missing in type '{ basePower: number; }' but required in type 'CombatAttackParams'.
+test/statusDamageDealt.test.ts(225,17): error TS2339: Property 'damage' does not exist on type 'number'.
+test/statusDamageDealt.test.ts(231,17): error TS2339: Property 'damage' does not exist on type 'number'.
+test/statusDamageDealt.test.ts(231,35): error TS2339: Property 'damage' does not exist on type 'number'.
+test/statusDamageDealt.test.ts(232,18): error TS2339: Property 'damage' does not exist on type 'number'.
+test/statusDamageDealt.test.ts(232,32): error TS2339: Property 'damage' does not exist on type 'number'.
+test/statusDamageDealtBySchool.test.ts(49,9): error TS2353: Object literal may only specify known properties, and 'effective' does not exist in type 'CombatSource'.
+test/statusDamageDealtBySchool.test.ts(56,27): error TS2339: Property 'damage' does not exist on type 'number'.
+test/statusDamageDealtBySchool.test.ts(65,7): error TS2353: Object literal may only specify known properties, and 'initialStacks' does not exist in type 'NewStatusEffectInput'.
+test/statusDamageDealtBySchool.test.ts(76,9): error TS2353: Object literal may only specify known properties, and 'effective' does not exist in type 'CombatSource'.
+test/statusDamageDealtBySchool.test.ts(83,29): error TS2339: Property 'damage' does not exist on type 'number'.
+test/statusDamageDealtBySchool.test.ts(89,9): error TS2353: Object literal may only specify known properties, and 'effective' does not exist in type 'CombatSource'.
+test/statusDamageDealtBySchool.test.ts(96,27): error TS2339: Property 'damage' does not exist on type 'number'.
+test/statusDamageDealtBySchool.test.ts(114,7): error TS2353: Object literal may only specify known properties, and 'initialStacks' does not exist in type 'NewStatusEffectInput'.
+test/statusDamageDealtBySchool.test.ts(126,7): error TS2353: Object literal may only specify known properties, and 'initialStacks' does not exist in type 'NewStatusEffectInput'.
+test/statusDamageDealtBySchool.test.ts(135,9): error TS2353: Object literal may only specify known properties, and 'effective' does not exist in type 'CombatSource'.
+test/statusDamageDealtBySchool.test.ts(143,22): error TS2339: Property 'damage' does not exist on type 'number'.
+test/statusDamageTaken.test.ts(95,5): error TS2353: Object literal may only specify known properties, and 'initialStacks' does not exist in type 'NewStatusEffectInput'.
+test/statusDamageTakenBySchool.test.ts(50,33): error TS2345: Argument of type '{ id: string; name: string; durationMs: number; maxStacks: number; modifiers: { damageTakenPct: number; damageTakenPctBySchool: { fire: number; }; }; }' is not assignable to parameter of type 'NewStatusEffectInput'.
+  Type '{ id: string; name: string; durationMs: number; maxStacks: number; modifiers: { damageTakenPct: number; damageTakenPctBySchool: { fire: number; }; }; }' is missing the following properties from type 'NewStatusEffectInput': sourceKind, sourceId

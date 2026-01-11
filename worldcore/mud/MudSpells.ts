@@ -7,13 +7,26 @@ import { Logger } from "../utils/logger";
 import { checkAndStartCooldown } from "../combat/Cooldowns";
 import { SPELLS, SpellDefinition, findSpellByNameOrId } from "../spells/SpellTypes";
 import { performNpcAttack } from "./MudActions";
-import { findNpcTargetByName, isDeadEntity, resurrectEntity } from "./MudHelperFunctions";
+import {
+  findNpcTargetByName,
+  findTargetPlayerEntityByName,
+  isDeadEntity,
+  resurrectEntity,
+  applySimpleDamageToPlayer,
+  markInCombat,
+} from "./MudHelperFunctions";
 import { getNpcPrototype } from "../npc/NpcTypes";
 import {
   isServiceProtectedEntity,
   isServiceProtectedNpcProto,
   serviceProtectedCombatLine,
 } from "../combat/ServiceProtection";
+
+import { computeEffectiveAttributes } from "../characters/Stats";
+import { computeDamage, type CombatSource, type CombatTarget } from "../combat/CombatEngine";
+import { DUEL_SERVICE } from "../pvp/DuelService";
+import { canDamagePlayer } from "../pvp/PvpRules";
+import { isPvpEnabledForRegion } from "../world/RegionFlags";
 import {
   getPrimaryPowerResourceForClass,
   trySpendPowerResource,
@@ -156,38 +169,19 @@ export async function castSpellForCharacter(
   switch (spell.kind) {
     case "damage_single_npc": {
       const npc = findNpcTargetByName(ctx.entities, roomId, targetRaw);
-      if (!npc) {
+      const playerTarget = !npc
+        ? findTargetPlayerEntityByName(ctx, roomId, targetRaw)
+        : null;
+
+      if (!npc && !playerTarget) {
         return `There is no '${targetRaw}' here to target with ${spell.name}.`;
       }
 
-      // Early fail: do not consume cooldown/resource when the target is a protected service provider.
-      if (isServiceProtectedNpcTarget(ctx, npc)) {
-        return serviceProtectedCombatLine(npc.name);
-      }
+      // Helper: Virtuoso "battle chant" song grants a short-lived outgoing damage buff on hit.
+      const maybeApplyVirtuosoBattleChantBuff = () => {
+        if (!isSong) return;
+        if (spell.id !== "song_virtuoso_battle_chant") return;
 
-      const cdErr = cooldownGate();
-      if (cdErr) return cdErr;
-
-      const resErr = resourceGate();
-      if (resErr) return resErr;
-
-      startSpellCooldown(char, spell);
-
-      const result = await performNpcAttack(ctx, char, selfEntity, npc, {
-        abilityName: spell.name,
-        tagPrefix: "spell",
-        channel: "spell",
-        damageMultiplier: spell.damageMultiplier,
-        flatBonus: spell.flatBonus,
-        // Songs: treat spellSchool as "song" so CombatEngine can apply appropriate scaling.
-        spellSchool: isSong ? "song" : spell.school,
-        songSchool,
-        isSong,
-      });
-
-      // --- Offensive Virtuoso buff: Dissonant Battle Chant ---
-      // Gives +10% outgoing damage per stack (up to 3) for 20s.
-      if (isSong && spell.id === "virtuoso_dissonant_battle_chant") {
         try {
           applyStatusEffect(char, {
             id: "buff_virtuoso_battle_chant_damage",
@@ -209,13 +203,153 @@ export async function castSpellForCharacter(
             error: String(err),
           });
         }
+      };
+
+      // NPC path: early fail for protected service providers (do not consume cooldown/resource).
+      if (npc) {
+        if (isServiceProtectedNpcTarget(ctx, npc)) {
+          return serviceProtectedCombatLine(npc.name);
+        }
       }
 
+      // Player path: PvP gate (fail closed) BEFORE consuming cooldown/resource.
+      type PlayerGate = {
+        mode: "duel" | "pvp";
+        label: "duel" | "pvp";
+        now: number;
+        targetChar: any;
+        targetSession: any;
+      };
+
+      let playerGate: PlayerGate | null = null;
+
+      if (playerTarget) {
+        const now = Date.now();
+        DUEL_SERVICE.tick(now);
+
+        const ownerSessionId = (playerTarget as any).ownerSessionId as string | undefined;
+        const targetSession = ownerSessionId ? ctx.sessions?.get(ownerSessionId) : null;
+        const targetChar =
+          (targetSession as any)?.character ?? (targetSession as any)?.char ?? null;
+
+        if (!targetChar?.id) {
+          return "That player cannot be targeted right now (no character attached).";
+        }
+
+        const inDuel = DUEL_SERVICE.isActiveBetween(char.id, targetChar.id);
+        const regionPvpEnabled = await isPvpEnabledForRegion(char.shardId, roomId);
+        const gate = canDamagePlayer(char, targetChar as any, inDuel, regionPvpEnabled);
+
+        if (!gate.allowed) {
+          return gate.reason;
+        }
+
+        playerGate = {
+          mode: gate.mode,
+          label: gate.label,
+          now,
+          targetChar,
+          targetSession,
+        };
+      }
+
+      const cdErr = cooldownGate();
+      if (cdErr) return cdErr;
+
+      const resErr = resourceGate();
+      if (resErr) return resErr;
+
+      startSpellCooldown(char, spell);
+
+      // Execute
+      if (npc) {
+        const result = await performNpcAttack(ctx, char, selfEntity, npc, {
+          abilityName: spell.name,
+          tagPrefix: "spell",
+          channel: "spell",
+          damageMultiplier: spell.damageMultiplier,
+          flatBonus: spell.flatBonus,
+          // Songs: treat spellSchool as "song" so CombatEngine can apply appropriate scaling.
+          spellSchool: isSong ? "song" : spell.school,
+          songSchool,
+          isSong,
+        });
+
+        maybeApplyVirtuosoBattleChantBuff();
+        applySchoolGains();
+        return result;
+      }
+
+      // Player damage path (duel or region-open PvP)
+      const gate = playerGate!;
+      const effective = computeEffectiveAttributes(char, ctx.items);
+
+      const source: CombatSource = {
+        char,
+        effective,
+        channel: "spell",
+        spellSchool: isSong ? "song" : spell.school,
+        songSchool,
+      };
+
+      const target: CombatTarget = {
+        entity: playerTarget as any,
+        armor: (playerTarget as any).armor ?? 0,
+        resist: (playerTarget as any).resist ?? {},
+      };
+
+      const dmgRoll = computeDamage(source, target, {
+        damageMultiplier: spell.damageMultiplier,
+        flatBonus: spell.flatBonus,
+      });
+
+      const oldHp = (() => {
+        const e: any = playerTarget as any;
+        const maxHp0 = typeof e.maxHp === "number" && e.maxHp > 0 ? e.maxHp : 100;
+        return typeof e.hp === "number" && e.hp >= 0 ? e.hp : maxHp0;
+      })();
+
+      const { newHp, maxHp, killed } = applySimpleDamageToPlayer(
+        playerTarget as any,
+        dmgRoll.damage,
+        gate.targetChar as any,
+        dmgRoll.school,
+        { mode: gate.mode },
+      );
+
+      const dmgFinal = Math.max(0, Math.floor(oldHp - newHp));
+
+      markInCombat(selfEntity);
+      markInCombat(playerTarget as any);
+
+      // Notify the target (best-effort).
+      if (gate.targetSession && ctx.sessions) {
+        ctx.sessions.send(gate.targetSession as any, "chat", {
+          from: "[world]",
+          sessionId: "system",
+          text: killed
+            ? `[${gate.label}] ${selfEntity.name} hits you for ${dmgFinal} damage. You fall. (0/${maxHp} HP)`
+            : `[${gate.label}] ${selfEntity.name} hits you for ${dmgFinal} damage. (${newHp}/${maxHp} HP)`,
+          t: gate.now,
+        });
+      }
+
+      if (killed && gate.mode === "duel") {
+        // Duel ends on death.
+        DUEL_SERVICE.endDuelFor(char.id, "death", gate.now);
+      }
+
+      maybeApplyVirtuosoBattleChantBuff();
       applySchoolGains();
-      return result;
+
+      if (killed) {
+        return `[${gate.label}] You hit ${playerTarget!.name} for ${dmgFinal} damage. You defeat them. (0/${maxHp} HP)`;
+      }
+
+      return `[${gate.label}] You hit ${playerTarget!.name} for ${dmgFinal} damage. (${newHp}/${maxHp} HP)`;
     }
 
-    case "heal_self": {
+case "heal_self": {
       const hp = (selfEntity as any).hp ?? 0;
       const maxHp = (selfEntity as any).maxHp ?? 0;
 

@@ -94,12 +94,14 @@ import {
   handleDebugMailTest,
   handleDebugNpcAi,
   handleDebugHydrateHere,
+  handleDebugRegionFlags,
 } from "./debug/handlers";
 import {
   handleDebugRegionDanger,
   handleDebugBumpRegionDanger,
 } from "./debug/regionDangerCommands";
 import { handleDebugVulnerability } from "./debug/vulnerabilityCommands";
+import { handleDebugRegionEvent, handleDebugRegionPvp } from "./debug/regionEventCommands";
 
 import type { MudCommandHandlerFn } from "./types";
 
@@ -248,6 +250,9 @@ export const COMMANDS: Record<string, MudCommandHandlerFn> = {
   debug_mail_test: withDebugGate(handleDebugMailTest, "dev"),
   debug_npc_ai: withDebugGate(handleDebugNpcAi, "gm"),
   debug_hydrate_here: withDebugGate(handleDebugHydrateHere, "gm"),
+  debug_region_flags: withDebugGate(handleDebugRegionFlags, "dev"),
+  debug_region_event: withDebugGate(handleDebugRegionEvent, "dev"),
+  debug_region_pvp: withDebugGate(handleDebugRegionPvp, "dev"),
 
   debug_region_danger: withDebugGate(handleDebugRegionDanger, "dev"),
   debug_bump_region_danger: withDebugGate(

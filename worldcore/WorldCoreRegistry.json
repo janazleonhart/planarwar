@@ -621,7 +621,8 @@
       "notes": [
         "Shared entity HP helpers and NPC melee damage formula.",
         "Tags entities in combat, handles simple kill/resurrect, applies simple damage with cowardice & status effect multipliers.",
-        "On player death, bumps RegionDanger for the character's region to make that area temporarily more dangerous."
+        "On player death, bumps RegionDanger for the character's region to make that area temporarily more dangerous.",
+        "Min-damage rule v1: positive fractional incoming damage becomes at least 1."
       ]
     },
     "combat.mitigation": {
@@ -680,6 +681,7 @@
       ],
       "dependsOn": [
         "world.regionDanger",
+        "world.RegionFlags",
         "characters.types",
         "combat.statusEffects"
       ],
@@ -1005,7 +1007,9 @@
         "world.trades?",
         "world.vendors?",
         "world.bank?",
-        "world.auctions?"
+        "world.auctions?",
+        "world.RegionFlags",
+        "db.Database"
       ],
       "handlesClientOps": [
         "ping / hello / heartbeat",
@@ -1712,7 +1716,9 @@
         "core.entities",
         "combat.entityCombat",
         "ai.npc.localBrain",
-        "world.spawns"
+        "world.spawns",
+        "db.Database",
+        "world.RegionFlags"
       ],
       "invokedBy": [
         "mud.handler"
@@ -3155,6 +3161,33 @@
         "Provides type guards isClientTerrainMessage and isServerTerrainMessage."
       ]
     },
+    "pvp.duels": {
+      "kind": "service",
+      "path": "worldcore/pvp/DuelService.ts",
+      "dependsOn": [],
+      "functions": [
+        "DuelService",
+        "DUEL_SERVICE",
+        "requestDuel",
+        "acceptDuel",
+        "acceptAny",
+        "declineDuel",
+        "endDuelFor",
+        "isActiveBetween",
+        "getActiveDuel",
+        "getOpponentId",
+        "tick"
+      ],
+      "provides": [
+        "In-memory duel handshake + active duel pairing",
+        "Duel-gated PvP enablement hook (mode: 'duel')"
+      ],
+      "notes": [
+        "Ephemeral state only (resets on server restart).",
+        "Requests expire quickly to avoid stale challenges.",
+        "Used by MudCommandHandler (duel/accept/decline/yield) and MudCombatActions (duel-gated player attack)."
+      ]
+    },
     "quests.engine": {
       "kind": "service",
       "path": "worldcore/quests/QuestEngine.ts",
@@ -3768,6 +3801,104 @@
       ],
       "notes": [
         "Shared region data model for MMO, strategy layer, and tools."
+      ]
+    },
+    "test.utils": {
+      "kind": "test_utility",
+      "path": "worldcore/test/testUtils.ts",
+      "functions": ["withRandomSequence", "/* other deterministic RNG helpers */"],
+      "dependsOn": [],
+      "notes": [
+        "Shared helpers for deterministic Math.random sequences in tests.",
+        "Used by smokeChecklist and damage-by-school regression tests."
+      ]
+    },
+    "test.smokeChecklist": {
+      "kind": "test",
+      "path": "worldcore/test/smokeChecklist.test.ts",
+      "dependsOn": [
+        "test.utils",
+        "combat.engine",
+        "combat.statusEffects"
+      ],
+      "notes": [
+        "High-level smoke checklist for combat math invariants.",
+        "Catches regressions when CombatEngine / StatusEffects ordering changes."
+      ]
+    },
+    "test.statusDamageDealtBySchool": {
+      "kind": "test",
+      "path": "worldcore/test/statusDamageDealtBySchool.test.ts",
+      "dependsOn": [
+        "test.utils",
+        "combat.engine",
+        "combat.statusEffects"
+      ],
+      "notes": [
+        "Regression: outgoing per-school damage dealt modifiers apply only to matching school.",
+        "Regression: stacks additively with global damageDealtPct."
+      ]
+    },
+    "test.statusDamageTakenBySchool": {
+      "kind": "test",
+      "path": "worldcore/test/statusDamageTakenBySchool.test.ts",
+      "dependsOn": [
+        "test.utils",
+        "combat.engine",
+        "combat.statusEffects",
+        "combat.mitigation",
+        "combat.resists"
+      ],
+      "notes": [
+        "Regression: incoming per-school damage taken modifiers apply only to matching school.",
+        "Regression: stacks additively with global damageTakenPct.",
+        "Verifies ordering remains: mitigation (armor/resist) then incoming multipliers."
+      ]
+    },
+    "test.regionDangerScalar": {
+      "kind": "test",
+      "path": "worldcore/test/regionDangerScalar.test.ts",
+      "dependsOn": [
+        "combat.regionDangerAuras",
+        "world.regionDanger",
+        "combat.statusEffects"
+      ],
+      "notes": [
+        "Regression: region danger scalar influences the Region Peril aura / danger scaling behavior."
+      ]
+    },
+    "test.pvpRules": {
+      "kind": "test",
+      "path": "worldcore/test/pvpRules.test.ts",
+      "dependsOn": [
+        "combat.pvpRules"
+     ],
+      "notes": [
+        "Regression: PvP gating rules (duel vs open vs warfront) behave as expected.",
+        "Foundation for future faction/party friendly-fire rules."
+      ]
+    },
+    "test.pvpFriendlyFireGuild": {
+      "kind": "test",
+      "path": "worldcore/test/pvpFriendlyFireGuild.test.ts",
+      "dependsOn": [
+        "combat.pvpRules",
+        "guilds.service?"
+      ],
+      "notes": [
+        "Regression: friendly-fire prevention for same-guild participants when configured."
+      ]
+    },
+    "test.duelService": {
+      "kind": "test",
+      "path": "worldcore/test/duelService.test.ts",
+      "dependsOn": [
+        "combat.duelService",
+        "core.sessions?",
+        "core.entities?"
+      ],
+      "notes": [
+        "Regression: duel lifecycle (challenge/accept/decline/yield) and state transitions."
       ]
     },
     "tools.resourceBaseline": {

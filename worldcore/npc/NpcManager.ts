@@ -925,10 +925,24 @@ export class NpcManager {
       );
     }
 
+    let targetSession: any | null = null;
+    let targetChar: CharacterState | undefined;
+
+    const ownerSessionId = (target as any).ownerSessionId;
+    if (sessionManager && ownerSessionId) {
+      const s = sessionManager.get(ownerSessionId);
+      if (s) {
+        targetSession = s;
+        targetChar = (s.character ?? undefined) as any;
+      }
+    }
+
     const dmg = computeNpcMeleeDamage(npcEntity);
     const { newHp, maxHp, killed } = applySimpleDamageToPlayer(
       target,
       dmg,
+      targetChar,
+      "physical",
     );
 
     // Tag NPC as in combat as well
@@ -946,19 +960,13 @@ export class NpcManager {
         `(${newHp}/${maxHp} HP)`;
     }
 
-    if (sessionManager) {
-      const ownerSessionId = (target as any).ownerSessionId;
-      if (ownerSessionId) {
-        const s = sessionManager.get(ownerSessionId);
-        if (s) {
-          sessionManager.send(s, "chat", {
-            from: "[world]",
-            sessionId: "system",
-            text: line,
-            t: Date.now(),
-          });
-        }
-      }
+    if (sessionManager && targetSession) {
+      sessionManager.send(targetSession, "chat", {
+        from: "[world]",
+        sessionId: "system",
+        text: line,
+        t: Date.now(),
+      });
     }
   }
 }

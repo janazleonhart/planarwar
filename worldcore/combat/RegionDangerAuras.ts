@@ -20,6 +20,8 @@ import {
   type RegionDangerTier,
 } from "../world/RegionDanger";
 
+import { getDangerScalarForRegion } from "../world/RegionFlags";
+
 import {
   applyStatusEffect,
   getActiveStatusEffects,
@@ -47,6 +49,23 @@ const DEFAULT_AURA_CONFIG: RegionDangerAuraConfig = {
   damageTakenPct: 0.05, // +5% damage taken when active
 };
 
+const MAX_REGION_DANGER_DAMAGE_TAKEN_PCT = 0.95;
+
+/**
+ * Scale a damageTakenPct by an external scalar (e.g., story/seasonal event tuning),
+ * with sensible safety rails.
+ *
+ * - scalar <= 0 or non-finite → treated as 1
+ * - result is clamped to [0, MAX_REGION_DANGER_DAMAGE_TAKEN_PCT]
+ */
+export function scaleDamageTakenPct(base: number, scalar: number): number {
+  if (!Number.isFinite(base) || base <= 0) return 0;
+  const s = Number.isFinite(scalar) && scalar > 0 ? scalar : 1;
+  const scaled = base * s;
+  if (scaled <= 0) return 0;
+  return Math.min(MAX_REGION_DANGER_DAMAGE_TAKEN_PCT, scaled);
+}
+
 /**
  * Compute whether the region danger tier should grant an aura.
  *
@@ -72,19 +91,35 @@ export function getRegionDangerAuraStrengthForTier(
  *
  * This function is side-effectful (mutates CharacterState via StatusEffects).
  */
-export function updateRegionDangerAuraForCharacter(
+export async function updateRegionDangerAuraForCharacter(
   char: CharacterState,
   now: number = Date.now(),
   config: RegionDangerAuraConfig = DEFAULT_AURA_CONFIG,
-): void {
+): Promise<void> {
   const tier = getRegionDangerForCharacter(char, now);
-  const strength = getRegionDangerAuraStrengthForTier(tier, config);
+  const baseStrength = getRegionDangerAuraStrengthForTier(tier, config);
 
-  if (strength <= 0) {
+  if (baseStrength <= 0) {
     // No aura for this tier. We do not actively remove any existing aura;
     // it will time out as its duration expires.
     return;
   }
+
+  // Optional event tuning: regions.flags.dangerScalar can amplify (or soften) this aura.
+  // Fail-closed: if we can't read flags, scalar defaults to 1.
+  const shardId = (char as any).shardId ?? "prime_shard";
+  const regionId =
+    (char as any).regionId ??
+    (char as any).roomId ?? // some callsites store combined ids here
+    "";
+
+  const scalar = regionId ? await getDangerScalarForRegion(shardId, regionId) : 1;
+  const strength = scaleDamageTakenPct(baseStrength, scalar);
+
+  if (strength <= 0) {
+    return;
+  }
+
 
   // See if we already have a region danger aura with enough time left.
   const active = getActiveStatusEffects(char, now);

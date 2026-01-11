@@ -1,11 +1,16 @@
 //worldcore/core/MessageRouter.ts
 
+//worldcore/core/MessageRouter.ts
+
 import { SessionManager } from "./SessionManager";
 import { RoomManager } from "./RoomManager";
 import { EntityManager } from "./EntityManager";
 import { Session } from "../shared/Session";
 import { ClientMessage } from "../shared/messages";
 import { Logger } from "../utils/logger";
+import { db } from "../db/Database";
+import { normalizeRegionIdForDb } from "../world/RegionFlags";
+
 import { ServerWorldManager } from "../world/ServerWorldManager";
 import { handleMudCommand } from "../mud/MudCommandHandler";
 import { buildMudContext } from "../mud/MudContext";
@@ -501,7 +506,7 @@ export class MessageRouter {
       // MUD
       // ---------------------------------------------------------
       case "whereami": {
-        this.handleWhereAmI(session);
+        void this.handleWhereAmI(session);
         break;
       }
 
@@ -615,7 +620,7 @@ export class MessageRouter {
     }
   }
 
-  handleWhereAmI(session: Session) {
+  async handleWhereAmI(session: Session): Promise<void> {
     // Start from the session's view of the world
     let roomId: string | null = session.roomId ?? null;
     let x = 0;
@@ -656,6 +661,37 @@ export class MessageRouter {
     // fall back to the prototype shard id.
     const shardId = this.world?.getWorldBlueprint().id ?? "prime_shard";
 
+
+    // Best-effort: enrich with DB-backed region metadata (name/kind/flags).
+    // This is primarily for debugging (PvP/event/warfront toggles) and must never hard-fail.
+    let regionName: string | undefined;
+    let regionKind: string | undefined;
+    let regionFlags: Record<string, unknown> | undefined;
+
+    if (regionId) {
+      const dbRegionId = normalizeRegionIdForDb(regionId);
+      try {
+        const res = await db.query(
+          `SELECT name, kind, flags FROM regions WHERE shard_id = $1 AND region_id = $2 LIMIT 1`,
+          [shardId, dbRegionId]
+        );
+
+        const row = (res.rows?.[0] ?? null) as any;
+        if (row) {
+          regionName = row.name ?? undefined;
+          regionKind = row.kind ?? undefined;
+          if (row.flags && typeof row.flags === "object") {
+            regionFlags = row.flags as Record<string, unknown>;
+          }
+        }
+      } catch (err: any) {
+        log.debug("whereami region metadata lookup failed", {
+          shardId,
+          regionId: dbRegionId,
+          err: err?.message ?? String(err),
+        });
+      }
+    }
     const payload: WhereAmIResultPayload = {
       shardId,
       roomId,
@@ -663,6 +699,9 @@ export class MessageRouter {
       y,
       z,
       regionId,
+      regionName,
+      regionKind,
+      regionFlags,
     };
 
     this.sessions.send(session, "whereami_result", payload);

@@ -1,6 +1,5 @@
 // worldcore/mud/commands/debug/handlers.ts
 
-// worldcore/mud/commands/debug/handlers.ts
 import { Logger } from "../../../utils/logger";
 import { getStaffRole } from "../../../shared/AuthTypes";
 import { logStaffAction } from "../../../auth/StaffAuditLog";
@@ -10,8 +9,11 @@ import {
   applySimpleDamageToPlayer,
   isDeadEntity,
 } from "../../../combat/entityCombat";
+import type { DamageSchool } from "../../../combat/CombatEngine";
 import { SpawnPointService } from "../../../world/SpawnPointService";
 import { SpawnHydrator } from "../../../world/SpawnHydrator";
+import { db } from "../../../db/Database";
+import { normalizeRegionIdForDb } from "../../../world/RegionFlags";
 import { NpcSpawnController } from "../../../npc/NpcSpawnController";
 import { announceSpawnToRoom } from "../../MudActions";
 import { getSelfEntity } from "../../runtime/mudRuntime";
@@ -24,6 +26,24 @@ import {
 } from "../../../npc/NpcTypes";
 export { handleDebugHydrateHere } from "./hydrateHere";
 
+
+
+const DAMAGE_SCHOOLS: DamageSchool[] = [
+  "physical",
+  "arcane",
+  "fire",
+  "frost",
+  "shadow",
+  "holy",
+  "nature",
+  "pure",
+];
+
+function parseDamageSchool(raw: unknown): DamageSchool | undefined {
+  const s = String(raw ?? "").trim().toLowerCase();
+  if (!s) return undefined;
+  return (DAMAGE_SCHOOLS as string[]).includes(s) ? (s as DamageSchool) : undefined;
+}
 
 const log = Logger.scope("MudDebug");
 
@@ -335,6 +355,227 @@ export async function handleDebugRehydratePois(
 // Event helpers
 // ---------------------------------------------------------------------------
 
+
+// ---------------------------------------------------------------------------
+// Debug region flags (DB-backed regions.flags jsonb)
+// ---------------------------------------------------------------------------
+
+export async function handleDebugRegionFlags(
+  ctx: any,
+  char: any,
+  input: MudInput
+): Promise<string> {
+  const identity = ctx.session?.identity;
+  if (!identity) return "You are not logged in.";
+
+  const role = getStaffRole(identity.flags);
+  const shardMode: "dev" | "live" =
+    process.env.PW_SHARD_MODE === "live" ? "live" : "dev";
+
+  // In dev, allow owner/dev/gm. In live, keep it owner-only (prevents accidents).
+  if (shardMode === "live") {
+    if (role !== "owner")
+      return "Only the shard owner may modify region flags in live mode.";
+  } else {
+    if (role !== "owner" && role !== "dev" && role !== "gm") {
+      return "You are not allowed to modify region flags.";
+    }
+  }
+
+  // Parse optional: --shard <id>  --region <id>
+  const argv = [...(input.args ?? [])].map((x) => String(x));
+  function takeOpt(name: string): string | null {
+    const i = argv.indexOf(name);
+    if (i === -1) return null;
+    const v = argv[i + 1];
+    argv.splice(i, v != null ? 2 : 1);
+    return v != null ? String(v) : null;
+  }
+
+  const shardOverride = takeOpt("--shard");
+  const regionOverride = takeOpt("--region");
+
+  const shardId: string =
+    shardOverride ??
+    char?.shardId ??
+    ctx.world?.getWorldBlueprint?.()?.id ??
+    "prime_shard";
+
+  const selfEnt = ctx.entities?.getEntityByOwner?.(ctx.session?.id);
+  const roomOrRegion: string | null =
+    regionOverride ??
+    (selfEnt?.roomId ?? null) ??
+    (char?.roomId ?? null) ??
+    null;
+
+  if (!roomOrRegion) {
+    return "Usage: debug_region_flags [--shard <id>] [--region <id>] [show|set|clear|reset] ...";
+  }
+
+  const regionIdDb = normalizeRegionIdForDb(roomOrRegion);
+  const sub = (argv[0] ?? "show").toLowerCase();
+
+  // Helpers
+  async function fetchRow(): Promise<{ name?: string; kind?: string; flags?: any } | null> {
+    const res = await db.query(
+      `SELECT name, kind, flags
+       FROM regions
+       WHERE shard_id = $1 AND region_id = $2
+       LIMIT 1`,
+      [shardId, regionIdDb]
+    );
+    return (res.rows?.[0] as any) ?? null;
+  }
+
+  async function ensureRegionRow(): Promise<boolean> {
+    const existing = await fetchRow();
+    if (existing) return false;
+
+    // If kind is an enum in your DB, grab any existing kind as a safe default.
+    let defaultKind = "wilderness";
+    try {
+      const any = await db.query(
+        `SELECT kind FROM regions WHERE shard_id = $1 LIMIT 1`,
+        [shardId]
+      );
+      if (any.rows?.[0]?.kind) defaultKind = String(any.rows[0].kind);
+    } catch {
+      // ignore
+    }
+
+    const defaultName = `Region ${regionIdDb}`;
+
+    try {
+      await db.query(
+        `INSERT INTO regions (shard_id, region_id, name, kind, flags)
+         VALUES ($1, $2, $3, $4, '{}'::jsonb)`,
+        [shardId, regionIdDb, defaultName, defaultKind]
+      );
+      return true;
+    } catch (err: any) {
+      // If another process created it first, that's fine.
+      return false;
+    }
+  }
+
+  async function show(): Promise<string> {
+    const row = await fetchRow();
+    if (!row) return `[region_flags] No region row found for ${shardId}/${regionIdDb}. (Use: debug_region_flags set <key> <value> to auto-create it.)`;
+
+    const flags = row.flags ?? {};
+    const pretty =
+      typeof flags === "object" ? JSON.stringify(flags, null, 2) : String(flags);
+
+    return [
+      `[region_flags] shard=${shardId} region=${regionIdDb}`,
+      `[region_flags] name=${row.name ?? "(none)"} kind=${row.kind ?? "(none)"}`,
+      `[region_flags] flags=${pretty}`,
+    ].join("\n");
+  }
+
+  function parseJsonish(raw: string): any {
+    const s = String(raw ?? "").trim();
+    if (!s.length) return "";
+    try {
+      return JSON.parse(s);
+    } catch {
+      if (s === "true") return true;
+      if (s === "false") return false;
+      if (s === "null") return null;
+      const n = Number(s);
+      if (!Number.isNaN(n) && String(n) === s) return n;
+      return s;
+    }
+  }
+
+  if (sub === "show" || sub === "list") {
+    return show();
+  }
+
+  if (sub === "reset") {
+    const created = await ensureRegionRow();
+
+    const res = await db.query(
+      `UPDATE regions
+       SET flags = '{}'::jsonb
+       WHERE shard_id = $1 AND region_id = $2`,
+      [shardId, regionIdDb]
+    );
+
+    await logStaffAction(identity, "region_flags_reset", { shardId, regionId: regionIdDb });
+
+    if (!res.rowCount) {
+      return `[region_flags] Failed to reset (no row) for ${shardId}/${regionIdDb}.`;
+    }
+
+    return created
+      ? `[region_flags] Created region row + reset flags for ${shardId}/${regionIdDb}.`
+      : `[region_flags] Reset flags for ${shardId}/${regionIdDb}.`;
+  }
+
+  if (sub === "clear") {
+    const key = argv[1];
+    if (!key) return "Usage: debug_region_flags clear <key> [--shard <id>] [--region <id>]";
+
+    const created = await ensureRegionRow();
+
+    const res = await db.query(
+      `UPDATE regions
+       SET flags = (COALESCE(flags, '{}'::jsonb) - $3)
+       WHERE shard_id = $1 AND region_id = $2`,
+      [shardId, regionIdDb, key]
+    );
+
+    await logStaffAction(identity, "region_flags_clear", { shardId, regionId: regionIdDb, key });
+
+    if (!res.rowCount) {
+      return `[region_flags] Failed to clear '${key}' (no row) for ${shardId}/${regionIdDb}.`;
+    }
+
+    return created
+      ? `[region_flags] Created region row + cleared '${key}' for ${shardId}/${regionIdDb}.`
+      : `[region_flags] Cleared '${key}' for ${shardId}/${regionIdDb}.`;
+  }
+
+  if (sub === "set") {
+    const key = argv[1];
+    const rawVal = argv.slice(2).join(" ").trim();
+    if (!key || !rawVal) {
+      return "Usage: debug_region_flags set <key> <jsonValue> [--shard <id>] [--region <id>]";
+    }
+
+    const created = await ensureRegionRow();
+
+    const val = parseJsonish(rawVal);
+    const valJson = JSON.stringify(val);
+
+    const res = await db.query(
+      `UPDATE regions
+       SET flags = jsonb_set(COALESCE(flags, '{}'::jsonb), ARRAY[$3], $4::jsonb, true)
+       WHERE shard_id = $1 AND region_id = $2`,
+      [shardId, regionIdDb, key, valJson]
+    );
+
+    await logStaffAction(identity, "region_flags_set", {
+      shardId,
+      regionId: regionIdDb,
+      key,
+      value: val,
+    });
+
+    if (!res.rowCount) {
+      return `[region_flags] Failed to set '${key}' (no row) for ${shardId}/${regionIdDb}.`;
+    }
+
+    return created
+      ? `[region_flags] Created region row + set '${key}'=${valJson} for ${shardId}/${regionIdDb}.`
+      : `[region_flags] Set '${key}'=${valJson} for ${shardId}/${regionIdDb}.`;
+  }
+
+  return "Usage: debug_region_flags [show|set|clear|reset] ...";
+}
+
+
 export async function handleEventGiveAny(
   ctx: any,
   char: any,
@@ -559,8 +800,13 @@ export async function handleDebugHurt(
   const amountRaw = input.args[0];
   const amount = Number(amountRaw ?? "0");
 
+  const school = parseDamageSchool(input.args[1]);
+  if (input.args[1] != null && !school) {
+    return `[debug] Invalid school "${input.args[1]}". Valid: ${DAMAGE_SCHOOLS.join(", ")}`;
+  }
+
   if (!amount || Number.isNaN(amount)) {
-    return "[debug] Usage: debug_hurt <amount>";
+    return "[debug] Usage: debug_hurt <amount> [school]";
   }
 
   const selfEntity = getSelfEntity(ctx);
@@ -585,6 +831,7 @@ export async function handleDebugHurt(
     selfEntity,
     amount,
     char,
+    school,
   );
 
   const actualDamage = Math.max(0, hpBefore - newHp);

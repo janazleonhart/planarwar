@@ -4,6 +4,12 @@
 // Opcode enums
 // -------------------------
 
+//worldcore/shared/messages.ts
+
+// -------------------------
+// Opcode enums
+// -------------------------
+
 export type ClientOpcode =
   | "hello"
   | "join_room"
@@ -73,6 +79,11 @@ export interface WhereAmIResultPayload {
   y: number;
   z: number;
   regionId: string | null;
+  /** Optional DB-backed region metadata (debug/inspection). */
+  regionName?: string;
+  regionKind?: string;
+  /** JSONB flags stored on regions.flags (PvP/event/warfront toggles). */
+  regionFlags?: Record<string, unknown>;
 }
 
 export interface WhereAmIResultMessage {

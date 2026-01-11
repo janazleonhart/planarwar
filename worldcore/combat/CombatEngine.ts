@@ -7,6 +7,8 @@ import { getWeaponSkillLevel, getSpellSchoolLevel } from "./CombatScaling";
 import { Logger } from "../utils/logger";
 import { getSongSchoolSkill, type SongSchoolId } from "../skills/SkillProgression";
 import { computeCombatStatusSnapshot } from "./StatusEffects";
+import type { CombatStatusSnapshot } from "./StatusEffects";
+import { armorMultiplier } from "./Mitigation";
 import { resistMultiplier } from "./Resists";
 
 const log = Logger.scope("COMBAT");
@@ -59,6 +61,10 @@ export interface CombatTarget {
   // Later: armor and resists can be derived from proto / equipment
   armor?: number;
   resist?: Partial<Record<DamageSchool, number>>;
+
+  // Optional: precomputed status snapshot for the defender.
+  // This lets mitigation respect armor/resist buffs/debuffs cleanly.
+  defenderStatus?: CombatStatusSnapshot;
 }
 
 export interface CombatAttackParams {
@@ -80,6 +86,35 @@ export interface CombatResult {
   school: DamageSchool;
   wasCrit: boolean;
   wasGlancing: boolean;
+}
+
+function clampNonNegativeInt(n: number): number {
+  if (!Number.isFinite(n) || n <= 0) return 0;
+  return Math.floor(n);
+}
+
+function applyArmorStatusMods(baseArmor: number, s?: CombatStatusSnapshot): number {
+  if (!s) return clampNonNegativeInt(baseArmor);
+  const flat = typeof s.armorFlat === "number" ? s.armorFlat : 0;
+  const pct = typeof s.armorPct === "number" ? s.armorPct : 0;
+  const afterFlat = baseArmor + flat;
+  const afterPct = afterFlat * (1 + pct);
+  return clampNonNegativeInt(afterPct);
+}
+
+function applyResistStatusMods(
+  baseResist: number,
+  school: DamageSchool,
+  s?: CombatStatusSnapshot,
+): number {
+  if (!s) return clampNonNegativeInt(baseResist);
+  const flat = (s.resistFlat as any)?.[school];
+  const pct = (s.resistPct as any)?.[school];
+  const flatN = typeof flat === "number" ? flat : 0;
+  const pctN = typeof pct === "number" ? pct : 0;
+  const afterFlat = baseResist + flatN;
+  const afterPct = afterFlat * (1 + pctN);
+  return clampNonNegativeInt(afterPct);
 }
 
 /**
@@ -177,7 +212,9 @@ export function computeDamage(
   try {
     const status = computeCombatStatusSnapshot(source.char);
     const global = status.damageDealtPct || 0;
-    const bySchool = (status.damageDealtPctBySchool && (status.damageDealtPctBySchool as any)[school]) || 0;
+    const bySchool =
+      (status.damageDealtPctBySchool &&
+        (status.damageDealtPctBySchool as any)[school]) || 0;
 
     // Additive stacking: global + per-school
     damageDealtPct = global + bySchool;
@@ -186,7 +223,6 @@ export function computeDamage(
   }
 
   if (damageDealtPct) {
-    // 0.10 => +10% damage, -0.10 => -10% damage
     dmg *= 1 + damageDealtPct;
   }
 
@@ -205,19 +241,27 @@ export function computeDamage(
     wasGlancing = true;
   }
 
-  // Apply target armor/resists (very rough v1)
-  const armor = target.armor ?? 0;
-  if (school === "physical" && armor > 0) {
-    const mitigation = Math.min(0.5, armor / (50 + armor)); // caps at 50%
-    dmg *= 1 - mitigation;
+  // --- Mitigation (armor/resists) ---
+  // Defender snapshot (optional) lets armor/resist buffs modify mitigation.
+  const defenderStatus = target.defenderStatus;
+
+  // Armor applies only to physical
+  const armorBase = target.armor ?? 0;
+  const armor = applyArmorStatusMods(armorBase, defenderStatus);
+  if (school === "physical") {
+    dmg *= armorMultiplier(armor);
   }
-  // Resist mitigation v1 (rating -> reduction)
-  // Applies to non-physical schools (physical uses armor) and not to "pure".
+
+  // Resists apply to non-physical, non-pure schools
   if (school !== "physical" && school !== "pure") {
-    const resistRating = target.resist?.[school];
-    if (typeof resistRating === "number" && resistRating > 0) {
-      dmg *= resistMultiplier(resistRating);
-    }
+    const resistRatingBase = target.resist?.[school];
+    const resistRating = applyResistStatusMods(
+      typeof resistRatingBase === "number" ? resistRatingBase : 0,
+      school,
+      defenderStatus,
+    );
+
+    dmg *= resistMultiplier(resistRating);
   }
 
   // Clamp and floor
