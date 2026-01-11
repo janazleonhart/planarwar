@@ -12,7 +12,6 @@ import {
   findTargetPlayerEntityByName,
   isDeadEntity,
   resurrectEntity,
-  applySimpleDamageToPlayer,
   markInCombat,
 } from "./MudHelperFunctions";
 import { getNpcPrototype } from "../npc/NpcTypes";
@@ -24,9 +23,9 @@ import {
 
 import { computeEffectiveAttributes } from "../characters/Stats";
 import { computeDamage, type CombatSource, type CombatTarget } from "../combat/CombatEngine";
+import { applyCombatResultToPlayer } from "../combat/entityCombat";
+import { gatePlayerDamageFromPlayerEntity } from "./MudCombatGates";
 import { DUEL_SERVICE } from "../pvp/DuelService";
-import { canDamagePlayer } from "../pvp/PvpRules";
-import { isPvpEnabledForRegion } from "../world/RegionFlags";
 import {
   getPrimaryPowerResourceForClass,
   trySpendPowerResource,
@@ -224,32 +223,17 @@ export async function castSpellForCharacter(
       let playerGate: PlayerGate | null = null;
 
       if (playerTarget) {
-        const now = Date.now();
-        DUEL_SERVICE.tick(now);
-
-        const ownerSessionId = (playerTarget as any).ownerSessionId as string | undefined;
-        const targetSession = ownerSessionId ? ctx.sessions?.get(ownerSessionId) : null;
-        const targetChar =
-          (targetSession as any)?.character ?? (targetSession as any)?.char ?? null;
-
-        if (!targetChar?.id) {
-          return "That player cannot be targeted right now (no character attached).";
-        }
-
-        const inDuel = DUEL_SERVICE.isActiveBetween(char.id, targetChar.id);
-        const regionPvpEnabled = await isPvpEnabledForRegion(char.shardId, roomId);
-        const gate = canDamagePlayer(char, targetChar as any, inDuel, regionPvpEnabled);
-
-        if (!gate.allowed) {
-          return gate.reason;
+        const gateRes = await gatePlayerDamageFromPlayerEntity(ctx, char, roomId, playerTarget);
+        if (!gateRes.allowed) {
+          return gateRes.reason;
         }
 
         playerGate = {
-          mode: gate.mode,
-          label: gate.label,
-          now,
-          targetChar,
-          targetSession,
+          mode: gateRes.mode,
+          label: gateRes.label,
+          now: gateRes.now,
+          targetChar: gateRes.targetChar,
+          targetSession: gateRes.targetSession,
         };
       }
 
@@ -309,11 +293,10 @@ export async function castSpellForCharacter(
         return typeof e.hp === "number" && e.hp >= 0 ? e.hp : maxHp0;
       })();
 
-      const { newHp, maxHp, killed } = applySimpleDamageToPlayer(
+      const { newHp, maxHp, killed } = applyCombatResultToPlayer(
         playerTarget as any,
-        dmgRoll.damage,
+        dmgRoll,
         gate.targetChar as any,
-        dmgRoll.school,
         { mode: gate.mode },
       );
 

@@ -31,9 +31,8 @@ import { applyProgressionForEvent } from "../MudProgressionHooks";
 import { applyProgressionEvent } from "../../progression/ProgressionCore";
 
 import { applySimpleDamageToPlayer } from "../../combat/entityCombat";
+import { gatePlayerDamageFromPlayerEntity } from "../MudCombatGates";
 import { DUEL_SERVICE } from "../../pvp/DuelService";
-import { canDamagePlayer } from "../../pvp/PvpRules";
-import { isPvpEnabledForRegion } from "../../world/RegionFlags";
 
 import {
   performNpcAttack as performNpcAttackCore,
@@ -158,31 +157,12 @@ export async function handleAttackAction(
   // 2) Try another player – duel-gated PvP (open PvP zones can come later).
   const playerTarget = findTargetPlayerEntityByName(ctx, roomId, targetNameRaw);
   if (playerTarget) {
-    const now = Date.now();
-    DUEL_SERVICE.tick(now);
-
-    const ownerSessionId = (playerTarget as any).ownerSessionId as string | undefined;
-    const targetSession = ownerSessionId ? ctx.sessions?.get(ownerSessionId) : null;
-    const targetChar =
-      (targetSession as any)?.character ?? (targetSession as any)?.char ?? null;
-
-    if (!targetChar?.id) {
-      return "That player cannot be fought right now (no character attached).";
+    const gateRes = await gatePlayerDamageFromPlayerEntity(ctx, char, roomId, playerTarget);
+    if (!gateRes.allowed) {
+      return gateRes.reason;
     }
 
-    // PvP gate:
-    // - Duel always allows PvP damage between the two participants.
-    // - Otherwise, consult RegionFlags for open PvP zones/planes.
-    const inDuel = DUEL_SERVICE.isActiveBetween(char.id, targetChar.id);
-    const regionPvpEnabled = await isPvpEnabledForRegion(char.shardId, roomId);
-    const gate = canDamagePlayer(char, targetChar as any, inDuel, regionPvpEnabled);
-
-    if (!gate.allowed) {
-      return gate.reason;
-    }
-
-    const label = gate.label;
-    const ctxMode = gate.mode;
+    const { now, label, mode: ctxMode, targetChar, targetSession } = gateRes;
 
     const effective = computeEffectiveAttributes(char, ctx.items);
     const dmg = computeTrainingDummyDamage(effective);
@@ -212,7 +192,7 @@ export async function handleAttackAction(
 
     if (killed) {
       // Skeleton rule: duel ends on death.
-      if (gate.mode === "duel") DUEL_SERVICE.endDuelFor(char.id, "death", now);
+      if (ctxMode === "duel") DUEL_SERVICE.endDuelFor(char.id, "death", now);
       return `[${label}] You hit ${playerTarget.name} for ${dmg} damage. You defeat them. (0/${maxHp} HP)`;
     }
 

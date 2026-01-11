@@ -609,7 +609,8 @@
         "isDeadEntity",
         "resurrectEntity",
         "applySimpleDamageToPlayer",
-        "computeNpcMeleeDamage"
+        "computeNpcMeleeDamage",
+        "applyCombatResultToPlayer"
       ],
       "dependsOn": [
         "characters.types",
@@ -622,7 +623,8 @@
         "Shared entity HP helpers and NPC melee damage formula.",
         "Tags entities in combat, handles simple kill/resurrect, applies simple damage with cowardice & status effect multipliers.",
         "On player death, bumps RegionDanger for the character's region to make that area temporarily more dangerous.",
-        "Min-damage rule v1: positive fractional incoming damage becomes at least 1."
+        "Min-damage rule v1: positive fractional incoming damage becomes at least 1.",
+        "Note that DamageContext.incomingModsAlreadyApplied exists and why (prevents double-dip when CombatEngine bakes defender taken mods)"
       ]
     },
     "combat.mitigation": {
@@ -2616,6 +2618,23 @@
         "Supports service keywords: bank/gbank/mail/ah/vendor by walking to nearest service anchor entity.",
         "Includes persistent risk-mode + coward toggle (stored on CharacterState progression.flags) to allow walking through combat with penalties.",
         "Walk interrupted on hit unless risk, and that it mirrors flags to entity fields (_pw_walkto*)"
+      ]
+    },
+    "mud.combatGates": {
+      "kind": "utility",
+      "path": "worldcore/mud/MudCombatGates.ts",
+      "lifecycle": "stateless",
+      "dependsOn": [
+        "pvp.duels",
+        "pvp.rules",
+        "world.regionFlags"
+      ],
+      "functions": [
+        "gatePlayerDamageFromPlayerEntity(ctx:MudContext, attackerChar:CharacterState, roomId:string, playerTargetEntity:any):Promise<PlayerDamageGateResult>"
+      ],
+      "notes": [
+        "Centralized PvP/duel gating for MUD entrypoints (attack, cast, etc.).",
+        "Ticks DuelService time, checks region PvP enablement, then delegates final policy to canDamagePlayer."
       ]
     },
     "mud.context": {
