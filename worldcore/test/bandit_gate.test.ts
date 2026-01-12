@@ -1,5 +1,5 @@
+import test, { after } from "node:test";
 import assert from "node:assert/strict";
-import test from "node:test";
 
 import { EntityManager } from "../core/EntityManager";
 import { SessionManager } from "../core/SessionManager";
@@ -8,6 +8,22 @@ import type { CharacterState } from "../characters/CharacterTypes";
 
 const FIGHT_ROOM = "bandit-fight";
 const HOME_ROOM = "bandit-home";
+
+after(() => {
+  const handles = (process as any)._getActiveHandles?.() ?? [];
+  const requests = (process as any)._getActiveRequests?.() ?? [];
+
+  const summarize = (x: any) => {
+    const name = x?.constructor?.name ?? typeof x;
+    // some handles have extra hints
+    const fd = (x as any)?.fd;
+    const hasRef = typeof (x as any)?.hasRef === "function" ? (x as any).hasRef() : undefined;
+    return { name, fd, hasRef };
+  };
+
+  console.error("\n[TEST DEBUG] Active handles:", handles.map(summarize));
+  console.error("[TEST DEBUG] Active requests:", requests.map(summarize));
+});
 
 function createCharacter(id = "char-bandit"): CharacterState {
   const now = new Date();

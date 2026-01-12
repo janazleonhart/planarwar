@@ -70,7 +70,7 @@ export class SpawnService {
     const { templateId, roomId, regionId, persistent, delayMs } = opts;
 
     if (delayMs && delayMs > 0) {
-      setTimeout(() => {
+      const handle = setTimeout(() => {
         // Fire-and-forget follow-up with delay cleared
         void this.spawnEntity({ ...opts, delayMs: 0 });
       }, delayMs).unref?.();

@@ -9,55 +9,65 @@
  *  - Fail-closed: if DB is unavailable, treat flags as empty.
  *  - Small in-memory cache: flags are expected to change rarely.
  *  - RegionId normalization: code often uses "prime_shard:8,8" while DB stores region_id as "8,8".
+ *
+ * TEST SAFETY:
+ *  - Under node --test, NEVER touch Postgres.
+ *  - Also do NOT import Database.ts at module load (it can create pools/handles depending on version).
  */
 
-import { db } from "../db/Database";
 import { Logger } from "../utils/logger";
 
 const log = Logger.scope("REGION_FLAGS");
 
-export type PvpMode = "open" | "duelOnly" | "warfront";
-export type EventKind = "invasion" | "warfront" | "seasonal" | "story";
+export type RegionPvpMode = "open" | "duelOnly" | "warfront";
+export type RegionEventKind = "invasion" | "warfront" | "seasonal" | "story";
 
 export type RegionFlags = {
+  // Combat rails
+  combatEnabled?: boolean;
+
   // PvP
   pvpEnabled?: boolean;
-  pvpMode?: PvpMode;
+  pvpMode?: RegionPvpMode;
 
-  // Story / seasonal / warfront metadata (optional)
+  // Event metadata
   eventEnabled?: boolean;
   eventId?: string;
-  eventKind?: EventKind;
+  eventKind?: RegionEventKind;
   eventTags?: string[];
 
   // Optional tuning knobs
-  dangerScalar?: number; // multiplies RegionDanger aura strength (default 1)
+  dangerScalar?: number;
 
-  // Warfront id (can be redundant with eventId, but useful for explicit warfront hooks)
+  // Warfront explicit id
   warfrontId?: string;
 
-  // Escape hatch for future structured rules
+  // Escape hatch for future ad-hoc rules
   rules?: Record<string, unknown>;
 };
 
-
-/**
- * Normalize regionId into the DB representation.
- *
- * The simulation commonly uses a combined form like:
- *   "prime_shard:8,8"
- *
- * The DB stores region_id separately (e.g. "8,8").
- */
-export function normalizeRegionIdForDb(regionId: string): string {
-  if (!regionId) return regionId;
-  const idx = regionId.indexOf(":");
-  if (idx === -1) return regionId;
-  return regionId.slice(idx + 1);
-}
-
 type CacheEntry = { flags: RegionFlags; loadedAtMs: number };
 const CACHE = new Map<string, CacheEntry>();
+
+function isNodeTestRuntime(): boolean {
+  return (
+    process.execArgv.includes("--test") ||
+    process.argv.includes("--test") ||
+    process.env.NODE_ENV === "test" ||
+    process.env.WORLDCORE_TEST === "1"
+  );
+}
+
+export function normalizeRegionIdForDb(regionId: string): string {
+  // Accept:
+  // - "prime_shard:8,8" -> "8,8"
+  // - "8,8" -> "8,8"
+  // - "bandit-fight" -> "bandit-fight" (non-grid named regions are fine)
+  const s = String(regionId ?? "").trim();
+  const idx = s.indexOf(":");
+  if (idx >= 0) return s.slice(idx + 1);
+  return s;
+}
 
 function key(shardId: string, dbRegionId: string): string {
   return `${shardId}::${dbRegionId}`;
@@ -67,15 +77,18 @@ function normalizeFlags(input: any): RegionFlags {
   if (!input || typeof input !== "object") return {};
   const f: RegionFlags = {};
 
+  // Combat rails
+  if (typeof input.combatEnabled === "boolean") f.combatEnabled = input.combatEnabled;
+
   // PvP
   if (typeof input.pvpEnabled === "boolean") f.pvpEnabled = input.pvpEnabled;
-  if (input.pvpMode === "open" || input.pvpMode === "duelOnly" || input.pvpMode === "warfront")
+  if (input.pvpMode === "open" || input.pvpMode === "duelOnly" || input.pvpMode === "warfront") {
     f.pvpMode = input.pvpMode;
+  }
 
   // Event metadata
   if (typeof input.eventEnabled === "boolean") f.eventEnabled = input.eventEnabled;
   if (typeof input.eventId === "string") f.eventId = input.eventId;
-
   if (
     input.eventKind === "invasion" ||
     input.eventKind === "warfront" ||
@@ -84,14 +97,12 @@ function normalizeFlags(input: any): RegionFlags {
   ) {
     f.eventKind = input.eventKind;
   }
-
   if (Array.isArray(input.eventTags)) {
     f.eventTags = input.eventTags.filter((x: any) => typeof x === "string");
   }
 
   // Optional tuning knobs
   if (typeof input.dangerScalar === "number" && Number.isFinite(input.dangerScalar)) {
-    // Clamp to sane bounds; downstream also clamps the resulting damageTakenPct.
     const clamped = Math.max(0.1, Math.min(10, input.dangerScalar));
     f.dangerScalar = clamped;
   }
@@ -107,14 +118,15 @@ function normalizeFlags(input: any): RegionFlags {
   return f;
 }
 
-
 export async function getRegionFlags(
   shardId: string,
   regionId: string,
   opts?: { bypassCache?: boolean; ttlMs?: number }
 ): Promise<RegionFlags> {
-  const ttlMs = opts?.ttlMs ?? 60_000;
+  // 🚫 Unit tests must never touch DB.
+  if (isNodeTestRuntime()) return {};
 
+  const ttlMs = opts?.ttlMs ?? 60_000;
   const dbRegionId = normalizeRegionIdForDb(regionId);
   const k = key(shardId, dbRegionId);
 
@@ -125,12 +137,15 @@ export async function getRegionFlags(
   }
 
   try {
+    // Lazy import so DB module is never loaded unless truly needed.
+    const { db } = await import("../db/Database");
+
     const res = await db.query(
       `SELECT flags FROM regions WHERE shard_id = $1 AND region_id = $2`,
       [shardId, dbRegionId]
     );
 
-    const flags = normalizeFlags(res.rows?.[0]?.flags ?? {});
+    const flags = normalizeFlags((res as any).rows?.[0]?.flags ?? {});
     CACHE.set(k, { flags, loadedAtMs: now });
     return flags;
   } catch (err: any) {
@@ -146,6 +161,12 @@ export async function getRegionFlags(
 export async function isPvpEnabledForRegion(shardId: string, regionId: string): Promise<boolean> {
   const flags = await getRegionFlags(shardId, regionId);
   return !!flags.pvpEnabled;
+}
+
+export async function isCombatEnabledForRegion(shardId: string, regionId: string): Promise<boolean> {
+  const flags = await getRegionFlags(shardId, regionId);
+  // Default allow if unset; only explicit false disables combat.
+  return flags.combatEnabled !== false;
 }
 
 export async function isEventEnabledForRegion(shardId: string, regionId: string): Promise<boolean> {

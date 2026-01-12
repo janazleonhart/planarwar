@@ -1,0 +1,1 @@
+Run tests with WORLDCORE_TEST=1 to avoid DB-backed RegionFlags during unit tests

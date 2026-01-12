@@ -5,10 +5,10 @@ import type { Entity } from "../shared/Entity";
 import { Logger } from "../utils/logger";
 import { getNpcPrototype } from "../npc/NpcTypes";
 import {
-  isServiceProtectedEntity,
   isServiceProtectedNpcProto,
   serviceProtectedCombatLine,
 } from "./ServiceProtection";
+import { serviceProtectionGate, canDamage } from "./DamagePolicy";
 import {
   markInCombat,
   isDeadEntity,
@@ -84,10 +84,35 @@ export async function performNpcAttack(
   npc: Entity,
   opts: NpcAttackOptions = {},
 ): Promise<string> {
+  // --- Damage policy: prevent bypassing region combatEnabled / service protection rules. ---
+  // (Contract test asserts NPC combat consults DamagePolicy.canDamage.)
+  try {
+    const regionId =
+      ((selfEntity as any)?.roomId as string | undefined) ??
+      ((npc as any)?.roomId as string | undefined);
+
+    // If regionId is missing for some reason, allow combat (best-effort).
+    if (regionId) {
+      const policy = await canDamage(
+        { char },
+        { entity: npc },
+        { shardId: char.shardId, regionId },
+      );
+
+      if (policy && policy.allowed === false) {
+        return policy.reason ?? "You cannot attack here.";
+      }
+    }
+  } catch {
+    // Best-effort: never let policy lookup crash combat.
+    // (In tests, WORLDCORE_TEST=1 disables DB-backed region flags anyway.)
+  }
+
   // --- Service-provider protection: bankers/auctioneers/mailboxes etc are immune. ---
   try {
-    if (isServiceProtectedEntity(npc)) {
-      return serviceProtectedCombatLine(npc.name);
+    const svc = serviceProtectionGate(npc);
+    if (svc && !svc.allowed) {
+      return svc.reason;
     }
 
     if (ctx.npcs) {
@@ -269,11 +294,7 @@ export async function performNpcAttack(
     const userId = ctx.session.identity?.userId;
     if (userId) {
       try {
-        const updated = await ctx.characters.grantXp(
-          userId,
-          char.id,
-          xpReward,
-        );
+        const updated = await ctx.characters.grantXp(userId, char.id, xpReward);
         if (updated) {
           ctx.session.character = updated;
           char.level = updated.level;
@@ -335,9 +356,7 @@ Extra items were delivered to your mailbox.`,
         lootLines.push(describeLootLine(entry.itemId, added, tpl.name));
       }
       if (mailed > 0) {
-        lootLines.push(
-          describeLootLine(entry.itemId, mailed, tpl.name) + " (via mail)",
-        );
+        lootLines.push(describeLootLine(entry.itemId, mailed, tpl.name) + " (via mail)");
       }
     }
 
@@ -378,6 +397,13 @@ export function applySimpleNpcCounterAttack(
   const p: any = player;
   const n: any = npc;
 
+  // Protected/invulnerable targets should not take counter-attack damage.
+  // (Prevents “hit for X” messages when the target is immune.)
+  const svc = serviceProtectionGate(player);
+  if (svc && !svc.allowed) {
+    return null;
+  }
+
   if (isDeadEntity(p)) {
     return null;
   }
@@ -387,8 +413,7 @@ export function applySimpleNpcCounterAttack(
     if (ctx.npcs) {
       const st = ctx.npcs.getNpcStateByEntityId(npc.id);
       if (st) {
-        const proto =
-          getNpcPrototype(st.templateId) ?? getNpcPrototype(st.protoId);
+        const proto = getNpcPrototype(st.templateId) ?? getNpcPrototype(st.protoId);
         const behavior = proto?.behavior ?? "aggressive";
         const tags = proto?.tags ?? [];
         const isCowardProto =
@@ -493,11 +518,7 @@ export function scheduleNpcCorpseAndRespawn(
   if (isResource) {
     // Optional flavor text
     setTimeout(() => {
-      announceSpawnToRoom(
-        ctx,
-        roomId,
-        `Fresh ore juts from the ground nearby.`,
-      );
+      announceSpawnToRoom(ctx, roomId, `Fresh ore juts from the ground nearby.`);
     }, respawnMs);
     return;
   }
@@ -525,8 +546,7 @@ export function scheduleNpcCorpseAndRespawn(
       room.broadcast("entity_spawn", ent);
     }
 
-    const proto2 =
-      getNpcPrototype(templateId) ?? getNpcPrototype(st.protoId);
+    const proto2 = getNpcPrototype(templateId) ?? getNpcPrototype(st.protoId);
     const npcName = (ent as any)?.name ?? proto2?.name ?? "Something";
     announceSpawnToRoom(ctx, roomId, `${npcName} returns.`);
   }, respawnMs);

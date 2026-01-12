@@ -578,6 +578,24 @@
         "Provides helpers to query remaining time and atomically check+start cooldowns with user-facing error strings."
       ]
     },
+    "combat.damagePolicy": {
+      "kind": "utility",
+      "path": "worldcore/combat/DamagePolicy.ts",
+      "functions": [
+        "serviceProtectionGate",
+        "resolvePlayerVsPlayerPolicy",
+        "canDamage"
+      ],
+      "dependsOn": [
+        "combat.serviceProtection",
+        "pvp.rules",
+        "world.regionFlags"
+      ],
+      "notes": [
+        "Centralized 'can I damage this target?' policy layer.",
+        "v1: blocks damage to protected service NPCs; applies fail-closed PvP gating using RegionFlags + PvpRules; defaults to PvE allow otherwise."
+      ]
+    },
     "combat.engine": {
       "kind": "service",
       "path": "worldcore/combat/CombatEngine.ts",
@@ -667,7 +685,8 @@
         "shared.entities",
         "skills.progression",
         "utils.logger",
-        "utils.random"
+        "utils.random",
+        "combat.damagePolicy"
       ],
       "notes": [
         "High-level NPC attack executor and death handling used by v1 brains.",
@@ -2917,7 +2936,8 @@
         "ai.localSimpleBrain",
         "combat.entityCombat",
         "classes.definitions",
-        "utils.logger"
+        "utils.logger",
+        "combat.damagePolicy"
       ],
       "notes": [
         "Owns runtime NPC state, per-room maps, threat tables, and bridges EntityManager ↔ AI brain ↔ sessions/chat.",
@@ -3205,6 +3225,21 @@
         "Ephemeral state only (resets on server restart).",
         "Requests expire quickly to avoid stale challenges.",
         "Used by MudCommandHandler (duel/accept/decline/yield) and MudCombatActions (duel-gated player attack)."
+      ]
+    },
+    "pvp.rules": {
+      "kind": "utility",
+      "path": "worldcore/pvp/PvpRules.ts",
+      "functions": [
+        "areAllies",
+        "canDamagePlayer",
+        "resolvePlayerDamageMode"
+      ],
+      "dependsOn": [
+        "characters.types"
+      ],
+      "notes": [
+        "Centralized PvP gating rules (v1). Fail-closed by default; duel allows; open PvP region allows unless allies (same guild)."
       ]
     },
     "quests.engine": {
@@ -4348,6 +4383,30 @@
         "Tracks per-region dynamic danger score and effective tier (1–5) based on base distance ring + recent activity.",
         "Applies exponential-style decay over time so regions cool down naturally.",
         "Used by cowardice, Region Peril aura, debug_region_danger, and debug_bump_region_danger."
+      ]
+    },
+    "world.regionFlags": {
+      "kind": "service",
+      "path": "worldcore/world/RegionFlags.ts",
+      "functions": [
+        "normalizeRegionIdForDb",
+        "getRegionFlags",
+        "isPvpEnabledForRegion",
+        "isCombatEnabledForRegion",
+        "isEventEnabledForRegion",
+        "getDangerScalarForRegion",
+        "clearRegionFlagsCache",
+        "setRegionFlagsTestOverrides(overrides | null)"
+        
+      ],
+      "dependsOn": [
+        "characters.types",
+        "characters.db",
+        "utils.logger"
+      ],
+      "notes": [
+        "DB-backed region flags lookup (jsonb) with cache.",
+        "combatEnabled defaults to true when unset; safe hubs can set combatEnabled=false."
       ]
     },
     "world.respawns": {

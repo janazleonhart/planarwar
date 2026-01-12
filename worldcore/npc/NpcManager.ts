@@ -702,7 +702,9 @@ export class NpcManager {
         continue;
       }
 
-      const decision = this.brain.decide(perception, deltaMs);
+      let decision = this.brain.decide(perception, deltaMs);
+      const forced = this.fallbackAttackDecision(perception, st, decision);
+      if (forced) decision = forced;
       if (!decision) continue;
 
       switch (decision.kind) {
@@ -744,6 +746,60 @@ export class NpcManager {
 
   // -------------------------------------------------------------------------
   // Internal AI helpers
+  /**
+   * Fallback: if the AI brain returns no decision (or only a "say"/idle),
+   * we still want obvious hostile reactions to happen immediately.
+   *
+   * - Guards retaliate on **severe** recent crime.
+   * - Aggressive/pack mobs swing at the current threat leader.
+   *
+   * This is intentionally conservative: it only triggers for behaviors that are allowed to attack,
+   * and only when there's a clear target in-room.
+   */
+  private fallbackAttackDecision(
+    perception: NpcPerception,
+    st: NpcRuntimeState,
+    currentDecision: any | null | undefined,
+  ): { kind: "attack_entity"; targetEntityId: string } | null {
+    if (!perception.alive) return null;
+
+    const behavior = perception.behavior;
+    if (behavior !== "aggressive" && behavior !== "guard") return null;
+
+    const kind = currentDecision?.kind;
+    if (kind === "attack_entity" || kind === "flee" || kind === "gate_home") return null;
+
+    const now = Date.now();
+
+    // Prevent rapid-fire fallback swings (brain may be in a think/cooldown window).
+    const last = (st as any).lastFallbackAttackAt ?? 0;
+    const cooldownMs = 800;
+    if (last && now - last < cooldownMs) return null;
+
+    if (behavior === "guard") {
+      const offender = perception.playersInRoom.find((p) => {
+        const until = typeof (p as any).recentCrimeUntil === "number" ? (p as any).recentCrimeUntil : 0;
+        const sev = (p as any).recentCrimeSeverity;
+        return until > now && sev === "severe";
+      });
+
+      if (!offender?.entityId) return null;
+
+      (st as any).lastFallbackAttackAt = now;
+      return { kind: "attack_entity", targetEntityId: offender.entityId };
+    }
+
+    // Aggressive/pack mobs: attack the current threat leader if present in the room.
+    const targetId = (perception as any).lastAttackerId;
+    if (typeof targetId !== "string" || !targetId) return null;
+
+    const present = perception.playersInRoom.some((p) => p.entityId === targetId);
+    if (!present) return null;
+
+    (st as any).lastFallbackAttackAt = now;
+    return { kind: "attack_entity", targetEntityId: targetId };
+  }
+
   // -------------------------------------------------------------------------
 
   private handleFleeDecision(

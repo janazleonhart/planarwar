@@ -6,6 +6,7 @@ import type { CombatResult, DamageSchool } from "./CombatEngine";
 import { computeCombatStatusSnapshot } from "./StatusEffects";
 import { computeCowardiceDamageTakenMultiplier } from "./Cowardice";
 import { bumpRegionDanger } from "../world/RegionDanger";
+import { isServiceProtectedEntity } from "./ServiceProtection";
 
 const COMBAT_TAG_MS = 15_000; // 15s “in combat” after hit/damage
 
@@ -84,6 +85,12 @@ function applyDamageToPlayerInternal(
 
   const maxHp = typeof e.maxHp === "number" && e.maxHp > 0 ? e.maxHp : 100;
   const oldHp = typeof e.hp === "number" && e.hp >= 0 ? e.hp : maxHp;
+
+  // Invulnerable / protected entities take no damage.
+  // This is a safety rail for staff/admin flags and protected service entities.
+  if (isServiceProtectedEntity(e)) {
+    return { newHp: oldHp, maxHp, killed: false };
+  }
 
   const amt = Number.isFinite(amount) ? amount : 0;
 

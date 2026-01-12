@@ -1,15 +1,15 @@
 // worldcore/mud/MudCombatGates.ts
 //
 // Centralized combat permission / gating for MUD actions.
-// This keeps PvP / duel checks consistent across commands (cast, attack, etc.)
-// and prevents “rules drift” where each file invents its own logic.
+//
+// This file is the ONLY place in worldcore/mud that should decide PvP/duel permissions.
+// (A contract test enforces this.)
 
 import type { MudContext } from "./MudContext";
 import type { CharacterState } from "../characters/CharacterTypes";
 
 import { DUEL_SERVICE } from "../pvp/DuelService";
-import { canDamagePlayer } from "../pvp/PvpRules";
-import { isPvpEnabledForRegion } from "../world/RegionFlags";
+import { resolvePlayerVsPlayerPolicy } from "../combat/DamagePolicy";
 
 export type PlayerDamageGateResult =
   | {
@@ -28,8 +28,7 @@ export type PlayerDamageGateResult =
  * Expectations:
  * - playerTargetEntity.ownerSessionId must exist to resolve the target session.
  * - duel state is ticked here to keep DUEL_SERVICE time-consistent.
- * - region PvP enablement is checked here (fail-closed).
- * - PvpRules.canDamagePlayer decides final policy (crime flags, duel override, etc).
+ * - PvP rules are resolved via combat/DamagePolicy (which consults RegionFlags + PvpRules).
  */
 export async function gatePlayerDamageFromPlayerEntity(
   ctx: MudContext,
@@ -41,9 +40,11 @@ export async function gatePlayerDamageFromPlayerEntity(
   DUEL_SERVICE.tick(now);
 
   const ownerSessionId = (playerTargetEntity as any).ownerSessionId as string | undefined;
-  const targetSession = ownerSessionId ? (ctx.sessions as any)?.get?.(ownerSessionId) ?? null : null;
-  const targetChar =
-    (targetSession as any)?.character ?? (targetSession as any)?.char ?? null;
+  const targetSession = ownerSessionId
+    ? (ctx.sessions as any)?.get?.(ownerSessionId) ?? null
+    : null;
+
+  const targetChar = (targetSession as any)?.character ?? (targetSession as any)?.char ?? null;
 
   if (!targetChar?.id) {
     return {
@@ -53,9 +54,12 @@ export async function gatePlayerDamageFromPlayerEntity(
   }
 
   const inDuel = DUEL_SERVICE.isActiveBetween(attackerChar.id, targetChar.id);
-  const regionPvpEnabled = await isPvpEnabledForRegion(attackerChar.shardId, roomId);
 
-  const gate = canDamagePlayer(attackerChar, targetChar as any, inDuel, regionPvpEnabled);
+  const gate = await resolvePlayerVsPlayerPolicy(attackerChar, targetChar as any, {
+    shardId: attackerChar.shardId,
+    regionId: roomId,
+    inDuel,
+  });
 
   if (!gate.allowed) {
     return { allowed: false, reason: gate.reason };
