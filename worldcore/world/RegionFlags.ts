@@ -1,24 +1,27 @@
 // worldcore/world/RegionFlags.ts
 /**
- * RegionFlags is a small DB-backed rules lookup for a region.
+ * RegionFlags is a small rules lookup for a region.
  *
- * Source of truth:
- *  - Postgres table: regions.flags (jsonb)
+ * Source of truth (runtime):
+ * - Postgres table: regions.flags (jsonb)
  *
  * Design goals:
- *  - Fail-closed: if DB is unavailable, treat flags as empty.
- *  - Small in-memory cache: flags are expected to change rarely.
- *  - RegionId normalization: code often uses "prime_shard:8,8" while DB stores region_id as "8,8".
+ * - Safe in unit tests: never touch DB/Redis
+ * - Lazy DB import: Database.ts must not load at module import time
+ * - Small in-memory cache: flags change rarely
+ * - RegionId normalization: code often uses "prime_shard:8,8" while DB stores "8,8"
  *
- * TEST SAFETY:
- *  - Under node --test, NEVER touch Postgres.
- *  - Also do NOT import Database.ts at module load (it can create pools/handles depending on version).
+ * Lane B:
+ * - Injectable provider (DB vs static) so tests can stub safely without Postgres.
  */
 
 import { Logger } from "../utils/logger";
 
 const log = Logger.scope("REGION_FLAGS");
 
+// -----------------------------
+// Types
+// -----------------------------
 export type RegionPvpMode = "open" | "duelOnly" | "warfront";
 export type RegionEventKind = "invasion" | "warfront" | "seasonal" | "story";
 
@@ -43,12 +46,24 @@ export type RegionFlags = {
   warfrontId?: string;
 
   // Escape hatch for future ad-hoc rules
-  rules?: Record<string, unknown>;
+  rules?: Record<string, any>;
 };
 
-type CacheEntry = { flags: RegionFlags; loadedAtMs: number };
-const CACHE = new Map<string, CacheEntry>();
+export type RegionFlagsOverrides = Record<string, Record<string, RegionFlags>>;
+// shape: { [shardId]: { [regionId]: flags } }
 
+export interface RegionFlagsProvider {
+  /**
+   * Fetch flags for a region.
+   * The regionId provided here is already normalized for DB use (no shard prefix).
+   * Implementations can fail/throw; RegionFlags will fail-closed to {}.
+   */
+  getFlags(shardId: string, dbRegionId: string): Promise<unknown>;
+}
+
+// -----------------------------
+// Runtime detection
+// -----------------------------
 function isNodeTestRuntime(): boolean {
   return (
     process.execArgv.includes("--test") ||
@@ -58,11 +73,17 @@ function isNodeTestRuntime(): boolean {
   );
 }
 
+// -----------------------------
+// Normalization & cache
+// -----------------------------
+type CacheEntry = { flags: RegionFlags; loadedAtMs: number };
+const CACHE = new Map<string, CacheEntry>();
+
 export function normalizeRegionIdForDb(regionId: string): string {
   // Accept:
   // - "prime_shard:8,8" -> "8,8"
   // - "8,8" -> "8,8"
-  // - "bandit-fight" -> "bandit-fight" (non-grid named regions are fine)
+  // - "bandit-fight" -> "bandit-fight" (named regions)
   const s = String(regionId ?? "").trim();
   const idx = s.indexOf(":");
   if (idx >= 0) return s.slice(idx + 1);
@@ -75,6 +96,7 @@ function key(shardId: string, dbRegionId: string): string {
 
 function normalizeFlags(input: any): RegionFlags {
   if (!input || typeof input !== "object") return {};
+
   const f: RegionFlags = {};
 
   // Combat rails
@@ -89,6 +111,7 @@ function normalizeFlags(input: any): RegionFlags {
   // Event metadata
   if (typeof input.eventEnabled === "boolean") f.eventEnabled = input.eventEnabled;
   if (typeof input.eventId === "string") f.eventId = input.eventId;
+
   if (
     input.eventKind === "invasion" ||
     input.eventKind === "warfront" ||
@@ -97,6 +120,7 @@ function normalizeFlags(input: any): RegionFlags {
   ) {
     f.eventKind = input.eventKind;
   }
+
   if (Array.isArray(input.eventTags)) {
     f.eventTags = input.eventTags.filter((x: any) => typeof x === "string");
   }
@@ -112,43 +136,120 @@ function normalizeFlags(input: any): RegionFlags {
 
   // Escape hatch
   if (input.rules && typeof input.rules === "object") {
-    f.rules = input.rules as Record<string, unknown>;
+    f.rules = input.rules as Record<string, any>;
   }
 
   return f;
 }
 
+export function clearRegionFlagsCache(): void {
+  CACHE.clear();
+}
+
+// -----------------------------
+// Providers
+// -----------------------------
+class DbRegionFlagsProvider implements RegionFlagsProvider {
+  async getFlags(shardId: string, dbRegionId: string): Promise<unknown> {
+    // Lazy import so Database.ts is never loaded unless truly needed.
+    const { db } = await import("../db/Database");
+
+    const res = await db.query(
+      `SELECT flags
+         FROM regions
+        WHERE shard_id = $1 AND region_id = $2`,
+      [shardId, dbRegionId],
+    );
+
+    return (res as any).rows?.[0]?.flags ?? {};
+  }
+}
+
+let TEST_OVERRIDES: RegionFlagsOverrides | null = null;
+
+class StaticRegionFlagsProvider implements RegionFlagsProvider {
+  async getFlags(shardId: string, dbRegionId: string): Promise<unknown> {
+    if (!TEST_OVERRIDES) return {};
+    const byShard = TEST_OVERRIDES[shardId];
+    if (!byShard) return {};
+
+    // allow override keys to be either "prime_shard:0,0" or "0,0"
+    const direct = byShard[dbRegionId];
+    if (direct) return direct;
+
+    // If someone stored with shard prefix by mistake, still try to find it.
+    const withShardPrefix = byShard[`${shardId}:${dbRegionId}`];
+    if (withShardPrefix) return withShardPrefix;
+
+    return {};
+  }
+}
+
+const DB_PROVIDER = new DbRegionFlagsProvider();
+const STATIC_PROVIDER = new StaticRegionFlagsProvider();
+
+let OVERRIDE_PROVIDER: RegionFlagsProvider | null = null;
+
+function getActiveProvider(): RegionFlagsProvider {
+  if (OVERRIDE_PROVIDER) return OVERRIDE_PROVIDER;
+  return isNodeTestRuntime() ? STATIC_PROVIDER : DB_PROVIDER;
+}
+
+/**
+ * Force a provider (primarily for tests or special tooling).
+ * Pass null to restore default provider selection.
+ */
+export function setRegionFlagsProvider(provider: RegionFlagsProvider | null): void {
+  OVERRIDE_PROVIDER = provider;
+  clearRegionFlagsCache();
+}
+
+/**
+ * In-memory overrides (unit tests / offline dev).
+ * Shape: { [shardId]: { [regionId]: flags } }
+ *
+ * NOTE: Setting overrides clears cache for determinism.
+ */
+export function setRegionFlagsTestOverrides(overrides: RegionFlagsOverrides | null): void {
+  TEST_OVERRIDES = overrides;
+  clearRegionFlagsCache();
+}
+
+// -----------------------------
+// Public API
+// -----------------------------
 export async function getRegionFlags(
   shardId: string,
   regionId: string,
-  opts?: { bypassCache?: boolean; ttlMs?: number }
+  opts?: { bypassCache?: boolean; ttlMs?: number },
 ): Promise<RegionFlags> {
-  // 🚫 Unit tests must never touch DB.
-  if (isNodeTestRuntime()) return {};
-
   const ttlMs = opts?.ttlMs ?? 60_000;
   const dbRegionId = normalizeRegionIdForDb(regionId);
   const k = key(shardId, dbRegionId);
-
   const now = Date.now();
+
   const cached = CACHE.get(k);
   if (!opts?.bypassCache && cached && now - cached.loadedAtMs <= ttlMs) {
     return cached.flags;
   }
 
   try {
-    // Lazy import so DB module is never loaded unless truly needed.
-    const { db } = await import("../db/Database");
+    const provider = getActiveProvider();
 
-    const res = await db.query(
-      `SELECT flags FROM regions WHERE shard_id = $1 AND region_id = $2`,
-      [shardId, dbRegionId]
-    );
+    // If someone tries to force DB provider in unit tests, fail fast.
+    if (isNodeTestRuntime() && provider === DB_PROVIDER) {
+      throw new Error(
+        "DbRegionFlagsProvider is not allowed under WORLDCORE_TEST=1 / node --test. Use setRegionFlagsTestOverrides(...) or a static provider.",
+      );
+    }
 
-    const flags = normalizeFlags((res as any).rows?.[0]?.flags ?? {});
+    const raw = await provider.getFlags(shardId, dbRegionId);
+    const flags = normalizeFlags(raw);
+
     CACHE.set(k, { flags, loadedAtMs: now });
     return flags;
   } catch (err: any) {
+    // Fail-closed: empty flags.
     log.warn("Failed to load region flags; defaulting to {}", {
       shardId,
       dbRegionId,
@@ -178,8 +279,4 @@ export async function getDangerScalarForRegion(shardId: string, regionId: string
   const flags = await getRegionFlags(shardId, regionId);
   const s = flags.dangerScalar;
   return typeof s === "number" && Number.isFinite(s) && s > 0 ? s : 1;
-}
-
-export function clearRegionFlagsCache(): void {
-  CACHE.clear();
 }
