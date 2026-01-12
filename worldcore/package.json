@@ -6,7 +6,7 @@
   "types": "../dist/worldcore/index.d.ts",
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "test": "npm run build && WORLDCORE_TEST=1 node --test ../dist/worldcore/test/*.js",
+    "test": "npm run build && node -e \"process.env.WORLDCORE_TEST='1'; const { spawnSync } = require('node:child_process'); const r = spawnSync(process.execPath, ['--test','../dist/worldcore/test'], { stdio: 'inherit', env: process.env }); process.exit(r.status ?? 1);\"",
     "sim:brain": "npm run build && node ../dist/worldcore/tools/simBrain.js"
   },
   "dependencies": {
