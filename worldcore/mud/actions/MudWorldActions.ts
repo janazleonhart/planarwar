@@ -62,13 +62,56 @@ function suggestCommandForTag(tag: string): string {
   }
 }
 
+function gatherFlavor(nodeTag: string): string {
+  switch (nodeTag) {
+    case "resource_ore":
+      return "You swing your pick into";
+    case "resource_stone":
+      return "You crack stone from";
+    case "resource_wood":
+      return "You chop into";
+    case "resource_herb":
+      return "You carefully harvest from";
+    case "resource_fish":
+      return "You cast a line into";
+    case "resource_grain":
+      return "You gather from";
+    case "resource_mana":
+      return "You siphon motes from";
+    default:
+      return "You work at";
+  }
+}
+
+function respawnSecondsForNodeTag(nodeTag: string): number {
+  // Tunable knobs. Node type should determine respawn, not the command used.
+  switch (nodeTag) {
+    case "resource_fish":
+      return 75;
+    case "resource_herb":
+      return 90;
+    case "resource_ore":
+      return 120;
+    case "resource_wood":
+      return 120;
+    case "resource_grain":
+      return 120;
+    case "resource_stone":
+      return 140;
+    case "resource_mana":
+      return 150;
+    default:
+      return 120;
+  }
+}
+
 /**
  * Fallback generic resource loot for nodes that don't yet have
  * explicit proto.loot definitions.
  *
  * IMPORTANT:
- * This must be keyed off the *node type* (nodeTag), not the command used.
- * Otherwise content mistakes (or copy/paste command bugs) can create nonsense loot.
+ * This is keyed off the *node type* (nodeTag), not the command used.
+ * That prevents content mistakes from turning fish into ore loot.
  */
 export function applyGenericResourceLoot(
   ctx: MudContext,
@@ -101,8 +144,6 @@ export function applyGenericResourceLoot(
       itemId = "grain_wheat";
       break;
     case "resource_mana":
-      // Best-effort: if you have a real item for mana clusters, this should exist.
-      // If not, we simply skip fallback loot (and log), rather than paying out ore.
       itemId = "mana_spark_arcane";
       break;
     default:
@@ -225,6 +266,7 @@ export async function handleGatherAction(
   }
 
   // Step 4: enforce “right command for right resource type”.
+  // IMPORTANT: this must occur before any damage is applied.
   if (!allowed.includes(nodeTag)) {
     return `That isn't compatible with '${suggestCommandForTag(
       allowed[0]
@@ -247,7 +289,7 @@ export async function handleGatherAction(
     proto.id
   );
 
-  // Chip away one HP/charge
+  // Consume one “charge”
   const newHp = npcs.applyDamage(target.id, 1);
   if (newHp === null) return "You can't gather that.";
 
@@ -275,11 +317,12 @@ export async function handleGatherAction(
       }
 
       const res = ctx.items.addToInventory(char.inventory, tpl.id, qty);
-      if (res.added > 0)
+      if (res.added > 0) {
         lootLines.push(describeLootLine(tpl.id, res.added, tpl.name));
+      }
     }
   } else {
-    // Fallback: keyed off node type (nodeTag), not the command.
+    // Fallback: keyed off node type, not the command.
     applyGenericResourceLoot(ctx, char, gatheringKind, nodeTag, lootLines);
   }
 
@@ -293,22 +336,14 @@ export async function handleGatherAction(
     }
   }
 
-  let line = `[harvest] You chip away at ${(target as any).name}.`;
+  const name = (target as any).name;
+  let line = `[harvest] ${gatherFlavor(nodeTag)} ${name}.`;
   if (lootLines.length > 0) line += ` You gather ${lootLines.join(", ")}.`;
 
   if (newHp <= 0) {
-    line += ` The ${(target as any).name} is exhausted.`;
+    line += ` The ${name} is exhausted.`;
 
-    const respawnSecondsByKind: Record<string, number> = {
-      mining: 120,
-      herbalism: 90,
-      logging: 120,
-      quarrying: 140,
-      fishing: 75,
-      farming: 120,
-    };
-
-    const respawnSeconds = respawnSecondsByKind[gatheringKind] ?? 120;
+    const respawnSeconds = respawnSecondsForNodeTag(nodeTag);
 
     // Personal resource node depletion uses spawnPointId timers.
     if (target.type === "node" && typeof (target as any).spawnPointId === "number") {
@@ -346,8 +381,9 @@ export async function handleGatherAction(
     }
   }
 
-  if (progressionSnippets.length > 0)
+  if (progressionSnippets.length > 0) {
     line += " " + progressionSnippets.join(" ");
+  }
 
   return line;
 }
