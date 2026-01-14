@@ -59,6 +59,10 @@ import { handleAutoAttackCommand } from "./combat/autoAttackCommand";
 // Gathering
 import { handlePickingCommand } from "./gathering/pickingCommand";
 import { handleMiningCommand } from "./gathering/miningCommand";
+import { handleFishingCommand } from "./gathering/fishingCommand";
+import { handleFarmingCommand } from "./gathering/farmingCommand";
+import { handleLumberingCommand } from "./gathering/lumberingCommand";
+import { handleQuarryingCommand } from "./gathering/quarryingCommand";
 
 // Progression
 import {
@@ -215,7 +219,11 @@ export const COMMANDS: Record<string, MudCommandHandlerFn> = {
 
   // Gathering
   pick: handlePickingCommand,
-  mine: handleMiningCommand,
+  mine: handleMiningCommand,  
+  farm: handleFarmingCommand,  
+  fish: handleFishingCommand,
+  lumber: handleLumberingCommand,
+  quarry: handleQuarryingCommand,
 
   // Progression
   quests: async (ctx, char) => handleQuestsCommand(ctx, char),

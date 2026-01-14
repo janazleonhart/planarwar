@@ -8,7 +8,8 @@ export async function handleFishingCommand(
   input: { cmd: string; args: string[]; parts: string[]; world?: any }
 ): Promise<string> {
   const targetNameRaw = input.args.join(" ").trim();
-  if (!targetNameRaw) return "Usage: mine <name|#|handle.#> (e.g. 'mine vein.1' or 'mine 2')";
+  if (!targetNameRaw)
+    return "Usage: fish <target> (e.g. 'fish pool.1' or 'fish 2')";
 
-  return handleGatherAction(ctx, char, targetNameRaw, "mining", "resource_ore");
+  return handleGatherAction(ctx, char, targetNameRaw, "fishing", "resource_fish");
 }

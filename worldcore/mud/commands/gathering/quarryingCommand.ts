@@ -8,7 +8,8 @@ export async function handleQuarryingCommand(
   input: { cmd: string; args: string[]; parts: string[]; world?: any }
 ): Promise<string> {
   const targetNameRaw = input.args.join(" ").trim();
-  if (!targetNameRaw) return "Usage: mine <name|#|handle.#> (e.g. 'mine vein.1' or 'mine 2')";
+  if (!targetNameRaw)
+    return "Usage: quarry <target> (e.g. 'quarry outcrop.1' or 'quarry 2')";
 
-  return handleGatherAction(ctx, char, targetNameRaw, "mining", "resource_ore");
+  return handleGatherAction(ctx, char, targetNameRaw, "quarrying", "resource_stone");
 }

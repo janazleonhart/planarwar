@@ -17,59 +17,103 @@ import { scheduleNpcCorpseAndRespawn } from "./MudCombatActions";
 
 const log = Logger.scope("MUD");
 
+const RESOURCE_TAGS = new Set([
+  "resource_ore",
+  "resource_herb",
+  "resource_wood",
+  "resource_stone",
+  "resource_fish",
+  "resource_grain",
+  "resource_mana",
+]);
+
+function asArray<T>(v: T | T[]): T[] {
+  return Array.isArray(v) ? v : [v];
+}
+
+function expectedResourceTagFromProtoId(protoId: string): string | null {
+  if (protoId.startsWith("ore_")) return "resource_ore";
+  if (protoId.startsWith("herb_")) return "resource_herb";
+  if (protoId.startsWith("wood_")) return "resource_wood";
+  if (protoId.startsWith("stone_")) return "resource_stone";
+  if (protoId.startsWith("fish_")) return "resource_fish";
+  if (protoId.startsWith("grain_")) return "resource_grain";
+  if (protoId.startsWith("mana_")) return "resource_mana";
+  return null;
+}
+
+function suggestCommandForTag(tag: string): string {
+  switch (tag) {
+    case "resource_ore":
+    case "resource_mana":
+      return "mine";
+    case "resource_herb":
+      return "pick";
+    case "resource_wood":
+      return "log";
+    case "resource_stone":
+      return "quarry";
+    case "resource_fish":
+      return "fish";
+    case "resource_grain":
+      return "farm";
+    default:
+      return "gather";
+  }
+}
+
 /**
  * Fallback generic resource loot for nodes that don't yet have
  * explicit proto.loot definitions.
  *
- * For now, each successful gather yields a random 2–5 of a
- * representative resource item based on the gatheringKind.
- *
- * This is intentionally simple so we can lock the system in; later
- * Mother Brain / region-aware tables will take over.
+ * IMPORTANT:
+ * This must be keyed off the *node type* (nodeTag), not the command used.
+ * Otherwise content mistakes (or copy/paste command bugs) can create nonsense loot.
  */
 export function applyGenericResourceLoot(
   ctx: MudContext,
   char: CharacterState,
-  gatheringKind: GatheringKind,
-  resourceTag: string,
+  _gatheringKind: GatheringKind,
+  nodeTag: string,
   lootLines: string[]
 ): void {
   if (!ctx.items) return;
 
   let itemId: string | null = null;
 
-  switch (gatheringKind) {
-    case "mining":
+  switch (nodeTag) {
+    case "resource_ore":
       itemId = "ore_iron_hematite";
       break;
-    case "herbalism":
+    case "resource_herb":
       itemId = "herb_peacebloom";
       break;
-    case "logging":
+    case "resource_wood":
       itemId = "wood_oak";
       break;
-    case "quarrying":
+    case "resource_stone":
       itemId = "stone_granite";
       break;
-    case "fishing":
+    case "resource_fish":
       itemId = "fish_river_trout";
       break;
-    case "farming":
+    case "resource_grain":
       itemId = "grain_wheat";
       break;
+    case "resource_mana":
+      // Best-effort: if you have a real item for mana clusters, this should exist.
+      // If not, we simply skip fallback loot (and log), rather than paying out ore.
+      itemId = "mana_spark_arcane";
+      break;
     default:
-      // Unknown/unsupported gathering kind for now.
       return;
   }
-
-  if (!itemId) return;
 
   const tpl = resolveItem(ctx.items, itemId);
   if (!tpl) {
     log.warn("Generic resource loot template missing", {
       itemId,
-      gatheringKind,
-      resourceTag,
+      nodeTag,
     });
     return;
   }
@@ -92,24 +136,23 @@ export async function handleGatherAction(
   char: CharacterState,
   targetNameRaw: string,
   gatheringKind: GatheringKind,
-  resourceTag: string // e.g. "resource_ore", "resource_herb"
+  allowedTags: string | string[]
 ): Promise<string> {
-  const what = (targetNameRaw || "").trim() || "ore";
+  const what = (targetNameRaw || "").trim() || "node";
+  const allowed = asArray(allowedTags);
 
-  if (!ctx.entities || !ctx.npcs) {
-    return "There is nothing here to gather.";
-  }
+  if (!ctx.entities || !ctx.npcs) return "There is nothing here to gather.";
 
-  const npcs = ctx.npcs;
   const entities = ctx.entities;
+  const npcs = ctx.npcs;
 
   const selfEntity = entities.getEntityByOwner(ctx.session.id);
-  if (!selfEntity) {
-    return "You don't have a world entity yet.";
-  }
+  if (!selfEntity) return "You don't have a world entity yet.";
 
   const roomId = selfEntity.roomId ?? char.shardId;
 
+  // Step 1: resolve ANY resource-like node/object by handle/name, not by tag.
+  // We’ll enforce “right command for right resource type” after we find it.
   const target = resolveTargetInRoom(entities, roomId, what, {
     selfId: selfEntity.id,
     filter: (e) => {
@@ -118,7 +161,7 @@ export async function handleGatherAction(
 
       if (typeof (e as any).spawnPointId !== "number") return false;
 
-      // Per-player resource nodes (e.g. ore veins) honor ownership.
+      // Per-player resource nodes honor ownership.
       if (
         (e as any).ownerSessionId &&
         (e as any).ownerSessionId !== ctx.session.id
@@ -128,8 +171,13 @@ export async function handleGatherAction(
 
       const st = npcs.getNpcStateByEntityId(e.id);
       if (!st) return false;
+
       const proto = getNpcPrototype(st.protoId);
-      return (proto?.tags ?? []).includes(resourceTag);
+      const tags = proto?.tags ?? [];
+
+      // Resource-ish heuristic: has "resource" OR any resource subtype tag.
+      if (tags.includes("resource")) return true;
+      return tags.some((t) => RESOURCE_TAGS.has(t));
     },
   });
 
@@ -137,18 +185,50 @@ export async function handleGatherAction(
     return `There is no '${what}' here to gather.`;
   }
 
-  if (typeof (target as any).spawnPointId !== "number") {
-    return "That isn't a real resource node.";
-  }
-
-  const npcState = ctx.npcs.getNpcStateByEntityId(target.id);
-  if (!npcState) {
-    return "You can't gather that.";
-  }
+  const npcState = npcs.getNpcStateByEntityId(target.id);
+  if (!npcState) return "You can't gather that.";
 
   const proto = getNpcPrototype(npcState.protoId);
-  if (!proto || !proto.tags || !proto.tags.includes(resourceTag)) {
-    return "That doesn't look gatherable.";
+  if (!proto) return "You can't gather that.";
+
+  const tags = proto.tags ?? [];
+
+  // Step 2: sanity-check resource subtype tags.
+  const presentResourceTags = tags.filter((t) => RESOURCE_TAGS.has(t));
+
+  if (presentResourceTags.length === 0) {
+    return "That doesn't look like a gatherable resource.";
+  }
+
+  if (presentResourceTags.length > 1) {
+    log.warn("Resource node has multiple resource subtype tags", {
+      protoId: proto.id,
+      presentResourceTags,
+    });
+    return "That resource node seems unstable (multiple resource types). Please tell an admin.";
+  }
+
+  const nodeTag = presentResourceTags[0];
+
+  // Step 3: protoId naming convention guard (blocks mis-tagged DB rows).
+  const expected = expectedResourceTagFromProtoId(proto.id);
+  if (expected && expected !== nodeTag) {
+    log.warn("Resource node tag mismatch vs protoId prefix", {
+      protoId: proto.id,
+      nodeTag,
+      expected,
+    });
+
+    return `That node seems misconfigured. Try '${suggestCommandForTag(
+      expected
+    )}' (expected ${expected}).`;
+  }
+
+  // Step 4: enforce “right command for right resource type”.
+  if (!allowed.includes(nodeTag)) {
+    return `That isn't compatible with '${suggestCommandForTag(
+      allowed[0]
+    )}'. Try '${suggestCommandForTag(nodeTag)}'.`;
   }
 
   // ---- generic progression event ----
@@ -168,10 +248,8 @@ export async function handleGatherAction(
   );
 
   // Chip away one HP/charge
-  const newHp = ctx.npcs.applyDamage(target.id, 1);
-  if (newHp === null) {
-    return "You can't gather that.";
-  }
+  const newHp = npcs.applyDamage(target.id, 1);
+  if (newHp === null) return "You can't gather that.";
 
   const lootLines: string[] = [];
 
@@ -182,8 +260,7 @@ export async function handleGatherAction(
     });
   } else if (proto.loot && proto.loot.length > 0) {
     for (const entry of proto.loot) {
-      const r = Math.random();
-      if (r > entry.chance) continue;
+      if (Math.random() > entry.chance) continue;
 
       const qty = rollInt(entry.minQty, entry.maxQty);
       if (qty <= 0) continue;
@@ -198,13 +275,12 @@ export async function handleGatherAction(
       }
 
       const res = ctx.items.addToInventory(char.inventory, tpl.id, qty);
-      if (res.added > 0) {
+      if (res.added > 0)
         lootLines.push(describeLootLine(tpl.id, res.added, tpl.name));
-      }
     }
   } else {
-    // Fallback: generic resource loot so gathering always feels rewarding
-    applyGenericResourceLoot(ctx, char, gatheringKind, resourceTag, lootLines);
+    // Fallback: keyed off node type (nodeTag), not the command.
+    applyGenericResourceLoot(ctx, char, gatheringKind, nodeTag, lootLines);
   }
 
   // Persist inventory + progression changes
@@ -213,33 +289,29 @@ export async function handleGatherAction(
     try {
       await ctx.characters.saveCharacter(char);
     } catch (err) {
-      log.warn("Failed to save character after gather", {
-        err,
-        charId: char.id,
-      });
+      log.warn("Failed to save character after gather", { err, charId: char.id });
     }
   }
 
   let line = `[harvest] You chip away at ${(target as any).name}.`;
-
-  if (lootLines.length > 0) {
-    line += ` You gather ${lootLines.join(", ")}.`;
-  }
+  if (lootLines.length > 0) line += ` You gather ${lootLines.join(", ")}.`;
 
   if (newHp <= 0) {
     line += ` The ${(target as any).name} is exhausted.`;
 
-    if (
-      target.type === "node" &&
-      typeof (target as any).spawnPointId === "number"
-    ) {
-      const respawnSeconds =
-        gatheringKind === "mining"
-          ? 120
-          : gatheringKind === "herbalism"
-          ? 90
-          : 120;
+    const respawnSecondsByKind: Record<string, number> = {
+      mining: 120,
+      herbalism: 90,
+      logging: 120,
+      quarrying: 140,
+      fishing: 75,
+      farming: 120,
+    };
 
+    const respawnSeconds = respawnSecondsByKind[gatheringKind] ?? 120;
+
+    // Personal resource node depletion uses spawnPointId timers.
+    if (target.type === "node" && typeof (target as any).spawnPointId === "number") {
       setNodeDepletedUntil(
         char,
         (target as any).spawnPointId,
@@ -257,9 +329,7 @@ export async function handleGatherAction(
         }
       }
 
-      // IMPORTANT (Fix D):
-      // Visual clients need an explicit despawn so the node actually disappears
-      // (and can later re-appear via the personal respawn tick in mmo-backend/server.ts).
+      // Fix D: tell visual clients to remove it immediately.
       try {
         ctx.sessions.send(ctx.session, "entity_despawn" as any, {
           id: target.id,
@@ -276,9 +346,8 @@ export async function handleGatherAction(
     }
   }
 
-  if (progressionSnippets.length > 0) {
+  if (progressionSnippets.length > 0)
     line += " " + progressionSnippets.join(" ");
-  }
 
   return line;
 }
