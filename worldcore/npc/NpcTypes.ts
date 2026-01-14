@@ -1,5 +1,4 @@
 // worldcore/npc/NpcTypes.ts
-
 /**
  * NPC prototype/runtime types and the default prototype registry used by
  * in-memory AI. Includes guard call radius helpers and built-in test NPCs.
@@ -26,8 +25,8 @@ export type NpcBehavior =
   | "testing";
 
 export interface NpcLootEntry {
-  itemId: string;      // id in ItemCatalog
-  chance: number;      // 0–1
+  itemId: string; // id in ItemCatalog (DB)
+  chance: number; // 0–1
   minQty: number;
   maxQty: number;
 }
@@ -50,6 +49,7 @@ export interface NpcPrototype {
   tags?: string[];
 
   behavior?: NpcBehavior;
+
   guardProfile?: GuardProfile;
   guardCallRadius?: number;
 
@@ -66,15 +66,11 @@ export interface NpcPrototype {
  * Runtime NPC state tracked server-side.
  */
 export interface NpcRuntimeState {
-  entityId: string;
-
-  // identity – e.g. "coward_rat"
-  protoId: NpcId;
-
-  // actual prototype key used
+  entityId: string; // identity – e.g. "coward_rat"
+  protoId: NpcId; // actual prototype key used
   templateId: NpcId;
-
   variantId?: string | null;
+
   roomId: string;
 
   hp: number;
@@ -86,7 +82,6 @@ export interface NpcRuntimeState {
 
   // For simple behavior flags; coward only uses this for now
   fleeing?: boolean;
-
   spawnRoomId?: string;
   gating?: boolean;
 }
@@ -173,9 +168,7 @@ export const DEFAULT_NPC_PROTOTYPES: Record<NpcId, NpcPrototype> = {
     canCallHelp: true,
     socialRange: 10,
     xpReward: 10,
-    loot: [
-      { itemId: "rat_tail", chance: 0.7, minQty: 1, maxQty: 2 },
-    ],
+    loot: [{ itemId: "rat_tail", chance: 0.7, minQty: 1, maxQty: 2 }],
   },
 
   // ---------------------------------------------------------------------------
@@ -185,20 +178,25 @@ export const DEFAULT_NPC_PROTOTYPES: Record<NpcId, NpcPrototype> = {
     id: "codex_goblin",
     name: "Codex Goblin",
     level: 5,
-    maxHp: 400,                 // ~12 base damage via 3% maxHp
+    maxHp: 400,
+    // ~12 base damage via 3% maxHp
     baseDamageMin: 0,
-    baseDamageMax: 0,           // we use computeNpcMeleeDamage instead
-    model: "goblin_melee",      // placeholder; client can map this however
+    baseDamageMax: 0, // we use computeNpcMeleeDamage instead
+    model: "goblin_melee",
     tags: ["hostile", "codex", "test_mob"],
     behavior: "neutral",
     xpReward: 25,
-    loot: [],                   // no real loot yet; pure test dummy
+    loot: [],
   },
 
   // ---------------------------------------------------------------------------
   // Resource nodes (gatherable world objects)
   // These are inert, non-hostile “node NPCs” placed by the ResourceBaseline
   // planner. Gathering logic (mine/pick/etc.) uses the resource_* tags below.
+  //
+  // IMPORTANT:
+  // These now have real starter loot entries pointing at DB item IDs.
+  // If DB prototypes override these, DB wins via setNpcPrototypes().
   // ---------------------------------------------------------------------------
 
   herb_peacebloom: {
@@ -208,12 +206,14 @@ export const DEFAULT_NPC_PROTOTYPES: Record<NpcId, NpcPrototype> = {
     maxHp: 1,
     baseDamageMin: 0,
     baseDamageMax: 0,
-    model: "node_herb_peacebloom", // placeholder / client-side model
-    // 'resource_herb' is what the 'pick' command looks for.
+    model: "node_herb_peacebloom",
     tags: ["resource", "resource_herb", "herb", "gatherable", "non_hostile"],
     behavior: "neutral",
     xpReward: 0,
-    loot: [], // gathering decides what item(s) you actually get
+    loot: [
+      { itemId: "herb_peacebloom", chance: 1.0, minQty: 2, maxQty: 5 },
+      { itemId: "herb_silverleaf", chance: 0.08, minQty: 1, maxQty: 2 },
+    ],
   },
 
   ore_iron_hematite: {
@@ -224,11 +224,13 @@ export const DEFAULT_NPC_PROTOTYPES: Record<NpcId, NpcPrototype> = {
     baseDamageMin: 0,
     baseDamageMax: 0,
     model: "node_ore_iron_hematite",
-    // 'resource_ore' is what mine/farm/fish/lumber/quarry look for right now.
     tags: ["resource", "resource_ore", "ore", "gatherable", "non_hostile"],
     behavior: "neutral",
     xpReward: 0,
-    loot: [],
+    loot: [
+      { itemId: "ore_iron_hematite", chance: 1.0, minQty: 2, maxQty: 5 },
+      { itemId: "ore_copper", chance: 0.06, minQty: 1, maxQty: 2 },
+    ],
   },
 
   stone_granite: {
@@ -239,11 +241,13 @@ export const DEFAULT_NPC_PROTOTYPES: Record<NpcId, NpcPrototype> = {
     baseDamageMin: 0,
     baseDamageMax: 0,
     model: "node_stone_granite",
-    // For now granite is also treated as 'resource_ore' so quarrying/mining see it.
-    tags: ["resource", "resource_ore", "stone", "gatherable", "non_hostile"],
+    tags: ["resource", "resource_stone", "stone", "gatherable", "non_hostile"],
     behavior: "neutral",
     xpReward: 0,
-    loot: [],
+    loot: [
+      { itemId: "stone_granite", chance: 1.0, minQty: 2, maxQty: 5 },
+      { itemId: "stone_limestone", chance: 0.05, minQty: 1, maxQty: 2 },
+    ],
   },
 
   wood_oak: {
@@ -254,11 +258,13 @@ export const DEFAULT_NPC_PROTOTYPES: Record<NpcId, NpcPrototype> = {
     baseDamageMin: 0,
     baseDamageMax: 0,
     model: "node_wood_oak",
-    // Lumbering is currently wired through mining/resource_ore as well.
-    tags: ["resource", "resource_ore", "wood", "gatherable", "non_hostile"],
+    tags: ["resource", "resource_wood", "wood", "gatherable", "non_hostile"],
     behavior: "neutral",
     xpReward: 0,
-    loot: [],
+    loot: [
+      { itemId: "wood_oak", chance: 1.0, minQty: 2, maxQty: 5 },
+      { itemId: "wood_pine", chance: 0.05, minQty: 1, maxQty: 2 },
+    ],
   },
 
   fish_river_trout: {
@@ -269,11 +275,13 @@ export const DEFAULT_NPC_PROTOTYPES: Record<NpcId, NpcPrototype> = {
     baseDamageMin: 0,
     baseDamageMax: 0,
     model: "node_fish_river_trout",
-    // Fishing command currently reuses mining/resource_ore under the hood.
-    tags: ["resource", "resource_ore", "fish", "gatherable", "non_hostile"],
+    tags: ["resource", "resource_fish", "fish", "gatherable", "non_hostile"],
     behavior: "neutral",
     xpReward: 0,
-    loot: [],
+    loot: [
+      { itemId: "fish_river_trout", chance: 1.0, minQty: 1, maxQty: 3 },
+      { itemId: "sea_salt", chance: 0.12, minQty: 1, maxQty: 1 },
+    ],
   },
 
   grain_wheat: {
@@ -284,11 +292,10 @@ export const DEFAULT_NPC_PROTOTYPES: Record<NpcId, NpcPrototype> = {
     baseDamageMin: 0,
     baseDamageMax: 0,
     model: "node_grain_wheat",
-    // Farming also goes through mining/resource_ore placeholder for now.
-    tags: ["resource", "resource_ore", "grain", "gatherable", "non_hostile"],
+    tags: ["resource", "resource_grain", "grain", "gatherable", "non_hostile"],
     behavior: "neutral",
     xpReward: 0,
-    loot: [],
+    loot: [{ itemId: "grain_wheat", chance: 1.0, minQty: 2, maxQty: 5 }],
   },
 
   mana_spark_arcane: {
@@ -299,10 +306,9 @@ export const DEFAULT_NPC_PROTOTYPES: Record<NpcId, NpcPrototype> = {
     baseDamageMin: 0,
     baseDamageMax: 0,
     model: "node_mana_spark_arcane",
-    // Mana crystals ride the same 'resource_ore' rail until we split them out.
     tags: [
       "resource",
-      "resource_ore",
+      "resource_mana",
       "mana",
       "arcane",
       "gatherable",
@@ -310,11 +316,13 @@ export const DEFAULT_NPC_PROTOTYPES: Record<NpcId, NpcPrototype> = {
     ],
     behavior: "neutral",
     xpReward: 0,
-    loot: [],
+    loot: [
+      { itemId: "mana_spark_arcane", chance: 1.0, minQty: 2, maxQty: 5 },
+      { itemId: "mana_crystal_runic", chance: 0.06, minQty: 1, maxQty: 2 },
+    ],
   },
 
-  // Simple guard stub – currently behaves like an aggressive NPC,
-  // but uses the "guard" behavior slot so we can special-case it later.
+  // Simple guard stub
   town_guard: {
     id: "town_guard",
     name: "Town Guard",
@@ -345,14 +353,7 @@ export const DEFAULT_NPC_PROTOTYPES: Record<NpcId, NpcPrototype> = {
     canCallHelp: true,
     socialRange: 12,
     xpReward: 12,
-    loot: [
-      {
-        itemId: "rat_tail",
-        chance: 0.7,
-        minQty: 1,
-        maxQty: 2,
-      },
-    ],
+    loot: [{ itemId: "rat_tail", chance: 0.7, minQty: 1, maxQty: 2 }],
   },
 
   bandit_caster: {
@@ -375,9 +376,7 @@ export const DEFAULT_NPC_PROTOTYPES: Record<NpcId, NpcPrototype> = {
 };
 
 // live registry (DB + defaults merged)
-let npcPrototypes: Record<string, NpcPrototype> = {
-  ...DEFAULT_NPC_PROTOTYPES,
-};
+let npcPrototypes: Record<NpcId, NpcPrototype> = { ...DEFAULT_NPC_PROTOTYPES };
 
 /**
  * Merge DB-provided prototypes on top of defaults.
@@ -386,11 +385,13 @@ let npcPrototypes: Record<string, NpcPrototype> = {
  * like "coward_rat".
  */
 export function setNpcPrototypes(list: NpcPrototype[]): void {
-  const bag: Record<string, NpcPrototype> = { ...DEFAULT_NPC_PROTOTYPES };
+  const bag: Record<NpcId, NpcPrototype> = { ...DEFAULT_NPC_PROTOTYPES };
+
   for (const proto of list) {
     const existing = bag[proto.id];
     bag[proto.id] = existing ? { ...existing, ...proto } : proto;
   }
+
   npcPrototypes = bag;
 }
 
