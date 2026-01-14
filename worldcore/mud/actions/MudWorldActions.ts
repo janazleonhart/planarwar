@@ -229,7 +229,10 @@ export async function handleGatherAction(
   if (newHp <= 0) {
     line += ` The ${(target as any).name} is exhausted.`;
 
-    if (target.type === "node" && typeof (target as any).spawnPointId === "number") {
+    if (
+      target.type === "node" &&
+      typeof (target as any).spawnPointId === "number"
+    ) {
       const respawnSeconds =
         gatheringKind === "mining"
           ? 120
@@ -252,6 +255,18 @@ export async function handleGatherAction(
             charId: char.id,
           });
         }
+      }
+
+      // IMPORTANT (Fix D):
+      // Visual clients need an explicit despawn so the node actually disappears
+      // (and can later re-appear via the personal respawn tick in mmo-backend/server.ts).
+      try {
+        ctx.sessions.send(ctx.session, "entity_despawn" as any, {
+          id: target.id,
+          ownerSessionId: ctx.session.id,
+        });
+      } catch {
+        // best-effort; MUD still works even if we can't signal the client
       }
 
       ctx.npcs?.despawnNpc?.(target.id);
