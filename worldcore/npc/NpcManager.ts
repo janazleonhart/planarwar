@@ -120,6 +120,11 @@ export class NpcManager {
 
     this.entities.setPosition(e.id, x, y, z);
 
+    // Preserve immutable spawn/home coords for respawn logic
+    (e as any).spawnX = x;
+    (e as any).spawnY = y;
+    (e as any).spawnZ = z;
+
     const state: NpcRuntimeState = {
       entityId: e.id,
       protoId: proto.id,

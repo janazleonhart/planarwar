@@ -1,6 +1,25 @@
 // worldcore/world/SpawnPointService.ts
 
-import { db } from "../db/Database";
+/**
+ * IMPORTANT:
+ * - This module must be safe to import in unit tests.
+ * - Database.ts can open sockets / DNS that prevent `node --test` from exiting.
+ * - Therefore: lazy-import Database only inside methods, and hard-disable DB access
+ *   when WORLDCORE_TEST=1 or Node's test runner is active.
+ */
+function isNodeTestRuntime(): boolean {
+  return (
+    process.execArgv.includes("--test") ||
+    process.argv.includes("--test") ||
+    process.env.NODE_ENV === "test" ||
+    process.env.WORLDCORE_TEST === "1"
+  );
+}
+
+async function getDb(): Promise<any> {
+  const mod: any = await import("../db/Database");
+  return mod.db;
+}
 
 /**
  * Raw row shape from the spawn_points table.
@@ -23,8 +42,8 @@ export interface SpawnPointRow {
   spawn_id: string;
   type: string;
   archetype: string;
-  proto_id: string | null;   // NEW
-  variant_id: string | null; // NEW
+  proto_id: string | null;
+  variant_id: string | null;
   x: number | null;
   y: number | null;
   z: number | null;
@@ -32,10 +51,10 @@ export interface SpawnPointRow {
 }
 
 /**
- * Runtime-friendly spawn point type.
+ * Runtime-friendly spawn point shape.
  *
- * We keep this separate so we can evolve it later (e.g. add metadata,
- * spawn weights, tags, etc.) without changing the DB schema.
+ * NOTE: protoId is required in runtime to give the spawn a canonical identity.
+ * If proto_id is null in DB, we default protoId to spawn_id.
  */
 export interface DbSpawnPoint {
   id: number;
@@ -45,8 +64,8 @@ export interface DbSpawnPoint {
   type: string;
 
   // NEW (future-proof identity)
-  protoId: string;           // canonical identity
-  variantId: string | null;  // optional incarnation/version
+  protoId: string; // canonical identity
+  variantId: string | null; // optional incarnation/version
 
   // Legacy (keep for now; useful for resources)
   archetype: string;
@@ -59,7 +78,7 @@ export interface DbSpawnPoint {
 }
 
 function rowToSpawnPoint(row: SpawnPointRow): DbSpawnPoint {
-  const protoId = row.proto_id ?? row.archetype;
+  const protoId = row.proto_id ?? row.spawn_id; // fallback canonical id
 
   return {
     id: row.id,
@@ -72,28 +91,31 @@ function rowToSpawnPoint(row: SpawnPointRow): DbSpawnPoint {
     x: row.x,
     y: row.y,
     z: row.z,
-    regionId: row.region_id,
+    regionId: row.region_id ?? null,
   };
 }
 
 /**
  * Simple service over the spawn_points table.
  *
- * v1 scope:
- *  - lookup by regionId
- *  - lookup by world-space radius (x/z circle)
+ * NOTE:
+ * - During unit tests, this returns empty results and never touches the DB.
+ * - The authoritative runtime source of truth is the DB table.
  */
 export class SpawnPointService {
   /**
-   * Get all spawn points for a given shard + region.
+   * Get all spawn points for a region.
    *
-   * regionId should match regions.region_id, which lines up with
-   * Region.id from ServerWorldManager (e.g. "prime_shard:-1,-1").
+   * regionId is expected to be the DB region id (e.g. "8,8"), not the room id
+   * (e.g. "prime_shard:8,8" or "prime_shard:-1,-1").
    */
   async getSpawnPointsForRegion(
     shardId: string,
     regionId: string,
   ): Promise<DbSpawnPoint[]> {
+    if (isNodeTestRuntime()) return [];
+
+    const db = await getDb();
     const res = await db.query(
       `
       SELECT
@@ -111,7 +133,7 @@ export class SpawnPointService {
       FROM spawn_points
       WHERE shard_id = $1 AND region_id = $2
       ORDER BY id
-    `,
+      `,
       [shardId, regionId],
     );
 
@@ -132,9 +154,12 @@ export class SpawnPointService {
     z: number,
     radius: number,
   ): Promise<DbSpawnPoint[]> {
+    if (isNodeTestRuntime()) return [];
+
     const safeRadius = Math.max(0, Math.min(radius, 10_000));
     const r2 = safeRadius * safeRadius;
 
+    const db = await getDb();
     const res = await db.query(
       `
       SELECT

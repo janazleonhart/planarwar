@@ -584,7 +584,8 @@
       "functions": [
         "serviceProtectionGate",
         "resolvePlayerVsPlayerPolicy",
-        "canDamage"
+        "canDamage",
+        "canDamageFast"
       ],
       "dependsOn": [
         "combat.serviceProtection",
@@ -1503,7 +1504,8 @@
         "mud.trainingDummy",
         "mud.progressionHooks",
         "progression.core",
-        "mud.helpers"
+        "mud.helpers",
+        "combat.damagePolicy"
       ],
       "provides": [
         "performNpcAttack(ctx, char, selfEntity, npc, opts?):Promise<string>",
@@ -2875,7 +2877,8 @@
         "combat.cooldowns",
         "mud.actions.combat",
         "mud.helpers",
-        "skills.progression"
+        "skills.progression",
+        "combat.damagePolicy"
       ],
       "provides": [
         "listKnownSpellsForChar(char):SpellDefinition[]",

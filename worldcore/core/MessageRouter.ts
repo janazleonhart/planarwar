@@ -1,7 +1,5 @@
 //worldcore/core/MessageRouter.ts
 
-//worldcore/core/MessageRouter.ts
-
 import { SessionManager } from "./SessionManager";
 import { RoomManager } from "./RoomManager";
 import { EntityManager } from "./EntityManager";
@@ -59,6 +57,39 @@ export interface MovementEngineFacade {
     payload: ClientMovePayload
   ): ResolvedMove | null;
 }
+
+export type MudResultEvent = "death" | "respawn";
+
+/**
+ * Infer MUD lifecycle events from the input + resulting text.
+ *
+ * - respawn: inferred from the explicit command verb "respawn" (stable).
+ * - death: inferred from the canonical "You die." marker (combat pipeline).
+ */
+export function inferMudResultEvent(
+  input: string,
+  replyText: string
+): MudResultEvent | undefined {
+  const cmd = String(input ?? "").trim().toLowerCase();
+  const verb = (cmd.split(/\s+/)[0] ?? "").trim();
+  const txt = String(replyText ?? "");
+
+  if (verb === "respawn") {
+    // Only emit a respawn event when the command actually succeeded.
+    if (txt.startsWith("You are not dead")) return;
+    if (txt.startsWith("You cannot respawn")) return;
+
+    return "respawn";
+  }
+
+  if (txt.includes("You die.")) return "death";
+  
+  // Fallback must stay strict: only "die." (not broad 'die' matching).
+  if (/\bdie\./i.test(txt)) return "death";
+
+  return undefined;
+}
+
 
 const log = Logger.scope("ROUTER");
 
@@ -542,7 +573,11 @@ export class MessageRouter {
         handleMudCommand(char, text, this.world, mudCtx)
           .then((reply) => {
             if (reply !== null) {
-              this.sessions.send(session, "mud_result", { text: reply });
+              const replyText = String(reply ?? "");
+const event = inferMudResultEvent(text, replyText);
+const mudPayload: any = { text: replyText };
+if (event) mudPayload.event = event;
+this.sessions.send(session, "mud_result", mudPayload);
             }
           })
           .catch((err) => {

@@ -38,6 +38,7 @@ import {
   type SongSchoolId,
 } from "../skills/SkillProgression";
 import { computeEffectiveAttributes } from "../characters/Stats";
+import { getSpawnPoint } from "../world/SpawnPointCache";
 
 const log = Logger.scope("NPC_COMBAT");
 
@@ -502,10 +503,62 @@ export function scheduleNpcCorpseAndRespawn(
   const isResource =
     proto?.tags?.includes("resource") ||
     proto?.tags?.some((t) => t.startsWith("resource_")) ||
-    ctx.entities.get(npcEntityId)?.type === "node";
+    (ctx.entities.get(npcEntityId) as any)?.type === "node";
 
-  const corpseMs = 2500;
-  const respawnMs = 8000;
+  // Capture spawn metadata + baseline "home" coords BEFORE corpse despawn runs.
+  const ent0: any = ctx.entities.get(npcEntityId);
+
+  const spawnPointId: number | undefined =
+    typeof ent0?.spawnPointId === "number"
+      ? ent0.spawnPointId
+      : typeof (st as any)?.spawnPointId === "number"
+        ? (st as any).spawnPointId
+        : undefined;
+
+  const spawnId: string | undefined =
+    typeof ent0?.spawnId === "string"
+      ? ent0.spawnId
+      : typeof (st as any)?.spawnId === "string"
+        ? (st as any).spawnId
+        : undefined;
+
+  const regionId: string | undefined =
+    typeof ent0?.regionId === "string"
+      ? ent0.regionId
+      : typeof (st as any)?.regionId === "string"
+        ? (st as any).regionId
+        : undefined;
+
+  // Immutable spawn/home coords. Prefer explicit spawnX/Y/Z if present.
+  const baseSpawnX =
+    typeof ent0?.spawnX === "number"
+      ? ent0.spawnX
+      : typeof ent0?.x === "number"
+        ? ent0.x
+        : 0;
+
+  const baseSpawnY =
+    typeof ent0?.spawnY === "number"
+      ? ent0.spawnY
+      : typeof ent0?.y === "number"
+        ? ent0.y
+        : 0;
+
+  const baseSpawnZ =
+    typeof ent0?.spawnZ === "number"
+      ? ent0.spawnZ
+      : typeof ent0?.z === "number"
+        ? ent0.z
+        : 0;
+
+  let corpseMs = 2500;
+  let respawnMs = 8000;
+
+  // Tests should never wait seconds for lifecycle.
+  if (process.env.WORLDCORE_TEST === "1") {
+    corpseMs = 5;
+    respawnMs = 60;
+  }
 
   // Despawn after corpse delay
   setTimeout(() => {
@@ -514,21 +567,20 @@ export function scheduleNpcCorpseAndRespawn(
     ctx.npcs?.despawnNpc(npcEntityId);
   }, corpseMs);
 
-  // IMPORTANT: resources are per-player. Do NOT respawn them as shared entities here.
+  // IMPORTANT: resources are personal/per-owner. Do NOT respawn them as shared entities here.
   if (isResource) {
-    // Optional flavor text
-    setTimeout(() => {
-      announceSpawnToRoom(ctx, roomId, `Fresh ore juts from the ground nearby.`);
-    }, respawnMs);
     return;
   }
 
   // Normal NPC respawn
   setTimeout(() => {
-    const deadEnt = ctx.entities?.get(npcEntityId);
-    const spawnX = deadEnt?.x ?? 0;
-    const spawnY = deadEnt?.y ?? 0;
-    const spawnZ = deadEnt?.z ?? 0;
+    // Consult SpawnPointCache *at respawn time* so late updates are honored.
+    const cached =
+      typeof spawnPointId === "number" ? (getSpawnPoint(spawnPointId) as any) : undefined;
+
+    const spawnX = typeof cached?.x === "number" ? cached.x : baseSpawnX;
+    const spawnY = typeof cached?.y === "number" ? cached.y : baseSpawnY;
+    const spawnZ = typeof cached?.z === "number" ? cached.z : baseSpawnZ;
 
     const spawned = ctx.npcs?.spawnNpcById(
       templateId,
@@ -540,8 +592,20 @@ export function scheduleNpcCorpseAndRespawn(
     );
     if (!spawned) return;
 
-    const ent = ctx.entities?.get(spawned.entityId);
+    const ent = ctx.entities?.get(spawned.entityId) as any;
     const room = ctx.rooms?.get(roomId);
+
+    // Re-attach spawn metadata for contracts + future systems.
+    if (ent) {
+      if (typeof spawnPointId === "number") ent.spawnPointId = spawnPointId;
+      if (typeof spawnId === "string") ent.spawnId = spawnId;
+      if (typeof regionId === "string") ent.regionId = regionId;
+
+      ent.spawnX = spawnX;
+      ent.spawnY = spawnY;
+      ent.spawnZ = spawnZ;
+    }
+
     if (ent && room) {
       room.broadcast("entity_spawn", ent);
     }

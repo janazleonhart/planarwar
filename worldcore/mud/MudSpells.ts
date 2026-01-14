@@ -4,6 +4,7 @@ import type { MudContext } from "./MudContext";
 import type { CharacterState, SpellbookState } from "../characters/CharacterTypes";
 
 import { Logger } from "../utils/logger";
+import { canDamage } from "../combat/DamagePolicy";
 import { checkAndStartCooldown } from "../combat/Cooldowns";
 import { SPELLS, SpellDefinition, findSpellByNameOrId } from "../spells/SpellTypes";
 import { performNpcAttack } from "./MudActions";
@@ -235,6 +236,22 @@ export async function castSpellForCharacter(
           targetChar: gateRes.targetChar,
           targetSession: gateRes.targetSession,
         };
+
+        // Lane D: async DamagePolicy backstop for player-vs-player damage.
+        // gatePlayerDamageFromPlayerEntity enforces duel consent; this enforces region combat/PvP flags + service protection.
+        try {
+          const policy = await canDamage(
+            { entity: selfEntity as any, char },
+            { entity: playerTarget as any, char: gateRes.targetChar as any },
+            { shardId: char.shardId, regionId: roomId, inDuel: gateRes.mode === "duel" },
+          );
+          if (policy && policy.allowed === false) {
+            return policy.reason ?? "You cannot attack here.";
+          }
+        } catch {
+          // Best-effort: never let policy lookup crash spell casting.
+        }
+
       }
 
       const cdErr = cooldownGate();

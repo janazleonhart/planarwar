@@ -12,6 +12,7 @@
 import { MudContext } from "../MudContext";
 import type { CharacterState } from "../../characters/CharacterTypes";
 import type { Entity } from "../../shared/Entity";
+import { canDamage } from "../../combat/DamagePolicy";
 
 import { computeEffectiveAttributes } from "../../characters/Stats";
 
@@ -163,6 +164,22 @@ export async function handleAttackAction(
     }
 
     const { now, label, mode: ctxMode, targetChar, targetSession } = gateRes;
+
+    // Lane D: async DamagePolicy backstop for player-vs-player damage.
+    // gatePlayerDamageFromPlayerEntity enforces duel consent; this enforces region combat/PvP flags + service protection.
+    try {
+      const policy = await canDamage(
+        { entity: selfEntity as any, char },
+        { entity: playerTarget as any, char: targetChar as any },
+        { shardId: char.shardId, regionId: roomId, inDuel: ctxMode === "duel" },
+      );
+      if (policy && policy.allowed === false) {
+        return policy.reason ?? "You cannot attack here.";
+      }
+    } catch {
+      // Best-effort: never let policy lookup crash melee.
+    }
+
 
     const effective = computeEffectiveAttributes(char, ctx.items);
     const dmg = computeTrainingDummyDamage(effective);

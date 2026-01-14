@@ -74,8 +74,7 @@ async function resolveRegionCombatEnabled(
 ): Promise<boolean> {
   if (typeof override === "boolean") return override;
 
-  // Unit tests should not touch Postgres. Default allow.
-  if (isNodeTestRuntime()) return true;
+  // In tests we still consult RegionFlags, which is itself test-safe (no DB) and can be overridden.
 
   const mod = await import("../world/RegionFlags");
   if (typeof mod.isCombatEnabledForRegion === "function") {
@@ -130,7 +129,7 @@ export async function resolvePlayerVsPlayerPolicy(
 }
 
 /**
- * Generic combat permission check.
+ * Generic combat permission check (async; can consult RegionFlags).
  */
 export async function canDamage(
   attacker: { entity?: any; char?: CharacterState },
@@ -160,6 +159,45 @@ export async function canDamage(
         ? await resolveRegionPvpEnabled(shardId, regionId, ctx.regionPvpEnabled)
         : false;
 
+    const gate = canDamagePlayer(a, d as any, !!ctx.inDuel, !!regionPvpEnabled);
+    if (!gate.allowed) return deny(gate.reason);
+
+    return { allowed: true, mode: gate.mode, label: gate.label };
+  }
+
+  // Default: PvE allowed
+  return { allowed: true, mode: "pve", label: "pve" };
+}
+
+/**
+ * Synchronous “best-effort” policy check.
+ *
+ * - Enforces service protection immediately.
+ * - Enforces PvP rules (fail-closed unless ctx.regionPvpEnabled is true or ctx.inDuel is true).
+ * - Enforces region combat enable ONLY when ctx.regionCombatEnabled is explicitly provided.
+ *
+ * This function never touches Postgres or other I/O. If you need DB-backed
+ * region flags, use the async canDamage(...).
+ */
+export function canDamageFast(
+  attacker: { entity?: any; char?: CharacterState },
+  defender: { entity?: any; char?: CharacterState },
+  ctx: CanDamageContext = {},
+): DamagePolicyDecision {
+  // 1) Service protection (defender is immune)
+  const svc = serviceProtectionGate(defender.entity, { ignore: ctx.ignoreServiceProtection });
+  if (svc) return svc;
+
+  // 2) Region combatEnabled gate (only when explicit override provided)
+  if (ctx.shardId && ctx.regionId && typeof ctx.regionCombatEnabled === "boolean") {
+    if (ctx.regionCombatEnabled === false) return deny("Combat is disabled in this region.");
+  }
+
+  // 3) PvP gate when both characters exist and are distinct
+  const a = attacker.char;
+  const d = defender.char;
+  if (a?.id && d?.id && a.id !== d.id) {
+    const regionPvpEnabled = typeof ctx.regionPvpEnabled === "boolean" ? ctx.regionPvpEnabled : false;
     const gate = canDamagePlayer(a, d as any, !!ctx.inDuel, !!regionPvpEnabled);
     if (!gate.allowed) return deny(gate.reason);
 

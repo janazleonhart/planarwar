@@ -7,6 +7,7 @@ import { computeCombatStatusSnapshot } from "./StatusEffects";
 import { computeCowardiceDamageTakenMultiplier } from "./Cowardice";
 import { bumpRegionDanger } from "../world/RegionDanger";
 import { isServiceProtectedEntity } from "./ServiceProtection";
+import { canDamageFast, type CanDamageContext } from "./DamagePolicy";
 
 const COMBAT_TAG_MS = 15_000; // 15s “in combat” after hit/damage
 
@@ -23,6 +24,24 @@ export type DamageContext = {
    * Reserved hook for future dueling/PvP scaling and rules.
    */
   mode?: DamageMode;
+
+  /**
+   * Optional attacker info so entityCombat can enforce DamagePolicy as a backstop.
+   * (If absent, we do not attempt PvP gating here.)
+   */
+  attackerEntity?: any;
+  attackerChar?: CharacterState;
+
+  /**
+   * Optional policy context overrides (sync only).
+   * If you need DB-backed region flags, resolve them higher up and pass overrides down.
+   */
+  shardId?: string;
+  regionId?: string;
+  regionCombatEnabled?: boolean;
+  regionPvpEnabled?: boolean;
+  inDuel?: boolean;
+  ignoreServiceProtection?: boolean;
 
   /**
    * SAFETY RAIL:
@@ -85,6 +104,39 @@ function applyDamageToPlayerInternal(
 
   const maxHp = typeof e.maxHp === "number" && e.maxHp > 0 ? e.maxHp : 100;
   const oldHp = typeof e.hp === "number" && e.hp >= 0 ? e.hp : maxHp;
+
+  // DamagePolicy backstop (sync):
+  // Only meaningfully gates PvP if attackerChar is supplied.
+  try {
+    if (ctx?.attackerChar) {
+      const policyCtx: CanDamageContext = {
+        shardId: ctx.shardId ?? ctx.attackerChar.shardId ?? char?.shardId,
+        regionId: ctx.regionId,
+        regionCombatEnabled: ctx.regionCombatEnabled,
+        regionPvpEnabled: ctx.regionPvpEnabled,
+        inDuel: ctx.inDuel ?? (ctx.mode === "duel"),
+        ignoreServiceProtection: ctx.ignoreServiceProtection,
+      };
+
+      const decision = canDamageFast(
+        { entity: ctx.attackerEntity, char: ctx.attackerChar },
+        { entity: e, char },
+        policyCtx,
+      );
+
+      if (decision.allowed === false) {
+        return { newHp: oldHp, maxHp, killed: false };
+      }
+    } else {
+      // Still enforce service protection even if attacker is unknown.
+      const svcOnly = canDamageFast({ entity: ctx?.attackerEntity }, { entity: e, char }, { ignoreServiceProtection: ctx?.ignoreServiceProtection });
+      if (svcOnly.allowed === false) {
+        return { newHp: oldHp, maxHp, killed: false };
+      }
+    }
+  } catch {
+    // Best-effort: policy backstop must never crash combat.
+  }
 
   // Invulnerable / protected entities take no damage.
   // This is a safety rail for staff/admin flags and protected service entities.
@@ -226,6 +278,9 @@ export function applyCombatResultToPlayer(
 
 /**
  * Shared v1 NPC melee damage formula.
+ *
+ * IMPORTANT: NpcCombat.ts and NpcManager.ts import this. If you remove/rename it,
+ * they will explode.
  */
 export function computeNpcMeleeDamage(npc: Entity): number {
   const n: any = npc;
