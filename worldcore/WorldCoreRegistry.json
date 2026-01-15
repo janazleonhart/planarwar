@@ -3609,6 +3609,19 @@
         "TownLikeSpawnRow now accepts townTier (DB) so station seeding can be tier-gated per town."
       ]
     },
+    "sim.townTierSeeding": {
+      "kind": "module",
+      "service": "sim",
+      "path": "worldcore/sim/TownTierSeeding.ts",
+      "class": "(functions)",
+      "lifecycle": "static",
+      "ctorArgs": [],
+      "provides": [],
+      "owns": [],
+      "notes": [
+        "Provides tier assignment helpers."
+      ]
+    },
     "skills.progression": {
       "kind": "service",
       "path": "worldcore/skills/SkillProgression.ts",

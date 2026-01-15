@@ -17,6 +17,8 @@ import type { CellCoverageRow, CoverageSummary, SpawnForCoverage } from "../sim/
 import { planGapFillSpawns } from "../sim/GapFiller";
 import type { GapFillPlanConfig, GapFillSpawn } from "../sim/GapFiller";
 
+import { tierForPointDistanceMode } from "../sim/TownTierSeeding";
+
 import { planTownBaselines } from "../sim/TownBaselinePlanner";
 import type { TownBaselinePlanOptions, TownLikeSpawnRow } from "../sim/TownBaselinePlanner";
 
@@ -39,7 +41,9 @@ type Cmd =
   | "snapshot-spawns"
   | "restore-spawns"
   | "wipe-placements"
-  | "help";
+  | "help"
+  | "set-town-tiers"
+;
 
 function usage(): void {
   console.log(
@@ -198,6 +202,18 @@ function parseBounds(input: string): Bounds {
   const [minCx, maxCx] = parseRange(a);
   const [minCz, maxCz] = parseRange(b);
   return { minCx, maxCx, minCz, maxCz };
+}
+
+function parseCenter(input: string): [number, number] {
+  const parts = String(input ?? "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+
+  const x = Number(parts[0] ?? "0");
+  const z = Number(parts[1] ?? "0");
+
+  return [Number.isFinite(x) ? x : 0, Number.isFinite(z) ? z : 0];
 }
 
 function parseFactions(input: string): FactionSeedSpec[] {
@@ -1503,6 +1519,98 @@ async function runTrimOutposts(args: {
 // Main
 // ---------------------------------------------------------------------------
 
+async function runSetTownTiersDistanceMode(opts: {
+  shardId: string;
+  bounds: Bounds;
+  cellSize: number;
+  centerX: number;
+  centerZ: number;
+  minTier: number;
+  maxTier: number;
+  commit: boolean;
+  report: boolean;
+}): Promise<void> {
+  const minX = opts.bounds.minCx * opts.cellSize;
+  const maxX = (opts.bounds.maxCx + 1) * opts.cellSize;
+  const minZ = opts.bounds.minCz * opts.cellSize;
+  const maxZ = (opts.bounds.maxCz + 1) * opts.cellSize;
+
+  const client = await db.connect();
+  let updated = 0;
+  let skipped = 0;
+
+  try {
+    await client.query("BEGIN");
+
+    const res = await client.query(
+      `
+      SELECT spawn_id, x, z, town_tier
+      FROM spawn_points
+      WHERE shard_id = $1
+        AND type = 'town'
+        AND x IS NOT NULL AND z IS NOT NULL
+        AND x >= $2 AND x < $3
+        AND z >= $4 AND z < $5
+      ORDER BY spawn_id
+      `,
+      [opts.shardId, minX, maxX, minZ, maxZ],
+    );
+
+    for (const row of res.rows as Array<{ spawn_id: string; x: number; z: number; town_tier: number | null }>) {
+      const spawnId = String(row.spawn_id);
+      const x = Number(row.x);
+      const z = Number(row.z);
+
+      const desiredTier = tierForPointDistanceMode({
+        x,
+        z,
+        bounds: opts.bounds,
+        cellSize: opts.cellSize,
+        centerX: opts.centerX,
+        centerZ: opts.centerZ,
+        minTier: opts.minTier,
+        maxTier: opts.maxTier,
+      });
+
+      const currentTier = row.town_tier == null ? null : Number(row.town_tier);
+      if (currentTier === desiredTier) {
+        skipped++;
+        continue;
+      }
+
+      await client.query(
+        `
+        UPDATE spawn_points
+        SET town_tier = $1
+        WHERE shard_id = $2 AND type = 'town' AND spawn_id = $3
+        `,
+        [desiredTier, opts.shardId, spawnId],
+      );
+
+      updated++;
+
+      if (opts.report) {
+        console.log(`[set-town-tiers] ${spawnId} (${x.toFixed(2)},${z.toFixed(2)}): ${currentTier ?? "null"} -> ${desiredTier}`);
+      }
+    }
+
+    if (opts.commit) await client.query("COMMIT");
+    else await client.query("ROLLBACK");
+
+    console.log(
+      `[set-town-tiers] shard=${opts.shardId} bounds=${opts.bounds.minCx}..${opts.bounds.maxCx},${opts.bounds.minCz}..${opts.bounds.maxCz} mode=distance center=(${opts.centerX},${opts.centerZ}) tiers=${opts.minTier}..${opts.maxTier}`,
+    );
+    console.log(`[set-town-tiers] ${opts.commit ? "committed" : "dry-run rolled back"}. updated=${updated} skipped=${skipped} ${opts.commit ? "" : "(use --commit)"}`.trim());
+  } catch (err) {
+    try {
+      await client.query("ROLLBACK");
+    } catch {}
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
 async function main(argv: string[]): Promise<void> {
   assertNoEllipsisArgs(argv);
 
@@ -1513,6 +1621,7 @@ async function main(argv: string[]): Promise<void> {
     "report",
     "status",
     "town-baseline",
+    "set-town-tiers",
     "fill-gaps",
     "era",
     "trim-outposts",
@@ -1616,6 +1725,40 @@ stationRadius,
       updateExisting,
     });
 
+    return;
+  }
+
+  if (cmd === "set-town-tiers") {
+    const boundsRaw = getFlag(argv, "--bounds");
+    if (!boundsRaw) throw new Error(`set-town-tiers requires --bounds "min..max,min..max"`);
+    const bounds = parseBounds(boundsRaw);
+
+    const cellSize = parseIntFlag(argv, "--cellSize", 64) || 64;
+
+    const mode = (getFlag(argv, "--mode") ?? "distance").toLowerCase();
+    if (mode !== "distance") {
+      throw new Error(`Unsupported --mode "${mode}". Supported: distance`);
+    }
+
+    const minTier = parseIntFlag(argv, "--minTier", 1) || 1;
+    const maxTier = parseIntFlag(argv, "--maxTier", 4) || 4;
+
+    const centerRaw = getFlag(argv, "--center") ?? "0,0";
+    const [centerX, centerZ] = parseCenter(centerRaw);
+
+    const report = hasFlag(argv, "--report") || hasFlag(argv, "--verbose");
+
+    await runSetTownTiersDistanceMode({
+      shardId,
+      bounds,
+      cellSize,
+      centerX,
+      centerZ,
+      minTier,
+      maxTier,
+      commit,
+      report,
+    });
     return;
   }
 

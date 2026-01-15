@@ -29,7 +29,7 @@ function mustNotMatch(src: string, re: RegExp, msg: string): void {
   assert.ok(!re.test(src), msg);
 }
 
-test("[contract] skinning command must grant loot and mark corpses as skinned", () => {
+test("[contract] skinning command must grant loot, mark corpses skinned, and emit progression", () => {
   const root = findRepoRoot();
   const src = readAt(root, "worldcore/mud/commands/gathering/skinningCommand.ts");
 
@@ -37,6 +37,10 @@ test("[contract] skinning command must grant loot and mark corpses as skinned", 
   mustMatch(src, /addItemToBags\s*\(/, "skinningCommand must add items to bags");
   mustMatch(src, /getEntitiesInRoom/, "skinningCommand must scan room entities");
   mustMatch(src, /skinned\s*=\s*true/, "skinningCommand must mark corpse as skinned");
+
+  // Progression hooks (best-effort, but we want the wires present).
+  mustMatch(src, /applyProgressionEvent\s*\(/, "skinningCommand must record a progression event");
+  mustMatch(src, /applyProgressionForEvent\s*\(/, "skinningCommand must trigger MUD progression hooks");
 
   // Ensure it's no longer the old placeholder.
   mustNotMatch(src, /Skinning loot not wired/i, "skinningCommand must not be a stub");
