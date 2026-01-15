@@ -72,9 +72,12 @@ Town baseline options (town-baseline):
   --noRest          do not seed rest baseline
   --restProtoId     (default: rest_spot_basic)
   --restRadius      (default: 10)
---noStations      do not seed crafting stations
---stations        comma list of station protoIds (default: station_forge,station_alchemy,station_oven,station_mill)
---stationRadius   (default: 9)
+  --noStations      do not seed crafting stations
+  --stations        comma list of station protoIds (default: station_forge,station_alchemy,station_oven,station_mill)
+  --stationRadius   (default: 9)
+
+  --respectTierStations  enable tier-gated station seeding (default: off)
+  --townTier        override tier for all towns (default: infer)
   --guardCount      NPC guards per town (default: 2)
   --guardProtoId    (default: town_guard)
   --guardRadius     (default: 12)
@@ -1580,7 +1583,13 @@ const stationProtoIds = parseTypes(getFlag(argv, "--stations"), [
 ]);
 const stationRadius = parseIntFlag(argv, "--stationRadius", 9) || 9;
 
-    const guardCount = parseIntFlag(argv, "--guardCount", 2) || 2;
+    const respectTierStations = hasFlag(argv, "--respectTierStations");
+
+    const townTierRaw = getFlag(argv, "--townTier");
+    const townTier = townTierRaw != null ? Number(townTierRaw) : null;
+    const townTierSafe = Number.isFinite(townTier as number) ? (townTier as number) : null;
+
+const guardCount = parseIntFlag(argv, "--guardCount", 2) || 2;
     const guardProtoId = getFlag(argv, "--guardProtoId") ?? "town_guard";
     const guardRadius = parseIntFlag(argv, "--guardRadius", 12) || 12;
 
@@ -1598,6 +1607,8 @@ const stationRadius = parseIntFlag(argv, "--stationRadius", 9) || 9;
 seedStations,
 stationProtoIds,
 stationRadius,
+      townTier: townTierSafe,
+      respectTierStations,
       guardCount,
       guardProtoId,
       guardRadius,
