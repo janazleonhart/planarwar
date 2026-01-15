@@ -7,6 +7,10 @@ import { ItemTemplate } from "./ItemTypes";
  *
  * These are mostly dev / bootstrap items so the world can function
  * even when Postgres has no rows in the `items` table yet.
+ *
+ * NOTE:
+ * - ItemTemplate requires `slot: string`
+ * - ItemTemplate does NOT support `tags` (that’s DB-backed metadata, not template-level)
  */
 const ITEMS: Record<string, ItemTemplate> = {
   // ---------------------------------------------------------------------------

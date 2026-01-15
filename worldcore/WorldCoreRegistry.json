@@ -729,6 +729,20 @@
         "If no skill is recorded, falls back to character level; otherwise uses skill/5 with a minimum of 1."
       ]
     },
+    "combat.skinLootService": {
+      "kind": "service",
+      "service": "combat",
+      "path": "worldcore/combat/SkinLootService.ts",
+      "class": "SkinLootService",
+      "lifecycle": "singleton",
+      "ctorArgs": [],
+      "dependsOn": ["db.database", "utils.logger"],
+      "provides": [
+        "getSkinLootService(): singleton accessor",
+        "SkinLootService.getEntries(protoId, tags): proto-first + tag fallback, deterministic ordering"
+      ],
+      "owns": []
+    },
     "combat.statusEffects": {
       "kind": "service",
       "path": "worldcore/combat/StatusEffects.ts",
@@ -1574,11 +1588,13 @@
         "mud.helpers"
       ],
       "provides": [
-        "handleGatherAction(ctx, char, targetNameRaw, gatheringKind, resourceTag):Promise<string>"
+        "handleGatherAction(ctx, char, targetNameRaw, gatheringKind, resourceTag):Promise<string>",
+        "applyFallbackSkinLoot(protoId): { itemId, minQty, maxQty } | null"
       ],
       "notes": [
         "Implements 'harvest' actions (mining/herbalism/etc.).",
-        "Handles node validation, loot rolls, depletion timestamps, and node/NPC despawn."
+        "Handles node validation, loot rolls, depletion timestamps, and node/NPC despawn.",
+        "Includes skinning fallback helper used by tests; real skinning loot will become DB-driven."
       ]
     },
     "mud.autoattack": {
@@ -1687,23 +1703,27 @@
     },
     "mud.commands.craft": {
       "kind": "mud_command",
+      "service": "mud.commands",
       "path": "worldcore/mud/commands/craftCommand.ts",
-      "function": "handleCraftCommand",
+      "class": null,
+      "lifecycle": "pure",
+      "ctorArgs": [],
       "dependsOn": [
-        "mud.context",
-        "items.service",
-        "characters.service",
-        "mail.service",
-        "tradeskills.recipes",
-        "mud.progression"
+        "tradeskills.tradeRecipeService",
+        "items.inventoryHelpers",
+        "items.inventoryConsume",
+        "mud.progression",
+        "core.entityManager"
       ],
-      "invokedBy": [
-        "mud.handler"
+      "provides": [
+        "mud.command.craft"
       ],
+      "owns": [],
       "notes": [
-        "Implements 'craft', 'craft list', and 'craft <id|name> [count]'.",
-        "Checks recipe inputs/outputs exist, consumes ingredients, adds outputs (bags + mail overflow),",
-        "and records action progress for tasks/quests."
+        "Implements 'craft list' and 'craft <id|name> [count]'.",
+        "DB-backed recipes (TradeRecipeService) with fallback to RecipeCatalog.",
+        "Optional station enforcement via PW_CRAFT_STATIONS_REQUIRED=1.",
+        "Station proximity uses EntityManager.getEntitiesInRoom(roomId)."
       ]
     },
     "mud.commands.debug.handlers": {
@@ -1899,8 +1919,9 @@
         "mud.handler"
       ],
       "notes": [
-        "Currently wired identically to mining (mining/resource_ore) – copy-paste placeholder.",
-        "Conceptually represents 'farming' gather actions; future refactor will adjust resource tags."
+        "Implements 'farm <target>'.",
+        "Delegates to handleGatherAction(ctx, char, targetNameRaw, farming, resource_grain).",
+        "Enforces farming only works on resource_grain nodes (no cross-tool gathering)."
       ]
     },
     "mud.commands.gathering.fishing": {
@@ -1916,8 +1937,9 @@
         "mud.handler"
       ],
       "notes": [
-        "Same as farming for now: delegates to handleGatherAction with mining/resource_ore.",
-        "Placeholder for true fishing logic (water validation, fish loot tables, etc.)."
+        "Implements 'fish <target>'.",
+        "Delegates to handleGatherAction(ctx, char, targetNameRaw, fishing, resource_fish).",
+        "Enforces fishing only works on resource_fish nodes."
       ]
     },
     "mud.commands.gathering.lumbering": {
@@ -1933,7 +1955,9 @@
         "mud.handler"
       ],
       "notes": [
-        "Also currently uses mining/resource_ore; intended to become woodcutting in a later pass."
+        "Implements 'lumber <target>'.",
+        "Delegates to handleGatherAction(ctx, char, targetNameRaw, 'lumber', 'resource_wood').",
+        "Enforces lumbering only works on resource_wood nodes (no cross-tool gathering)."
       ]
     },
     "mud.commands.gathering.mining": {
@@ -1950,7 +1974,8 @@
       ],
       "notes": [
         "Implements 'mine <target>'.",
-        "Delegates to handleGatherAction(ctx, char, targetNameRaw, 'mining', 'resource_ore')."
+        "Delegates to handleGatherAction(ctx, char, targetNameRaw, 'mining', 'resource_ore').",
+        "Enforces mining only works on resource_ore nodes (no cross-tool gathering)."
       ]
     },
     "mud.commands.gathering.picking": {
@@ -1967,7 +1992,8 @@
       ],
       "notes": [
         "Implements 'pick <target>'.",
-        "Delegates to handleGatherAction(ctx, char, targetNameRaw, 'herbalism', 'resource_herb')."
+        "Delegates to handleGatherAction(ctx, char, targetNameRaw, 'herbalism', 'resource_herb').",
+        "Enforces picking only works on resource_herb nodes (no cross-tool gathering)."
       ]
     },
     "mud.commands.gathering.quarrying": {
@@ -1984,8 +2010,29 @@
       ],
       "notes": [
         "Implements 'quarry <target>'.",
-        "Delegates to handleGatherAction(ctx, char, targetNameRaw, 'mining', 'resource_ore')."
+        "Delegates to handleGatherAction(ctx, char, targetNameRaw, 'quarry', 'resource_stone').",
+        "Enforces quarrying only works on resource_stone nodes (no cross-tool gathering)."
       ]
+    },
+    "mud.commands.gathering.skinning": {
+      "kind": "module",
+      "service": "mud",
+      "path": "worldcore/mud/commands/gathering/skinningCommand.ts",
+      "class": "(function) handleSkinningCommand",
+      "lifecycle": "static",
+      "ctorArgs": [],
+      "dependsOn": [
+        "combat.entityCombat",
+        "combat.skinLootService",
+        "mud.actions.world",
+        "npc.types",
+        "items.catalog",
+        "items.inventory"
+      ],
+      "provides": [
+        "skin <corpse>: validates corpse, resolves skin loot (DB-first, fallback), grants items, marks corpse skinned"
+      ],
+      "owns": []
     },
     "mud.commands.guildBank": {
       "kind": "mud_command",
@@ -3550,15 +3597,17 @@
       "class": "(functions)",
       "lifecycle": "static",
       "ctorArgs": [],
-      "dependsOn": [
-        "sim.BrainActions",
-        "sim.SimGrid"
-      ],
       "provides": [
-        "planTownBaselines(): deterministic planner for baseline spawn_points around town-like POIs",
-        "seed definitions: mailbox/rest POIs and guard NPC spawn_points"
+        "planTownBaselines",
+        "TownBaselinePlanOptions",
+        "TownBaselinePlan",
+        "TownLikeSpawnRow"
       ],
-      "owns": []
+      "owns": [],
+      "notes": [
+        "Plans baseline services around towns (mailboxes/rest/guards/dummies/stations).",
+        "TownLikeSpawnRow now accepts townTier (DB) so station seeding can be tier-gated per town."
+      ]
     },
     "skills.progression": {
       "kind": "service",
@@ -3863,7 +3912,10 @@
     "test.utils": {
       "kind": "test_utility",
       "path": "worldcore/test/testUtils.ts",
-      "functions": ["withRandomSequence", "/* other deterministic RNG helpers */"],
+      "functions": [
+        "withRandomSequence",
+        "/* other deterministic RNG helpers */"
+      ],
       "dependsOn": [],
       "notes": [
         "Shared helpers for deterministic Math.random sequences in tests.",
@@ -3881,6 +3933,50 @@
       "notes": [
         "High-level smoke checklist for combat math invariants.",
         "Catches regressions when CombatEngine / StatusEffects ordering changes."
+      ]
+    },
+    "test.contractGatheringCommandsResourceTags": {
+      "kind": "test",
+      "service": "test.contract",
+      "path": "worldcore/test/contract_gatheringCommandsResourceTags.test.ts",
+      "class": null,
+      "lifecycle": "test",
+      "ctorArgs": [],
+      "dependsOn": [
+        "test.utils"
+      ],
+      "provides": [],
+      "owns": [],
+      "notes": [
+        "Contract: gathering commands must pass correct gatheringKind and resource_tag.",
+        "Ensures fish/farm/quarry do not accidentally use resource_ore."
+      ]
+    },
+    "test.contractCraftingRequiresStations": {
+      "kind": "test",
+      "service": "test.contract",
+      "path": "worldcore/test/contract_craftingRequiresStations.test.ts",
+      "class": null,
+      "lifecycle": "test",
+      "ctorArgs": [],
+      "dependsOn": [
+        "mud.commands.craft",
+        "test.utils"
+      ],
+      "provides": [],
+      "owns": [],
+      "notes": [
+        "Contract: when PW_CRAFT_STATIONS_REQUIRED=1, crafting requires the correct station in the room.",
+        "Prevents regressions where station checks silently stop seeing room entities."
+      ]
+    },
+    "test.skinningFallbackLoot": {
+      "kind": "test",
+      "path": "worldcore/test/skinningFallbackLoot.test.ts",
+      "dependsOn": ["mud.actions.world"],
+      "notes": [
+        "Smoke test for applyFallbackSkinLoot(protoId).",
+        "Ensures starter skinning fallback returns hide_scraps with sane qty bounds."
       ]
     },
     "test.statusDamageDealtBySchool": {
@@ -3929,7 +4025,7 @@
       "path": "worldcore/test/pvpRules.test.ts",
       "dependsOn": [
         "combat.pvpRules"
-     ],
+      ],
       "notes": [
         "Regression: PvP gating rules (duel vs open vs warfront) behave as expected.",
         "Foundation for future faction/party friendly-fire rules."
@@ -3977,16 +4073,44 @@
         "Keep seed inputs stable for reproducible dev environments and deterministic tests."
       ]
     },
+    "tools.applySchema": {
+      "kind": "service",
+      "path": "worldcore/tools/applySchema.ts",
+      "class": "ToolScript",
+      "lifecycle": "tool",
+      "ctorArgs": [],
+      "dependsOn": [
+        "worldcore/db/Database.ts",
+        "utils.logger"
+      ],
+      "provides": [
+        "Applies SQL files under worldcore/infra/schema in numeric order",
+        "Tracks applied migrations in schema_migrations",
+        "Supports --dry-run"
+      ],
+      "owns": [
+        "Migration ordering",
+        "Idempotency tracking",
+        "Safe logging + failure visibility"
+      ],
+      "notes": [
+        "This tool is required now that DB-backed recipes are authoritative.",
+        "Without a runner, new schema/seed files rely on manual psql execution."
+      ]
+    },
     "tools.simBrain": {
       "kind": "dev_script",
       "path": "worldcore/tools/simBrain.ts",
       "dependsOn": [
-        "db.main",
-        "sim.settlementPlanner",
-        "sim.respawnCoverage",
-        "sim.gapFiller",
-        "sim.brainActions",
-        "world.spawnPoints"
+        "db.Database",
+        "infra.schema",
+        "sim.SimWorld",
+        "sim.SimGrid",
+        "sim.SimRng",
+        "sim.BrainActions",
+        "sim.townBaselinePlanner",
+        "world.spawnPointService",
+        "world.spawnHydrator"
       ],
       "provides": [
         "preview/apply: deterministic outpost planning (dry-run vs --commit)",
@@ -3996,7 +4120,12 @@
         "trim-outposts: enforce per-faction cap by deleting extras within bounds",
         "snapshot-spawns/restore-spawns: export + reapply spawn_points slices",
         "wipe-placements: delete spawn_points of selected types within bounds",
-        "town-baseline command: seed town/outpost baseline spawn_points (mailbox/rest/guards) into spawn_points table"
+        "town-baseline command: seed town/outpost baseline spawn_points (mailbox/rest/guards) into spawn_points table",
+        "CLI: town-baseline",
+        "Flag: --stations",
+        "Flag: --respectTierStations / --tierStations",
+        "Flag: --townTier <1..5>",
+        "DB seeding: town services + stations + guards + dummies"
       ],
       "owns": [
         "artifacts/brain/*"
@@ -4087,6 +4216,37 @@
       "notes": [
         "Static v1 recipe catalog for smelting and alchemy test recipes (e.g., smelt_iron_ingot, brew_minor_heal).",
         "Provides lookup helpers by id and by case-insensitive name."
+      ]
+    },
+    "tradeskills.recipes.db": {
+      "kind": "service",
+      "path": "worldcore/tradeskills/TradeRecipeService.ts",
+      "class": "TradeRecipeService",
+      "lifecycle": "singleton",
+      "ctorArgs": [],
+      "dependsOn": [
+        "tradeskills.types",
+        "tradeskills.recipes",
+        "worldcore/db/Database.ts",
+        "utils.logger"
+      ],
+      "provides": [
+        "ensureLoaded()",
+        "listAll()",
+        "get(id)",
+        "findByIdOrName(token)",
+        "hasDbRecipes()",
+        "getTradeRecipeService()"
+      ],
+      "owns": [
+        "DB-first recipe resolution (trade_recipes / trade_recipe_inputs / trade_recipe_outputs)",
+        "Static fallback merge with RecipeCatalog during migration",
+        "In-memory cache of merged recipes"
+      ],
+      "notes": [
+        "DB-backed recipe service (authoritative).",
+        "Safely falls back to static RecipeCatalog while DB tables or rows are missing.",
+        "Designed for incremental migration: DB overrides code; code fills gaps."
       ]
     },
     "tradeskills.types": {
@@ -4400,7 +4560,6 @@
         "getDangerScalarForRegion",
         "clearRegionFlagsCache",
         "setRegionFlagsTestOverrides(overrides | null)"
-        
       ],
       "dependsOn": [
         "characters.types",
@@ -4501,12 +4660,14 @@
         "db.main"
       ],
       "provides": [
-        "getSpawnPointsForRegion(shardId, regionId)",
-        "getSpawnPointsNear(shardId, x, z, radius)"
+        "DbSpawnPoint",
+        "SpawnPointRow",
+        "SpawnPointService.getSpawnPointsInBounds",
+        "SpawnPointService.getSpawnPointsNear"
       ],
       "notes": [
-        "Thin DB facade over spawn_points table.",
-        "Returns DbSpawnPoint objects with protoId/variantId."
+        "Reads spawn_points from Postgres with test-safe lazy DB import.",
+        "Now also reads spawn_points.town_tier into DbSpawnPoint.townTier for town-tier aware planning."
       ]
     },
     "world.spawns": {
@@ -4582,13 +4743,19 @@
       "lifecycle": "static",
       "ctorArgs": [],
       "dependsOn": [
-        "world.spawnPoints"
+        "world.spawnPointService"
       ],
       "provides": [
+        "TownTierId",
+        "TownServiceId",
+        "TownStationProtoId",
         "getTownTierRule(tier)",
         "getServicesForTier(tier)",
+        "getStationProtoIdsForTier(tier)",
+        "tryInferTownTierFromSpawn(spawn)",
         "inferTownTierFromSpawn(spawn)",
-        "getServicesForTownSpawn(spawn)"
+        "getServicesForTownSpawn(spawn)",
+        "getStationProtoIdsForTownSpawn(spawn)"
       ],
       "owns": [],
       "notes": [
@@ -4607,7 +4774,8 @@
       "dependsOn": [
         "worldcore/data/items/ItemTypes.ts"
       ],
-      "notes": "Shared in-memory item database for basic herbs, ores, lumber, tools and magical resources; used for drops, rewards and simple inventories across MMO, webend and MUD."
+      "notes": "Shared in-memory item database for basic herbs, ores, lumber, tools and magical resources; used for drops, rewards and simple inventories across MMO, webend and MUD.",
+      "path": "worldcore/data/items/ItemDatabase.ts"
     },
     "worldcore/data/items/ItemTypes.ts": {
       "file": "worldcore/data/items/ItemTypes.ts",
@@ -4621,7 +4789,8 @@
         "ItemDef"
       ],
       "dependsOn": [],
-      "notes": "Canonical item model (categories, rarities, resource tags, base ItemDef) shared across all frontends and backends."
+      "notes": "Canonical item model (categories, rarities, resource tags, base ItemDef) shared across all frontends and backends.",
+      "path": "worldcore/data/items/ItemTypes.ts"
     },
     "worldcore/db/ChunkCache.ts": {
       "file": "worldcore/db/ChunkCache.ts",
@@ -4637,7 +4806,8 @@
         "worldcore/db/Database.ts",
         "worldcore/utils/logger.ts"
       ],
-      "notes": "Redis-backed generic chunk cache used by future terrain/worldgen streaming (WGEv3, TerrainStream v3) to store arbitrary per-chunk payloads."
+      "notes": "Redis-backed generic chunk cache used by future terrain/worldgen streaming (WGEv3, TerrainStream v3) to store arbitrary per-chunk payloads.",
+      "path": "worldcore/db/ChunkCache.ts"
     },
     "worldcore/db/Database.ts": {
       "file": "worldcore/db/Database.ts",
@@ -4656,7 +4826,8 @@
         "dotenv",
         "worldcore/utils/logger.ts"
       ],
-      "notes": "Central Postgres and Redis connection layer with pooled DB access and lazy Redis connection; currently parked for when shard storage and other DB-backed systems go live."
+      "notes": "Central Postgres and Redis connection layer with pooled DB access and lazy Redis connection; currently parked for when shard storage and other DB-backed systems go live.",
+      "path": "worldcore/db/Database.ts"
     },
     "worldcore/db/ShardStorage.ts": {
       "file": "worldcore/db/ShardStorage.ts",
@@ -4671,7 +4842,140 @@
         "worldcore/utils/logger.ts",
         "worldcore/shards/WorldBlueprint.ts"
       ],
-      "notes": "Shard-level persistence helper for loading world blueprints (boundary, regions, objects, spawns) from the shards table into WorldBlueprint structures."
+      "notes": "Shard-level persistence helper for loading world blueprints (boundary, regions, objects, spawns) from the shards table into WorldBlueprint structures.",
+      "path": "worldcore/db/ShardStorage.ts"
+    },
+    "infra.schema.030_trade_recipes": {
+      "kind": "service",
+      "path": "worldcore/infra/schema/030_trade_recipes.sql",
+      "class": "SchemaMigration",
+      "lifecycle": "migration",
+      "ctorArgs": [],
+      "dependsOn": [
+        "worldcore/db/Database.ts"
+      ],
+      "provides": [
+        "trade_recipes table",
+        "trade_recipe_inputs table",
+        "trade_recipe_outputs table"
+      ],
+      "owns": [
+        "DB schema for DB-backed tradeskill recipes",
+        "FK constraints into items(id)",
+        "Indexes for recipe category lookups"
+      ],
+      "notes": [
+        "Tradeskills v1: introduces DB-backed recipes as authoritative content source.",
+        "Inputs/outputs stored as separate tables for easy extension (stations, skill reqs, tools)."
+      ]
+    },
+    "infra.seed.031_trade_recipes_v1": {
+      "kind": "service",
+      "path": "worldcore/infra/schema/031_seed_trade_recipes_v1.sql",
+      "class": "SeedMigration",
+      "lifecycle": "migration",
+      "ctorArgs": [],
+      "dependsOn": [
+        "infra.schema.030_trade_recipes",
+        "infra.schema.007_items",
+        "worldcore/db/Database.ts"
+      ],
+      "provides": [
+        "smelt_iron_ingot recipe (DB)",
+        "brew_minor_heal recipe (DB)"
+      ],
+      "owns": [
+        "Baseline recipe seeds using UPSERT",
+        "Inputs/outputs rows for each seeded recipe"
+      ],
+      "notes": [
+        "Tradeskills v1 baseline DB recipes.",
+        "Safe to re-run; uses ON CONFLICT UPSERT patterns."
+      ]
+    },
+    "infra.seed.032_trade_recipes_cooking_v1": {
+      "kind": "service",
+      "path": "worldcore/infra/schema/032_seed_trade_recipes_cooking_v1.sql",
+      "class": "SeedMigration",
+      "lifecycle": "migration",
+      "ctorArgs": [],
+      "dependsOn": [
+        "infra.schema.030_trade_recipes",
+        "infra.schema.007_items",
+        "worldcore/db/Database.ts"
+      ],
+      "provides": [
+        "cook_river_trout (DB recipe seed)",
+        "mill_wheat_flour (DB recipe seed)",
+        "bake_simple_bread (DB recipe seed)"
+      ],
+      "owns": [
+        "Starter cooking recipe seeds (UPSERT)",
+        "Deterministic inputs/outputs replacement per recipe"
+      ],
+      "notes": [
+        "Migrates RecipeCatalog cooking recipes into DB so crafting is DB-authoritative.",
+        "Safe to re-run."
+      ]
+    },
+    "infra.schema.033_trade_recipes_station_kind": {
+      "kind": "service",
+      "path": "worldcore/infra/schema/033_trade_recipes_station_kind.sql",
+      "class": "SchemaMigration",
+      "lifecycle": "migration",
+      "ctorArgs": [],
+      "dependsOn": [
+        "infra.schema.030_trade_recipes"
+      ],
+      "provides": [
+        "trade_recipes.station_kind",
+        "idx_trade_recipes_station_kind"
+      ],
+      "owns": [
+        "Crafting station requirement schema for trade recipes"
+      ],
+      "notes": [
+        "Nullable station_kind enables Crafting Stations v0 without breaking existing recipes.",
+        "Enforcement is handled in craftCommand behind PW_CRAFT_STATIONS_REQUIRED=1."
+      ]
+    },
+    "infra.seed.034_trade_recipes_station_kinds_v1": {
+      "kind": "service",
+      "path": "worldcore/infra/schema/034_seed_trade_recipes_station_kinds_v1.sql",
+      "class": "SeedMigration",
+      "lifecycle": "migration",
+      "ctorArgs": [],
+      "dependsOn": [
+        "infra.schema.033_trade_recipes_station_kind"
+      ],
+      "provides": [
+        "Starter recipe station_kind assignments"
+      ],
+      "owns": [
+        "Station policy for starter recipes: campfire portable; forge/alchemy_table/millstone/oven town-only"
+      ]
+    },
+    "infra.schema.035_skin_loot_v1": {
+      "kind": "schema",
+      "service": "infra",
+      "path": "worldcore/infra/schema/035_skin_loot_v1.sql",
+      "class": "(sql)",
+      "lifecycle": "static",
+      "ctorArgs": [],
+      "dependsOn": ["infra.schema.007_items"],
+      "provides": ["skin_loot table for DB-backed skinning loot profiles (proto and/or tag targeting)"],
+      "owns": []
+    },
+    "infra.schema.036_seed_skin_loot_v1": {
+      "kind": "schema_seed",
+      "service": "infra",
+      "path": "worldcore/infra/schema/036_seed_skin_loot_v1.sql",
+      "class": "(sql)",
+      "lifecycle": "static",
+      "ctorArgs": [],
+      "dependsOn": ["infra.schema.035_skin_loot_v1"],
+      "provides": ["minimal beast/critter starter skin loot rows (hide_scraps)"],
+      "owns": []
     },
     "worldcore/economy/EconomyHelpers.ts": {
       "file": "worldcore/economy/EconomyHelpers.ts",
@@ -4698,7 +5002,8 @@
         "worldcore/characters/CharacterTypes.ts",
         "worldcore/items/InventoryHelpers.ts"
       ],
-      "notes": "High-level gold and item helpers for characters: give/take gold, add/remove item quantities, cost checks and reward application for shops, quests and other systems."
+      "notes": "High-level gold and item helpers for characters: give/take gold, add/remove item quantities, cost checks and reward application for shops, quests and other systems.",
+      "path": "worldcore/economy/EconomyHelpers.ts"
     },
     "worldcore/factions/FactionTypes.ts": {
       "file": "worldcore/factions/FactionTypes.ts",
@@ -4712,7 +5017,8 @@
         "getAllFactions"
       ],
       "dependsOn": [],
-      "notes": "Basic faction model and temporary in-memory faction registry (including test_empire) for early region control, naming and UI tests."
+      "notes": "Basic faction model and temporary in-memory faction registry (including test_empire) for early region control, naming and UI tests.",
+      "path": "worldcore/factions/FactionTypes.ts"
     },
     "worldcore/gathering/GatherTables.ts": {
       "file": "worldcore/gathering/GatherTables.ts",
@@ -4724,7 +5030,8 @@
         "HERB_TABLES"
       ],
       "dependsOn": [],
-      "notes": "Weighted herb drop tables keyed by biome+tier (e.g. plains:1, plains:3, plains:5) used by gathering nodes to roll what items a harvest yields."
+      "notes": "Weighted herb drop tables keyed by biome+tier (e.g. plains:1, plains:3, plains:5) used by gathering nodes to roll what items a harvest yields.",
+      "path": "worldcore/gathering/GatherTables.ts"
     },
     "worldcore/guilds/GuildService.ts": {
       "file": "worldcore/guilds/guildService.ts",
@@ -4737,7 +5044,8 @@
       "dependsOn": [
         "worldcore/db/Database.ts"
       ],
-      "notes": "DB-backed guild service for resolving a character's guild and listing guild members with rank and basic character info."
+      "notes": "DB-backed guild service for resolving a character's guild and listing guild members with rank and basic character info.",
+      "path": "worldcore/guilds/guildService.ts"
     },
     "worldcore/index.ts": {
       "file": "worldcore/index.ts",
@@ -4762,7 +5070,8 @@
         "worldcore/terrain/index.ts",
         "worldcore/terrain/worldgen/ScaledWorldgen.ts"
       ],
-      "notes": "Root worldcore barrel that re-exports config, shard blueprints, shared region types and terrain/worldgen entrypoints as a stable public API."
+      "notes": "Root worldcore barrel that re-exports config, shard blueprints, shared region types and terrain/worldgen entrypoints as a stable public API.",
+      "path": "worldcore/index.ts"
     },
     "worldgen.scaled": {
       "kind": "worldgen_factory",

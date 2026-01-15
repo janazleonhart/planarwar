@@ -72,6 +72,9 @@ Town baseline options (town-baseline):
   --noRest          do not seed rest baseline
   --restProtoId     (default: rest_spot_basic)
   --restRadius      (default: 10)
+--noStations      do not seed crafting stations
+--stations        comma list of station protoIds (default: station_forge,station_alchemy,station_oven,station_mill)
+--stationRadius   (default: 9)
   --guardCount      NPC guards per town (default: 2)
   --guardProtoId    (default: town_guard)
   --guardRadius     (default: 12)
@@ -612,6 +615,11 @@ async function runTownBaseline(args: {
   seedRest: boolean;
   restProtoId: string;
   restRadius: number;
+  seedStations: boolean;
+  stationProtoIds: string[];
+  stationRadius: number;
+  townTier?: number | null;
+  respectTierStations?: boolean;
   guardCount: number;
   guardProtoId: string;
   guardRadius: number;
@@ -640,7 +648,7 @@ async function runTownBaseline(args: {
   try {
     const res = await client.query(
       `
-      SELECT shard_id, spawn_id, type, x, y, z, region_id
+      SELECT shard_id, spawn_id, type, archetype, proto_id, variant_id, x, y, z, region_id
       FROM spawn_points
       WHERE shard_id = $1
         AND x >= $2 AND x < $3
@@ -659,10 +667,14 @@ async function runTownBaseline(args: {
     shardId: String(r.shard_id),
     spawnId: String(r.spawn_id),
     type: String(r.type),
+    archetype: r.archetype != null ? String(r.archetype) : undefined,
+    protoId: r.proto_id != null ? String(r.proto_id) : undefined,
+    variantId: r.variant_id != null ? String(r.variant_id) : null,
     x: Number(r.x ?? 0),
     y: Number(r.y ?? 0),
     z: Number(r.z ?? 0),
     regionId: r.region_id ? String(r.region_id) : null,
+    townTier: r.town_tier != null ? Number(r.town_tier) : null,
   }));
 
   // Defaults: 1 big dummy per town, radius ~10 units
@@ -685,6 +697,13 @@ async function runTownBaseline(args: {
     restProtoId: args.restProtoId,
     restRadius: Math.max(0, args.restRadius),
 
+    seedStations: args.seedStations,
+    stationType: "station",
+    stationProtoIds: args.stationProtoIds,
+    stationRadius: Math.max(0, args.stationRadius),
+    townTierOverride: args.townTier ?? null,
+    respectTownTierStations: Boolean(args.respectTierStations),
+
     guardCount: Math.max(0, Math.floor(args.guardCount)),
     guardProtoId: args.guardProtoId,
     guardRadius: Math.max(0, args.guardRadius),
@@ -701,7 +720,7 @@ async function runTownBaseline(args: {
       args.bounds,
     )} towns=${plan.townsConsidered} actions=${plan.actions.length} mailbox=${
       opts.seedMailbox ? "on" : "off"
-    } rest=${opts.seedRest ? "on" : "off"} guards=${opts.guardCount} dummies=${
+    } rest=${opts.seedRest ? "on" : "off"} stations=${opts.seedStations ? (opts.stationProtoIds?.length ?? 0) : 0} tierStations=${args.respectTierStations ? "on" : "off"} townTier=${args.townTier ?? "infer"} guards=${opts.guardCount} dummies=${
       opts.dummyCount
     }`,
   );
@@ -1552,6 +1571,15 @@ async function main(argv: string[]): Promise<void> {
     const restProtoId = getFlag(argv, "--restProtoId") ?? "rest_spot_basic";
     const restRadius = parseIntFlag(argv, "--restRadius", 10) || 10;
 
+const seedStations = !hasFlag(argv, "--noStations");
+const stationProtoIds = parseTypes(getFlag(argv, "--stations"), [
+  "station_forge",
+  "station_alchemy",
+  "station_oven",
+  "station_mill",
+]);
+const stationRadius = parseIntFlag(argv, "--stationRadius", 9) || 9;
+
     const guardCount = parseIntFlag(argv, "--guardCount", 2) || 2;
     const guardProtoId = getFlag(argv, "--guardProtoId") ?? "town_guard";
     const guardRadius = parseIntFlag(argv, "--guardRadius", 12) || 12;
@@ -1567,6 +1595,9 @@ async function main(argv: string[]): Promise<void> {
       seedRest,
       restProtoId,
       restRadius,
+seedStations,
+stationProtoIds,
+stationRadius,
       guardCount,
       guardProtoId,
       guardRadius,

@@ -48,6 +48,9 @@ export interface SpawnPointRow {
   y: number | null;
   z: number | null;
   region_id: string | null;
+
+  // Optional column; older DBs may not have it yet.
+  town_tier?: number | null;
 }
 
 /**
@@ -75,6 +78,9 @@ export interface DbSpawnPoint {
   z: number | null;
 
   regionId: string | null;
+
+  // Option B: DB-backed town tier (spawn_points.town_tier). Only meaningful for type='town'.
+  townTier?: number | null;
 }
 
 function rowToSpawnPoint(row: SpawnPointRow): DbSpawnPoint {

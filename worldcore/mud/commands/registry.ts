@@ -63,6 +63,7 @@ import { handleFishingCommand } from "./gathering/fishingCommand";
 import { handleFarmingCommand } from "./gathering/farmingCommand";
 import { handleLumberingCommand } from "./gathering/lumberingCommand";
 import { handleQuarryingCommand } from "./gathering/quarryingCommand";
+import { handleSkinningCommand } from "./gathering/skinningCommand";
 
 // Progression
 import {
@@ -224,6 +225,7 @@ export const COMMANDS: Record<string, MudCommandHandlerFn> = {
   fish: handleFishingCommand,
   lumber: handleLumberingCommand,
   quarry: handleQuarryingCommand,
+  skin: handleSkinningCommand,
 
   // Progression
   quests: async (ctx, char) => handleQuestsCommand(ctx, char),

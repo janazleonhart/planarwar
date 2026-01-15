@@ -42,6 +42,18 @@ export type TownBaselinePlanOptions = {
   restProtoId: string;     // default: "rest_spot_basic"
   restRadius: number;      // default: 10
 
+  // Crafting stations baseline (POI placeholders)
+  seedStations: boolean;
+  stationType: string;        // default: "station"
+  stationProtoIds: string[];  // e.g. ["station_forge","station_alchemy","station_oven","station_mill"]
+  stationRadius: number;      // default: 9
+
+ // Optional: force a tier for station gating (dev/testing)
+  townTierOverride?: number | null;
+
+  // Optional: when tier is known, intersect stationProtoIds with tier-allowed stations
+  respectTownTierStations?: boolean;
+
   // Guard baseline (real NPC spawns)
   guardCount: number;      // default: 2
   guardProtoId: string;    // default: "town_guard"
@@ -111,6 +123,15 @@ function inWorldBounds(
   const minZ = bounds.minCz * cellSize;
   const maxZ = (bounds.maxCz + 1) * cellSize;
   return x >= minX && x < maxX && z >= minZ && z < maxZ;
+}
+
+function sanitizeId(s: string): string {
+  return String(s ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .slice(0, 32) || "x";
 }
 
 function makeSpawnId(prefix: string, townSpawnId: string): string {
@@ -186,6 +207,37 @@ export function planTownBaselines(
         });
       }
     }
+
+// Crafting stations (POI placeholders)
+if (opts.seedStations) {
+  const protoIds = (opts.stationProtoIds ?? []).map((x) => String(x ?? "").trim()).filter(Boolean);
+  const stationType = norm(opts.stationType || "station") || "station";
+  const stationRadius = Math.max(0, Number(opts.stationRadius ?? 9) || 9);
+
+  for (const pid of protoIds) {
+    const off = polarOffset(`${townSpawnId}:station:${pid}`, stationRadius);
+    const x = round2(baseX + off.dx);
+    const z = round2(baseZ + off.dz);
+
+    if (!inWorldBounds(x, z, opts.bounds, opts.cellSize)) continue;
+
+    actions.push({
+      kind: "place_spawn",
+      spawn: {
+        shardId,
+        spawnId: makeSpawnId(`stn_${sanitizeId(pid)}`, townSpawnId),
+        type: stationType,
+        archetype: "station",
+        protoId: pid,
+        variantId: null,
+        x,
+        y: baseY,
+        z,
+        regionId,
+      },
+    });
+  }
+}
 
     // Guards
     const guardCount = Math.max(0, Math.floor(opts.guardCount ?? 0));

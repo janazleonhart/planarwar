@@ -152,10 +152,7 @@ export function applyGenericResourceLoot(
 
   const tpl = resolveItem(ctx.items, itemId);
   if (!tpl) {
-    log.warn("Generic resource loot template missing", {
-      itemId,
-      nodeTag,
-    });
+    log.warn("Generic resource loot template missing", { itemId, nodeTag });
     return;
   }
 
@@ -163,9 +160,7 @@ export function applyGenericResourceLoot(
   if (qty <= 0) return;
 
   const res = ctx.items.addToInventory(char.inventory, tpl.id, qty);
-  if (res.added > 0) {
-    lootLines.push(describeLootLine(tpl.id, res.added, tpl.name));
-  }
+  if (res.added > 0) lootLines.push(describeLootLine(tpl.id, res.added, tpl.name));
 }
 
 // ---------------------------------------------------------------------------
@@ -203,10 +198,7 @@ export async function handleGatherAction(
       if (typeof (e as any).spawnPointId !== "number") return false;
 
       // Per-player resource nodes honor ownership.
-      if (
-        (e as any).ownerSessionId &&
-        (e as any).ownerSessionId !== ctx.session.id
-      ) {
+      if ((e as any).ownerSessionId && (e as any).ownerSessionId !== ctx.session.id) {
         return false;
       }
 
@@ -222,9 +214,7 @@ export async function handleGatherAction(
     },
   });
 
-  if (!target) {
-    return `There is no '${what}' here to gather.`;
-  }
+  if (!target) return `There is no '${what}' here to gather.`;
 
   const npcState = npcs.getNpcStateByEntityId(target.id);
   if (!npcState) return "You can't gather that.";
@@ -236,10 +226,7 @@ export async function handleGatherAction(
 
   // Step 2: sanity-check resource subtype tags.
   const presentResourceTags = tags.filter((t) => RESOURCE_TAGS.has(t));
-
-  if (presentResourceTags.length === 0) {
-    return "That doesn't look like a gatherable resource.";
-  }
+  if (presentResourceTags.length === 0) return "That doesn't look like a gatherable resource.";
 
   if (presentResourceTags.length > 1) {
     log.warn("Resource node has multiple resource subtype tags", {
@@ -260,17 +247,13 @@ export async function handleGatherAction(
       expected,
     });
 
-    return `That node seems misconfigured. Try '${suggestCommandForTag(
-      expected
-    )}' (expected ${expected}).`;
+    return `That node seems misconfigured. Try '${suggestCommandForTag(expected)}' (expected ${expected}).`;
   }
 
   // Step 4: enforce “right command for right resource type”.
   // IMPORTANT: this must occur before any damage is applied.
   if (!allowed.includes(nodeTag)) {
-    return `That isn't compatible with '${suggestCommandForTag(
-      allowed[0]
-    )}'. Try '${suggestCommandForTag(nodeTag)}'.`;
+    return `That isn't compatible with '${suggestCommandForTag(allowed[0])}'. Try '${suggestCommandForTag(nodeTag)}'.`;
   }
 
   // ---- generic progression event ----
@@ -317,9 +300,7 @@ export async function handleGatherAction(
       }
 
       const res = ctx.items.addToInventory(char.inventory, tpl.id, qty);
-      if (res.added > 0) {
-        lootLines.push(describeLootLine(tpl.id, res.added, tpl.name));
-      }
+      if (res.added > 0) lootLines.push(describeLootLine(tpl.id, res.added, tpl.name));
     }
   } else {
     // Fallback: keyed off node type, not the command.
@@ -347,20 +328,13 @@ export async function handleGatherAction(
 
     // Personal resource node depletion uses spawnPointId timers.
     if (target.type === "node" && typeof (target as any).spawnPointId === "number") {
-      setNodeDepletedUntil(
-        char,
-        (target as any).spawnPointId,
-        Date.now() + respawnSeconds * 1000
-      );
+      setNodeDepletedUntil(char, (target as any).spawnPointId, Date.now() + respawnSeconds * 1000);
 
       if (ctx.characters) {
         try {
           await ctx.characters.saveCharacter(char);
         } catch (err) {
-          log.warn("Failed to save character after node depletion", {
-            err,
-            charId: char.id,
-          });
+          log.warn("Failed to save character after node depletion", { err, charId: char.id });
         }
       }
 
@@ -371,7 +345,7 @@ export async function handleGatherAction(
           ownerSessionId: ctx.session.id,
         });
       } catch {
-        // best-effort; MUD still works even if we can't signal the client
+        // best-effort
       }
 
       ctx.npcs?.despawnNpc?.(target.id);
@@ -381,9 +355,20 @@ export async function handleGatherAction(
     }
   }
 
-  if (progressionSnippets.length > 0) {
-    line += " " + progressionSnippets.join(" ");
-  }
+  if (progressionSnippets.length > 0) line += " " + progressionSnippets.join(" ");
 
   return line;
 }
+
+// Skinning: starter fallback loot.
+// Later: replace with DB-driven creature-family loot.
+// Skinning: starter fallback loot.
+// Later: prefer DB-driven skin_loot profiles (see SkinLootService) and keep this as a safety net.
+export function applyFallbackSkinLoot(protoId: string): { itemId: string; minQty: number; maxQty: number } | null {
+  const proto = getNpcPrototype(protoId);
+  const tags = proto?.tags ?? [];
+  const isSkinnable = Array.isArray(tags) && (tags.includes("beast") || tags.includes("critter"));
+  if (!isSkinnable) return null;
+  return { itemId: "hide_scraps", minQty: 1, maxQty: 2 };
+}
+

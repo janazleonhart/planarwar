@@ -27,6 +27,12 @@ export interface TradeRecipe {
   inputs: RecipeIngredient[];
   outputs: RecipeOutput[];
 
+  /**
+   * Optional station requirement.
+   * Examples: "forge", "alchemy_table", "oven", "millstone", "campfire"
+   */
+  stationKind?: string | null;
+
   // Future knobs – leave for v2:
   // minSkill?: number;
   // skillUpChance?: number;

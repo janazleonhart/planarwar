@@ -39,6 +39,18 @@ import {
 } from "../skills/SkillProgression";
 import { computeEffectiveAttributes } from "../characters/Stats";
 import { getSpawnPoint } from "../world/SpawnPointCache";
+function envInt(name: string, fallback: number): number {
+  const raw = process.env[name];
+  if (raw == null || raw === "") return fallback;
+  const n = Number.parseInt(raw, 10);
+  return Number.isFinite(n) ? n : fallback;
+}
+
+function envBool(name: string, fallback: boolean): boolean {
+  const raw = process.env[name];
+  if (raw == null || raw === "") return fallback;
+  return raw === "1" || raw.toLowerCase() === "true" || raw.toLowerCase() === "yes";
+}
 
 const log = Logger.scope("NPC_COMBAT");
 
@@ -252,6 +264,22 @@ export async function performNpcAttack(
 
   // --- NPC death: XP + loot ---
   (npc as any).alive = false;
+
+  // Notify room listeners immediately (corpse state / client visuals / post-kill actions).
+  // Safe no-op if the client ignores entity_update.
+  try {
+    const st = ctx.npcs?.getNpcStateByEntityId(npc.id);
+    const rid = st?.roomId ?? (npc as any)?.roomId;
+    const room = rid ? ctx.rooms?.get(rid) : undefined;
+    room?.broadcast("entity_update", {
+      id: npc.id,
+      hp: 0,
+      maxHp: (npc as any)?.maxHp ?? 1,
+      alive: false,
+    });
+  } catch {
+    // ignore
+  }
   line += ` You slay ${npc.name}!`;
 
   // Resolve prototype for rewards
@@ -551,10 +579,21 @@ export function scheduleNpcCorpseAndRespawn(
         ? ent0.z
         : 0;
 
-  let corpseMs = 2500;
-  let respawnMs = 8000;
+  let corpseMs = envInt("PW_CORPSE_RESOURCE_MS", 2500);
+  let respawnMs = envInt("PW_RESPAWN_AFTER_CORPSE_MS", 8000);
 
-  // Tests should never wait seconds for lifecycle.
+  // NPC corpses need to stick around long enough for post-kill actions (e.g. skinning).
+  // Resources remain fast because they're not skinned and are handled by the personal-node pipeline.
+  if (!isResource) {
+    corpseMs = envInt("PW_CORPSE_NPC_MS", 15000);
+
+    // Give beasts/critter-style mobs a bit longer since skinning is expected.
+    const tags = proto?.tags ?? [];
+    if (tags.includes("beast") || tags.includes("critter")) {
+      corpseMs = envInt("PW_CORPSE_BEAST_MS", 20000);
+    }
+  }
+// Tests should never wait seconds for lifecycle.
   if (process.env.WORLDCORE_TEST === "1") {
     corpseMs = 5;
     respawnMs = 60;

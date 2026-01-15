@@ -1,12 +1,18 @@
 // worldcore/world/TownTierRules.ts
 // -----------------------------------------------------------------------------
 // Purpose:
-// Centralize "town tier" rules for world services.
+// Centralize "town tier" rules for world services + (optionally) crafting stations.
 //
 // v1 goals:
 // - Tier 1: rest + mailbox + guards (what we already have in baseline).
 // - Higher tiers (2+): define which services *should* exist once service
 //   gating + anchors are wired (bank/vendor/auction/guildbank).
+//
+// Station goals (early, pragmatic):
+// - Keep station requirements DB-backed (recipes declare stationKind).
+// - Allow planners/tools to *optionally* gate which stations appear by town tier.
+// - Do NOT hard-require tier metadata; if we can't infer a tier, callers can
+//   choose to skip tier gating.
 //
 // This file is intentionally pure/data-only so multiple systems can depend on
 // it (simBrain planners, TownBaselines, future faction AI, tools) without
@@ -26,6 +32,20 @@ export type TownServiceId =
   | "auction"
   | "guildbank";
 
+/**
+ * Station proto ids (spawn_points.protoId for type="station").
+ *
+ * NOTE:
+ * - 'station_campfire' is intentionally listed even though it's usually a
+ *   wilderness / player-placed station (not town-seeded).
+ */
+export type TownStationProtoId =
+  | "station_forge"
+  | "station_alchemy"
+  | "station_oven"
+  | "station_mill"
+  | "station_campfire";
+
 export interface TownTierRule {
   tier: TownTierId;
   services: TownServiceId[];
@@ -33,7 +53,7 @@ export interface TownTierRule {
 }
 
 // -----------------------------------------------------------------------------
-// Hard-coded default rules.
+// Hard-coded default service rules.
 // These are the "design intent"; actual enforcement happens elsewhere.
 // -----------------------------------------------------------------------------
 
@@ -73,6 +93,33 @@ const TOWN_TIER_RULES: TownTierRule[] = [
   },
 ];
 
+// -----------------------------------------------------------------------------
+// Station rules (optional)
+// -----------------------------------------------------------------------------
+//
+// These are intentionally conservative: Tier 1 towns don't get heavy stations.
+// If a caller can't infer a tier, it can choose to NOT apply station gating.
+//
+// Default intent:
+// - Tier 1: none (campfire is generally not a town-seeded station)
+// - Tier 2: oven + mill (food loop)
+// - Tier 3: forge (basic metal loop)
+// - Tier 4: alchemy (pots/consumables)
+// - Tier 5: all
+//
+// You can still force any station anywhere by:
+///  - bypassing this module, or
+//   - skipping gating when tier is unknown.
+// -----------------------------------------------------------------------------
+
+const TOWN_STATION_RULES: Record<TownTierId, TownStationProtoId[]> = {
+  1: [],
+  2: ["station_oven", "station_mill"],
+  3: ["station_oven", "station_mill", "station_forge"],
+  4: ["station_oven", "station_mill", "station_forge", "station_alchemy"],
+  5: ["station_oven", "station_mill", "station_forge", "station_alchemy"],
+};
+
 function clampTier(n: number): TownTierId {
   const t = Math.max(1, Math.min(5, Math.floor(n || 1)));
   return t as TownTierId;
@@ -95,6 +142,14 @@ export function getServicesForTier(tier: number): TownServiceId[] {
   return [...getTownTierRule(tier).services];
 }
 
+/**
+ * Convenience: get the intended station proto ids for a tier.
+ */
+export function getStationProtoIdsForTier(tier: number): TownStationProtoId[] {
+  const t = clampTier(tier);
+  return [...(TOWN_STATION_RULES[t] ?? [])];
+}
+
 // -----------------------------------------------------------------------------
 // Tier inference helpers
 // -----------------------------------------------------------------------------
@@ -103,12 +158,13 @@ export function getServicesForTier(tier: number): TownServiceId[] {
 //
 // - spawn.variantId like "town_tier2_default"
 // - spawn.spawnId like "town_tier3_whatever"
-// - archetype or tags containing "tier_4" or "tier-4"
+// - archetype containing "tier_4" or "tier-4"
 //
-// If nothing is found, default to Tier 1.
+// If nothing is found, inferTownTierFromSpawn defaults to Tier 1.
+// If you need a "tier is unknown" signal, use tryInferTownTierFromSpawn().
 // -----------------------------------------------------------------------------
 
-type Spawnish = Pick<DbSpawnPoint, "spawnId" | "archetype" | "variantId"> & {
+type Spawnish = Pick<DbSpawnPoint, "spawnId" | "archetype" | "variantId" | "townTier"> & {
   // Optional future metadata from tools/worldgen; we don't rely on it yet.
   tags?: string[] | null;
 };
@@ -123,6 +179,38 @@ function tryParseTierToken(s: string | null | undefined): TownTierId | null {
 }
 
 /**
+ * Returns the town tier if explicitly provided (DB column `town_tier`),
+ * otherwise attempts to infer it from a tier token (e.g. `tier_3`) in spawn metadata.
+ * Returns null if no tier information is present.
+ */
+export function tryInferTownTierFromSpawn(spawn: Spawnish): TownTierId | null {
+  // Option B (authoritative): DB-backed town tier (spawn_points.town_tier) wins.
+  const explicit = spawn.townTier;
+  if (explicit !== null && explicit !== undefined) {
+    const n = typeof explicit === "number" ? explicit : parseInt(String(explicit), 10);
+    if (Number.isFinite(n)) return clampTier(n);
+  }
+
+  const candidates: (string | null | undefined)[] = [
+    spawn.variantId,
+    spawn.spawnId,
+    spawn.archetype,
+  ];
+
+  const tags = spawn.tags;
+  if (Array.isArray(tags)) {
+    for (const t of tags) candidates.push(String(t));
+  }
+
+  for (const c of candidates) {
+    const tier = tryParseTierToken(c);
+    if (tier) return tier;
+  }
+
+  return null;
+}
+
+/**
  * Infer a town's tier from its spawn metadata.
  *
  * v1 behavior:
@@ -131,25 +219,7 @@ function tryParseTierToken(s: string | null | undefined): TownTierId | null {
  * - else fall back to Tier 1
  */
 export function inferTownTierFromSpawn(spawn: Spawnish): TownTierId {
-  const candidates: (string | null | undefined)[] = [
-    spawn.variantId,
-    spawn.spawnId,
-    spawn.archetype,
-  ];
-
-  const tags = (spawn as any).tags;
-  if (Array.isArray(tags)) {
-    for (const t of tags) {
-      candidates.push(String(t));
-    }
-  }
-
-  for (const c of candidates) {
-    const tier = tryParseTierToken(c);
-    if (tier) return tier;
-  }
-
-  return 1;
+  return tryInferTownTierFromSpawn(spawn) ?? 1;
 }
 
 /**
@@ -161,4 +231,18 @@ export function inferTownTierFromSpawn(spawn: Spawnish): TownTierId {
 export function getServicesForTownSpawn(spawn: Spawnish): TownServiceId[] {
   const tier = inferTownTierFromSpawn(spawn);
   return getServicesForTier(tier);
+}
+
+/**
+ * Get the *intended* station proto ids for a given town spawn.
+ *
+ * If the town tier is unknown (no tier token), we return null so callers
+ * can decide whether to skip gating or force a default.
+ */
+export function getStationProtoIdsForTownSpawn(
+  spawn: Spawnish,
+): TownStationProtoId[] | null {
+  const tier = tryInferTownTierFromSpawn(spawn);
+  if (!tier) return null;
+  return getStationProtoIdsForTier(tier);
 }

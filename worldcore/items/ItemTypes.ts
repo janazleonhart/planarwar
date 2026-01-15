@@ -21,24 +21,27 @@ export interface ItemTemplate {
   category?: string;      // "gear", "material", "food", etc.
   description?: string;   // tooltip text
   rarity?: ItemRarity;    // "common", "rare", etc.
-}
-  
-  export const EQUIP_SLOTS = [
-    "head",
-    "chest",
-    "legs",
-    "feet",
-    "hands",
-    "mainhand",
-    "offhand",
-    "ring1",
-    "ring2",
-    "neck",
-  ] as const;
-  
-  export type EquipSlot = (typeof EQUIP_SLOTS)[number];
 
-  export type ItemRarity =
+  // Optional free-form tags (safe for local/dev catalogs; DB uses category/specialization).
+  tags?: string[];
+}
+
+export const EQUIP_SLOTS = [
+  "head",
+  "chest",
+  "legs",
+  "feet",
+  "hands",
+  "mainhand",
+  "offhand",
+  "ring1",
+  "ring2",
+  "neck",
+] as const;
+
+export type EquipSlot = (typeof EQUIP_SLOTS)[number];
+
+export type ItemRarity =
   | "common"
   | "uncommon"
   | "rare"
@@ -57,7 +60,6 @@ export interface ItemDefinition {
   specializationId?: string | null;  // e.g. "spec_ore_iron"
   iconId?: string | null;
 
-  
   maxStack: number;                  // 1 for weapons, 99+ for resources
 
   flags: Record<string, any>;        // bind flags, quest flags, etc.
@@ -113,4 +115,3 @@ export function rowToItemDefinition(row: ItemRow): ItemDefinition {
     updatedAt: row.updated_at,
   };
 }
-

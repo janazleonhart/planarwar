@@ -81,6 +81,7 @@ const DEFAULT_ALLOWED_TYPES = [
   // Town/service anchors (inert POIs; safe by default)
   "mailbox",
   "rest",
+  "station",
 
   "outpost",
   "town",
@@ -102,6 +103,22 @@ const ALWAYS_EXCLUDED_TYPES = new Set([
 ]);
 
 function computePoiName(sp: DbSpawnPoint): string {
+  const type = normalizeType(sp.type);
+  const protoId = String(sp.protoId ?? sp.archetype ?? "").trim();
+
+  if (type === "mailbox") return "Mailbox";
+  if (type === "rest") return "Rest Spot";
+
+  if (type === "station") {
+    const pid = protoId.toLowerCase();
+    if (pid.includes("forge")) return "Forge";
+    if (pid.includes("alchemy")) return "Alchemy Table";
+    if (pid.includes("oven")) return "Oven";
+    if (pid.includes("mill")) return "Millstone";
+    if (pid.includes("workbench")) return "Workbench";
+    return protoId ? titleCase(protoId.replace(/^station_/, "").replace(/_/g, " ")) : "Crafting Station";
+  }
+
   const t = titleCase(sp.type);
   const id = String(sp.spawnId ?? "").trim();
   if (!id) return t;
@@ -252,6 +269,27 @@ export class SpawnHydrator {
       (ent as any).protoId = sp.protoId ?? null;
       (ent as any).variantId = sp.variantId ?? null;
       (ent as any).spawnType = sp.type;
+
+// Service protection + helpful tags for inert town services
+if (ent.type === "mailbox" || ent.type === "rest" || ent.type === "station") {
+  (ent as any).isServiceProvider = true;
+  (ent as any).isProtectedService = true;
+  (ent as any).immuneToDamage = true;
+  (ent as any).noAttack = true;
+
+  const tags = new Set<string>(Array.isArray((ent as any).tags) ? (ent as any).tags : []);
+  tags.add("service");
+  tags.add("protected_service");
+  tags.add(ent.type);
+
+  if (ent.type === "station") {
+    tags.add("craft_station");
+    const pid = String((ent as any).protoId ?? "").trim();
+    if (pid) tags.add(pid);
+  }
+
+  (ent as any).tags = [...tags];
+}
 
       // Ensure it doesn't get misclassified as a personal node or player-like entity
       delete (ent as any).ownerSessionId;
