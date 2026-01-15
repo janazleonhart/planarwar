@@ -648,7 +648,7 @@ async function runTownBaseline(args: {
   try {
     const res = await client.query(
       `
-      SELECT shard_id, spawn_id, type, archetype, proto_id, variant_id, x, y, z, region_id
+      SELECT shard_id, spawn_id, type, archetype, proto_id, variant_id, x, y, z, region_id, town_tier
       FROM spawn_points
       WHERE shard_id = $1
         AND x >= $2 AND x < $3

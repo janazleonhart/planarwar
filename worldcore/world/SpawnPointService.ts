@@ -17,20 +17,24 @@ function isNodeTestRuntime(): boolean {
 }
 
 async function getDb(): Promise<any> {
-  const mod: any = await import("../db/Database");
+  // IMPORTANT: lazy import (see module docstring)
+  const mod = await import("../db/Database");
   return mod.db;
 }
 
 /**
- * Raw row shape from the spawn_points table.
+ * DB row shape for spawn_points.
  *
+ * NOTE: This intentionally matches the DB columns we SELECT.
+ *
+ * TABLE spawn_points:
  *  id SERIAL PRIMARY KEY,
- *  shard_id TEXT,
- *  spawn_id TEXT,
- *  type TEXT,
- *  archetype TEXT,
- *  proto_id TEXT NULL,
- *  variant_id TEXT NULL,
+ *  shard_id TEXT NOT NULL,
+ *  spawn_id TEXT NOT NULL,
+ *  type TEXT NOT NULL,
+ *  archetype TEXT NOT NULL,
+ *  proto_id TEXT,
+ *  variant_id TEXT,
  *  x REAL,
  *  y REAL,
  *  z REAL,
@@ -56,7 +60,7 @@ export interface SpawnPointRow {
 /**
  * Runtime-friendly spawn point shape.
  *
- * NOTE: protoId is required in runtime to give the spawn a canonical identity.
+ * NOTE: protoId is required canonical identity.
  * If proto_id is null in DB, we default protoId to spawn_id.
  */
 export interface DbSpawnPoint {
@@ -98,6 +102,7 @@ function rowToSpawnPoint(row: SpawnPointRow): DbSpawnPoint {
     y: row.y,
     z: row.z,
     regionId: row.region_id ?? null,
+    townTier: row.town_tier ?? null,
   };
 }
 
@@ -106,15 +111,9 @@ function rowToSpawnPoint(row: SpawnPointRow): DbSpawnPoint {
  *
  * NOTE:
  * - During unit tests, this returns empty results and never touches the DB.
- * - The authoritative runtime source of truth is the DB table.
+ * - The authoritative runtime source of truth is the DB; this is just a thin query layer.
  */
 export class SpawnPointService {
-  /**
-   * Get all spawn points for a region.
-   *
-   * regionId is expected to be the DB region id (e.g. "8,8"), not the room id
-   * (e.g. "prime_shard:8,8" or "prime_shard:-1,-1").
-   */
   async getSpawnPointsForRegion(
     shardId: string,
     regionId: string,
@@ -135,11 +134,12 @@ export class SpawnPointService {
         x,
         y,
         z,
-        region_id
+        region_id,
+        town_tier
       FROM spawn_points
       WHERE shard_id = $1 AND region_id = $2
       ORDER BY id
-      `,
+    `,
       [shardId, regionId],
     );
 
@@ -179,7 +179,8 @@ export class SpawnPointService {
         x,
         y,
         z,
-        region_id
+        region_id,
+        town_tier
       FROM spawn_points
       WHERE
         shard_id = $1
