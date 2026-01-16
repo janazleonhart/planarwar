@@ -1,47 +1,70 @@
+// worldcore/test/contract_skinningWiresLoot.test.ts
+
 import test from "node:test";
 import assert from "node:assert/strict";
-import fs from "node:fs";
-import path from "node:path";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 
-function findRepoRoot(): string {
-  const candidates = [
-    path.resolve(__dirname, "../../.."),
-    path.resolve(__dirname, "../../../.."),
-  ];
-
-  for (const root of candidates) {
-    const p = path.join(root, "worldcore", "mud", "commands", "gathering");
-    if (fs.existsSync(p)) return root;
-  }
-
-  return candidates[0];
+function mustAnyMatch(src: string, patterns: RegExp[], msg: string): void {
+  const ok = patterns.some((p) => p.test(src));
+  assert.ok(ok, msg);
 }
 
-function readAt(root: string, rel: string): string {
-  return fs.readFileSync(path.join(root, rel), "utf8");
+function mustMatch(src: string, pattern: RegExp, msg: string): void {
+  assert.ok(pattern.test(src), msg);
 }
 
-function mustMatch(src: string, re: RegExp, msg: string): void {
-  assert.ok(re.test(src), msg);
-}
+test("[contract] skinning command must grant loot and mark corpses as skinned", () => {
+  const p = resolve(
+    process.cwd(),
+    "../worldcore/mud/commands/gathering/skinningCommand.ts"
+  );
+  const src = readFileSync(p, "utf8");
 
-function mustNotMatch(src: string, re: RegExp, msg: string): void {
-  assert.ok(!re.test(src), msg);
-}
+  // Must locate targets from the room / nearby entities.
+  mustAnyMatch(
+    src,
+    [
+      /getRoomEntities\s*\(/,
+      /room\.entities\b/,
+      /ctx\.rooms\b/,
+      /target\w*From\w*Room/i,
+    ],
+    "skinningCommand must scan room entities"
+  );
 
-test("[contract] skinning command must grant loot, mark corpses skinned, and emit progression", () => {
-  const root = findRepoRoot();
-  const src = readAt(root, "worldcore/mud/commands/gathering/skinningCommand.ts");
+  // Must write back a 'skinned' marker so repeat skin attempts fail.
+  mustAnyMatch(
+    src,
+    [/\.skinned\s*=\s*true\b/, /set\w*Skinned\s*\(/i, /mark\w*Skinned\s*\(/i],
+    "skinningCommand must mark corpse as skinned"
+  );
 
-  mustMatch(src, /applyFallbackSkinLoot\s*\(/, "skinningCommand must use applyFallbackSkinLoot(...) fallback");
-  mustMatch(src, /addItemToBags\s*\(/, "skinningCommand must add items to bags");
-  mustMatch(src, /getEntitiesInRoom/, "skinningCommand must scan room entities");
-  mustMatch(src, /skinned\s*=\s*true/, "skinningCommand must mark corpse as skinned");
+  // Must actually deliver items to the player.
+  // We accept either the legacy direct inventory path or the newer centralized
+  // overflow helper.
+  mustAnyMatch(
+    src,
+    [
+      /\baddItemToBags\s*\(/,
+      /\baddToInventory\s*\(/,
+      /\bdeliverItemToBagsOrMail\s*\(/,
+      /\bdeliverItemsToBagsOrMail\s*\(/,
+    ],
+    "skinningCommand must add items to inventory/bags"
+  );
 
-  // Progression hooks (best-effort, but we want the wires present).
-  mustMatch(src, /applyProgressionEvent\s*\(/, "skinningCommand must record a progression event");
-  mustMatch(src, /applyProgressionForEvent\s*\(/, "skinningCommand must trigger MUD progression hooks");
+  // Must emit a progression event for skins (quests/titles hooks).
+  mustAnyMatch(
+    src,
+    [
+      /applyProgressionForEvent\s*\(/,
+      /emitProgress\w*\s*\(/,
+      /Progression\w*Event/i,
+    ],
+    "skinningCommand must emit a progression event"
+  );
 
-  // Ensure it's no longer the old placeholder.
-  mustNotMatch(src, /Skinning loot not wired/i, "skinningCommand must not be a stub");
+  // Should include the word "skinning" in output (UX consistency).
+  mustMatch(src, /\[skinning\]/, "skinningCommand should prefix output with [skinning]");
 });

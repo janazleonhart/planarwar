@@ -691,7 +691,8 @@
       ],
       "notes": [
         "High-level NPC attack executor and death handling used by v1 brains.",
-        "Uses CombatEngine for damage, updates skill and fury progression, applies counter-attacks, grants XP, rolls loot with overflow-to-mail, and schedules corpse/respawn with resource-node special-casing."
+        "Uses CombatEngine for damage, updates skill and fury progression, applies counter-attacks, grants XP, and schedules corpse/respawn with resource-node special-casing.",
+        "Now delegate overflow behavior to the helper"
       ]
     },
     "combat.regionDangerAuras": {
@@ -1408,6 +1409,18 @@
       "notes": [
         "Formats a single loot line like '2x Rat Tail' or 'Rat Tail' based on quantity and optional display name.",
         "Clamps qty to >= 0 and falls back to the itemId when itemName is not provided."
+      ]
+    },
+    "loot.OverflowDelivery": {
+      "kind": "helper",
+      "path": "worldcore/loot/OverflowDelivery.ts",
+      "ctorArgs": [
+        "NpcCombat",
+        "MudWorldActions", 
+        "skinningCommand"
+      ],
+      "notes": [
+        "Deliver items to bags with overflow-to-mail"
       ]
     },
     "mail.postgres": {

@@ -10,6 +10,7 @@ import {
   setNodeDepletedUntil,
 } from "../../progression/ProgressionCore";
 import { resolveItem } from "../../items/resolveItem";
+import { deliverItemToBagsOrMail } from "../../loot/OverflowDelivery";
 import { describeLootLine, rollInt } from "../MudHelperFunctions";
 import type { GatheringKind } from "../../progression/ProgressEvents";
 import { Logger } from "../../utils/logger";
@@ -113,13 +114,14 @@ function respawnSecondsForNodeTag(nodeTag: string): number {
  * This is keyed off the *node type* (nodeTag), not the command used.
  * That prevents content mistakes from turning fish into ore loot.
  */
-export function applyGenericResourceLoot(
+export async function applyGenericResourceLoot(
   ctx: MudContext,
   char: CharacterState,
   _gatheringKind: GatheringKind,
   nodeTag: string,
-  lootLines: string[]
-): void {
+  lootLines: string[],
+  sourceName?: string
+): Promise<void> {
   if (!ctx.items) return;
 
   let itemId: string | null = null;
@@ -159,8 +161,21 @@ export function applyGenericResourceLoot(
   const qty = rollInt(2, 5);
   if (qty <= 0) return;
 
-  const res = ctx.items.addToInventory(char.inventory, tpl.id, qty);
-  if (res.added > 0) lootLines.push(describeLootLine(tpl.id, res.added, tpl.name));
+  const res = await deliverItemToBagsOrMail(
+    { items: ctx.items, mail: ctx.mail, session: ctx.session },
+    {
+      itemId: tpl.id,
+      qty,
+      inventory: char.inventory,
+      ownerKind: "account",
+      sourceName: sourceName ?? "a resource node",
+      sourceVerb: "gathering",
+      mailSubject: "Overflow gathering",
+    },
+  );
+
+  if (res.added > 0) lootLines.push(describeLootLine(res.itemId, res.added, res.name));
+  if (res.mailed > 0) lootLines.push(describeLootLine(res.itemId, res.mailed, res.name) + " (via mail)");
 }
 
 // ---------------------------------------------------------------------------
@@ -299,12 +314,25 @@ export async function handleGatherAction(
         continue;
       }
 
-      const res = ctx.items.addToInventory(char.inventory, tpl.id, qty);
-      if (res.added > 0) lootLines.push(describeLootLine(tpl.id, res.added, tpl.name));
+      const res = await deliverItemToBagsOrMail(
+        { items: ctx.items, mail: ctx.mail, session: ctx.session },
+        {
+          itemId: tpl.id,
+          qty,
+          inventory: char.inventory,
+          ownerKind: "account",
+          sourceName: (target as any).name ?? "a resource node",
+          sourceVerb: "gathering",
+          mailSubject: "Overflow gathering",
+        },
+      );
+
+      if (res.added > 0) lootLines.push(describeLootLine(res.itemId, res.added, res.name));
+      if (res.mailed > 0) lootLines.push(describeLootLine(res.itemId, res.mailed, res.name) + " (via mail)");
     }
   } else {
     // Fallback: keyed off node type, not the command.
-    applyGenericResourceLoot(ctx, char, gatheringKind, nodeTag, lootLines);
+    await applyGenericResourceLoot(ctx, char, gatheringKind, nodeTag, lootLines, (target as any).name ?? "a resource node");
   }
 
   // Persist inventory + progression changes

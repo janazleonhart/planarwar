@@ -16,9 +16,8 @@ import {
   computeNpcMeleeDamage,
 } from "./entityCombat";
 import { describeLootLine } from "../loot/lootText";
+import { deliverItemToBagsOrMail } from "../loot/OverflowDelivery";
 import { rollInt } from "../utils/random";
-import { getItemTemplate } from "../items/ItemCatalog";
-import { addItemToBags } from "../items/InventoryHelpers";
 import {
   computeDamage,
   type CombatSource,
@@ -353,39 +352,34 @@ export async function performNpcAttack(
       const qty = rollInt(entry.minQty, entry.maxQty);
       if (qty <= 0) continue;
 
-      const tpl = getItemTemplate(entry.itemId);
-      if (!tpl) {
-        log.warn("Loot template missing for NPC drop", {
+      const res = await deliverItemToBagsOrMail(
+        { items: ctx.items, mail: ctx.mail, session: ctx.session },
+        {
+          itemId: entry.itemId,
+          qty,
+          inventory,
+          ownerKind: "account",
+          sourceName: npc.name,
+          sourceVerb: "looting",
+          mailSubject: "Overflow loot",
+        },
+      );
+
+      if (res.added <= 0 && res.mailed <= 0 && res.leftover > 0) {
+        log.warn("Loot delivery failed; dropping overflow", {
           itemId: entry.itemId,
           npc: npc.name,
+          qty,
+          leftover: res.leftover,
         });
         continue;
       }
 
-      const maxStack = tpl.maxStack ?? 1;
-      const leftover = addItemToBags(inventory, entry.itemId, qty, maxStack);
-      const added = qty - leftover;
-
-      let mailed = 0;
-      const overflow = leftover;
-
-      if (overflow > 0 && ctx.mail && ctx.session.identity) {
-        mailed = overflow;
-        await ctx.mail.sendSystemMail(
-          ctx.session.identity.userId,
-          "account",
-          "Overflow loot",
-          `Your bags were full while looting ${npc.name}.
-Extra items were delivered to your mailbox.`,
-          [{ itemId: entry.itemId, qty: overflow }],
-        );
+      if (res.added > 0) {
+        lootLines.push(describeLootLine(res.itemId, res.added, res.name));
       }
-
-      if (added > 0) {
-        lootLines.push(describeLootLine(entry.itemId, added, tpl.name));
-      }
-      if (mailed > 0) {
-        lootLines.push(describeLootLine(entry.itemId, mailed, tpl.name) + " (via mail)");
+      if (res.mailed > 0) {
+        lootLines.push(describeLootLine(res.itemId, res.mailed, res.name) + " (via mail)");
       }
     }
 

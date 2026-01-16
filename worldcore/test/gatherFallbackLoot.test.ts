@@ -1,59 +1,81 @@
 // worldcore/test/gatherFallbackLoot.test.ts
+//
+// Contract: Generic resource nodes (with no explicit proto.loot) must still
+// grant fallback loot. This test covers the mining path.
+//
+// Important:
+// - applyGenericResourceLoot is async (it can mail overflow), so this test MUST await it.
+// - The gather pipeline delivers loot via OverflowDelivery (bags first, optional mail).
 
 import test from "node:test";
 import assert from "node:assert/strict";
 
-// We patch resolveItem so we don't depend on the real item DB/service.
-import * as resolveItemModule from "../items/resolveItem";
 import { applyGenericResourceLoot } from "../mud/actions/MudWorldActions";
 
-test("Generic resource fallback loot: mining yields 2–5 Hematite Ore", () => {
-  // Arrange: patch resolveItem to return a simple template
-  const templateName = "Test Hematite Ore";
-  (resolveItemModule as any).resolveItem = (_items: any, itemId: string) => ({
-    id: itemId,
-    name: templateName,
-  });
+function makeEmptyInventory(): any {
+  const size = 12;
+  return {
+    bags: [
+      {
+        id: "bag_basic",
+        size,
+        // Slots array length matters: InventoryHelpers iterates bag.slots.length
+        slots: Array.from({ length: size }, () => null),
+      },
+    ],
+  };
+}
 
-  const inventory: any[] = [];
+function getAllBagStacks(inv: any): any[] {
+  const out: any[] = [];
+  for (const b of inv?.bags ?? []) {
+    for (const s of b?.slots ?? []) {
+      if (s) out.push(s);
+    }
+  }
+  return out;
+}
+
+test("Generic resource fallback loot: mining yields 2-5 Hematite Ore", async () => {
   const lootLines: string[] = [];
 
-  // Very small fake ItemService: only addToInventory is used.
+  const inventory = makeEmptyInventory();
+  const char: any = { id: "char_test", inventory };
+
+  // Minimal ctx shim: resolveItem(ctx.items, ...) must return a template.
+  // We provide the fields resolveItem/describe paths commonly rely on.
   const ctx: any = {
+    session: { id: "sess_test", identity: { userId: "user_test" } },
     items: {
-      addToInventory(inv: any[], itemId: string, qty: number) {
-        inv.push({ itemId, qty });
-        return { added: qty, remaining: 0 };
-      },
+      has: (id: string) => id === "ore_iron_hematite",
+      get: (id: string) =>
+        id === "ore_iron_hematite"
+          ? {
+              id,
+              name: "Hematite Ore",
+              maxStack: 20,
+              slot: "material",
+            }
+          : undefined,
     },
+    // No mail service needed for this test; bags have plenty of space.
+    mail: undefined,
   };
 
-  const char: any = { inventory };
+  // NOTE: await is the whole point.
+  await applyGenericResourceLoot(ctx, char, "mining", "resource_ore", lootLines, "a vein");
 
-  // Act: mining with no explicit proto.loot should hit the generic fallback.
-  applyGenericResourceLoot(ctx, char, "mining", "resource_ore", lootLines);
+  const stacks = getAllBagStacks(inventory);
+  assert.equal(stacks.length, 1, "Expected one stack added to bags");
 
-  // Assert: we got exactly one stack in inventory
-  assert.equal(inventory.length, 1);
-  const entry = inventory[0];
-
-  // It should be the mining fallback item
-  assert.equal(
-    entry.itemId,
-    "ore_iron_hematite",
-    "Mining fallback should yield ore_iron_hematite"
-  );
-
-  // Quantity should be between 2 and 5 inclusive
+  const stack = stacks[0];
+  assert.equal(stack.itemId, "ore_iron_hematite");
   assert.ok(
-    entry.qty >= 2 && entry.qty <= 5,
-    `Expected qty between 2 and 5, got ${entry.qty}`
+    stack.qty >= 2 && stack.qty <= 5,
+    `Expected qty 2..5, got ${stack.qty}`,
   );
 
-  // And a human-readable loot line should be produced using our template name
-  assert.equal(lootLines.length, 1);
-  assert.ok(
-    lootLines[0].includes(templateName),
-    "Loot line should mention the item name"
-  );
+  assert.equal(lootLines.length, 1, "Expected one loot line");
+  assert.ok(lootLines[0].includes("Hematite"), "Loot line should include the item name");
+  assert.ok(!lootLines[0].includes("(via mail)"), "Should not mail when bags have space");
 });
