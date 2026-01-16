@@ -4,26 +4,45 @@
 //
 // Policy:
 //  1) Try to add items to bag inventory.
-//  2) If bags overflow and MailService is available -> send overflow as system mail.
-//  3) If mail is unavailable or fails -> overflow is dropped (v1 behavior).
+//  2) If bags overflow and a mail sender is available -> send overflow as system mail.
+//  3) If mail is unavailable or fails -> overflow is dropped (v1 behavior) unless
+//     the caller opts into a non-dropping policy.
 //
 // This module is intentionally dependency-light so both combat and MUD commands
 // can use it without duplicating overflow policy logic.
 
 import type { InventoryState } from "../characters/CharacterTypes";
-import type { MailService } from "../mail/MailService";
 import { addItemToBags } from "../items/InventoryHelpers";
 import { getItemTemplate } from "../items/ItemCatalog";
 import { resolveItem } from "../items/resolveItem";
 
-type OwnerKind = Parameters<MailService["sendSystemMail"]>[1];
+export type OwnerKind = "account" | "character" | "guild";
+
+export type SystemMailAttachment = {
+  itemId: string;
+  qty: number;
+  meta?: any;
+};
+
+// Minimal mail surface required by this helper.
+// We intentionally accept a structurally compatible subset so callers can pass
+// either a full MailService or a lightweight shim that only implements sendSystemMail.
+export type OverflowMailService = {
+  sendSystemMail(
+    ownerId: string,
+    ownerKind: OwnerKind,
+    subject: string,
+    body: string,
+    attachments: SystemMailAttachment[]
+  ): Promise<void>;
+};
 
 export type OverflowDeliveryContext = {
   // Optional; used to resolve DB-backed item templates (via resolveItem).
   items?: any;
 
   // Optional; used to mail overflow.
-  mail?: MailService;
+  mail?: OverflowMailService;
 
   // Optional; convenience default ownerId source.
   session?: { identity?: { userId: string } };
@@ -47,6 +66,16 @@ export type DeliverItemOptions = {
   sourceName?: string; // e.g. "Town Rat", "Hematite Iron Vein"
   mailSubject?: string; // default: "Overflow delivery"
   mailBody?: string; // default: derived from verb + sourceName
+
+  // Optional attachment metadata (e.g. equipment affixes). If provided and a
+  // mail overflow occurs, this meta is attached to the mailed stack.
+  attachmentMeta?: any;
+
+  // When overflow cannot be mailed (mail missing / no owner / mail failure),
+  // decide what happens to the undelivered amount.
+  // - "drop" (default): undelivered is considered dropped/lost (v1 loot behavior)
+  // - "keep": undelivered is simply not delivered (used for shops/crafting)
+  undeliveredPolicy?: "drop" | "keep";
 };
 
 export type DeliverItemResult = {
@@ -73,6 +102,8 @@ export type DeliverItemsOptions = Omit<
     qty: number;
     displayName?: string;
     maxStack?: number;
+
+    attachmentMeta?: any;
 
     // Optional per-item sourceName override (useful if a bundle includes mixed sources).
     sourceName?: string;
@@ -185,6 +216,7 @@ export async function deliverItemToBagsOrMail(
   const overflow = Math.max(0, preMailLeftover);
   let mailed = 0;
   let dropped = 0;
+  const policy: "drop" | "keep" = opts.undeliveredPolicy ?? "drop";
 
   if (overflow > 0 && ctx.mail) {
     const ownerId = opts.ownerId ?? ctx.session?.identity?.userId;
@@ -198,21 +230,21 @@ export async function deliverItemToBagsOrMail(
           defaultMailBody(opts.sourceVerb ?? "looting", opts.sourceName ?? "your target");
 
         await ctx.mail.sendSystemMail(ownerId, ownerKind, subject, body, [
-          { itemId, qty: overflow },
+          { itemId, qty: overflow, meta: opts.attachmentMeta },
         ]);
 
         mailed = overflow;
       } catch {
-        // Mail failed: keep v1 behavior (drop overflow).
-        dropped = overflow;
+        // Mail failed.
+        dropped = policy === "drop" ? overflow : 0;
       }
     } else {
-      // No owner to mail to: drop overflow.
-      dropped = overflow;
+      // No owner to mail to.
+      dropped = policy === "drop" ? overflow : 0;
     }
   } else {
-    // No mail service: drop overflow (v1).
-    dropped = overflow;
+    // No mail service.
+    dropped = policy === "drop" ? overflow : 0;
   }
 
   return {
@@ -221,7 +253,7 @@ export async function deliverItemToBagsOrMail(
     requested,
     added,
     mailed,
-    leftover: dropped,
+    leftover: policy === "drop" ? dropped : overflow - mailed,
     overflowDropped: dropped,
   };
 }
@@ -247,6 +279,8 @@ export async function deliverItemsToBagsOrMail(
       displayName: it.displayName,
       maxStack: it.maxStack,
 
+      attachmentMeta: it.attachmentMeta,
+
       ownerId: opts.ownerId,
       ownerKind: opts.ownerKind,
 
@@ -255,6 +289,8 @@ export async function deliverItemsToBagsOrMail(
 
       mailSubject: opts.mailSubject,
       mailBody: opts.mailBody,
+
+      undeliveredPolicy: opts.undeliveredPolicy,
     });
 
     results.push(r);

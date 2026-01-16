@@ -2,7 +2,7 @@
 
 import { Logger } from "../utils/logger";
 import { getItemTemplate } from "./ItemCatalog";
-import { addItemToBags } from "./InventoryHelpers";
+import { deliverItemToBagsOrMail } from "../loot/OverflowDelivery";
 import type { ItemStack } from "../characters/CharacterTypes";
 
 const log = Logger.scope("EquipOps");
@@ -74,33 +74,44 @@ export async function equipFirstMatchingFromBags(
   char.equipment[slot] = foundStack;
 
   if (existing) {
-    const existingTpl = getItemTemplate(existing.itemId);
-    const maxStack = existingTpl?.maxStack ?? 1;
-  
     const qty = existing.qty ?? 1;
-    const leftover = addItemToBags(char.inventory, existing.itemId, qty, maxStack);
-  
-    if (leftover > 0) {
-      const userId = ctx.session.identity?.userId;
-  
-      // Prefer mail overflow instead of deleting items
-      if (ctx.mail && userId) {
-        await ctx.mail.sendSystemMail(
-          userId,
-          "account",
-          "Equipment swap overflow",
-          `Your bags were full while equipping an item in slot '${slot}'. The replaced item was mailed to you.`,
-          [{ itemId: existing.itemId, qty: leftover, meta: (existing as any).meta }]
-        );
-      } else {
-        // fallback: log (last resort)
-        log.warn("equip: no space to return previously equipped item (and no mail available)", {
-          charId: char.id,
-          slot,
-          itemId: existing.itemId,
-          leftover,
-        });
-      }
+
+    const res = await deliverItemToBagsOrMail(ctx, {
+      inventory: char.inventory,
+      itemId: existing.itemId,
+      qty,
+
+      ownerId: userId,
+      ownerKind: "account",
+
+      sourceVerb: "equipping",
+      sourceName: foundTpl?.name ?? foundStack.itemId,
+      mailSubject: "Equipment swap overflow",
+      mailBody: `Your bags were full while equipping an item in slot '${slot}'.\nThe replaced item was delivered to your mailbox.`,
+
+      attachmentMeta: (existing as any).meta,
+      undeliveredPolicy: "keep",
+    });
+
+    // If we could not deliver the swapped-out item anywhere (bags full and no mail),
+    // abort the equip and revert state rather than silently deleting gear.
+    if (res.added + res.mailed < qty) {
+      // Put the new item back into its original bag slot.
+      char.inventory.bags[foundBag].slots[foundSlot] = foundStack;
+      // Restore the old item into the equipment slot.
+      char.equipment[slot] = existing;
+
+      // Defensive log for debugging.
+      log.warn("equip: aborting due to full bags and no mail for swap", {
+        charId: char.id,
+        slot,
+        swappedOutItemId: existing.itemId,
+        requestedQty: qty,
+        delivered: res.added + res.mailed,
+        leftover: res.leftover,
+      });
+
+      return `Your bags are full; you cannot equip that because there is no space to store your currently equipped item in '${slot}'.`;
     }
   }
 
@@ -136,28 +147,26 @@ export async function unequipToBags(
   if (!equipped) return `You have nothing equipped in slot '${slot}'.`;
 
   const qty = equipped.qty ?? 1;
-  const equippedTpl = getItemTemplate(equipped.itemId);
-  const maxStack = equippedTpl?.maxStack ?? 1;
 
-  const leftover = addItemToBags(char.inventory, equipped.itemId, qty, maxStack);
+  const res = await deliverItemToBagsOrMail(ctx, {
+    inventory: char.inventory,
+    itemId: equipped.itemId,
+    qty,
 
-  let mailed = 0;
-  if (leftover > 0) {
-    const userId = ctx.session.identity?.userId;
+    ownerId: userId,
+    ownerKind: "account",
 
-    if (ctx.mail && userId) {
-      await ctx.mail.sendSystemMail(
-        userId,
-        "account",
-        "Unequip overflow",
-        `Your bags were full while unequipping from slot '${slot}'. The item was sent to your mailbox.`,
-        [{ itemId: equipped.itemId, qty: leftover, meta: (equipped as any).meta }]
-      );
-      mailed = leftover;
-    } else {
-      // No mail available; keep conservative behavior
-      return "Your bags are full; you cannot unequip that.";
-    }
+    sourceVerb: "unequipping",
+    sourceName: slot,
+    mailSubject: "Unequip overflow",
+    mailBody: `Your bags were full while unequipping from slot '${slot}'.\nThe item was sent to your mailbox.`,
+
+    attachmentMeta: (equipped as any).meta,
+    undeliveredPolicy: "keep",
+  });
+
+  if (res.added + res.mailed < qty) {
+    return "Your bags are full; you cannot unequip that.";
   }
 
   // Now actually unequip (even if mailed)
@@ -181,8 +190,9 @@ export async function unequipToBags(
     return "Failed to save equipment changes.";
   }
 
+  const equippedTpl = getItemTemplate(equipped.itemId);
   const name = equippedTpl?.name ?? equipped.itemId;
   let msg = `You unequip ${name} from your ${slot}.`;
-  if (mailed > 0) msg += ` (${mailed}x sent to your mailbox due to full bags.)`;
+  if (res.mailed > 0) msg += ` (${res.mailed}x sent to your mailbox due to full bags.)`;
   return msg;
 }

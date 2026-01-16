@@ -8,7 +8,7 @@
 // - Stations are seeded only inside towns/player-cities right now, so "near station"
 //   is a stronger and less brittle check than trying to infer "town-ness" from room tags.
 
-import { addItemToBags } from "../../items/InventoryHelpers";
+import { deliverItemsToBagsOrMail } from "../../loot/OverflowDelivery";
 import { listAllRecipes as listStaticRecipes } from "../../tradeskills/RecipeCatalog";
 import { getTradeRecipeService } from "../../tradeskills/TradeRecipeService";
 import {
@@ -157,6 +157,21 @@ function prettyStation(stationKind: string): string {
   return k ? `station_${k}` : "station";
 }
 
+function cloneInventoryForSimulation(inv: any): any {
+  // Minimal deep clone for bags/slots. We only simulate stack merges.
+  if (!inv || !Array.isArray(inv.bags)) return JSON.parse(JSON.stringify(inv ?? {}));
+  return {
+    ...inv,
+    bags: inv.bags.map((b: any) => {
+      const slots = Array.isArray(b?.slots) ? b.slots : [];
+      return {
+        ...b,
+        slots: slots.map((s: any) => (s ? { ...s } : null)),
+      };
+    }),
+  };
+}
+
 export async function handleCraftCommand(
   ctx: any,
   char: any,
@@ -234,38 +249,47 @@ export async function handleCraftCommand(
     return `You need ${check.need}x ${name}, but only have ${check.have}.`;
   }
 
+  // If mail is unavailable, ensure outputs will fit before we consume ingredients.
+  if (!ctx.mail) {
+    const simInv = cloneInventoryForSimulation(char.inventory);
+    const simCtx: any = { items: ctx.items }; // no mail on purpose
+
+    const sim = await deliverItemsToBagsOrMail(simCtx, {
+      inventory: simInv,
+      items: recipe.outputs.map((o: any) => ({ itemId: o.itemId, qty: o.qty * count })),
+      undeliveredPolicy: "keep",
+    });
+
+    const undelivered = sim.results.reduce((sum: number, r: any) => sum + (r.leftover ?? 0), 0);
+    if (undelivered > 0) {
+      return "Your bags are too full to receive the crafted items (and mailbox delivery is unavailable).";
+    }
+  }
+
   // 2) Consume ingredients
   if (!consumeRecipe(char.inventory, recipe.inputs, count)) {
     return "An internal error occurred while removing ingredients.";
   }
 
-  // 3) Add outputs (mail overflow supported)
-  let totalMade = 0;
-  let totalMailed = 0;
+  // 3) Add outputs (bags first; overflow to mail when available)
+  const deliver = await deliverItemsToBagsOrMail(ctx, {
+    inventory: char.inventory,
+    items: recipe.outputs.map((o: any) => ({ itemId: o.itemId, qty: o.qty * count })),
 
-  for (const out of recipe.outputs) {
-    const def = ctx.items.get(out.itemId)!;
-    const maxStack = def.maxStack ?? 1;
+    ownerId: ctx.session?.identity?.userId,
+    ownerKind: "account",
 
-    const totalToMake = out.qty * count;
-    let remaining = totalToMake;
+    sourceVerb: "crafting",
+    sourceName: recipe.name,
+    mailSubject: "Crafting overflow",
+    mailBody: `Your bags were full while crafting '${recipe.name}'. Extra items were delivered to your mailbox.`,
 
-    const leftover = addItemToBags(char.inventory, def.id, remaining, maxStack);
-    const added = remaining - leftover;
-    totalMade += added;
-    remaining = leftover;
+    undeliveredPolicy: "keep",
+  });
 
-    if (remaining > 0 && ctx.mail && ctx.session.identity) {
-      await ctx.mail.sendSystemMail(
-        ctx.session.identity.userId,
-        "account",
-        "Crafting overflow",
-        `You crafted ${totalToMake}x ${def.name}, but some could not fit in your bags.`,
-        [{ itemId: def.id, qty: remaining }],
-      );
-      totalMailed += remaining;
-    }
-  }
+  const totalMade = deliver.totalAdded;
+  const totalMailed = deliver.totalMailed;
+  const totalUndelivered = deliver.results.reduce((sum: number, r: any) => sum + (r.leftover ?? 0), 0);
 
   // 4) Progression hooks
   recordActionProgress(char, `craft_${recipe.category}`);
@@ -278,5 +302,6 @@ export async function handleCraftCommand(
   let msg = `You craft ${count}x '${recipe.name}'.`;
   if (totalMade > 0) msg += ` ${totalMade} item(s) went into your bags.`;
   if (totalMailed > 0) msg += ` ${totalMailed} item(s) were sent to your mailbox.`;
+  if (totalUndelivered > 0) msg += ` (${totalUndelivered} item(s) could not be delivered.)`;
   return msg;
 }

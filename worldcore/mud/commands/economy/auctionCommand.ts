@@ -1,13 +1,19 @@
-// worldcore/mud/commands/auctionCommand.ts
+// worldcore/mud/commands/economy/auctionCommand.ts
 
 import {
   getCharacterGold,
   setCharacterGold,
   giveGold,
-  giveItemsToCharacter,
 } from "../../../economy/EconomyHelpers";
+import { deliverItemToBagsOrMail } from "../../../loot/OverflowDelivery";
 import { logAuctionEvent } from "../../../auction/AuctionAuditLog";
 import { formatAuctionListing } from "../../../auction/AuctionFormat";
+
+function deepClone<T>(v: T): T {
+  // Inventory state is plain JSON data; a JSON clone is sufficient and keeps
+  // this command independent from structuredClone typings.
+  return JSON.parse(JSON.stringify(v)) as T;
+}
 
 export async function handleAuctionCommand(
   ctx: any,
@@ -125,11 +131,7 @@ export async function handleAuctionCommand(
     if (!Number.isInteger(id) || id <= 0) return "Invalid listing id.";
 
     const listing = await ctx.auctions.get(id);
-    if (
-      !listing ||
-      listing.status !== "active" ||
-      listing.shardId !== shardId
-    ) {
+    if (!listing || listing.status !== "active" || listing.shardId !== shardId) {
       return "That auction is not available.";
     }
 
@@ -140,6 +142,24 @@ export async function handleAuctionCommand(
     const currentGold = getCharacterGold(char);
     if (currentGold < price) {
       return `You do not have enough gold. You need ${price}, but have ${currentGold}.`;
+    }
+
+    // If mailbox delivery is unavailable, we must ensure the items can fit in bags
+    // BEFORE committing the buyout. Auction buyout is a shared resource and we
+    // don't want to end up with a sold listing + charged gold + nowhere safe to
+    // put the items.
+    const canMailbox = !!(ctx.mail && ctx.session?.identity?.userId);
+    if (!canMailbox) {
+      try {
+        const previewInv = deepClone(char.inventory);
+        const preview = ctx.items.addToInventory(previewInv, def.id, listing.qty);
+        if (preview?.leftover > 0) {
+          return "Your bags are full and mailbox delivery is unavailable. Clear space and try again.";
+        }
+      } catch {
+        // If we cannot reliably preflight inventory, fail safe.
+        return "Cannot verify inventory space for delivery (mailbox unavailable). Please try again or contact staff.";
+      }
     }
 
     const updated = await ctx.auctions.buyout({
@@ -161,21 +181,64 @@ export async function handleAuctionCommand(
       details: { priceGold: price },
     });
 
+    // Charge after buyout commit.
     setCharacterGold(char, currentGold - price);
-    await ctx.characters.saveCharacter(char);
 
-    // Deliver via mail (v1)
-    if (ctx.mail && ctx.session.identity) {
-      await ctx.mail.sendSystemMail(
-        ctx.session.identity.userId,
-        "account",
-        "Auction purchase",
-        `You bought ${listing.qty}x ${def.name} for ${price} gold from ${listing.sellerCharName}.`,
-        [{ itemId: def.id, qty: listing.qty }]
-      );
+    // Deliver: prefer mailbox (keeps bags clean); if mailbox is unavailable, deliver to bags.
+    if (canMailbox) {
+      try {
+        // Uses system mail for auction lifecycle delivery (mail is the feature; not overflow).
+        await ctx.mail.sendSystemMail(
+          ctx.session.identity.userId,
+          "account",
+          "Auction purchase",
+          `You bought ${listing.qty}x ${def.name} for ${price} gold from ${listing.sellerCharName}.`,
+          [{ itemId: def.id, qty: listing.qty }]
+        );
+
+        await ctx.characters.saveCharacter(char);
+        return `You bought ${listing.qty}x ${def.name} for ${price} gold. The items have been mailed to you.`;
+      } catch {
+        // If mail fails, fall back to bags (never drop undelivered).
+        const deliver = await deliverItemToBagsOrMail(ctx, {
+          inventory: char.inventory,
+          itemId: def.id,
+          qty: listing.qty,
+
+          ownerId: ctx.session?.identity?.userId,
+          ownerKind: "account",
+
+          sourceVerb: "receiving",
+          sourceName: `auction #${listing.id}`,
+          mailSubject: "Auction purchase overflow",
+          mailBody: `Your bags were full while receiving items from auction #${listing.id}.`,
+
+          undeliveredPolicy: "keep",
+        });
+
+        await ctx.characters.saveCharacter(char);
+
+        const deliveredQty = deliver.added + deliver.mailed;
+        if (deliveredQty <= 0) {
+          return `You bought ${listing.qty}x ${def.name} for ${price} gold, but delivery failed (mail error and bags full). Please contact staff.`;
+        }
+
+        let msg = `You bought ${deliveredQty}x ${def.name} for ${price} gold. ${deliver.added} item(s) went into your bags.`;
+        if (deliver.mailed > 0) msg += ` ${deliver.mailed} item(s) were mailed.`;
+        if (deliver.leftover > 0)
+          msg += ` (${deliver.leftover} item(s) could not be delivered.)`;
+        return msg;
+      }
     }
 
-    return `You bought ${listing.qty}x ${def.name} for ${price} gold. The items have been mailed to you.`;
+    // No mailbox available: bags-only (preflighted above).
+    const res = ctx.items.addToInventory(char.inventory, def.id, listing.qty);
+    await ctx.characters.saveCharacter(char);
+    if (res?.leftover > 0) {
+      return `You bought ${listing.qty}x ${def.name} for ${price} gold, but delivery failed because your bags filled unexpectedly and mailbox delivery is unavailable. Please contact staff.`;
+    }
+
+    return `You bought ${listing.qty}x ${def.name} for ${price} gold. The items were delivered to your bags.`;
   }
 
   // ah my
@@ -260,33 +323,33 @@ export async function handleAuctionCommand(
       return "That auction was just bought or already cancelled.";
     }
 
-    // Return items: bags first, overflow via mail
-    const giveResult = giveItemsToCharacter(char, [
-      { itemId: def.id, quantity: listing.qty },
-    ]);
+    // Return items: bags first; overflow via mail when possible (never drop).
+    const deliver = await deliverItemToBagsOrMail(ctx, {
+      inventory: char.inventory,
+      itemId: def.id,
+      qty: listing.qty,
 
-    const applied = giveResult.applied.find((s) => s.itemId === def.id);
-    const added = applied?.quantity ?? 0;
-    const leftover = listing.qty - added;
+      ownerId: ctx.session?.identity?.userId,
+      ownerKind: "account",
 
-    let totalToMail = 0;
+      sourceVerb: "returning",
+      sourceName: `cancelled auction #${listing.id}`,
+      mailSubject: "Auction cancel overflow",
+      mailBody: `Some items from your cancelled auction #${listing.id} could not fit in your bags and were sent by mail.`,
 
-    if (leftover > 0 && ctx.mail && ctx.session.identity) {
-      await ctx.mail.sendSystemMail(
-        ctx.session.identity.userId,
-        "account",
-        "Auction cancel overflow",
-        `Some items from your cancelled auction #${listing.id} could not fit in your bags and were sent by mail.`,
-        [{ itemId: def.id, qty: leftover }]
-      );
-      totalToMail = leftover;
-    }
+      undeliveredPolicy: "keep",
+    });
+
+    const added = deliver.added;
+    const totalToMail = deliver.mailed;
 
     if (added === 0 && totalToMail === 0) {
       return "Your bags are full and no mail delivery was possible; cannot return items from cancelled auction.";
     }
 
-    await ctx.characters.saveCharacter(char);
+    if (added > 0) {
+      await ctx.characters.saveCharacter(char);
+    }
 
     await logAuctionEvent({
       shardId,
@@ -294,18 +357,24 @@ export async function handleAuctionCommand(
       action: "cancel",
       actorCharId: (char as any).id,
       actorCharName: (char as any).name,
-      details: { returnedQty: added, mailedQty: totalToMail },
+      details: {
+        returnedQty: added,
+        mailedQty: totalToMail,
+        undeliveredQty: deliver.leftover,
+      },
     });
 
     let msg = `Cancelled auction #${listing.id}.`;
     if (added > 0) msg += ` Returned ${added}x ${def.name} to your bags.`;
     if (totalToMail > 0) msg += ` ${totalToMail}x sent to your mailbox.`;
+    if (deliver.leftover > 0)
+      msg += ` (${deliver.leftover}x could not be delivered.)`;
     return msg;
   }
 
   // ah expire (staff-only)
   if (sub === "expire") {
-    const identity = ctx.session.identity;
+    const identity = ctx.session?.identity;
     const flags = identity?.flags;
     const isStaff = !!(flags?.isOwner || flags?.isDev || flags?.isGM);
     if (!isStaff) return "You are not allowed to run auction expiry.";
@@ -345,26 +414,26 @@ export async function handleAuctionCommand(
         continue;
       }
 
-      const giveResult = giveItemsToCharacter(char, [
-        { itemId: def.id, quantity: listing.qty },
-      ]);
+      const deliver = await deliverItemToBagsOrMail(ctx, {
+        inventory: char.inventory,
+        itemId: def.id,
+        qty: listing.qty,
 
-      const applied = giveResult.applied.find((s) => s.itemId === def.id);
-      const added = applied?.quantity ?? 0;
-      const leftover = listing.qty - added;
+        ownerId: ctx.session?.identity?.userId,
+        ownerKind: "account",
 
+        sourceVerb: "reclaiming",
+        sourceName: `expired auction #${listing.id}`,
+        mailSubject: "Auction reclaim overflow",
+        mailBody: `Some items from your expired auction #${listing.id} could not fit in your bags and were sent by mail.`,
+
+        undeliveredPolicy: "keep",
+      });
+
+      const added = deliver.added;
+      const mailed = deliver.mailed;
       if (added > 0) totalToBags += added;
-
-      if (leftover > 0 && ctx.mail && ctx.session.identity) {
-        await ctx.mail.sendSystemMail(
-          ctx.session.identity.userId,
-          "account",
-          "Auction reclaim overflow",
-          `Some items from your expired auction #${listing.id} could not fit in your bags and were sent by mail.`,
-          [{ itemId: def.id, qty: leftover }]
-        );
-        totalToMail += leftover;
-      }
+      if (mailed > 0) totalToMail += mailed;
 
       await logAuctionEvent({
         shardId,
@@ -372,7 +441,12 @@ export async function handleAuctionCommand(
         action: "reclaim",
         actorCharId: sellerCharId,
         actorCharName: (char as any).name,
-        details: { qty: listing.qty, toBags: added, toMail: leftover },
+        details: {
+          qty: listing.qty,
+          toBags: added,
+          toMail: mailed,
+          undeliveredQty: deliver.leftover,
+        },
       });
 
       totalListings++;

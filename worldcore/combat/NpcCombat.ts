@@ -53,10 +53,11 @@ function envBool(name: string, fallback: boolean): boolean {
 
 const log = Logger.scope("NPC_COMBAT");
 
-// Prevent occasional duplicate spawn flavor lines (e.g. 'Town Rat returns.')
-// caused by overlapping respawn scheduling paths.
+// Defensive de-dupe for short-burst spawn announcements.
+// In rare cases, overlapping respawn scheduling can emit the same "X returns." flavor twice.
+// We treat identical room+text messages within a tiny window as duplicates.
+const SPAWN_ANNOUNCE_DEDUPE_WINDOW_MS = 250;
 const recentSpawnAnnouncements = new Map<string, number>();
-
 
 type SimpleCombatContext = {
   [key: string]: any;
@@ -502,17 +503,21 @@ export function announceSpawnToRoom(
   const room = ctx.rooms.get(roomId);
   if (!room) return;
 
-  // De-dupe identical spawn flavor lines that can occur if respawn scheduling overlaps.
+  // De-dupe identical spawn announcements in the same room in a short window.
+  // (Prevents occasional double "X returns." spam when respawn scheduling overlaps.)
   const now = Date.now();
-  const key = `${roomId}|${text}`;
+  const key = `${roomId}\u0000${text}`;
   const last = recentSpawnAnnouncements.get(key);
-  if (typeof last === "number" && now - last < 250) return;
+  if (last != null && now - last < SPAWN_ANNOUNCE_DEDUPE_WINDOW_MS) {
+    return;
+  }
   recentSpawnAnnouncements.set(key, now);
-
-  // Opportunistic cleanup to avoid unbounded growth.
-  if (recentSpawnAnnouncements.size > 512) {
-    for (const [k, ts] of recentSpawnAnnouncements) {
-      if (now - ts > 10_000) recentSpawnAnnouncements.delete(k);
+  // Best-effort cleanup so the map doesn't grow unbounded.
+  if (recentSpawnAnnouncements.size > 2000) {
+    for (const [k, t] of recentSpawnAnnouncements) {
+      if (now - t > SPAWN_ANNOUNCE_DEDUPE_WINDOW_MS * 4) {
+        recentSpawnAnnouncements.delete(k);
+      }
     }
   }
 
@@ -520,7 +525,7 @@ export function announceSpawnToRoom(
     from: "[world]",
     sessionId: "system",
     text,
-    t: now,
+    t: Date.now(),
   });
 }
 

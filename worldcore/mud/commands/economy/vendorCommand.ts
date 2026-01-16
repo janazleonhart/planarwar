@@ -1,10 +1,7 @@
-// worldcore/mud/commands/vendorCommand.ts
+// worldcore/mud/commands/economy/vendorCommand.ts
 
-import {
-  getCharacterGold,
-  setCharacterGold,
-  giveItemsToCharacter,
-} from "../../../economy/EconomyHelpers";
+import { getCharacterGold, setCharacterGold } from "../../../economy/EconomyHelpers";
+import { deliverItemToBagsOrMail } from "../../../loot/OverflowDelivery";
 
 export async function handleVendorCommand(
   ctx: any,
@@ -79,46 +76,27 @@ export async function handleVendorCommand(
       return `You do not have enough gold. You need ${totalRequestedCost}, but have ${currentGold}.`;
     }
 
-    // Try to add items via the shared economy helper
-    const result = giveItemsToCharacter(char, [
-      { itemId: def.id, quantity: qty },
-    ]);
+    const deliver = await deliverItemToBagsOrMail(ctx, {
+      inventory: char.inventory,
+      itemId: def.id,
+      qty,
 
-    const applied = result.applied.find((s) => s.itemId === def.id);
-    const addedQty = applied?.quantity ?? 0;
+      ownerId: ctx.session?.identity?.userId,
+      ownerKind: "account",
 
-    let mailedQty = 0;
+      sourceVerb: "buying",
+      sourceName: def.name,
+      mailSubject: "Vendor purchase overflow",
+      mailBody: `Your bags were full while buying ${def.name}.\nThe remaining items were sent to your mailbox.`,
 
-    // If some items couldn't fit in bags, optionally mail them
-    if (
-      result.failed.length > 0 &&
-      ctx.mail &&
-      ctx.session &&
-      ctx.session.identity
-    ) {
-      const leftoverTotal = result.failed.reduce(
-        (sum, s) => sum + s.quantity,
-        0
-      );
+      // Never delete items just because mail isn't available; undelivered just isn't delivered.
+      undeliveredPolicy: "keep",
+    });
 
-      if (leftoverTotal > 0) {
-        await ctx.mail.sendSystemMail(
-          ctx.session.identity.userId,
-          "account",
-          "Vendor purchase overflow",
-          `Your bags were full while buying ${def.name}. The remaining items were sent to your mailbox.`,
-          [{ itemId: def.id, qty: leftoverTotal }]
-        );
-        mailedQty = leftoverTotal;
-      }
-    }
-
-    const deliveredQty = addedQty + mailedQty;
+    const deliveredQty = deliver.added + deliver.mailed;
 
     // If absolutely nothing made it into bags or mail, abort and don't charge.
-    if (deliveredQty === 0) {
-      return "Your bags are full; the vendor cannot complete the sale.";
-    }
+    if (deliveredQty === 0) return "Your bags are full; the vendor cannot complete the sale.";
 
     // Charge only for what was actually delivered (bags + mail)
     const actualCost = deliveredQty * entry.priceGold;
@@ -127,9 +105,7 @@ export async function handleVendorCommand(
     await ctx.characters.saveCharacter(char);
 
     let msg = `You buy ${deliveredQty}x ${def.name} for ${actualCost} gold.`;
-    if (mailedQty > 0) {
-      msg += ` (${mailedQty}x sent to your mailbox due to full bags.)`;
-    }
+    if (deliver.mailed > 0) msg += ` (${deliver.mailed}x sent to your mailbox due to full bags.)`;
 
     return msg;
   }

@@ -1229,12 +1229,13 @@
         "utils.logger",
         "items.catalog",
         "items.inventoryHelpers",
-        "mail.service?",
-        "characters.service?"
+        "mail.service",
+        "characters.service?",
+        "loot.OverflowDelivery"
       ],
       "notes": [
         "High-level equipment swap logic operating on character.inventory and equipment.",
-        "Handles bag overflow by mailing items when possible, or rejecting unequip if no space/mail."
+        "Handles bag overflow via OverflowDelivery; refuses equip/unequip when it cannot safely deliver displaced gear (bags full and mail unavailable)."
       ]
     },
     "items.grantRules": {
@@ -1414,10 +1415,14 @@
     "loot.OverflowDelivery": {
       "kind": "helper",
       "path": "worldcore/loot/OverflowDelivery.ts",
-      "ctorArgs": [
+      "functions": [
+        "deliverItemToBagsOrMail",
+        "deliverItemsToBagsOrMail"
       ],
       "notes": [
-        "Deliver items to bags with overflow-to-mail"
+        "Deliver items to bags with overflow-to-mail",
+        "Now supports attachment meta + undeliveredPolicy",
+        "Accepts a minimal mail sender surface (sendSystemMail) to support lightweight contexts (e.g., EquipContext)."
       ]
     },
     "mail.postgres": {
@@ -1441,7 +1446,7 @@
       "path": "worldcore/mail/MailService.ts",
       "notes": [
         "MailService interface: getOrCreateMailbox, listMail, getMail, markRead, sendSystemMail, claimAttachments.",
-        "claimAttachments moves items into a character's inventory and reports claimed vs leftover counts."
+        "claimAttachments uses ItemService.addToInventory; leftover can be handled by caller (or mailed via OverflowDelivery when appropriate)."
       ]
     },
     "mail.types": {
@@ -1723,7 +1728,8 @@
         "items.inventoryHelpers",
         "items.inventoryConsume",
         "mud.progression",
-        "core.entityManager"
+        "core.entityManager",
+        "loot.OverflowDelivery"
       ],
       "provides": [
         "mud.command.craft"
@@ -1733,7 +1739,7 @@
         "Implements 'craft list' and 'craft <id|name> [count]'.",
         "DB-backed recipes (TradeRecipeService) with fallback to RecipeCatalog.",
         "Optional station enforcement via PW_CRAFT_STATIONS_REQUIRED=1.",
-        "Station proximity uses EntityManager.getEntitiesInRoom(roomId)."
+        "Station proximity currently checks entities in the room."
       ]
     },
     "mud.commands.debug.handlers": {
@@ -1771,7 +1777,8 @@
         "ai.npc.localBrain",
         "world.spawns",
         "db.Database",
-        "world.RegionFlags"
+        "world.RegionFlags",
+        "loot.OverflowDelivery"
       ],
       "invokedBy": [
         "mud.handler"
@@ -1779,7 +1786,9 @@
       "notes": [
         "Collection of staff/debug/event commands (debug_give, debug_xp, debug_spawn_npc, event_give_any, etc.).",
         "Many of these should be wrapped with withDebugGate before being exposed to normal command routing.",
-        "Includes debug_hydrate_here to force region hydration from spawn_points for the current room."
+        "Includes debug_hydrate_here to force region hydration from spawn_points for the current room.",
+        "Item grant commands (debug_give/event_give_any/debug_give_mat) route through OverflowDelivery (bags-first, overflow-to-mail).",
+        "Event_mail_reward sends explicit system mail (mail as feature)."
       ]
     },
     "mud.commands.debug.hydrateHere": {
@@ -1867,14 +1876,16 @@
         "mail.service",
         "economy.gold",
         "auction.auditLog",
-        "auction.format"
+        "auction.format",
+        "loot.OverflowDelivery"
       ],
       "invokedBy": [
         "mud.handler"
       ],
       "notes": [
         "Implements 'ah' / auction house commands: browse, sell, buy, my, claim, cancel, expire, reclaim.",
-        "Handles bag removal, proceeds claim, and overflow via mail."
+        "Handles bag removal, proceeds claim, and overflow via mail.",
+        "Uses system mail for auction lifecycle delivery (preferred); overflow policy is separate (OverflowDelivery) for non-auction sources."
       ]
     },
     "mud.commands.economy.trade": {
@@ -1906,7 +1917,8 @@
         "items.service",
         "characters.service",
         "mail.service",
-        "economy.gold"
+        "economy.gold",
+        "loot.OverflowDelivery"
       ],
       "invokedBy": [
         "mud.handler"
@@ -2465,8 +2477,8 @@
         "mud.commands.registry"
       ],
       "notes": [
-        "Implements 'mail [list|read|claim|event_reward]'.",
-        "Player-facing mailbox plus staff-only event_reward helper."
+        "Implements player mailbox commands: mail list, mail read <id>, mail claim <id>.",
+        "Also includes staff-only mail event_reward (explicit mail as a feature; not overflow policy)."
       ]
     },
     "mud.commands.social.who": {
