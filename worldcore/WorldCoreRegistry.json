@@ -1420,8 +1420,8 @@
         "deliverItemsToBagsOrMail"
       ],
       "notes": [
-        "Deliver items to bags with overflow-to-mail",
-        "Now supports attachment meta + undeliveredPolicy",
+        "Central overflow delivery policy: bags-first, overflow-to-mail.",
+        "Supports attachment meta + undeliveredPolicy ('drop'|'keep')",
         "Accepts a minimal mail sender surface (sendSystemMail) to support lightweight contexts (e.g., EquipContext)."
       ]
     },
@@ -1788,7 +1788,7 @@
         "Many of these should be wrapped with withDebugGate before being exposed to normal command routing.",
         "Includes debug_hydrate_here to force region hydration from spawn_points for the current room.",
         "Item grant commands (debug_give/event_give_any/debug_give_mat) route through OverflowDelivery (bags-first, overflow-to-mail).",
-        "Event_mail_reward sends explicit system mail (mail as feature)."
+        "event_mail_reward sends explicit system mail (mail as feature)."
       ]
     },
     "mud.commands.debug.hydrateHere": {
