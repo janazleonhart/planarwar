@@ -1415,9 +1415,6 @@
       "kind": "helper",
       "path": "worldcore/loot/OverflowDelivery.ts",
       "ctorArgs": [
-        "NpcCombat",
-        "MudWorldActions", 
-        "skinningCommand"
       ],
       "notes": [
         "Deliver items to bags with overflow-to-mail"
@@ -2040,10 +2037,12 @@
         "mud.actions.world",
         "npc.types",
         "items.catalog",
-        "items.inventory"
+        "items.inventory",
+        "loot.OverflowDelivery"
       ],
       "provides": [
-        "skin <corpse>: validates corpse, resolves skin loot (DB-first, fallback), grants items, marks corpse skinned"
+        "skin <corpse>: validates corpse, resolves skin loot (DB-first, fallback), grants items, marks corpse skinned",
+        "progression event emission + overflow-to-mail via OverflowDelivery"
       ],
       "owns": []
     },
@@ -2636,7 +2635,10 @@
       ],
       "notes": [
         "Implements 'nearby'.",
-        "Refreshes personal nodes, then lists nearby entities within radius with short handles like rat.1."
+        "Refreshes personal nodes, then lists nearby entities within radius with short handles like rat.1.",
+        "filter/group/sort flags",
+        "--limit / --max",
+        "safe caps + “UI-friendly output shaping"
       ]
     },
     "mud.commands.world.save": {

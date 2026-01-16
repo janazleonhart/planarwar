@@ -53,6 +53,11 @@ function envBool(name: string, fallback: boolean): boolean {
 
 const log = Logger.scope("NPC_COMBAT");
 
+// Prevent occasional duplicate spawn flavor lines (e.g. 'Town Rat returns.')
+// caused by overlapping respawn scheduling paths.
+const recentSpawnAnnouncements = new Map<string, number>();
+
+
 type SimpleCombatContext = {
   [key: string]: any;
   npcs?: any;
@@ -496,11 +501,26 @@ export function announceSpawnToRoom(
   if (!ctx.rooms) return;
   const room = ctx.rooms.get(roomId);
   if (!room) return;
+
+  // De-dupe identical spawn flavor lines that can occur if respawn scheduling overlaps.
+  const now = Date.now();
+  const key = `${roomId}|${text}`;
+  const last = recentSpawnAnnouncements.get(key);
+  if (typeof last === "number" && now - last < 250) return;
+  recentSpawnAnnouncements.set(key, now);
+
+  // Opportunistic cleanup to avoid unbounded growth.
+  if (recentSpawnAnnouncements.size > 512) {
+    for (const [k, ts] of recentSpawnAnnouncements) {
+      if (now - ts > 10_000) recentSpawnAnnouncements.delete(k);
+    }
+  }
+
   room.broadcast("chat", {
     from: "[world]",
     sessionId: "system",
     text,
-    t: Date.now(),
+    t: now,
   });
 }
 

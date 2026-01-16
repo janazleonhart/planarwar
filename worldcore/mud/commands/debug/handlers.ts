@@ -16,6 +16,7 @@ import { db } from "../../../db/Database";
 import { normalizeRegionIdForDb } from "../../../world/RegionFlags";
 import { NpcSpawnController } from "../../../npc/NpcSpawnController";
 import { announceSpawnToRoom } from "../../MudActions";
+import { deliverItemToBagsOrMail } from "../../../loot/OverflowDelivery";
 import { getSelfEntity } from "../../runtime/mudRuntime";
 
 import { LocalSimpleAggroBrain } from "../../../ai/LocalSimpleNpcBrain";
@@ -74,29 +75,33 @@ export async function handleDebugGive(
   if (!ctx.items) return "Item service unavailable.";
   if (!ctx.characters) return "Character service unavailable.";
 
-  const def =
-    ctx.items.get(token) ?? ctx.items.findByIdOrName?.(token);
+  const def = ctx.items.get(token) ?? ctx.items.findByIdOrName?.(token);
   if (!def) return `No DB item found for '${token}'.`;
 
-  const res = ctx.items.addToInventory(char.inventory, def.id, qty);
+  const res = await deliverItemToBagsOrMail(
+    { items: ctx.items, mail: ctx.mail, session: ctx.session },
+    {
+      itemId: def.id,
+      qty,
+      inventory: char.inventory,
+      ownerKind: "account",
+      sourceVerb: "debug_give",
+      sourceName: "a debug command",
+      mailSubject: "Debug item overflow",
+      mailBody: `Your bags were full; extra ${def.name} was mailed to you.`,
+    },
+  );
 
-  // overflow → mail (optional)
-  if (res.leftover > 0 && ctx.mail && ctx.session?.identity) {
-    await ctx.mail.sendSystemMail(
-      ctx.session.identity.userId,
-      "account",
-      "Debug item overflow",
-      `Your bags were full; ${res.leftover}x ${def.name} was mailed to you.`,
-      [{ itemId: def.id, qty: res.leftover }]
-    );
-  }
+  if (res.added === 0 && res.mailed === 0) return "Your bags are full.";
 
   await ctx.characters.saveCharacter(char);
 
   let msg = `[debug] Gave ${res.added}x ${def.name}.`;
-  if (res.leftover > 0) msg += ` (${res.leftover}x mailed)`;
+  if (res.mailed > 0) msg += ` (${res.mailed}x mailed)`;
+  if (res.leftover > 0) msg += ` (${res.leftover}x dropped)`;
   return msg;
 }
+
 
 export async function handleDebugXp(
   ctx: any,
@@ -596,22 +601,22 @@ export async function handleEventGiveAny(
     return "Only the shard owner may use event_give_any.";
   }
 
-  const res = ctx.items.addToInventory(char.inventory, def.id, qty);
+  const res = await deliverItemToBagsOrMail(
+    { items: ctx.items, mail: ctx.mail, session: ctx.session },
+    {
+      itemId: def.id,
+      qty,
+      inventory: char.inventory,
+      ownerKind: "account",
+      sourceVerb: "event reward",
+      sourceName: "an event",
+      mailSubject: "Event overflow items",
+      mailBody:
+        `Your bags were full during an event.\nExtra ${def.name} copies were delivered to your mailbox.`,
+    },
+  );
 
-  let mailed = 0;
-  const identity = ctx.session.identity;
-  if (res.leftover > 0 && ctx.mail && identity) {
-    await ctx.mail.sendSystemMail(
-      identity.userId,
-      "account",
-      "Event overflow items",
-      `Your bags were full during an event.\nExtra ${def.name} copies were delivered to your mailbox.`,
-      [{ itemId: def.id, qty: res.leftover }]
-    );
-    mailed = res.leftover;
-  }
-
-  if (res.added === 0 && mailed === 0) {
+  if (res.added === 0 && res.mailed === 0) {
     return "Your bags are full.";
   }
 
@@ -625,15 +630,19 @@ export async function handleEventGiveAny(
     requestedQty: qty,
     grantedQty: res.added,
     leftover: res.leftover,
-    mailed,
+    mailed: res.mailed,
   });
 
   let msg = `[EVENT] You receive ${res.added} x ${def.name}.`;
-  if (mailed > 0) {
-    msg += ` ${mailed} x ${def.name} were sent to your mailbox.`;
+  if (res.mailed > 0) {
+    msg += ` ${res.mailed} x ${def.name} were sent to your mailbox.`;
+  }
+  if (res.leftover > 0) {
+    msg += ` ${res.leftover} x ${def.name} could not be delivered.`;
   }
   return msg;
 }
+
 
 export async function handleEventMailReward(
   ctx: any,
@@ -712,22 +721,21 @@ export async function handleDebugGiveMat(
     return `You are not allowed to grant '${def.id}'.`;
   }
 
-  const res = ctx.items.addToInventory(char.inventory, def.id, qty);
+  const res = await deliverItemToBagsOrMail(
+    { items: ctx.items, mail: ctx.mail, session: ctx.session },
+    {
+      itemId: def.id,
+      qty,
+      inventory: char.inventory,
+      ownerKind: "account",
+      sourceVerb: "debug grant",
+      sourceName: "a staff command",
+      mailSubject: "Overflow items",
+      mailBody: `Your bags were full while receiving ${def.name}.`,
+    },
+  );
 
-  let mailed = 0;
-  const identity = ctx.session.identity;
-  if (res.leftover > 0 && ctx.mail && identity) {
-    await ctx.mail.sendSystemMail(
-      identity.userId,
-      "account",
-      "Overflow items",
-      `Your bags were full while receiving ${def.name}.`,
-      [{ itemId: def.id, qty: res.leftover }]
-    );
-    mailed = res.leftover;
-  }
-
-  if (res.added === 0 && mailed === 0) {
+  if (res.added === 0 && res.mailed === 0) {
     return "Your bags are full.";
   }
 
@@ -741,15 +749,19 @@ export async function handleDebugGiveMat(
     requestedQty: qty,
     grantedQty: res.added,
     leftover: res.leftover,
-    mailed,
+    mailed: res.mailed,
   });
 
   let msg = `You receive ${res.added} x ${def.name} (DB item).`;
-  if (mailed > 0) {
-    msg += ` ${mailed} x ${def.name} were sent to your mailbox.`;
+  if (res.mailed > 0) {
+    msg += ` ${res.mailed} x ${def.name} were sent to your mailbox.`;
+  }
+  if (res.leftover > 0) {
+    msg += ` ${res.leftover} x ${def.name} could not be delivered.`;
   }
   return msg;
 }
+
 
 export async function handleDebugResetLevel(
   ctx: any,
