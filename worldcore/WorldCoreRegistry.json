@@ -3015,7 +3015,9 @@
       ],
       "notes": [
         "Determines which NPCs are 'protected' (civilian, vendor, questgiver, protected_town, etc.) and records crimes against them on the attacker.",
-        "Sets recentCrimeUntil and recentCrimeSeverity (minor|severe) on characters to drive guard response."
+        "Sets recentCrimeUntil and recentCrimeSeverity (minor|severe) on characters to drive guard response.",
+        "law_exempt > law_protected > legacy tags precedence",
+        "guards/resources are never “protected” for crime purposes"
       ]
     },
     "npc.manager": {
@@ -4194,6 +4196,25 @@
       "notes": [
         "This tool is required now that DB-backed recipes are authoritative.",
         "Without a runner, new schema/seed files rely on manual psql execution."
+      ]
+    },
+    "tools.auditNpcLawTags": {
+      "kind": "service",
+      "path": "worldcore/tools/auditNpcLawTags.ts",
+      "class": "ToolScript",
+      "lifecycle": "tool",
+      "ctorArgs": [],
+      "dependsOn": [
+        "worldcore/db/Database.ts",
+        "utils.logger"
+      ],
+      "provides": [
+        "audits + optionally cleans npcs.tags law/protection contradictions",
+        "Supports --dry-run"
+      ],
+      "owns": [
+      ],
+      "notes": [
       ]
     },
     "tools.simBrain": {

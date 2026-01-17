@@ -15,12 +15,13 @@ import garrisonsRoutes from "./routes/garrisons";
 import buildingsRoutes from "./routes/buildings";
 import heroesRoutes from "./routes/heroes";
 import workshopRoutes from "./routes/workshop";
-import { resourceTierRouter }  from "./routes/resourceTierRoutes";
+import { resourceTierRouter } from "./routes/resourceTierRoutes";
 import charactersRouter from "./routes/characters";
 import authRouter from "./routes/auth";
 import adminQuestsRouter from "./routes/adminQuests";
 import adminNpcsRouter from "./routes/adminNpcs";
 import adminItemsRouter from "./routes/adminItems";
+import adminSpawnPointsRouter from "./routes/adminSpawnPoints";
 
 dotenv.config();
 
@@ -30,7 +31,7 @@ const PORT = process.env.PORT ? Number(process.env.PORT) : 4000;
 app.use(
   cors({
     origin: "*",
-  })
+  }),
 );
 app.use(express.json());
 
@@ -53,9 +54,11 @@ app.use("/api/resources", resourceTierRouter);
 app.use("/api/characters", charactersRouter);
 app.use("/api/auth", authRouter);
 app.use("/api/characters", charactersRouter);
+
 app.use("/api/admin/quests", adminQuestsRouter);
 app.use("/api/admin/npcs", adminNpcsRouter);
 app.use("/api/admin/items", adminItemsRouter);
+app.use("/api/admin/spawn_points", adminSpawnPointsRouter);
 
 app.listen(PORT, () => {
   console.log(`Backend listening on http://localhost:${PORT}`);
