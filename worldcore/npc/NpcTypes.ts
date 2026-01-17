@@ -80,6 +80,9 @@ export interface NpcRuntimeState {
   lastAggroAt?: number;
   lastAttackerEntityId?: string;
 
+  // Last time this NPC was the victim of a crime (used by guard AI).
+  lastCrimeAt?: number;
+
   // For simple behavior flags; coward only uses this for now
   fleeing?: boolean;
   spawnRoomId?: string;

@@ -44,9 +44,13 @@ test("applyDamage records crime when attacking protected NPCs", () => {
   const entities = new EntityManager();
   const npcManager = new NpcManager(entities); // sessions optional in NpcManager
 
-  // town_rat has the "protected_town" tag, so it should trigger crime heat
-  const playerEntity = entities.createPlayerForSession("sess_crime", "town_square");
-  const npcState = npcManager.spawnNpcById("town_rat", "town_square", 0, 0, 0);
+  // coward_rat has "protected_town" + "civilian" tags, so it must trigger crime heat.
+  // NOTE: town_rat is intentionally law_exempt for newbie questing.
+  const playerEntity = entities.createPlayerForSession(
+    "sess_crime",
+    "town_square",
+  );
+  const npcState = npcManager.spawnNpcById("coward_rat", "town_square", 0, 0, 0);
   assert.ok(npcState, "expected NPC to spawn for crime test");
 
   const attacker = makeCharacter();

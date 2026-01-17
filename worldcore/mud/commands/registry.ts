@@ -76,6 +76,7 @@ import {
   handleTitlesCommand,
   handleSetTitleCommand,
 } from "./progression/titlesCommand";
+import { handleRewardCommand } from "./progression/rewardCommand";
 
 // Player status / effects
 import { handleEffectsCommand } from "./player/effectsCommand";
@@ -235,6 +236,11 @@ export const COMMANDS: Record<string, MudCommandHandlerFn> = {
   title: async (ctx, char) => handleTitleCommand(ctx, char),
   titles: async (ctx, char) => handleTitlesCommand(ctx, char),
   settitle: handleSetTitleCommand,
+
+  reward: async (ctx, char, input) =>
+    handleRewardCommand(ctx as any, char as any, input.args),
+  rewards: async (ctx, char, input) =>
+    handleRewardCommand(ctx as any, char as any, input.args),
 
   // Recovery
   respawn: async (ctx) => handleRespawnCommand(ctx),

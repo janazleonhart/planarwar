@@ -2,10 +2,7 @@
 
 import type { MudContext } from "../../MudContext";
 import type { RecoveryContext } from "../../../systems/recovery/recoveryOps";
-import {
-  respawnInPlace,
-  restOrSleep,
-} from "../../../systems/recovery/recoveryOps";
+import { respawnInPlace, restOrSleep } from "../../../systems/recovery/recoveryOps";
 import { stopAutoAttack } from "../combat/autoattack/trainingDummyAutoAttack";
 import { stopTrainingDummyAi } from "../../MudTrainingDummy";
 import {
@@ -14,10 +11,7 @@ import {
   gainPowerResource,
 } from "../../../resources/PowerResources";
 import type { CharacterState } from "../../../characters/CharacterTypes";
-import {
-  hasActiveCrimeHeat,
-  getCrimeHeatLabel,
-} from "../../../characters/CharacterTypes";
+import { hasActiveCrimeHeat, getCrimeHeatLabel } from "../../../characters/CharacterTypes";
 
 // Minimal structural type for the RespawnService we threaded in via ctx.
 // We don't import the actual class here to avoid extra compile coupling.
@@ -28,14 +22,19 @@ type RespawnLike = {
   ) => Promise<{ character: any; spawn: any }>;
 };
 
+function clearCrimeHeat(char: CharacterState): void {
+  // Respawn must never chain-kill you via guards.
+  // Later: replace this with "jail" / "bounty" / faction KoS rules.
+  (char as any).recentCrimeUntil = 0;
+  delete (char as any).recentCrimeSeverity;
+}
+
 // --- Respawn: shard/world-aware (with fallback to old HP-only behavior) ---
 
-export async function handleRespawnCommand(
-  ctx: MudContext
-): Promise<string> {
+export async function handleRespawnCommand(ctx: MudContext): Promise<string> {
   const char = ctx.session.character as CharacterState | undefined;
 
-  // No character attached? Fallback to old behavior (or just shrug).
+  // No character attached? Fallback to old behavior.
   if (!char) {
     const recoveryCtx: RecoveryContext = {
       session: { id: ctx.session.id },
@@ -57,18 +56,18 @@ export async function handleRespawnCommand(
       stopAutoAttack,
       stopTrainingDummyAi,
     };
+
+    // Even in fallback mode, clear crime heat so guards don't perma-kill on respawn.
+    clearCrimeHeat(char);
+
     return respawnInPlace(recoveryCtx);
   }
 
   const ent = ctx.entities.getEntityByOwner(ctx.session.id);
   const hp =
-    ent && typeof (ent as any).hp === "number"
-      ? (ent as any).hp
-      : undefined;
+    ent && typeof (ent as any).hp === "number" ? (ent as any).hp : undefined;
   const aliveFlag =
-    ent && typeof (ent as any).alive === "boolean"
-      ? (ent as any).alive
-      : undefined;
+    ent && typeof (ent as any).alive === "boolean" ? (ent as any).alive : undefined;
 
   const isDead = !ent || hp === 0 || (hp as number) < 0 || aliveFlag === false;
 
@@ -81,14 +80,15 @@ export async function handleRespawnCommand(
   const crimeHeatLabel = getCrimeHeatLabel(char, now);
   const crimeHeatActive = hasActiveCrimeHeat(char, now);
 
-  // v1: ask RespawnService to put you at a sensible spawn and stand you up.
+  // Ask RespawnService to put you at a sensible spawn and stand you up.
   const { spawn } = await respawns.respawnCharacter(ctx.session, char);
 
-  if (spawn && spawn.regionId) {
-    // Later we can include pretty region/settlement names.
+  // HARD SAFETY: respawn must break death-loops.
+  clearCrimeHeat(char);
 
+  if (spawn && spawn.regionId) {
     if (crimeHeatActive && crimeHeatLabel !== "none") {
-      // Same hub-safe mechanics, but flavor text hints the law is watching.
+      // Flavor can still hint at law attention, but mechanics must not chain-kill.
       return "You feel your spirit pulled back to safety. You awaken in a guarded sanctuary, under the wary gaze of the law.";
     }
 
@@ -101,9 +101,7 @@ export async function handleRespawnCommand(
 
 // --- Rest: HP via recoveryOps + resource regen (mana only, no fury) ---
 
-export async function handleRestCommand(
-  ctx: MudContext
-): Promise<string> {
+export async function handleRestCommand(ctx: MudContext): Promise<string> {
   // Combat gate: block full rest while recently in combat.
   let inCombatRecently = false;
 
@@ -139,7 +137,6 @@ export async function handleRestCommand(
   // 2) Resource handling (needs character on the session)
   const char = ctx.session.character as CharacterState | undefined;
   if (!char) {
-    // No character attached (shouldn’t happen in normal play)
     return baseMsg;
   }
 
@@ -159,7 +156,6 @@ export async function handleRestCommand(
   const after = pool.current;
 
   if (after === before) {
-    // Already full on mana
     return `${baseMsg} Your mana is already full (${after}/${pool.max}).`;
   }
 

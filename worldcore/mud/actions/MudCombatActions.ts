@@ -91,6 +91,12 @@ export async function handleAttackAction(
   // 1) Try NPC target first (rats, ore, dummies, etc.)
   const npcTarget = findNpcTargetByName(ctx.entities, roomId, targetNameRaw);
   if (npcTarget) {
+    // Prevent double-kills / double-loot / double-respawn scheduling.
+    // If the entity is already dead, you shouldn't be able to attack it.
+    if (npcTarget.alive === false) {
+      return `That is already dead.`;
+    }
+
     const npcState = ctx.npcs?.getNpcStateByEntityId(npcTarget.id);
     const protoId = npcState?.protoId;
 
@@ -179,7 +185,6 @@ export async function handleAttackAction(
     } catch {
       // Best-effort: never let policy lookup crash melee.
     }
-
 
     const effective = computeEffectiveAttributes(char, ctx.items);
     const dmg = computeTrainingDummyDamage(effective);

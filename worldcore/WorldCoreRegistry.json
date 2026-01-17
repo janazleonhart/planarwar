@@ -2333,6 +2333,23 @@
         "Default shows quest log; subcommand 'turnin'/'turn-in'/'complete' turns in a quest by target string."
       ]
     },
+    "mud.commands.progression.reward": {
+      "kind": "mud_command",
+      "path": "worldcore/mud/commands/progression/rewardCommand.ts",
+      "function": "handleRewardCommand",
+      "dependsOn": [
+        "mud.context",
+        "progression.ProgressionCore",
+        "rewards.RewardDelivery",
+        "characters.service"
+      ],
+      "invokedBy": [
+        "mud.commands.registry"
+      ],
+      "notes": [
+        "Implements 'reward list' and 'reward claim' for pendingRewards delivery."
+      ]
+    },
     "mud.commands.progression.titles": {
       "kind": "mud_command_group",
       "path": "worldcore/mud/commands/progression/titlesCommand.ts",
@@ -2400,7 +2417,8 @@
         "mud.commands.progression.progress",
         "mud.commands.progression.titles",
         "mud.commands.debug.handlers",
-        "mud.commands.debug.withDebugGate"
+        "mud.commands.debug.withDebugGate",
+        "rewards.RewardDelivery"
       ],
       "notes": [
         "Maps text commands (bank, move, cast, etc.) to specific handler functions.",
@@ -3168,11 +3186,33 @@
       "dependsOn": [
         "utils.logger",
         "characters.service?",
-        "economy.helpers"
+        "economy.helpers",
+        "rewards.RewardDelivery"
       ],
       "notes": [
         "Aggregates XP, gold, and item rewards from completed tasks and applies them to the character.",
         "Uses characters.grantXp and EconomyHelpers.grantReward, with optional patchCharacter to persist inventory."
+      ]
+    },
+    "progression.rewards.grantTaskRewards": {
+      "kind": "module",
+      "path": "worldcore/progression/rewards/grantTaskRewards.ts",
+      "functions": [
+        "grantTaskRewards"
+      ],
+      "dependsOn": [
+        "utils.logger",
+        "economy.EconomyHelpers",
+        "progression.ProgressionCore",
+        "loot.OverflowDelivery",
+        "rewards.RewardDelivery",
+        "characters.service?"
+      ],
+      "notes": [
+        "Aggregates task reward XP/gold/items across completed tasks.",
+        "XP is granted via CharacterService.grantXp; gold applied via EconomyHelpers.",
+        "Item delivery uses RewardDelivery (bags-first, overflow-to-mail if available; otherwise queues to progression.pendingRewards).",
+        "When items are queued, players can retrieve them later via 'reward claim'."
       ]
     },
     "progression.tasks.engine": {
@@ -3410,7 +3450,7 @@
         "Prints per-objective progress lines for kill, harvest, collect_item, craft, city, and talk_to objectives."
       ]
     },
-    "quests.turnIn": {
+    "quests.turnInQuest": {
       "kind": "service",
       "path": "worldcore/quests/turnInQuest.ts",
       "functions": [
@@ -3423,7 +3463,8 @@
         "quests.state",
         "progression.core",
         "items.inventoryHelpers",
-        "economy.helpers"
+        "economy.helpers",
+        "rewards.RewardDelivery"
       ],
       "notes": [
         "Handles quest turn-in: resolves quest by id/name, checks completion and repeatable caps, and revalidates objectives.",
@@ -3460,6 +3501,23 @@
       "notes": [
         "Manages Fury/Mana pools stored under char.progression.powerResources.",
         "Provides class->primary resource mapping and helpers to spend/gain power."
+      ]
+    },
+    "rewards.RewardDelivery": {
+      "kind": "helper",
+      "path": "worldcore/rewards/RewardDelivery.ts",
+      "functions": [
+        "deliverRewardItems",
+        "claimPendingRewards"
+      ],
+      "dependsOn": [
+        "progression.ProgressionCore",
+        "loot.OverflowDelivery"
+      ],
+      "notes": [
+        "Central reward item delivery: uses OverflowDelivery (bags-first, overflow-to-mail).",
+        "Queues undelivered reward items into progression.pendingRewards so rewards are never lost.",
+        "Supports strict preflight mode for quest turn-ins when mail is unavailable."
       ]
     },
     "shards.worldBlueprint": {

@@ -53,12 +53,6 @@ function envBool(name: string, fallback: boolean): boolean {
 
 const log = Logger.scope("NPC_COMBAT");
 
-// Defensive de-dupe for short-burst spawn announcements.
-// In rare cases, overlapping respawn scheduling can emit the same "X returns." flavor twice.
-// We treat identical room+text messages within a tiny window as duplicates.
-const SPAWN_ANNOUNCE_DEDUPE_WINDOW_MS = 250;
-const recentSpawnAnnouncements = new Map<string, number>();
-
 type SimpleCombatContext = {
   [key: string]: any;
   npcs?: any;
@@ -502,25 +496,6 @@ export function announceSpawnToRoom(
   if (!ctx.rooms) return;
   const room = ctx.rooms.get(roomId);
   if (!room) return;
-
-  // De-dupe identical spawn announcements in the same room in a short window.
-  // (Prevents occasional double "X returns." spam when respawn scheduling overlaps.)
-  const now = Date.now();
-  const key = `${roomId}\u0000${text}`;
-  const last = recentSpawnAnnouncements.get(key);
-  if (last != null && now - last < SPAWN_ANNOUNCE_DEDUPE_WINDOW_MS) {
-    return;
-  }
-  recentSpawnAnnouncements.set(key, now);
-  // Best-effort cleanup so the map doesn't grow unbounded.
-  if (recentSpawnAnnouncements.size > 2000) {
-    for (const [k, t] of recentSpawnAnnouncements) {
-      if (now - t > SPAWN_ANNOUNCE_DEDUPE_WINDOW_MS * 4) {
-        recentSpawnAnnouncements.delete(k);
-      }
-    }
-  }
-
   room.broadcast("chat", {
     from: "[world]",
     sessionId: "system",
@@ -554,6 +529,12 @@ export function scheduleNpcCorpseAndRespawn(
 
   // Capture spawn metadata + baseline "home" coords BEFORE corpse despawn runs.
   const ent0: any = ctx.entities.get(npcEntityId);
+
+  // Idempotency: this function may be invoked more than once for the same death (e.g. extra hits after fatal).
+  // Guard against double-despawn/double-respawn which creates duplicate NPCs/corpses.
+  if ((st as any)._pwLifecycleScheduled || (ent0 as any)?._pwLifecycleScheduled) return;
+  (st as any)._pwLifecycleScheduled = true;
+  if (ent0) (ent0 as any)._pwLifecycleScheduled = true;
 
   const spawnPointId: number | undefined =
     typeof ent0?.spawnPointId === "number"

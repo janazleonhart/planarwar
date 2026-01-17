@@ -56,6 +56,9 @@ export class RespawnService {
       posY: targetY,
       posZ: targetZ,
       lastRegionId: targetRegionId,
+      // Respawn is a clean slate: clear any crime heat so guards do not keep chain-killing you.
+      recentCrimeUntil: 0,
+
     };
 
     // 2) Persist character.
@@ -74,6 +77,9 @@ export class RespawnService {
       ent.x = targetX;
       ent.y = targetY;
       ent.z = targetZ;
+      // Ensure the entity is actually in the respawn room (not just moved in-place).
+      if (targetRegionId) ent.roomId = targetRegionId;
+
 
       // v1: simple full-heal + reset flags.
       const e: any = ent;

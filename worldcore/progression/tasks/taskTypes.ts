@@ -6,8 +6,10 @@ export interface SimpleTask {
   target: string;
   required: number;
   completed?: boolean;
+
   reward?: {
     xp?: number;
-    // later: currency, items, etc.
+    gold?: number;
+    items?: { itemId: string; quantity: number }[];
   };
 }

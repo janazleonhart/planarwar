@@ -104,6 +104,9 @@ export function ensureProgression(char: CharacterState): ProgressionState {
   prog.exploration ??= {};
   prog.gathering ??= {};
 
+  // NEW: never-drop reward backlog
+  prog.pendingRewards ??= [];
+
   return prog;
 }
 

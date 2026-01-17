@@ -2,29 +2,47 @@
 
 import { Logger } from "../../utils/logger";
 import type { CharacterState } from "../../characters/CharacterTypes";
-import { giveGold } from "../../economy/EconomyHelpers";
-import { deliverItemsToBagsOrMail } from "../../loot/OverflowDelivery";
+import { grantReward, SimpleItemStack } from "../../economy/EconomyHelpers";
+import {
+  deliverRewardItemsNeverDrop,
+} from "../../rewards/RewardDelivery";
 
 const log = Logger.scope("Rewards");
 
 export type RewardsContext = {
   characters?: {
-    grantXp(userId: string, charId: string, amount: number): Promise<CharacterState | null>;
+    grantXp(
+      userId: string,
+      charId: string,
+      amount: number
+    ): Promise<CharacterState | null>;
 
-    // Optional: if available, let us persist inventory/currency changes
-    patchCharacter?(userId: string, charId: string, patch: Partial<CharacterState>): Promise<CharacterState | null | void>;
+    // Optional: if available, let us persist inventory/currency/progression changes
+    patchCharacter?(
+      userId: string,
+      charId: string,
+      patch: Partial<CharacterState>
+    ): Promise<CharacterState | null | void>;
   };
-
-  // Optional; if present, we can overflow-to-mail for task rewards.
-  mail?: any;
-
-  // Optional; used by OverflowDelivery to resolve DB-backed item metadata.
-  items?: any;
 
   // Optional: if the caller wants us to update their session cache.
   session?: {
     character?: CharacterState | null;
     identity?: { userId: string };
+  };
+
+  // Optional: enables DB-backed item resolution for stacking rules.
+  items?: any;
+
+  // Optional: enables overflow-to-mail for task rewards.
+  mail?: {
+    sendSystemMail(
+      ownerId: string,
+      ownerKind: "account" | "character" | "guild",
+      subject: string,
+      body: string,
+      attachments: { itemId: string; qty: number; meta?: any }[]
+    ): Promise<void>;
   };
 };
 
@@ -63,121 +81,125 @@ export async function grantTaskRewards(
     if (r.items) {
       for (const it of r.items) {
         if (!it.itemId || !it.quantity || it.quantity <= 0) continue;
-        itemAccum.set(it.itemId, (itemAccum.get(it.itemId) ?? 0) + it.quantity);
+        const prev = itemAccum.get(it.itemId) ?? 0;
+        itemAccum.set(it.itemId, prev + it.quantity);
       }
     }
   }
 
-  if (totalXp <= 0 && totalGold <= 0 && itemAccum.size === 0) return msgs;
+  // If literally nothing to grant, bail early
+  if (totalXp <= 0 && totalGold <= 0 && itemAccum.size === 0) {
+    return msgs;
+  }
 
+  // We'll apply rewards on this working character (XP first, then items/gold)
   let workingChar: CharacterState = char;
 
   // 1) Grant XP in one batch
   if (totalXp > 0) {
     try {
-      const updated = await ctx.characters.grantXp(char.userId, char.id, totalXp);
+      const updated = await ctx.characters.grantXp(
+        char.userId,
+        char.id,
+        totalXp
+      );
       if (updated) {
         workingChar = updated;
         if (ctx.session) ctx.session.character = updated;
       }
-      msgs.push(`[progress] You gain ${totalXp} XP for completing task(s).`);
+      msgs.push(
+        `[progress] You gain ${totalXp} XP for completing task(s).`
+      );
     } catch (err) {
-      log.warn("Failed to grant task XP", { err: String(err), charId: char.id, totalXp });
-    }
-  }
-
-  // 2) Gold (no delivery risk)
-  if (totalGold > 0) {
-    giveGold(workingChar, totalGold);
-    msgs.push(`[progress] You receive ${totalGold} gold for completing task(s).`);
-  }
-
-  // 3) Items (bags-first; overflow-to-mail if available)
-  const items = Array.from(itemAccum.entries()).map(([itemId, qty]) => ({ itemId, qty }));
-
-  if (items.length > 0) {
-    const mailAvailable = !!ctx.mail;
-
-    // If mail is unavailable, we should avoid partial delivery/drop by requiring bag fit.
-    // We do a best-effort preflight using ItemService.addToInventory if present.
-    if (!mailAvailable) {
-      const itemService = ctx.items;
-      if (!itemService || typeof itemService.addToInventory !== "function") {
-        log.warn("Task reward items could not be delivered: no mail + no item service for preflight", {
-          charId: workingChar.id,
-          items,
-        });
-        msgs.push("[progress] Task reward items could not be delivered (mail unavailable). Clear bag space and contact staff if this persists.");
-      } else {
-        try {
-          const simInv = JSON.parse(JSON.stringify(workingChar.inventory));
-          for (const it of items) {
-            const r = itemService.addToInventory(simInv, it.itemId, it.qty);
-            if (r && typeof r.leftover === "number" && r.leftover > 0) {
-              msgs.push("[progress] Your bags are full; clear space to receive task reward items.");
-              // Skip delivery; do not risk partial/drop when mail is unavailable.
-              // (XP/gold already granted above; items are withheld.)
-              items.length = 0;
-              break;
-            }
-          }
-        } catch (err) {
-          log.warn("Failed to preflight task reward items", { err: String(err), charId: workingChar.id });
-        }
-      }
-    }
-
-    if (items.length > 0) {
-      try {
-        const deliveryCtx = {
-          items: ctx.items,
-          mail: ctx.mail,
-          session: ctx.session,
-        };
-
-        const deliver = await deliverItemsToBagsOrMail(deliveryCtx as any, {
-          inventory: workingChar.inventory,
-          items: items.map((it) => ({ itemId: it.itemId, qty: it.qty })),
-
-          ownerId: workingChar.userId,
-          ownerKind: "account",
-
-          sourceVerb: "receiving",
-          sourceName: "task rewards",
-          mailSubject: "Task reward overflow",
-          mailBody: "Your bags were full while receiving task rewards. Extra items were delivered to your mailbox.",
-        });
-
-        const appliedParts = deliver.results
-          .filter((r) => r.added + r.mailed > 0)
-          .map((r) => `${r.added + r.mailed}x ${r.itemId}`);
-
-        if (appliedParts.length > 0) {
-          msgs.push(`[progress] You receive: ${appliedParts.join(", ")}.`);
-        }
-
-        const undelivered = deliver.results.filter((r) => (r as any).leftover > 0);
-        if (undelivered.length > 0) {
-          log.warn("Some task reward items could not be delivered", {
-            charId: workingChar.id,
-            undelivered: undelivered.map((r) => ({ itemId: r.itemId, qty: (r as any).leftover })),
-          });
-          msgs.push("[progress] Some task reward items could not be delivered (bags full and mail unavailable/failed).");
-        }
-      } catch (err) {
-        log.warn("Failed to apply task item rewards", { err: String(err), charId: workingChar.id, items });
-      }
-    }
-  }
-
-  // Persist inventory/currency if the caller supports it
-  if (ctx.characters.patchCharacter) {
-    try {
-      await ctx.characters.patchCharacter(workingChar.userId, workingChar.id, {
-        inventory: workingChar.inventory,
+      log.warn("Failed to grant task XP", {
+        err: String(err),
+        charId: char.id,
+        totalXp,
       });
+    }
+  }
+
+  // 2) Grant gold immediately (safe) via EconomyHelpers
+  if (totalGold > 0) {
+    try {
+      const rewardResult = grantReward(workingChar, { gold: totalGold, items: [] });
+      if (rewardResult.goldGranted > 0) {
+        msgs.push(
+          `[progress] You receive ${rewardResult.goldGranted} gold for completing task(s).`
+        );
+      }
     } catch (err) {
-      log.warn("Failed to patch character after task rewards", { err: String(err), charId: workingChar.id });
+      log.warn("Failed to grant task gold", {
+        err: String(err),
+        charId: workingChar.id,
+        totalGold,
+      });
+    }
+  }
+
+  // 3) Deliver items via never-drop delivery
+  const itemStacks: SimpleItemStack[] = [];
+  for (const [itemId, quantity] of itemAccum.entries()) {
+    itemStacks.push({ itemId, quantity });
+  }
+
+  if (itemStacks.length > 0) {
+    try {
+      const res = await deliverRewardItemsNeverDrop(
+        { items: ctx.items, mail: ctx.mail, session: ctx.session },
+        workingChar,
+        workingChar.inventory,
+        itemStacks.map((s) => ({ itemId: s.itemId, qty: s.quantity })),
+        {
+          source: "task rewards",
+          note: "queued because bags/mail could not deliver immediately",
+          ownerId: ctx.session?.identity?.userId,
+          ownerKind: "account",
+          mailSubject: "Task rewards",
+          mailBody: "Your bags were full while receiving task rewards.\nExtra items were delivered to your mailbox.",
+        }
+      );
+
+      const got = [...res.deliveredToBags, ...res.mailed];
+      if (got.length > 0) {
+        const parts = got.map((s) => `${s.qty}x ${s.itemId}`);
+        msgs.push(`[progress] You receive: ${parts.join(", ")}.`);
+      }
+
+      if (res.queued.length > 0) {
+        // Keep the original warning line intact (tests may be strict about it).
+        msgs.push(
+          "[progress] Your bags are full; some reward items could not be delivered."
+        );
+        msgs.push(
+          "[progress] Those items were queued. Use 'reward claim' after clearing space."
+        );
+      }
+
+      // Persist inventory + progression if the caller supports it
+      if (ctx.characters.patchCharacter) {
+        try {
+          await ctx.characters.patchCharacter(
+            workingChar.userId,
+            workingChar.id,
+            {
+              inventory: workingChar.inventory,
+              progression: workingChar.progression,
+            }
+          );
+        } catch (err) {
+          log.warn("Failed to patch character after task rewards", {
+            err: String(err),
+            charId: workingChar.id,
+          });
+        }
+      }
+    } catch (err) {
+      log.warn("Failed to apply task item rewards", {
+        err: String(err),
+        charId: workingChar.id,
+        items: itemStacks,
+      });
     }
   }
 

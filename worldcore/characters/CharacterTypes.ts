@@ -60,6 +60,24 @@ export interface SpellbookState {
 
 export type AbilitiesState = Record<string, any>;
 
+// -----------------------------
+// Pending reward delivery (never-drop safety net)
+// -----------------------------
+
+export interface PendingRewardItem {
+  itemId: string;
+  qty: number;
+  meta?: JsonObject;
+}
+
+export interface PendingRewardEntry {
+  id: string;          // stable id for logging/debug
+  createdAt: number;   // unix ms
+  source: string;      // e.g. "task rewards", "quest turn-in: Rat Problem"
+  note?: string;       // optional extra context
+  items: PendingRewardItem[];
+}
+
 export interface ProgressionState {
   aa?: Record<string, any>;
   rebirth?: Record<string, any>;
@@ -86,6 +104,9 @@ export interface ProgressionState {
 
   // per-skill
   gathering?: Partial<Record<GatheringKind, GatheringStats>>;
+
+  // NEW: queued rewards when bags are full and mail is unavailable/fails
+  pendingRewards?: PendingRewardEntry[];
 }
 
 // -----------------------------
@@ -246,6 +267,7 @@ export function defaultProgression(): ProgressionState {
     flags: {},
     exploration: {},
     gathering: {},
+    pendingRewards: [], // NEW
   };
 }
 
