@@ -974,6 +974,20 @@ export class NpcManager {
       return;
     }
 
+    // AIv2 melee range gate: prevent global-room sniping.
+    // If the target is outside melee range, skip this tick (future: chase/train).
+    const npcX = typeof npcEntity.x === "number" ? npcEntity.x : 0;
+    const npcZ = typeof npcEntity.z === "number" ? npcEntity.z : 0;
+    const tgtX = typeof target.x === "number" ? target.x : 0;
+    const tgtZ = typeof target.z === "number" ? target.z : 0;
+    const dx = npcX - tgtX;
+    const dz = npcZ - tgtZ;
+    const distSq = dx * dx + dz * dz;
+    const MELEE_RANGE = 4;
+    if (distSq > MELEE_RANGE * MELEE_RANGE) {
+      return;
+    }
+
     if (isGuard) {
       this.maybeCallGuardHelp(
         npcId,
