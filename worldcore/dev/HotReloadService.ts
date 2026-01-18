@@ -87,7 +87,7 @@ async function maybeClearSpawnPointCache(warnings: string[]): Promise<boolean> {
 
     if (candidates.length === 0) {
       warnings.push(
-        "SpawnPointCache module loaded but no clear/reset function was found.",
+        "spawn cache: SpawnPointCache module loaded but no clear/reset function was found.",
       );
       return false;
     }
@@ -97,7 +97,7 @@ async function maybeClearSpawnPointCache(warnings: string[]): Promise<boolean> {
     return true;
   } catch (err: any) {
     warnings.push(
-      `SpawnPointCache not available to clear (import failed): ${String(
+      `spawn cache: SpawnPointCache not available to clear (import failed): ${String(
         err?.message ?? err,
       )}`,
     );
@@ -129,7 +129,9 @@ function maybeClearSpawnPointServiceCaches(
         return true;
       } catch (err: any) {
         warnings.push(
-          `SpawnPointService.${name}() threw: ${String(err?.message ?? err)}`,
+          `spawn cache: SpawnPointService.${name}() threw: ${String(
+            err?.message ?? err,
+          )}`,
         );
         return false;
       }
@@ -179,13 +181,15 @@ export async function runHotReload(
     try {
       const svc: any = deps.items;
       if (!svc) {
-        warnings.push("No ItemService provided; items not reloaded.");
+        warnings.push("items: not reloaded (no ItemService wired).");
       } else if (typeof svc.reload === "function") {
         await svc.reload();
-        report.reloaded.items.count = typeof svc.count === "function" ? svc.count() : 0;
+        report.reloaded.items.count =
+          typeof svc.count === "function" ? svc.count() : 0;
       } else if (typeof svc.loadAll === "function") {
         await svc.loadAll();
-        report.reloaded.items.count = typeof svc.count === "function" ? svc.count() : 0;
+        report.reloaded.items.count =
+          typeof svc.count === "function" ? svc.count() : 0;
       } else {
         throw new Error("ItemService has no reload()/loadAll()");
       }
@@ -203,7 +207,7 @@ export async function runHotReload(
     try {
       const loader: any = deps.questLoader;
       if (!loader) {
-        warnings.push("No questLoader provided; quests not reloaded.");
+        warnings.push("quests: not reloaded (no questLoader wired).");
       } else if (typeof loader.reload === "function") {
         const defs = await loader.reload();
         if (typeof deps.quests?.setQuestDefinitions === "function") {
@@ -233,7 +237,7 @@ export async function runHotReload(
     try {
       const loader: any = deps.npcLoader;
       if (!loader) {
-        warnings.push("No npcLoader provided; NPC prototypes not reloaded.");
+        warnings.push("npcs: prototypes not reloaded (no npcLoader wired).");
       } else if (typeof loader.reload === "function") {
         const protos = await loader.reload();
         if (typeof deps.quests?.setNpcPrototypes === "function") {
@@ -293,6 +297,22 @@ export async function runHotReload(
   return report;
 }
 
+function spawnPointCacheStatus(r: HotReloadReport): string {
+  if (r.reloaded.spawns.spawnPointCacheCleared) return "cleared";
+
+  // Distinguish “nothing to clear” vs “we couldn’t clear”
+  const joined = r.warnings.join(" | ").toLowerCase();
+  if (joined.includes("spawnpointcache not available")) return "unavailable";
+  if (joined.includes("no clear/reset function")) return "no-clear-fn";
+
+  return "no-cache";
+}
+
+function spawnPointServiceStatus(r: HotReloadReport): string {
+  if (r.reloaded.spawns.serviceCacheCleared) return "cleared";
+  return "no-cache";
+}
+
 export function formatHotReloadReport(r: HotReloadReport): string {
   const lines: string[] = [];
 
@@ -326,11 +346,9 @@ export function formatHotReloadReport(r: HotReloadReport): string {
 
   if (r.requested.includes("all") || r.requested.includes("spawns")) {
     lines.push(
-      `[reload] spawns: ${r.reloaded.spawns.ok ? "ok" : "fail"} (SpawnPointCache=${
-        r.reloaded.spawns.spawnPointCacheCleared ? "cleared" : "no-op"
-      }, SpawnPointService=${
-        r.reloaded.spawns.serviceCacheCleared ? "cleared" : "no-op"
-      })`,
+      `[reload] spawns: ${r.reloaded.spawns.ok ? "ok" : "fail"} (SpawnPointCache=${spawnPointCacheStatus(
+        r,
+      )}, SpawnPointService=${spawnPointServiceStatus(r)})`,
     );
   }
 
@@ -340,7 +358,8 @@ export function formatHotReloadReport(r: HotReloadReport): string {
   }
 
   if (r.warnings.length) {
-    lines.push(`[reload] warnings:`);
+    // “warnings” are often just “not wired yet” in our dev loop — don’t spook future-us.
+    lines.push(`[reload] notes:`);
     for (const w of r.warnings) lines.push(`- ${w}`);
   }
 
