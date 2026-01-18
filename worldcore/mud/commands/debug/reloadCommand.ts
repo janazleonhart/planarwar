@@ -72,22 +72,12 @@ function stripFlags(args: string[]): string[] {
   return out;
 }
 
-function resolveRoomShardRegion(ctx: MudContext, char: CharacterState): {
-  roomId: string;
-  shardId: string;
-  regionId: string | null;
-} {
-  // Keep these fallbacks permissive. Worst case: no region => we skip hydration/reconcile.
-  const roomId =
-    (char as any)?.roomId ??
-    (ctx.session as any)?.roomId ??
-    "prime_room";
-
-  const shardId =
-    (char as any)?.shardId ??
-    (ctx.session as any)?.shardId ??
-    "prime_shard";
-
+function resolveRoomShardRegion(
+  ctx: MudContext,
+  char: CharacterState,
+): { roomId: string; shardId: string; regionId: string | null } {
+  const roomId = (char as any)?.roomId ?? (ctx.session as any)?.roomId ?? "prime_room";
+  const shardId = (char as any)?.shardId ?? (ctx.session as any)?.shardId ?? "prime_shard";
   const regionId =
     (char as any)?.lastRegionId ??
     (char as any)?.regionId ??
@@ -95,6 +85,17 @@ function resolveRoomShardRegion(ctx: MudContext, char: CharacterState): {
     null;
 
   return { roomId, shardId, regionId };
+}
+
+function resolveOwnerSessionId(ctx: MudContext, char: CharacterState): string | null {
+  const sid =
+    (ctx.session as any)?.id ??
+    (ctx.session as any)?.sessionId ??
+    (char as any)?.ownerSessionId ??
+    (ctx.session as any)?.ownerSessionId ??
+    null;
+
+  return typeof sid === "string" && sid.trim() ? sid : null;
 }
 
 function getCharXZ(char: CharacterState): { x: number; z: number } {
@@ -107,30 +108,36 @@ function getEntityId(e: any): string | number | null {
   return e?.id ?? e?.entityId ?? null;
 }
 
-function getEntityXZ(e: any): { x: number; z: number } | null {
-  const x = e?.x ?? e?.posX ?? e?.spawnX;
-  const z = e?.z ?? e?.posZ ?? e?.spawnZ;
-  const nx = Number(x);
-  const nz = Number(z);
+/**
+ * For staleness checks:
+ * - Only use immutable spawn coordinates when present.
+ * - Never use live x/z because NPCs can move.
+ */
+function getEntitySpawnXZ(e: any): { x: number; z: number } | null {
+  const sx = e?.spawnX;
+  const sz = e?.spawnZ;
+  const nx = Number(sx);
+  const nz = Number(sz);
   if (!Number.isFinite(nx) || !Number.isFinite(nz)) return null;
   return { x: nx, z: nz };
 }
 
-function isSharedNpcEntity(e: any): boolean {
-  if (!e) return false;
+/**
+ * For scope checks (--here radius):
+ * - Prefer spawn coords if present
+ * - Otherwise fall back to live coords (x/z)
+ *
+ * This is safe because it ONLY decides whether an entity is "in the radius bucket",
+ * not whether it is stale due to movement.
+ */
+function getEntityScopeXZ(e: any): { x: number; z: number } | null {
+  const spawn = getEntitySpawnXZ(e);
+  if (spawn) return spawn;
 
-  // Must be spawn_points-driven
-  if (!isNumberLike(e.spawnPointId)) return false;
-
-  // Never touch personal nodes
-  if (e.ownerSessionId) return false;
-
-  // Never touch nodes/objects explicitly
-  const t = String(e.type ?? "").toLowerCase();
-  if (t === "node" || t === "object") return false;
-
-  // Conservatively treat anything else as "NPC-ish"
-  return true;
+  const lx = Number(e?.x ?? e?.posX);
+  const lz = Number(e?.z ?? e?.posZ);
+  if (!Number.isFinite(lx) || !Number.isFinite(lz)) return null;
+  return { x: lx, z: lz };
 }
 
 function isNpcPointType(p: any): boolean {
@@ -138,22 +145,87 @@ function isNpcPointType(p: any): boolean {
   return t === "npc" || t === "mob" || t === "creature";
 }
 
+function isNodePointType(p: any): boolean {
+  const t = String(p?.type ?? "").toLowerCase();
+  return t === "node" || t === "resource";
+}
+
+function isSharedNpcEntity(e: any): boolean {
+  if (!e) return false;
+
+  if (!isNumberLike(e.spawnPointId)) return false;
+
+  // Never touch personal/per-session entities
+  if (e.ownerSessionId) return false;
+
+  // Only NPC-ish types here
+  const t = String(e.type ?? "").toLowerCase();
+  if (t === "node" || t === "object") return false;
+
+  return true;
+}
+
+function isPersonalNodeEntity(e: any, ownerSessionId: string): boolean {
+  if (!e) return false;
+  const t = String(e.type ?? "").toLowerCase();
+  if (t !== "node" && t !== "object") return false;
+  if (e.ownerSessionId !== ownerSessionId) return false;
+  if (!isNumberLike(e.spawnPointId)) return false;
+  return true;
+}
+
+function shouldRespawnEntityFromPoint(e: any, p: any): boolean {
+  // Only treat coords as stale if immutable spawn coords exist.
+  const ex = getEntitySpawnXZ(e);
+  const px = Number(p?.x ?? 0);
+  const pz = Number(p?.z ?? 0);
+
+  const eps = 0.05;
+  if (ex && (Math.abs(ex.x - px) > eps || Math.abs(ex.z - pz) > eps)) return true;
+
+  // proto change -> rebuild
+  const eProto = String(e?.protoId ?? "").trim();
+  const pProto = String(p?.protoId ?? "").trim();
+  if (eProto && pProto && eProto !== pProto) return true;
+
+  // variant change -> rebuild
+  const eVar = String(e?.variantId ?? "").trim();
+  const pVar = String(p?.variantId ?? "").trim();
+  if (eVar && pVar && eVar !== pVar) return true;
+
+  return false;
+}
+
+async function safeDespawnEntity(ctx: MudContext, entityId: any): Promise<boolean> {
+  if (entityId == null) return false;
+
+  const npcs: any = (ctx as any).npcs;
+  if (npcs?.despawnNpc) {
+    npcs.despawnNpc(entityId);
+    return true;
+  }
+
+  const entities: any = (ctx as any).entities;
+  if (entities?.removeEntity) {
+    entities.removeEntity(String(entityId));
+    return true;
+  }
+
+  return false;
+}
+
 /**
  * reload [targets...] [--here[=radius]] [--region]
  *
- * Examples:
- *   reload
- *   reload spawns
- *   reload spawns --here
- *   reload spawns --here=80
- *   reload spawns --region
- *   reload --region            (implies spawns)
- *
  * Behavior:
- * - Best-effort: if loaders are not provided, HotReloadService warns + skips.
- * - spawns always: clears SpawnPointCache, then force rehydrates POIs for current room/region.
- * - --here: additionally reconciles shared NPC spawns near the player (radius) in the current room.
- * - --region: additionally reconciles shared NPC spawns for the whole current region.
+ * - spawns:
+ *    - clears SpawnPointCache (via HotReloadService)
+ *    - force rehydrates POIs for current room/region (SpawnHydrator)
+ * - --here/--region:
+ *    - reconciles shared NPC spawns for the given scope (despawn stale, respawn missing)
+ *    - MUST NOT touch personal nodes/resources
+ * - plain `reload spawns` (no flags):
+ *    - additionally reconciles personal nodes for THIS session + current region
  */
 export async function handleReloadCommand(
   ctx: MudContext,
@@ -166,7 +238,6 @@ export async function handleReloadCommand(
   const argsSansFlags = stripFlags(rawArgs);
   let targets = parseHotReloadTargets(argsSansFlags);
 
-  // Preserve the "reload = all" UX
   if (!targets.length) targets = ["all"];
 
   // If user asked for reconcile mode without specifying spawns,
@@ -177,22 +248,18 @@ export async function handleReloadCommand(
 
   const { roomId, shardId, regionId } = resolveRoomShardRegion(ctx, char);
 
-  // HotReloadService expects a strict deps bag. Only pass fields that exist in HotReloadDeps.
   const deps: HotReloadDeps = {
     items: ctx.items,
     spawnPoints: (ctx.npcSpawns as any)?.deps?.spawnPoints,
-    // questLoader: <wire later>,
-    // npcLoader: <wire later>,
   } satisfies HotReloadDeps;
 
   const report = await runHotReload(targets, deps);
   let out = formatHotReloadReport(report);
 
-  const wantSpawns =
-    targets.includes("all") || (targets as HotReloadTarget[]).includes("spawns");
+  const wantSpawns = targets.includes("all") || (targets as HotReloadTarget[]).includes("spawns");
 
   // ---------------------------------------------------------------------------
-  // 1) POI hydration: make spawn_points changes visible immediately (stations/mailbox/etc)
+  // 1) POI hydration
   // ---------------------------------------------------------------------------
   if (wantSpawns && ctx.spawnHydrator?.rehydrateRoom && regionId) {
     try {
@@ -214,11 +281,94 @@ export async function handleReloadCommand(
   }
 
   // ---------------------------------------------------------------------------
-  // 2) Optional NPC reconcile: --here / --region
+  // 2) Personal nodes reconcile (ONLY on plain reload, no flags)
+  // ---------------------------------------------------------------------------
+  if (wantSpawns && mode === "none") {
+    const spawnService: any =
+      (ctx.npcSpawns as any)?.deps?.spawnPoints ?? (deps as any).spawnPoints ?? null;
+
+    const ownerSessionId = resolveOwnerSessionId(ctx, char);
+
+    if (!spawnService || !ctx.entities || !ctx.npcs) {
+      out += `\n[reload] personalNodes: skipped (missing spawnPoints/entities/npcs)`;
+    } else if (!regionId) {
+      out += `\n[reload] personalNodes: skipped (no regionId available)`;
+    } else if (!ownerSessionId) {
+      out += `\n[reload] personalNodes: skipped (no ownerSessionId available)`;
+    } else {
+      const controller =
+        (ctx.npcSpawns as any) ??
+        new NpcSpawnController({
+          spawnPoints: spawnService,
+          npcs: ctx.npcs as any,
+          entities: ctx.entities as any,
+        });
+
+      try {
+        const points = await spawnService.getSpawnPointsForRegion(shardId, regionId);
+
+        const desiredNodes = new Map<number, any>();
+        for (const p of points ?? []) {
+          const id = Number(p?.id);
+          if (!Number.isFinite(id)) continue;
+          if (!isNodePointType(p)) continue;
+          desiredNodes.set(id, p);
+        }
+
+        let despawned = 0;
+        const ents: any[] = (ctx.entities as any).getEntitiesInRoom?.(roomId) ?? [];
+        for (const e of ents) {
+          if (!isPersonalNodeEntity(e, ownerSessionId)) continue;
+
+          const spid = Number(e.spawnPointId);
+          const desired = desiredNodes.get(spid);
+
+          if (!desired) {
+            const eid = getEntityId(e);
+            if (await safeDespawnEntity(ctx, eid)) despawned++;
+            continue;
+          }
+
+          if (shouldRespawnEntityFromPoint(e, desired)) {
+            const eid = getEntityId(e);
+            if (await safeDespawnEntity(ctx, eid)) despawned++;
+            continue;
+          }
+        }
+
+        const spawned =
+          typeof (controller as any).spawnPersonalNodesForRegion === "function"
+            ? await (controller as any).spawnPersonalNodesForRegion(
+                shardId,
+                regionId,
+                roomId,
+                ownerSessionId,
+                char,
+              )
+            : typeof (controller as any).spawnPersonalNodesFromRegion === "function"
+              ? await (controller as any).spawnPersonalNodesFromRegion(
+                  shardId,
+                  regionId,
+                  roomId,
+                  ownerSessionId,
+                  char,
+                )
+              : 0;
+
+        out += `\n[reload] personalNodes(region): desired=${desiredNodes.size} despawned=${despawned} spawned=${spawned}`;
+      } catch (err: any) {
+        out += `\n[reload] personalNodes(region): failed (${String(err?.message ?? err)})`;
+      }
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // 3) Shared NPC reconcile: --here / --region
   // ---------------------------------------------------------------------------
   if (wantSpawns && mode !== "none") {
-    // We need runtime services to safely reconcile
-    const spawnService: any = (ctx.npcSpawns as any)?.deps?.spawnPoints ?? (deps as any).spawnPoints;
+    const spawnService: any =
+      (ctx.npcSpawns as any)?.deps?.spawnPoints ?? (deps as any).spawnPoints ?? null;
+
     if (!spawnService || !ctx.entities || !ctx.npcs) {
       out += `\n[reload] reconcile: skipped (missing spawnPoints/entities/npcs)`;
       return out;
@@ -230,43 +380,40 @@ export async function handleReloadCommand(
     }
 
     const controller =
-      ctx.npcSpawns ??
+      (ctx.npcSpawns as any) ??
       new NpcSpawnController({
         spawnPoints: spawnService,
-        npcs: ctx.npcs,
-        entities: ctx.entities,
+        npcs: ctx.npcs as any,
+        entities: ctx.entities as any,
       });
 
     try {
       const { x, z } = getCharXZ(char);
       const radius = mode === "here" ? (hereRadius ?? 60) : 0;
 
-      // Build the desired set of shared-NPC spawnPointIds for scope
       const points =
         mode === "region"
           ? await spawnService.getSpawnPointsForRegion(shardId, regionId)
           : await spawnService.getSpawnPointsNear(shardId, x, z, radius);
 
-      const desiredNpcIds = new Set<number>();
+      const desiredNpcById = new Map<number, any>();
       for (const p of points ?? []) {
         if (!isNpcPointType(p)) continue;
         const id = Number(p.id);
-        if (Number.isFinite(id)) desiredNpcIds.add(id);
+        if (Number.isFinite(id)) desiredNpcById.set(id, p);
       }
 
-      // Despawn stale shared NPC entities in scope (SAFE FILTERS)
       let despawned = 0;
       const ents: any[] = (ctx.entities as any).getEntitiesInRoom?.(roomId) ?? [];
       for (const e of ents) {
         if (!isSharedNpcEntity(e)) continue;
 
-        // Scope gate: region must match if present
         if (e.regionId && String(e.regionId) !== String(regionId)) continue;
 
-        // Scope gate for --here: only within radius (if we can compute coords)
+        // Scope gate for --here: use spawn coords if present, else live coords.
         if (mode === "here") {
-          const pos = getEntityXZ(e);
-          if (!pos) continue; // can't safely compute, so skip
+          const pos = getEntityScopeXZ(e);
+          if (!pos) continue;
           const dx = pos.x - x;
           const dz = pos.z - z;
           if (dx * dx + dz * dz > radius * radius) continue;
@@ -275,21 +422,26 @@ export async function handleReloadCommand(
         const spid = Number(e.spawnPointId);
         if (!Number.isFinite(spid)) continue;
 
-        if (!desiredNpcIds.has(spid)) {
+        const desired = desiredNpcById.get(spid);
+        if (!desired) {
           const eid = getEntityId(e);
-          if (eid == null) continue;
-          (ctx.npcs as any).despawnNpc?.(eid);
-          despawned++;
+          if (await safeDespawnEntity(ctx, eid)) despawned++;
+          continue;
+        }
+
+        if (shouldRespawnEntityFromPoint(e, desired)) {
+          const eid = getEntityId(e);
+          if (await safeDespawnEntity(ctx, eid)) despawned++;
+          continue;
         }
       }
 
-      // Spawn missing shared NPCs for scope (controller dedupes against live entities)
       const spawned =
         mode === "region"
-          ? await controller.spawnFromRegion(shardId, regionId, roomId)
-          : await controller.spawnNear(shardId, x, z, radius, roomId);
+          ? await (controller as any).spawnFromRegion(shardId, regionId, roomId)
+          : await (controller as any).spawnNear(shardId, x, z, radius, roomId);
 
-      out += `\n[reload] reconcile(${mode}): desired=${desiredNpcIds.size} despawned=${despawned} spawned=${spawned}`;
+      out += `\n[reload] reconcile(${mode}): desired=${desiredNpcById.size} despawned=${despawned} spawned=${spawned}`;
     } catch (err: any) {
       out += `\n[reload] reconcile(${mode}): failed (${String(err?.message ?? err)})`;
     }
