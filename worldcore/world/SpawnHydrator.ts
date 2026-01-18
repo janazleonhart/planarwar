@@ -35,13 +35,9 @@ export type SpawnHydratorOptions = {
 export type RehydrateRoomArgs = {
   shardId: string;
   regionId: string; // spawn_points.region_id (e.g. "prime_shard:0,0")
-  roomId: string; // session.roomId (often constant in current runtime)
+  roomId: string;   // session.roomId (often constant in current runtime)
   dryRun?: boolean;
-  /**
-   * Ignore per-region memoization and attempt hydration again.
-   * This is what hot-reload should use.
-   */
-  force?: boolean;
+  force?: boolean; // ignore per-region cache
 };
 
 export type RehydrateRoomResult = {
@@ -175,33 +171,6 @@ export class SpawnHydrator {
     this.townBaselines = new TownBaselines(this.entities);
   }
 
-  // ---------------------------------------------------------------------------
-  // Hot reload helpers
-  // ---------------------------------------------------------------------------
-
-  /**
-   * Clears ALL per-region memoization.
-   *
-   * Use this when:
-   * - spawn_points changed
-   * - you want `rehydrateRoom({ force: true })` to actually do work again
-   */
-  resetHydratedRegions(): void {
-    this.hydratedRegionKeys.clear();
-  }
-
-  /**
-   * Clears memoization for a single region.
-   */
-  invalidateRegion(shardId: string, regionId: string): void {
-    const key = `${shardId}:${regionId}`;
-    this.hydratedRegionKeys.delete(key);
-  }
-
-  // ---------------------------------------------------------------------------
-  // Main API
-  // ---------------------------------------------------------------------------
-
   /**
    * Rehydrate POI-like spawn_points for a region into the current room.
    * Returns a summary so callers can log/report it.
@@ -210,18 +179,29 @@ export class SpawnHydrator {
     const { shardId, regionId, roomId, dryRun, force } = args;
 
     const key = `${shardId}:${regionId}`;
+
+    // If we already hydrated this region and caller didn't force,
+    // we still give town baselines a chance to run (safe no-op if disabled).
     if (!force && this.hydratedRegionKeys.has(key)) {
-      // Even if we skip POI rehydration (cached), still allow town baselines
-      // to run so hot reloads / data changes can take effect without restart.
-      if (this.townBaselines.enabled) {
-        try {
+      try {
+        const wantTownBaselines =
+          process.env.PW_TOWN_BASELINES === "1" ||
+          process.env.WORLD_TOWN_BASELINES === "1";
+
+        if (wantTownBaselines && this.townBaselines?.enabled) {
           const rows = await this.spawnPoints.getSpawnPointsForRegion(shardId, regionId);
           for (const sp of rows) {
-            this.townBaselines.ensureTownBaseline({ shardId, regionId, roomId, townSpawn: sp, dryRun });
+            this.townBaselines.ensureTownBaseline({
+              shardId,
+              regionId,
+              roomId,
+              townSpawn: sp,
+              dryRun,
+            });
           }
-        } catch {
-          // ignore
         }
+      } catch (err: any) {
+        log.warn("Town baselines ensure failed", { shardId, regionId, err });
       }
 
       return {
@@ -270,8 +250,16 @@ export class SpawnHydrator {
 
     for (const sp of eligibleRows) {
       // Town baselines (mailbox anchors, etc.) run regardless of whether we spawn the POI this call.
-      if (this.townBaselines.enabled) {
-        this.townBaselines.ensureTownBaseline({ shardId, regionId, roomId, townSpawn: sp, dryRun });
+      try {
+        const wantTownBaselines =
+          process.env.PW_TOWN_BASELINES === "1" ||
+          process.env.WORLD_TOWN_BASELINES === "1";
+
+        if (wantTownBaselines && this.townBaselines.enabled) {
+          this.townBaselines.ensureTownBaseline({ shardId, regionId, roomId, townSpawn: sp, dryRun });
+        }
+      } catch (err: any) {
+        log.warn("Town baselines ensure failed", { shardId, regionId, err });
       }
 
       const already = inRoom.some((e) => entityAlreadyRepresentsSpawnPoint(e, sp));
@@ -285,9 +273,9 @@ export class SpawnHydrator {
         continue;
       }
 
-      // EntityManager only has a "createNpcEntity" factory today.
-      // We use it, then immediately convert it into an inert POI placeholder.
-      const model = String((sp as any).protoId ?? (sp as any).archetype ?? sp.type ?? "poi");
+      // EntityManager factory we actually have today:
+      // createNpcEntity(roomId, model) -> returns an Entity placed into the room.
+      const model = String(sp.protoId ?? (sp as any).archetype ?? sp.type ?? "poi");
       const ent = this.entities.createNpcEntity(roomId, model);
 
       // Convert it into an inert POI-ish thing.
@@ -300,8 +288,8 @@ export class SpawnHydrator {
 
       // DB linkage
       (ent as any).spawnPointId = sp.id;
-      (ent as any).protoId = (sp as any).protoId ?? null;
-      (ent as any).variantId = (sp as any).variantId ?? null;
+      (ent as any).protoId = sp.protoId ?? null;
+      (ent as any).variantId = sp.variantId ?? null;
       (ent as any).spawnType = sp.type;
 
       // Service protection + helpful tags for inert town services

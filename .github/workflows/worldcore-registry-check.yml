@@ -1,0 +1,33 @@
+name: WorldCore Registry Check
+
+on:
+  pull_request:
+    paths:
+      - "worldcore/**"
+      - ".github/workflows/worldcore-registry-check.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "worldcore/**"
+      - ".github/workflows/worldcore-registry-check.yml"
+
+jobs:
+  registry-check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install deps
+        run: npm ci
+
+      - name: WorldCore registry guard (CI diff)
+        run: node worldcore/tools/registryCheck.js --mode=ci

@@ -578,6 +578,24 @@
         "Provides helpers to query remaining time and atomically check+start cooldowns with user-facing error strings."
       ]
     },
+    "combat.cowardice": {
+      "kind": "utility",
+      "path": "worldcore/combat/Cowardice.ts",
+      "functions": [
+        "resolveCowardiceTier",
+        "computeCowardiceDamageTakenMultiplier",
+        "getCowardiceInfo",
+        "formatCowardiceStatus"
+      ],
+      "dependsOn": [
+        "characters.types",
+        "world.regionDanger"
+      ],
+      "notes": [
+        "Cowardice/risk-mode incoming damage logic. Returns scalar multiplier applied to incoming damage.",
+        "Uses RegionDanger tier to scale cowardice impact."
+      ]
+    },
     "combat.damagePolicy": {
       "kind": "utility",
       "path": "worldcore/combat/DamagePolicy.ts",
@@ -714,6 +732,19 @@
         "TickEngine calls updateRegionDangerAuraForCharacter per character tick to keep aura in sync with current region."
       ]
     },
+    "combat.resists": {
+      "kind": "utility",
+      "path": "worldcore/combat/Resists.ts",
+      "functions": [
+        "resistMultiplier",
+        "applyResistMitigation"
+      ],
+      "dependsOn": [],
+      "notes": [
+        "Resists v1 helper. Pure functions for non-physical damage mitigation.",
+        "Default curve: mitigation = min(0.75, resist/200). Resist values are 'rating-like' not percent."
+      ]
+    },
     "combat.scaling": {
       "kind": "utility",
       "path": "worldcore/combat/CombatScaling.ts",
@@ -728,6 +759,20 @@
       "notes": [
         "Maps raw weapon/spell school skill into effective combat level.",
         "If no skill is recorded, falls back to character level; otherwise uses skill/5 with a minimum of 1."
+      ]
+    },
+    "combat.serviceProtection": {
+      "kind": "utility",
+      "path": "worldcore/combat/ServiceProtection.ts",
+      "functions": [
+        "isServiceProtectedNpcProto",
+        "isServiceProtectedEntity",
+        "serviceProtectedCombatLine"
+      ],
+      "dependsOn": [],
+      "notes": [
+        "Protects critical service NPCs (bank/mail/auction/etc.) from being killed/griefed.",
+        "Pure helpers; detection based on proto id/tags and optional runtime flags."
       ]
     },
     "combat.skinLootService": {
@@ -1145,6 +1190,30 @@
         "Ticks NPCs via NpcManager.updateAll each tick (if provided).",
         "Calls cfg.onTick(now, tick, deltaMs) hook for systems like SongEngine.",
         "Logs basic stats periodically."
+      ]
+    },
+    "dev.hotReloadService": {
+      "kind": "service",
+      "path": "worldcore/dev/HotReloadService.ts",
+      "functions": [
+        "parseHotReloadTargets(args:string[]):HotReloadTarget[]",
+        "runHotReload(targets:HotReloadTarget[], deps:HotReloadDeps):Promise<HotReloadReport>",
+        "formatHotReloadReport(r:HotReloadReport):string"
+      ],
+      "dependsOn": [
+        "utils.logger",
+        "items.service?",
+        "quests.registry",
+        "npc.types",
+        "world.spawnPointCache?"
+      ],
+      "notes": [
+        "Central hot-reload coordinator used by the MUD 'reload' command.",
+        "Supports targets: all/items/quests/npcs/spawns.",
+        "Items reload prefers ItemService.reload() then falls back to loadAll().",
+        "Quests reload pushes definitions into QuestRegistry via setQuestDefinitions().",
+        "NPC reload pushes prototypes into NpcTypes via setNpcPrototypes().",
+        "Spawns reload clears SpawnPointCache (best-effort dynamic import) and optionally clears SpawnPointService caches via duck-typed methods."
       ]
     },
     "interaction.ops": {
@@ -1833,6 +1902,29 @@
         "Implements 'debug_region_danger [regionId]' for inspecting base tier, current score, sources, and lastUpdated.",
         "Implements 'debug_bump_region_danger <amount> [regionId]' for manually bumping danger score during testing.",
         "Commands are wrapped with withDebugGate in registry.ts and only exposed to dev-level accounts."
+      ]
+    },
+    "mud.commands.debug.reload": {
+      "kind": "mud_command",
+      "path": "worldcore/mud/commands/debug/reloadCommand.ts",
+      "function": "handleReloadCommand",
+      "dependsOn": [
+        "dev.hotReloadService",
+        "world.spawnHydrator?",
+        "npc.spawnController?",
+        "world.spawnPoints?",
+        "core.entities?",
+        "npc.service?"
+      ],
+      "invokedBy": [
+        "mud.commands.registry",
+        "mud.handler"
+      ],
+      "notes": [
+        "Implements MUD 'reload' command with targets like: reload | reload spawns | reload items.",
+        "On 'reload spawns', clears spawn caches and forces SpawnHydrator.rehydrateRoom for the current room/region so POIs update immediately.",
+        "Supports optional reconciliation flags: '--here=<radius>' (reconcile shared NPC spawn_points near the player) and '--region' (reconcile shared NPC spawn_points for the whole region).",
+        "Reconcile is constrained to spawn_points-driven shared NPCs (spawnPointId present, no ownerSessionId) to avoid touching personal nodes or non-DB entities."
       ]
     },
     "mud.commands.debug.vulnerability": {
@@ -4154,6 +4246,46 @@
         "Regression: duel lifecycle (challenge/accept/decline/yield) and state transitions."
       ]
     },
+    "test.contractReloadSpawnsForcesHydration": {
+      "kind": "test",
+      "path": "worldcore/test/contract_reloadSpawnsForcesHydration.test.ts",
+      "dependsOn": [
+        "mud.commands.debug.reload",
+        "world.spawnHydrator"
+      ],
+      "notes": [
+        "Contract: 'reload spawns' must force SpawnHydrator.rehydrateRoom(force=true) for the current room/region.",
+        "Prevents regressions where spawns only refresh indirectly via 'nearby' or movement."
+      ]
+    },
+
+    "test.behaviorReloadSpawnsHereReconcilesSharedNpcs": {
+      "kind": "test",
+      "path": "worldcore/test/behavior_reloadSpawnsHereReconcilesSharedNpcs.test.ts",
+      "dependsOn": [
+        "mud.commands.debug.reload",
+        "npc.spawnController",
+        "core.entities"
+      ],
+      "notes": [
+        "Behavior: 'reload spawns --here=<r>' reconciles only spawn_points-driven shared NPCs in radius.",
+        "Ensures nodes/personal spawns (ownerSessionId) are never despawned by reconcile."
+      ]
+    },
+    "test.behaviorReloadSpawnsRegionReconcilesSharedNpcs": {
+      "kind": "test",
+      "path": "worldcore/test/behavior_reloadSpawnsRegionReconcilesSharedNpcs.test.ts",
+      "dependsOn": [
+        "mud.commands.debug.reload",
+        "npc.spawnController",
+        "core.entities",
+        "world.spawnPoints"
+      ],
+      "notes": [
+        "Behavior: 'reload spawns --region' reconciles spawn_points-driven shared NPCs for the current region.",
+        "Locks down epoch swap flows (MotherBrain waves replacing themes) without requiring relog."
+      ]
+    },
     "tools.resourceBaseline": {
       "kind": "dev_script",
       "path": "worldcore/tools/resourceBaseline.ts",
@@ -5307,84 +5439,6 @@
       "notes": [
         "Stage 2.3.6 – resource node placement (ore/herb/wood/fish/rare) plus per-kind masks.",
         "Respects biome, elevation, climate, hydrology, and avoids city centers while tagging 'near settlement' nodes."
-      ]
-    },
-    "combat.resists": {
-      "kind": "utility",
-      "path": "worldcore/combat/Resists.ts",
-      "functions": [
-        "resistMultiplier",
-        "applyResistMitigation"
-      ],
-      "dependsOn": [],
-      "notes": [
-        "Resists v1 helper. Pure functions for non-physical damage mitigation.",
-        "Default curve: mitigation = min(0.75, resist/200). Resist values are 'rating-like' not percent."
-      ]
-    },
-    "combat.cowardice": {
-      "kind": "utility",
-      "path": "worldcore/combat/Cowardice.ts",
-      "functions": [
-        "resolveCowardiceTier",
-        "computeCowardiceDamageTakenMultiplier",
-        "getCowardiceInfo",
-        "formatCowardiceStatus"
-      ],
-      "dependsOn": [
-        "characters.types",
-        "world.regionDanger"
-      ],
-      "notes": [
-        "Cowardice/risk-mode incoming damage logic. Returns scalar multiplier applied to incoming damage.",
-        "Uses RegionDanger tier to scale cowardice impact."
-      ]
-    },
-    "combat.serviceProtection": {
-      "kind": "utility",
-      "path": "worldcore/combat/ServiceProtection.ts",
-      "functions": [
-        "isServiceProtectedNpcProto",
-        "isServiceProtectedEntity",
-        "serviceProtectedCombatLine"
-      ],
-      "dependsOn": [],
-      "notes": [
-        "Protects critical service NPCs (bank/mail/auction/etc.) from being killed/griefed.",
-        "Pure helpers; detection based on proto id/tags and optional runtime flags."
-      ]
-    },
-    "dev.hotReload": {
-      "kind": "helper",
-      "path": "worldcore/dev/HotReloadService.ts",
-      "functions": [
-        "parseHotReloadTargets(args:string[]):HotReloadTarget[]",
-        "runHotReload(targets:HotReloadTarget[], deps:HotReloadDeps):Promise<HotReloadReport>",
-        "formatHotReloadReport(r:HotReloadReport):string"
-      ],
-      "dependsOn": [
-        "items.service?",
-        "quests.registry",
-        "npc.types",
-        "world.spawnPointCache?",
-        "world.spawnPoints?",
-        "world.spawnHydrator?",
-        "npc.spawnController?"
-      ],
-      "provides": [
-        "HotReloadTarget",
-        "HotReloadDeps",
-        "HotReloadSpawnContext",
-        "HotReloadReport"
-      ],
-      "notes": [
-        "Central hot reload runner used by dev/admin command surfaces.",
-        "Targets: items, quests, npcs, spawns (or all).",
-        "Items reload prefers ItemService.reload() then loadAll().",
-        "Quests reload requires a questLoader (listQuests) and pushes definitions into QuestRegistry via setQuestDefinitions().",
-        "NPC reload requires an npcLoader (listNpcs) and pushes prototypes into NpcTypes via setNpcPrototypes().",
-        "Spawns reload clears SpawnPointCache and best-effort clears SpawnPointService caches.",
-        "If spawnContexts + spawnHydrator/npcSpawns are provided, spawns reload can also force POI rehydration and respawn spawn_points-driven NPCs and personal nodes."
       ]
     }
   }

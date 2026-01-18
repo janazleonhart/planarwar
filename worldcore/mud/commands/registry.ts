@@ -31,15 +31,9 @@ import { handleHelpCommand } from "./meta/helpCommand";
 
 import { handleInventoryCommand } from "./player/inventoryCommand";
 import { handleItemInfoCommand } from "./player/itemInfoCommand";
-import {
-  handleEquipCommand,
-  handleUnequipCommand,
-} from "./player/equipmentCommand";
+import { handleEquipCommand, handleUnequipCommand } from "./player/equipmentCommand";
 import { handleStatsCommand } from "./player/statsCommand";
-import {
-  handleRespawnCommand,
-  handleRestCommand,
-} from "./player/recoveryCommand";
+import { handleRespawnCommand, handleRestCommand } from "./player/recoveryCommand";
 import { handleResourcesCommand } from "./player/resourcesCommand";
 import { handleSkillsCommand } from "./player/skillsCommand";
 import { handleGuildBankCommand } from "./guildBankCommand";
@@ -66,16 +60,9 @@ import { handleQuarryingCommand } from "./gathering/quarryingCommand";
 import { handleSkinningCommand } from "./gathering/skinningCommand";
 
 // Progression
-import {
-  handleQuestsCommand,
-  handleQuestCommand,
-} from "./progression/questsCommand";
+import { handleQuestsCommand, handleQuestCommand } from "./progression/questsCommand";
 import { handleProgressCommand } from "./progression/progressCommand";
-import {
-  handleTitleCommand,
-  handleTitlesCommand,
-  handleSetTitleCommand,
-} from "./progression/titlesCommand";
+import { handleTitleCommand, handleTitlesCommand, handleSetTitleCommand } from "./progression/titlesCommand";
 import { handleRewardCommand } from "./progression/rewardCommand";
 
 // Player status / effects
@@ -102,12 +89,11 @@ import {
   handleDebugHydrateHere,
   handleDebugRegionFlags,
 } from "./debug/handlers";
-import {
-  handleDebugRegionDanger,
-  handleDebugBumpRegionDanger,
-} from "./debug/regionDangerCommands";
+import { handleDebugRegionDanger, handleDebugBumpRegionDanger } from "./debug/regionDangerCommands";
 import { handleDebugVulnerability } from "./debug/vulnerabilityCommands";
 import { handleDebugRegionEvent, handleDebugRegionPvp } from "./debug/regionEventCommands";
+
+// NEW: hot reload command (gated, but not prefixed)
 import { handleReloadCommand } from "./debug/reloadCommand";
 
 import type { MudCommandHandlerFn } from "./types";
@@ -118,44 +104,51 @@ export const COMMANDS: Record<string, MudCommandHandlerFn> = {
     requireTownService(ctx, char, "bank", () =>
       handleBankCommand(ctx, char, input.args),
     ) as any,
+
   gbank: async (ctx, char, input) =>
     requireTownService(ctx, char, "guildbank", () =>
       handleGuildBankCommand(ctx, char, input.args),
     ) as any,
+
   guildbank: async (ctx, char, input) =>
     requireTownService(ctx, char, "guildbank", () =>
       handleGuildBankCommand(ctx, char, input.args),
     ) as any,
-  trade: async (ctx, char, input) =>
-    handleTradeCommand(ctx, char, input.args),
+
+  trade: async (ctx, char, input) => handleTradeCommand(ctx, char, input.args),
+
   vendor: async (ctx, char, input) =>
     requireTownService(ctx, char, "vendor", () =>
       handleVendorCommand(ctx, char, input.args),
     ) as any,
+
   buy: async (ctx, char, input) =>
     requireTownService(ctx, char, "vendor", () =>
       handleVendorCommand(ctx, char, ["buy", ...input.args]),
     ) as any,
+
   sell: async (ctx, char, input) =>
     requireTownService(ctx, char, "vendor", () =>
       handleVendorCommand(ctx, char, ["sell", ...input.args]),
     ) as any,
+
   auction: async (ctx, char, input) =>
     requireTownService(ctx, char, "auction", () =>
       handleAuctionCommand(ctx, char, input.parts),
     ) as any,
+
   ah: async (ctx, char, input) =>
     requireTownService(ctx, char, "auction", () =>
       handleAuctionCommand(ctx, char, input.parts),
     ) as any,
+
   mail: async (ctx, char, input) =>
     requireTownService(ctx, char, "mail", () =>
       Promise.resolve(handleMailCommand(ctx, input.args) as any),
     ) as any,
 
   // Crafting
-  craft: async (ctx, char, input) =>
-    handleCraftCommand(ctx, char, input.parts),
+  craft: async (ctx, char, input) => handleCraftCommand(ctx, char, input.parts),
 
   // World
   look: async (ctx, char, input) =>
@@ -194,18 +187,17 @@ export const COMMANDS: Record<string, MudCommandHandlerFn> = {
   res: handleResourcesCommand,
   skills: async (ctx) => handleSkillsCommand(ctx),
   skill: async (ctx) => handleSkillsCommand(ctx),
-  melody: async (ctx, char, input) =>
-    handleMelodyCommand(ctx, char, input),
+
+  melody: async (ctx, char, input) => handleMelodyCommand(ctx, char, input),
   song: handleSongsCommand,
   songs: handleSongsCommand,
+
   stats: handleStatsCommand,
   sheet: handleStatsCommand,
-  status: handleStatsCommand, // QoL alias for stats
+  status: handleStatsCommand,
 
-  risk: async (ctx, char, input) =>
-    handleRiskCommand(ctx, char, input),
-  cowardice: async (ctx, char, input) =>
-    handleRiskCommand(ctx, char, input),
+  risk: async (ctx, char, input) => handleRiskCommand(ctx, char, input),
+  cowardice: async (ctx, char, input) => handleRiskCommand(ctx, char, input),
 
   effects: handleEffectsCommand,
   buffs: handleEffectsCommand,
@@ -222,8 +214,8 @@ export const COMMANDS: Record<string, MudCommandHandlerFn> = {
 
   // Gathering
   pick: handlePickingCommand,
-  mine: handleMiningCommand,  
-  farm: handleFarmingCommand,  
+  mine: handleMiningCommand,
+  farm: handleFarmingCommand,
   fish: handleFishingCommand,
   lumber: handleLumberingCommand,
   quarry: handleQuarryingCommand,
@@ -238,10 +230,8 @@ export const COMMANDS: Record<string, MudCommandHandlerFn> = {
   titles: async (ctx, char) => handleTitlesCommand(ctx, char),
   settitle: handleSetTitleCommand,
 
-  reward: async (ctx, char, input) =>
-    handleRewardCommand(ctx as any, char as any, input.args),
-  rewards: async (ctx, char, input) =>
-    handleRewardCommand(ctx as any, char as any, input.args),
+  reward: async (ctx, char, input) => handleRewardCommand(ctx as any, char as any, input.args),
+  rewards: async (ctx, char, input) => handleRewardCommand(ctx as any, char as any, input.args),
 
   // Recovery
   respawn: async (ctx) => handleRespawnCommand(ctx),
@@ -251,6 +241,9 @@ export const COMMANDS: Record<string, MudCommandHandlerFn> = {
   // Meta
   help: async (ctx) => handleHelpCommand(ctx),
   "?": async (ctx) => handleHelpCommand(ctx),
+
+  // Hot reload (gated; not prefixed)
+  reload: withDebugGate(handleReloadCommand, "dev"),
 
   // Debug (gated)
   debug_give: withDebugGate(handleDebugGive, "dev"),
@@ -272,16 +265,9 @@ export const COMMANDS: Record<string, MudCommandHandlerFn> = {
   debug_region_pvp: withDebugGate(handleDebugRegionPvp, "dev"),
 
   debug_region_danger: withDebugGate(handleDebugRegionDanger, "dev"),
-  debug_bump_region_danger: withDebugGate(
-    handleDebugBumpRegionDanger,
-    "dev",
-  ),
+  debug_bump_region_danger: withDebugGate(handleDebugBumpRegionDanger, "dev"),
 
   debug_vuln: withDebugGate(handleDebugVulnerability, "dev"),
-
-  // Hot reload (dev-only)
-  reload: withDebugGate(handleReloadCommand, "dev"),
-  debug_reload: withDebugGate(handleReloadCommand, "dev"),
 
   event_give_any: withDebugGate(handleEventGiveAny, "owner"),
   event_mail_reward: withDebugGate(handleEventMailReward, "gm"),

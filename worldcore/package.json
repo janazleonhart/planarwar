@@ -8,7 +8,10 @@
     "build": "tsc -p tsconfig.json",
     "test": "npm run build && node -e \"process.env.WORLDCORE_TEST='1'; const { spawnSync } = require('node:child_process'); const r = spawnSync(process.execPath, ['--test','../dist/worldcore/test'], { stdio: 'inherit', env: process.env }); process.exit(r.status ?? 1);\"",
     "sim:brain": "npm run build && node ../dist/worldcore/tools/simBrain.js",
-    "audit:npcs": "npm run build && node ../dist/worldcore/tools/auditNpcLawTags.js"
+    "audit:npcs": "npm run build && node ../dist/worldcore/tools/auditNpcLawTags.js",
+    "registry:check": "node tools/registryCheck.js --mode=worktree",
+    "registry:ci": "node tools/registryCheck.js --mode=ci",
+    "registry:audit": "node tools/registryCheck.js --mode=all"
   },
   "dependencies": {
     "dotenv": "^16.4.5",
