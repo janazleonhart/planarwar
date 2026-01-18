@@ -8,6 +8,8 @@ import { planBrainWave } from "../../worldcore/sim/MotherBrainWavePlanner";
 
 const router = Router();
 
+type SpawnAuthority = "anchor" | "seed" | "brain" | "manual";
+
 type AdminSpawnPoint = {
   id?: number | null;
 
@@ -28,7 +30,7 @@ type AdminSpawnPoint = {
   townTier?: number | null;
 
   // server-provided convenience
-  authority?: "anchor" | "seed" | "brain" | "manual";
+  authority?: SpawnAuthority;
 };
 
 function numOrNull(v: any): number | null {
@@ -43,8 +45,13 @@ function strOrNull(v: any): string | null {
 }
 
 function requiredStr(v: any): string {
-  const s = String(v ?? "").trim();
-  return s;
+  return String(v ?? "").trim();
+}
+
+function normalizeAuthority(a: any): SpawnAuthority | null {
+  const s = String(a ?? "").trim().toLowerCase();
+  if (s === "anchor" || s === "seed" || s === "brain" || s === "manual") return s as SpawnAuthority;
+  return null;
 }
 
 function validateUpsert(p: AdminSpawnPoint): string | null {
@@ -72,7 +79,10 @@ function validateUpsert(p: AdminSpawnPoint): string | null {
 
   // If it's an NPC/node spawn, protoId should be present (otherwise spawnId fallback can be wrong)
   const t = type.toLowerCase();
-  if ((t === "npc" || t === "mob" || t === "creature" || t === "node" || t === "resource") && !protoId) {
+  if (
+    (t === "npc" || t === "mob" || t === "creature" || t === "node" || t === "resource") &&
+    !protoId
+  ) {
     return "protoId is required for npc/node/resource spawn points.";
   }
 
@@ -91,118 +101,138 @@ function validateUpsert(p: AdminSpawnPoint): string | null {
   return null;
 }
 
+function mapRowToAdmin(r: any): AdminSpawnPoint {
+  const spawnId = String(r.spawn_id ?? "");
+  return {
+    id: Number(r.id),
+    shardId: String(r.shard_id ?? ""),
+    spawnId,
+    type: String(r.type ?? ""),
+    archetype: String(r.archetype ?? ""),
+    protoId: r.proto_id ?? null,
+    variantId: r.variant_id ?? null,
+    x: r.x ?? null,
+    y: r.y ?? null,
+    z: r.z ?? null,
+    regionId: r.region_id ?? null,
+    townTier: r.town_tier ?? null,
+    authority: getSpawnAuthority(spawnId),
+  };
+}
+
+// ------------------------------
+// Spawn points CRUD
+// ------------------------------
+
 // GET /api/admin/spawn_points?shardId=prime_shard&regionId=prime_shard:0,0
 // GET /api/admin/spawn_points?shardId=prime_shard&x=0&z=0&radius=500
+//
+// Optional filters:
+//   authority=anchor|seed|manual|brain
+//   type=<exact, case-insensitive>
+//   archetype=<exact, case-insensitive>
+//   protoId=<substring, ilike>
+//   spawnId=<substring, ilike>
+//   limit=<1..1000>
 router.get("/", async (req, res) => {
   try {
     const shardId = String(req.query.shardId ?? "prime_shard").trim();
+
     const regionId = strOrNull(req.query.regionId);
     const x = numOrNull(req.query.x);
     const z = numOrNull(req.query.z);
     const radius = numOrNull(req.query.radius);
 
-    let rows: any[] = [];
+    const authority = normalizeAuthority(req.query.authority);
+    const typeQ = strOrNull(req.query.type);
+    const archetypeQ = strOrNull(req.query.archetype);
+    const protoQ = strOrNull(req.query.protoId);
+    const spawnQ = strOrNull(req.query.spawnId);
 
+    const limit = Math.max(1, Math.min(1000, Number(req.query.limit ?? 200)));
+
+    const where: string[] = ["shard_id = $1"];
+    const args: any[] = [shardId];
+    let i = 2;
+
+    // Mode: region
     if (regionId) {
-      const r = await db.query(
-        `
-        SELECT
-          id,
-          shard_id,
-          spawn_id,
-          type,
-          archetype,
-          proto_id,
-          variant_id,
-          x,
-          y,
-          z,
-          region_id,
-          town_tier
-        FROM spawn_points
-        WHERE shard_id = $1 AND region_id = $2
-        ORDER BY id ASC
-        `,
-        [shardId, regionId],
-      );
-      rows = r.rows ?? [];
-    } else if (x !== null && z !== null && radius !== null) {
+      where.push(`region_id = $${i++}`);
+      args.push(regionId);
+    }
+
+    // Mode: radius (only if no regionId)
+    if (!regionId && x !== null && z !== null && radius !== null) {
       const safeRadius = Math.max(0, Math.min(radius, 10_000));
       const r2 = safeRadius * safeRadius;
 
-      const r = await db.query(
-        `
-        SELECT
-          id,
-          shard_id,
-          spawn_id,
-          type,
-          archetype,
-          proto_id,
-          variant_id,
-          x,
-          y,
-          z,
-          region_id,
-          town_tier
-        FROM spawn_points
-        WHERE
-          shard_id = $1
-          AND x IS NOT NULL
-          AND z IS NOT NULL
-          AND ((x - $2) * (x - $2) + (z - $3) * (z - $3)) <= $4
-        ORDER BY id ASC
-        `,
-        [shardId, x, z, r2],
-      );
-      rows = r.rows ?? [];
-    } else {
-      // conservative default: return a small window rather than dumping the world
-      const r = await db.query(
-        `
-        SELECT
-          id,
-          shard_id,
-          spawn_id,
-          type,
-          archetype,
-          proto_id,
-          variant_id,
-          x,
-          y,
-          z,
-          region_id,
-          town_tier
-        FROM spawn_points
-        WHERE shard_id = $1
-        ORDER BY id DESC
-        LIMIT 200
-        `,
-        [shardId],
-      );
-      rows = r.rows ?? [];
+      where.push(`x IS NOT NULL AND z IS NOT NULL`);
+      where.push(`((x - $${i}) * (x - $${i}) + (z - $${i + 1}) * (z - $${i + 1})) <= $${i + 2}`);
+      args.push(x, z, r2);
+      i += 3;
     }
 
-    const points: AdminSpawnPoint[] = rows.map((r: any) => {
-      const spawnId = String(r.spawn_id ?? "");
-      return {
-        id: Number(r.id),
-        shardId: String(r.shard_id ?? ""),
-        spawnId,
-        type: String(r.type ?? ""),
-        archetype: String(r.archetype ?? ""),
-        protoId: r.proto_id ?? null,
-        variantId: r.variant_id ?? null,
-        x: r.x ?? null,
-        y: r.y ?? null,
-        z: r.z ?? null,
-        regionId: r.region_id ?? null,
-        townTier: r.town_tier ?? null,
-        authority: getSpawnAuthority(spawnId),
-      };
-    });
+    // Filters
+    if (authority) {
+      if (authority === "anchor") where.push(`spawn_id LIKE 'anchor:%'`);
+      else if (authority === "seed") where.push(`spawn_id LIKE 'seed:%'`);
+      else if (authority === "brain") where.push(`spawn_id LIKE 'brain:%'`);
+      else {
+        // manual = not any of the known prefixes
+        where.push(`spawn_id NOT LIKE 'anchor:%' AND spawn_id NOT LIKE 'seed:%' AND spawn_id NOT LIKE 'brain:%'`);
+      }
+    }
 
-    res.json({ ok: true, spawnPoints: points });
+    if (typeQ) {
+      where.push(`LOWER(type) = LOWER($${i++})`);
+      args.push(typeQ);
+    }
+
+    if (archetypeQ) {
+      where.push(`LOWER(archetype) = LOWER($${i++})`);
+      args.push(archetypeQ);
+    }
+
+    if (protoQ) {
+      where.push(`proto_id ILIKE $${i++}`);
+      args.push(`%${protoQ}%`);
+    }
+
+    if (spawnQ) {
+      where.push(`spawn_id ILIKE $${i++}`);
+      args.push(`%${spawnQ}%`);
+    }
+
+    const sql = `
+      SELECT
+        id,
+        shard_id,
+        spawn_id,
+        type,
+        archetype,
+        proto_id,
+        variant_id,
+        x,
+        y,
+        z,
+        region_id,
+        town_tier
+      FROM spawn_points
+      WHERE ${where.join(" AND ")}
+      ORDER BY id ASC
+      LIMIT $${i}
+    `;
+
+    args.push(limit);
+
+    const r = await db.query(sql, args);
+    const rows = r.rows ?? [];
+
+    res.json({
+      ok: true,
+      spawnPoints: rows.map(mapRowToAdmin),
+      total: rows.length,
+    });
   } catch (err) {
     console.error("[ADMIN/SPAWN_POINTS] list error", err);
     res.status(500).json({ ok: false, error: "internal_error" });
@@ -278,6 +308,163 @@ router.post("/", async (req, res) => {
     res.json({ ok: true, id: newId });
   } catch (err) {
     console.error("[ADMIN/SPAWN_POINTS] upsert error", err);
+    res.status(500).json({ ok: false, error: "internal_error" });
+  }
+});
+
+// DELETE /api/admin/spawn_points/:id?shardId=prime_shard
+router.delete("/:id", async (req, res) => {
+  try {
+    const shardId = String(req.query.shardId ?? "prime_shard").trim();
+    const id = Number(req.params.id ?? 0);
+
+    if (!Number.isFinite(id) || id <= 0) {
+      return res.status(400).json({ ok: false, error: "invalid_id" });
+    }
+
+    const row = await db.query(
+      `SELECT id, shard_id, spawn_id FROM spawn_points WHERE id = $1 LIMIT 1`,
+      [id],
+    );
+
+    const found = row.rows?.[0];
+    if (!found) return res.status(404).json({ ok: false, error: "not_found" });
+    if (String(found.shard_id) !== shardId) return res.status(403).json({ ok: false, error: "shard_mismatch" });
+
+    const spawnId = String(found.spawn_id ?? "");
+    if (!isSpawnEditable(spawnId)) {
+      return res.status(403).json({ ok: false, error: "brain_owned_readonly" });
+    }
+
+    await db.query(`DELETE FROM spawn_points WHERE id = $1`, [id]);
+    clearSpawnPointCache();
+
+    res.json({ ok: true, deleted: 1 });
+  } catch (err) {
+    console.error("[ADMIN/SPAWN_POINTS] delete error", err);
+    res.status(500).json({ ok: false, error: "internal_error" });
+  }
+});
+
+type BulkDeleteRequest = {
+  shardId?: string;
+  ids: number[];
+};
+
+router.post("/bulk_delete", async (req, res) => {
+  try {
+    const body: BulkDeleteRequest = (req.body ?? {}) as any;
+    const shardId = strOrNull(body.shardId) ?? "prime_shard";
+    const ids = Array.isArray(body.ids) ? body.ids.map((n) => Number(n)).filter((n) => Number.isFinite(n) && n > 0) : [];
+
+    if (ids.length === 0) {
+      return res.status(400).json({ ok: false, error: "no_ids" });
+    }
+
+    // Enforce brain-readonly at server side (don’t trust UI).
+    const rows = await db.query(
+      `
+      SELECT id, spawn_id
+      FROM spawn_points
+      WHERE shard_id = $1 AND id = ANY($2::int[])
+      `,
+      [shardId, ids],
+    );
+
+    const deletable = (rows.rows ?? [])
+      .filter((r: any) => isSpawnEditable(String(r.spawn_id ?? "")))
+      .map((r: any) => Number(r.id))
+      .filter((n: number) => Number.isFinite(n) && n > 0);
+
+    if (deletable.length === 0) {
+      return res.json({ ok: true, deleted: 0, skipped: ids.length });
+    }
+
+    const del = await db.query(
+      `DELETE FROM spawn_points WHERE shard_id = $1 AND id = ANY($2::int[])`,
+      [shardId, deletable],
+    );
+
+    clearSpawnPointCache();
+
+    res.json({
+      ok: true,
+      deleted: Number(del.rowCount ?? deletable.length),
+      skipped: ids.length - deletable.length,
+    });
+  } catch (err) {
+    console.error("[ADMIN/SPAWN_POINTS] bulk_delete error", err);
+    res.status(500).json({ ok: false, error: "internal_error" });
+  }
+});
+
+type BulkMoveRequest = {
+  shardId?: string;
+  ids: number[];
+  dx?: number;
+  dy?: number;
+  dz?: number;
+};
+
+router.post("/bulk_move", async (req, res) => {
+  try {
+    const body: BulkMoveRequest = (req.body ?? {}) as any;
+    const shardId = strOrNull(body.shardId) ?? "prime_shard";
+
+    const ids = Array.isArray(body.ids) ? body.ids.map((n) => Number(n)).filter((n) => Number.isFinite(n) && n > 0) : [];
+    if (ids.length === 0) return res.status(400).json({ ok: false, error: "no_ids" });
+
+    const dx = Number(body.dx ?? 0);
+    const dy = Number(body.dy ?? 0);
+    const dz = Number(body.dz ?? 0);
+
+    if (![dx, dy, dz].some((n) => Number.isFinite(n) && n !== 0)) {
+      return res.status(400).json({ ok: false, error: "no_delta" });
+    }
+
+    // Filter out brain-owned ids (server-side enforcement).
+    const rows = await db.query(
+      `
+      SELECT id, spawn_id
+      FROM spawn_points
+      WHERE shard_id = $1 AND id = ANY($2::int[])
+      `,
+      [shardId, ids],
+    );
+
+    const movable = (rows.rows ?? [])
+      .filter((r: any) => isSpawnEditable(String(r.spawn_id ?? "")))
+      .map((r: any) => Number(r.id))
+      .filter((n: number) => Number.isFinite(n) && n > 0);
+
+    if (movable.length === 0) {
+      return res.json({ ok: true, moved: 0, skipped: ids.length });
+    }
+
+    // Only move rows with coordinates present (x/z). y is optional.
+    // If y is null, we treat it as 0 then add dy, resulting in dy.
+    const upd = await db.query(
+      `
+      UPDATE spawn_points
+      SET
+        x = CASE WHEN x IS NULL THEN NULL ELSE x + $3 END,
+        y = CASE WHEN y IS NULL THEN (CASE WHEN $4 = 0 THEN NULL ELSE $4 END) ELSE y + $4 END,
+        z = CASE WHEN z IS NULL THEN NULL ELSE z + $5 END
+      WHERE shard_id = $1
+        AND id = ANY($2::int[])
+      `,
+      [shardId, movable, Number.isFinite(dx) ? dx : 0, Number.isFinite(dy) ? dy : 0, Number.isFinite(dz) ? dz : 0],
+    );
+
+    clearSpawnPointCache();
+
+    res.json({
+      ok: true,
+      moved: Number(upd.rowCount ?? movable.length),
+      skipped: ids.length - movable.length,
+    });
+  } catch (err) {
+    console.error("[ADMIN/SPAWN_POINTS] bulk_move error", err);
     res.status(500).json({ ok: false, error: "internal_error" });
   }
 });
@@ -506,7 +693,17 @@ router.post("/mother_brain/wave", async (req, res) => {
     parsedBounds = parseCellBounds(bounds);
     box = toWorldBox(parsedBounds, Number.isFinite(cellSize) ? cellSize : 64, borderMargin);
   } catch (err: any) {
-    res.status(400).json({ ok: false, shardId, bounds, cellSize, theme, epoch, commit, append, error: String(err?.message ?? "bad_bounds") } satisfies MotherBrainWaveResponse);
+    res.status(400).json({
+      ok: false,
+      shardId,
+      bounds,
+      cellSize,
+      theme,
+      epoch,
+      commit,
+      append,
+      error: String(err?.message ?? "bad_bounds"),
+    } satisfies MotherBrainWaveResponse);
     return;
   }
 
@@ -532,7 +729,9 @@ router.post("/mother_brain/wave", async (req, res) => {
           [shardId, box.minX, box.maxX, box.minZ, box.maxZ],
         );
 
-        const ids: number[] = (existing.rows ?? []).map((r: any) => Number(r.id)).filter((n: number) => Number.isFinite(n));
+        const ids: number[] = (existing.rows ?? [])
+          .map((r: any) => Number(r.id))
+          .filter((n: number) => Number.isFinite(n));
         wouldDelete = ids.length;
 
         if (ids.length > 0) {
@@ -551,22 +750,24 @@ router.post("/mother_brain/wave", async (req, res) => {
         count,
       });
 
-      const placeRows = (planned ?? []).map((a: any) => {
-        // Most of our planners emit kind: 'place_spawn' with flat fields.
-        const kind = a?.kind ?? "";
-        if (kind && kind !== "place_spawn") return null;
-        const spawnId = strOrNull(a?.spawnId ?? a?.spawn_id);
-        const type = strOrNull(a?.type);
-        const archetype = strOrNull(a?.archetype) ?? "brain";
-        const protoId = strOrNull(a?.protoId ?? a?.proto_id);
-        const variantId = strOrNull(a?.variantId ?? a?.variant_id);
-        const x = Number(a?.x);
-        const y = Number(a?.y ?? 0);
-        const z = Number(a?.z);
-        const regionId = strOrNull(a?.regionId ?? a?.region_id);
-        if (!spawnId || !type || !Number.isFinite(x) || !Number.isFinite(z)) return null;
-        return { spawnId, type, archetype, protoId, variantId, x, y: Number.isFinite(y) ? y : 0, z, regionId };
-      }).filter(Boolean);
+      const placeRows = (planned ?? [])
+        .map((a: any) => {
+          // Most of our planners emit kind: 'place_spawn' with flat fields.
+          const kind = a?.kind ?? "";
+          if (kind && kind !== "place_spawn") return null;
+          const spawnId = strOrNull(a?.spawnId ?? a?.spawn_id);
+          const type = strOrNull(a?.type);
+          const archetype = strOrNull(a?.archetype) ?? "brain";
+          const protoId = strOrNull(a?.protoId ?? a?.proto_id);
+          const variantId = strOrNull(a?.variantId ?? a?.variant_id);
+          const x = Number(a?.x);
+          const y = Number(a?.y ?? 0);
+          const z = Number(a?.z);
+          const regionId = strOrNull(a?.regionId ?? a?.region_id);
+          if (!spawnId || !type || !Number.isFinite(x) || !Number.isFinite(z)) return null;
+          return { spawnId, type, archetype, protoId, variantId, x, y: Number.isFinite(y) ? y : 0, z, regionId };
+        })
+        .filter(Boolean);
 
       for (const row of placeRows) {
         wouldInsert += 1;
