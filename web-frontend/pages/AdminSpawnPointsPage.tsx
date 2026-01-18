@@ -131,6 +131,35 @@ export function AdminSpawnPointsPage() {
   const [bulkDz, setBulkDz] = useState(0);
   const [bulkWorking, setBulkWorking] = useState(false);
 
+  // Clone / Scatter (System 3 MVP)
+  const [whereamiPaste, setWhereamiPaste] = useState("");
+
+  // Clone selected
+  const [cloneCountPerId, setCloneCountPerId] = useState(3);
+  const [cloneScatterRadius, setCloneScatterRadius] = useState(50);
+  const [cloneMinDistance, setCloneMinDistance] = useState(10);
+  const [cloneSeedBase, setCloneSeedBase] = useState("seed:editor");
+  const [cloneRegionOverride, setCloneRegionOverride] = useState("");
+  const [cloneResult, setCloneResult] = useState<any>(null);
+  const [cloneWorking, setCloneWorking] = useState(false);
+
+  // Scatter new
+  const [scatterType, setScatterType] = useState("node");
+  const [scatterArchetype, setScatterArchetype] = useState("node");
+  const [scatterProtoId, setScatterProtoId] = useState("ore_iron_hematite");
+  const [scatterVariantId, setScatterVariantId] = useState("");
+  const [scatterCount, setScatterCount] = useState(20);
+  const [scatterCenterX, setScatterCenterX] = useState(0);
+  const [scatterCenterZ, setScatterCenterZ] = useState(0);
+  const [scatterY, setScatterY] = useState(0);
+  const [scatterRegionId, setScatterRegionId] = useState("");
+  const [scatterTownTier, setScatterTownTier] = useState<string>("");
+  const [scatterRadius, setScatterRadius] = useState(120);
+  const [scatterMinDistance, setScatterMinDistance] = useState(10);
+  const [scatterSeedBase, setScatterSeedBase] = useState("seed:editor");
+  const [scatterResult, setScatterResult] = useState<any>(null);
+  const [scatterWorking, setScatterWorking] = useState(false);
+
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -478,6 +507,109 @@ export function AdminSpawnPointsPage() {
     await bulkMove(dx, 0, dz);
   };
 
+
+  const parseWhereami = (txt: string): { x: number; y: number; z: number } | null => {
+    // Example: "pos=(22.34, 0.00, 137.27)"
+    const m = String(txt ?? "").match(/pos=\(\s*([-0-9.]+)\s*,\s*([-0-9.]+)\s*,\s*([-0-9.]+)\s*\)/i);
+    if (!m) return null;
+    const x = Number(m[1]);
+    const y = Number(m[2]);
+    const z = Number(m[3]);
+    if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z)) return null;
+    return { x, y, z };
+  };
+
+  const applyWhereamiToScatter = () => {
+    const p = parseWhereami(whereamiPaste);
+    if (!p) {
+      setError("Could not parse whereami. Paste a line containing: pos=(x, y, z)");
+      return;
+    }
+    setScatterCenterX(p.x);
+    setScatterCenterZ(p.z);
+    setScatterY(p.y);
+    if (loadMode === "region" && regionId.trim()) {
+      setScatterRegionId(regionId.trim());
+    }
+  };
+
+  const cloneSelected = async () => {
+    if (selectedIds.length === 0) return;
+
+    setCloneWorking(true);
+    setError(null);
+    setCloneResult(null);
+
+    try {
+      const res = await fetch(`${ADMIN_API_BASE}/api/admin/spawn_points/clone`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          shardId: shardId.trim() || "prime_shard",
+          ids: selectedIds,
+          countPerId: Number(cloneCountPerId) || 1,
+          scatterRadius: Number(cloneScatterRadius) || 0,
+          minDistance: Number(cloneMinDistance) || 0,
+          seedBase: cloneSeedBase.trim() || "seed:editor",
+          regionId: cloneRegionOverride.trim() ? cloneRegionOverride.trim() : null,
+        }),
+      });
+
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok || payload.ok === false) {
+        throw new Error(payload.error || `Clone failed (HTTP ${res.status})`);
+      }
+
+      setCloneResult(payload);
+      await load();
+    } catch (err: any) {
+      setError(err.message || String(err));
+    } finally {
+      setCloneWorking(false);
+    }
+  };
+
+  const scatterNew = async () => {
+    setScatterWorking(true);
+    setError(null);
+    setScatterResult(null);
+
+    try {
+      const res = await fetch(`${ADMIN_API_BASE}/api/admin/spawn_points/scatter`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          shardId: shardId.trim() || "prime_shard",
+          type: scatterType.trim(),
+          archetype: scatterArchetype.trim(),
+          protoId: scatterProtoId.trim() || null,
+          variantId: scatterVariantId.trim() || null,
+          count: Number(scatterCount) || 1,
+          centerX: Number(scatterCenterX) || 0,
+          centerZ: Number(scatterCenterZ) || 0,
+          y: Number(scatterY) || 0,
+          regionId: scatterRegionId.trim() || null,
+          townTier: scatterTownTier.trim() ? Number(scatterTownTier) : null,
+          scatterRadius: Number(scatterRadius) || 0,
+          minDistance: Number(scatterMinDistance) || 0,
+          seedBase: scatterSeedBase.trim() || "seed:editor",
+        }),
+      });
+
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok || payload.ok === false) {
+        throw new Error(payload.error || `Scatter failed (HTTP ${res.status})`);
+      }
+
+      setScatterResult(payload);
+      await load();
+    } catch (err: any) {
+      setError(err.message || String(err));
+    } finally {
+      setScatterWorking(false);
+    }
+  };
+
   return (
     <div style={{ padding: 16 }}>
       <h1>Spawn Points Editor (v1)</h1>
@@ -784,6 +916,158 @@ export function AdminSpawnPointsPage() {
 
               <div style={{ fontSize: 12, opacity: 0.85 }}>
                 Note: brain:* rows will be <b>skipped</b> by bulk delete/move even if selected.
+              </div>
+            </div>
+          </div>
+
+          {/* Clone / Scatter (System 3 MVP) */}
+          <div style={{ border: "1px solid #333", borderRadius: 8, padding: 12, marginBottom: 12 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+              <strong>Clone / Scatter (Editor Paint Tools)</strong>
+              <span style={{ fontSize: 12, opacity: 0.8 }}>Writes new spawn_points rows (seed:editor...). Brain-owned rows are skipped.</span>
+            </div>
+
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+              {/* Clone selected */}
+              <div style={{ border: "1px solid #222", borderRadius: 8, padding: 10 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <strong>Clone Selected</strong>
+                  <span style={{ fontSize: 12, opacity: 0.8 }}>{selectedIds.length} selected</span>
+                </div>
+
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10, alignItems: "flex-end" }}>
+                  <label style={{ display: "grid", gap: 4 }}>
+                    <span style={{ opacity: 0.8 }}>Copies each</span>
+                    <input type="number" style={{ width: 100 }} value={cloneCountPerId} onChange={(e) => setCloneCountPerId(Number(e.target.value) || 0)} />
+                  </label>
+                  <label style={{ display: "grid", gap: 4 }}>
+                    <span style={{ opacity: 0.8 }}>Scatter radius</span>
+                    <input type="number" style={{ width: 120 }} value={cloneScatterRadius} onChange={(e) => setCloneScatterRadius(Number(e.target.value) || 0)} />
+                  </label>
+                  <label style={{ display: "grid", gap: 4 }}>
+                    <span style={{ opacity: 0.8 }}>Min distance</span>
+                    <input type="number" style={{ width: 120 }} value={cloneMinDistance} onChange={(e) => setCloneMinDistance(Number(e.target.value) || 0)} />
+                  </label>
+                  <label style={{ display: "grid", gap: 4 }}>
+                    <span style={{ opacity: 0.8 }}>Seed base</span>
+                    <input style={{ width: 160 }} value={cloneSeedBase} onChange={(e) => setCloneSeedBase(e.target.value)} placeholder="seed:editor" />
+                  </label>
+                  <label style={{ display: "grid", gap: 4 }}>
+                    <span style={{ opacity: 0.8 }}>Region override</span>
+                    <input style={{ width: 180 }} value={cloneRegionOverride} onChange={(e) => setCloneRegionOverride(e.target.value)} placeholder="(optional)" />
+                  </label>
+
+                  <button disabled={cloneWorking || selectedIds.length === 0} onClick={() => void cloneSelected()}>
+                    {cloneWorking ? "Working..." : "Clone"}
+                  </button>
+                </div>
+
+                {cloneResult && (
+                  <pre style={{ marginTop: 10, background: "#111", border: "1px solid #333", padding: 8, borderRadius: 6, overflow: "auto" }}>
+                    {JSON.stringify(cloneResult, null, 2)}
+                  </pre>
+                )}
+              </div>
+
+              {/* Scatter new */}
+              <div style={{ border: "1px solid #222", borderRadius: 8, padding: 10 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <strong>Scatter New</strong>
+                  <span style={{ fontSize: 12, opacity: 0.8 }}>Drops a new batch around a center point</span>
+                </div>
+
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10, alignItems: "flex-end" }}>
+                  <label style={{ display: "grid", gap: 4 }}>
+                    <span style={{ opacity: 0.8 }}>Type</span>
+                    <input style={{ width: 120 }} value={scatterType} onChange={(e) => setScatterType(e.target.value)} placeholder="node" />
+                  </label>
+                  <label style={{ display: "grid", gap: 4 }}>
+                    <span style={{ opacity: 0.8 }}>Archetype</span>
+                    <input style={{ width: 120 }} value={scatterArchetype} onChange={(e) => setScatterArchetype(e.target.value)} placeholder="node" />
+                  </label>
+                  <label style={{ display: "grid", gap: 4 }}>
+                    <span style={{ opacity: 0.8 }}>ProtoId</span>
+                    <input style={{ width: 180 }} value={scatterProtoId} onChange={(e) => setScatterProtoId(e.target.value)} placeholder="ore_iron_hematite" />
+                  </label>
+                  <label style={{ display: "grid", gap: 4 }}>
+                    <span style={{ opacity: 0.8 }}>VariantId</span>
+                    <input style={{ width: 140 }} value={scatterVariantId} onChange={(e) => setScatterVariantId(e.target.value)} placeholder="(optional)" />
+                  </label>
+                  <label style={{ display: "grid", gap: 4 }}>
+                    <span style={{ opacity: 0.8 }}>Count</span>
+                    <input type="number" style={{ width: 100 }} value={scatterCount} onChange={(e) => setScatterCount(Number(e.target.value) || 0)} />
+                  </label>
+                </div>
+
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10, alignItems: "flex-end" }}>
+                  <label style={{ display: "grid", gap: 4 }}>
+                    <span style={{ opacity: 0.8 }}>Center X</span>
+                    <input type="number" style={{ width: 120 }} value={scatterCenterX} onChange={(e) => setScatterCenterX(Number(e.target.value) || 0)} />
+                  </label>
+                  <label style={{ display: "grid", gap: 4 }}>
+                    <span style={{ opacity: 0.8 }}>Center Z</span>
+                    <input type="number" style={{ width: 120 }} value={scatterCenterZ} onChange={(e) => setScatterCenterZ(Number(e.target.value) || 0)} />
+                  </label>
+                  <label style={{ display: "grid", gap: 4 }}>
+                    <span style={{ opacity: 0.8 }}>Y</span>
+                    <input type="number" style={{ width: 100 }} value={scatterY} onChange={(e) => setScatterY(Number(e.target.value) || 0)} />
+                  </label>
+
+                  <button
+                    onClick={() => {
+                      if (loadMode === "radius") {
+                        setScatterCenterX(Number(queryX) || 0);
+                        setScatterCenterZ(Number(queryZ) || 0);
+                      }
+                      if (loadMode === "region") {
+                        setScatterRegionId(regionId.trim());
+                      }
+                    }}
+                  >
+                    Use current query
+                  </button>
+                </div>
+
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10, alignItems: "flex-end" }}>
+                  <label style={{ display: "grid", gap: 4, flex: 1, minWidth: 260 }}>
+                    <span style={{ opacity: 0.8 }}>whereami paste</span>
+                    <input value={whereamiPaste} onChange={(e) => setWhereamiPaste(e.target.value)} placeholder='Paste: pos=(22.34, 0.00, 137.27)' />
+                  </label>
+                  <button onClick={applyWhereamiToScatter}>Apply</button>
+                </div>
+
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10, alignItems: "flex-end" }}>
+                  <label style={{ display: "grid", gap: 4 }}>
+                    <span style={{ opacity: 0.8 }}>RegionId</span>
+                    <input style={{ width: 220 }} value={scatterRegionId} onChange={(e) => setScatterRegionId(e.target.value)} placeholder="(optional)" />
+                  </label>
+                  <label style={{ display: "grid", gap: 4 }}>
+                    <span style={{ opacity: 0.8 }}>Town tier</span>
+                    <input style={{ width: 100 }} value={scatterTownTier} onChange={(e) => setScatterTownTier(e.target.value)} placeholder="(opt)" />
+                  </label>
+                  <label style={{ display: "grid", gap: 4 }}>
+                    <span style={{ opacity: 0.8 }}>Scatter radius</span>
+                    <input type="number" style={{ width: 120 }} value={scatterRadius} onChange={(e) => setScatterRadius(Number(e.target.value) || 0)} />
+                  </label>
+                  <label style={{ display: "grid", gap: 4 }}>
+                    <span style={{ opacity: 0.8 }}>Min distance</span>
+                    <input type="number" style={{ width: 120 }} value={scatterMinDistance} onChange={(e) => setScatterMinDistance(Number(e.target.value) || 0)} />
+                  </label>
+                  <label style={{ display: "grid", gap: 4 }}>
+                    <span style={{ opacity: 0.8 }}>Seed base</span>
+                    <input style={{ width: 160 }} value={scatterSeedBase} onChange={(e) => setScatterSeedBase(e.target.value)} placeholder="seed:editor" />
+                  </label>
+
+                  <button disabled={scatterWorking} onClick={() => void scatterNew()}>
+                    {scatterWorking ? "Working..." : "Scatter"}
+                  </button>
+                </div>
+
+                {scatterResult && (
+                  <pre style={{ marginTop: 10, background: "#111", border: "1px solid #333", padding: 8, borderRadius: 6, overflow: "auto" }}>
+                    {JSON.stringify(scatterResult, null, 2)}
+                  </pre>
+                )}
               </div>
             </div>
           </div>

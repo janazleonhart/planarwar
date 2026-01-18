@@ -1921,10 +1921,12 @@
         "mud.handler"
       ],
       "notes": [
-        "Implements MUD 'reload' command with targets like: reload | reload spawns | reload items.",
-        "On 'reload spawns', clears spawn caches and forces SpawnHydrator.rehydrateRoom for the current room/region so POIs update immediately.",
-        "Supports optional reconciliation flags: '--here=<radius>' (reconcile shared NPC spawn_points near the player) and '--region' (reconcile shared NPC spawn_points for the whole region).",
-        "Reconcile is constrained to spawn_points-driven shared NPCs (spawnPointId present, no ownerSessionId) to avoid touching personal nodes or non-DB entities."
+        "Plain reload spawns (no flags) also reconciles personal nodes for the current session + region (despawn stale/moved, respawn from DB).",
+        "--here/--region must not touch personal nodes/resources (NPC reconcile only).",
+        "Suggested updated note bullets (copy/paste into that entry):",
+        "On reload spawns, clears spawn caches and forces SpawnHydrator.rehydrateRoom(force=true) for the current room/region so POIs update immediately.",
+        "On plain reload spawns (no flags), also live-reconciles personal nodes/resources for the current session + region (despawn stale/moved spawnPointId entities, respawn from DB) so placement edits apply without reconnect.",
+        "--here[=radius] and --region reconcile shared NPC spawn_points only (spawnPointId present, no ownerSessionId); personal nodes/resources remain untouched by these flags."
       ]
     },
     "mud.commands.debug.vulnerability": {

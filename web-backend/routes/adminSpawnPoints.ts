@@ -33,6 +33,42 @@ type AdminSpawnPoint = {
   authority?: SpawnAuthority;
 };
 
+type CloneScatterSuccess = {
+  ok: true;
+  inserted: number;
+  skippedBrainOwned: number;
+  skippedMissingCoords: number;
+  failedToPlace: number;
+  createdIds: number[];
+  createdSpawnIds: string[];
+};
+
+type CloneScatterFailure = {
+  ok: false;
+  inserted: number;
+  skippedBrainOwned: number;
+  skippedMissingCoords: number;
+  failedToPlace: number;
+  createdIds: number[];
+  createdSpawnIds: string[];
+  error: string;
+};
+
+type CloneScatterResponse = CloneScatterSuccess | CloneScatterFailure;
+
+function cloneScatterFail(error: string): CloneScatterFailure {
+  return {
+    ok: false,
+    inserted: 0,
+    skippedBrainOwned: 0,
+    skippedMissingCoords: 0,
+    failedToPlace: 0,
+    createdIds: [],
+    createdSpawnIds: [],
+    error,
+  };
+}
+
 function numOrNull(v: any): number | null {
   if (v === null || v === undefined || v === "") return null;
   const n = Number(v);
@@ -472,6 +508,431 @@ router.post("/bulk_move", async (req, res) => {
 
 
 // ------------------------------
+
+// ------------------------------
+// System 3: Clone / Scatter (editor paint tools)
+// ------------------------------
+
+type CloneRequest = {
+  shardId?: string;
+  ids: number[];
+  countPerId?: number;
+  scatterRadius?: number;
+  minDistance?: number;
+  seedBase?: string;
+  regionId?: string | null;
+};
+
+type ScatterRequest = {
+  shardId?: string;
+  type: string;
+  archetype: string;
+  protoId?: string | null;
+  variantId?: string | null;
+  count?: number;
+  centerX?: number;
+  centerZ?: number;
+  y?: number;
+  regionId?: string | null;
+  townTier?: number | null;
+  scatterRadius?: number;
+  minDistance?: number;
+  seedBase?: string;
+};
+
+function finiteOr(v: any, fallback: number): number {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : fallback;
+}
+
+function clamp(n: number, lo: number, hi: number): number {
+  return Math.max(lo, Math.min(hi, n));
+}
+
+function dist2(ax: number, az: number, bx: number, bz: number): number {
+  const dx = ax - bx;
+  const dz = az - bz;
+  return dx * dx + dz * dz;
+}
+
+function sampleDisk(centerX: number, centerZ: number, radius: number): { x: number; z: number } {
+  const r = Math.max(0, radius);
+  if (r === 0) return { x: centerX, z: centerZ };
+  const t = Math.random() * Math.PI * 2;
+  const u = Math.random();
+  const rr = Math.sqrt(u) * r;
+  return { x: centerX + Math.cos(t) * rr, z: centerZ + Math.sin(t) * rr };
+}
+
+function randSuffix(len = 6): string {
+  const alphabet = "abcdefghijklmnopqrstuvwxyz0123456789";
+  let out = "";
+  for (let i = 0; i < len; i++) out += alphabet[Math.floor(Math.random() * alphabet.length)];
+  return out;
+}
+
+function normalizeSeedBase(v: any): string {
+  const s = String(v ?? "").trim();
+  if (!s) return "seed:editor";
+  return s;
+}
+
+function makeSpawnId(seedBase: string, kind: "clone" | "scatter", hint: string): string {
+  const safeHint = String(hint ?? "x")
+    .trim()
+    .replace(/\s+/g, "_")
+    .replace(/[^a-zA-Z0-9:_\-\.]/g, "");
+  const base = normalizeSeedBase(seedBase);
+
+  // Never allow brain:* writes from the editor endpoints.
+  if (base.toLowerCase().startsWith("brain:")) {
+    throw new Error("seedBase cannot be brain:* (brain spawns are read-only)");
+  }
+
+  const stamp = Date.now().toString(36);
+  return `${base}:${kind}:${safeHint}:${stamp}:${randSuffix(6)}`;
+}
+
+async function loadNearbyPointsForSpacing(params: {
+  shardId: string;
+  regionId: string | null;
+  centerX: number;
+  centerZ: number;
+  radius: number;
+}): Promise<Array<{ x: number; z: number }>> {
+  const { shardId, regionId, centerX, centerZ, radius } = params;
+  if (!Number.isFinite(centerX) || !Number.isFinite(centerZ) || radius <= 0) return [];
+
+  // Fast prefilter: bounding box.
+  const minX = centerX - radius;
+  const maxX = centerX + radius;
+  const minZ = centerZ - radius;
+  const maxZ = centerZ + radius;
+
+  const args: any[] = [shardId, minX, maxX, minZ, maxZ];
+  let sql = `
+    SELECT x, z
+    FROM spawn_points
+    WHERE shard_id = $1
+      AND x IS NOT NULL AND z IS NOT NULL
+      AND x BETWEEN $2 AND $3
+      AND z BETWEEN $4 AND $5
+  `;
+
+  if (regionId) {
+    sql += ` AND region_id = $6`;
+    args.push(regionId);
+  }
+
+  const rows = await db.query(sql, args);
+  return (rows.rows ?? [])
+    .map((r: any) => ({ x: Number(r.x), z: Number(r.z) }))
+    .filter((p: { x: number; z: number }) => Number.isFinite(p.x) && Number.isFinite(p.z));
+}
+
+function pickPositionWithSpacing(params: {
+  centerX: number;
+  centerZ: number;
+  scatterRadius: number;
+  minDistance: number;
+  existing: Array<{ x: number; z: number }>;
+  placed: Array<{ x: number; z: number }>;
+}): { x: number; z: number } | null {
+  const { centerX, centerZ, scatterRadius, minDistance, existing, placed } = params;
+  const minD = Math.max(0, minDistance);
+  const minD2 = minD * minD;
+
+  // If spacing is disabled, first roll wins.
+  if (minD === 0) return sampleDisk(centerX, centerZ, scatterRadius);
+
+  const tries = 80;
+  for (let t = 0; t < tries; t++) {
+    const p = sampleDisk(centerX, centerZ, scatterRadius);
+
+    // check against existing + newly placed
+    let ok = true;
+    for (const q of existing) {
+      if (dist2(p.x, p.z, q.x, q.z) < minD2) {
+        ok = false;
+        break;
+      }
+    }
+    if (!ok) continue;
+    for (const q of placed) {
+      if (dist2(p.x, p.z, q.x, q.z) < minD2) {
+        ok = false;
+        break;
+      }
+    }
+    if (!ok) continue;
+
+    return p;
+  }
+
+  return null;
+}
+
+// POST /api/admin/spawn_points/clone
+// Body: { shardId, ids, countPerId, scatterRadius, minDistance, seedBase, regionId? }
+router.post("/clone", async (req, res) => {
+  const body: CloneRequest = (req.body ?? {}) as any;
+
+  try {
+    const shardId = strOrNull(body.shardId) ?? "prime_shard";
+    const ids = Array.isArray(body.ids)
+      ? body.ids
+          .map((n) => Number(n))
+          .filter((n) => Number.isFinite(n) && n > 0)
+      : [];
+
+    if (ids.length === 0) {
+      return res.status(400).json(cloneScatterFail("no_ids") satisfies CloneScatterResponse);
+    }
+
+    const countPerId = clamp(finiteOr(body.countPerId, 1), 1, 500);
+    const scatterRadius = clamp(finiteOr(body.scatterRadius, 0), 0, 50_000);
+    const minDistance = clamp(finiteOr(body.minDistance, 0), 0, 50_000);
+    const seedBase = normalizeSeedBase(body.seedBase);
+    const regionOverride = strOrNull(body.regionId);
+
+    // Load source rows.
+    const rows = await db.query(
+      `
+      SELECT id, shard_id, spawn_id, type, archetype, proto_id, variant_id, x, y, z, region_id, town_tier
+      FROM spawn_points
+      WHERE shard_id = $1 AND id = ANY($2::int[])
+      `,
+      [shardId, ids],
+    );
+
+    const source = (rows.rows ?? []).map(mapRowToAdmin);
+    if (source.length === 0) {
+      return res.status(404).json(cloneScatterFail("not_found") satisfies CloneScatterResponse);
+    }
+
+    let skippedBrainOwned = 0;
+    let skippedMissingCoords = 0;
+    let failedToPlace = 0;
+    let inserted = 0;
+    const createdIds: number[] = [];
+    const createdSpawnIds: string[] = [];
+
+    for (const sp of source) {
+      if (!isSpawnEditable(sp.spawnId)) {
+        skippedBrainOwned += 1;
+        continue;
+      }
+
+      const baseX = numOrNull(sp.x);
+      const baseZ = numOrNull(sp.z);
+      const baseY = numOrNull(sp.y) ?? 0;
+
+      if (baseX === null || baseZ === null) {
+        skippedMissingCoords += 1;
+        continue;
+      }
+
+      const targetRegionId = regionOverride ?? strOrNull(sp.regionId);
+
+      const spacingRadius = Math.max(scatterRadius, minDistance);
+      const existing = await loadNearbyPointsForSpacing({
+        shardId,
+        regionId: targetRegionId,
+        centerX: baseX,
+        centerZ: baseZ,
+        radius: spacingRadius,
+      });
+
+      const placed: Array<{ x: number; z: number }> = [];
+
+      for (let c = 0; c < countPerId; c++) {
+        const p = pickPositionWithSpacing({
+          centerX: baseX,
+          centerZ: baseZ,
+          scatterRadius,
+          minDistance,
+          existing,
+          placed,
+        });
+
+        if (!p) {
+          failedToPlace += 1;
+          continue;
+        }
+
+        const spawnId = makeSpawnId(seedBase, "clone", sp.spawnId);
+        const ins = await db.query(
+          `
+          INSERT INTO spawn_points
+            (shard_id, spawn_id, type, archetype, proto_id, variant_id, x, y, z, region_id, town_tier)
+          VALUES
+            ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+          RETURNING id
+          `,
+          [
+            shardId,
+            spawnId,
+            sp.type,
+            sp.archetype,
+            strOrNull(sp.protoId),
+            strOrNull(sp.variantId),
+            p.x,
+            baseY,
+            p.z,
+            targetRegionId,
+            numOrNull(sp.townTier),
+          ],
+        );
+
+        const newId = Number(ins.rows?.[0]?.id ?? 0);
+        if (Number.isFinite(newId) && newId > 0) createdIds.push(newId);
+        createdSpawnIds.push(spawnId);
+        inserted += 1;
+        placed.push(p);
+      }
+    }
+
+    clearSpawnPointCache();
+
+    return res.json({
+      ok: true,
+      inserted,
+      skippedBrainOwned,
+      skippedMissingCoords,
+      failedToPlace,
+      createdIds,
+      createdSpawnIds,
+    } satisfies CloneScatterResponse);
+  } catch (err: any) {
+    console.error("[ADMIN/SPAWN_POINTS] clone error", err);
+    return res.status(500).json({
+      ok: false,
+      inserted: 0,
+      skippedBrainOwned: 0,
+      skippedMissingCoords: 0,
+      failedToPlace: 0,
+      createdIds: [],
+      createdSpawnIds: [],
+      error: err?.message || "internal_error",
+    } satisfies CloneScatterResponse);
+  }
+});
+
+// POST /api/admin/spawn_points/scatter
+// Body: { shardId, type, archetype, protoId?, variantId?, count, centerX, centerZ, y, regionId?, townTier?, scatterRadius, minDistance, seedBase }
+router.post("/scatter", async (req, res) => {
+  const body: ScatterRequest = (req.body ?? {}) as any;
+
+  try {
+    const shardId = strOrNull(body.shardId) ?? "prime_shard";
+
+    const type = requiredStr(body.type);
+    const archetype = requiredStr(body.archetype);
+    const protoId = strOrNull(body.protoId);
+    const variantId = strOrNull(body.variantId);
+
+    const count = clamp(finiteOr(body.count, 1), 1, 5000);
+    const centerX = finiteOr(body.centerX, 0);
+    const centerZ = finiteOr(body.centerZ, 0);
+    const y = finiteOr(body.y, 0);
+    const regionId = strOrNull(body.regionId);
+    const townTier = numOrNull(body.townTier);
+
+    const scatterRadius = clamp(finiteOr(body.scatterRadius, 0), 0, 50_000);
+    const minDistance = clamp(finiteOr(body.minDistance, 0), 0, 50_000);
+    const seedBase = normalizeSeedBase(body.seedBase);
+
+    // protoId rules: if it's npc/node/resource-ish, require protoId.
+    const t = type.toLowerCase();
+    if (
+      (t === "npc" || t === "mob" || t === "creature" || t === "node" || t === "resource") &&
+      !protoId
+    ) {
+      return res
+        .status(400)
+        .json(
+          cloneScatterFail("protoId_required_for_npc_node_resource") satisfies CloneScatterResponse,
+        );
+    }
+
+    // Spacing checks need existing points in the area.
+    const spacingRadius = Math.max(scatterRadius, minDistance);
+    const existing = await loadNearbyPointsForSpacing({
+      shardId,
+      regionId,
+      centerX,
+      centerZ,
+      radius: spacingRadius,
+    });
+
+    const placed: Array<{ x: number; z: number }> = [];
+
+    let inserted = 0;
+    let failedToPlace = 0;
+
+    const createdIds: number[] = [];
+    const createdSpawnIds: string[] = [];
+
+    for (let i = 0; i < count; i++) {
+      const p = pickPositionWithSpacing({
+        centerX,
+        centerZ,
+        scatterRadius,
+        minDistance,
+        existing,
+        placed,
+      });
+
+      if (!p) {
+        failedToPlace += 1;
+        continue;
+      }
+
+      const spawnId = makeSpawnId(seedBase, "scatter", protoId || archetype || type);
+      const ins = await db.query(
+        `
+        INSERT INTO spawn_points
+          (shard_id, spawn_id, type, archetype, proto_id, variant_id, x, y, z, region_id, town_tier)
+        VALUES
+          ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+        RETURNING id
+        `,
+        [shardId, spawnId, type, archetype, protoId, variantId, p.x, y, p.z, regionId, townTier],
+      );
+
+      const newId = Number(ins.rows?.[0]?.id ?? 0);
+      if (Number.isFinite(newId) && newId > 0) createdIds.push(newId);
+      createdSpawnIds.push(spawnId);
+      inserted += 1;
+      placed.push(p);
+    }
+
+    clearSpawnPointCache();
+
+    return res.json({
+      ok: true,
+      inserted,
+      skippedBrainOwned: 0,
+      skippedMissingCoords: 0,
+      failedToPlace,
+      createdIds,
+      createdSpawnIds,
+    } satisfies CloneScatterResponse);
+  } catch (err: any) {
+    console.error("[ADMIN/SPAWN_POINTS] scatter error", err);
+    return res.status(500).json({
+      ok: false,
+      inserted: 0,
+      skippedBrainOwned: 0,
+      skippedMissingCoords: 0,
+      failedToPlace: 0,
+      createdIds: [],
+      createdSpawnIds: [],
+      error: err?.message || "internal_error",
+    } satisfies CloneScatterResponse);
+  }
+});
+
 // Mother Brain façade endpoints
 // ------------------------------
 
