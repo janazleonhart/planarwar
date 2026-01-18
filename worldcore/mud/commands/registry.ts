@@ -108,6 +108,7 @@ import {
 } from "./debug/regionDangerCommands";
 import { handleDebugVulnerability } from "./debug/vulnerabilityCommands";
 import { handleDebugRegionEvent, handleDebugRegionPvp } from "./debug/regionEventCommands";
+import { handleReloadCommand } from "./debug/reloadCommand";
 
 import type { MudCommandHandlerFn } from "./types";
 
@@ -277,6 +278,10 @@ export const COMMANDS: Record<string, MudCommandHandlerFn> = {
   ),
 
   debug_vuln: withDebugGate(handleDebugVulnerability, "dev"),
+
+  // Hot reload (dev-only)
+  reload: withDebugGate(handleReloadCommand, "dev"),
+  debug_reload: withDebugGate(handleReloadCommand, "dev"),
 
   event_give_any: withDebugGate(handleEventGiveAny, "owner"),
   event_mail_reward: withDebugGate(handleEventMailReward, "gm"),

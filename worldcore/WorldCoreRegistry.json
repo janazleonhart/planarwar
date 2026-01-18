@@ -5353,6 +5353,39 @@
         "Protects critical service NPCs (bank/mail/auction/etc.) from being killed/griefed.",
         "Pure helpers; detection based on proto id/tags and optional runtime flags."
       ]
+    },
+    "dev.hotReload": {
+      "kind": "helper",
+      "path": "worldcore/dev/HotReloadService.ts",
+      "functions": [
+        "parseHotReloadTargets(args:string[]):HotReloadTarget[]",
+        "runHotReload(targets:HotReloadTarget[], deps:HotReloadDeps):Promise<HotReloadReport>",
+        "formatHotReloadReport(r:HotReloadReport):string"
+      ],
+      "dependsOn": [
+        "items.service?",
+        "quests.registry",
+        "npc.types",
+        "world.spawnPointCache?",
+        "world.spawnPoints?",
+        "world.spawnHydrator?",
+        "npc.spawnController?"
+      ],
+      "provides": [
+        "HotReloadTarget",
+        "HotReloadDeps",
+        "HotReloadSpawnContext",
+        "HotReloadReport"
+      ],
+      "notes": [
+        "Central hot reload runner used by dev/admin command surfaces.",
+        "Targets: items, quests, npcs, spawns (or all).",
+        "Items reload prefers ItemService.reload() then loadAll().",
+        "Quests reload requires a questLoader (listQuests) and pushes definitions into QuestRegistry via setQuestDefinitions().",
+        "NPC reload requires an npcLoader (listNpcs) and pushes prototypes into NpcTypes via setNpcPrototypes().",
+        "Spawns reload clears SpawnPointCache and best-effort clears SpawnPointService caches.",
+        "If spawnContexts + spawnHydrator/npcSpawns are provided, spawns reload can also force POI rehydration and respawn spawn_points-driven NPCs and personal nodes."
+      ]
     }
   }
 }

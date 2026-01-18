@@ -11,7 +11,7 @@
 //   WORLD_SPAWNS_ENABLED=1
 // Optional filter:
 //   WORLD_SPAWNS_TYPES=outpost,checkpoint,graveyard,town
-
+//
 // Optional town baselines:
 //   PW_TOWN_BASELINES=1 (or WORLD_TOWN_BASELINES=1)
 // -----------------------------------------------------------------------------
@@ -35,9 +35,13 @@ export type SpawnHydratorOptions = {
 export type RehydrateRoomArgs = {
   shardId: string;
   regionId: string; // spawn_points.region_id (e.g. "prime_shard:0,0")
-  roomId: string;   // session.roomId (often constant in current runtime)
+  roomId: string; // session.roomId (often constant in current runtime)
   dryRun?: boolean;
-  force?: boolean; // ignore per-region cache
+  /**
+   * Ignore per-region memoization and attempt hydration again.
+   * This is what hot-reload should use.
+   */
+  force?: boolean;
 };
 
 export type RehydrateRoomResult = {
@@ -104,7 +108,7 @@ const ALWAYS_EXCLUDED_TYPES = new Set([
 
 function computePoiName(sp: DbSpawnPoint): string {
   const type = normalizeType(sp.type);
-  const protoId = String(sp.protoId ?? sp.archetype ?? "").trim();
+  const protoId = String(sp.protoId ?? (sp as any).archetype ?? "").trim();
 
   if (type === "mailbox") return "Mailbox";
   if (type === "rest") return "Rest Spot";
@@ -116,7 +120,9 @@ function computePoiName(sp: DbSpawnPoint): string {
     if (pid.includes("oven")) return "Oven";
     if (pid.includes("mill")) return "Millstone";
     if (pid.includes("workbench")) return "Workbench";
-    return protoId ? titleCase(protoId.replace(/^station_/, "").replace(/_/g, " ")) : "Crafting Station";
+    return protoId
+      ? titleCase(protoId.replace(/^station_/, "").replace(/_/g, " "))
+      : "Crafting Station";
   }
 
   const t = titleCase(sp.type);
@@ -135,7 +141,7 @@ function entityAlreadyRepresentsSpawnPoint(e: Entity, sp: DbSpawnPoint): boolean
   // Fallback: type + proto + near-coords
   if (normalizeType(e.type) === normalizeType(sp.type)) {
     const protoA = String(a.protoId ?? a.model ?? "").trim();
-    const protoB = String(sp.protoId ?? sp.archetype ?? "").trim();
+    const protoB = String(sp.protoId ?? (sp as any).archetype ?? "").trim();
     if (protoA && protoB && protoA === protoB) {
       const dx = Math.abs((e.x ?? 0) - (sp.x ?? 0));
       const dz = Math.abs((e.z ?? 0) - (sp.z ?? 0));
@@ -156,7 +162,6 @@ export class SpawnHydrator {
   private allowTypes: string[];
   private townBaselines: TownBaselines;
 
-
   constructor(
     private spawnPoints: SpawnPointService,
     private entities: EntityManager,
@@ -169,6 +174,33 @@ export class SpawnHydrator {
     // Optional: town service baselines (e.g., mailbox anchors)
     this.townBaselines = new TownBaselines(this.entities);
   }
+
+  // ---------------------------------------------------------------------------
+  // Hot reload helpers
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Clears ALL per-region memoization.
+   *
+   * Use this when:
+   * - spawn_points changed
+   * - you want `rehydrateRoom({ force: true })` to actually do work again
+   */
+  resetHydratedRegions(): void {
+    this.hydratedRegionKeys.clear();
+  }
+
+  /**
+   * Clears memoization for a single region.
+   */
+  invalidateRegion(shardId: string, regionId: string): void {
+    const key = `${shardId}:${regionId}`;
+    this.hydratedRegionKeys.delete(key);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Main API
+  // ---------------------------------------------------------------------------
 
   /**
    * Rehydrate POI-like spawn_points for a region into the current room.
@@ -191,6 +223,7 @@ export class SpawnHydrator {
           // ignore
         }
       }
+
       return {
         shardId,
         regionId,
@@ -240,6 +273,7 @@ export class SpawnHydrator {
       if (this.townBaselines.enabled) {
         this.townBaselines.ensureTownBaseline({ shardId, regionId, roomId, townSpawn: sp, dryRun });
       }
+
       const already = inRoom.some((e) => entityAlreadyRepresentsSpawnPoint(e, sp));
       if (already) {
         skippedExisting++;
@@ -253,7 +287,7 @@ export class SpawnHydrator {
 
       // EntityManager only has a "createNpcEntity" factory today.
       // We use it, then immediately convert it into an inert POI placeholder.
-      const model = String(sp.protoId ?? sp.archetype ?? sp.type ?? "poi");
+      const model = String((sp as any).protoId ?? (sp as any).archetype ?? sp.type ?? "poi");
       const ent = this.entities.createNpcEntity(roomId, model);
 
       // Convert it into an inert POI-ish thing.
@@ -266,30 +300,30 @@ export class SpawnHydrator {
 
       // DB linkage
       (ent as any).spawnPointId = sp.id;
-      (ent as any).protoId = sp.protoId ?? null;
-      (ent as any).variantId = sp.variantId ?? null;
+      (ent as any).protoId = (sp as any).protoId ?? null;
+      (ent as any).variantId = (sp as any).variantId ?? null;
       (ent as any).spawnType = sp.type;
 
-// Service protection + helpful tags for inert town services
-if (ent.type === "mailbox" || ent.type === "rest" || ent.type === "station") {
-  (ent as any).isServiceProvider = true;
-  (ent as any).isProtectedService = true;
-  (ent as any).immuneToDamage = true;
-  (ent as any).noAttack = true;
+      // Service protection + helpful tags for inert town services
+      if (ent.type === "mailbox" || ent.type === "rest" || ent.type === "station") {
+        (ent as any).isServiceProvider = true;
+        (ent as any).isProtectedService = true;
+        (ent as any).immuneToDamage = true;
+        (ent as any).noAttack = true;
 
-  const tags = new Set<string>(Array.isArray((ent as any).tags) ? (ent as any).tags : []);
-  tags.add("service");
-  tags.add("protected_service");
-  tags.add(ent.type);
+        const tags = new Set<string>(Array.isArray((ent as any).tags) ? (ent as any).tags : []);
+        tags.add("service");
+        tags.add("protected_service");
+        tags.add(ent.type);
 
-  if (ent.type === "station") {
-    tags.add("craft_station");
-    const pid = String((ent as any).protoId ?? "").trim();
-    if (pid) tags.add(pid);
-  }
+        if (ent.type === "station") {
+          tags.add("craft_station");
+          const pid = String((ent as any).protoId ?? "").trim();
+          if (pid) tags.add(pid);
+        }
 
-  (ent as any).tags = [...tags];
-}
+        (ent as any).tags = [...tags];
+      }
 
       // Ensure it doesn't get misclassified as a personal node or player-like entity
       delete (ent as any).ownerSessionId;
