@@ -112,6 +112,17 @@ type MotherBrainWaveResponse = {
   error?: string;
 };
 
+
+type MotherBrainWipeResponse = {
+  ok: boolean;
+  commit: boolean;
+  wouldDelete?: number;
+  deleted?: number;
+  // optional preview list (shape matches status list)
+  list?: MotherBrainListRow[];
+  error?: string;
+};
+
 function getAuthority(spawnId: string): SpawnAuthority {
   const s = String(spawnId ?? "").trim().toLowerCase();
   if (s.startsWith("anchor:")) return "anchor";
@@ -300,6 +311,16 @@ export function AdminSpawnPointsPage() {
   const [waveLoading, setWaveLoading] = useState(false);
   const [waveResult, setWaveResult] = useState<MotherBrainWaveResponse | null>(null);
 
+
+  // Mother Brain (wipe)
+  const [wipeTheme, setWipeTheme] = useState<string>("");
+  const [wipeEpoch, setWipeEpoch] = useState<string>("");
+  const [wipeBorderMargin, setWipeBorderMargin] = useState(0);
+  const [wipeWithList, setWipeWithList] = useState(true);
+  const [wipeLimit, setWipeLimit] = useState(25);
+  const [wipeLoading, setWipeLoading] = useState(false);
+  const [wipeResult, setWipeResult] = useState<MotherBrainWipeResponse | null>(null);
+
   const selectedSet = useMemo(() => new Set(selectedIds), [selectedIds]);
 
   const visibleSpawnPoints = useMemo(() => {
@@ -425,6 +446,48 @@ export function AdminSpawnPointsPage() {
       setError(err.message || String(err));
     } finally {
       setWaveLoading(false);
+    }
+  };
+
+
+  const runMotherBrainWipe = async (commit: boolean) => {
+    setWipeLoading(true);
+    setError(null);
+    try {
+      const url = `${ADMIN_API_BASE}/api/admin/spawn_points/mother_brain/wipe`;
+
+      const theme = wipeTheme.trim();
+      const epochRaw = wipeEpoch.trim();
+      const epoch = epochRaw ? Number(epochRaw) : null;
+
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          shardId: shardId.trim() || "prime_shard",
+          bounds: mbBounds.trim() || "-1..1,-1..1",
+          cellSize: Number(mbCellSize) || 64,
+          borderMargin: Number(wipeBorderMargin) || 0,
+          theme: theme ? theme : null,
+          epoch: epochRaw ? (Number.isFinite(epoch) ? epoch : null) : null,
+          list: !!wipeWithList,
+          limit: Math.max(1, Math.min(200, Number(wipeLimit) || 25)),
+          commit: !!commit,
+        }),
+      });
+
+      if (!res.ok) throw new Error(`MotherBrain wipe failed (HTTP ${res.status})`);
+      const data: MotherBrainWipeResponse = await res.json();
+      if (!data.ok) throw new Error(data.error || "MotherBrain wipe failed");
+      setWipeResult(data);
+
+      // Refresh status + reload list so it feels immediate.
+      await runMotherBrainStatus(false);
+      await load();
+    } catch (err: any) {
+      setError(err.message || String(err));
+    } finally {
+      setWipeLoading(false);
     }
   };
 
@@ -1097,11 +1160,67 @@ export function AdminSpawnPointsPage() {
               </div>
 
               {waveResult && (
-                <pre style={{ marginTop: 10, background: "#111", border: "1px solid #333", padding: 8, borderRadius: 6, overflow: "auto" }}>
+                <pre style={{ marginTop: 10, background: "#111", color: "#eee", border: "1px solid #333", padding: 8, borderRadius: 6, overflow: "auto" }}>
                   {JSON.stringify(waveResult, null, 2)}
                 </pre>
               )}
             </div>
+
+            <div style={{ borderTop: "1px solid #333", marginTop: 12, paddingTop: 12 }}>
+              <h3 style={{ margin: "0 0 8px 0" }}>Wipe (delete brain spawns)</h3>
+              <div style={{ fontSize: 12, opacity: 0.85, marginBottom: 10 }}>
+                Deletes <code>brain:*</code> rows within <b>Bounds</b>. Optional filters: theme/epoch. Dry-run by default.
+              </div>
+
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                <label style={{ display: "grid", gap: 4 }}>
+                  <span style={{ opacity: 0.8 }}>Theme (optional)</span>
+                  <input value={wipeTheme} onChange={(e) => setWipeTheme(e.target.value)} placeholder="(any)" />
+                </label>
+                <label style={{ display: "grid", gap: 4 }}>
+                  <span style={{ opacity: 0.8 }}>Epoch (optional)</span>
+                  <input value={wipeEpoch} onChange={(e) => setWipeEpoch(e.target.value)} placeholder="(any)" />
+                </label>
+                <label style={{ display: "grid", gap: 4 }}>
+                  <span style={{ opacity: 0.8 }}>Border Margin</span>
+                  <input type="number" value={wipeBorderMargin} onChange={(e) => setWipeBorderMargin(Number(e.target.value) || 0)} />
+                </label>
+                <label style={{ display: "grid", gap: 4 }}>
+                  <span style={{ opacity: 0.8 }}>List Limit</span>
+                  <input type="number" value={wipeLimit} onChange={(e) => setWipeLimit(Number(e.target.value) || 0)} />
+                </label>
+                <label style={{ display: "flex", alignItems: "center", gap: 8, gridColumn: "1 / span 2" }}>
+                  <input type="checkbox" checked={wipeWithList} onChange={(e) => setWipeWithList(e.target.checked)} />
+                  <span>Include preview list</span>
+                </label>
+              </div>
+
+              <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
+                <button disabled={wipeLoading} onClick={() => void runMotherBrainWipe(false)}>
+                  {wipeLoading ? "Working..." : "Plan wipe (dry-run)"}
+                </button>
+                <button
+                  disabled={wipeLoading}
+                  onClick={() => {
+                    const ok = window.confirm(
+                      `Commit Mother Brain wipe?\n\nThis will DELETE brain:* spawns in bounds ${mbBounds.trim() || "-1..1,-1..1"}.\nTheme=${wipeTheme.trim() || "(any)"} Epoch=${wipeEpoch.trim() || "(any)"}`
+                    );
+                    if (ok) void runMotherBrainWipe(true);
+                  }}
+                  style={{ border: "1px solid #b71c1c" }}
+                >
+                  {wipeLoading ? "Working..." : "Commit wipe"}
+                </button>
+              </div>
+
+              {wipeResult && (
+                <pre style={{ marginTop: 10, background: "#111", color: "#eee", border: "1px solid #333", padding: 8, borderRadius: 6, overflow: "auto" }}>
+                  {JSON.stringify(wipeResult, null, 2)}
+                </pre>
+              )}
+            </div>
+
+
           </div>
 
 
@@ -1267,7 +1386,7 @@ export function AdminSpawnPointsPage() {
                 </div>
 
                 {cloneResult && (
-                  <pre style={{ marginTop: 10, background: "#111", border: "1px solid #333", padding: 8, borderRadius: 6, overflow: "auto" }}>
+                  <pre style={{ marginTop: 10, background: "#111", color: "#eee", border: "1px solid #333", padding: 8, borderRadius: 6, overflow: "auto" }}>
                     {JSON.stringify(cloneResult, null, 2)}
                   </pre>
                 )}
@@ -1368,7 +1487,7 @@ export function AdminSpawnPointsPage() {
                 </div>
 
                 {scatterResult && (
-                  <pre style={{ marginTop: 10, background: "#111", border: "1px solid #333", padding: 8, borderRadius: 6, overflow: "auto" }}>
+                  <pre style={{ marginTop: 10, background: "#111", color: "#eee", border: "1px solid #333", padding: 8, borderRadius: 6, overflow: "auto" }}>
                     {JSON.stringify(scatterResult, null, 2)}
                   </pre>
                 )}
