@@ -1,0 +1,130 @@
+{
+  "services": {
+    "app": {
+      "kind": "ui",
+      "path": "web-frontend/App.tsx",
+      "functions": [],
+      "dependsOn": [],
+      "notes": [
+        "AUTO-GENERATED skeleton from raw_links.txt. Fill functions/dependsOn/notes as the package evolves."
+      ]
+    },
+    "index": {
+      "kind": "doc",
+      "path": "web-frontend/index.html",
+      "functions": [],
+      "dependsOn": [],
+      "notes": [
+        "AUTO-GENERATED skeleton from raw_links.txt. Fill functions/dependsOn/notes as the package evolves."
+      ]
+    },
+    "lib.api": {
+      "kind": "module",
+      "path": "web-frontend/lib/api.ts",
+      "functions": [],
+      "dependsOn": [],
+      "notes": [
+        "AUTO-GENERATED skeleton from raw_links.txt. Fill functions/dependsOn/notes as the package evolves."
+      ]
+    },
+    "main": {
+      "kind": "ui",
+      "path": "web-frontend/main.tsx",
+      "functions": [],
+      "dependsOn": [],
+      "notes": [
+        "AUTO-GENERATED skeleton from raw_links.txt. Fill functions/dependsOn/notes as the package evolves."
+      ]
+    },
+    "package": {
+      "kind": "data",
+      "path": "web-frontend/package.json",
+      "functions": [],
+      "dependsOn": [],
+      "notes": [
+        "AUTO-GENERATED skeleton from raw_links.txt. Fill functions/dependsOn/notes as the package evolves."
+      ]
+    },
+    "pages.adminItemsPage": {
+      "kind": "ui",
+      "path": "web-frontend/pages/AdminItemsPage.tsx",
+      "functions": [],
+      "dependsOn": [],
+      "notes": [
+        "AUTO-GENERATED skeleton from raw_links.txt. Fill functions/dependsOn/notes as the package evolves."
+      ]
+    },
+    "pages.adminNpcsPage": {
+      "kind": "ui",
+      "path": "web-frontend/pages/AdminNpcsPage.tsx",
+      "functions": [],
+      "dependsOn": [],
+      "notes": [
+        "AUTO-GENERATED skeleton from raw_links.txt. Fill functions/dependsOn/notes as the package evolves."
+      ]
+    },
+    "pages.adminQuestsPage": {
+      "kind": "ui",
+      "path": "web-frontend/pages/AdminQuestsPage.tsx",
+      "functions": [],
+      "dependsOn": [],
+      "notes": [
+        "AUTO-GENERATED skeleton from raw_links.txt. Fill functions/dependsOn/notes as the package evolves."
+      ]
+    },
+    "pages.adminSpawnPointsPage": {
+      "kind": "ui",
+      "path": "web-frontend/pages/AdminSpawnPointsPage.tsx",
+      "functions": [],
+      "dependsOn": [],
+      "notes": [
+        "AUTO-GENERATED skeleton from raw_links.txt. Fill functions/dependsOn/notes as the package evolves."
+      ]
+    },
+    "pages.mePage": {
+      "kind": "ui",
+      "path": "web-frontend/pages/MePage.tsx",
+      "functions": [],
+      "dependsOn": [],
+      "notes": [
+        "AUTO-GENERATED skeleton from raw_links.txt. Fill functions/dependsOn/notes as the package evolves."
+      ]
+    },
+    "pages.operationsPage": {
+      "kind": "ui",
+      "path": "web-frontend/pages/OperationsPage.tsx",
+      "functions": [],
+      "dependsOn": [],
+      "notes": [
+        "AUTO-GENERATED skeleton from raw_links.txt. Fill functions/dependsOn/notes as the package evolves."
+      ]
+    },
+    "tsconfig": {
+      "kind": "data",
+      "path": "web-frontend/tsconfig.json",
+      "functions": [],
+      "dependsOn": [],
+      "notes": [
+        "AUTO-GENERATED skeleton from raw_links.txt. Fill functions/dependsOn/notes as the package evolves."
+      ]
+    },
+    "viteConfig": {
+      "kind": "module",
+      "path": "web-frontend/vite.config.ts",
+      "functions": [],
+      "dependsOn": [],
+      "notes": [
+        "AUTO-GENERATED skeleton from raw_links.txt. Fill functions/dependsOn/notes as the package evolves."
+      ]
+    },
+    "viteEnvD": {
+      "kind": "module",
+      "path": "web-frontend/vite-env.d.ts",
+      "functions": [],
+      "dependsOn": [],
+      "notes": [
+        "AUTO-GENERATED skeleton from raw_links.txt. Fill functions/dependsOn/notes as the package evolves."
+      ]
+    }
+  }
+}

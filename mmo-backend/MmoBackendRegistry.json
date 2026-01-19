@@ -1,0 +1,40 @@
+{
+  "services": {
+    "config": {
+      "kind": "module",
+      "path": "mmo-backend/config.ts",
+      "functions": [],
+      "dependsOn": [],
+      "notes": [
+        "AUTO-GENERATED skeleton from raw_links.txt. Fill functions/dependsOn/notes as the package evolves."
+      ]
+    },
+    "fileLogTap": {
+      "kind": "module",
+      "path": "mmo-backend/FileLogTap.ts",
+      "functions": [],
+      "dependsOn": [],
+      "notes": [
+        "AUTO-GENERATED skeleton from raw_links.txt. Fill functions/dependsOn/notes as the package evolves."
+      ]
+    },
+    "package": {
+      "kind": "data",
+      "path": "mmo-backend/package.json",
+      "functions": [],
+      "dependsOn": [],
+      "notes": [
+        "AUTO-GENERATED skeleton from raw_links.txt. Fill functions/dependsOn/notes as the package evolves."
+      ]
+    },
+    "server": {
+      "kind": "module",
+      "path": "mmo-backend/server.ts",
+      "functions": [],
+      "dependsOn": [],
+      "notes": [
+        "AUTO-GENERATED skeleton from raw_links.txt. Fill functions/dependsOn/notes as the package evolves."
+      ]
+    }
+  }
+}

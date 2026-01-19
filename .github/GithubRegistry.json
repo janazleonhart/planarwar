@@ -1,0 +1,13 @@
+{
+  "services": {
+    "workflows.worldcoreRegistryCheck": {
+      "kind": "workflow",
+      "path": ".github/workflows/worldcore-registry-check.yml",
+      "functions": [],
+      "dependsOn": [],
+      "notes": [
+        "AUTO: skeleton generated from raw_links.txt; fill functions/dependsOn later."
+      ]
+    }
+  }
+}

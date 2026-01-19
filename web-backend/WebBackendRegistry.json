@@ -1,0 +1,364 @@
+{
+  "services": {
+    "config": {
+      "kind": "module",
+      "path": "web-backend/config.ts",
+      "functions": [],
+      "dependsOn": [],
+      "notes": [
+        "AUTO-GENERATED skeleton from raw_links.txt. Fill functions/dependsOn/notes as the package evolves."
+      ]
+    },
+    "config.cityTierConfig": {
+      "kind": "module",
+      "path": "web-backend/config/cityTierConfig.ts",
+      "functions": [],
+      "dependsOn": [],
+      "notes": [
+        "AUTO-GENERATED skeleton from raw_links.txt. Fill functions/dependsOn/notes as the package evolves."
+      ]
+    },
+    "data.cityTierConfig": {
+      "kind": "data",
+      "path": "web-backend/data/cityTierConfig.json",
+      "functions": [],
+      "dependsOn": [],
+      "notes": [
+        "AUTO-GENERATED skeleton from raw_links.txt. Fill functions/dependsOn/notes as the package evolves."
+      ]
+    },
+    "data.resources.blackMarket": {
+      "kind": "data",
+      "path": "web-backend/data/resources/black_market.json",
+      "functions": [],
+      "dependsOn": [],
+      "notes": [
+        "AUTO-GENERATED skeleton from raw_links.txt. Fill functions/dependsOn/notes as the package evolves."
+      ]
+    },
+    "data.resources.fish": {
+      "kind": "data",
+      "path": "web-backend/data/resources/fish.json",
+      "functions": [],
+      "dependsOn": [],
+      "notes": [
+        "AUTO-GENERATED skeleton from raw_links.txt. Fill functions/dependsOn/notes as the package evolves."
+      ]
+    },
+    "data.resources.food": {
+      "kind": "data",
+      "path": "web-backend/data/resources/food.json",
+      "functions": [],
+      "dependsOn": [],
+      "notes": [
+        "AUTO-GENERATED skeleton from raw_links.txt. Fill functions/dependsOn/notes as the package evolves."
+      ]
+    },
+    "data.resources.herbs": {
+      "kind": "data",
+      "path": "web-backend/data/resources/herbs.json",
+      "functions": [],
+      "dependsOn": [],
+      "notes": [
+        "AUTO-GENERATED skeleton from raw_links.txt. Fill functions/dependsOn/notes as the package evolves."
+      ]
+    },
+    "data.resources.luxury": {
+      "kind": "data",
+      "path": "web-backend/data/resources/luxury.json",
+      "functions": [],
+      "dependsOn": [],
+      "notes": [
+        "AUTO-GENERATED skeleton from raw_links.txt. Fill functions/dependsOn/notes as the package evolves."
+      ]
+    },
+    "data.resources.mana": {
+      "kind": "data",
+      "path": "web-backend/data/resources/mana.json",
+      "functions": [],
+      "dependsOn": [],
+      "notes": [
+        "AUTO-GENERATED skeleton from raw_links.txt. Fill functions/dependsOn/notes as the package evolves."
+      ]
+    },
+    "data.resources.ore": {
+      "kind": "data",
+      "path": "web-backend/data/resources/ore.json",
+      "functions": [],
+      "dependsOn": [],
+      "notes": [
+        "AUTO-GENERATED skeleton from raw_links.txt. Fill functions/dependsOn/notes as the package evolves."
+      ]
+    },
+    "data.resources.stone": {
+      "kind": "data",
+      "path": "web-backend/data/resources/stone.json",
+      "functions": [],
+      "dependsOn": [],
+      "notes": [
+        "AUTO-GENERATED skeleton from raw_links.txt. Fill functions/dependsOn/notes as the package evolves."
+      ]
+    },
+    "data.resources.wood": {
+      "kind": "data",
+      "path": "web-backend/data/resources/wood.json",
+      "functions": [],
+      "dependsOn": [],
+      "notes": [
+        "AUTO-GENERATED skeleton from raw_links.txt. Fill functions/dependsOn/notes as the package evolves."
+      ]
+    },
+    "domain.armies": {
+      "kind": "module",
+      "path": "web-backend/domain/armies.ts",
+      "functions": [],
+      "dependsOn": [],
+      "notes": [
+        "AUTO-GENERATED skeleton from raw_links.txt. Fill functions/dependsOn/notes as the package evolves."
+      ]
+    },
+    "domain.city": {
+      "kind": "module",
+      "path": "web-backend/domain/city.ts",
+      "functions": [],
+      "dependsOn": [],
+      "notes": [
+        "AUTO-GENERATED skeleton from raw_links.txt. Fill functions/dependsOn/notes as the package evolves."
+      ]
+    },
+    "domain.heroes": {
+      "kind": "module",
+      "path": "web-backend/domain/heroes.ts",
+      "functions": [],
+      "dependsOn": [],
+      "notes": [
+        "AUTO-GENERATED skeleton from raw_links.txt. Fill functions/dependsOn/notes as the package evolves."
+      ]
+    },
+    "domain.missions": {
+      "kind": "module",
+      "path": "web-backend/domain/missions.ts",
+      "functions": [],
+      "dependsOn": [],
+      "notes": [
+        "AUTO-GENERATED skeleton from raw_links.txt. Fill functions/dependsOn/notes as the package evolves."
+      ]
+    },
+    "domain.resources": {
+      "kind": "module",
+      "path": "web-backend/domain/resources.ts",
+      "functions": [],
+      "dependsOn": [],
+      "notes": [
+        "AUTO-GENERATED skeleton from raw_links.txt. Fill functions/dependsOn/notes as the package evolves."
+      ]
+    },
+    "domain.tech": {
+      "kind": "module",
+      "path": "web-backend/domain/tech.ts",
+      "functions": [],
+      "dependsOn": [],
+      "notes": [
+        "AUTO-GENERATED skeleton from raw_links.txt. Fill functions/dependsOn/notes as the package evolves."
+      ]
+    },
+    "domain.world": {
+      "kind": "module",
+      "path": "web-backend/domain/world.ts",
+      "functions": [],
+      "dependsOn": [],
+      "notes": [
+        "AUTO-GENERATED skeleton from raw_links.txt. Fill functions/dependsOn/notes as the package evolves."
+      ]
+    },
+    "gameState": {
+      "kind": "module",
+      "path": "web-backend/gameState.ts",
+      "functions": [],
+      "dependsOn": [],
+      "notes": [
+        "AUTO-GENERATED skeleton from raw_links.txt. Fill functions/dependsOn/notes as the package evolves."
+      ]
+    },
+    "index": {
+      "kind": "module",
+      "path": "web-backend/index.ts",
+      "functions": [],
+      "dependsOn": [],
+      "notes": [
+        "AUTO-GENERATED skeleton from raw_links.txt. Fill functions/dependsOn/notes as the package evolves."
+      ]
+    },
+    "package": {
+      "kind": "data",
+      "path": "web-backend/package.json",
+      "functions": [],
+      "dependsOn": [],
+      "notes": [
+        "AUTO-GENERATED skeleton from raw_links.txt. Fill functions/dependsOn/notes as the package evolves."
+      ]
+    },
+    "routes.adminItems": {
+      "kind": "module",
+      "path": "web-backend/routes/adminItems.ts",
+      "functions": [],
+      "dependsOn": [],
+      "notes": [
+        "AUTO-GENERATED skeleton from raw_links.txt. Fill functions/dependsOn/notes as the package evolves."
+      ]
+    },
+    "routes.adminNpcs": {
+      "kind": "module",
+      "path": "web-backend/routes/adminNpcs.ts",
+      "functions": [],
+      "dependsOn": [],
+      "notes": [
+        "AUTO-GENERATED skeleton from raw_links.txt. Fill functions/dependsOn/notes as the package evolves."
+      ]
+    },
+    "routes.adminQuests": {
+      "kind": "module",
+      "path": "web-backend/routes/adminQuests.ts",
+      "functions": [],
+      "dependsOn": [],
+      "notes": [
+        "AUTO-GENERATED skeleton from raw_links.txt. Fill functions/dependsOn/notes as the package evolves."
+      ]
+    },
+    "routes.adminSpawnPoints": {
+      "kind": "module",
+      "path": "web-backend/routes/adminSpawnPoints.ts",
+      "functions": [],
+      "dependsOn": [],
+      "notes": [
+        "AUTO-GENERATED skeleton from raw_links.txt. Fill functions/dependsOn/notes as the package evolves."
+      ]
+    },
+    "routes.armies": {
+      "kind": "module",
+      "path": "web-backend/routes/armies.ts",
+      "functions": [],
+      "dependsOn": [],
+      "notes": [
+        "AUTO-GENERATED skeleton from raw_links.txt. Fill functions/dependsOn/notes as the package evolves."
+      ]
+    },
+    "routes.auth": {
+      "kind": "module",
+      "path": "web-backend/routes/auth.ts",
+      "functions": [],
+      "dependsOn": [],
+      "notes": [
+        "AUTO-GENERATED skeleton from raw_links.txt. Fill functions/dependsOn/notes as the package evolves."
+      ]
+    },
+    "routes.buildings": {
+      "kind": "module",
+      "path": "web-backend/routes/buildings.ts",
+      "functions": [],
+      "dependsOn": [],
+      "notes": [
+        "AUTO-GENERATED skeleton from raw_links.txt. Fill functions/dependsOn/notes as the package evolves."
+      ]
+    },
+    "routes.characters": {
+      "kind": "module",
+      "path": "web-backend/routes/characters.ts",
+      "functions": [],
+      "dependsOn": [],
+      "notes": [
+        "AUTO-GENERATED skeleton from raw_links.txt. Fill functions/dependsOn/notes as the package evolves."
+      ]
+    },
+    "routes.city": {
+      "kind": "module",
+      "path": "web-backend/routes/city.ts",
+      "functions": [],
+      "dependsOn": [],
+      "notes": [
+        "AUTO-GENERATED skeleton from raw_links.txt. Fill functions/dependsOn/notes as the package evolves."
+      ]
+    },
+    "routes.garrisons": {
+      "kind": "module",
+      "path": "web-backend/routes/garrisons.ts",
+      "functions": [],
+      "dependsOn": [],
+      "notes": [
+        "AUTO-GENERATED skeleton from raw_links.txt. Fill functions/dependsOn/notes as the package evolves."
+      ]
+    },
+    "routes.heroes": {
+      "kind": "module",
+      "path": "web-backend/routes/heroes.ts",
+      "functions": [],
+      "dependsOn": [],
+      "notes": [
+        "AUTO-GENERATED skeleton from raw_links.txt. Fill functions/dependsOn/notes as the package evolves."
+      ]
+    },
+    "routes.me": {
+      "kind": "module",
+      "path": "web-backend/routes/me.ts",
+      "functions": [],
+      "dependsOn": [],
+      "notes": [
+        "AUTO-GENERATED skeleton from raw_links.txt. Fill functions/dependsOn/notes as the package evolves."
+      ]
+    },
+    "routes.missions": {
+      "kind": "module",
+      "path": "web-backend/routes/missions.ts",
+      "functions": [],
+      "dependsOn": [],
+      "notes": [
+        "AUTO-GENERATED skeleton from raw_links.txt. Fill functions/dependsOn/notes as the package evolves."
+      ]
+    },
+    "routes.policies": {
+      "kind": "module",
+      "path": "web-backend/routes/policies.ts",
+      "functions": [],
+      "dependsOn": [],
+      "notes": [
+        "AUTO-GENERATED skeleton from raw_links.txt. Fill functions/dependsOn/notes as the package evolves."
+      ]
+    },
+    "routes.resourceTierRoutes": {
+      "kind": "module",
+      "path": "web-backend/routes/resourceTierRoutes.ts",
+      "functions": [],
+      "dependsOn": [],
+      "notes": [
+        "AUTO-GENERATED skeleton from raw_links.txt. Fill functions/dependsOn/notes as the package evolves."
+      ]
+    },
+    "routes.tech": {
+      "kind": "module",
+      "path": "web-backend/routes/tech.ts",
+      "functions": [],
+      "dependsOn": [],
+      "notes": [
+        "AUTO-GENERATED skeleton from raw_links.txt. Fill functions/dependsOn/notes as the package evolves."
+      ]
+    },
+    "routes.warfront": {
+      "kind": "module",
+      "path": "web-backend/routes/warfront.ts",
+      "functions": [],
+      "dependsOn": [],
+      "notes": [
+        "AUTO-GENERATED skeleton from raw_links.txt. Fill functions/dependsOn/notes as the package evolves."
+      ]
+    },
+    "routes.workshop": {
+      "kind": "module",
+      "path": "web-backend/routes/workshop.ts",
+      "functions": [],
+      "dependsOn": [],
+      "notes": [
+        "AUTO-GENERATED skeleton from raw_links.txt. Fill functions/dependsOn/notes as the package evolves."
+      ]
+    }
+  }
+}
