@@ -6,6 +6,9 @@ import { clearSpawnPointCache } from "../../worldcore/world/SpawnPointCache";
 import { getSpawnAuthority, isSpawnEditable } from "../../worldcore/world/spawnAuthority";
 import { planBrainWave } from "../../worldcore/sim/MotherBrainWavePlanner";
 import { computeBrainWipePlan } from "../../worldcore/sim/MotherBrainWaveOps";
+import { planTownBaselines } from "../../worldcore/sim/TownBaselinePlanner";
+import type { TownBaselinePlanOptions, TownLikeSpawnRow } from "../../worldcore/sim/TownBaselinePlanner";
+import { getStationProtoIdsForTier } from "../../worldcore/world/TownTierRules";
 
 const router = Router();
 
@@ -79,6 +82,11 @@ function numOrNull(v: any): number | null {
 function strOrNull(v: any): string | null {
   const s = String(v ?? "").trim();
   return s ? s : null;
+}
+
+function strOrUndef(v: any): string | undefined {
+  const s = strOrNull(v);
+  return s === null ? undefined : s;
 }
 
 function requiredStr(v: any): string {
@@ -931,6 +939,520 @@ router.post("/scatter", async (req, res) => {
       createdSpawnIds: [],
       error: err?.message || "internal_error",
     } satisfies CloneScatterResponse);
+  }
+});
+
+
+// Town Baseline seeding endpoints (Placement Editor MVP)
+// -----------------------------------------------------
+
+type TownBaselinePlanRequest = {
+  shardId?: string;
+  townSpawn?: AdminSpawnPoint;
+  townSpawnId?: number;
+
+  // Optional override bounds/cell size.
+  // bounds format: "-8..8,-8..8" in cell coords.
+  bounds?: string;
+  cellSize?: number;
+
+  // Seed behavior
+  spawnIdMode?: "seed" | "legacy";
+  seedBase?: string;
+
+  // What to include
+  includeMailbox?: boolean;
+  includeRest?: boolean;
+  includeStations?: boolean;
+  includeGuards?: boolean;
+  includeDummies?: boolean;
+
+  guardCount?: number;
+  dummyCount?: number;
+  stationProtoIds?: string[];
+  respectTownTierStations?: boolean;
+
+  // Optional: override town tier for station gating
+  townTierOverride?: number | null;
+};
+
+type TownBaselinePlanItem = {
+  spawn: AdminSpawnPoint;
+  op: "insert" | "update" | "skip";
+  existingId?: number | null;
+};
+
+type TownBaselinePlanResponse = {
+  ok: boolean;
+  shardId: string;
+  bounds: string;
+  cellSize: number;
+  seedBase: string;
+  spawnIdMode: "seed" | "legacy";
+  includeStations: boolean;
+  respectTownTierStations: boolean;
+  townTierOverride: number | null;
+
+  wouldInsert?: number;
+  wouldUpdate?: number;
+  wouldSkip?: number;
+  skippedReadOnly?: number;
+
+  plan?: TownBaselinePlanItem[];
+  error?: string;
+};
+
+function cellBoundsAroundWorldPoint(x: number, z: number, cellSize: number, marginCells: number): CellBounds {
+  const cs = Math.max(1, Math.floor(cellSize || 64));
+  const cx = Math.floor(x / cs);
+  const cz = Math.floor(z / cs);
+  const m = Math.max(1, Math.floor(marginCells || 1));
+  return { minCx: cx - m, maxCx: cx + m, minCz: cz - m, maxCz: cz + m };
+}
+
+function cellBoundsToString(b: CellBounds): string {
+  return `${b.minCx}..${b.maxCx},${b.minCz}..${b.maxCz}`;
+}
+
+function approxEq(a: number | null, b: number | null, eps = 1e-6): boolean {
+  if (a === null || a === undefined) return b === null || b === undefined;
+  if (b === null || b === undefined) return false;
+  return Math.abs(a - b) <= eps;
+}
+
+function sameSpawnRow(existing: any, planned: AdminSpawnPoint): boolean {
+  // Compare the columns we write in apply.
+  const exType = String(existing.type ?? "");
+  const exArch = String(existing.archetype ?? "");
+  const exProto = strOrNull(existing.proto_id);
+  const exVar = strOrNull(existing.variant_id);
+  const exRegion = strOrNull(existing.region_id);
+  const exTier = numOrNull(existing.town_tier);
+
+  const exX = numOrNull(existing.x);
+  const exY = numOrNull(existing.y);
+  const exZ = numOrNull(existing.z);
+
+  return (
+    exType === planned.type &&
+    exArch === planned.archetype &&
+    exProto === strOrNull(planned.protoId) &&
+    exVar === strOrNull(planned.variantId) &&
+    exRegion === strOrNull(planned.regionId) &&
+    (exTier ?? null) === (numOrNull(planned.townTier) ?? null) &&
+    approxEq(exX, numOrNull(planned.x)) &&
+    approxEq(exY, numOrNull(planned.y)) &&
+    approxEq(exZ, numOrNull(planned.z))
+  );
+}
+
+async function loadTownSpawnFromDb(shardId: string, id: number): Promise<AdminSpawnPoint | null> {
+  const res = await db.query(
+    `
+    SELECT id, shard_id, spawn_id, type, archetype, proto_id, variant_id, x, y, z, region_id, town_tier
+    FROM spawn_points
+    WHERE shard_id = $1 AND id = $2
+    LIMIT 1
+    `,
+    [shardId, id],
+  );
+
+  const row = res.rows?.[0];
+  return row ? mapRowToAdmin(row) : null;
+}
+
+function toTownLikeRow(sp: AdminSpawnPoint, townTierOverride: number | null): TownLikeSpawnRow {
+  const x = numOrNull(sp.x);
+  const y = numOrNull(sp.y) ?? 0;
+  const z = numOrNull(sp.z);
+  if (x === null || z === null) {
+    throw new Error("townSpawn must have numeric x and z");
+  }
+
+  return {
+    shardId: requiredStr(sp.shardId),
+    spawnId: requiredStr(sp.spawnId),
+    type: requiredStr(sp.type),
+    archetype: requiredStr(sp.archetype),
+    protoId: strOrUndef(sp.protoId),
+    variantId: strOrNull(sp.variantId),
+    x,
+    y,
+    z,
+    regionId: strOrNull(sp.regionId),
+    townTier: townTierOverride != null ? townTierOverride : numOrNull(sp.townTier),
+  };
+}
+
+async function computeTownBaselinePlan(body: TownBaselinePlanRequest): Promise<{
+  shardId: string;
+  bounds: string;
+  cellSize: number;
+  seedBase: string;
+  spawnIdMode: "seed" | "legacy";
+  includeStations: boolean;
+  respectTownTierStations: boolean;
+  townTierOverride: number | null;
+  planItems: TownBaselinePlanItem[];
+  wouldInsert: number;
+  wouldUpdate: number;
+  wouldSkip: number;
+}> {
+  const shardId = strOrNull(body.shardId) ?? "prime_shard";
+  const cellSize = Number.isFinite(Number(body.cellSize)) ? Number(body.cellSize) : 64;
+
+  let townSpawn: AdminSpawnPoint | null = null;
+  if (body.townSpawn) {
+    townSpawn = body.townSpawn as any;
+  } else if (Number.isFinite(Number(body.townSpawnId))) {
+    townSpawn = await loadTownSpawnFromDb(shardId, Number(body.townSpawnId));
+  }
+
+  if (!townSpawn) {
+    throw new Error("townSpawn (or townSpawnId) is required");
+  }
+
+  // Ensure shardId is consistent.
+  townSpawn.shardId = townSpawn.shardId?.trim() || shardId;
+
+  const x = numOrNull(townSpawn.x);
+  const z = numOrNull(townSpawn.z);
+  if (x === null || z === null) {
+    throw new Error("Selected town spawn must have x and z coords");
+  }
+
+  const townTierOverride = body.townTierOverride != null ? numOrNull(body.townTierOverride) : null;
+
+  // Default bounds: around the selected town. (Big enough for radius-based placements.)
+  const defaultBounds = cellBoundsAroundWorldPoint(x, z, cellSize, 6);
+  const boundsStr = strOrNull(body.bounds) ?? cellBoundsToString(defaultBounds);
+
+  const parsedBounds = parseCellBounds(boundsStr);
+
+  const spawnIdMode = body.spawnIdMode === "legacy" ? "legacy" : "seed";
+  const seedBase = normalizeSeedBase(body.seedBase);
+
+  const includeMailbox = body.includeMailbox !== false;
+  const includeRest = body.includeRest !== false;
+  const includeStations = body.includeStations === true;
+  const includeGuards = body.includeGuards !== false;
+  const includeDummies = body.includeDummies !== false;
+
+  const guardCount = includeGuards ? clamp(finiteOr(body.guardCount, 2), 0, 50) : 0;
+  const dummyCount = includeDummies ? clamp(finiteOr(body.dummyCount, 1), 0, 50) : 0;
+
+  const stationProtoIds = Array.isArray(body.stationProtoIds) && body.stationProtoIds.length
+    ? body.stationProtoIds.map((s) => String(s)).filter(Boolean)
+    : getStationProtoIdsForTier(5);
+
+  const respectTownTierStations = body.respectTownTierStations === true;
+
+  const row = toTownLikeRow(townSpawn, townTierOverride);
+
+  const opts: TownBaselinePlanOptions = {
+    bounds: parsedBounds,
+    cellSize,
+    townTypes: ["town", "outpost"],
+    spawnIdMode,
+    seedBase,
+    seedMailbox: includeMailbox,
+    seedRest: includeRest,
+    seedStations: includeStations,
+    stationProtoIds,
+    respectTownTierStations,
+    guardCount,
+    dummyCount,
+  };
+
+  const plan = planTownBaselines([row], opts);
+  const actions = plan.actions;
+  const plannedSpawns: AdminSpawnPoint[] = actions.map((a) => {
+    const s = (a as any).spawn ?? (a as any).spawnPoint ?? null;
+    if (!s) throw new Error("Planner returned an action without spawn");
+    return {
+      id: 0,
+      shardId: shardId,
+      spawnId: String(s.spawnId ?? ""),
+      type: String(s.type ?? ""),
+      archetype: String(s.archetype ?? ""),
+      protoId: strOrNull(s.protoId),
+      variantId: strOrNull(s.variantId),
+      x: numOrNull(s.x),
+      y: numOrNull(s.y),
+      z: numOrNull(s.z),
+      regionId: strOrNull(s.regionId),
+      townTier: numOrNull((s as any).townTier),
+      authority: getSpawnAuthority(String(s.spawnId ?? "")),
+    };
+  });
+
+  // Load existing rows by spawn_id so we can classify insert/update/skip.
+  const spawnIds = plannedSpawns.map((p) => p.spawnId).filter(Boolean);
+  const existingRes = spawnIds.length
+    ? await db.query(
+        `
+        SELECT id, shard_id, spawn_id, type, archetype, proto_id, variant_id, x, y, z, region_id, town_tier
+        FROM spawn_points
+        WHERE shard_id = $1 AND spawn_id = ANY($2::text[])
+        `,
+        [shardId, spawnIds],
+      )
+    : { rows: [] };
+
+  const existingBySpawnId = new Map<string, any>();
+  for (const r of existingRes.rows ?? []) {
+    existingBySpawnId.set(String(r.spawn_id), r);
+  }
+
+  let wouldInsert = 0;
+  let wouldUpdate = 0;
+  let wouldSkip = 0;
+
+  const planItems: TownBaselinePlanItem[] = plannedSpawns.map((sp) => {
+    const ex = existingBySpawnId.get(sp.spawnId);
+    if (!ex) {
+      wouldInsert += 1;
+      return { spawn: sp, op: "insert" };
+    }
+
+    if (sameSpawnRow(ex, sp)) {
+      wouldSkip += 1;
+      return { spawn: sp, op: "skip", existingId: Number(ex.id) || null };
+    }
+
+    wouldUpdate += 1;
+    return { spawn: sp, op: "update", existingId: Number(ex.id) || null };
+  });
+
+  return {
+    shardId,
+    bounds: boundsStr,
+    cellSize,
+    seedBase,
+    spawnIdMode,
+    includeStations,
+    respectTownTierStations,
+    townTierOverride,
+    planItems,
+    wouldInsert,
+    wouldUpdate,
+    wouldSkip,
+  };
+}
+
+// POST /api/admin/spawn_points/town_baseline/plan
+// Body: TownBaselinePlanRequest
+router.post("/town_baseline/plan", async (req, res) => {
+  const body: TownBaselinePlanRequest = (req.body ?? {}) as any;
+
+  try {
+    const plan = await computeTownBaselinePlan(body);
+
+    const response: TownBaselinePlanResponse = {
+      ok: true,
+      shardId: plan.shardId,
+      bounds: plan.bounds,
+      cellSize: plan.cellSize,
+      seedBase: plan.seedBase,
+      spawnIdMode: plan.spawnIdMode,
+      includeStations: plan.includeStations,
+      respectTownTierStations: plan.respectTownTierStations,
+      townTierOverride: plan.townTierOverride,
+      wouldInsert: plan.wouldInsert,
+      wouldUpdate: plan.wouldUpdate,
+      wouldSkip: plan.wouldSkip,
+      plan: plan.planItems,
+    };
+
+    return res.json(response);
+  } catch (err: any) {
+    const shardId = strOrNull(body.shardId) ?? "prime_shard";
+    const response: TownBaselinePlanResponse = {
+      ok: false,
+      shardId,
+      bounds: strOrNull(body.bounds) ?? "",
+      cellSize: Number.isFinite(Number(body.cellSize)) ? Number(body.cellSize) : 64,
+      seedBase: normalizeSeedBase(body.seedBase),
+      spawnIdMode: body.spawnIdMode === "legacy" ? "legacy" : "seed",
+      includeStations: body.includeStations === true,
+      respectTownTierStations: body.respectTownTierStations === true,
+      townTierOverride: body.townTierOverride != null ? numOrNull(body.townTierOverride) : null,
+      error: String(err?.message ?? "internal_error"),
+    };
+
+    return res.status(400).json(response);
+  }
+});
+
+// POST /api/admin/spawn_points/town_baseline/apply
+// Body: TownBaselinePlanRequest & { commit?: boolean }
+router.post("/town_baseline/apply", async (req, res) => {
+  const body: TownBaselinePlanRequest & { commit?: boolean } = (req.body ?? {}) as any;
+
+  const commit = body.commit === true;
+
+  try {
+    const plan = await computeTownBaselinePlan(body);
+
+    if (!commit) {
+      const response: TownBaselinePlanResponse = {
+        ok: true,
+        shardId: plan.shardId,
+        bounds: plan.bounds,
+        cellSize: plan.cellSize,
+        seedBase: plan.seedBase,
+        spawnIdMode: plan.spawnIdMode,
+        includeStations: plan.includeStations,
+        respectTownTierStations: plan.respectTownTierStations,
+        townTierOverride: plan.townTierOverride,
+        wouldInsert: plan.wouldInsert,
+        wouldUpdate: plan.wouldUpdate,
+        wouldSkip: plan.wouldSkip,
+        plan: plan.planItems,
+      };
+      return res.json(response);
+    }
+
+    let inserted = 0;
+    let updated = 0;
+    let skipped = 0;
+    let skippedReadOnly = 0;
+
+    await db.query("BEGIN");
+    try {
+      for (const item of plan.planItems) {
+        const sp = item.spawn;
+        const sid = String(sp.spawnId ?? "");
+
+        // Safety: never mutate brain-owned points.
+        if (!isSpawnEditable(sid)) {
+          skippedReadOnly += 1;
+          continue;
+        }
+
+        // Lock existing row by spawnId.
+        const lockRes = await db.query(
+          `
+          SELECT id, shard_id, spawn_id, type, archetype, proto_id, variant_id, x, y, z, region_id, town_tier
+          FROM spawn_points
+          WHERE shard_id = $1 AND spawn_id = $2
+          LIMIT 1
+          FOR UPDATE
+          `,
+          [plan.shardId, sid],
+        );
+
+        const ex = lockRes.rows?.[0];
+        if (!ex) {
+          await db.query(
+            `
+            INSERT INTO spawn_points
+              (shard_id, spawn_id, type, archetype, proto_id, variant_id, x, y, z, region_id, town_tier)
+            VALUES
+              ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+            `,
+            [
+              plan.shardId,
+              sid,
+              sp.type,
+              sp.archetype,
+              strOrNull(sp.protoId),
+              strOrNull(sp.variantId),
+              numOrNull(sp.x),
+              numOrNull(sp.y) ?? 0,
+              numOrNull(sp.z),
+              strOrNull(sp.regionId),
+              numOrNull(sp.townTier),
+            ],
+          );
+          inserted += 1;
+          continue;
+        }
+
+        if (sameSpawnRow(ex, sp)) {
+          skipped += 1;
+          continue;
+        }
+
+        await db.query(
+          `
+          UPDATE spawn_points
+          SET type = $3,
+              archetype = $4,
+              proto_id = $5,
+              variant_id = $6,
+              x = $7,
+              y = $8,
+              z = $9,
+              region_id = $10,
+              town_tier = $11
+          WHERE shard_id = $1 AND id = $2
+          `,
+          [
+            plan.shardId,
+            Number(ex.id),
+            sp.type,
+            sp.archetype,
+            strOrNull(sp.protoId),
+            strOrNull(sp.variantId),
+            numOrNull(sp.x),
+            numOrNull(sp.y) ?? 0,
+            numOrNull(sp.z),
+            strOrNull(sp.regionId),
+            numOrNull(sp.townTier),
+          ],
+        );
+        updated += 1;
+      }
+
+      await db.query("COMMIT");
+    } catch (err) {
+      await db.query("ROLLBACK");
+      throw err;
+    }
+
+    clearSpawnPointCache();
+
+    const response: TownBaselinePlanResponse = {
+      ok: true,
+      shardId: plan.shardId,
+      bounds: plan.bounds,
+      cellSize: plan.cellSize,
+      seedBase: plan.seedBase,
+      spawnIdMode: plan.spawnIdMode,
+      includeStations: plan.includeStations,
+      respectTownTierStations: plan.respectTownTierStations,
+      townTierOverride: plan.townTierOverride,
+      wouldInsert: inserted,
+      wouldUpdate: updated,
+      wouldSkip: skipped,
+      skippedReadOnly,
+      plan: plan.planItems,
+    };
+
+    return res.json(response);
+  } catch (err: any) {
+    try {
+      await db.query("ROLLBACK");
+    } catch {
+      // ignore
+    }
+
+    const shardId = strOrNull(body.shardId) ?? "prime_shard";
+    const response: TownBaselinePlanResponse = {
+      ok: false,
+      shardId,
+      bounds: strOrNull(body.bounds) ?? "",
+      cellSize: Number.isFinite(Number(body.cellSize)) ? Number(body.cellSize) : 64,
+      seedBase: normalizeSeedBase(body.seedBase),
+      spawnIdMode: body.spawnIdMode === "legacy" ? "legacy" : "seed",
+      includeStations: body.includeStations === true,
+      respectTownTierStations: body.respectTownTierStations === true,
+      townTierOverride: body.townTierOverride != null ? numOrNull(body.townTierOverride) : null,
+      error: String(err?.message ?? "internal_error"),
+    };
+
+    return res.status(500).json(response);
   }
 });
 

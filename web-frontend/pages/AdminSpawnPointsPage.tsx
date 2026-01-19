@@ -10,7 +10,7 @@ const SPAWN_UI_LS_KEY = 'adminSpawnPointsPage.ui.v1';
  type SpawnUiSaved = {
   shardId?: string;
   activeTab?: 'browse' | 'tools' | 'brain';
-  toolsSubtab?: 'bulk' | 'paint';
+  toolsSubtab?: 'bulk' | 'paint' | 'baseline';
   loadMode?: 'region' | 'xy';
   regionId?: string;
   queryX?: number;
@@ -23,6 +23,21 @@ const SPAWN_UI_LS_KEY = 'adminSpawnPointsPage.ui.v1';
   filterSpawnId?: string;
   limit?: number;
   recommendedOrder?: boolean;
+
+  // Tools: town baseline
+  baselineSeedBase?: string;
+  baselineSpawnIdMode?: "seed" | "legacy";
+  baselineBounds?: string;
+  baselineCellSize?: number;
+  baselineIncludeMailbox?: boolean;
+  baselineIncludeRest?: boolean;
+  baselineIncludeStations?: boolean;
+  baselineRespectTierStations?: boolean;
+  baselineIncludeGuards?: boolean;
+  baselineGuardCount?: number;
+  baselineIncludeDummies?: boolean;
+  baselineDummyCount?: number;
+  baselineTownTierOverride?: string;
 };
 
 function safeLoadSpawnUiState(): SpawnUiSaved {
@@ -74,6 +89,36 @@ type AdminSpawnPoint = {
   townTier: number | null;
 
   authority?: SpawnAuthority;
+};
+
+
+
+// Town Baseline seeding (Placement Editor MVP)
+
+type TownBaselinePlanItem = {
+  spawn: AdminSpawnPoint;
+  op: "insert" | "update" | "skip";
+  existingId?: number | null;
+};
+
+type TownBaselinePlanResponse = {
+  ok: boolean;
+  shardId: string;
+  bounds: string;
+  cellSize: number;
+  seedBase: string;
+  spawnIdMode: "seed" | "legacy";
+  includeStations: boolean;
+  respectTownTierStations: boolean;
+  townTierOverride: number | null;
+
+  wouldInsert?: number;
+  wouldUpdate?: number;
+  wouldSkip?: number;
+  skippedReadOnly?: number;
+
+  plan?: TownBaselinePlanItem[];
+  error?: string;
 };
 
 // Mother Brain admin responses (kept structural on purpose)
@@ -235,7 +280,7 @@ export function AdminSpawnPointsPage() {
 
   const [shardId, setShardId] = useState(savedUi.shardId || "prime_shard");
   const [activeTab, setActiveTab] = useState<AdminTab>((savedUi.activeTab as AdminTab) || "browse");
-  const [toolsSubtab, setToolsSubtab] = useState<"bulk" | "paint">(savedUi.toolsSubtab || "bulk");
+  const [toolsSubtab, setToolsSubtab] = useState<"bulk" | "paint" | "baseline">((savedUi.toolsSubtab as any) || "bulk");
 
   // Load controls
   const [loadMode, setLoadMode] = useState<LoadMode>((savedUi.loadMode as LoadMode) || "region");
@@ -288,6 +333,24 @@ export function AdminSpawnPointsPage() {
   const [scatterSeedBase, setScatterSeedBase] = useState("seed:editor");
   const [scatterResult, setScatterResult] = useState<any>(null);
   const [scatterWorking, setScatterWorking] = useState(false);
+  
+  // Town Baseline (System 4 MVP)
+  const [baselineSeedBase, setBaselineSeedBase] = useState(savedUi.baselineSeedBase || "seed:town_baseline");
+  const [baselineSpawnIdMode, setBaselineSpawnIdMode] = useState<"seed" | "legacy">((savedUi.baselineSpawnIdMode as any) || "seed");
+  const [baselineBounds, setBaselineBounds] = useState(savedUi.baselineBounds || "");
+  const [baselineCellSize, setBaselineCellSize] = useState(savedUi.baselineCellSize ?? 64);
+  const [baselineIncludeMailbox, setBaselineIncludeMailbox] = useState(savedUi.baselineIncludeMailbox ?? true);
+  const [baselineIncludeRest, setBaselineIncludeRest] = useState(savedUi.baselineIncludeRest ?? true);
+  const [baselineIncludeStations, setBaselineIncludeStations] = useState(savedUi.baselineIncludeStations ?? false);
+  const [baselineRespectTierStations, setBaselineRespectTierStations] = useState(savedUi.baselineRespectTierStations ?? true);
+  const [baselineIncludeGuards, setBaselineIncludeGuards] = useState(savedUi.baselineIncludeGuards ?? true);
+  const [baselineGuardCount, setBaselineGuardCount] = useState(savedUi.baselineGuardCount ?? 2);
+  const [baselineIncludeDummies, setBaselineIncludeDummies] = useState(savedUi.baselineIncludeDummies ?? true);
+  const [baselineDummyCount, setBaselineDummyCount] = useState(savedUi.baselineDummyCount ?? 1);
+  const [baselineTownTierOverride, setBaselineTownTierOverride] = useState(savedUi.baselineTownTierOverride || "");
+  const [baselineWorking, setBaselineWorking] = useState(false);
+  const [baselineResult, setBaselineResult] = useState<TownBaselinePlanResponse | null>(null);
+
 
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -525,6 +588,20 @@ export function AdminSpawnPointsPage() {
       filterSpawnId,
       limit,
       recommendedOrder,
+
+      baselineSeedBase,
+      baselineSpawnIdMode,
+      baselineBounds,
+      baselineCellSize,
+      baselineIncludeMailbox,
+      baselineIncludeRest,
+      baselineIncludeStations,
+      baselineRespectTierStations,
+      baselineIncludeGuards,
+      baselineGuardCount,
+      baselineIncludeDummies,
+      baselineDummyCount,
+      baselineTownTierOverride,
     });
   }, [
     shardId,
@@ -542,6 +619,20 @@ export function AdminSpawnPointsPage() {
     filterSpawnId,
     limit,
     recommendedOrder,
+
+    baselineSeedBase,
+    baselineSpawnIdMode,
+    baselineBounds,
+    baselineCellSize,
+    baselineIncludeMailbox,
+    baselineIncludeRest,
+    baselineIncludeStations,
+    baselineRespectTierStations,
+    baselineIncludeGuards,
+    baselineGuardCount,
+    baselineIncludeDummies,
+    baselineDummyCount,
+    baselineTownTierOverride,
   ]);
 
   const startNew = () => {
@@ -847,6 +938,65 @@ export function AdminSpawnPointsPage() {
       setError(err.message || String(err));
     } finally {
       setScatterWorking(false);
+    }
+  };
+
+
+
+  const runTownBaseline = async (commit: boolean) => {
+    setBaselineWorking(true);
+    setError(null);
+
+    try {
+      if (!form) throw new Error("Select a town/outpost spawn point in the list first.");
+      if (form.x == null || form.z == null) throw new Error("Selected spawn is missing X/Z coords.");
+
+      const shard = shardId.trim() || "prime_shard";
+      const url = `${ADMIN_API_BASE}/api/admin/spawn_points/town_baseline/${commit ? "apply" : "plan"}`;
+
+      const boundsStr = baselineBounds.trim();
+      const tierOverrideRaw = baselineTownTierOverride.trim();
+      const tierOverride = tierOverrideRaw ? Number(tierOverrideRaw) : null;
+
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          shardId: shard,
+          townSpawn: { ...form, shardId: shard },
+          bounds: boundsStr ? boundsStr : undefined,
+          cellSize: Number(baselineCellSize) || 64,
+          seedBase: baselineSeedBase,
+          spawnIdMode: baselineSpawnIdMode,
+          includeMailbox: !!baselineIncludeMailbox,
+          includeRest: !!baselineIncludeRest,
+          includeStations: !!baselineIncludeStations,
+          respectTownTierStations: !!baselineRespectTierStations,
+          includeGuards: !!baselineIncludeGuards,
+          guardCount: Math.max(0, Number(baselineGuardCount) || 0),
+          includeDummies: !!baselineIncludeDummies,
+          dummyCount: Math.max(0, Number(baselineDummyCount) || 0),
+          townTierOverride: tierOverride,
+          commit: !!commit,
+        }),
+      });
+
+      if (!res.ok) throw new Error(`Town baseline ${commit ? "apply" : "plan"} failed (HTTP ${res.status})`);
+      const data: TownBaselinePlanResponse = await res.json();
+      if (!data.ok) throw new Error(data.error || "Town baseline failed");
+
+      setBaselineResult(data);
+
+      // If server computed bounds (auto), reflect it for convenience.
+      if (!boundsStr && data.bounds) setBaselineBounds(data.bounds);
+
+      if (commit) {
+        await load();
+      }
+    } catch (err: any) {
+      setError(err.message || String(err));
+    } finally {
+      setBaselineWorking(false);
     }
   };
 
@@ -1258,6 +1408,19 @@ export function AdminSpawnPointsPage() {
                 >
                   Clone / Scatter
                 </button>
+                <button
+                  onClick={() => setToolsSubtab("baseline")}
+                  style={{
+                    padding: "6px 10px",
+                    borderRadius: 8,
+                    border: toolsSubtab === "baseline" ? "2px solid #4caf50" : "1px solid #ccc",
+                    background: "white",
+                    cursor: "pointer",
+                    fontWeight: toolsSubtab === "baseline" ? 700 : 500,
+                  }}
+                >
+                  Town Baseline
+                </button>
               </div>
           {toolsSubtab === "bulk" ? (
             <>
@@ -1496,6 +1659,108 @@ export function AdminSpawnPointsPage() {
           </div>
 
 
+            </>
+          ) : null}
+
+          {toolsSubtab === "baseline" ? (
+            <>
+              <div style={{ border: "1px solid #333", borderRadius: 8, padding: 12, marginBottom: 12 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                  <strong>Town Baseline Seeder</strong>
+                  <span style={{ fontSize: 12, opacity: 0.8 }}>Plan/apply mailboxes, rest, guards (and optional stations) around a selected town/outpost.</span>
+                </div>
+
+                <div style={{ fontSize: 12, opacity: 0.85, marginBottom: 10, lineHeight: 1.4 }}>
+                  Select a <b>town</b> or <b>outpost</b> spawn on the left, then plan/apply a deterministic baseline using <code>seed:</code> spawnIds.
+                </div>
+
+                <div style={{ display: "grid", gap: 10 }}>
+                  <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end" }}>
+                    <label style={{ display: "grid", gap: 4 }}>
+                      <span style={{ opacity: 0.8 }}>Seed base</span>
+                      <input style={{ width: 200 }} value={baselineSeedBase} onChange={(e) => setBaselineSeedBase(e.target.value)} placeholder="seed:town_baseline" />
+                    </label>
+
+                    <label style={{ display: "grid", gap: 4 }}>
+                      <span style={{ opacity: 0.8 }}>SpawnId mode</span>
+                      <select style={{ width: 140 }} value={baselineSpawnIdMode} onChange={(e) => setBaselineSpawnIdMode(e.target.value as any)}>
+                        <option value="seed">seed (editable)</option>
+                        <option value="legacy">legacy (spawnId fallback)</option>
+                      </select>
+                    </label>
+
+                    <label style={{ display: "grid", gap: 4 }}>
+                      <span style={{ opacity: 0.8 }}>Cell size</span>
+                      <input type="number" style={{ width: 110 }} value={baselineCellSize} onChange={(e) => setBaselineCellSize(Number(e.target.value) || 0)} />
+                    </label>
+
+                    <label style={{ display: "grid", gap: 4 }}>
+                      <span style={{ opacity: 0.8 }}>Bounds (cells)</span>
+                      <input style={{ width: 160 }} value={baselineBounds} onChange={(e) => setBaselineBounds(e.target.value)} placeholder="auto" />
+                    </label>
+
+                    <label style={{ display: "grid", gap: 4 }}>
+                      <span style={{ opacity: 0.8 }}>Tier override</span>
+                      <input style={{ width: 110 }} value={baselineTownTierOverride} onChange={(e) => setBaselineTownTierOverride(e.target.value)} placeholder="(opt)" />
+                    </label>
+                  </div>
+
+                  <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
+                    <label style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                      <input type="checkbox" checked={baselineIncludeMailbox} onChange={(e) => setBaselineIncludeMailbox(e.target.checked)} />
+                      Mailbox
+                    </label>
+                    <label style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                      <input type="checkbox" checked={baselineIncludeRest} onChange={(e) => setBaselineIncludeRest(e.target.checked)} />
+                      Rest
+                    </label>
+                    <label style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                      <input type="checkbox" checked={baselineIncludeGuards} onChange={(e) => setBaselineIncludeGuards(e.target.checked)} />
+                      Guards
+                    </label>
+                    <label style={{ display: "grid", gap: 4 }}>
+                      <span style={{ opacity: 0.8 }}>Guard count</span>
+                      <input type="number" style={{ width: 110 }} value={baselineGuardCount} onChange={(e) => setBaselineGuardCount(Number(e.target.value) || 0)} />
+                    </label>
+
+                    <label style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                      <input type="checkbox" checked={baselineIncludeDummies} onChange={(e) => setBaselineIncludeDummies(e.target.checked)} />
+                      Dummies
+                    </label>
+                    <label style={{ display: "grid", gap: 4 }}>
+                      <span style={{ opacity: 0.8 }}>Dummy count</span>
+                      <input type="number" style={{ width: 110 }} value={baselineDummyCount} onChange={(e) => setBaselineDummyCount(Number(e.target.value) || 0)} />
+                    </label>
+
+                    <label style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                      <input type="checkbox" checked={baselineIncludeStations} onChange={(e) => setBaselineIncludeStations(e.target.checked)} />
+                      Stations
+                    </label>
+
+                    {baselineIncludeStations ? (
+                      <label style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                        <input type="checkbox" checked={baselineRespectTierStations} onChange={(e) => setBaselineRespectTierStations(e.target.checked)} />
+                        Respect tier stations
+                      </label>
+                    ) : null}
+                  </div>
+
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                    <button disabled={baselineWorking} onClick={() => void runTownBaseline(false)}>
+                      {baselineWorking ? "Working..." : "Plan (dry-run)"}
+                    </button>
+                    <button disabled={baselineWorking} onClick={() => void runTownBaseline(true)} style={{ border: "1px solid #b71c1c" }}>
+                      {baselineWorking ? "Working..." : "Commit apply"}
+                    </button>
+                  </div>
+
+                  {baselineResult ? (
+                    <pre style={{ marginTop: 10, background: "#111", color: "#eee", border: "1px solid #333", padding: 8, borderRadius: 6, overflow: "auto" }}>
+                      {JSON.stringify(baselineResult, null, 2)}
+                    </pre>
+                  ) : null}
+                </div>
+              </div>
             </>
           ) : null}
 

@@ -45,7 +45,7 @@
         "DOM mount to #root"
       ],
       "notes": [
-        "Vite entrypoint; renders <App/>." 
+        "Vite entrypoint; renders <App/>."
       ]
     },
     "web-frontend.ui.app": {
@@ -80,7 +80,6 @@
         "City-builder pages (MePage/OperationsPage) exist but are not currently routed from App.tsx."
       ]
     },
-
     "web-frontend.lib.api": {
       "kind": "module",
       "service": "api.client",
@@ -97,10 +96,9 @@
       "owns": [],
       "notes": [
         "Used by MePage and OperationsPage (city-builder/operations UI).",
-        "Caution: this package also contains a .env file with server secrets; Vite only exposes VITE_* at runtime, but secrets in-repo are still a security risk." 
+        "Caution: this package also contains a .env file with server secrets; Vite only exposes VITE_* at runtime, but secrets in-repo are still a security risk."
       ]
     },
-
     "web-frontend.pages.adminQuests": {
       "kind": "ui",
       "service": "admin.quests",
@@ -121,10 +119,9 @@
       ],
       "notes": [
         "Uses a hard-coded ADMIN_API_BASE (http://192.168.0.74:4000) — should be replaced with a hostname-derived URL or VITE_* config.",
-        "Endpoints: GET /api/admin/quests; POST /api/admin/quests; then refreshes list." 
+        "Endpoints: GET /api/admin/quests; POST /api/admin/quests; then refreshes list."
       ]
     },
-
     "web-frontend.pages.adminNpcs": {
       "kind": "ui",
       "service": "admin.npcs",
@@ -142,10 +139,9 @@
       ],
       "notes": [
         "Uses hard-coded ADMIN_API_BASE (http://192.168.0.74:4000).",
-        "Endpoints: GET /api/admin/npcs; POST /api/admin/npcs; then refreshes list." 
+        "Endpoints: GET /api/admin/npcs; POST /api/admin/npcs; then refreshes list."
       ]
     },
-
     "web-frontend.pages.adminItems": {
       "kind": "ui",
       "service": "admin.items",
@@ -163,10 +159,9 @@
       ],
       "notes": [
         "Uses hard-coded ADMIN_API_BASE (http://192.168.0.74:4000).",
-        "Endpoints: GET /api/admin/items; POST /api/admin/items; then refreshes list." 
+        "Endpoints: GET /api/admin/items; POST /api/admin/items; then refreshes list."
       ]
     },
-
     "web-frontend.pages.adminSpawnPoints": {
       "kind": "ui",
       "service": "admin.spawnPoints",
@@ -178,7 +173,8 @@
       "provides": [
         "Spawn Points Editor (v1): browse/edit",
         "Batch tools: bulk delete/move, clone, scatter",
-        "Mother Brain: status, list, wave (plan/commit), wipe (plan/commit)"
+        "Mother Brain: status, list, wave (plan/commit), wipe (plan/commit)",
+        "Town Baseline tool: plan/apply deterministic town/outpost services around a selected town spawn (mailbox/rest/guards/dummies/stations)"
       ],
       "owns": [
         "UI persistence in localStorage (adminSpawnPointsPage.ui.v1)",
@@ -189,10 +185,10 @@
         "Uses hard-coded ADMIN_API_BASE (http://192.168.0.74:4000).",
         "Endpoints: GET /api/admin/spawn_points?..., POST /api/admin/spawn_points (create), PUT /api/admin/spawn_points/:id, bulk_delete, bulk_move, clone, scatter.",
         "Mother Brain endpoints: GET /api/admin/spawn_points/mother_brain/status, POST /mother_brain/wave, POST /mother_brain/wipe.",
-        "UI prints JSON responses in <pre>; styling was recently improved to avoid unreadable dark output."
+        "UI prints JSON responses in <pre>; styling was recently improved to avoid unreadable dark output.",
+        "Town Baseline endpoints: POST /api/admin/spawn_points/town_baseline/plan and /town_baseline/apply."
       ]
     },
-
     "web-frontend.pages.me": {
       "kind": "ui",
       "service": "cityBuilder.me",
@@ -213,10 +209,9 @@
       ],
       "notes": [
         "Not currently routed from App.tsx.",
-        "Endpoints used include: /api/me, /api/tech/start, /api/missions/start, /api/missions/complete, /api/missions/refresh_region, /api/buildings/construct, /api/buildings/upgrade, /api/city/tier-up, /api/warfront/assault, /api/armies/raise, /api/armies/reinforce, /api/garrisons/strike, /api/heroes/equip_attachment, /api/heroes/recruit, /api/workshop/craft, /api/workshop/collect, /api/policies/toggle." 
+        "Endpoints used include: /api/me, /api/tech/start, /api/missions/start, /api/missions/complete, /api/missions/refresh_region, /api/buildings/construct, /api/buildings/upgrade, /api/city/tier-up, /api/warfront/assault, /api/armies/raise, /api/armies/reinforce, /api/garrisons/strike, /api/heroes/equip_attachment, /api/heroes/recruit, /api/workshop/craft, /api/workshop/collect, /api/policies/toggle."
       ]
     },
-
     "web-frontend.pages.operations": {
       "kind": "ui",
       "service": "cityBuilder.operations",
@@ -238,7 +233,6 @@
         "Uses fetchMe() (GET /api/me)."
       ]
     },
-
     "web-frontend.config.vite": {
       "kind": "module",
       "service": "vite.config",
@@ -254,7 +248,6 @@
       "owns": [],
       "notes": []
     },
-
     "web-frontend.config.ts": {
       "kind": "data",
       "service": "tsconfig",
@@ -269,7 +262,6 @@
       "owns": [],
       "notes": []
     },
-
     "web-frontend.meta.envD": {
       "kind": "module",
       "service": "vite.env",
@@ -284,7 +276,6 @@
       "owns": [],
       "notes": []
     },
-
     "web-frontend.meta.package": {
       "kind": "data",
       "service": "npm.package",
@@ -299,7 +290,7 @@
       ],
       "owns": [],
       "notes": [
-        "axios is listed as a dependency but is not currently used in the checked-in TSX/TS files." 
+        "axios is listed as a dependency but is not currently used in the checked-in TSX/TS files."
       ]
     }
   },

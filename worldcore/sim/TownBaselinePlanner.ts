@@ -13,12 +13,17 @@
 // -----------------------------------------------------------------------------
 
 import type { PlaceSpawnAction } from "./BrainActions";
-import type { Bounds } from "./SimGrid";
 
 import {
   getStationProtoIdsForTier,
   tryInferTownTierFromSpawn,
 } from "../world/TownTierRules";
+
+// NOTE: We intentionally use a *structural* bounds type here (cell-coordinate bounds).
+// Some parts of the codebase may brand/nominally-type bounds in SimGrid.
+// TownBaselinePlanner only needs these four fields, so keeping this structural
+// avoids type friction when called from other packages (e.g., web-backend).
+export type CellBounds = { minCx: number; maxCx: number; minCz: number; maxCz: number };
 
 // NOTE: simBrain passes through optional DB metadata (archetype/proto/variant/tier).
 // Keep these optional so older callers (or tests) can provide just the core fields.
@@ -40,28 +45,30 @@ export type TownLikeSpawnRow = {
   townTier?: number | null;
 };
 
+export type TownBaselineSpawnIdMode = "legacy" | "seed";
+
 export type TownBaselinePlanOptions = {
-  bounds: Bounds;
+  bounds: CellBounds;
   cellSize: number;
   townTypes: string[];
 
   // Mailbox baseline (POI placeholder)
   seedMailbox: boolean;
-  mailboxType: string; // default: "mailbox"
-  mailboxProtoId: string; // default: "mailbox_basic"
-  mailboxRadius: number; // default: 8
+  mailboxType?: string; // default: "mailbox"
+  mailboxProtoId?: string; // default: "mailbox_basic"
+  mailboxRadius?: number; // default: 8
 
   // Rest baseline (POI placeholder)
   seedRest: boolean;
-  restType: string; // default: "rest"
-  restProtoId: string; // default: "rest_spot_basic"
-  restRadius: number; // default: 10
+  restType?: string; // default: "rest"
+  restProtoId?: string; // default: "rest_spot_basic"
+  restRadius?: number; // default: 10
 
   // Crafting stations baseline (POI placeholders)
   seedStations: boolean;
-  stationType: string; // default: "station"
+  stationType?: string; // default: "station"
   stationProtoIds: string[]; // e.g. ["station_forge","station_alchemy","station_oven","station_mill"]
-  stationRadius: number; // default: 9
+  stationRadius?: number; // default: 9
 
   // Optional: force a tier for station gating (dev/testing)
   townTierOverride?: number | null;
@@ -71,13 +78,22 @@ export type TownBaselinePlanOptions = {
 
   // Guard baseline (real NPC spawns)
   guardCount: number; // default: 2
-  guardProtoId: string; // default: "town_guard"
-  guardRadius: number; // default: 12
+  guardProtoId?: string; // default: "town_guard"
+  guardRadius?: number; // default: 12
 
   // Training dummy baseline (DPS testing)
   dummyCount: number; // default: 1
-  dummyProtoId: string; // default: "training_dummy_big"
-  dummyRadius: number; // default: 10
+  dummyProtoId?: string; // default: "training_dummy_big"
+  dummyRadius?: number; // default: 10
+
+  // Spawn id strategy:
+  // - "legacy": historic svc_* ids (kept for simBrain/backwards compatibility)
+  // - "seed": seed:* ids suitable for web placement editor ownership
+  spawnIdMode?: TownBaselineSpawnIdMode;
+
+  // Only used when spawnIdMode="seed".
+  // Example: "seed:town_baseline" => seed:town_baseline:<townKey>:<kindKey>
+  seedBase?: string;
 };
 
 export type TownBaselinePlanResult = {
@@ -104,7 +120,7 @@ function hash01(seed: string): number {
   return hash32(seed) / 0x100000000;
 }
 
-function polarOffset(seed: string, radius: number): { dx: number; dz: number } {
+function polarOffset(seed: string, radius?: number): { dx: number; dz: number } {
   const r = Math.max(0, Number(radius ?? 0));
   const a = hash01(seed) * Math.PI * 2;
   return {
@@ -129,7 +145,7 @@ function round2(n: number): number {
   return Math.round((n + Number.EPSILON) * 100) / 100;
 }
 
-function inWorldBounds(x: number, z: number, bounds: Bounds, cellSize: number): boolean {
+function inWorldBounds(x: number, z: number, bounds: CellBounds, cellSize: number): boolean {
   const cs = Math.max(1, Math.floor(cellSize || 64));
   const minX = bounds.minCx * cs;
   const maxX = (bounds.maxCx + 1) * cs;
@@ -149,9 +165,55 @@ function sanitizeId(s: string): string {
   );
 }
 
-function makeSpawnId(prefix: string, townSpawnId: string): string {
-  // Stable + readable + low collision risk
+function sanitizeSeedToken(s: string, maxLen: number): string {
+  const cleaned = String(s ?? "")
+    .trim()
+    .toLowerCase()
+    // no colon inside tokens; colon separates namespaces
+    .replace(/[^a-z0-9_.-]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+  const clipped = cleaned.slice(0, Math.max(1, Math.floor(maxLen || 32)));
+  return clipped || "x";
+}
+
+function resolveSpawnIdMode(opts: TownBaselinePlanOptions): TownBaselineSpawnIdMode {
+  return opts.spawnIdMode === "seed" ? "seed" : "legacy";
+}
+
+function resolveSeedBase(opts: TownBaselinePlanOptions): string {
+  const raw = String(opts.seedBase ?? "seed:town_baseline").trim();
+  if (!raw) return "seed:town_baseline";
+
+  // Never allow brain:* as a seed base (that would make tools treat these as read-only).
+  if (raw.toLowerCase().startsWith("brain:")) return "seed:town_baseline";
+
+  // If user forgot the namespace, help them.
+  if (!raw.includes(":")) return `seed:${sanitizeSeedToken(raw, 24)}`;
+
+  return raw;
+}
+
+function makeSpawnIdLegacy(prefix: string, townSpawnId: string): string {
+  // Stable + readable + low collision risk (legacy format)
   return `${prefix}_${townSpawnId}`;
+}
+
+function makeSpawnIdSeed(opts: TownBaselinePlanOptions, townSpawnId: string, kind: string): string {
+  const base = resolveSeedBase(opts);
+  const townKey = sanitizeSeedToken(townSpawnId, 48);
+  const kindKey = sanitizeSeedToken(kind, 64);
+  return `${base}:${townKey}:${kindKey}`;
+}
+
+function makeSpawnId(
+  opts: TownBaselinePlanOptions,
+  legacyPrefix: string,
+  townSpawnId: string,
+  seedKind: string,
+): string {
+  const mode = resolveSpawnIdMode(opts);
+  if (mode === "seed") return makeSpawnIdSeed(opts, townSpawnId, seedKind);
+  return makeSpawnIdLegacy(legacyPrefix, townSpawnId);
 }
 
 function intersectInOrder(base: string[], allowed: Set<string>): string[] {
@@ -223,7 +285,7 @@ export function planTownBaselines(
           kind: "place_spawn",
           spawn: {
             shardId,
-            spawnId: makeSpawnId("svc_mail", townSpawnId),
+            spawnId: makeSpawnId(opts, "svc_mail", townSpawnId, "mailbox"),
             type: norm(opts.mailboxType || "mailbox"),
             archetype: "mailbox",
             protoId: norm(opts.mailboxProtoId || "mailbox_basic"),
@@ -248,7 +310,7 @@ export function planTownBaselines(
           kind: "place_spawn",
           spawn: {
             shardId,
-            spawnId: makeSpawnId("svc_rest", townSpawnId),
+            spawnId: makeSpawnId(opts, "svc_rest", townSpawnId, "rest"),
             type: norm(opts.restType || "rest"),
             archetype: "rest",
             protoId: norm(opts.restProtoId || "rest_spot_basic"),
@@ -276,11 +338,14 @@ export function planTownBaselines(
 
         if (!inWorldBounds(x, z, opts.bounds, opts.cellSize)) continue;
 
+        const legacyPrefix = `stn_${sanitizeId(pid)}`;
+        const seedKind = `station_${sanitizeId(pid)}`;
+
         actions.push({
           kind: "place_spawn",
           spawn: {
             shardId,
-            spawnId: makeSpawnId(`stn_${sanitizeId(pid)}`, townSpawnId),
+            spawnId: makeSpawnId(opts, legacyPrefix, townSpawnId, seedKind),
             type: stationType,
             archetype: "station",
             protoId: pid,
@@ -307,11 +372,14 @@ export function planTownBaselines(
 
         if (!inWorldBounds(x, z, opts.bounds, opts.cellSize)) continue;
 
+        const legacyPrefix = `svc_guard${i + 1}`;
+        const seedKind = `guard_${i + 1}`;
+
         actions.push({
           kind: "place_spawn",
           spawn: {
             shardId,
-            spawnId: makeSpawnId(`svc_guard${i + 1}`, townSpawnId),
+            spawnId: makeSpawnId(opts, legacyPrefix, townSpawnId, seedKind),
             type: "npc",
             archetype: guardProto,
             protoId: guardProto,
@@ -338,11 +406,14 @@ export function planTownBaselines(
 
         if (!inWorldBounds(x, z, opts.bounds, opts.cellSize)) continue;
 
+        const legacyPrefix = `svc_dummy${i + 1}`;
+        const seedKind = `dummy_${i + 1}`;
+
         actions.push({
           kind: "place_spawn",
           spawn: {
             shardId,
-            spawnId: makeSpawnId(`svc_dummy${i + 1}`, townSpawnId),
+            spawnId: makeSpawnId(opts, legacyPrefix, townSpawnId, seedKind),
             type: "npc",
             archetype: dummyProto,
             protoId: dummyProto,

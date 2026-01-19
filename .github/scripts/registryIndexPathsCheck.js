@@ -12,9 +12,8 @@
  *    - Glob paths (e.g. foo/*.json): must match at least one file
  *
  * Notes:
- * - Keeps your hybrid registry style (service graph entries + file catalog entries).
- * - Does NOT enforce that registry keys match entry.path; it only validates the referenced paths.
- * - Adds better diagnostics for case issues (Linux) without mutating files.
+ * - Supports hybrid registries (mixed entry shapes). Keys do not matter.
+ * - Conservative: missing paths fail CI.
  */
 
 const fs = require("node:fs");
@@ -73,13 +72,11 @@ function exists(absPath) {
 
 function isGlobPath(relPath) {
   const p = normalizeSlashes(relPath);
-  // Simple glob detection: *, ?, or [] patterns
   return /[*?\[]/.test(p);
 }
 
 function segmentToRegex(seg) {
-  // Supports * and ? and [] literally if present (we don't expand [] ranges).
-  const esc = seg.replace(/[.+^${}()|\\]/g, "\\$&");
+  const esc = seg.replace(/[.+^${}()|[\]\\]/g, "\\$&");
   const re = esc.replace(/\*/g, ".*").replace(/\?/g, ".");
   return new RegExp(`^${re}$`);
 }
@@ -92,11 +89,6 @@ function listDir(absDir) {
   }
 }
 
-/**
- * Case-insensitive resolver for nicer error messages on Linux.
- * Returns a normalized relative path with correct casing if it can be resolved,
- * else null.
- */
 function resolveCaseInsensitive(repoRoot, relPath) {
   const rel = normalizeSlashes(relPath);
   const parts = rel.split("/").filter(Boolean);
@@ -127,14 +119,6 @@ function resolveCaseInsensitive(repoRoot, relPath) {
   return exists(candidateAbs) ? candidateRel : null;
 }
 
-/**
- * Expand a simple glob pattern by walking directories.
- * Supports:
- * - * and ? in path segments
- * - ** as "match any directories"
- *
- * Returns matched absolute file paths.
- */
 function expandGlob(repoRoot, relPattern) {
   const pattern = normalizeSlashes(relPattern);
   const parts = pattern.split("/").filter(Boolean);
@@ -148,14 +132,9 @@ function expandGlob(repoRoot, relPattern) {
     const seg = parts[idx];
 
     if (seg === "**") {
-      // Option A: ** matches zero segments
       walk(curAbs, idx + 1);
-
-      // Option B: ** matches one+ directory segments
       for (const ent of listDir(curAbs)) {
-        if (ent.isDirectory()) {
-          walk(path.join(curAbs, ent.name), idx);
-        }
+        if (ent.isDirectory()) walk(path.join(curAbs, ent.name), idx);
       }
       return;
     }
@@ -165,7 +144,6 @@ function expandGlob(repoRoot, relPattern) {
 
     for (const ent of listDir(curAbs)) {
       if (!rx.test(ent.name)) continue;
-
       const nextAbs = path.join(curAbs, ent.name);
 
       if (isLast) {
@@ -176,8 +154,6 @@ function expandGlob(repoRoot, relPattern) {
     }
   }
 
-  // Find the deepest non-glob prefix so we don’t start at repo root unnecessarily.
-  // If the prefix itself doesn't exist, we fail earlier in the caller.
   walk(rootAbs, 0);
   return matches;
 }
@@ -199,7 +175,7 @@ function main() {
 
   const registries = index.registries;
   if (!Array.isArray(registries)) {
-    fail(`RegistryIndex.json: "registries" must be an array.`);
+    fail('RegistryIndex.json: "registries" must be an array.');
     return;
   }
 
@@ -236,10 +212,7 @@ function main() {
       if (!entry || typeof entry !== "object") continue;
 
       const entryPath = entry.path;
-      if (entryPath == null) {
-        // allowed: conceptual entries
-        continue;
-      }
+      if (entryPath == null) continue;
 
       if (typeof entryPath !== "string" || !entryPath.trim()) {
         missing++;
@@ -251,7 +224,6 @@ function main() {
       entriesChecked++;
 
       if (isGlobPath(rel)) {
-        // Glob must match at least one file
         const matches = expandGlob(repoRoot, rel);
         if (!matches.length) {
           missing++;
@@ -265,7 +237,6 @@ function main() {
 
       if (exists(abs)) continue;
 
-      // Missing: try case-insensitive hint
       const hint = resolveCaseInsensitive(repoRoot, rel);
       missing++;
       if (hint) {
