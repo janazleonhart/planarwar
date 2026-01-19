@@ -4,8 +4,55 @@ import { useEffect, useMemo, useState } from "react";
 
 const ADMIN_API_BASE = "http://192.168.0.74:4000";
 
+// ----- UI state persistence (safe on SSR) -----
+const SPAWN_UI_LS_KEY = 'adminSpawnPointsPage.ui.v1';
+
+ type SpawnUiSaved = {
+  shardId?: string;
+  activeTab?: 'browse' | 'tools' | 'brain';
+  toolsSubtab?: 'bulk' | 'paint';
+  loadMode?: 'region' | 'xy';
+  regionId?: string;
+  queryX?: number;
+  queryZ?: number;
+  queryRadius?: number;
+  filterAuthority?: string;
+  filterType?: string;
+  filterArchetype?: string;
+  filterProtoId?: string;
+  filterSpawnId?: string;
+  limit?: number;
+  recommendedOrder?: boolean;
+};
+
+function safeLoadSpawnUiState(): SpawnUiSaved {
+  if (typeof window === 'undefined') return {};
+  try {
+    const raw = window.localStorage.getItem(SPAWN_UI_LS_KEY);
+    if (!raw) return {};
+    const obj = JSON.parse(raw);
+    return (obj && typeof obj === 'object') ? obj : {};
+  } catch {
+    return {};
+  }
+}
+
+function safeSaveSpawnUiState(state: SpawnUiSaved) {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.setItem(SPAWN_UI_LS_KEY, JSON.stringify(state));
+  } catch {
+    // ignore
+  }
+}
+
+const STICKY_TOP_PX = 96;
+
+
 type SpawnAuthority = "anchor" | "seed" | "brain" | "manual";
 type LoadMode = "region" | "radius" | "recent";
+
+type AdminTab = "browse" | "tools" | "brain";
 
 type AdminSpawnPoint = {
   id: number;
@@ -77,6 +124,73 @@ function canEditSpawn(spawnId: string): boolean {
   return getAuthority(spawnId) !== "brain";
 }
 
+const AUTHORITY_SORT: Record<SpawnAuthority, number> = {
+  anchor: 0,
+  seed: 1,
+  manual: 2,
+  brain: 3,
+};
+
+const TYPE_SORT: Record<string, number> = {
+  // High-level infrastructure first
+  town: 0,
+  outpost: 1,
+  graveyard: 2,
+  checkpoint: 3,
+  poi: 4,
+
+  // Town services + stations
+  mailbox: 10,
+  rest: 11,
+  station: 12,
+
+  // Actors + resources
+  npc: 20,
+  resource: 30,
+  node: 30,
+};
+
+
+function normStr(v: unknown): string {
+  return String(v ?? "").trim().toLowerCase();
+}
+
+function compareSpawnPointsRecommended(a: AdminSpawnPoint, b: AdminSpawnPoint): number {
+  const aAuth = (a.authority ?? getAuthority(a.spawnId)) as SpawnAuthority;
+  const bAuth = (b.authority ?? getAuthority(b.spawnId)) as SpawnAuthority;
+
+  // Keep brain-owned spawns last, anchors first, etc.
+  const authCmp = (AUTHORITY_SORT[aAuth] ?? 99) - (AUTHORITY_SORT[bAuth] ?? 99);
+  if (authCmp) return authCmp;
+
+  // Recommended order: town infrastructure -> services/stations -> NPCs -> resources
+  const aTypeKey = normStr(a.type);
+  const bTypeKey = normStr(b.type);
+  const typeCmp = (TYPE_SORT[aTypeKey] ?? 999) - (TYPE_SORT[bTypeKey] ?? 999);
+  if (typeCmp) return typeCmp;
+
+  // Within a type bucket, keep things grouped and predictable
+  const archCmp = normStr(a.archetype).localeCompare(normStr(b.archetype));
+  if (archCmp) return archCmp;
+
+  const protoCmp = normStr(a.protoId).localeCompare(normStr(b.protoId));
+  if (protoCmp) return protoCmp;
+
+  const spawnCmp = normStr(a.spawnId).localeCompare(normStr(b.spawnId));
+  if (spawnCmp) return spawnCmp;
+
+  return (Number(a.id) || 0) - (Number(b.id) || 0);
+}
+
+function compareSpawnPointsDefault(a: AdminSpawnPoint, b: AdminSpawnPoint): number {
+  // Preserve a mostly "DB-ish" order when recommended sorting is off.
+  const aId = Number(a.id) || 0;
+  const bId = Number(b.id) || 0;
+  if (aId != bId) return aId - bId;
+  return normStr(a.spawnId).localeCompare(normStr(b.spawnId));
+}
+
+
 function SmallKeyValue(props: { title: string; map?: Record<string, number> }) {
   const entries = Object.entries(props.map ?? {});
   const hasAny = entries.length > 0;
@@ -103,26 +217,30 @@ function SmallKeyValue(props: { title: string; map?: Record<string, number> }) {
 }
 
 export function AdminSpawnPointsPage() {
+  const savedUi = useMemo(() => safeLoadSpawnUiState(), []);
   const [spawnPoints, setSpawnPoints] = useState<AdminSpawnPoint[]>([]);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [form, setForm] = useState<AdminSpawnPoint | null>(null);
 
-  const [shardId, setShardId] = useState("prime_shard");
+  const [shardId, setShardId] = useState(savedUi.shardId || "prime_shard");
+  const [activeTab, setActiveTab] = useState<AdminTab>((savedUi.activeTab as AdminTab) || "browse");
+  const [toolsSubtab, setToolsSubtab] = useState<"bulk" | "paint">(savedUi.toolsSubtab || "bulk");
 
   // Load controls
-  const [loadMode, setLoadMode] = useState<LoadMode>("region");
-  const [regionId, setRegionId] = useState("prime_shard:0,0");
-  const [queryX, setQueryX] = useState(0);
-  const [queryZ, setQueryZ] = useState(0);
-  const [queryRadius, setQueryRadius] = useState(500);
+  const [loadMode, setLoadMode] = useState<LoadMode>((savedUi.loadMode as LoadMode) || "region");
+  const [regionId, setRegionId] = useState(savedUi.regionId || "prime_shard:0,0");
+  const [queryX, setQueryX] = useState(savedUi.queryX ?? 0);
+  const [queryZ, setQueryZ] = useState(savedUi.queryZ ?? 0);
+  const [queryRadius, setQueryRadius] = useState(savedUi.queryRadius ?? 500);
 
   // Filters
-  const [filterAuthority, setFilterAuthority] = useState<string>("");
-  const [filterType, setFilterType] = useState("");
-  const [filterArchetype, setFilterArchetype] = useState("");
-  const [filterProtoId, setFilterProtoId] = useState("");
-  const [filterSpawnId, setFilterSpawnId] = useState("");
-  const [limit, setLimit] = useState(200);
+  const [filterAuthority, setFilterAuthority] = useState<string>(savedUi.filterAuthority || "");
+  const [filterType, setFilterType] = useState(savedUi.filterType || "");
+  const [filterArchetype, setFilterArchetype] = useState(savedUi.filterArchetype || "");
+  const [filterProtoId, setFilterProtoId] = useState(savedUi.filterProtoId || "");
+  const [filterSpawnId, setFilterSpawnId] = useState(savedUi.filterSpawnId || "");
+  const [limit, setLimit] = useState(savedUi.limit ?? 200);
+  const [recommendedOrder, setRecommendedOrder] = useState(savedUi.recommendedOrder ?? true);
 
   // Bulk selection + ops
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
@@ -183,6 +301,14 @@ export function AdminSpawnPointsPage() {
   const [waveResult, setWaveResult] = useState<MotherBrainWaveResponse | null>(null);
 
   const selectedSet = useMemo(() => new Set(selectedIds), [selectedIds]);
+
+  const visibleSpawnPoints = useMemo(() => {
+    if (!recommendedOrder) return spawnPoints;
+    const arr = [...spawnPoints];
+    arr.sort(compareSpawnPointsRecommended);
+    return arr;
+  }, [spawnPoints, recommendedOrder]);
+
 
   const load = async () => {
     setLoading(true);
@@ -318,6 +444,43 @@ export function AdminSpawnPointsPage() {
     if (sp) setForm({ ...sp });
   }, [selectedId, spawnPoints]);
 
+  // Persist the UI state so the editor opens where you left it.
+  useEffect(() => {
+    safeSaveSpawnUiState({
+      shardId,
+      activeTab: activeTab as any,
+      toolsSubtab: toolsSubtab as any,
+      loadMode: loadMode as any,
+      regionId,
+      queryX,
+      queryZ,
+      queryRadius,
+      filterAuthority,
+      filterType,
+      filterArchetype,
+      filterProtoId,
+      filterSpawnId,
+      limit,
+      recommendedOrder,
+    });
+  }, [
+    shardId,
+    activeTab,
+    toolsSubtab,
+    loadMode,
+    regionId,
+    queryX,
+    queryZ,
+    queryRadius,
+    filterAuthority,
+    filterType,
+    filterArchetype,
+    filterProtoId,
+    filterSpawnId,
+    limit,
+    recommendedOrder,
+  ]);
+
   const startNew = () => {
     setSelectedId(null);
     setForm({
@@ -350,8 +513,22 @@ export function AdminSpawnPointsPage() {
     });
   };
 
+  const selectedIdsForOps = useMemo(() => {
+    if (!recommendedOrder) return selectedIds;
+    const byId = new Map<number, AdminSpawnPoint>();
+    for (const sp of spawnPoints) byId.set(sp.id, sp);
+    return [...selectedIds].sort((a, b) => {
+      const sa = byId.get(a);
+      const sb = byId.get(b);
+      if (!sa && !sb) return a - b;
+      if (!sa) return 1;
+      if (!sb) return -1;
+      return compareSpawnPointsRecommended(sa, sb);
+    });
+  }, [recommendedOrder, selectedIds, spawnPoints]);
+
   const toggleSelectAllVisible = () => {
-    const visibleIds = spawnPoints.map((p) => p.id);
+    const visibleIds = visibleSpawnPoints.map((p) => p.id);
     const allSelected = visibleIds.every((id) => selectedSet.has(id));
     if (allSelected) {
       // clear only visible
@@ -442,7 +619,7 @@ export function AdminSpawnPointsPage() {
   };
 
   const bulkDelete = async () => {
-    if (selectedIds.length === 0) return;
+    if (selectedIdsForOps.length === 0) return;
     if (!window.confirm(`Bulk delete ${selectedIds.length} spawn points? (brain:* will be skipped)`))
       return;
 
@@ -454,7 +631,7 @@ export function AdminSpawnPointsPage() {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           shardId: shardId.trim() || "prime_shard",
-          ids: selectedIds,
+          ids: selectedIdsForOps,
         }),
       });
 
@@ -473,7 +650,7 @@ export function AdminSpawnPointsPage() {
   };
 
   const bulkMove = async (dx: number, dy: number, dz: number) => {
-    if (selectedIds.length === 0) return;
+    if (selectedIdsForOps.length === 0) return;
 
     setBulkWorking(true);
     setError(null);
@@ -483,7 +660,7 @@ export function AdminSpawnPointsPage() {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           shardId: shardId.trim() || "prime_shard",
-          ids: selectedIds,
+          ids: selectedIdsForOps,
           dx,
           dy,
           dz,
@@ -534,7 +711,7 @@ export function AdminSpawnPointsPage() {
   };
 
   const cloneSelected = async () => {
-    if (selectedIds.length === 0) return;
+    if (selectedIdsForOps.length === 0) return;
 
     setCloneWorking(true);
     setError(null);
@@ -546,7 +723,7 @@ export function AdminSpawnPointsPage() {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           shardId: shardId.trim() || "prime_shard",
-          ids: selectedIds,
+          ids: selectedIdsForOps,
           countPerId: Number(cloneCountPerId) || 1,
           scatterRadius: Number(cloneScatterRadius) || 0,
           minDistance: Number(cloneMinDistance) || 0,
@@ -610,102 +787,185 @@ export function AdminSpawnPointsPage() {
     }
   };
 
+  const filterSummary = useMemo(() => {
+    const parts: string[] = [];
+    if (filterAuthority.trim()) parts.push(`authority=${filterAuthority.trim()}`);
+    if (filterType.trim()) parts.push(`type~${filterType.trim()}`);
+    if (filterArchetype.trim()) parts.push(`arch~${filterArchetype.trim()}`);
+    if (filterProtoId.trim()) parts.push(`proto~${filterProtoId.trim()}`);
+    if (filterSpawnId.trim()) parts.push(`spawn~${filterSpawnId.trim()}`);
+    return parts.length ? parts.join(", ") : "none";
+  }, [filterAuthority, filterType, filterArchetype, filterProtoId, filterSpawnId]);
+
   return (
     <div style={{ padding: 16 }}>
+      <div
+        style={{
+          position: "sticky",
+          top: 0,
+          background: "white",
+          zIndex: 50,
+          paddingBottom: 12,
+          marginBottom: 12,
+          borderBottom: "1px solid #ddd",
+        }}
+      >
       <h1>Spawn Points Editor (v1)</h1>
+
+      <div data-testid="spawnpoints-tabs" style={{ display: "flex", gap: 8, margin: "8px 0 12px 0" }}>
+        <button
+          onClick={() => setActiveTab("browse")}
+          style={{
+            padding: "6px 10px",
+            borderRadius: 8,
+            border: activeTab === "browse" ? "2px solid #4caf50" : "1px solid #ccc",
+            background: "white",
+            cursor: "pointer",
+            fontWeight: activeTab === "browse" ? 700 : 500,
+          }}
+        >
+          Browse + Edit ({visibleSpawnPoints.length})
+        </button>
+        <button
+          onClick={() => setActiveTab("tools")}
+          style={{
+            padding: "6px 10px",
+            borderRadius: 8,
+            border: activeTab === "tools" ? "2px solid #4caf50" : "1px solid #ccc",
+            background: "white",
+            cursor: "pointer",
+            fontWeight: activeTab === "tools" ? 700 : 500,
+          }}
+        >
+          Batch Tools ({selectedSet.size})
+        </button>
+        <button
+          onClick={() => setActiveTab("brain")}
+          style={{
+            padding: "6px 10px",
+            borderRadius: 8,
+            border: activeTab === "brain" ? "2px solid #4caf50" : "1px solid #ccc",
+            background: "white",
+            cursor: "pointer",
+            fontWeight: activeTab === "brain" ? 700 : 500,
+          }}
+        >
+          Mother Brain
+        </button>
+        <div style={{ flex: 1 }} />
+        <div style={{ fontSize: 12, opacity: 0.8, alignSelf: "center" }}>Tip: use tabs to de-clutter the page.</div>
+      </div>
 
       {error && <div style={{ color: "red", marginBottom: 8 }}>Error: {error}</div>}
 
       {/* Load + filter controls */}
       <div style={{ border: "1px solid #333", borderRadius: 8, padding: 12, marginBottom: 12 }}>
-        <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "flex-end" }}>
-          <label style={{ display: "grid", gap: 4 }}>
-            <span style={{ opacity: 0.8 }}>Shard</span>
-            <input style={{ width: 180 }} value={shardId} onChange={(e) => setShardId(e.target.value)} />
-          </label>
-
-          <label style={{ display: "grid", gap: 4 }}>
-            <span style={{ opacity: 0.8 }}>Load Mode</span>
-            <select value={loadMode} onChange={(e) => setLoadMode(e.target.value as LoadMode)}>
-              <option value="region">Region</option>
-              <option value="radius">Radius</option>
-              <option value="recent">Recent</option>
-            </select>
-          </label>
-
-          {loadMode === "region" && (
+        <div style={{ display: "grid", gap: 10 }}>
+          <div style={{ display: "grid", gap: 12, gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", alignItems: "end" }}>
             <label style={{ display: "grid", gap: 4 }}>
-              <span style={{ opacity: 0.8 }}>Region</span>
-              <input style={{ width: 240 }} value={regionId} onChange={(e) => setRegionId(e.target.value)} />
+              <span style={{ opacity: 0.8 }}>Shard</span>
+              <input style={{ width: 180 }} value={shardId} onChange={(e) => setShardId(e.target.value)} />
             </label>
-          )}
 
-          {loadMode === "radius" && (
-            <>
+            <label style={{ display: "grid", gap: 4 }}>
+              <span style={{ opacity: 0.8 }}>Load Mode</span>
+              <select value={loadMode} onChange={(e) => setLoadMode(e.target.value as LoadMode)}>
+                <option value="region">Region</option>
+                <option value="radius">Radius</option>
+                <option value="recent">Recent</option>
+              </select>
+            </label>
+
+            {loadMode === "region" && (
               <label style={{ display: "grid", gap: 4 }}>
-                <span style={{ opacity: 0.8 }}>X</span>
-                <input type="number" style={{ width: 110 }} value={queryX} onChange={(e) => setQueryX(Number(e.target.value) || 0)} />
+                <span style={{ opacity: 0.8 }}>Region</span>
+                <input style={{ width: 240 }} value={regionId} onChange={(e) => setRegionId(e.target.value)} />
               </label>
+            )}
+
+            {loadMode === "radius" && (
+              <>
+                <label style={{ display: "grid", gap: 4 }}>
+                  <span style={{ opacity: 0.8 }}>X</span>
+                  <input type="number" style={{ width: 110 }} value={queryX} onChange={(e) => setQueryX(Number(e.target.value) || 0)} />
+                </label>
+                <label style={{ display: "grid", gap: 4 }}>
+                  <span style={{ opacity: 0.8 }}>Z</span>
+                  <input type="number" style={{ width: 110 }} value={queryZ} onChange={(e) => setQueryZ(Number(e.target.value) || 0)} />
+                </label>
+                <label style={{ display: "grid", gap: 4 }}>
+                  <span style={{ opacity: 0.8 }}>Radius</span>
+                  <input type="number" style={{ width: 110 }} value={queryRadius} onChange={(e) => setQueryRadius(Number(e.target.value) || 0)} />
+                </label>
+              </>
+            )}
+
+            <label style={{ display: "grid", gap: 4 }}>
+              <span style={{ opacity: 0.8 }}>Limit</span>
+              <input type="number" style={{ width: 90 }} value={limit} onChange={(e) => setLimit(Number(e.target.value) || 0)} />
+            </label>
+            <label style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 18, whiteSpace: "nowrap" }} title="Sort visible spawn points in a recommended authoring order">
+              <input type="checkbox" checked={recommendedOrder} onChange={(e) => setRecommendedOrder(e.target.checked)} />
+              <span>Recommended order</span>
+            </label>
+
+            <button onClick={load} disabled={loading}>
+              {loading ? "Loading..." : "Load"}
+            </button>
+
+            <button onClick={startNew} disabled={saving}>
+              New
+            </button>
+          </div>
+
+          <div style={{ fontSize: 12, opacity: 0.8 }}>
+            Loaded: {spawnPoints.length} • Visible: {visibleSpawnPoints.length} • Selected: {selectedSet.size}
+          </div>
+
+          <details>
+            <summary style={{ cursor: "pointer", userSelect: "none", opacity: 0.9 }}>
+              Filters ({filterSummary})
+            </summary>
+            <div style={{ display: "grid", gap: 12, gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", alignItems: "end", marginTop: 10 }}>
               <label style={{ display: "grid", gap: 4 }}>
-                <span style={{ opacity: 0.8 }}>Z</span>
-                <input type="number" style={{ width: 110 }} value={queryZ} onChange={(e) => setQueryZ(Number(e.target.value) || 0)} />
+                <span style={{ opacity: 0.8 }}>Authority</span>
+                <select value={filterAuthority} onChange={(e) => setFilterAuthority(e.target.value)}>
+                  <option value="">(any)</option>
+                  <option value="anchor">anchor</option>
+                  <option value="seed">seed</option>
+                  <option value="manual">manual</option>
+                  <option value="brain">brain</option>
+                </select>
               </label>
+
               <label style={{ display: "grid", gap: 4 }}>
-                <span style={{ opacity: 0.8 }}>Radius</span>
-                <input type="number" style={{ width: 110 }} value={queryRadius} onChange={(e) => setQueryRadius(Number(e.target.value) || 0)} />
+                <span style={{ opacity: 0.8 }}>Type</span>
+                <input style={{ width: 140 }} value={filterType} onChange={(e) => setFilterType(e.target.value)} placeholder="npc / node / poi" />
               </label>
-            </>
-          )}
 
-          <label style={{ display: "grid", gap: 4 }}>
-            <span style={{ opacity: 0.8 }}>Authority</span>
-            <select value={filterAuthority} onChange={(e) => setFilterAuthority(e.target.value)}>
-              <option value="">(any)</option>
-              <option value="anchor">anchor</option>
-              <option value="seed">seed</option>
-              <option value="manual">manual</option>
-              <option value="brain">brain</option>
-            </select>
-          </label>
+              <label style={{ display: "grid", gap: 4 }}>
+                <span style={{ opacity: 0.8 }}>Archetype</span>
+                <input style={{ width: 140 }} value={filterArchetype} onChange={(e) => setFilterArchetype(e.target.value)} placeholder="npc / resource / ..." />
+              </label>
 
-          <label style={{ display: "grid", gap: 4 }}>
-            <span style={{ opacity: 0.8 }}>Type</span>
-            <input style={{ width: 140 }} value={filterType} onChange={(e) => setFilterType(e.target.value)} placeholder="npc / node / poi" />
-          </label>
+              <label style={{ display: "grid", gap: 4 }}>
+                <span style={{ opacity: 0.8 }}>protoId contains</span>
+                <input style={{ width: 180 }} value={filterProtoId} onChange={(e) => setFilterProtoId(e.target.value)} placeholder="ore / town_rat / ..." />
+              </label>
 
-          <label style={{ display: "grid", gap: 4 }}>
-            <span style={{ opacity: 0.8 }}>Archetype</span>
-            <input style={{ width: 140 }} value={filterArchetype} onChange={(e) => setFilterArchetype(e.target.value)} placeholder="npc / resource / ..." />
-          </label>
-
-          <label style={{ display: "grid", gap: 4 }}>
-            <span style={{ opacity: 0.8 }}>protoId contains</span>
-            <input style={{ width: 180 }} value={filterProtoId} onChange={(e) => setFilterProtoId(e.target.value)} placeholder="ore / town_rat / ..." />
-          </label>
-
-          <label style={{ display: "grid", gap: 4 }}>
-            <span style={{ opacity: 0.8 }}>spawnId contains</span>
-            <input style={{ width: 180 }} value={filterSpawnId} onChange={(e) => setFilterSpawnId(e.target.value)} placeholder="seed:camp / anchor:..." />
-          </label>
-
-          <label style={{ display: "grid", gap: 4 }}>
-            <span style={{ opacity: 0.8 }}>Limit</span>
-            <input type="number" style={{ width: 90 }} value={limit} onChange={(e) => setLimit(Number(e.target.value) || 0)} />
-          </label>
-
-          <button onClick={load} disabled={loading}>
-            {loading ? "Loading..." : "Load"}
-          </button>
-
-          <button onClick={startNew} disabled={saving}>
-            New
-          </button>
+              <label style={{ display: "grid", gap: 4 }}>
+                <span style={{ opacity: 0.8 }}>spawnId contains</span>
+                <input style={{ width: 180 }} value={filterSpawnId} onChange={(e) => setFilterSpawnId(e.target.value)} placeholder="seed:camp / anchor:..." />
+              </label>
+            </div>
+          </details>
         </div>
       </div>
 
-      <div style={{ display: "flex", gap: 24, alignItems: "flex-start" }}>
-        {/* Left: list + mother brain panels */}
-        <div style={{ minWidth: 380 }}>
+      </div>
+
+      {activeTab === "brain" ? (
+        <div style={{ marginTop: 12 }}>
           {/* Mother Brain panel (kept) */}
           <div style={{ border: "1px solid #333", borderRadius: 8, padding: 12, marginBottom: 12 }}>
             <h2 style={{ margin: "0 0 8px 0" }}>Mother Brain</h2>
@@ -844,13 +1104,51 @@ export function AdminSpawnPointsPage() {
             </div>
           </div>
 
+
+        </div>
+      ) : (
+      <div style={{ display: "flex", gap: 24, alignItems: "flex-start" }}>
+        {/* Left: list + mother brain panels */}
+        <div style={{ minWidth: 380 }}>
+          {activeTab === "tools" ? (
+            <>
+              <div data-testid="tools-subtabs" style={{ display: "flex", gap: 8, marginBottom: 10, flexWrap: "wrap" }}>
+                <button
+                  onClick={() => setToolsSubtab("bulk")}
+                  style={{
+                    padding: "6px 10px",
+                    borderRadius: 8,
+                    border: toolsSubtab === "bulk" ? "2px solid #4caf50" : "1px solid #ccc",
+                    background: "white",
+                    cursor: "pointer",
+                    fontWeight: toolsSubtab === "bulk" ? 700 : 500,
+                  }}
+                >
+                  Bulk Ops
+                </button>
+                <button
+                  onClick={() => setToolsSubtab("paint")}
+                  style={{
+                    padding: "6px 10px",
+                    borderRadius: 8,
+                    border: toolsSubtab === "paint" ? "2px solid #4caf50" : "1px solid #ccc",
+                    background: "white",
+                    cursor: "pointer",
+                    fontWeight: toolsSubtab === "paint" ? 700 : 500,
+                  }}
+                >
+                  Clone / Scatter
+                </button>
+              </div>
+          {toolsSubtab === "bulk" ? (
+            <>
           {/* Bulk ops */}
           <div style={{ border: "1px solid #333", borderRadius: 8, padding: 12, marginBottom: 12 }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
               <strong>Spawn Points in DB</strong>
               <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
                 <span style={{ fontSize: 12, opacity: 0.85 }}>{selectedIds.length} selected</span>
-                <button onClick={toggleSelectAllVisible} disabled={spawnPoints.length === 0}>
+                <button onClick={toggleSelectAllVisible} disabled={visibleSpawnPoints.length === 0}>
                   Toggle all (visible)
                 </button>
                 <button onClick={clearSelection} disabled={selectedIds.length === 0}>
@@ -920,6 +1218,12 @@ export function AdminSpawnPointsPage() {
             </div>
           </div>
 
+
+            </>
+          ) : null}
+
+          {toolsSubtab === "paint" ? (
+            <>
           {/* Clone / Scatter (System 3 MVP) */}
           <div style={{ border: "1px solid #333", borderRadius: 8, padding: 12, marginBottom: 12 }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
@@ -1072,10 +1376,17 @@ export function AdminSpawnPointsPage() {
             </div>
           </div>
 
+
+            </>
+          ) : null}
+
+            </>
+          ) : null}
+
           {/* List */}
           <div style={{ maxHeight: 640, overflow: "auto", paddingRight: 6 }}>
             <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
-              {spawnPoints.map((sp) => {
+              {visibleSpawnPoints.map((sp) => {
                 const auth = sp.authority ?? getAuthority(sp.spawnId);
                 const selected = sp.id === selectedId;
                 const checked = selectedSet.has(sp.id);
@@ -1130,13 +1441,30 @@ export function AdminSpawnPointsPage() {
                 );
               })}
 
-              {spawnPoints.length === 0 && <li>No spawn points returned.</li>}
+              {visibleSpawnPoints.length === 0 && <li>No spawn points returned.</li>}
             </ul>
           </div>
         </div>
 
-        {/* Right: spawn point form */}
-        <div style={{ flex: 1 }}>
+        {activeTab === "tools" ? (
+          <div style={{ flex: 1, position: "sticky", top: 12, alignSelf: "flex-start", maxHeight: "calc(100vh - 140px)", overflow: "auto" }}>
+            <div style={{ border: "1px solid #ccc", borderRadius: 8, padding: 12 }}>
+              <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 6 }}>Batch Tools</div>
+              <div style={{ fontSize: 12, opacity: 0.85, lineHeight: 1.4 }}>
+                Select rows on the left, then use <b>Bulk Move/Delete</b> or <b>Clone/Scatter</b>.
+                <div style={{ marginTop: 8 }}>
+                  <div>
+                    Selected: <b>{selectedIds.length}</b>
+                  </div>
+                  <div style={{ marginTop: 4 }}>
+                    Note: <code>brain:</code> rows are always protected.
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        ) : (
+<div style={{ flex: 1, position: "sticky", top: 12, alignSelf: "flex-start", maxHeight: "calc(100vh - 140px)", overflow: "auto" }}>
           {form ? (
             <div style={{ border: "1px solid #ccc", borderRadius: 8, padding: 12 }}>
               <div style={{ fontSize: 12, opacity: 0.8, marginBottom: 8 }}>
@@ -1299,7 +1627,9 @@ export function AdminSpawnPointsPage() {
             <div>Select a spawn point or click “New”.</div>
           )}
         </div>
+        )}
       </div>
+      )}
     </div>
   );
 }
