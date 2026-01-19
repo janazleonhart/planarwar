@@ -157,7 +157,7 @@
         "mud.context"
       ],
       "notes": [
-        "Builds a one-line MUD description for a listing like '#12 Hematite Iron Ore [common] x20 – 3g each (total 60g) by Testing [active]'.",
+        "Builds a one-line MUD description for a listing like '#12 Hematite Iron Ore [common] x20 \u2013 3g each (total 60g) by Testing [active]'.",
         "Looks up item definitions via ctx.items?.get to resolve item name and rarity."
       ]
     },
@@ -417,7 +417,7 @@
         "classes.definitions"
       ],
       "notes": [
-        "Postgres-backed character service using the characters table and CharacterRow → CharacterState mapping.",
+        "Postgres-backed character service using the characters table and CharacterRow \u2192 CharacterState mapping.",
         "Supports partial JSONB patching, XP/level gains with per-class attribute growth, and spell/equipment updates."
       ]
     },
@@ -1206,10 +1206,11 @@
       "dependsOn": [
         "utils.logger",
         "items.service?",
-        "quests.registry",
-        "npc.types",
+        "quests.registry?",
+        "npc.types?",
         "world.spawnPointCache?",
-        "world.SpawnHydrator"
+        "world.spawnHydrator?",
+        "world.spawnPoints?"
       ],
       "notes": [
         "Central hot-reload coordinator used by the MUD 'reload' command.",
@@ -1217,7 +1218,7 @@
         "Items reload prefers ItemService.reload() then falls back to loadAll().",
         "Quests reload pushes definitions into QuestRegistry via setQuestDefinitions().",
         "NPC reload pushes prototypes into NpcTypes via setNpcPrototypes().",
-        "Spawns reload clears SpawnPointCache (best-effort dynamic import) and optionally clears SpawnPointService caches via duck-typed methods."
+        "Spawns reload clears SpawnPointCache (best-effort dynamic import), optionally clears SpawnPointService caches (duck-typed), and invalidates SpawnHydrator hydration cache when present."
       ]
     },
     "interaction.ops": {
@@ -2766,7 +2767,7 @@
         "Refreshes personal nodes, then lists nearby entities within radius with short handles like rat.1.",
         "filter/group/sort flags",
         "--limit / --max",
-        "safe caps + “UI-friendly output shaping"
+        "safe caps + \u201cUI-friendly output shaping"
       ]
     },
     "mud.commands.world.save": {
@@ -3115,7 +3116,7 @@
         "Determines which NPCs are 'protected' (civilian, vendor, questgiver, protected_town, etc.) and records crimes against them on the attacker.",
         "Sets recentCrimeUntil and recentCrimeSeverity (minor|severe) on characters to drive guard response.",
         "law_exempt > law_protected > legacy tags precedence",
-        "guards/resources are never “protected” for crime purposes"
+        "guards/resources are never \u201cprotected\u201d for crime purposes"
       ]
     },
     "npc.manager": {
@@ -3135,7 +3136,7 @@
         "combat.damagePolicy"
       ],
       "notes": [
-        "Owns runtime NPC state, per-room maps, threat tables, and bridges EntityManager ↔ AI brain ↔ sessions/chat.",
+        "Owns runtime NPC state, per-room maps, threat tables, and bridges EntityManager \u2194 AI brain \u2194 sessions/chat.",
         "Spawns/Despawns NPCs, applies damage, records threat, coordinates guard/pack help, coward fleeing, gating, and drives AI decisions each tick."
       ]
     },
@@ -3689,7 +3690,7 @@
       "kind": "types",
       "path": "worldcore/sim/BrainActions.ts",
       "notes": [
-        "Types for Mother-Brain style planning outputs (audit → plan actions → apply).",
+        "Types for Mother-Brain style planning outputs (audit \u2192 plan actions \u2192 apply).",
         "Includes PlaceSpawnAction used by SettlementPlanner + simBrain apply."
       ]
     },
@@ -4063,7 +4064,7 @@
       ],
       "notes": [
         "Computes difficulty tier by radial distance from world center.",
-        "Uses max world radius ≈ 2048 units for current prime shard."
+        "Uses max world radius \u2248 2048 units for current prime shard."
       ]
     },
     "terrain.regionDisplay": {
@@ -4440,7 +4441,7 @@
       "notes": [
         "Dev Simulation Harness CLI entrypoint.",
         "Includes Mother Brain wave planning commands (mother-wave/mother-status) for brain-owned spawn_points pipelines.",
-        "Follows audit → plan → apply pattern with safe default rollback unless --commit.",
+        "Follows audit \u2192 plan \u2192 apply pattern with safe default rollback unless --commit.",
         "Safety rails: refuses literal '...' arg; refuses --commit without explicit --bounds (unless --allowDefaultBounds).",
         "Artifacts are dev-only outputs; keep them gitignored."
       ]
@@ -4851,7 +4852,7 @@
         "characters.types"
       ],
       "notes": [
-        "Tracks per-region dynamic danger score and effective tier (1–5) based on base distance ring + recent activity.",
+        "Tracks per-region dynamic danger score and effective tier (1\u20135) based on base distance ring + recent activity.",
         "Applies exponential-style decay over time so regions cool down naturally.",
         "Used by cowardice, Region Peril aura, debug_region_danger, and debug_bump_region_danger."
       ]
@@ -4944,19 +4945,24 @@
       "class": "SpawnHydrator",
       "lifecycle": "singleton",
       "ctorArgs": [
-        "entities",
-        "spawnPoints"
+        "spawnPoints",
+        "entities"
       ],
       "dependsOn": [
-        "core.EntityManager",
+        "core.entities",
         "world.spawnPoints",
-        "world.townBaselines?"
+        "world.townBaselines"
       ],
       "provides": [
-        "hydrateTownPois(roomId): loads non-NPC spawn_points and materializes POI entities",
-        "filters by WORLD_SPAWNS_TYPES (default includes checkpoint, graveyard, mailbox, rest, outpost, town, ...)"
+        "SpawnHydrator.invalidateAll(): clears per-region hydration cache (for hot reload + tests)",
+        "SpawnHydrator.invalidateRegion(shardId, regionId): clears hydration cache for a single region",
+        "SpawnHydrator.rehydrateRoom({ shardId, regionId, roomId, force?, dryRun? }): materializes POI-like spawn_points into inert entities (never mobs/resources)",
+        "Respects WORLD_SPAWNS_ENABLED and WORLD_SPAWNS_TYPES; optional town baselines via PW_TOWN_BASELINES / WORLD_TOWN_BASELINES"
       ],
-      "owns": []
+      "owns": [],
+      "notes": [
+        "Caches hydration per (shardId, regionId) to avoid redundant DB reads; invalidate* clears that cache only (no despawns)."
+      ]
     },
     "world.spawnPoints": {
       "kind": "service",
@@ -4971,7 +4977,8 @@
         "DbSpawnPoint",
         "SpawnPointRow",
         "SpawnPointService.getSpawnPointsInBounds",
-        "SpawnPointService.getSpawnPointsNear"
+        "SpawnPointService.getSpawnPointsNear",
+        "SpawnPointService.getSpawnPointsForRegion"
       ],
       "notes": [
         "Reads spawn_points from Postgres with test-safe lazy DB import.",
@@ -5036,7 +5043,7 @@
         "entities"
       ],
       "dependsOn": [
-        "core.EntityManager"
+        "core.entities"
       ],
       "provides": [
         "ensureTownBaseline(spawnPoint, roomId): ensures service anchors exist around town-like POIs (runtime fallback)"
@@ -5051,7 +5058,7 @@
       "lifecycle": "static",
       "ctorArgs": [],
       "dependsOn": [
-        "world.spawnPointService"
+        "world.spawnPoints"
       ],
       "provides": [
         "TownTierId",
@@ -5429,7 +5436,7 @@
         "run(input:BiomeInput, ctx?:WorldGenContext):BiomeResult"
       ],
       "notes": [
-        "Stage 2.3.4 – biome assignment per cell + connected biome clusters.",
+        "Stage 2.3.4 \u2013 biome assignment per cell + connected biome clusters.",
         "Outputs biomeMap + cluster IDs + counts per biome."
       ]
     },
@@ -5448,7 +5455,7 @@
         "run(input:CivilizationInput, ctx?:WorldGenContext):CivilizationResult"
       ],
       "notes": [
-        "Stage 2.3.5 – settlements, roads, and POIs.",
+        "Stage 2.3.5 \u2013 settlements, roads, and POIs.",
         "Scores candidate cells, picks settlements with spacing, builds a road graph, scatters points of interest."
       ]
     },
@@ -5465,7 +5472,7 @@
         "run(input:ClimateInput, ctx?:WorldGenContext):ClimateResult"
       ],
       "notes": [
-        "Stage 2.3.3 – temperature, moisture, and compact climate zones.",
+        "Stage 2.3.3 \u2013 temperature, moisture, and compact climate zones.",
         "Can optionally use erosion outputs to bias humidity near rivers/lakes."
       ]
     },
@@ -5481,7 +5488,7 @@
         "run(input:{ landforms:LandformResult, params?:ErosionParams }, ctx?:WorldGenContext):ErosionResult"
       ],
       "notes": [
-        "Stage 2.3.2 – hydrology, erosion, rivers, lakes.",
+        "Stage 2.3.2 \u2013 hydrology, erosion, rivers, lakes.",
         "Outputs updated elevation, water, sediment, flow dirs, river/lake masks."
       ]
     },
@@ -5495,7 +5502,7 @@
         "run(input:ShardSeedInput, ctx?:WorldGenContext):LandformResult"
       ],
       "notes": [
-        "Stage 2.3.1 – base landforms: tectonics, continents, uplift, macro elevation.",
+        "Stage 2.3.1 \u2013 base landforms: tectonics, continents, uplift, macro elevation.",
         "First stage in the WGEv2 pipeline; everything else builds on its LandformResult."
       ]
     },
@@ -5515,13 +5522,13 @@
         "run(input:ResourceInput, ctx?:WorldGenContext):ResourceResult"
       ],
       "notes": [
-        "Stage 2.3.6 – resource node placement (ore/herb/wood/fish/rare) plus per-kind masks.",
+        "Stage 2.3.6 \u2013 resource node placement (ore/herb/wood/fish/rare) plus per-kind masks.",
         "Respects biome, elevation, climate, hydrology, and avoids city centers while tagging 'near settlement' nodes."
       ]
     },
-    "worldcore/guilds/guildService.ts": {
+    "worldcore/guilds/GuildService.ts": {
       "kind": "service",
-      "path": "worldcore/guilds/guildService.ts",
+      "path": "worldcore/guilds/GuildService.ts",
       "class": "GuildService",
       "lifecycle": "singleton",
       "ctorArgs": [],
@@ -5534,6 +5541,110 @@
       "owns": [],
       "notes": [
         "DB-backed guild service for resolving a character's guild and listing guild members with rank and basic character info."
+      ]
+    },
+    "world.spawnPointCache": {
+      "kind": "module",
+      "service": "world",
+      "path": "worldcore/world/SpawnPointCache.ts",
+      "class": "(module) SpawnPointCache",
+      "lifecycle": "static",
+      "ctorArgs": [],
+      "dependsOn": [
+        "world.spawnPoints"
+      ],
+      "provides": [
+        "upsertSpawnPoint(p): cache/refresh a single DbSpawnPoint row",
+        "upsertSpawnPoints(points): batch cache refresh",
+        "getSpawnPoint(spawnPointId): read cached entry",
+        "setSpawnPointCoords(spawnPointId, coords): dev/test override of cached coords",
+        "clearSpawnPointCache(): drop all cached entries"
+      ],
+      "owns": []
+    },
+    "world.spawnAuthority": {
+      "kind": "module",
+      "service": "world",
+      "path": "worldcore/world/spawnAuthority.ts",
+      "class": "(module) spawnAuthority",
+      "lifecycle": "static",
+      "ctorArgs": [],
+      "dependsOn": [],
+      "provides": [
+        "SpawnAuthority: anchor|seed|brain|manual",
+        "getSpawnAuthority(spawnId): infer authority from spawnId prefix",
+        "isSpawnEditable(spawnId): false for brain-owned points",
+        "isSpawnAnchor/isSpawnSeed/isSpawnBrain helpers"
+      ],
+      "owns": []
+    },
+    "test.contract_reloadSpawnsInvalidatesHydratorCache": {
+      "kind": "test",
+      "service": "test",
+      "path": "worldcore/test/contract_reloadSpawnsInvalidatesHydratorCache.test.ts",
+      "dependsOn": [
+        "mud.commands.debug.reload",
+        "dev.hotReloadService",
+        "world.spawnHydrator"
+      ],
+      "provides": [
+        "[contract] reload spawns invalidates SpawnHydrator hydration cache before POI rehydrate",
+        "Asserts hot reload report includes SpawnHydrator=cleared"
+      ],
+      "notes": [
+        "Guards against stale POI hydration when spawn_points change at runtime."
+      ]
+    },
+    "quests.generator": {
+      "kind": "module",
+      "service": "quests",
+      "path": "worldcore/quests/QuestGenerator.ts",
+      "class": "(module) QuestGenerator",
+      "lifecycle": "static",
+      "ctorArgs": [],
+      "dependsOn": [
+        "quests.types"
+      ],
+      "provides": [
+        "stableQuestGenSeed({townId,tier,epoch}): stable 32-bit seed",
+        "generateTownQuests({townId,tier,epoch,...}): deterministic town quest set",
+        "mergeRewards(a,b): helper to sum QuestReward bags"
+      ],
+      "notes": [
+        "Quest Generator v0: deterministic per (townId, tier, epoch).",
+        "Uses conservative objective pools (ids already present in QuestTypes examples) so generated quests are completable with current content.",
+        "Introduces small deterministic jitter on required counts and XP/gold rewards."
+      ]
+    },
+    "test.contract_townQuestGeneratorDeterminism": {
+      "kind": "test",
+      "service": "test",
+      "path": "worldcore/test/contract_townQuestGeneratorDeterminism.test.ts",
+      "dependsOn": [
+        "quests.generator"
+      ],
+      "provides": [
+        "[contract] town quest generator is deterministic for identical inputs",
+        "[contract] different epoch changes output (seeded variance)"
+      ],
+      "notes": [
+        "Guards reproducibility for generated quest sets so server restarts and tooling yield identical results."
+      ]
+    },
+    "test.contract_townQuestGeneratorObjectivePool": {
+      "kind": "test",
+      "service": "test",
+      "path": "worldcore/test/contract_townQuestGeneratorObjectivePool.test.ts",
+      "dependsOn": [
+        "quests.generator",
+        "quests.types"
+      ],
+      "provides": [
+        "[contract] generated quest objectives only use safe ids from the current content set",
+        "[contract] generated quest ids are unique and town-prefixed"
+      ],
+      "notes": [
+        "Prevents the generator from emitting impossible objectives until content pools expand intentionally."
       ]
     }
   }
