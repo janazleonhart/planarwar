@@ -29,6 +29,57 @@
         "Triggered by pull_request paths filter for worldcore/**, WorldCoreRegistry.json, and this workflow file.",
         "Runs registryCheck.js in CI mode to enforce registry freshness."
       ]
+    },
+
+    "scripts.registryIndexPathsCheck": {
+      "kind": "script",
+      "service": "ci.guard",
+      "path": ".github/scripts/registryIndexPathsCheck.js",
+      "functions": [
+        "Parse RegistryIndex.json and each listed registry JSON",
+        "Validate registry entry paths (file/dir) exist",
+        "Validate glob paths (e.g. *.json) match at least one file",
+        "Emit helpful hints for case mismatches on Linux"
+      ],
+      "dependsOn": [
+        "node:fs",
+        "node:path"
+      ],
+      "provides": [
+        "CLI: node .github/scripts/registryIndexPathsCheck.js"
+      ],
+      "owns": [
+        "Cross-registry path integrity checks"
+      ],
+      "notes": [
+        "Hybrid registries supported (service graph entries + file catalog entries).",
+        "Conservative: missing paths fail CI; glob patterns must match >= 1 file."
+      ]
+    },
+
+    "workflows.registryIndexPathsCheck": {
+      "kind": "workflow",
+      "service": "ci.guard",
+      "path": ".github/workflows/registry-index-paths-check.yml",
+      "functions": [
+        "On PRs/pushes touching RegistryIndex or any *Registry.json, validate registry JSON and referenced paths",
+        "Fail CI if RegistryIndex points to missing registries or registries point to missing files"
+      ],
+      "dependsOn": [
+        "actions/checkout@v4",
+        "actions/setup-node@v4 (node 20)",
+        "node .github/scripts/registryIndexPathsCheck.js"
+      ],
+      "provides": [
+        "Pull request CI check: registry-index-paths-check"
+      ],
+      "owns": [
+        "RegistryIndex + cross-registry path sanity gate"
+      ],
+      "notes": [
+        "Prevents broken registry navigation from creeping in.",
+        "Path filters target RegistryIndex.json, any *Registry.json, and this workflow/script."
+      ]
     }
   }
 }

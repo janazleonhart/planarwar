@@ -77,7 +77,7 @@
     "web-backend.data.resources": {
       "kind": "data",
       "service": "resources.catalog",
-      "path": "web-backend/data/resources/*.json",
+      "path": "web-backend/data/resources",
       "class": null,
       "lifecycle": "static",
       "ctorArgs": [],
@@ -511,7 +511,7 @@
     "web-backend.packageLock": {
       "kind": "data",
       "service": "package.meta",
-      "path": "web-backend/package-lock.json",
+      "path": "package-lock.json",
       "class": null,
       "lifecycle": "static",
       "ctorArgs": [],

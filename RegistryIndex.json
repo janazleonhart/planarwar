@@ -8,7 +8,7 @@
   "registries": [
     {
       "scope": "worldcore",
-      "path": "WorldCoreRegistry.json",
+      "path": "worldcore/WorldCoreRegistry.json",
       "kind": "code_registry",
       "notes": ["Tracks services/models/tests/tools under worldcore/."]
     },

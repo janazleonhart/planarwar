@@ -1,0 +1,33 @@
+name: registry-index-paths-check
+
+on:
+  pull_request:
+    paths:
+      - "RegistryIndex.json"
+      - "**/*Registry.json"
+      - ".github/workflows/registry-index-paths-check.yml"
+      - ".github/scripts/registryIndexPathsCheck.js"
+  push:
+    branches: ["main"]
+    paths:
+      - "RegistryIndex.json"
+      - "**/*Registry.json"
+      - ".github/workflows/registry-index-paths-check.yml"
+      - ".github/scripts/registryIndexPathsCheck.js"
+
+jobs:
+  registry-index-paths:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Validate RegistryIndex + registry entry paths
+        run: node .github/scripts/registryIndexPathsCheck.js
