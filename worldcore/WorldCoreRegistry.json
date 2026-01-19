@@ -3723,6 +3723,27 @@
         "Shared by settlement planner, respawn coverage report, and gap filler."
       ]
     },
+    "sim.motherBrainWaveOps": {
+      "kind": "module",
+      "service": "sim",
+      "path": "worldcore/sim/MotherBrainWaveOps.ts",
+      "class": "(functions)",
+      "lifecycle": "static",
+      "ctorArgs": [],
+      "provides": [
+        "computeBrainWaveApplyPlan",
+        "computeBrainWipePlan",
+        "parseBrainSpawnIdLoose"
+      ],
+      "dependsOn": [
+        "sim.motherBrainWavePlanner"
+      ],
+      "owns": [],
+      "notes": [
+        "Pure helper utilities for reasoning about Mother Brain wave idempotence/replace behavior and wipe selection without DB access.",
+        "Used primarily by tests; safe to import anywhere."
+      ]
+    },
     "sim.respawnCoverage": {
       "kind": "utility",
       "path": "worldcore/sim/RespawnCoverage.ts",
@@ -3782,7 +3803,9 @@
       "lifecycle": "static",
       "ctorArgs": [],
       "provides": [
-        "planBrainWave"
+        "planBrainWave",
+        "mother-wipe: delete brain-owned spawn_points within bounds (filterable by --theme/--epoch), dry-run vs --commit",
+        "CLI: mother-wipe"
       ],
       "dependsOn": [],
       "owns": [],

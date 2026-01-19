@@ -47,6 +47,7 @@ type Cmd =
   | "set-town-tiers"
   | "mother-status"
   | "mother-wave"
+  | "mother-wipe"
 ;
 
 function usage(): void {
@@ -61,6 +62,7 @@ Usage:
   node dist/worldcore/tools/simBrain.js status [options]
   node dist/worldcore/tools/simBrain.js mother-status [options]
   node dist/worldcore/tools/simBrain.js mother-wave [options] [--commit]
+  node dist/worldcore/tools/simBrain.js mother-wipe [options] [--commit]
   node dist/worldcore/tools/simBrain.js town-baseline [options] [--commit]
   node dist/worldcore/tools/simBrain.js fill-gaps [options] [--commit]
   node dist/worldcore/tools/simBrain.js era [options] [--commit]
@@ -154,6 +156,13 @@ Restore-spawns options:
   --in             required. snapshot file produced by snapshot-spawns
   --shard          target shard override (default: prime_shard)
   --updateExisting allow updating existing spawn_ids (default: false)
+
+Mother Brain wipe options (mother-wipe):
+  --theme          optional theme token filter (e.g. goblins)
+  --epoch          optional epoch filter (e.g. 0)
+  --borderMargin   expand bounds by N cells (default: 0)
+  --list           print spawn_ids to be deleted (top --limit)
+  --limit          list limit (default: 25)
 
 Wipe-placements options:
   --types          comma list of spawn_points.type to delete (default: outpost,checkpoint,graveyard)
@@ -1628,6 +1637,7 @@ async function main(argv: string[]): Promise<void> {
     "status",
     "mother-status",
     "mother-wave",
+    "mother-wipe",
     "town-baseline",
     "set-town-tiers",
     "fill-gaps",
@@ -2060,6 +2070,144 @@ async function main(argv: string[]): Promise<void> {
           console.log(
             `[mother-wave] wouldDelete=${wouldDelete} wouldInsert=${wouldInsert} wouldUpdate=${wouldUpdate} wouldSkip=${wouldSkip}`,
           );
+        }
+      }
+
+      return;
+    } catch (err) {
+      try {
+        await client.query("ROLLBACK");
+      } catch {}
+      throw err;
+    } finally {
+      client.release();
+    }
+  }
+
+
+  if (cmd === "mother-wipe") {
+    const themeQ = (getFlag(argv, "--theme") ?? "").trim() || null;
+    const epochRaw = (getFlag(argv, "--epoch") ?? "").trim();
+    const epochMaybe = epochRaw ? Number(epochRaw) : null;
+    const epochQ = epochMaybe != null && Number.isFinite(epochMaybe) ? (epochMaybe as number) : null;
+
+    const borderMargin = Math.max(0, Math.min(10, parseIntFlag(argv, "--borderMargin", 0) || 0));
+
+    const listRaw = (getFlag(argv, "--list") ?? (hasFlag(argv, "--list") ? "1" : "")).trim().toLowerCase();
+    const wantList = listRaw === "1" || listRaw === "true" || listRaw === "yes" || listRaw === "y";
+    const limit = Math.max(1, Math.min(500, parseIntFlag(argv, "--limit", 25) || 25));
+
+    const minX = (bounds.minCx - borderMargin) * cellSize;
+    const maxX = (bounds.maxCx + 1 + borderMargin) * cellSize;
+    const minZ = (bounds.minCz - borderMargin) * cellSize;
+    const maxZ = (bounds.maxCz + 1 + borderMargin) * cellSize;
+
+    const matchesFilters = (spawnId: string): boolean => {
+      const sid = String(spawnId ?? "");
+      if (!sid.startsWith("brain:")) return false;
+
+      const toks = sid
+        .split(":")
+        .map((s) => s.trim())
+        .filter(Boolean)
+        .slice(1); // drop 'brain'
+
+      const toksLower = toks.map((t) => t.toLowerCase());
+
+      if (themeQ) {
+        const tq = themeQ.toLowerCase();
+        if (!toksLower.includes(tq)) return false;
+      }
+
+      if (epochQ != null) {
+        let found = false;
+        for (const t of toks) {
+          if (!/^\d+$/.test(t)) continue;
+          const n = parseInt(t, 10);
+          if (Number.isFinite(n) && n === epochQ) {
+            found = true;
+            break;
+          }
+        }
+        if (!found) return false;
+      }
+
+      return true;
+    };
+
+    const client = await db.connect();
+    try {
+      await client.query("BEGIN");
+
+      const res = await client.query(
+        `
+        SELECT id, spawn_id
+        FROM spawn_points
+        WHERE shard_id = $1
+          AND spawn_id LIKE 'brain:%'
+          AND x >= $2 AND x <= $3
+          AND z >= $4 AND z <= $5
+        ORDER BY spawn_id
+        `,
+        [shardId, minX, maxX, minZ, maxZ],
+      );
+
+      const rows = (res.rows ?? []) as Array<{ id: number; spawn_id: string }>;
+
+      const filtered = rows.filter((r) => matchesFilters(String(r.spawn_id ?? "")));
+      const ids = filtered.map((r) => Number(r.id)).filter((n) => Number.isFinite(n));
+
+      const wouldDelete = ids.length;
+      let deleted = 0;
+
+      if (commit && ids.length > 0) {
+        await client.query(`DELETE FROM spawn_points WHERE id = ANY($1::int[])`, [ids]);
+        deleted = ids.length;
+      }
+
+      if (commit) await client.query("COMMIT");
+      else await client.query("ROLLBACK");
+
+      const payload = {
+        ok: true,
+        commit,
+        shardId,
+        bounds: boundsSlug(bounds),
+        cellSize,
+        borderMargin,
+        theme: themeQ,
+        epoch: epochQ,
+        wouldDelete: commit ? undefined : wouldDelete,
+        deleted: commit ? deleted : undefined,
+        list: wantList
+          ? filtered
+              .slice(0, limit)
+              .map((r) => String(r.spawn_id ?? ""))
+          : undefined,
+      };
+
+      if (hasFlag(argv, "--json")) {
+        console.log(JSON.stringify(payload, null, 2));
+      } else {
+        const headline = commit ? "committed" : "dry-run";
+        console.log(
+          `[mother-wipe] ${headline}. shard=${shardId} bounds=${boundsSlug(bounds)} cellSize=${cellSize} borderMargin=${borderMargin} theme=${themeQ ?? "(any)"} epoch=${epochQ ?? "(any)"}`,
+        );
+
+        if (commit) {
+          console.log(`[mother-wipe] deleted=${deleted}`);
+        } else {
+          console.log(`[mother-wipe] wouldDelete=${wouldDelete} (use --commit)`);
+        }
+
+        if (wantList) {
+          console.log(`  list (top ${limit}):`);
+          for (const sid of payload.list ?? []) {
+            console.log(`    - ${sid}`);
+          }
+          if (filtered.length > limit) {
+            console.log(`  (truncated) remaining=${filtered.length - limit}`);
+          }
         }
       }
 
