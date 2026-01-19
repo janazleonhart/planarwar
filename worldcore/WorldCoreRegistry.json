@@ -4288,6 +4288,22 @@
         "Locks down epoch swap flows (MotherBrain waves replacing themes) without requiring relog."
       ]
     },
+
+    "test.behaviorSharedRespawnUsesSpawnPointCache": {
+      "kind": "test",
+      "path": "worldcore/test/npcCombat.sharedRespawnUsesSpawnPointCache.behavior.test.ts",
+      "dependsOn": [
+        "core.entities",
+        "npc.manager",
+        "npc.spawnController",
+        "combat.npc",
+        "world.spawnPointCache"
+      ],
+      "notes": [
+        "Behavior: when a shared NPC has spawnPointId, respawn consults SpawnPointCache for live-edited coords (no DB hit).",
+        "Locks down live spawn point edit workflows + hot reload safety."
+      ]
+    },
     "tools.resourceBaseline": {
       "kind": "dev_script",
       "path": "worldcore/tools/resourceBaseline.ts",
@@ -4902,6 +4918,29 @@
         "filters by WORLD_SPAWNS_TYPES (default includes checkpoint, graveyard, mailbox, rest, outpost, town, ...)"
       ],
       "owns": []
+    },
+
+    "world.spawnPointCache": {
+      "kind": "utility",
+      "path": "worldcore/world/SpawnPointCache.ts",
+      "types": [
+        "SpawnPointCacheEntry"
+      ],
+      "functions": [
+        "upsertSpawnPoint",
+        "upsertSpawnPoints",
+        "getSpawnPoint",
+        "setSpawnPointCoords",
+        "clearSpawnPointCache"
+      ],
+      "dependsOn": [
+        "world.spawnPoints"
+      ],
+      "notes": [
+        "Lightweight in-memory cache of spawn_points entries (no IO; safe in unit tests).",
+        "Lets runtime systems (e.g. shared NPC respawn) consult the most recently known spawn point coordinates without touching the DB.",
+        "Supports dev/test overrides via setSpawnPointCoords; cleared by hot reload when reloading spawns."
+      ]
     },
     "world.spawnPoints": {
       "kind": "service",
