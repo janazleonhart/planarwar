@@ -22,6 +22,8 @@ import { tierForPointDistanceMode } from "../sim/TownTierSeeding";
 import { planTownBaselines } from "../sim/TownBaselinePlanner";
 import type { TownBaselinePlanOptions, TownLikeSpawnRow } from "../sim/TownBaselinePlanner";
 
+import { planBrainWave } from "../sim/MotherBrainWavePlanner";
+
 // Prefer the canonical action types if present in your repo.
 // If your BrainActions.ts exports these, keep this import.
 // If it doesn't (older branch), you can remove it and fallback to local types.
@@ -43,6 +45,8 @@ type Cmd =
   | "wipe-placements"
   | "help"
   | "set-town-tiers"
+  | "mother-status"
+  | "mother-wave"
 ;
 
 function usage(): void {
@@ -55,6 +59,8 @@ Usage:
   node dist/worldcore/tools/simBrain.js apply [options] [--commit]
   node dist/worldcore/tools/simBrain.js report [options]
   node dist/worldcore/tools/simBrain.js status [options]
+  node dist/worldcore/tools/simBrain.js mother-status [options]
+  node dist/worldcore/tools/simBrain.js mother-wave [options] [--commit]
   node dist/worldcore/tools/simBrain.js town-baseline [options] [--commit]
   node dist/worldcore/tools/simBrain.js fill-gaps [options] [--commit]
   node dist/worldcore/tools/simBrain.js era [options] [--commit]
@@ -1620,6 +1626,8 @@ async function main(argv: string[]): Promise<void> {
     "apply",
     "report",
     "status",
+    "mother-status",
+    "mother-wave",
     "town-baseline",
     "set-town-tiers",
     "fill-gaps",
@@ -1662,6 +1670,410 @@ async function main(argv: string[]): Promise<void> {
     await runStatus({ shardId, bounds, cellSize, respawnRadius, topGaps });
     return;
   }
+
+  if (cmd === "mother-status") {
+    const themeQ = (getFlag(argv, "--theme") ?? "").trim() || null;
+    const epochRaw = (getFlag(argv, "--epoch") ?? "").trim();
+    const epochQ = epochRaw ? Number(epochRaw) : null;
+    const borderMargin = parseIntFlag(argv, "--borderMargin", 0) || 0;
+
+    const listRaw = (getFlag(argv, "--list") ?? (hasFlag(argv, "--list") ? "1" : "")).trim().toLowerCase();
+    const wantList = listRaw === "1" || listRaw === "true" || listRaw === "yes" || listRaw === "y";
+    const limit = Math.max(1, Math.min(200, parseIntFlag(argv, "--limit", 25) || 25));
+
+    const minX = (bounds.minCx - borderMargin) * cellSize;
+    const maxX = (bounds.maxCx + 1 + borderMargin) * cellSize;
+    const minZ = (bounds.minCz - borderMargin) * cellSize;
+    const maxZ = (bounds.maxCz + 1 + borderMargin) * cellSize;
+
+    const parseBrainSpawnId = (spawnId: string): { epoch: number | null; theme: string | null } => {
+      const parts = String(spawnId ?? "").split(":");
+      if (parts.length < 2) return { epoch: null, theme: null };
+
+      const a = parts[1] ?? null;
+      const b = parts[2] ?? null;
+
+      const epochA = Number(a);
+      if (Number.isFinite(epochA)) return { epoch: epochA, theme: b };
+
+      const epochB = Number(b);
+      if (Number.isFinite(epochB)) return { epoch: epochB, theme: a };
+
+      return { epoch: null, theme: a };
+    };
+
+    const rowsRes = await db.query(
+      `
+      SELECT spawn_id, type, proto_id, region_id
+      FROM spawn_points
+      WHERE shard_id = $1
+        AND spawn_id LIKE 'brain:%'
+        AND x >= $2 AND x <= $3
+        AND z >= $4 AND z <= $5
+      `,
+      [shardId, minX, maxX, minZ, maxZ],
+    );
+
+    const byTheme: Record<string, number> = {};
+    const byEpoch: Record<string, number> = {};
+    const byType: Record<string, number> = {};
+    const topProto: Record<string, number> = {};
+
+    const filtered = (rowsRes.rows ?? []).filter((r: any) => {
+      const sid = String(r.spawn_id ?? "");
+      if (!sid.startsWith("brain:")) return false;
+      const meta = parseBrainSpawnId(sid);
+      if (themeQ && meta.theme !== themeQ) return false;
+      if (epochQ != null && Number.isFinite(epochQ) && meta.epoch !== epochQ) return false;
+      return true;
+    });
+
+    for (const r of filtered) {
+      const sid = String(r.spawn_id ?? "");
+      const meta = parseBrainSpawnId(sid);
+      const tTheme = meta.theme ?? "(unknown)";
+      const tEpoch = meta.epoch != null ? String(meta.epoch) : "(unknown)";
+      const tType = String(r.type ?? "(unknown)");
+      const tProto = String(r.proto_id ?? "(none)");
+
+      byTheme[tTheme] = (byTheme[tTheme] ?? 0) + 1;
+      byEpoch[tEpoch] = (byEpoch[tEpoch] ?? 0) + 1;
+      byType[tType] = (byType[tType] ?? 0) + 1;
+      topProto[tProto] = (topProto[tProto] ?? 0) + 1;
+    }
+
+    const payload = {
+      shardId,
+      bounds: boundsSlug(bounds),
+      cellSize,
+      borderMargin,
+      theme: themeQ,
+      epoch: epochQ != null && Number.isFinite(epochQ) ? epochQ : null,
+      total: filtered.length,
+      byTheme,
+      byEpoch,
+      byType,
+      topProto,
+      list: wantList
+        ? filtered
+            .slice()
+            .sort((a: any, b: any) => String(a.spawn_id ?? "").localeCompare(String(b.spawn_id ?? "")))
+            .slice(0, limit)
+            .map((r: any) => ({
+              spawnId: String(r.spawn_id ?? ""),
+              type: String(r.type ?? ""),
+              protoId: String(r.proto_id ?? "") || null,
+              regionId: String(r.region_id ?? "") || null,
+            }))
+        : undefined,
+    };
+
+    if (hasFlag(argv, "--json")) {
+      console.log(JSON.stringify(payload, null, 2));
+      return;
+    }
+
+    console.log(
+      `[mother-status] shard=${shardId} bounds=${boundsSlug(bounds)} cellSize=${cellSize} borderMargin=${borderMargin} theme=${themeQ ?? "(any)"} epoch=${epochQ != null && Number.isFinite(epochQ) ? epochQ : "(any)"} total=${filtered.length}`,
+    );
+
+    const printMap = (title: string, m: Record<string, number>, top = 12) => {
+      const entries = Object.entries(m).sort((a, b) => (b[1] ?? 0) - (a[1] ?? 0));
+      console.log(`  ${title}: ${entries.length}`);
+      for (const [k, v] of entries.slice(0, top)) {
+        console.log(`    - ${k}: ${v}`);
+      }
+    };
+
+    printMap("byTheme", byTheme);
+    printMap("byEpoch", byEpoch);
+    printMap("byType", byType);
+    printMap("topProto", topProto, 18);
+
+    if (wantList) {
+      console.log(`  list (top ${limit}):`);
+      for (const r of payload.list ?? []) {
+        console.log(`    - ${r.spawnId} type=${r.type} protoId=${r.protoId ?? "(none)"} region=${r.regionId ?? "(none)"}`);
+      }
+    }
+
+    return;
+  }
+
+  if (cmd === "mother-wave") {
+    const theme = (getFlag(argv, "--theme") ?? "goblins").trim() || "goblins";
+    const epoch = parseIntFlag(argv, "--epoch", 0) || 0;
+    const count = Math.max(1, Math.min(5000, parseIntFlag(argv, "--count", 8) || 8));
+    const seed = (getFlag(argv, "--seed") ?? "seed:mother").trim() || "seed:mother";
+    const append = hasFlag(argv, "--append");
+    const borderMargin = Math.max(0, Math.min(10, parseIntFlag(argv, "--borderMargin", 0) || 0));
+
+    const minX = (bounds.minCx - borderMargin) * cellSize;
+    const maxX = (bounds.maxCx + 1 + borderMargin) * cellSize;
+    const minZ = (bounds.minCz - borderMargin) * cellSize;
+    const maxZ = (bounds.maxCz + 1 + borderMargin) * cellSize;
+
+    const fnv1a32 = (text: string): number => {
+      let h = 0x811c9dc5;
+      for (let i = 0; i < text.length; i++) {
+        h ^= text.charCodeAt(i);
+        h = (h + ((h << 1) + (h << 4) + (h << 7) + (h << 8) + (h << 24))) >>> 0;
+      }
+      return h >>> 0;
+    };
+
+    const ensureBrainId = (row: any, i: number): string => {
+      const existing = String(row.spawnId ?? "").trim();
+      if (existing && existing.startsWith("brain:")) return existing;
+      const proto = String(row.protoId ?? "");
+      const region = String(row.regionId ?? "");
+      const x = Number(row.x);
+      const z = Number(row.z);
+      const base = `${seed}|${epoch}|${theme}|${row.type}|${proto}|${region}|${x.toFixed(2)}|${z.toFixed(2)}|${i}`;
+      const h = fnv1a32(base).toString(16).padStart(8, "0");
+      return `brain:${epoch}:${theme}:${h}`;
+    };
+
+    const client = await db.connect();
+    try {
+      await client.query("BEGIN");
+
+      let wouldDelete = 0;
+      let deleted = 0;
+
+      if (!append) {
+        const existing = await client.query(
+          `
+          SELECT id
+          FROM spawn_points
+          WHERE shard_id = $1
+            AND spawn_id LIKE 'brain:%'
+            AND x >= $2 AND x <= $3
+            AND z >= $4 AND z <= $5
+          `,
+          [shardId, minX, maxX, minZ, maxZ],
+        );
+
+        const ids: number[] = (existing.rows ?? [])
+          .map((r: any) => Number(r.id))
+          .filter((n: number) => Number.isFinite(n));
+        wouldDelete = ids.length;
+
+        if (commit && ids.length > 0) {
+          await client.query(`DELETE FROM spawn_points WHERE id = ANY($1::int[])`, [ids]);
+          deleted = ids.length;
+        }
+      }
+
+      const planned: any[] = await (planBrainWave as any)({
+        shardId,
+        bounds: boundsSlug(bounds),
+        cellSize,
+        borderMargin,
+        seed,
+        epoch,
+        theme,
+        count,
+      });
+
+      const placeRows = (planned ?? [])
+        .map((a: any, i: number) => {
+          const kind = a?.kind ?? "";
+          if (kind && kind !== "place_spawn") return null;
+
+          const spawn = a?.spawn ?? null;
+          const spawnId = spawn?.spawnId ?? a?.spawnId ?? a?.spawn_id;
+          const type = spawn?.type ?? a?.type;
+          const archetype = spawn?.archetype ?? a?.archetype ?? "brain";
+          const protoId = spawn?.protoId ?? a?.protoId ?? a?.proto_id;
+          const variantId = spawn?.variantId ?? a?.variantId ?? a?.variant_id;
+          const x = Number(spawn?.x ?? a?.x);
+          const y = Number(spawn?.y ?? a?.y ?? 0);
+          const z = Number(spawn?.z ?? a?.z);
+          const regionId = spawn?.regionId ?? a?.regionId ?? a?.region_id;
+
+          if (!type || !Number.isFinite(x) || !Number.isFinite(z)) return null;
+
+          const row = {
+            spawnId,
+            type: String(type),
+            archetype: String(archetype),
+            protoId: protoId != null ? String(protoId) : null,
+            variantId: variantId != null ? String(variantId) : null,
+            x,
+            y: Number.isFinite(y) ? y : 0,
+            z,
+            regionId: regionId != null ? String(regionId) : null,
+          };
+
+          const fixedSpawnId = ensureBrainId(row, i);
+          return {
+            ...row,
+            spawnId: fixedSpawnId,
+            protoId: (row as any).protoId ?? null,
+            variantId: (row as any).variantId ?? null,
+            regionId: (row as any).regionId ?? null,
+          };
+        })
+        .filter(Boolean);
+
+      const spawnIds: string[] = placeRows.map((r: any) => String(r.spawnId));
+
+      let existingMap = new Map<string, number>();
+      if (spawnIds.length > 0) {
+        const existRes = await client.query(
+          `SELECT id, spawn_id FROM spawn_points WHERE shard_id = $1 AND spawn_id = ANY($2::text[])`,
+          [shardId, spawnIds],
+        );
+        for (const r of existRes.rows ?? []) {
+          existingMap.set(String(r.spawn_id), Number(r.id));
+        }
+      }
+
+      let wouldInsert = 0;
+      let wouldUpdate = 0;
+      let wouldSkip = 0;
+      let inserted = 0;
+      let updated = 0;
+
+      for (const row of placeRows) {
+        const sid = String((row as any).spawnId);
+        const existingId = existingMap.get(sid);
+
+        if (existingId != null && Number.isFinite(existingId)) {
+          if (!updateExisting) {
+            wouldSkip += 1;
+            continue;
+          }
+
+          wouldUpdate += 1;
+
+          if (commit) {
+            await client.query(
+              `
+              UPDATE spawn_points
+              SET type = $3,
+                  archetype = $4,
+                  proto_id = $5,
+                  variant_id = $6,
+                  x = $7,
+                  y = $8,
+                  z = $9,
+                  region_id = $10
+              WHERE shard_id = $1 AND spawn_id = $2
+              `,
+              [
+                shardId,
+                sid,
+                (row as any).type,
+                (row as any).archetype,
+                (row as any).protoId ?? null,
+                (row as any).variantId ?? null,
+                (row as any).x,
+                (row as any).y,
+                (row as any).z,
+                (row as any).regionId ?? null,
+              ],
+            );
+            updated += 1;
+          }
+          continue;
+        }
+
+        wouldInsert += 1;
+        if (commit) {
+          await client.query(
+            `
+            INSERT INTO spawn_points (shard_id, spawn_id, type, archetype, proto_id, variant_id, x, y, z, region_id)
+            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+            `,
+            [
+              shardId,
+              sid,
+              (row as any).type,
+              (row as any).archetype,
+              (row as any).protoId ?? null,
+              (row as any).variantId ?? null,
+              (row as any).x,
+              (row as any).y,
+              (row as any).z,
+              (row as any).regionId ?? null,
+            ],
+          );
+          inserted += 1;
+        }
+      }
+
+      if (commit) {
+        await client.query("COMMIT");
+      } else {
+        await client.query("ROLLBACK");
+      }
+
+      const payload = commit
+        ? {
+            ok: true,
+            commit,
+            shardId,
+            bounds: boundsSlug(bounds),
+            cellSize,
+            borderMargin,
+            seed,
+            epoch,
+            theme,
+            append,
+            deleted,
+            inserted,
+            updated,
+            skipped: wouldSkip,
+          }
+        : {
+            ok: true,
+            commit,
+            shardId,
+            bounds: boundsSlug(bounds),
+            cellSize,
+            borderMargin,
+            seed,
+            epoch,
+            theme,
+            append,
+            wouldDelete,
+            wouldInsert,
+            wouldUpdate,
+            wouldSkip,
+          };
+
+      if (hasFlag(argv, "--json")) {
+        console.log(JSON.stringify(payload, null, 2));
+      } else {
+        const headline = commit ? "committed" : "dry-run";
+        console.log(
+          `[mother-wave] ${headline}. shard=${shardId} bounds=${boundsSlug(bounds)} cellSize=${cellSize} borderMargin=${borderMargin} theme=${theme} epoch=${epoch} seed=${seed} count=${count} append=${append}`,
+        );
+
+        if (commit) {
+          console.log(
+            `[mother-wave] deleted=${deleted} inserted=${inserted} updated=${updated} skipped=${wouldSkip}`,
+          );
+        } else {
+          console.log(
+            `[mother-wave] wouldDelete=${wouldDelete} wouldInsert=${wouldInsert} wouldUpdate=${wouldUpdate} wouldSkip=${wouldSkip}`,
+          );
+        }
+      }
+
+      return;
+    } catch (err) {
+      try {
+        await client.query("ROLLBACK");
+      } catch {}
+      throw err;
+    } finally {
+      client.release();
+    }
+  }
+
 
   if (cmd === "town-baseline") {
 

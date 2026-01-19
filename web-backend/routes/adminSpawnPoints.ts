@@ -1033,12 +1033,30 @@ function isBrainSpawnId(spawnId: string): boolean {
 }
 
 function parseBrainSpawnId(spawnId: string): { epoch: number | null; theme: string | null } {
-  // brain:<epoch>:<theme>:...
+  // We *prefer* the canonical format:
+  //   brain:<epoch>:<theme>:...
+  // ...but older/experimental branches sometimes emitted:
+  //   brain:<theme>:<epoch>:...
+  // or even:
+  //   brain:<theme>:...
   const parts = spawnId.split(":");
-  if (parts.length < 3) return { epoch: null, theme: null };
-  const epoch = Number(parts[1]);
-  const theme = parts[2] ?? null;
-  return { epoch: Number.isFinite(epoch) ? epoch : null, theme };
+  if (parts.length < 2) return { epoch: null, theme: null };
+
+  const a = parts[1] ?? null;
+  const b = parts[2] ?? null;
+
+  const epochA = Number(a);
+  if (Number.isFinite(epochA)) {
+    return { epoch: epochA, theme: b };
+  }
+
+  const epochB = Number(b);
+  if (Number.isFinite(epochB)) {
+    return { epoch: epochB, theme: a };
+  }
+
+  // Fall back: brain:<theme>:...
+  return { epoch: null, theme: a };
 }
 
 router.get("/mother_brain/status", async (req, res) => {
@@ -1048,7 +1066,8 @@ router.get("/mother_brain/status", async (req, res) => {
     const cellSize = Number(req.query.cellSize ?? 64);
     const themeQ = strOrNull(req.query.theme);
     const epochQ = strOrNull(req.query.epoch);
-    const wantList = String(req.query.list ?? "").toLowerCase() === "true";
+    const listRaw = String(req.query.list ?? "").trim().toLowerCase();
+    const wantList = listRaw === "true" || listRaw === "1" || listRaw === "yes" || listRaw === "y";
     const limit = Math.max(1, Math.min(200, Number(req.query.limit ?? 15)));
 
     const parsedBounds = parseCellBounds(bounds);
@@ -1171,6 +1190,7 @@ router.post("/mother_brain/wave", async (req, res) => {
   try {
     const client = await db.connect();
     let wouldDelete = 0;
+    let deleted = 0;
     let wouldInsert = 0;
     let inserted = 0;
 
@@ -1195,8 +1215,9 @@ router.post("/mother_brain/wave", async (req, res) => {
           .filter((n: number) => Number.isFinite(n));
         wouldDelete = ids.length;
 
-        if (ids.length > 0) {
+        if (commit && ids.length > 0) {
           await client.query(`DELETE FROM spawn_points WHERE id = ANY($1::int[])`, [ids]);
+          deleted = ids.length;
         }
       }
 
@@ -1231,7 +1252,6 @@ router.post("/mother_brain/wave", async (req, res) => {
         .filter(Boolean);
 
       for (const row of placeRows) {
-        wouldInsert += 1;
         const exists = await client.query(
           `SELECT id FROM spawn_points WHERE shard_id = $1 AND spawn_id = $2 LIMIT 1`,
           [shardId, (row as any).spawnId],
@@ -1241,25 +1261,29 @@ router.post("/mother_brain/wave", async (req, res) => {
           continue;
         }
 
-        await client.query(
-          `
-          INSERT INTO spawn_points (shard_id, spawn_id, type, archetype, proto_id, variant_id, x, y, z, region_id)
-          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
-          `,
-          [
-            shardId,
-            (row as any).spawnId,
-            (row as any).type,
-            (row as any).archetype,
-            (row as any).protoId,
-            (row as any).variantId,
-            (row as any).x,
-            (row as any).y,
-            (row as any).z,
-            (row as any).regionId,
-          ],
-        );
-        inserted += 1;
+        wouldInsert += 1;
+
+        if (commit) {
+          await client.query(
+            `
+            INSERT INTO spawn_points (shard_id, spawn_id, type, archetype, proto_id, variant_id, x, y, z, region_id)
+            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+            `,
+            [
+              shardId,
+              (row as any).spawnId,
+              (row as any).type,
+              (row as any).archetype,
+              (row as any).protoId,
+              (row as any).variantId,
+              (row as any).x,
+              (row as any).y,
+              (row as any).z,
+              (row as any).regionId,
+            ],
+          );
+          inserted += 1;
+        }
       }
 
       if (commit) {
@@ -1283,7 +1307,7 @@ router.post("/mother_brain/wave", async (req, res) => {
             commit,
             append,
             inserted,
-            deleted: wouldDelete,
+            deleted,
           }
         : {
             ok: true,
