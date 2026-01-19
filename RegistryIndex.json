@@ -1,0 +1,40 @@
+{
+  "registryVersion": "1.0",
+  "root": ".",
+  "notes": [
+    "Index of per-package registries. Each package owns its own registry to keep scope sane.",
+    "WorldCoreRegistry.json remains authoritative for the worldcore/ package only."
+  ],
+  "registries": [
+    {
+      "scope": "worldcore",
+      "path": "WorldCoreRegistry.json",
+      "kind": "code_registry",
+      "notes": ["Tracks services/models/tests/tools under worldcore/."]
+    },
+    {
+      "scope": "web-backend",
+      "path": "web-backend/WebBackendRegistry.json",
+      "kind": "code_registry",
+      "notes": ["HTTP API + admin tools for the web layer."]
+    },
+    {
+      "scope": "web-frontend",
+      "path": "web-frontend/WebFrontendRegistry.json",
+      "kind": "code_registry",
+      "notes": ["React/Vite frontend including admin pages."]
+    },
+    {
+      "scope": "mmo-backend",
+      "path": "mmo-backend/MmoBackendRegistry.json",
+      "kind": "code_registry",
+      "notes": ["WebSocket shard server."]
+    },
+    {
+      "scope": "github",
+      "path": ".github/GithubRegistry.json",
+      "kind": "ops_registry",
+      "notes": ["GitHub workflows and repo automation metadata."]
+    }
+  ]
+}

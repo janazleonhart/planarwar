@@ -1,12 +1,33 @@
 {
+  "registryVersion": "1.0",
+  "root": ".github",
+  "package": {
+    "name": "planarwar-github",
+    "purpose": "Repo automation (CI checks, guard rails, workflows)."
+  },
   "services": {
     "workflows.worldcoreRegistryCheck": {
       "kind": "workflow",
+      "service": "ci.guard",
       "path": ".github/workflows/worldcore-registry-check.yml",
-      "functions": [],
-      "dependsOn": [],
+      "functions": [
+        "On PRs touching worldcore/** or WorldCoreRegistry.json, run registry guard in CI",
+        "Fail PR if WorldCoreRegistry.json is out of sync with worldcore source tree"
+      ],
+      "dependsOn": [
+        "actions/checkout@v4",
+        "actions/setup-node@v4 (node 20)",
+        "node worldcore/tools/registryCheck.js --mode=ci"
+      ],
+      "provides": [
+        "Pull request CI check: registry-check"
+      ],
+      "owns": [
+        "Registry consistency gate for worldcore package"
+      ],
       "notes": [
-        "AUTO: skeleton generated from raw_links.txt; fill functions/dependsOn later."
+        "Triggered by pull_request paths filter for worldcore/**, WorldCoreRegistry.json, and this workflow file.",
+        "Runs registryCheck.js in CI mode to enforce registry freshness."
       ]
     }
   }

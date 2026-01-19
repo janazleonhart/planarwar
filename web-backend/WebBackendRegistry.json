@@ -1,363 +1,917 @@
 {
+  "registryVersion": "1.0",
+  "root": "web-backend",
+  "package": {
+    "name": "planarwar-web-backend",
+    "version": "0.1.0",
+    "runtime": "node",
+    "stack": [
+      "express",
+      "postgres (via worldcore)"
+    ]
+  },
   "services": {
-    "config": {
+    "web-backend.config.cityTier": {
       "kind": "module",
-      "path": "web-backend/config.ts",
-      "functions": [],
-      "dependsOn": [],
-      "notes": [
-        "AUTO-GENERATED skeleton from raw_links.txt. Fill functions/dependsOn/notes as the package evolves."
-      ]
-    },
-    "config.cityTierConfig": {
-      "kind": "module",
+      "service": "cityTier.config",
       "path": "web-backend/config/cityTierConfig.ts",
-      "functions": [],
-      "dependsOn": [],
+      "class": null,
+      "lifecycle": "singleton",
+      "ctorArgs": [],
+      "dependsOn": [
+        "node:fs",
+        "node:path",
+        "web-backend.data.cityTierConfig",
+        "web-backend.gameState",
+        "web-backend.domain.resources"
+      ],
+      "provides": [
+        "getCityTierConfig()",
+        "getTierConfig(tier)",
+        "getMorphConfig()",
+        "DEFAULT_MORPH_CONFIG"
+      ],
+      "owns": [
+        "in-process CityTierConfig cache"
+      ],
       "notes": [
-        "AUTO-GENERATED skeleton from raw_links.txt. Fill functions/dependsOn/notes as the package evolves."
+        "Loads /web-backend/data/cityTierConfig.json from disk and caches it.",
+        "City morph options and tier-up costs are defined here (and/or in the JSON file)."
       ]
     },
-    "data.cityTierConfig": {
+    "web-backend.config.demo": {
+      "kind": "module",
+      "service": "demo.config",
+      "path": "web-backend/config.ts",
+      "class": null,
+      "lifecycle": "static",
+      "ctorArgs": [],
+      "dependsOn": [],
+      "provides": [
+        "demoProfile",
+        "tickConfig",
+        "startingResourcesConfig",
+        "missionDurationConfig"
+      ],
+      "owns": [],
+      "notes": [
+        "Demo profile knobs for tick rate, starting resources, and mission pacing."
+      ]
+    },
+    "web-backend.data.cityTierConfig": {
       "kind": "data",
+      "service": "cityTier.data",
       "path": "web-backend/data/cityTierConfig.json",
-      "functions": [],
+      "class": null,
+      "lifecycle": "static",
+      "ctorArgs": [],
       "dependsOn": [],
+      "provides": [
+        "City tier progression + morph configuration (JSON)"
+      ],
+      "owns": [],
       "notes": [
-        "AUTO-GENERATED skeleton from raw_links.txt. Fill functions/dependsOn/notes as the package evolves."
+        "Loaded by web-backend/config/cityTierConfig.ts."
       ]
     },
-    "data.resources.blackMarket": {
+    "web-backend.data.resources": {
       "kind": "data",
+      "service": "resources.catalog",
+      "path": "web-backend/data/resources/*.json",
+      "class": null,
+      "lifecycle": "static",
+      "ctorArgs": [],
+      "dependsOn": [],
+      "provides": [
+        "Resource item definitions for families: ore/stone/wood/herbs/food/fish/mana/luxury/black_market"
+      ],
+      "owns": [
+        "web-backend.data.resources.food",
+        "web-backend.data.resources.wood",
+        "web-backend.data.resources.stone",
+        "web-backend.data.resources.ore",
+        "web-backend.data.resources.herbs",
+        "web-backend.data.resources.fish",
+        "web-backend.data.resources.mana",
+        "web-backend.data.resources.luxury",
+        "web-backend.data.resources.black_market"
+      ],
+      "notes": [
+        "Catalog JSON files for resource items (used by web-backend/domain/resources.ts).",
+        "Note: luxury.json and black_market.json exist but are not in RESOURCE_DATA_FILES yet."
+      ]
+    },
+    "web-backend.data.resources.black_market": {
+      "kind": "data",
+      "service": "data.resources",
       "path": "web-backend/data/resources/black_market.json",
-      "functions": [],
+      "class": null,
+      "lifecycle": "static",
+      "ctorArgs": [],
       "dependsOn": [],
+      "provides": [
+        "Resource item catalog (present; not currently loaded by domain/resources.ts)"
+      ],
+      "owns": [],
       "notes": [
-        "AUTO-GENERATED skeleton from raw_links.txt. Fill functions/dependsOn/notes as the package evolves."
+        "Not referenced by RESOURCE_DATA_FILES; currently unused unless loaded elsewhere."
       ]
     },
-    "data.resources.fish": {
+    "web-backend.data.resources.fish": {
       "kind": "data",
+      "service": "data.resources",
       "path": "web-backend/data/resources/fish.json",
-      "functions": [],
+      "class": null,
+      "lifecycle": "static",
+      "ctorArgs": [],
       "dependsOn": [],
+      "provides": [
+        "Resource item catalog (loaded by domain/resources.ts)"
+      ],
+      "owns": [],
       "notes": [
-        "AUTO-GENERATED skeleton from raw_links.txt. Fill functions/dependsOn/notes as the package evolves."
+        "Included in RESOURCE_DATA_FILES in domain/resources.ts."
       ]
     },
-    "data.resources.food": {
+    "web-backend.data.resources.food": {
       "kind": "data",
+      "service": "data.resources",
       "path": "web-backend/data/resources/food.json",
-      "functions": [],
+      "class": null,
+      "lifecycle": "static",
+      "ctorArgs": [],
       "dependsOn": [],
+      "provides": [
+        "Resource item catalog (loaded by domain/resources.ts)"
+      ],
+      "owns": [],
       "notes": [
-        "AUTO-GENERATED skeleton from raw_links.txt. Fill functions/dependsOn/notes as the package evolves."
+        "Included in RESOURCE_DATA_FILES in domain/resources.ts."
       ]
     },
-    "data.resources.herbs": {
+    "web-backend.data.resources.herbs": {
       "kind": "data",
+      "service": "data.resources",
       "path": "web-backend/data/resources/herbs.json",
-      "functions": [],
+      "class": null,
+      "lifecycle": "static",
+      "ctorArgs": [],
       "dependsOn": [],
+      "provides": [
+        "Resource item catalog (loaded by domain/resources.ts)"
+      ],
+      "owns": [],
       "notes": [
-        "AUTO-GENERATED skeleton from raw_links.txt. Fill functions/dependsOn/notes as the package evolves."
+        "Included in RESOURCE_DATA_FILES in domain/resources.ts."
       ]
     },
-    "data.resources.luxury": {
+    "web-backend.data.resources.luxury": {
       "kind": "data",
+      "service": "data.resources",
       "path": "web-backend/data/resources/luxury.json",
-      "functions": [],
+      "class": null,
+      "lifecycle": "static",
+      "ctorArgs": [],
       "dependsOn": [],
+      "provides": [
+        "Resource item catalog (present; not currently loaded by domain/resources.ts)"
+      ],
+      "owns": [],
       "notes": [
-        "AUTO-GENERATED skeleton from raw_links.txt. Fill functions/dependsOn/notes as the package evolves."
+        "Not referenced by RESOURCE_DATA_FILES; currently unused unless loaded elsewhere."
       ]
     },
-    "data.resources.mana": {
+    "web-backend.data.resources.mana": {
       "kind": "data",
+      "service": "data.resources",
       "path": "web-backend/data/resources/mana.json",
-      "functions": [],
+      "class": null,
+      "lifecycle": "static",
+      "ctorArgs": [],
       "dependsOn": [],
+      "provides": [
+        "Resource item catalog (loaded by domain/resources.ts)"
+      ],
+      "owns": [],
       "notes": [
-        "AUTO-GENERATED skeleton from raw_links.txt. Fill functions/dependsOn/notes as the package evolves."
+        "Included in RESOURCE_DATA_FILES in domain/resources.ts."
       ]
     },
-    "data.resources.ore": {
+    "web-backend.data.resources.ore": {
       "kind": "data",
+      "service": "data.resources",
       "path": "web-backend/data/resources/ore.json",
-      "functions": [],
+      "class": null,
+      "lifecycle": "static",
+      "ctorArgs": [],
       "dependsOn": [],
+      "provides": [
+        "Resource item catalog (loaded by domain/resources.ts)"
+      ],
+      "owns": [],
       "notes": [
-        "AUTO-GENERATED skeleton from raw_links.txt. Fill functions/dependsOn/notes as the package evolves."
+        "Included in RESOURCE_DATA_FILES in domain/resources.ts."
       ]
     },
-    "data.resources.stone": {
+    "web-backend.data.resources.stone": {
       "kind": "data",
+      "service": "data.resources",
       "path": "web-backend/data/resources/stone.json",
-      "functions": [],
+      "class": null,
+      "lifecycle": "static",
+      "ctorArgs": [],
       "dependsOn": [],
+      "provides": [
+        "Resource item catalog (loaded by domain/resources.ts)"
+      ],
+      "owns": [],
       "notes": [
-        "AUTO-GENERATED skeleton from raw_links.txt. Fill functions/dependsOn/notes as the package evolves."
+        "Included in RESOURCE_DATA_FILES in domain/resources.ts."
       ]
     },
-    "data.resources.wood": {
+    "web-backend.data.resources.wood": {
       "kind": "data",
+      "service": "data.resources",
       "path": "web-backend/data/resources/wood.json",
-      "functions": [],
+      "class": null,
+      "lifecycle": "static",
+      "ctorArgs": [],
       "dependsOn": [],
+      "provides": [
+        "Resource item catalog (loaded by domain/resources.ts)"
+      ],
+      "owns": [],
       "notes": [
-        "AUTO-GENERATED skeleton from raw_links.txt. Fill functions/dependsOn/notes as the package evolves."
+        "Included in RESOURCE_DATA_FILES in domain/resources.ts."
       ]
     },
-    "domain.armies": {
+    "web-backend.domain.armies": {
       "kind": "module",
+      "service": "domain.armies",
       "path": "web-backend/domain/armies.ts",
-      "functions": [],
+      "class": null,
+      "lifecycle": "static",
+      "ctorArgs": [],
       "dependsOn": [],
+      "provides": [
+        "seedStarterArmies(cityId)",
+        "types: Army, ArmyType"
+      ],
+      "owns": [],
       "notes": [
-        "AUTO-GENERATED skeleton from raw_links.txt. Fill functions/dependsOn/notes as the package evolves."
+        "Starter army generation for web-city-builder demo."
       ]
     },
-    "domain.city": {
+    "web-backend.domain.city": {
       "kind": "module",
+      "service": "domain.city",
       "path": "web-backend/domain/city.ts",
-      "functions": [],
-      "dependsOn": [],
+      "class": null,
+      "lifecycle": "static",
+      "ctorArgs": [],
+      "dependsOn": [
+        "web-backend.config.cityTier"
+      ],
+      "provides": [
+        "seedStarterCity(ownerId)",
+        "getBuildingProductionPerTick(building)",
+        "getCityProductionPerTick(city)",
+        "getBuildingUpgradeCost(building)",
+        "getBuildingConstructionCost(kind, city)",
+        "maxBuildingSlotsForTier(tier)",
+        "createBuilding(kind, city)",
+        "types: City, CityBuilding, BuildingProduction"
+      ],
+      "owns": [],
       "notes": [
-        "AUTO-GENERATED skeleton from raw_links.txt. Fill functions/dependsOn/notes as the package evolves."
+        "City/building math and starter city seeding for the web-city-builder prototype."
       ]
     },
-    "domain.heroes": {
+    "web-backend.domain.heroes": {
       "kind": "module",
+      "service": "domain.heroes",
       "path": "web-backend/domain/heroes.ts",
-      "functions": [],
+      "class": null,
+      "lifecycle": "static",
+      "ctorArgs": [],
       "dependsOn": [],
+      "provides": [
+        "seedStarterHeroes(ownerId)",
+        "types: Hero, HeroRole"
+      ],
+      "owns": [],
       "notes": [
-        "AUTO-GENERATED skeleton from raw_links.txt. Fill functions/dependsOn/notes as the package evolves."
+        "Starter hero generation for web-city-builder demo."
       ]
     },
-    "domain.missions": {
+    "web-backend.domain.missions": {
       "kind": "module",
+      "service": "domain.missions",
       "path": "web-backend/domain/missions.ts",
-      "functions": [],
-      "dependsOn": [],
+      "class": null,
+      "lifecycle": "static",
+      "ctorArgs": [],
+      "dependsOn": [
+        "web-backend.domain.city",
+        "web-backend.domain.resources"
+      ],
+      "provides": [
+        "generateMissionOffers(ctx)",
+        "types: MissionOffer, RewardBundle, MissionDifficulty"
+      ],
+      "owns": [],
       "notes": [
-        "AUTO-GENERATED skeleton from raw_links.txt. Fill functions/dependsOn/notes as the package evolves."
+        "Mission offer generation and reward/risk shaping for web-city-builder demo."
       ]
     },
-    "domain.resources": {
+    "web-backend.domain.resources": {
       "kind": "module",
+      "service": "domain.resources",
       "path": "web-backend/domain/resources.ts",
-      "functions": [],
-      "dependsOn": [],
+      "class": null,
+      "lifecycle": "singleton",
+      "ctorArgs": [],
+      "dependsOn": [
+        "node:fs",
+        "node:path",
+        "web-backend.data.resources.food",
+        "web-backend.data.resources.wood",
+        "web-backend.data.resources.stone",
+        "web-backend.data.resources.ore",
+        "web-backend.data.resources.herbs",
+        "web-backend.data.resources.fish",
+        "web-backend.data.resources.mana"
+      ],
+      "provides": [
+        "getAllResourceItems()",
+        "getResourceItemById(id)",
+        "getResourceItemsByKey(key)",
+        "addResources(target, delta)",
+        "types: ResourceKey, ResourceVector"
+      ],
+      "owns": [
+        "in-process resource catalog cache"
+      ],
       "notes": [
-        "AUTO-GENERATED skeleton from raw_links.txt. Fill functions/dependsOn/notes as the package evolves."
+        "Loads resource JSON catalogs from /web-backend/data/resources/*.json and exposes lookup helpers.",
+        "Loads a fixed set of JSON catalogs from RESOURCE_DATA_FILES; luxury/black_market are present but currently excluded."
       ]
     },
-    "domain.tech": {
+    "web-backend.domain.tech": {
       "kind": "module",
+      "service": "domain.tech",
       "path": "web-backend/domain/tech.ts",
-      "functions": [],
+      "class": null,
+      "lifecycle": "static",
+      "ctorArgs": [],
       "dependsOn": [],
+      "provides": [
+        "getAllTechDefs()",
+        "getTechById(id)",
+        "getAvailableTechsForPlayer(ctx)",
+        "types: TechDefinition, TechAge, TechEpoch, TechCategory"
+      ],
+      "owns": [],
       "notes": [
-        "AUTO-GENERATED skeleton from raw_links.txt. Fill functions/dependsOn/notes as the package evolves."
+        "Tech tree definitions and availability rules for web-city-builder demo."
       ]
     },
-    "domain.world": {
+    "web-backend.domain.world": {
       "kind": "module",
+      "service": "domain.world",
       "path": "web-backend/domain/world.ts",
-      "functions": [],
+      "class": null,
+      "lifecycle": "static",
+      "ctorArgs": [],
       "dependsOn": [],
+      "provides": [
+        "seedWorld()",
+        "types: World, Shard, Region, RegionId"
+      ],
+      "owns": [],
       "notes": [
-        "AUTO-GENERATED skeleton from raw_links.txt. Fill functions/dependsOn/notes as the package evolves."
+        "Seeds the demo world map / regions for the web-city-builder prototype."
       ]
     },
-    "gameState": {
-      "kind": "module",
-      "path": "web-backend/gameState.ts",
-      "functions": [],
-      "dependsOn": [],
-      "notes": [
-        "AUTO-GENERATED skeleton from raw_links.txt. Fill functions/dependsOn/notes as the package evolves."
-      ]
-    },
-    "index": {
-      "kind": "module",
+    "web-backend.entry": {
+      "kind": "entrypoint",
+      "service": "http.server",
       "path": "web-backend/index.ts",
-      "functions": [],
-      "dependsOn": [],
+      "class": null,
+      "lifecycle": "process",
+      "ctorArgs": [],
+      "dependsOn": [
+        "npm:express",
+        "npm:cors",
+        "npm:dotenv",
+        "web-backend.routes.me",
+        "web-backend.routes.missions",
+        "web-backend.routes.city",
+        "web-backend.routes.policies",
+        "web-backend.routes.tech",
+        "web-backend.routes.warfront",
+        "web-backend.routes.armies",
+        "web-backend.routes.garrisons",
+        "web-backend.routes.buildings",
+        "web-backend.routes.heroes",
+        "web-backend.routes.workshop",
+        "web-backend.routes.resources",
+        "web-backend.routes.characters",
+        "web-backend.routes.auth",
+        "web-backend.routes.adminQuests",
+        "web-backend.routes.adminNpcs",
+        "web-backend.routes.adminItems",
+        "web-backend.routes.adminSpawnPoints"
+      ],
+      "provides": [
+        "GET / -> { ok: true, message: ... }",
+        "Mount /api/me",
+        "Mount /api/missions",
+        "Mount /api/city",
+        "Mount /api/policies",
+        "Mount /api/tech",
+        "Mount /api/warfront",
+        "Mount /api/armies",
+        "Mount /api/garrisons",
+        "Mount /api/buildings",
+        "Mount /api/heroes",
+        "Mount /api/workshop",
+        "Mount /api/resources",
+        "Mount /api/characters",
+        "Mount /api/auth",
+        "Mount /api/admin/quests",
+        "Mount /api/admin/npcs",
+        "Mount /api/admin/items",
+        "Mount /api/admin/spawn_points"
+      ],
+      "owns": [
+        "Express app instance",
+        "HTTP listen socket"
+      ],
       "notes": [
-        "AUTO-GENERATED skeleton from raw_links.txt. Fill functions/dependsOn/notes as the package evolves."
+        "This server is a thin Express host that exposes both: (1) web-city-builder demo endpoints (gameState/domain/*), and (2) worldcore-backed admin APIs (quests/npcs/items/spawn_points/auth).",
+        "Technical debt: index.ts mounts /api/characters twice (harmless but redundant)."
       ]
     },
-    "package": {
+    "web-backend.gameState": {
+      "kind": "module",
+      "service": "demo.gameState",
+      "path": "web-backend/gameState.ts",
+      "class": null,
+      "lifecycle": "singleton",
+      "ctorArgs": [],
+      "dependsOn": [
+        "web-backend.config.demo",
+        "web-backend.config.cityTier",
+        "web-backend.domain.world",
+        "web-backend.domain.city",
+        "web-backend.domain.heroes",
+        "web-backend.domain.armies",
+        "web-backend.domain.missions",
+        "web-backend.domain.tech",
+        "web-backend.domain.resources"
+      ],
+      "provides": [
+        "getGameState()",
+        "getPlayerState(playerId)",
+        "getDemoPlayer()",
+        "getDemoPlayerWithOffers()",
+        "startMissionForPlayer(...)",
+        "completeMissionForPlayer(...)",
+        "regenerateRegionMissionsForPlayer(...)",
+        "buildBuildingForPlayer(...)",
+        "upgradeBuildingForPlayer(...)",
+        "startResearchForPlayer(...)"
+      ],
+      "owns": [
+        "in-memory GameState (demo)",
+        "DEMO_PLAYER_ID singleton player"
+      ],
+      "notes": [
+        "In-memory, demo-style state manager for the web-city-builder prototype.",
+        "Routes call tickPlayerState(...) before reads/writes to keep time-based progression consistent."
+      ]
+    },
+    "web-backend.package": {
       "kind": "data",
+      "service": "package.meta",
       "path": "web-backend/package.json",
-      "functions": [],
+      "class": null,
+      "lifecycle": "static",
+      "ctorArgs": [],
       "dependsOn": [],
+      "provides": [
+        "npm package metadata + scripts"
+      ],
+      "owns": [],
       "notes": [
-        "AUTO-GENERATED skeleton from raw_links.txt. Fill functions/dependsOn/notes as the package evolves."
+        "Entry: dist/index.js. Scripts: dev/build/start."
       ]
     },
-    "routes.adminItems": {
+    "web-backend.packageLock": {
+      "kind": "data",
+      "service": "package.meta",
+      "path": "web-backend/package-lock.json",
+      "class": null,
+      "lifecycle": "static",
+      "ctorArgs": [],
+      "dependsOn": [],
+      "provides": [
+        "npm dependency lockfile"
+      ],
+      "owns": [],
+      "notes": [
+        "Generated by npm; controls exact dependency resolution for reproducible installs."
+      ]
+    },
+    "web-backend.routes.adminItems": {
       "kind": "module",
+      "service": "http.adminRoutes",
       "path": "web-backend/routes/adminItems.ts",
-      "functions": [],
-      "dependsOn": [],
+      "class": null,
+      "lifecycle": "singleton",
+      "ctorArgs": [],
+      "dependsOn": [
+        "npm:express",
+        "worldcore:db/Database"
+      ],
+      "provides": [
+        "GET /api/admin/items",
+        "POST /api/admin/items"
+      ],
+      "owns": [],
       "notes": [
-        "AUTO-GENERATED skeleton from raw_links.txt. Fill functions/dependsOn/notes as the package evolves."
+        "Admin item list + upsert backed by worldcore DB tables."
       ]
     },
-    "routes.adminNpcs": {
+    "web-backend.routes.adminNpcs": {
       "kind": "module",
+      "service": "http.adminRoutes",
       "path": "web-backend/routes/adminNpcs.ts",
-      "functions": [],
-      "dependsOn": [],
+      "class": null,
+      "lifecycle": "singleton",
+      "ctorArgs": [],
+      "dependsOn": [
+        "npm:express",
+        "worldcore:db/Database"
+      ],
+      "provides": [
+        "GET /api/admin/npcs",
+        "POST /api/admin/npcs"
+      ],
+      "owns": [],
       "notes": [
-        "AUTO-GENERATED skeleton from raw_links.txt. Fill functions/dependsOn/notes as the package evolves."
+        "Admin NPC list + upsert backed by worldcore DB tables."
       ]
     },
-    "routes.adminQuests": {
+    "web-backend.routes.adminQuests": {
       "kind": "module",
+      "service": "http.adminRoutes",
       "path": "web-backend/routes/adminQuests.ts",
-      "functions": [],
-      "dependsOn": [],
+      "class": null,
+      "lifecycle": "singleton",
+      "ctorArgs": [
+        "PostgresQuestService()"
+      ],
+      "dependsOn": [
+        "npm:express",
+        "worldcore:db/Database",
+        "worldcore:quests/PostgresQuestService",
+        "worldcore:quests/QuestRegistry"
+      ],
+      "provides": [
+        "GET /api/admin/quests",
+        "POST /api/admin/quests"
+      ],
+      "owns": [
+        "PostgresQuestService instance"
+      ],
       "notes": [
-        "AUTO-GENERATED skeleton from raw_links.txt. Fill functions/dependsOn/notes as the package evolves."
+        "Admin quest list + upsert; reloads QuestRegistry in-process after changes."
       ]
     },
-    "routes.adminSpawnPoints": {
+    "web-backend.routes.adminSpawnPoints": {
       "kind": "module",
+      "service": "http.adminRoutes",
       "path": "web-backend/routes/adminSpawnPoints.ts",
-      "functions": [],
-      "dependsOn": [],
+      "class": null,
+      "lifecycle": "singleton",
+      "ctorArgs": [],
+      "dependsOn": [
+        "npm:express",
+        "worldcore:db/Database",
+        "worldcore:world/SpawnPointCache",
+        "worldcore:world/spawnAuthority",
+        "worldcore:sim/MotherBrainWavePlanner",
+        "worldcore:sim/MotherBrainWaveOps"
+      ],
+      "provides": [
+        "GET /api/admin/spawn_points",
+        "POST /api/admin/spawn_points (upsert)",
+        "DELETE /api/admin/spawn_points/:id",
+        "POST /api/admin/spawn_points/bulk_delete",
+        "POST /api/admin/spawn_points/bulk_move",
+        "POST /api/admin/spawn_points/clone",
+        "POST /api/admin/spawn_points/scatter",
+        "GET /api/admin/spawn_points/mother_brain/status",
+        "POST /api/admin/spawn_points/mother_brain/wave",
+        "POST /api/admin/spawn_points/mother_brain/wipe"
+      ],
+      "owns": [],
       "notes": [
-        "AUTO-GENERATED skeleton from raw_links.txt. Fill functions/dependsOn/notes as the package evolves."
+        "Admin spawn point CRUD + batch operations.",
+        "Mother Brain endpoints call into worldcore planner/ops and clear SpawnPointCache after mutations.",
+        "Important invariant: brain-owned spawnIds are not editable through the admin UI (spawnAuthority enforcement)."
       ]
     },
-    "routes.armies": {
+    "web-backend.routes.armies": {
       "kind": "module",
+      "service": "http.routes",
       "path": "web-backend/routes/armies.ts",
-      "functions": [],
-      "dependsOn": [],
+      "class": null,
+      "lifecycle": "singleton",
+      "ctorArgs": [],
+      "dependsOn": [
+        "npm:express",
+        "web-backend.gameState"
+      ],
+      "provides": [
+        "POST /api/armies/raise",
+        "POST /api/armies/reinforce"
+      ],
+      "owns": [],
       "notes": [
-        "AUTO-GENERATED skeleton from raw_links.txt. Fill functions/dependsOn/notes as the package evolves."
+        "Army raise/reinforce endpoints for demo city builder."
       ]
     },
-    "routes.auth": {
+    "web-backend.routes.auth": {
       "kind": "module",
+      "service": "http.routes",
       "path": "web-backend/routes/auth.ts",
-      "functions": [],
-      "dependsOn": [],
+      "class": null,
+      "lifecycle": "singleton",
+      "ctorArgs": [
+        "PostgresAuthService()"
+      ],
+      "dependsOn": [
+        "npm:express",
+        "worldcore:auth/PostgresAuthService"
+      ],
+      "provides": [
+        "POST /api/auth/register",
+        "POST /api/auth/login"
+      ],
+      "owns": [
+        "PostgresAuthService instance"
+      ],
       "notes": [
-        "AUTO-GENERATED skeleton from raw_links.txt. Fill functions/dependsOn/notes as the package evolves."
+        "Auth endpoints backed by worldcore auth service."
       ]
     },
-    "routes.buildings": {
+    "web-backend.routes.buildings": {
       "kind": "module",
+      "service": "http.routes",
       "path": "web-backend/routes/buildings.ts",
-      "functions": [],
-      "dependsOn": [],
+      "class": null,
+      "lifecycle": "singleton",
+      "ctorArgs": [],
+      "dependsOn": [
+        "npm:express",
+        "web-backend.gameState"
+      ],
+      "provides": [
+        "POST /api/buildings/construct",
+        "POST /api/buildings/upgrade"
+      ],
+      "owns": [],
       "notes": [
-        "AUTO-GENERATED skeleton from raw_links.txt. Fill functions/dependsOn/notes as the package evolves."
+        "Alternate building endpoints (construct/upgrade) for demo city builder."
       ]
     },
-    "routes.characters": {
+    "web-backend.routes.characters": {
       "kind": "module",
+      "service": "http.routes",
       "path": "web-backend/routes/characters.ts",
-      "functions": [],
-      "dependsOn": [],
+      "class": null,
+      "lifecycle": "singleton",
+      "ctorArgs": [],
+      "dependsOn": [
+        "npm:express",
+        "worldcore:characters/PostgresCharacterService"
+      ],
+      "provides": [
+        "GET /api/characters",
+        "POST /api/characters",
+        "GET /api/characters/:id",
+        "POST /api/characters/:id/xp",
+        "POST /api/characters/:id/learn-spell",
+        "POST /api/characters/:id/equip"
+      ],
+      "owns": [],
       "notes": [
-        "AUTO-GENERATED skeleton from raw_links.txt. Fill functions/dependsOn/notes as the package evolves."
+        "Worldcore-backed character CRUD and progression endpoints."
       ]
     },
-    "routes.city": {
+    "web-backend.routes.city": {
       "kind": "module",
+      "service": "http.routes",
       "path": "web-backend/routes/city.ts",
-      "functions": [],
-      "dependsOn": [],
+      "class": null,
+      "lifecycle": "singleton",
+      "ctorArgs": [],
+      "dependsOn": [
+        "npm:express",
+        "web-backend.gameState",
+        "web-backend.config.cityTier"
+      ],
+      "provides": [
+        "POST /api/city/upgrade-building",
+        "POST /api/city/build",
+        "POST /api/city/tier-up",
+        "POST /api/city/morph"
+      ],
+      "owns": [],
       "notes": [
-        "AUTO-GENERATED skeleton from raw_links.txt. Fill functions/dependsOn/notes as the package evolves."
+        "City operations for demo city builder (build/upgrade/tier/morph)."
       ]
     },
-    "routes.garrisons": {
+    "web-backend.routes.garrisons": {
       "kind": "module",
+      "service": "http.routes",
       "path": "web-backend/routes/garrisons.ts",
-      "functions": [],
-      "dependsOn": [],
+      "class": null,
+      "lifecycle": "singleton",
+      "ctorArgs": [],
+      "dependsOn": [
+        "npm:express",
+        "web-backend.gameState"
+      ],
+      "provides": [
+        "POST /api/garrisons/strike"
+      ],
+      "owns": [],
       "notes": [
-        "AUTO-GENERATED skeleton from raw_links.txt. Fill functions/dependsOn/notes as the package evolves."
+        "Garrison strike endpoint for demo city builder."
       ]
     },
-    "routes.heroes": {
+    "web-backend.routes.heroes": {
       "kind": "module",
+      "service": "http.routes",
       "path": "web-backend/routes/heroes.ts",
-      "functions": [],
-      "dependsOn": [],
+      "class": null,
+      "lifecycle": "singleton",
+      "ctorArgs": [],
+      "dependsOn": [
+        "npm:express",
+        "web-backend.gameState"
+      ],
+      "provides": [
+        "POST /api/heroes/equip_attachment",
+        "POST /api/heroes/recruit"
+      ],
+      "owns": [],
       "notes": [
-        "AUTO-GENERATED skeleton from raw_links.txt. Fill functions/dependsOn/notes as the package evolves."
+        "Hero recruit + equipment endpoints for demo city builder."
       ]
     },
-    "routes.me": {
+    "web-backend.routes.me": {
       "kind": "module",
+      "service": "http.routes",
       "path": "web-backend/routes/me.ts",
-      "functions": [],
-      "dependsOn": [],
+      "class": null,
+      "lifecycle": "singleton",
+      "ctorArgs": [],
+      "dependsOn": [
+        "npm:express",
+        "web-backend.gameState"
+      ],
+      "provides": [
+        "GET /api/me -> demo playerP state snapshot"
+      ],
+      "owns": [],
       "notes": [
-        "AUTO-GENERATED skeleton from raw_links.txt. Fill functions/dependsOn/notes as the package evolves."
+        "Demo endpoint(s) for player state."
       ]
     },
-    "routes.missions": {
+    "web-backend.routes.missions": {
       "kind": "module",
+      "service": "http.routes",
       "path": "web-backend/routes/missions.ts",
-      "functions": [],
-      "dependsOn": [],
+      "class": null,
+      "lifecycle": "singleton",
+      "ctorArgs": [],
+      "dependsOn": [
+        "npm:express",
+        "web-backend.gameState"
+      ],
+      "provides": [
+        "GET /api/missions/offers",
+        "POST /api/missions/start",
+        "POST /api/missions/complete",
+        "POST /api/missions/refresh_region"
+      ],
+      "owns": [],
       "notes": [
-        "AUTO-GENERATED skeleton from raw_links.txt. Fill functions/dependsOn/notes as the package evolves."
+        "Mission offer listing + start/complete for the demo city builder."
       ]
     },
-    "routes.policies": {
+    "web-backend.routes.policies": {
       "kind": "module",
+      "service": "http.routes",
       "path": "web-backend/routes/policies.ts",
-      "functions": [],
-      "dependsOn": [],
+      "class": null,
+      "lifecycle": "singleton",
+      "ctorArgs": [],
+      "dependsOn": [
+        "npm:express",
+        "web-backend.gameState"
+      ],
+      "provides": [
+        "GET /api/policies",
+        "POST /api/policies/toggle"
+      ],
+      "owns": [],
       "notes": [
-        "AUTO-GENERATED skeleton from raw_links.txt. Fill functions/dependsOn/notes as the package evolves."
+        "Policy toggles for demo city builder."
       ]
     },
-    "routes.resourceTierRoutes": {
+    "web-backend.routes.resources": {
       "kind": "module",
+      "service": "http.routes",
       "path": "web-backend/routes/resourceTierRoutes.ts",
-      "functions": [],
-      "dependsOn": [],
+      "class": null,
+      "lifecycle": "singleton",
+      "ctorArgs": [],
+      "dependsOn": [
+        "npm:express",
+        "web-backend.gameState",
+        "web-backend.domain.resources"
+      ],
+      "provides": [
+        "POST /api/resources/tier-up"
+      ],
+      "owns": [],
       "notes": [
-        "AUTO-GENERATED skeleton from raw_links.txt. Fill functions/dependsOn/notes as the package evolves."
+        "Resource mastery tier-up endpoint for demo city builder."
       ]
     },
-    "routes.tech": {
+    "web-backend.routes.tech": {
       "kind": "module",
+      "service": "http.routes",
       "path": "web-backend/routes/tech.ts",
-      "functions": [],
-      "dependsOn": [],
+      "class": null,
+      "lifecycle": "singleton",
+      "ctorArgs": [],
+      "dependsOn": [
+        "npm:express",
+        "web-backend.gameState",
+        "web-backend.domain.tech"
+      ],
+      "provides": [
+        "POST /api/tech/start"
+      ],
+      "owns": [],
       "notes": [
-        "AUTO-GENERATED skeleton from raw_links.txt. Fill functions/dependsOn/notes as the package evolves."
+        "Tech start endpoint for demo city builder."
       ]
     },
-    "routes.warfront": {
+    "web-backend.routes.warfront": {
       "kind": "module",
+      "service": "http.routes",
       "path": "web-backend/routes/warfront.ts",
-      "functions": [],
-      "dependsOn": [],
+      "class": null,
+      "lifecycle": "singleton",
+      "ctorArgs": [],
+      "dependsOn": [
+        "npm:express",
+        "web-backend.gameState"
+      ],
+      "provides": [
+        "POST /api/warfront/assault"
+      ],
+      "owns": [],
       "notes": [
-        "AUTO-GENERATED skeleton from raw_links.txt. Fill functions/dependsOn/notes as the package evolves."
+        "Warfront assault endpoint for demo city builder."
       ]
     },
-    "routes.workshop": {
+    "web-backend.routes.workshop": {
       "kind": "module",
+      "service": "http.routes",
       "path": "web-backend/routes/workshop.ts",
-      "functions": [],
-      "dependsOn": [],
+      "class": null,
+      "lifecycle": "singleton",
+      "ctorArgs": [],
+      "dependsOn": [
+        "npm:express",
+        "web-backend.gameState"
+      ],
+      "provides": [
+        "POST /api/workshop/craft",
+        "POST /api/workshop/collect"
+      ],
+      "owns": [],
       "notes": [
-        "AUTO-GENERATED skeleton from raw_links.txt. Fill functions/dependsOn/notes as the package evolves."
+        "Workshop crafting job endpoints for demo city builder."
       ]
     }
   }

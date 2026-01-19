@@ -1,130 +1,323 @@
 {
+  "registryVersion": "1.0",
+  "root": "web-frontend",
+  "package": {
+    "name": "planarwar-web-frontend",
+    "version": "0.1.0",
+    "runtime": "browser",
+    "stack": [
+      "vite",
+      "react 18",
+      "typescript"
+    ]
+  },
   "services": {
-    "app": {
-      "kind": "ui",
-      "path": "web-frontend/App.tsx",
-      "functions": [],
-      "dependsOn": [],
-      "notes": [
-        "AUTO-GENERATED skeleton from raw_links.txt. Fill functions/dependsOn/notes as the package evolves."
-      ]
-    },
-    "index": {
+    "web-frontend.entry.indexHtml": {
       "kind": "doc",
+      "service": "vite.entry",
       "path": "web-frontend/index.html",
-      "functions": [],
+      "class": null,
+      "lifecycle": "static",
+      "ctorArgs": [],
       "dependsOn": [],
+      "provides": [
+        "Vite HTML entrypoint (mounts #root)"
+      ],
+      "owns": [],
       "notes": [
-        "AUTO-GENERATED skeleton from raw_links.txt. Fill functions/dependsOn/notes as the package evolves."
+        "Client bootstrap for the Planar War web console + admin tools UI."
       ]
     },
-    "lib.api": {
-      "kind": "module",
-      "path": "web-frontend/lib/api.ts",
-      "functions": [],
-      "dependsOn": [],
-      "notes": [
-        "AUTO-GENERATED skeleton from raw_links.txt. Fill functions/dependsOn/notes as the package evolves."
-      ]
-    },
-    "main": {
+    "web-frontend.entry.main": {
       "kind": "ui",
+      "service": "react.bootstrap",
       "path": "web-frontend/main.tsx",
-      "functions": [],
-      "dependsOn": [],
+      "class": null,
+      "lifecycle": "static",
+      "ctorArgs": [],
+      "dependsOn": [
+        "web-frontend.ui.app"
+      ],
+      "provides": [
+        "ReactDOM root render (StrictMode)"
+      ],
+      "owns": [
+        "DOM mount to #root"
+      ],
       "notes": [
-        "AUTO-GENERATED skeleton from raw_links.txt. Fill functions/dependsOn/notes as the package evolves."
+        "Vite entrypoint; renders <App/>." 
       ]
     },
-    "package": {
-      "kind": "data",
-      "path": "web-frontend/package.json",
-      "functions": [],
-      "dependsOn": [],
-      "notes": [
-        "AUTO-GENERATED skeleton from raw_links.txt. Fill functions/dependsOn/notes as the package evolves."
-      ]
-    },
-    "pages.adminItemsPage": {
+    "web-frontend.ui.app": {
       "kind": "ui",
-      "path": "web-frontend/pages/AdminItemsPage.tsx",
-      "functions": [],
-      "dependsOn": [],
+      "service": "webConsole.app",
+      "path": "web-frontend/App.tsx",
+      "class": null,
+      "lifecycle": "singleton",
+      "ctorArgs": [],
+      "dependsOn": [
+        "web-frontend.pages.adminQuests",
+        "web-frontend.pages.adminNpcs",
+        "web-frontend.pages.adminItems",
+        "web-frontend.pages.adminSpawnPoints"
+      ],
+      "provides": [
+        "Login/register UI (JWT)",
+        "Character list + create character",
+        "CharacterState debug viewer",
+        "Shard WebSocket console (MUD command input)",
+        "Dev-only admin shortcuts via pathname (/admin/*)"
+      ],
+      "owns": [
+        "auth token persistence in localStorage (pw_auth_v1)",
+        "selected character id",
+        "WebSocket connection + log buffer"
+      ],
       "notes": [
-        "AUTO-GENERATED skeleton from raw_links.txt. Fill functions/dependsOn/notes as the package evolves."
+        "Computes API_BASE (http://<host>:4000) and SHARD_WS (ws://<host>:7777/ws) based on window.location.hostname.",
+        "Uses /api/auth/login, /api/auth/register, /api/characters (GET/POST), /api/characters/:id (GET).",
+        "WebSocket sends ops: whereami, mud; expects mud_result, whereami_result, chat payloads.",
+        "City-builder pages (MePage/OperationsPage) exist but are not currently routed from App.tsx."
       ]
     },
-    "pages.adminNpcsPage": {
-      "kind": "ui",
-      "path": "web-frontend/pages/AdminNpcsPage.tsx",
-      "functions": [],
+
+    "web-frontend.lib.api": {
+      "kind": "module",
+      "service": "api.client",
+      "path": "web-frontend/lib/api.ts",
+      "class": null,
+      "lifecycle": "static",
+      "ctorArgs": [],
       "dependsOn": [],
+      "provides": [
+        "Typed DTOs for city-builder UI (MeProfile, missions, armies, heroes, tech, etc.)",
+        "API_BASE_URL from VITE_API_BASE_URL (fallback http://localhost:4000)",
+        "fetchMe(), startTech(), api(path, init)"
+      ],
+      "owns": [],
       "notes": [
-        "AUTO-GENERATED skeleton from raw_links.txt. Fill functions/dependsOn/notes as the package evolves."
+        "Used by MePage and OperationsPage (city-builder/operations UI).",
+        "Caution: this package also contains a .env file with server secrets; Vite only exposes VITE_* at runtime, but secrets in-repo are still a security risk." 
       ]
     },
-    "pages.adminQuestsPage": {
+
+    "web-frontend.pages.adminQuests": {
       "kind": "ui",
+      "service": "admin.quests",
       "path": "web-frontend/pages/AdminQuestsPage.tsx",
-      "functions": [],
-      "dependsOn": [],
+      "class": null,
+      "lifecycle": "singleton",
+      "ctorArgs": [],
+      "dependsOn": [
+        "web-frontend.lib.api"
+      ],
+      "provides": [
+        "Quest list + edit/create UI",
+        "Objective kinds: kill/harvest/collect_item/talk_to",
+        "Writes to /api/admin/quests"
+      ],
+      "owns": [
+        "client-side form state"
+      ],
       "notes": [
-        "AUTO-GENERATED skeleton from raw_links.txt. Fill functions/dependsOn/notes as the package evolves."
+        "Uses a hard-coded ADMIN_API_BASE (http://192.168.0.74:4000) — should be replaced with a hostname-derived URL or VITE_* config.",
+        "Endpoints: GET /api/admin/quests; POST /api/admin/quests; then refreshes list." 
       ]
     },
-    "pages.adminSpawnPointsPage": {
+
+    "web-frontend.pages.adminNpcs": {
       "kind": "ui",
+      "service": "admin.npcs",
+      "path": "web-frontend/pages/AdminNpcsPage.tsx",
+      "class": null,
+      "lifecycle": "singleton",
+      "ctorArgs": [],
+      "dependsOn": [],
+      "provides": [
+        "NPC list + edit/create UI",
+        "Loot editor (chance/min/max)"
+      ],
+      "owns": [
+        "client-side form state"
+      ],
+      "notes": [
+        "Uses hard-coded ADMIN_API_BASE (http://192.168.0.74:4000).",
+        "Endpoints: GET /api/admin/npcs; POST /api/admin/npcs; then refreshes list." 
+      ]
+    },
+
+    "web-frontend.pages.adminItems": {
+      "kind": "ui",
+      "service": "admin.items",
+      "path": "web-frontend/pages/AdminItemsPage.tsx",
+      "class": null,
+      "lifecycle": "singleton",
+      "ctorArgs": [],
+      "dependsOn": [],
+      "provides": [
+        "Item list + edit/create UI",
+        "Edits flagsText/statsText serialized fields"
+      ],
+      "owns": [
+        "client-side form state"
+      ],
+      "notes": [
+        "Uses hard-coded ADMIN_API_BASE (http://192.168.0.74:4000).",
+        "Endpoints: GET /api/admin/items; POST /api/admin/items; then refreshes list." 
+      ]
+    },
+
+    "web-frontend.pages.adminSpawnPoints": {
+      "kind": "ui",
+      "service": "admin.spawnPoints",
       "path": "web-frontend/pages/AdminSpawnPointsPage.tsx",
-      "functions": [],
+      "class": null,
+      "lifecycle": "singleton",
+      "ctorArgs": [],
       "dependsOn": [],
+      "provides": [
+        "Spawn Points Editor (v1): browse/edit",
+        "Batch tools: bulk delete/move, clone, scatter",
+        "Mother Brain: status, list, wave (plan/commit), wipe (plan/commit)"
+      ],
+      "owns": [
+        "UI persistence in localStorage (adminSpawnPointsPage.ui.v1)",
+        "selected rows + filter state",
+        "Mother Brain wave/wipe responses"
+      ],
       "notes": [
-        "AUTO-GENERATED skeleton from raw_links.txt. Fill functions/dependsOn/notes as the package evolves."
+        "Uses hard-coded ADMIN_API_BASE (http://192.168.0.74:4000).",
+        "Endpoints: GET /api/admin/spawn_points?..., POST /api/admin/spawn_points (create), PUT /api/admin/spawn_points/:id, bulk_delete, bulk_move, clone, scatter.",
+        "Mother Brain endpoints: GET /api/admin/spawn_points/mother_brain/status, POST /mother_brain/wave, POST /mother_brain/wipe.",
+        "UI prints JSON responses in <pre>; styling was recently improved to avoid unreadable dark output."
       ]
     },
-    "pages.mePage": {
+
+    "web-frontend.pages.me": {
       "kind": "ui",
+      "service": "cityBuilder.me",
       "path": "web-frontend/pages/MePage.tsx",
-      "functions": [],
-      "dependsOn": [],
+      "class": null,
+      "lifecycle": "singleton",
+      "ctorArgs": [],
+      "dependsOn": [
+        "web-frontend.lib.api"
+      ],
+      "provides": [
+        "City-builder dashboard: city status + buildings + tech + missions + armies/heroes + policies",
+        "Action buttons that POST to various /api/* endpoints"
+      ],
+      "owns": [
+        "client-side UI state for selected actions",
+        "optimistic refresh loops calling fetchMe()"
+      ],
       "notes": [
-        "AUTO-GENERATED skeleton from raw_links.txt. Fill functions/dependsOn/notes as the package evolves."
+        "Not currently routed from App.tsx.",
+        "Endpoints used include: /api/me, /api/tech/start, /api/missions/start, /api/missions/complete, /api/missions/refresh_region, /api/buildings/construct, /api/buildings/upgrade, /api/city/tier-up, /api/warfront/assault, /api/armies/raise, /api/armies/reinforce, /api/garrisons/strike, /api/heroes/equip_attachment, /api/heroes/recruit, /api/workshop/craft, /api/workshop/collect, /api/policies/toggle." 
       ]
     },
-    "pages.operationsPage": {
+
+    "web-frontend.pages.operations": {
       "kind": "ui",
+      "service": "cityBuilder.operations",
       "path": "web-frontend/pages/OperationsPage.tsx",
-      "functions": [],
-      "dependsOn": [],
+      "class": null,
+      "lifecycle": "singleton",
+      "ctorArgs": [],
+      "dependsOn": [
+        "web-frontend.lib.api"
+      ],
+      "provides": [
+        "Read-only operations view (active missions)"
+      ],
+      "owns": [
+        "client-side fetchMe() state"
+      ],
       "notes": [
-        "AUTO-GENERATED skeleton from raw_links.txt. Fill functions/dependsOn/notes as the package evolves."
+        "Not currently routed from App.tsx.",
+        "Uses fetchMe() (GET /api/me)."
       ]
     },
-    "tsconfig": {
-      "kind": "data",
-      "path": "web-frontend/tsconfig.json",
-      "functions": [],
-      "dependsOn": [],
-      "notes": [
-        "AUTO-GENERATED skeleton from raw_links.txt. Fill functions/dependsOn/notes as the package evolves."
-      ]
-    },
-    "viteConfig": {
+
+    "web-frontend.config.vite": {
       "kind": "module",
+      "service": "vite.config",
       "path": "web-frontend/vite.config.ts",
-      "functions": [],
+      "class": null,
+      "lifecycle": "static",
+      "ctorArgs": [],
       "dependsOn": [],
-      "notes": [
-        "AUTO-GENERATED skeleton from raw_links.txt. Fill functions/dependsOn/notes as the package evolves."
-      ]
+      "provides": [
+        "Vite dev server settings (host 0.0.0.0, port 5173)",
+        "React SWC plugin"
+      ],
+      "owns": [],
+      "notes": []
     },
-    "viteEnvD": {
-      "kind": "module",
-      "path": "web-frontend/vite-env.d.ts",
-      "functions": [],
+
+    "web-frontend.config.ts": {
+      "kind": "data",
+      "service": "tsconfig",
+      "path": "web-frontend/tsconfig.json",
+      "class": null,
+      "lifecycle": "static",
+      "ctorArgs": [],
       "dependsOn": [],
+      "provides": [
+        "TypeScript build configuration for Vite"
+      ],
+      "owns": [],
+      "notes": []
+    },
+
+    "web-frontend.meta.envD": {
+      "kind": "module",
+      "service": "vite.env",
+      "path": "web-frontend/vite-env.d.ts",
+      "class": null,
+      "lifecycle": "static",
+      "ctorArgs": [],
+      "dependsOn": [],
+      "provides": [
+        "Vite TS env type declarations"
+      ],
+      "owns": [],
+      "notes": []
+    },
+
+    "web-frontend.meta.package": {
+      "kind": "data",
+      "service": "npm.package",
+      "path": "web-frontend/package.json",
+      "class": null,
+      "lifecycle": "static",
+      "ctorArgs": [],
+      "dependsOn": [],
+      "provides": [
+        "NPM scripts: dev/build/preview",
+        "Dependencies: react/react-dom, devDependencies: vite, typescript"
+      ],
+      "owns": [],
       "notes": [
-        "AUTO-GENERATED skeleton from raw_links.txt. Fill functions/dependsOn/notes as the package evolves."
+        "axios is listed as a dependency but is not currently used in the checked-in TSX/TS files." 
       ]
+    }
+  },
+  "conventions": {
+    "adminPages": [
+      "/admin/quests",
+      "/admin/npcs",
+      "/admin/items",
+      "/admin/spawn_points"
+    ],
+    "apiConfig": {
+      "preferred": "VITE_API_BASE_URL",
+      "currentAdminPages": "hard-coded ADMIN_API_BASE"
+    },
+    "runtimePorts": {
+      "web-backend": 4000,
+      "mmo-backend.ws": 7777,
+      "vite.dev": 5173
     }
   }
 }

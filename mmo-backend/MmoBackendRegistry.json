@@ -1,39 +1,127 @@
 {
+  "registryVersion": "1.0",
+  "root": "mmo-backend",
+  "package": {
+    "name": "planarwar-mmo-backend",
+    "version": "0.1.0",
+    "runtime": "node",
+    "transport": ["ws"],
+    "stack": [
+      "ws",
+      "dotenv",
+      "postgres (via worldcore services)",
+      "zod (protocol validation, via worldcore router)"
+    ]
+  },
   "services": {
-    "config": {
-      "kind": "module",
-      "path": "mmo-backend/config.ts",
-      "functions": [],
-      "dependsOn": [],
-      "notes": [
-        "AUTO-GENERATED skeleton from raw_links.txt. Fill functions/dependsOn/notes as the package evolves."
-      ]
-    },
-    "fileLogTap": {
-      "kind": "module",
-      "path": "mmo-backend/FileLogTap.ts",
-      "functions": [],
-      "dependsOn": [],
-      "notes": [
-        "AUTO-GENERATED skeleton from raw_links.txt. Fill functions/dependsOn/notes as the package evolves."
-      ]
-    },
-    "package": {
-      "kind": "data",
-      "path": "mmo-backend/package.json",
-      "functions": [],
-      "dependsOn": [],
-      "notes": [
-        "AUTO-GENERATED skeleton from raw_links.txt. Fill functions/dependsOn/notes as the package evolves."
-      ]
-    },
-    "server": {
-      "kind": "module",
+    "mmo-backend.entry": {
+      "kind": "entrypoint",
+      "service": "ws.server",
       "path": "mmo-backend/server.ts",
-      "functions": [],
-      "dependsOn": [],
+      "class": null,
+      "lifecycle": "process",
+      "ctorArgs": [],
+      "dependsOn": [
+        "npm:ws",
+        "node:http",
+        "mmo-backend.config.network",
+        "mmo-backend.logging.fileTap",
+        "worldcore:world/WorldServices.createWorldServices",
+        "worldcore:core/Heartbeat.startHeartbeat",
+        "worldcore:auth/PostgresAuthService",
+        "worldcore:characters/PostgresCharacterService",
+        "worldcore:quests/PostgresQuestService",
+        "worldcore:npc/PostgresNpcService",
+        "worldcore:world/NpcSpawnController",
+        "worldcore:core/SessionManager",
+        "worldcore:core/RoomManager",
+        "worldcore:core/MessageRouter",
+        "worldcore:songs/SongEngine",
+        "worldcore:combat/RegionDangerAuras"
+      ],
+      "provides": [
+        "WebSocket server at ws://{host}:{port}{path}",
+        "Accepts query params: token (JWT), characterId",
+        "On connect: creates Session, optionally attaches identity/character, joins room, streams entities",
+        "Routes all incoming WS messages through worldcore router.handleRawMessage(session, data)",
+        "Starts TickEngine + Heartbeat idle cleanup"
+      ],
+      "owns": [
+        "HTTP server instance",
+        "WebSocketServer instance",
+        "Session lifecycle (create/remove)",
+        "TickEngine (worldcore)",
+        "Heartbeat sweep for idle sessions"
+      ],
       "notes": [
-        "AUTO-GENERATED skeleton from raw_links.txt. Fill functions/dependsOn/notes as the package evolves."
+        "Auth is optional in dev by default (PW_AUTH_OPTIONAL != 'false'). In production, set PW_AUTH_OPTIONAL=false and require JWT tokens.",
+        "Startup loads quests + NPC prototypes from Postgres asynchronously and hydrates in-memory registries; failures fall back to hardcoded defaults.",
+        "Character attach path auto-seeds NPCs from spawn_points and personal resource nodes before joinRoom so entity_list includes them.",
+        "OnTick hook drives Virtuoso SongEngine (tickSongsForCharacter) and updates region danger aura; keep this centralized to avoid double ticks.",
+        "Disconnect handler stops melody, leaves room, and removes the session." 
+      ]
+    },
+
+    "mmo-backend.config.network": {
+      "kind": "module",
+      "service": "config.network",
+      "path": "mmo-backend/config.ts",
+      "class": null,
+      "lifecycle": "static",
+      "ctorArgs": [],
+      "dependsOn": ["node:process"],
+      "provides": [
+        "netConfig (host, port, path)",
+        "netConfig.heartbeatIntervalMs",
+        "netConfig.idleTimeoutMs",
+        "netConfig.tickIntervalMs",
+        "netConfig.authOptional"
+      ],
+      "owns": [],
+      "notes": [
+        "Env vars: PW_MMO_HOST, PW_MMO_PORT, PW_HEARTBEAT_INTERVAL, PW_IDLE_TIMEOUT, PW_TICK_INTERVAL, PW_AUTH_OPTIONAL.",
+        "Defaults: host 0.0.0.0, port 7777, path /ws, heartbeat 5s, idle timeout 10m, tick interval 50ms (20 TPS)."
+      ]
+    },
+
+    "mmo-backend.logging.fileTap": {
+      "kind": "module",
+      "service": "logging.fileTap",
+      "path": "mmo-backend/FileLogTap.ts",
+      "class": null,
+      "lifecycle": "process",
+      "ctorArgs": [],
+      "dependsOn": ["node:fs", "node:util"],
+      "provides": [
+        "installFileLogTap() console interception",
+        "PW_FILELOG env enables file logging",
+        "Optional per-scope logs with {scope} token"
+      ],
+      "owns": [
+        "Write streams (single or per-scope) when PW_FILELOG is set"
+      ],
+      "notes": [
+        "Strips ANSI color codes for readable log files.",
+        "Scope is extracted from formatted logger payloads like [NPC:INFO]."
+      ]
+    },
+
+    "mmo-backend.package": {
+      "kind": "data",
+      "service": "package.meta",
+      "path": "mmo-backend/package.json",
+      "class": null,
+      "lifecycle": "static",
+      "ctorArgs": [],
+      "dependsOn": [],
+      "provides": [
+        "Scripts: dev (ts-node-dev), build (tsc), start (node dist/server.js)",
+        "Deps: ws, pg, jsonwebtoken, dotenv, zod, express (present; not used in server.ts currently)",
+        "Main: dist/server.js"
+      ],
+      "owns": [],
+      "notes": [
+        "express is listed as a dependency but the MMO backend currently serves WS only (HTTP server exists solely as ws upgrade host)."
       ]
     }
   }
