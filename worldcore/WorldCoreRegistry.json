@@ -782,7 +782,10 @@
       "class": "SkinLootService",
       "lifecycle": "singleton",
       "ctorArgs": [],
-      "dependsOn": ["db.database", "utils.logger"],
+      "dependsOn": [
+        "db.database",
+        "utils.logger"
+      ],
       "provides": [
         "getSkinLootService(): singleton accessor",
         "SkinLootService.getEntries(protoId, tags): proto-first + tag fallback, deterministic ordering"
@@ -3771,6 +3774,23 @@
         "Adds deterministic jitter within a cell border margin."
       ]
     },
+    "sim.motherBrainWavePlanner": {
+      "kind": "module",
+      "service": "sim",
+      "path": "worldcore/sim/MotherBrainWavePlanner.ts",
+      "class": "(functions)",
+      "lifecycle": "static",
+      "ctorArgs": [],
+      "provides": [
+        "planBrainWave"
+      ],
+      "dependsOn": [],
+      "owns": [],
+      "notes": [
+        "Deterministic planner for Mother Brain \"brain-owned\" spawn_points waves (preview/commit pipeline).",
+        "Used by tools.simBrain (mother-wave/mother-status) and web admin spawnpoints route."
+      ]
+    },
     "sim.townBaselinePlanner": {
       "kind": "module",
       "service": "sim",
@@ -4167,7 +4187,9 @@
     "test.skinningFallbackLoot": {
       "kind": "test",
       "path": "worldcore/test/skinningFallbackLoot.test.ts",
-      "dependsOn": ["mud.actions.world"],
+      "dependsOn": [
+        "mud.actions.world"
+      ],
       "notes": [
         "Smoke test for applyFallbackSkinLoot(protoId).",
         "Ensures starter skinning fallback returns hide_scraps with sane qty bounds."
@@ -4260,7 +4282,6 @@
         "Prevents regressions where spawns only refresh indirectly via 'nearby' or movement."
       ]
     },
-
     "test.behaviorReloadSpawnsHereReconcilesSharedNpcs": {
       "kind": "test",
       "path": "worldcore/test/behavior_reloadSpawnsHereReconcilesSharedNpcs.test.ts",
@@ -4286,22 +4307,6 @@
       "notes": [
         "Behavior: 'reload spawns --region' reconciles spawn_points-driven shared NPCs for the current region.",
         "Locks down epoch swap flows (MotherBrain waves replacing themes) without requiring relog."
-      ]
-    },
-
-    "test.behaviorSharedRespawnUsesSpawnPointCache": {
-      "kind": "test",
-      "path": "worldcore/test/npcCombat.sharedRespawnUsesSpawnPointCache.behavior.test.ts",
-      "dependsOn": [
-        "core.entities",
-        "npc.manager",
-        "npc.spawnController",
-        "combat.npc",
-        "world.spawnPointCache"
-      ],
-      "notes": [
-        "Behavior: when a shared NPC has spawnPointId, respawn consults SpawnPointCache for live-edited coords (no DB hit).",
-        "Locks down live spawn point edit workflows + hot reload safety."
       ]
     },
     "tools.resourceBaseline": {
@@ -4362,10 +4367,8 @@
         "audits + optionally cleans npcs.tags law/protection contradictions",
         "Supports --dry-run"
       ],
-      "owns": [
-      ],
-      "notes": [
-      ]
+      "owns": [],
+      "notes": []
     },
     "tools.simBrain": {
       "kind": "dev_script",
@@ -4378,6 +4381,7 @@
         "sim.SimRng",
         "sim.BrainActions",
         "sim.townBaselinePlanner",
+        "sim.motherBrainWavePlanner",
         "world.spawnPointService",
         "world.spawnHydrator"
       ],
@@ -4386,11 +4390,15 @@
         "report/status: respawn coverage audit across bounds (status supports --topGaps)",
         "fill-gaps: place checkpoints/graveyards to patch coverage gaps (dry-run vs --commit)",
         "era: orchestrated outposts + gapfill run with safe-mode caps + artifact output",
+        "mother-wave: plan/apply deterministic Mother Brain wave (dry-run vs --commit), with --append/--theme/--epoch controls",
+        "mother-status: summarize Mother Brain (brain-owned) spawn_points within bounds (optionally list)",
         "trim-outposts: enforce per-faction cap by deleting extras within bounds",
         "snapshot-spawns/restore-spawns: export + reapply spawn_points slices",
         "wipe-placements: delete spawn_points of selected types within bounds",
         "town-baseline command: seed town/outpost baseline spawn_points (mailbox/rest/guards) into spawn_points table",
         "CLI: town-baseline",
+        "CLI: mother-status",
+        "CLI: mother-wave",
         "Flag: --stations",
         "Flag: --respectTierStations / --tierStations",
         "Flag: --townTier <1..5>",
@@ -4401,6 +4409,7 @@
       ],
       "notes": [
         "Dev Simulation Harness CLI entrypoint.",
+        "Includes Mother Brain wave planning commands (mother-wave/mother-status) for brain-owned spawn_points pipelines.",
         "Follows audit → plan → apply pattern with safe default rollback unless --commit.",
         "Safety rails: refuses literal '...' arg; refuses --commit without explicit --bounds (unless --allowDefaultBounds).",
         "Artifacts are dev-only outputs; keep them gitignored."
@@ -4919,29 +4928,6 @@
       ],
       "owns": []
     },
-
-    "world.spawnPointCache": {
-      "kind": "utility",
-      "path": "worldcore/world/SpawnPointCache.ts",
-      "types": [
-        "SpawnPointCacheEntry"
-      ],
-      "functions": [
-        "upsertSpawnPoint",
-        "upsertSpawnPoints",
-        "getSpawnPoint",
-        "setSpawnPointCoords",
-        "clearSpawnPointCache"
-      ],
-      "dependsOn": [
-        "world.spawnPoints"
-      ],
-      "notes": [
-        "Lightweight in-memory cache of spawn_points entries (no IO; safe in unit tests).",
-        "Lets runtime systems (e.g. shared NPC respawn) consult the most recently known spawn point coordinates without touching the DB.",
-        "Supports dev/test overrides via setSpawnPointCoords; cleared by hot reload when reloading spawns."
-      ]
-    },
     "world.spawnPoints": {
       "kind": "service",
       "path": "worldcore/world/SpawnPointService.ts",
@@ -5254,8 +5240,12 @@
       "class": "(sql)",
       "lifecycle": "static",
       "ctorArgs": [],
-      "dependsOn": ["infra.schema.007_items"],
-      "provides": ["skin_loot table for DB-backed skinning loot profiles (proto and/or tag targeting)"],
+      "dependsOn": [
+        "infra.schema.007_items"
+      ],
+      "provides": [
+        "skin_loot table for DB-backed skinning loot profiles (proto and/or tag targeting)"
+      ],
       "owns": []
     },
     "infra.schema.036_seed_skin_loot_v1": {
@@ -5265,8 +5255,12 @@
       "class": "(sql)",
       "lifecycle": "static",
       "ctorArgs": [],
-      "dependsOn": ["infra.schema.035_skin_loot_v1"],
-      "provides": ["minimal beast/critter starter skin loot rows (hide_scraps)"],
+      "dependsOn": [
+        "infra.schema.035_skin_loot_v1"
+      ],
+      "provides": [
+        "minimal beast/critter starter skin loot rows (hide_scraps)"
+      ],
       "owns": []
     },
     "worldcore/economy/EconomyHelpers.ts": {
