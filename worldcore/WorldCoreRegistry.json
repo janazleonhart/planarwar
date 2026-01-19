@@ -1208,7 +1208,8 @@
         "items.service?",
         "quests.registry",
         "npc.types",
-        "world.spawnPointCache?"
+        "world.spawnPointCache?",
+        "world.SpawnHydrator"
       ],
       "notes": [
         "Central hot-reload coordinator used by the MUD 'reload' command.",
@@ -3826,13 +3827,17 @@
         "TownBaselinePlanOptions",
         "TownBaselinePlan",
         "TownLikeSpawnRow",
-        "TownBaselineSpawnIdMode"
+        "TownBaselineSpawnIdMode",
+        "spawnIdMode: legacy | seed",
+        "seedBase namespace (default seed:town_baseline)"
       ],
       "owns": [],
       "notes": [
         "Plans baseline services around towns (mailboxes/rest/guards/dummies/stations).",
         "TownLikeSpawnRow now accepts townTier (DB) so station seeding can be tier-gated per town.",
-        "Supports spawnIdMode: \"seed\" (seed:* spawnIds suitable for web placement ownership) vs \"legacy\" (svc_* ids for backwards compatibility)."
+        "Supports spawnIdMode: \"seed\" (seed:* spawnIds suitable for web placement ownership) vs \"legacy\" (svc_* ids for backwards compatibility).",
+        "Made bounds typing structural so backend-provided bounds typechecks cleanly",
+        "Made polarOffset() accept optional radius to avoid number | undefined TS errors"
       ]
     },
     "sim.townTierSeeding": {

@@ -25,18 +25,26 @@ export type BrainWaveTheme =
 
 export type PlanBrainWaveArgs = {
   shardId: string;
-  bounds: Bounds;
+
+  /**
+   * Cell bounds. For convenience, callers may pass a slug string like "-4..4,-4..4".
+   * (The canonical type is Bounds; the slug is legacy-friendly for tools.)
+   */
+  bounds: Bounds | string;
+
   cellSize: number;
   borderMargin: number;
 
-  seed: string;     // deterministic seed
-  epoch: number;    // changes spawns over time
+  seed: string; // deterministic seed
+  epoch: number; // changes spawns over time
   theme: BrainWaveTheme;
 
-  count: number;    // number of placements to generate
+  count: number; // number of placements to generate
 };
 
 export function planBrainWave(args: PlanBrainWaveArgs): PlaceSpawnAction[] {
+  const bounds = coerceBounds(args.bounds);
+
   const cellSize = Math.max(1, Math.floor(args.cellSize));
   const border = clamp(Math.floor(args.borderMargin), 0, Math.floor(cellSize / 2));
   const count = Math.max(0, Math.floor(args.count));
@@ -44,8 +52,8 @@ export function planBrainWave(args: PlanBrainWaveArgs): PlaceSpawnAction[] {
   const rng = mulberry32(hashSeed(`${args.seed}|epoch=${args.epoch}|theme=${args.theme}`));
 
   const cells: Array<{ cx: number; cz: number }> = [];
-  for (let cz = args.bounds.minCz; cz <= args.bounds.maxCz; cz++) {
-    for (let cx = args.bounds.minCx; cx <= args.bounds.maxCx; cx++) {
+  for (let cz = bounds.minCz; cz <= bounds.maxCz; cz++) {
+    for (let cx = bounds.minCx; cx <= bounds.maxCx; cx++) {
       cells.push({ cx, cz });
     }
   }
@@ -71,6 +79,7 @@ export function planBrainWave(args: PlanBrainWaveArgs): PlaceSpawnAction[] {
 
     const protoId = protoPool[Math.floor(rng() * protoPool.length)] ?? protoPool[0];
 
+    // We intentionally embed epoch/theme for wipe/select tools, and cell coords for stability.
     const spawnId = sanitizeId(`brain:${args.epoch}:${args.theme}:${cx}_${cz}:${i}:${protoId}`);
     const regionId = `${args.shardId}:${cx},${cz}`;
 
@@ -92,6 +101,43 @@ export function planBrainWave(args: PlanBrainWaveArgs): PlaceSpawnAction[] {
   }
 
   return actions;
+}
+
+// ---------------------------------------------------------------------------
+// Bounds parsing (slug form: "-4..4,-4..4")
+// ---------------------------------------------------------------------------
+
+export function parseBoundsSlug(input: string): Bounds {
+  const raw = String(input ?? "").trim();
+  const [a, b] = raw.split(",").map((s) => s.trim());
+
+  const [minCx, maxCx] = parseRange(a);
+  const [minCz, maxCz] = parseRange(b);
+
+  return { minCx, maxCx, minCz, maxCz };
+}
+
+function coerceBounds(b: Bounds | string): Bounds {
+  if (typeof b === "string") return parseBoundsSlug(b);
+  const x = b as Bounds;
+  return {
+    minCx: Number.isFinite(x.minCx) ? x.minCx : 0,
+    maxCx: Number.isFinite(x.maxCx) ? x.maxCx : (Number.isFinite(x.minCx) ? x.minCx : 0),
+    minCz: Number.isFinite(x.minCz) ? x.minCz : 0,
+    maxCz: Number.isFinite(x.maxCz) ? x.maxCz : (Number.isFinite(x.minCz) ? x.minCz : 0),
+  };
+}
+
+function parseRange(s: string): [number, number] {
+  const raw = String(s ?? "").trim();
+  if (!raw) return [0, 0];
+
+  const [loRaw, hiRaw] = raw.split("..").map((x) => x.trim());
+  const lo = parseInt(loRaw || "0", 10);
+  const hi = parseInt(hiRaw ?? loRaw ?? "0", 10);
+  const a = Number.isFinite(lo) ? lo : 0;
+  const b = Number.isFinite(hi) ? hi : a;
+  return [Math.min(a, b), Math.max(a, b)];
 }
 
 // ---------------------------------------------------------------------------
@@ -128,9 +174,7 @@ function lerp(a: number, b: number, t: number): number {
 
 function sanitizeId(s: string): string {
   // keep ":" for authority prefix readability, but normalize everything else
-  return s
-    .replace(/[^a-zA-Z0-9_:]+/g, "_")
-    .replace(/^_+|_+$/g, "");
+  return s.replace(/[^a-zA-Z0-9_:]+/g, "_").replace(/^_+|_+$/g, "");
 }
 
 function hashSeed(seed: string): number {

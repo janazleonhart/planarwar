@@ -172,6 +172,31 @@ export class SpawnHydrator {
   }
 
   /**
+   * Invalidate ALL per-region hydration cache.
+   *
+   * Why this exists: hot reload can change spawn_points, and the hydrator
+   * keeps a per-region "already hydrated" set to avoid redundant DB reads.
+   * Reload must clear that set so future non-forced hydration calls
+   * reflect the updated database state.
+   *
+   * Safe: this only affects whether we early-return on rehydrateRoom().
+   * It does NOT despawn or mutate entities by itself.
+   */
+  invalidateAll(): void {
+    this.hydratedRegionKeys.clear();
+  }
+
+  /**
+   * Invalidate a single region hydration cache entry.
+   *
+   * Note: regionId should match spawn_points.region_id (e.g. "prime_shard:0,0").
+   */
+  invalidateRegion(shardId: string, regionId: string): void {
+    const key = `${shardId}:${regionId}`;
+    this.hydratedRegionKeys.delete(key);
+  }
+
+  /**
    * Rehydrate POI-like spawn_points for a region into the current room.
    * Returns a summary so callers can log/report it.
    */

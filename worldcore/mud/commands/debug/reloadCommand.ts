@@ -251,6 +251,7 @@ export async function handleReloadCommand(
   const deps: HotReloadDeps = {
     items: ctx.items,
     spawnPoints: (ctx.npcSpawns as any)?.deps?.spawnPoints,
+    spawnHydrator: (ctx as any).spawnHydrator,
   } satisfies HotReloadDeps;
 
   const report = await runHotReload(targets, deps);

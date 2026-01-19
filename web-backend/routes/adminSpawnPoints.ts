@@ -5,7 +5,12 @@ import { db } from "../../worldcore/db/Database";
 import { clearSpawnPointCache } from "../../worldcore/world/SpawnPointCache";
 import { getSpawnAuthority, isSpawnEditable } from "../../worldcore/world/spawnAuthority";
 import { planBrainWave } from "../../worldcore/sim/MotherBrainWavePlanner";
-import { computeBrainWipePlan } from "../../worldcore/sim/MotherBrainWaveOps";
+import {
+  computeBrainWaveApplyPlan,
+  computeBrainWaveBudgetReport,
+  filterPlannedActionsToBudget,
+  computeBrainWipePlan,
+} from "../../worldcore/sim/MotherBrainWaveOps";
 import { planTownBaselines } from "../../worldcore/sim/TownBaselinePlanner";
 import type { TownBaselinePlanOptions, TownLikeSpawnRow } from "../../worldcore/sim/TownBaselinePlanner";
 import { getStationProtoIdsForTier } from "../../worldcore/world/TownTierRules";
@@ -1491,34 +1496,67 @@ type MotherBrainStatusResponse = {
   list?: MotherBrainListRow[];
 };
 
+
+type MotherBrainWaveBudgetConfig = {
+  maxTotalInBounds?: number | null;
+  maxThemeInBounds?: number | null;
+  maxEpochThemeInBounds?: number | null;
+  maxNewInserts?: number | null;
+};
+
 type MotherBrainWaveRequest = {
-  shardId?: string;
+  shardId: string;
   bounds: string;
-  cellSize?: number;
+  cellSize: number;
+
+  // NOTE: borderMargin is CELLS padding for selection/deletion boxes.
   borderMargin?: number;
-  seed?: string;
-  epoch?: number;
-  theme?: string;
-  count?: number;
+
+  // Placement inset in WORLD units within each cell (keeps placements off exact edges).
+  placeInset?: number;
+
+  seed: string;
+  epoch: number;
+  theme: string;
+  count: number;
   append?: boolean;
+
+  // If true, update existing spawn_id rows in-place; otherwise skip them.
+  updateExisting?: boolean;
+
+  // Hardening caps (server applies safe defaults; pass <=0 or null to disable a cap).
+  budget?: MotherBrainWaveBudgetConfig;
+
   commit?: boolean;
 };
 
 type MotherBrainWaveResponse = {
   ok: boolean;
-  shardId: string;
-  bounds: string;
-  cellSize: number;
-  theme: string;
-  epoch: number;
-  commit: boolean;
-  append: boolean;
-  wouldInsert?: number;
+
+  // dry-run (commit=false)
   wouldDelete?: number;
-  inserted?: number;
+  wouldInsert?: number;
+  wouldUpdate?: number;
+  wouldSkip?: number;
+  duplicatePlanned?: number;
+  droppedDueToBudget?: number;
+
+  // commit=true
   deleted?: number;
-  error?: string;
+  inserted?: number;
+  updated?: number;
+  skipped?: number;
+
+  // bookkeeping
+  theme?: string;
+  epoch?: number;
+  append?: boolean;
+  budget?: MotherBrainWaveBudgetConfig;
+  budgetReport?: any;
+  budgetFilter?: any;
+  applyPlan?: any;
 };
+
 
 
 type MotherBrainWipeRequest = {
@@ -1703,213 +1741,257 @@ router.get("/mother_brain/status", async (req, res) => {
   }
 });
 
+
 router.post("/mother_brain/wave", async (req, res) => {
   const body: MotherBrainWaveRequest = (req.body ?? {}) as any;
 
-  const shardId = strOrNull(body.shardId) ?? "prime_shard";
-  const bounds = strOrNull(body.bounds) ?? "-1..1,-1..1";
-  const cellSize = Number(body.cellSize ?? 64);
-  const borderMargin = Math.max(0, Math.min(10, Number(body.borderMargin ?? 0)));
-  const seed = strOrNull(body.seed) ?? "seed:mother_brain";
-  const epoch = Number.isFinite(Number(body.epoch)) ? Number(body.epoch) : 0;
-  const theme = strOrNull(body.theme) ?? "bandits";
-  const count = Math.max(1, Math.min(5000, Number(body.count ?? 8)));
+  const shardId = (body.shardId ?? "prime_shard").toString();
+  const rawBounds = (body.bounds ?? "-4..4,-4..4").toString();
+
+  const cellSize = Math.max(1, Math.min(256, Number(body.cellSize ?? 64) || 64));
+
+  // CELLS padding for selection/deletion.
+  const borderMargin = Math.max(0, Math.min(25, Number(body.borderMargin ?? 0) || 0));
+
+  // WORLD inset for placement within each cell.
+  const placeInset = Math.max(0, Math.min(Math.floor(cellSize / 2), Number(body.placeInset ?? 0) || 0));
+
+  const seed = (body.seed ?? "seed:mother").toString();
+  const epoch = Math.max(0, Number(body.epoch ?? 0) || 0);
+  const theme = (body.theme ?? "goblins").toString();
+  const count = Math.max(1, Math.min(5000, Number(body.count ?? 8) || 8));
   const append = Boolean(body.append ?? false);
+  const updateExisting = Boolean(body.updateExisting ?? false);
   const commit = Boolean(body.commit ?? false);
 
-  let parsedBounds: CellBounds;
-  let box: WorldBox;
+  const parsedBounds = parseCellBounds(rawBounds);
+  const box = toWorldBox(parsedBounds, cellSize, borderMargin);
 
+  const capOrNull = (n: any, fallback: number | null): number | null => {
+    if (n === null) return null;
+    if (n === undefined) return fallback;
+    const v = Number(n);
+    if (!Number.isFinite(v)) return fallback;
+    const i = Math.floor(v);
+    if (i <= 0) return null;
+    return i;
+  };
+
+  // Safe defaults (hardening). Send <=0 or null to disable a cap.
+  const defaultBudget = {
+    maxTotalInBounds: 5000,
+    maxThemeInBounds: 2500,
+    maxEpochThemeInBounds: 2000,
+    maxNewInserts: 1000,
+  };
+
+  const budget = {
+    maxTotalInBounds: capOrNull(body.budget?.maxTotalInBounds, defaultBudget.maxTotalInBounds),
+    maxThemeInBounds: capOrNull(body.budget?.maxThemeInBounds, defaultBudget.maxThemeInBounds),
+    maxEpochThemeInBounds: capOrNull(body.budget?.maxEpochThemeInBounds, defaultBudget.maxEpochThemeInBounds),
+    maxNewInserts: capOrNull(body.budget?.maxNewInserts, defaultBudget.maxNewInserts),
+  };
+
+  const client = await db.connect();
   try {
-    parsedBounds = parseCellBounds(bounds);
-    box = toWorldBox(parsedBounds, Number.isFinite(cellSize) ? cellSize : 64, borderMargin);
-  } catch (err: any) {
-    res.status(400).json({
-      ok: false,
+    await client.query("BEGIN");
+
+    // Existing brain:* spawn_ids inside the selection box (for replace-mode deletion + budgeting).
+    const existingBrainRes = await client.query(
+      `
+        SELECT id, spawn_id
+        FROM spawn_points
+        WHERE shard_id = $1
+          AND spawn_id LIKE 'brain:%'
+          AND x >= $2 AND x <= $3
+          AND z >= $4 AND z <= $5
+      `,
+      [shardId, box.minX, box.maxX, box.minZ, box.maxZ],
+    );
+
+    const existingBrainIds: number[] = (existingBrainRes.rows ?? [])
+      .map((r: any) => Number(r.id))
+      .filter((n: number) => Number.isFinite(n));
+
+    const existingBrainSpawnIds: string[] = (existingBrainRes.rows ?? [])
+      .map((r: any) => String(r.spawn_id ?? ""))
+      .filter(Boolean);
+
+    const plannedActions = planBrainWave({
       shardId,
-      bounds,
+      bounds: parsedBounds,
       cellSize,
+      borderMargin: placeInset,
+      seed,
+      epoch,
+      theme: theme as any,
+      count,
+    });
+
+    const plannedSpawnIds: string[] = (plannedActions ?? [])
+      .map((a: any) => String(a?.spawn?.spawnId ?? ""))
+      .filter(Boolean);
+
+    const existingSpawnIds = new Set<string>();
+    if (plannedSpawnIds.length > 0) {
+      const existRes = await client.query(
+        `SELECT spawn_id FROM spawn_points WHERE shard_id = $1 AND spawn_id = ANY($2::text[])`,
+        [shardId, plannedSpawnIds],
+      );
+      for (const r of existRes.rows ?? []) existingSpawnIds.add(String(r.spawn_id ?? ""));
+    }
+
+    const budgetReport = computeBrainWaveBudgetReport({
+      existingBrainSpawnIdsInBox: existingBrainSpawnIds,
+      append,
       theme,
       epoch,
-      commit,
+      budget,
+    });
+
+    const budgetFilter = filterPlannedActionsToBudget({
+      plannedActions: plannedActions as any,
+      existingSpawnIds,
+      updateExisting,
+      allowedNewInserts: budgetReport.allowedNewInserts,
+    });
+
+    const applyPlan = computeBrainWaveApplyPlan({
+      plannedActions: budgetFilter.filteredActions as any,
+      existingSpawnIds,
+      existingBrainSpawnIdsInBox: existingBrainSpawnIds,
       append,
-      error: String(err?.message ?? "bad_bounds"),
-    } satisfies MotherBrainWaveResponse);
-    return;
-  }
+      updateExisting,
+    });
 
-  try {
-    const client = await db.connect();
-    let wouldDelete = 0;
     let deleted = 0;
-    let wouldInsert = 0;
     let inserted = 0;
+    let updated = 0;
+    let skipped = 0;
 
-    try {
-      await client.query("BEGIN");
-
-      if (!append) {
-        const existing = await client.query(
-          `
-          SELECT id
-          FROM spawn_points
-          WHERE shard_id = $1
-            AND spawn_id LIKE 'brain:%'
-            AND x >= $2 AND x <= $3
-            AND z >= $4 AND z <= $5
-          `,
-          [shardId, box.minX, box.maxX, box.minZ, box.maxZ],
-        );
-
-        const ids: number[] = (existing.rows ?? [])
-          .map((r: any) => Number(r.id))
-          .filter((n: number) => Number.isFinite(n));
-        wouldDelete = ids.length;
-
-        if (commit && ids.length > 0) {
-          await client.query(`DELETE FROM spawn_points WHERE id = ANY($1::int[])`, [ids]);
-          deleted = ids.length;
-        }
+    if (commit) {
+      if (!append && existingBrainIds.length > 0) {
+        await client.query(`DELETE FROM spawn_points WHERE id = ANY($1::int[])`, [existingBrainIds]);
+        deleted = existingBrainIds.length;
       }
 
-      const planned: any[] = await (planBrainWave as any)({
-        shardId,
-        bounds: parsedBounds,
-        cellSize: Number.isFinite(cellSize) ? cellSize : 64,
-        borderMargin,
-        seed,
-        epoch,
-        theme,
-        count,
-      });
+      for (const a of budgetFilter.filteredActions as any[]) {
+        if (!a || (a as any).kind !== "place_spawn") continue;
+        const s = (a as any).spawn ?? null;
+        const sid = String(s?.spawnId ?? "");
+        if (!sid) continue;
 
-      const placeRows = (planned ?? [])
-        .map((a: any) => {
-          // Planners may emit either:
-          //   { kind: 'place_spawn', spawn: { ...fields } }
-          // or legacy flat fields.
-          const kind = a?.kind ?? "";
-          if (kind && kind !== "place_spawn") return null;
+        const exists = existingSpawnIds.has(sid);
+        if (exists) {
+          if (!updateExisting) {
+            skipped += 1;
+            continue;
+          }
 
-          const s = a?.spawn ?? a;
-
-          const spawnId = strOrNull(s?.spawnId ?? s?.spawn_id);
-          const type = strOrNull(s?.type);
-          const archetype = strOrNull(s?.archetype) ?? "brain";
-          const protoId = strOrNull(s?.protoId ?? s?.proto_id);
-          const variantId = strOrNull(s?.variantId ?? s?.variant_id);
-          const x = Number(s?.x);
-          const y = Number(s?.y ?? 0);
-          const z = Number(s?.z);
-          const regionId = strOrNull(s?.regionId ?? s?.region_id);
-
-          if (!spawnId || !type || !Number.isFinite(x) || !Number.isFinite(z)) return null;
-
-          return {
-            spawnId,
-            type,
-            archetype,
-            protoId,
-            variantId,
-            x,
-            y: Number.isFinite(y) ? y : 0,
-            z,
-            regionId,
-          };
-        })
-        .filter(Boolean);
-
-      for (const row of placeRows) {
-        const exists = await client.query(
-          `SELECT id FROM spawn_points WHERE shard_id = $1 AND spawn_id = $2 LIMIT 1`,
-          [shardId, (row as any).spawnId],
-        );
-        if ((exists.rows ?? []).length > 0) {
-          // Keep it idempotent.
-          continue;
-        }
-
-        wouldInsert += 1;
-
-        if (commit) {
           await client.query(
             `
-            INSERT INTO spawn_points (shard_id, spawn_id, type, archetype, proto_id, variant_id, x, y, z, region_id)
-            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+              UPDATE spawn_points
+              SET type = $3,
+                  archetype = $4,
+                  proto_id = $5,
+                  variant_id = $6,
+                  x = $7,
+                  y = $8,
+                  z = $9,
+                  region_id = $10
+              WHERE shard_id = $1 AND spawn_id = $2
             `,
             [
               shardId,
-              (row as any).spawnId,
-              (row as any).type,
-              (row as any).archetype,
-              (row as any).protoId,
-              (row as any).variantId,
-              (row as any).x,
-              (row as any).y,
-              (row as any).z,
-              (row as any).regionId,
+              sid,
+              String(s?.type ?? "npc"),
+              String(s?.archetype ?? "npc"),
+              s?.protoId != null ? String(s.protoId) : null,
+              s?.variantId != null ? String(s.variantId) : null,
+              Number(s?.x ?? 0),
+              Number(s?.y ?? 0),
+              Number(s?.z ?? 0),
+              s?.regionId != null ? String(s.regionId) : null,
             ],
           );
-          inserted += 1;
+          updated += 1;
+          continue;
         }
-      }
 
-      if (commit) {
-        await client.query("COMMIT");
-      } else {
-        await client.query("ROLLBACK");
-      }
-
-      if (commit) {
-        clearSpawnPointCache();
-      }
-
-      const payload: MotherBrainWaveResponse = commit
-        ? {
-            ok: true,
+        await client.query(
+          `
+            INSERT INTO spawn_points (shard_id, spawn_id, type, archetype, proto_id, variant_id, x, y, z, region_id)
+            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+          `,
+          [
             shardId,
-            bounds,
-            cellSize: Number.isFinite(cellSize) ? cellSize : 64,
-            theme,
-            epoch,
-            commit,
-            append,
-            inserted,
-            deleted,
-          }
-        : {
-            ok: true,
-            shardId,
-            bounds,
-            cellSize: Number.isFinite(cellSize) ? cellSize : 64,
-            theme,
-            epoch,
-            commit,
-            append,
-            wouldInsert,
-            wouldDelete,
-          };
-
-      res.json(payload);
-    } finally {
-      client.release();
+            sid,
+            String(s?.type ?? "npc"),
+            String(s?.archetype ?? "npc"),
+            s?.protoId != null ? String(s.protoId) : null,
+            s?.variantId != null ? String(s.variantId) : null,
+            Number(s?.x ?? 0),
+            Number(s?.y ?? 0),
+            Number(s?.z ?? 0),
+            s?.regionId != null ? String(s.regionId) : null,
+          ],
+        );
+        inserted += 1;
+      }
+    } else {
+      skipped = applyPlan.wouldSkip;
     }
-  } catch (err: any) {
-    console.error("[ADMIN/SPAWN_POINTS] mother_brain/wave error", err);
-    res.status(500).json({
-      ok: false,
-      shardId,
-      bounds,
-      cellSize: Number.isFinite(cellSize) ? cellSize : 64,
-      theme,
-      epoch,
-      commit,
-      append,
-      error: "internal_error",
-    } satisfies MotherBrainWaveResponse);
+
+    if (commit) {
+      await client.query("COMMIT");
+      clearSpawnPointCache();
+    } else {
+      await client.query("ROLLBACK");
+    }
+
+    const out: MotherBrainWaveResponse = commit
+      ? {
+          ok: true,
+          deleted,
+          inserted,
+          updated,
+          skipped,
+          theme,
+          epoch,
+          append,
+          budget,
+          budgetReport,
+          budgetFilter,
+          applyPlan,
+        }
+      : {
+          ok: true,
+          wouldDelete: append ? 0 : existingBrainIds.length,
+          wouldInsert: applyPlan.wouldInsert,
+          wouldUpdate: applyPlan.wouldUpdate,
+          wouldSkip: applyPlan.wouldSkip,
+          duplicatePlanned: applyPlan.duplicatePlanned,
+          droppedDueToBudget: budgetFilter.droppedDueToBudget,
+          theme,
+          epoch,
+          append,
+          budget,
+          budgetReport,
+          budgetFilter,
+          applyPlan,
+        };
+
+    res.json(out);
+  } catch (err) {
+    try {
+      await client.query("ROLLBACK");
+    } catch {}
+
+    res.status(500).json({ ok: false, error: (err as any)?.message ?? String(err) });
+  } finally {
+    client.release();
   }
 });
-
 
 router.post("/mother_brain/wipe", async (req, res) => {
   const body: MotherBrainWipeRequest = (req.body ?? {}) as any;

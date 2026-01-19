@@ -16,6 +16,8 @@ export interface HotReloadDeps {
 
   // Spawn systems (optional)
   spawnPoints?: any; // SpawnPointService (may have caches)
+
+  spawnHydrator?: any; // SpawnHydrator (may cache hydrated regions)
 }
 
 export interface HotReloadReport {
@@ -31,6 +33,7 @@ export interface HotReloadReport {
       ok: boolean;
       spawnPointCacheCleared: boolean;
       serviceCacheCleared: boolean;
+      hydratorCacheCleared: boolean;
       error?: string | null;
     };
   };
@@ -140,6 +143,50 @@ function maybeClearSpawnPointServiceCaches(
   return false;
 }
 
+function maybeInvalidateSpawnHydratorCache(spawnHydrator: any, warnings: string[]): boolean {
+  if (!spawnHydrator) return false;
+
+  const fns = [
+    "invalidateAll",
+    "invalidateCache",
+    "clearCache",
+    "resetCache",
+    "clearHydrationCache",
+    "clearHydratedRegions",
+  ];
+
+  for (const name of fns) {
+    const fn = (spawnHydrator as any)[name];
+    if (typeof fn === "function") {
+      try {
+        fn.call(spawnHydrator);
+        return true;
+      } catch (err: any) {
+        warnings.push(
+          `SpawnHydrator.${name}() threw: ${String(err?.message ?? err)}`,
+        );
+        return false;
+      }
+    }
+  }
+
+  // Fallback: TS private becomes a normal property at runtime; clear if present.
+  const maybeSet = (spawnHydrator as any).hydratedRegionKeys;
+  if (maybeSet && typeof maybeSet.clear === "function") {
+    try {
+      maybeSet.clear();
+      return true;
+    } catch (err: any) {
+      warnings.push(
+        `SpawnHydrator.hydratedRegionKeys.clear() threw: ${String(err?.message ?? err)}`,
+      );
+      return false;
+    }
+  }
+
+  return false;
+}
+
 export async function runHotReload(
   targets: HotReloadTarget[],
   deps: HotReloadDeps,
@@ -165,6 +212,7 @@ export async function runHotReload(
         ok: true,
         spawnPointCacheCleared: false,
         serviceCacheCleared: false,
+        hydratorCacheCleared: false,
         error: null,
       },
     },
@@ -267,6 +315,9 @@ export async function runHotReload(
       report.reloaded.spawns.serviceCacheCleared =
         maybeClearSpawnPointServiceCaches(deps.spawnPoints, warnings);
 
+      report.reloaded.spawns.hydratorCacheCleared =
+        maybeInvalidateSpawnHydratorCache(deps.spawnHydrator, warnings);
+
       // Even if both are false, it can still be OK (no caches to clear).
     } catch (err: any) {
       report.reloaded.spawns.ok = false;
@@ -340,6 +391,8 @@ export function formatHotReloadReport(r: HotReloadReport): string {
         r.reloaded.spawns.spawnPointCacheCleared ? "cleared" : "unchanged"
       }, SpawnPointService=${
         r.reloaded.spawns.serviceCacheCleared ? "refreshed" : "unchanged"
+      }, SpawnHydrator=${
+        r.reloaded.spawns.hydratorCacheCleared ? "cleared" : "unchanged"
       })`,
     );
   }
