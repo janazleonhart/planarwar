@@ -280,12 +280,23 @@ export async function handleGatherAction(
   });
 
   // ---- MUD-side tasks/quests/titles ----
-  const { snippets: progressionSnippets } = await applyProgressionForEvent(
-    ctx,
-    char,
-    "harvests",
-    proto.id
-  );
+  // Never let progression hooks break harvesting output (quests/titles/tasks are nice-to-have).
+  let progressionSnippets: string[] = [];
+  try {
+    const { snippets } = await applyProgressionForEvent(
+      ctx,
+      char,
+      "harvests",
+      proto.id
+    );
+    progressionSnippets = snippets ?? [];
+  } catch (err) {
+    log.warn("applyProgressionForEvent (harvest) failed", {
+      err,
+      charId: char.id,
+      protoId: proto.id,
+    });
+  }
 
   // Consume one “charge”
   const newHp = npcs.applyDamage(target.id, 1);
