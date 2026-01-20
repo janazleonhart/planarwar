@@ -30,8 +30,40 @@ export async function turnInQuest(
 
   const prog = ensureProgression(char);
   const questState = ensureQuestState(char);
+  const ids = Object.keys(questState).sort();
 
-  const resolved = resolveQuestByIdOrNameIncludingAccepted(trimmed, questState);
+  // Warfront-friendly helpers:
+  // - 'quest turnin list' / 'quest turnin ready' => show completed quests ready to cash in
+  // - 'quest turnin <#>' => numeric index into quest log ordering (ids.sort())
+  const lower = trimmed.toLowerCase();
+  if (lower === "list" || lower === "ready") {
+    if (ids.length === 0) return "[quest] You have no accepted quests.";
+
+    const completed = ids.filter((id) => questState[id]?.state === "completed");
+    if (completed.length === 0) return "[quest] No completed quests are ready to turn in yet.";
+
+    let out = "[quest] Completed quests ready to turn in:\n";
+    for (const id of completed) {
+      const entry = questState[id];
+      const q = resolveQuestDefinitionFromStateId(id, entry);
+      const name = q?.name ?? id;
+      const idx = ids.indexOf(id) + 1;
+      out += ` - ${idx}) ${name} (${id})\n`;
+    }
+    out += "\nUse: quest turnin <#|id|name>";
+    return out.trimEnd();
+  }
+
+  let key = trimmed;
+  if (/^\d+$/.test(trimmed)) {
+    const idx = Number(trimmed);
+    const id = ids[idx - 1];
+    if (!id) return `[quest] You do not have a quest #${trimmed}. (Use 'quest' to list accepted quests.)`;
+    key = id;
+  }
+
+
+  const resolved = resolveQuestByIdOrNameIncludingAccepted(key, questState);
   if (!resolved) {
     return `[quest] Unknown quest '${trimmed}'.`;
   }
@@ -39,7 +71,10 @@ export async function turnInQuest(
   const quest = resolved.quest;
   const entry = questState[quest.id];
 
-  if (!entry || entry.state !== "completed") {
+  if (!entry) {
+    return `[quest] You have not accepted '${quest.name}'.`;
+  }
+  if (entry.state !== "completed") {
     return `[quest] '${quest.name}' is not ready to turn in yet.`;
   }
 
