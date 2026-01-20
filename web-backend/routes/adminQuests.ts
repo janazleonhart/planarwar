@@ -8,6 +8,8 @@ const router = Router();
 const questService = new PostgresQuestService();
 
 // Shape used by the web editor (v0: one objective + xp/gold)
+type ObjectiveKind = "kill" | "harvest" | "collect_item" | "craft" | "talk_to" | "city";
+
 type AdminQuestPayload = {
   id: string;
   name: string;
@@ -15,7 +17,7 @@ type AdminQuestPayload = {
   repeatable?: boolean;
   maxCompletions?: number | null;
 
-  objectiveKind: "kill" | "harvest" | "collect_item";
+  objectiveKind: ObjectiveKind;
   objectiveTargetId: string;
   objectiveRequired: number;
 
@@ -31,15 +33,16 @@ router.get("/", async (_req, res) => {
     const payload: AdminQuestPayload[] = defs.map((q) => {
       const firstObj = q.objectives[0];
 
-      // pull the target id regardless of which field it lives on
       const targetId =
         (firstObj as any)?.targetProtoId ??
         (firstObj as any)?.nodeProtoId ??
         (firstObj as any)?.itemId ??
+        (firstObj as any)?.actionId ??
+        (firstObj as any)?.cityActionId ??
+        (firstObj as any)?.npcId ??
         "";
 
       const required = (firstObj as any)?.required ?? 1;
-
       const reward = q.reward || {};
 
       return {
@@ -92,39 +95,43 @@ router.post("/", async (req, res) => {
   const rewardXp = Number(body.rewardXp || 0);
   const rewardGold = Number(body.rewardGold || 0);
 
+  const kind = body.objectiveKind as ObjectiveKind;
+
   // Map editor kind -> DB enum value
-  const dbKind =
-    body.objectiveKind === "collect_item"
-      ? "item_turnin"
-      : body.objectiveKind;
+  const dbKind = kind === "collect_item" ? "item_turnin" : kind;
 
-  // Validate that the target exists for this objective kind
-  if (body.objectiveKind === "kill" || body.objectiveKind === "harvest") {
-    const npcCheck = await db.query(
-      "SELECT 1 FROM npcs WHERE id = $1",
-      [body.objectiveTargetId]
-    );
-    if (npcCheck.rowCount === 0) {
-      return res.status(400).json({
-        ok: false,
-        error: `NPC '${body.objectiveTargetId}' does not exist. Create it first in the NPC editor.`,
-      });
+  // Validation (best-effort, don’t brick the editor on unknown content tables)
+  try {
+    if (kind === "kill" || kind === "talk_to") {
+      const npcCheck = await db.query("SELECT 1 FROM npcs WHERE id = $1", [
+        body.objectiveTargetId,
+      ]);
+      if (npcCheck.rowCount === 0) {
+        return res.status(400).json({
+          ok: false,
+          error: `NPC '${body.objectiveTargetId}' does not exist. Create it first in the NPC editor.`,
+        });
+      }
     }
+
+    if (kind === "collect_item") {
+      const itemCheck = await db.query("SELECT 1 FROM items WHERE id = $1", [
+        body.objectiveTargetId,
+      ]);
+      if (itemCheck.rowCount === 0) {
+        return res.status(400).json({
+          ok: false,
+          error: `Item '${body.objectiveTargetId}' does not exist. Create it first in the item editor.`,
+        });
+      }
+    }
+
+    // harvest/craft/city: no hard validation here (table names differ per build)
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.warn("[ADMIN/QUESTS] validation skipped due to DB error", err);
   }
 
-  if (body.objectiveKind === "collect_item") {
-    const itemCheck = await db.query(
-      "SELECT 1 FROM items WHERE id = $1", // adjust table name to your real items table
-      [body.objectiveTargetId]
-    );
-    if (itemCheck.rowCount === 0) {
-      return res.status(400).json({
-        ok: false,
-        error: `Item '${body.objectiveTargetId}' does not exist. Create it first in the item editor.`,
-      });
-    }
-  }
-  
   try {
     // 1) Upsert quest row
     await db.query(
@@ -142,14 +149,8 @@ router.post("/", async (req, res) => {
       [body.id, body.name, body.description, repeatable, maxCompletions]
     );
 
-    // (Optional but very useful for debugging once)
-    // const check = await db.query("SELECT id FROM quests WHERE id = $1", [body.id]);
-    // console.log("[ADMIN/QUESTS] quest row after upsert:", check.rows);
-
     // 2) Clear old objectives / rewards
-    await db.query("DELETE FROM quest_objectives WHERE quest_id = $1", [
-      body.id,
-    ]);
+    await db.query("DELETE FROM quest_objectives WHERE quest_id = $1", [body.id]);
     await db.query("DELETE FROM quest_rewards WHERE quest_id = $1", [body.id]);
 
     // 3) Insert single objective
@@ -184,9 +185,7 @@ router.post("/", async (req, res) => {
 
     // 5) Reload quest definitions into in-process registry
     const defs = await questService.listQuests();
-    const { setQuestDefinitions } = await import(
-      "../../worldcore/quests/QuestRegistry"
-    );
+    const { setQuestDefinitions } = await import("../../worldcore/quests/QuestRegistry");
     setQuestDefinitions(defs);
 
     res.json({ ok: true });

@@ -2429,7 +2429,8 @@
       ],
       "notes": [
         "Implements 'quests' and 'quest ...' commands.",
-        "Default shows quest log; subcommand 'turnin'/'turn-in'/'complete' turns in a quest by target string."
+        "Default shows quest log; subcommand 'turnin'/'turn-in'/'complete' turns in a quest by target string.",
+        "Provides board/accept/abandon"
       ]
     },
     "mud.commands.progression.reward": {
@@ -3475,7 +3476,8 @@
       ],
       "notes": [
         "Scans all quests against kills, harvests, actions, flags, and inventory to update completion state.",
-        "Marks active quests as completed when all objectives are satisfied and returns the completed list."
+        "Marks active quests as completed when all objectives are satisfied and returns the completed list.",
+        "No auto-activation"
       ]
     },
     "quests.postgres": {
@@ -3548,7 +3550,37 @@
       ],
       "notes": [
         "Renders textual quest log including status marks [ ], [C], [T] and repeatable completion counters.",
-        "Prints per-objective progress lines for kill, harvest, collect_item, craft, city, and talk_to objectives."
+        "Prints per-objective progress lines for kill, harvest, collect_item, craft, city, and talk_to objectives.",
+        "No auto-activation."
+      ]
+    },
+    "quests.TownQuestBoard": {
+      "kind": "service",
+      "path": "worldcore/quests/TownQuestBoard.ts",
+      "functions": [
+        "renderTownQuestBoard(ctx, char)",
+        "acceptTownQuest(ctx, char, idOrIndex)",
+        "abandonQuest(ctx, char, idOrIndex)",
+        "resolveQuestDefinitionFromStateId(questId, entry)"
+      ],
+      "dependsOn": [
+        "quests.QuestGenerator",
+        "quests.QuestRegistry",
+        "quests.QuestState",
+        "progression.core",
+        "characters.service",
+        "core.EntityManager",
+        "core.RoomManager"
+      ],
+      "provides": [
+        "Town-scoped deterministic quest board output",
+        "Accept/abandon writes QuestState entries",
+        "Quest definition resolution for generated quests via QuestSource metadata"
+      ],
+      "notes": [
+        "Quest Board v0: lists deterministic generated quests for current town context (region/town key + tier + epoch).",
+        "Acceptance creates QuestState entries (quests are no longer implicitly active just because they exist in the registry).",
+        "resolveQuestDefinitionFromStateId enables QuestEngine/QuestText/turnInQuest to resolve generated quests without needing live ctx."
       ]
     },
     "quests.turnInQuest": {

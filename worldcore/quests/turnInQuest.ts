@@ -8,20 +8,15 @@ import { ensureQuestState } from "./QuestState";
 import { ensureProgression } from "../progression/ProgressionCore";
 import { countItemInInventory, consumeItemFromInventory } from "../items/inventoryConsume";
 import { grantReward } from "../economy/EconomyHelpers";
-import type { SimpleItemStack } from "../economy/EconomyHelpers";
 import {
   deliverRewardItemsNeverDrop,
   preflightBagsForRewards,
 } from "../rewards/RewardDelivery";
+import { resolveQuestDefinitionFromStateId } from "./TownQuestBoard";
 
 /**
  * Turn in a quest by id or name.
- * - Verifies the quest exists.
- * - Verifies the quest is in "completed" state.
- * - Re-checks objectives (including collect_item) for safety.
- * - Consumes required items for collect_item objectives.
- * - Applies quest reward (XP/gold/items/titles).
- * - Updates repeatable/completion state and saves the character.
+ * Supports both registry quests and deterministic generated quests (accepted via quest board).
  */
 export async function turnInQuest(
   ctx: MudContext,
@@ -33,13 +28,15 @@ export async function turnInQuest(
     return "[quest] Turn in which quest?";
   }
 
-  const quest = resolveQuestByIdOrName(trimmed);
-  if (!quest) {
+  const prog = ensureProgression(char);
+  const questState = ensureQuestState(char);
+
+  const resolved = resolveQuestByIdOrNameIncludingAccepted(trimmed, questState);
+  if (!resolved) {
     return `[quest] Unknown quest '${trimmed}'.`;
   }
 
-  const prog = ensureProgression(char);
-  const questState = ensureQuestState(char);
+  const quest = resolved.quest;
   const entry = questState[quest.id];
 
   if (!entry || entry.state !== "completed") {
@@ -104,7 +101,6 @@ export async function turnInQuest(
           reward.xp
         );
         if (updated) {
-          // keep in-memory snapshot in sync
           (char as any).xp = updated.xp;
           (char as any).level = updated.level;
           (char as any).attributes = updated.attributes;
@@ -120,7 +116,7 @@ export async function turnInQuest(
       }
     }
 
-    // Gold (safe)
+    // Gold
     if (typeof reward.gold === "number" && reward.gold > 0) {
       try {
         const econ = grantReward(char, { gold: reward.gold, items: [] });
@@ -180,7 +176,7 @@ export async function turnInQuest(
       }
     }
 
-    // Titles (simple v1: just append to progression titles)
+    // Titles
     if (reward.titles && reward.titles.length > 0) {
       const titles = prog.titles ?? { unlocked: [], active: null };
       prog.titles = titles;
@@ -239,17 +235,38 @@ export async function turnInQuest(
 // Helpers
 // ---------------------------------------------------------------------------
 
-function resolveQuestByIdOrName(input: string): QuestDefinition | undefined {
+function resolveQuestByIdOrNameIncludingAccepted(
+  input: string,
+  questState: Record<string, any>
+): { quest: QuestDefinition } | null {
   const lower = input.toLowerCase();
 
+  // 1) Exact id in registry
   const byId = getQuestById(input);
-  if (byId) return byId;
+  if (byId) return { quest: byId };
 
+  // 2) Exact id match in accepted state (generated or registry)
+  if (questState[input]) {
+    const q = resolveQuestDefinitionFromStateId(input, questState[input]);
+    if (q) return { quest: q };
+  }
+
+  // 3) Case-insensitive by id or name in registry
   const all = getAllQuests();
   const idMatch = all.find((q) => q.id.toLowerCase() === lower);
-  if (idMatch) return idMatch;
+  if (idMatch) return { quest: idMatch };
+  const nameMatch = all.find((q) => q.name.toLowerCase() === lower);
+  if (nameMatch) return { quest: nameMatch };
 
-  return all.find((q) => q.name.toLowerCase() === lower);
+  // 4) Case-insensitive match among accepted quests (generated)
+  for (const [id, entry] of Object.entries(questState)) {
+    const q = resolveQuestDefinitionFromStateId(id, entry);
+    if (!q) continue;
+    if (q.id.toLowerCase() === lower) return { quest: q };
+    if (q.name.toLowerCase() === lower) return { quest: q };
+  }
+
+  return null;
 }
 
 function areObjectivesSatisfiedForTurnIn(

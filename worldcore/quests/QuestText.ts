@@ -1,9 +1,13 @@
 // worldcore/quests/QuestText.ts
+//
+// IMPORTANT CHANGE (Quest Board v0):
+// - Quest log now renders ONLY accepted quests (present in QuestStateMap).
+// - No more "missing entry means active" behavior.
 
 import { ensureProgression } from "../progression/ProgressionCore";
 import { ensureQuestState } from "./QuestState";
-import { getAllQuests } from "./QuestRegistry";
 import { countItemInInventory } from "../items/inventoryConsume";
+import { resolveQuestDefinitionFromStateId } from "./TownQuestBoard";
 
 import type { QuestObjective } from "./QuestTypes";
 import type { CharacterState } from "../characters/CharacterTypes";
@@ -13,37 +17,48 @@ export function renderQuestLog(char: CharacterState): string {
   const kills = (prog.kills as Record<string, number>) || {};
   const harvests = (prog.harvests as Record<string, number>) || {};
   const actions = (prog.actions as Record<string, number>) || {};
-  const flags = (prog.flags as Record<string, unknown>) || {};  // ← NEW
+  const flags = (prog.flags as Record<string, unknown>) || {};
+
   const state = ensureQuestState(char);
+  const ids = Object.keys(state);
+
+  if (ids.length === 0) {
+    return "Quests:\n - None accepted.\n\nUse: quest board\n      quest accept <#|id>";
+  }
 
   let out = "Quests:\n";
 
-  for (const q of getAllQuests()) {
-    const entry = state[q.id] || { state: "active" as const };
+  for (const id of ids.sort()) {
+    const entry = state[id];
+    if (!entry) continue;
 
+    const q = resolveQuestDefinitionFromStateId(id, entry);
+
+    const name = q?.name ?? id;
     const mark =
       entry.state === "completed"
         ? "[C]"
         : entry.state === "turned_in"
         ? "[T]"
-        : "[ ]";
+        : "[A]";
 
     let repeatInfo = "";
-    if (q.repeatable) {
+    if (q?.repeatable) {
       const completions = entry.completions ?? 0;
       const max = q.maxCompletions ?? null;
 
-      if (max != null) {
-        repeatInfo = ` [repeatable ${completions}/${max}]`;
-      } else {
-        repeatInfo = ` [repeatable ${completions}/∞]`;
-      }
+      if (max != null) repeatInfo = ` [repeatable ${completions}/${max}]`;
+      else repeatInfo = ` [repeatable ${completions}/∞]`;
     }
 
-    out += ` ${mark} ${q.name} (${q.id})${repeatInfo}\n`;
+    out += ` ${mark} ${name} (${id})${repeatInfo}\n`;
 
-    for (const obj of q.objectives) {
-      out += renderObjectiveLine(char, obj, { kills, harvests, actions, flags }); // ← flags added
+    if (q) {
+      for (const obj of q.objectives) {
+        out += renderObjectiveLine(char, obj, { kills, harvests, actions, flags });
+      }
+    } else {
+      out += "   - (Quest definition missing; cannot render objectives.)\n";
     }
   }
 
@@ -99,9 +114,9 @@ function renderObjectiveLine(
     case "talk_to": {
       const required = obj.required ?? 1;
       const key = `talked_to:${obj.npcId}`;
-      const talked = Boolean(flags[key]);
-      const current = talked ? 1 : 0;
-      const display = Math.min(current, required);
+      const v = flags[key];
+      const cur = typeof v === "number" ? v : v ? 1 : 0;
+      const display = Math.min(cur, required);
       return `   - Talk to ${obj.npcId} (${display}/${required})\n`;
     }
 

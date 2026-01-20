@@ -3,7 +3,23 @@
 import type { CharacterState } from "../characters/CharacterTypes";
 import { ensureProgression } from "../progression/ProgressionCore";
 
+export type QuestSource =
+  | {
+      kind: "generated_town";
+      townId: string;
+      tier: number;
+      epoch: string;
+    }
+  | {
+      // default / legacy
+      kind: "registry";
+    };
+
 export interface QuestStateEntry {
+  /**
+   * Quests are NOT implicitly active anymore.
+   * A quest exists in this map only if the player accepted (or otherwise started) it.
+   */
   state: "active" | "completed" | "turned_in";
 
   /**
@@ -11,6 +27,12 @@ export interface QuestStateEntry {
    * Only really matters for repeatable quests.
    */
   completions?: number;
+
+  /**
+   * Optional metadata for resolving quest definitions that aren't in QuestRegistry
+   * (ex: deterministic town-generated quests).
+   */
+  source?: QuestSource;
 }
 
 export interface QuestStateMap {

@@ -1,15 +1,19 @@
 // worldcore/quests/QuestEngine.ts
+//
+// IMPORTANT CHANGE (Quest Board v0):
+// - We no longer auto-activate every quest in the registry.
+// - We ONLY evaluate quests that the character has accepted (present in QuestStateMap).
 
 import { ensureProgression } from "../progression/ProgressionCore";
 import { ensureQuestState } from "./QuestState";
-import { getAllQuests } from "./QuestRegistry";
 import { countItemInInventory } from "../items/inventoryConsume";
+import { resolveQuestDefinitionFromStateId } from "./TownQuestBoard";
 
 import type { CharacterState } from "../characters/CharacterTypes";
 import type { QuestDefinition, QuestObjective } from "./QuestTypes";
 
 /**
- * Evaluate all quests against the character's current progression + inventory.
+ * Evaluate accepted quests against the character's current progression + inventory.
  * Any quest that was active and now fully satisfied is marked "completed"
  * and returned in the result.
  */
@@ -26,13 +30,11 @@ export function updateQuestsFromProgress(
   const state = ensureQuestState(char);
   const completed: QuestDefinition[] = [];
 
-  for (const q of getAllQuests()) {
-    const entry = state[q.id] || (state[q.id] = { state: "active" });
+  for (const [questId, entry] of Object.entries(state)) {
+    if (!entry || entry.state !== "active") continue;
 
-    // Only active quests are eligible to flip to completed.
-    if (entry.state !== "active") {
-      continue;
-    }
+    const q = resolveQuestDefinitionFromStateId(questId, entry);
+    if (!q) continue;
 
     let allDone = true;
 
@@ -95,13 +97,11 @@ function isObjectiveSatisfied(
       const required = obj.required ?? 1;
       const key = `talked_to:${obj.npcId}`;
       const v = flags[key];
-      // Our talk system currently stores boolean, but support numeric later.
       const cur = typeof v === "number" ? v : v ? 1 : 0;
       return cur >= required;
     }
 
     default:
-      // Future objective kinds (go_to, interact, etc.) can be wired here.
       return false;
   }
 }

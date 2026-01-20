@@ -1,9 +1,15 @@
 //worldcore/mud/commands/progression/questsCommand.ts
 
 import { renderQuestLog } from "../../MudProgression";
-import { turnInQuest } from "../../../quests/turnInQuest"
+import { turnInQuest } from "../../../quests/turnInQuest";
+import {
+  renderTownQuestBoard,
+  acceptTownQuest,
+  abandonQuest,
+} from "../../../quests/TownQuestBoard";
 
-export async function handleQuestsCommand(_ctx: any, char: any): Promise<string> {
+export async function handleQuestsCommand(ctx: any, char: any): Promise<string> {
+  // Keep 'quests' as the log for backward compatibility.
   return renderQuestLog(char);
 }
 
@@ -14,8 +20,24 @@ export async function handleQuestCommand(
 ): Promise<string> {
   const sub = (input.parts[1] || "").toLowerCase();
 
-  if (!sub || sub === "log" || sub === "list") {
+  if (!sub || sub === "log" || sub === "list" || sub === "quests" || sub === "questlog") {
     return renderQuestLog(char);
+  }
+
+  if (sub === "board" || sub === "questboard") {
+    return renderTownQuestBoard(ctx, char);
+  }
+
+  if (sub === "accept") {
+    const target = input.parts.slice(2).join(" ").trim();
+    if (!target) return "Usage: quest accept <#|id>";
+    return acceptTownQuest(ctx, char, target);
+  }
+
+  if (sub === "abandon" || sub === "drop") {
+    const target = input.parts.slice(2).join(" ").trim();
+    if (!target) return "Usage: quest abandon <#|id>";
+    return abandonQuest(ctx, char, target);
   }
 
   if (sub === "turnin" || sub === "turn-in" || sub === "complete") {
@@ -24,5 +46,12 @@ export async function handleQuestCommand(
     return turnInQuest(ctx, char, target);
   }
 
-  return "Usage: quest [log|turnin <id or name>]";
+  return [
+    "Usage:",
+    " quest                (shows quest log)",
+    " quest board           (shows available town quests)",
+    " quest accept <#|id>",
+    " quest abandon <#|id>",
+    " quest turnin <id|name>",
+  ].join("\n");
 }

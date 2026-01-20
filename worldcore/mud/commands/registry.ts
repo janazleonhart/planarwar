@@ -224,6 +224,9 @@ export const COMMANDS: Record<string, MudCommandHandlerFn> = {
   // Progression
   quests: async (ctx, char) => handleQuestsCommand(ctx, char),
   questlog: async (ctx, char) => handleQuestsCommand(ctx, char),
+  questboard: async (ctx, char) => handleQuestCommand(ctx, char, { cmd: "quest", args: ["board"], parts: ["quest","board"] }),
+  qboard: async (ctx, char) => handleQuestCommand(ctx, char, { cmd: "quest", args: ["board"], parts: ["quest","board"] }),
+
   quest: handleQuestCommand,
   progress: async (ctx, char) => handleProgressCommand(ctx, char),
   title: async (ctx, char) => handleTitleCommand(ctx, char),
