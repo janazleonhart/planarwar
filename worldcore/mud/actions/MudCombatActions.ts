@@ -46,6 +46,10 @@ export type { NpcAttackOptions } from "../../combat/NpcCombat";
 
 /**
  * Thin wrapper so existing callers keep importing from MudActions.
+ *
+ * IMPORTANT:
+ * Centralize kill progression here so BOTH melee (/attack) and spells (MudSpells -> MudActions -> performNpcAttack)
+ * advance kills/titles/tasks/quests consistently.
  */
 export async function performNpcAttack(
   ctx: MudContext,
@@ -54,7 +58,43 @@ export async function performNpcAttack(
   npc: Entity,
   opts?: NpcAttackOptions,
 ): Promise<string> {
-  return performNpcAttackCore(ctx, char, selfEntity, npc, opts ?? {});
+  let result = await performNpcAttackCore(ctx, char, selfEntity, npc, opts ?? {});
+
+  // If this line indicates a kill, emit the event then let the hook react.
+  // (NpcCombat already handles XP/loot + corpse/respawn scheduling on kill.)
+  if (result.includes("You slay")) {
+    const protoIdForProgress =
+      ctx.npcs?.getNpcStateByEntityId(npc.id)?.protoId ?? npc.name;
+
+    // 1) record the kill in progression
+    applyProgressionEvent(char, {
+      kind: "kill",
+      targetProtoId: protoIdForProgress,
+    });
+
+    // 2) react: tasks, quests, titles, xp, DB patch
+    try {
+      const { snippets } = await applyProgressionForEvent(
+        ctx,
+        char,
+        "kills",
+        protoIdForProgress,
+      );
+      if (snippets.length > 0) {
+        result += " " + snippets.join(" ");
+      }
+    } catch (err) {
+      // Never let progression hooks break combat output.
+      // eslint-disable-next-line no-console
+      console.warn("applyProgressionForEvent (kill) failed", {
+        err,
+        charId: char.id,
+        protoId: protoIdForProgress,
+      });
+    }
+  }
+
+  return result;
 }
 
 // Re-exported wrappers for backwards compatibility (MudActions imports these).
@@ -128,37 +168,9 @@ export async function handleAttackAction(
       return line;
     }
 
-    // Normal NPC attack flow
-    let result = await performNpcAttack(ctx, char, selfEntity, npcTarget);
-
-    // If this line indicates a kill, emit the event then let the hook react.
-    if (result.includes("You slay")) {
-      const protoIdForProgress =
-        ctx.npcs?.getNpcStateByEntityId(npcTarget.id)?.protoId ?? npcTarget.name;
-
-      // 1) record the kill in progression
-      applyProgressionEvent(char, {
-        kind: "kill",
-        targetProtoId: protoIdForProgress,
-      });
-
-      // 2) react: tasks, quests, titles, xp, DB patch
-      // Signature: (ctx, char, category, targetProtoId)
-      const { snippets } = await applyProgressionForEvent(
-        ctx,
-        char,
-        "kills",
-        protoIdForProgress,
-      );
-      if (snippets.length > 0) {
-        result += " " + snippets.join(" ");
-      }
-
-      // 3) schedule corpse + respawn
-      scheduleNpcCorpseAndRespawn(ctx, npcTarget.id);
-    }
-
-    return result;
+    // Normal NPC attack flow.
+    // Kill progression is centralized inside performNpcAttack(...) above.
+    return await performNpcAttack(ctx, char, selfEntity, npcTarget);
   }
 
   // 2) Try another player – duel-gated PvP (open PvP zones can come later).
