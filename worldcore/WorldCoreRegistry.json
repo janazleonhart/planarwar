@@ -4467,6 +4467,23 @@
         "Prevents the generator from emitting impossible objectives until content pools expand intentionally."
       ]
     },
+    "test.contract_townQuestBoardAcceptAndAbandon": {
+      "kind": "test",
+      "service": "test",
+      "path": "worldcore/test/contract_townQuestBoardAcceptAndAbandon.test.ts",
+      "dependsOn": [
+        "quests.TownQuestBoard",
+        "quests.text",
+        "mud.commands.progression.quests"
+      ],
+      "provides": [
+        "[contract] town quest board accept adds quest to questlog",
+        "[contract] quest abandon removes quest from questlog"
+      ],
+      "notes": [
+        "Covers the minimal quest runtime loop: board -> accept -> questlog -> abandon."
+      ]
+    },
     "tools.resourceBaseline": {
       "kind": "dev_script",
       "path": "worldcore/tools/resourceBaseline.ts",
