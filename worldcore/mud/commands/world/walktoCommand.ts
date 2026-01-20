@@ -23,6 +23,15 @@ type WalkTarget =
 
 type ServiceName = "bank" | "guildbank" | "vendor" | "auction" | "mail";
 
+type NearbyTargetSnapshotEntry = {
+  e: any;
+  dist: number;
+  kindLabel: string;
+  baseName: string;
+  handle: string;
+};
+
+
 type WalkOptions = {
   radiusOverride?: number;
   maxStepsOverride?: number;
@@ -438,6 +447,120 @@ function stepDirTowards(dx: number, dz: number, preferX: boolean): string {
   }
 }
 
+
+
+function isDeadNpcLike(e: any): boolean {
+  const t = String(e?.type ?? "");
+  return (t === "npc" || t === "mob") && e?.alive === false;
+}
+
+function makeShortHandleBase(name: string): string {
+  const words = String(name ?? "")
+    .toLowerCase()
+    .replace(/[^a-z0-9 ]/g, "")
+    .split(/\s+/)
+    .filter(Boolean);
+  return words[words.length - 1] ?? "entity";
+}
+
+type _NearbySnapWork = {
+  e: any;
+  dist: number;
+  kindLabel: string;
+  baseName: string;
+  deadNpc: boolean;
+};
+
+function buildNearbyTargetSnapshot(
+  ctx: MudContext,
+  char: CharacterState,
+  roomId: string,
+  radius: number
+): NearbyTargetSnapshotEntry[] {
+  const entities: any[] = (ctx.entities as any)?.getEntitiesInRoom?.(roomId) ?? [];
+  if (!Array.isArray(entities) || entities.length === 0) return [];
+
+  const viewerSessionId = String((ctx as any)?.session?.id ?? "");
+
+  // Exclude self by entity id (NOT by ownerSessionId), because personal nodes also have ownerSessionId.
+  const self = (ctx.entities as any)?.getEntityByOwner?.(viewerSessionId);
+  const selfId = self?.id;
+
+  const { x: originX, z: originZ } = getPlayerXZ(ctx, char);
+
+  const work: _NearbySnapWork[] = [];
+
+  for (const e of entities) {
+    if (!e || !e.id) continue;
+    if (selfId && e.id === selfId) continue;
+
+    const ex = typeof e.x === "number" ? e.x : 0;
+    const ez = typeof e.z === "number" ? e.z : 0;
+    const dist = distanceXZ(ex, ez, originX, originZ);
+    if (dist > radius) continue;
+
+    const deadNpc = isDeadNpcLike(e);
+    const hasSpawnPoint = typeof e?.spawnPointId === "number";
+
+    // If it has an ownerSessionId but NO spawnPointId, it's player-like.
+    const isPlayerLike = !!e?.ownerSessionId && !hasSpawnPoint;
+
+    // Real nodes must have spawnPointId and be shared or owned by you.
+    const isRealNode =
+      (e.type === "node" || e.type === "object") &&
+      hasSpawnPoint &&
+      (!e.ownerSessionId || e.ownerSessionId === viewerSessionId);
+
+    // Hide foreign/invalid personal nodes entirely.
+    if ((e.type === "node" || e.type === "object") && !isRealNode) continue;
+
+    // Normalize type into display label
+    let kindLabel: string;
+
+    if (isPlayerLike) {
+      kindLabel = "player";
+    } else if (e.type === "npc" || e.type === "mob") {
+      kindLabel = deadNpc ? "corpse" : "npc";
+    } else if (isRealNode) {
+      kindLabel = "node";
+    } else {
+      kindLabel = String(e.type ?? "entity");
+    }
+
+    const baseName = String(e.name ?? e.id);
+
+    work.push({ e, dist, kindLabel, baseName, deadNpc });
+  }
+
+  // Default nearby ordering: dist asc; if tied, alive first, then name/id.
+  work.sort((a, b) => {
+    if (a.dist !== b.dist) return a.dist - b.dist;
+    if (a.deadNpc !== b.deadNpc) return a.deadNpc ? 1 : -1;
+
+    const an = a.baseName.toLowerCase();
+    const bn = b.baseName.toLowerCase();
+    if (an !== bn) return an.localeCompare(bn);
+    return String(a.e?.id ?? "").localeCompare(String(b.e?.id ?? ""));
+  });
+
+  // Build handles like guard.2 / table.1 in the same pass/order as nearby.
+  const shortCounts = new Map<string, number>();
+  const buildHandle = (kindLabel: string, baseName: string): string => {
+    const shortBase = makeShortHandleBase(baseName);
+    const key = `${kindLabel}:${shortBase}`;
+    const n = (shortCounts.get(key) ?? 0) + 1;
+    shortCounts.set(key, n);
+    return `${shortBase}.${n}`;
+  };
+
+  return work.map((it) => ({
+    e: it.e,
+    dist: it.dist,
+    kindLabel: it.kindLabel,
+    baseName: it.baseName,
+    handle: buildHandle(it.kindLabel, it.baseName),
+  }));
+}
 async function resolveTarget(
   ctx: MudContext,
   char: CharacterState,
@@ -470,30 +593,43 @@ async function resolveTarget(
 
   const ents: any[] = (ctx.entities as any)?.getEntitiesInRoom?.(roomId) ?? [];
 
-  // Numeric selector: treat as "nearby" index (1-based) by distance.
-  if (/^\d+$/.test(raw)) {
-    const idx = Number(raw);
-    if (Number.isInteger(idx) && idx >= 1 && Array.isArray(ents) && ents.length > 0) {
-      const { x: px, z: pz } = getPlayerXZ(ctx, char);
-      const sorted = [...ents]
-        .filter(Boolean)
-        .map((e: any) => {
-          const ex = typeof e.x === "number" ? e.x : 0;
-          const ez = typeof e.z === "number" ? e.z : 0;
-          return { e, d: distanceXZ(px, pz, ex, ez) };
-        })
-        .sort((a: any, b: any) => a.d - b.d);
+    // Use a nearby-equivalent snapshot for handle + index targeting.
+  // This makes `walkto guard.2` and `walkto 12` line up with the most recent `nearby` output.
+  const snapshotRadius = clamp(envFloat("PW_NEARBY_TARGET_RADIUS", 30), 5, 200);
+  const snapshotNeeded = /^\d+$/.test(raw) || /^[a-z0-9_]+\.[0-9]+$/i.test(raw);
+  const snapshot = snapshotNeeded ? buildNearbyTargetSnapshot(ctx, char, roomId, snapshotRadius) : null;
 
-      const pick = sorted[idx - 1]?.e;
+  // Numeric selector: treat as `nearby` index (1-based) using nearby-equivalent visibility + ordering.
+  if (/^\d+$/.test(raw) && snapshot && snapshot.length > 0) {
+    const idx = Number(raw);
+    if (Number.isInteger(idx) && idx >= 1) {
+      const pick = snapshot[idx - 1];
       if (pick) {
+        const e = pick.e;
         return {
           kind: "entity",
-          id: String(pick.id ?? raw),
-          name: pick.name ?? pick.id ?? raw,
-          x: typeof pick.x === "number" ? pick.x : 0,
-          z: typeof pick.z === "number" ? pick.z : 0,
+          id: String(e.id ?? raw),
+          name: e.name ?? e.id ?? raw,
+          x: typeof e.x === "number" ? e.x : 0,
+          z: typeof e.z === "number" ? e.z : 0,
         };
       }
+    }
+  }
+
+  // Handle selector: treat as a `nearby` hint handle (e.g. guard.2 / table.1).
+  if (/^[a-z0-9_]+\.[0-9]+$/i.test(raw) && snapshot && snapshot.length > 0) {
+    const h = raw.toLowerCase();
+    const pick = snapshot.find((x) => x.handle.toLowerCase() === h);
+    if (pick) {
+      const e = pick.e;
+      return {
+        kind: "entity",
+        id: String(e.id ?? raw),
+        name: e.name ?? e.id ?? raw,
+        x: typeof e.x === "number" ? e.x : 0,
+        z: typeof e.z === "number" ? e.z : 0,
+      };
     }
   }
 
