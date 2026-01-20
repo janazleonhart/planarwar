@@ -76,6 +76,14 @@ export type TownBaselinePlanOptions = {
   // Optional: when tier is known, intersect stationProtoIds with tier-allowed stations
   respectTownTierStations?: boolean;
 
+  // Vendor baseline (real NPC spawns)
+  // NOTE: Vendors act as service anchors for serviceGates (vendor/buy/sell).
+  // By default we seed one vendor per town/outpost so towns always have a shop.
+  seedVendors?: boolean; // default: true
+  vendorCount?: number; // default: 1
+  vendorProtoId?: string; // default: "starter_alchemist"
+  vendorRadius?: number; // default: 11
+
   // Guard baseline (real NPC spawns)
   guardCount: number; // default: 2
   guardProtoId?: string; // default: "town_guard"
@@ -349,6 +357,41 @@ export function planTownBaselines(
             type: stationType,
             archetype: "station",
             protoId: pid,
+            variantId: null,
+            x,
+            y: baseY,
+            z,
+            regionId,
+          },
+        });
+      }
+    }
+
+    // Vendors (service anchors)
+    const seedVendors = opts.seedVendors !== false;
+    const vendorCount = Math.max(0, Math.floor(opts.vendorCount ?? 1));
+    if (seedVendors && vendorCount > 0) {
+      const vendorRadius = Math.max(0, Number(opts.vendorRadius ?? 11) || 11);
+      const vendorProto = norm(opts.vendorProtoId || "starter_alchemist") || "starter_alchemist";
+
+      for (let i = 0; i < vendorCount; i++) {
+        const off = polarOffset(`${townSpawnId}:vendor:${i}`, vendorRadius);
+        const x = round2(baseX + off.dx);
+        const z = round2(baseZ + off.dz);
+
+        if (!inWorldBounds(x, z, opts.bounds, opts.cellSize)) continue;
+
+        const legacyPrefix = `svc_vendor${i + 1}`;
+        const seedKind = `vendor_${i + 1}`;
+
+        actions.push({
+          kind: "place_spawn",
+          spawn: {
+            shardId,
+            spawnId: makeSpawnId(opts, legacyPrefix, townSpawnId, seedKind),
+            type: "npc",
+            archetype: vendorProto,
+            protoId: vendorProto,
             variantId: null,
             x,
             y: baseY,

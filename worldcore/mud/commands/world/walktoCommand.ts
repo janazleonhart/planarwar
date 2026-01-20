@@ -150,6 +150,51 @@ function parseServiceName(raw: string): ServiceName | null {
   return null;
 }
 
+function isServiceAnchorEntity(e: any, service: ServiceName): boolean {
+  if (!e) return false;
+
+  // Avoid targeting players.
+  const hasSpawnPoint = typeof e.spawnPointId === "number";
+  const isPlayerLike = !!e.ownerSessionId && !hasSpawnPoint;
+  if (isPlayerLike) return false;
+
+  const t = norm(e.type).toLowerCase();
+  const name = norm(e.name).toLowerCase();
+  const id = norm(e.id).toLowerCase();
+  const tags = Array.isArray(e.tags) ? e.tags.map((x: any) => norm(x).toLowerCase()) : [];
+  const roles = Array.isArray(e.roles) ? e.roles.map((x: any) => norm(x).toLowerCase()) : [];
+  const svcKind = norm((e as any).serviceKind).toLowerCase();
+
+  const wantTag = service === "guildbank" ? "service_bank" : `service_${service}`;
+
+  // Prefer explicit typing when present.
+  const typeMatches =
+    (service === "mail" && (t === "mailbox" || t === "mail")) ||
+    ((service === "bank" || service === "guildbank") && (t === "banker" || t === "bank")) ||
+    (service === "auction" && (t === "auctioneer" || t === "auction")) ||
+    (service === "vendor" && (t === "vendor" || t === "merchant"));
+
+  // Service tags/roles are the "real" signal for NPCs like Shard Alchemist (type=npc).
+  const tagMatches =
+    tags.includes(wantTag) ||
+    (tags.includes("protected_service") &&
+      tags.some((x: string) => x.startsWith("service_")) &&
+      (tags.includes(wantTag) || svcKind === service));
+
+  const roleMatches = roles.includes(wantTag) || roles.includes(service);
+
+  const kindMatches = svcKind === service || (service === "guildbank" && svcKind === "bank");
+
+  // Legacy heuristic fallback (older content / simple prototypes).
+  const legacyMatches =
+    (service === "mail" && (name.includes("mail") || id.includes("mail"))) ||
+    ((service === "bank" || service === "guildbank") && (name.includes("bank") || id.includes("bank") || id.includes("gbank"))) ||
+    (service === "auction" && (name.includes("auction") || id.includes("auction"))) ||
+    (service === "vendor" && (name.includes("vendor") || name.includes("shop") || name.includes("merchant") || id.includes("vendor") || id.includes("shop") || norm((e as any).protoId).toLowerCase().includes("vendor")));
+
+  return !!(typeMatches || tagMatches || roleMatches || kindMatches || legacyMatches);
+}
+
 function findNearestServiceAnchor(
   ctx: MudContext,
   roomId: string,
@@ -160,26 +205,11 @@ function findNearestServiceAnchor(
   const ents: any[] = (ctx.entities as any)?.getEntitiesInRoom?.(roomId) ?? [];
   if (!Array.isArray(ents) || ents.length === 0) return null;
 
-  const matches = ents.filter((e) => {
-    if (!e) return false;
-    const t = norm(e.type).toLowerCase();
-    const name = norm(e.name).toLowerCase();
-    const id = norm(e.id).toLowerCase();
-
-    // v1: match by type + name hints (tune later; registry-backed "services" can formalize this)
-    if (service === "mail") return t === "mailbox" || name.includes("mail") || id.includes("mail");
-    if (service === "bank") return t === "bank" || name.includes("bank") || id.includes("bank");
-    if (service === "guildbank") return t === "guildbank" || name.includes("guild bank") || id.includes("gbank");
-    if (service === "vendor") return t === "vendor" || name.includes("vendor") || name.includes("shop");
-    if (service === "auction") return t === "auction" || name.includes("auction") || id.includes("auction");
-    return false;
-  });
-
-  if (matches.length === 0) return null;
-
   let best: any = null;
   let bestD = Infinity;
-  for (const e of matches) {
+
+  for (const e of ents) {
+    if (!isServiceAnchorEntity(e, service)) continue;
     const x = typeof e.x === "number" ? e.x : 0;
     const z = typeof e.z === "number" ? e.z : 0;
     const d = distanceXZ(fromX, fromZ, x, z);
@@ -192,6 +222,73 @@ function findNearestServiceAnchor(
   if (!best) return null;
   return { x: best.x ?? 0, z: best.z ?? 0, name: best.name ?? best.id };
 }
+
+// Fallback for vendor anchors: if an NPC's protoId matches a vendorId in the DB,
+// treat it as a vendor location even if tags/serviceKind are missing.
+// This keeps towns usable while we gradually standardize service tags in npc prototypes.
+let _VENDOR_ID_CACHE: { at: number; ids: Set<string> } | null = null;
+
+async function getVendorIdSet(ctx: MudContext): Promise<Set<string> | null> {
+  const svc: any = (ctx as any).vendors;
+  if (!svc || typeof svc.listVendors !== "function") return null;
+
+  const now = Date.now();
+  if (_VENDOR_ID_CACHE && now - _VENDOR_ID_CACHE.at < 30_000) return _VENDOR_ID_CACHE.ids;
+
+  try {
+    const list = await svc.listVendors();
+    const ids = new Set<string>();
+    if (Array.isArray(list)) {
+      for (const v of list) {
+        const id = norm((v as any)?.id).toLowerCase();
+        if (id) ids.add(id);
+      }
+    }
+    _VENDOR_ID_CACHE = { at: now, ids };
+    return ids;
+  } catch {
+    return null;
+  }
+}
+
+async function findNearestVendorAnchorFromDb(
+  ctx: MudContext,
+  roomId: string,
+  fromX: number,
+  fromZ: number
+): Promise<{ x: number; z: number; name?: string } | null> {
+  const ids = await getVendorIdSet(ctx);
+  if (!ids || ids.size === 0) return null;
+
+  const ents: any[] = (ctx.entities as any)?.getEntitiesInRoom?.(roomId) ?? [];
+  if (!Array.isArray(ents) || ents.length === 0) return null;
+
+  let best: any = null;
+  let bestD = Infinity;
+
+  for (const e of ents) {
+    if (!e) continue;
+
+    // protoId is canonical for NPC prototypes; templateId sometimes used too.
+    const pid = norm((e as any).protoId).toLowerCase();
+    const tid = norm((e as any).templateId).toLowerCase();
+
+    if (!pid && !tid) continue;
+    if (!ids.has(pid) && !ids.has(tid)) continue;
+
+    const x = typeof e.x === "number" ? e.x : 0;
+    const z = typeof e.z === "number" ? e.z : 0;
+    const d = distanceXZ(fromX, fromZ, x, z);
+    if (d < bestD) {
+      best = e;
+      bestD = d;
+    }
+  }
+
+  if (!best) return null;
+  return { x: best.x ?? 0, z: best.z ?? 0, name: best.name ?? best.id };
+}
+
 
 function parseOptions(argv: string[]): WalkOptions {
   const out: WalkOptions = { keep: [] };
@@ -354,7 +451,15 @@ async function resolveTarget(
   const svc = parseServiceName(raw);
   if (svc) {
     const { x: px, z: pz } = getPlayerXZ(ctx, char);
-    const found = findNearestServiceAnchor(ctx, roomId, svc, px, pz);
+
+    // Prefer explicit service-tagged anchors (service_vendor / service_bank / etc).
+    let found = findNearestServiceAnchor(ctx, roomId, svc, px, pz);
+
+    // Vendor fallback: treat an NPC whose protoId matches a vendorId as a vendor anchor.
+    if (!found && svc === "vendor") {
+      found = await findNearestVendorAnchorFromDb(ctx, roomId, px, pz);
+    }
+
     if (!found) return null;
     return { kind: "service", service: svc, x: found.x, z: found.z, name: found.name ?? raw };
   }
@@ -363,23 +468,117 @@ async function resolveTarget(
   const coords = parseCoords(raw);
   if (coords) return { kind: "coords", x: coords.x, z: coords.z, name: raw };
 
-  // Entity handle: try matching by id/name substring in room
   const ents: any[] = (ctx.entities as any)?.getEntitiesInRoom?.(roomId) ?? [];
+
+  // Numeric selector: treat as "nearby" index (1-based) by distance.
+  if (/^\d+$/.test(raw)) {
+    const idx = Number(raw);
+    if (Number.isInteger(idx) && idx >= 1 && Array.isArray(ents) && ents.length > 0) {
+      const { x: px, z: pz } = getPlayerXZ(ctx, char);
+      const sorted = [...ents]
+        .filter(Boolean)
+        .map((e: any) => {
+          const ex = typeof e.x === "number" ? e.x : 0;
+          const ez = typeof e.z === "number" ? e.z : 0;
+          return { e, d: distanceXZ(px, pz, ex, ez) };
+        })
+        .sort((a: any, b: any) => a.d - b.d);
+
+      const pick = sorted[idx - 1]?.e;
+      if (pick) {
+        return {
+          kind: "entity",
+          id: String(pick.id ?? raw),
+          name: pick.name ?? pick.id ?? raw,
+          x: typeof pick.x === "number" ? pick.x : 0,
+          z: typeof pick.z === "number" ? pick.z : 0,
+        };
+      }
+    }
+  }
+
   const lowered = raw.toLowerCase();
 
+  function aliasesOf(e: any): string[] {
+    const out: string[] = [];
+    const push = (v: any) => {
+      const s = norm(v).toLowerCase();
+      if (s) out.push(s);
+    };
+
+    push(e?.id);
+    push(e?.name);
+    push(e?.handle);
+    push(e?.targetHandle);
+    push(e?.clientHandle);
+    push(e?.shortId);
+    push(e?.debugHandle);
+    push(e?.protoId);
+    push(e?.templateId);
+    push(e?.spawnId);
+
+    // Some systems store handles in metadata bags.
+    if (e?.meta && typeof e.meta === "object") {
+      push(e.meta.handle);
+      push(e.meta.targetHandle);
+    }
+    return out;
+  }
+
+  // Try an EntityManager resolver if one exists (talk/inspect often use this).
+  function resolveByHandleDuck(handle: string): any | null {
+    const em: any = ctx.entities as any;
+    const fns: any[] = [
+      em?.resolveInRoomByHandle,
+      em?.getEntityInRoomByHandle,
+      em?.findEntityInRoomByHandle,
+      em?.resolveHandleInRoom,
+      em?.resolveHandle,
+      em?.getByHandle,
+      em?.findByHandle,
+    ].filter((fn) => typeof fn === "function");
+
+    for (const fn of fns) {
+      try {
+        const r1 = fn.call(em, roomId, handle);
+        if (r1) return r1;
+      } catch {}
+      try {
+        const r2 = fn.call(em, handle, roomId);
+        if (r2) return r2;
+      } catch {}
+      try {
+        const r3 = fn.call(em, handle);
+        if (r3) return r3;
+      } catch {}
+    }
+    return null;
+  }
+
+  const direct = resolveByHandleDuck(raw);
+  if (direct) {
+    return {
+      kind: "entity",
+      id: String(direct.id ?? raw),
+      name: direct.name ?? direct.id ?? raw,
+      x: typeof direct.x === "number" ? direct.x : 0,
+      z: typeof direct.z === "number" ? direct.z : 0,
+    };
+  }
+
+  // Entity handle: match common aliases (id/name/handle/shortId/protoId/etc) in room
   let best: any = null;
   for (const e of ents) {
     if (!e) continue;
-    const id = norm(e.id).toLowerCase();
-    const name = norm(e.name).toLowerCase();
 
-    if (id === lowered || name === lowered) {
+    const aliases = aliasesOf(e);
+    if (aliases.some((a) => a === lowered)) {
       best = e;
       break;
     }
 
     // substring match as a fallback
-    if (!best && (id.includes(lowered) || name.includes(lowered))) best = e;
+    if (!best && aliases.some((a) => a.includes(lowered))) best = e;
   }
 
   if (!best) return null;
@@ -392,6 +591,7 @@ async function resolveTarget(
     z: typeof best.z === "number" ? best.z : 0,
   };
 }
+
 
 export async function handleWalkToCommand(
   ctx: MudContext,

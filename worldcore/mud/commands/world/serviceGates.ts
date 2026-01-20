@@ -1,295 +1,258 @@
 // worldcore/mud/commands/world/serviceGates.ts
+//
+// Service gating: certain town services (bank, vendor, mailbox, etc.) should only be
+// usable when you are physically near the matching service anchor entity.
+//
+// NOTE:
+// - Most services can be toggled via PW_SERVICE_GATES.
+// - Vendor proximity is enforced whenever we have enough runtime context
+//   (session+entities), even if PW_SERVICE_GATES is off. This prevents "remote shopping"
+//   which breaks the town loop.
+//
+// This file must remain test-friendly: if we cannot evaluate proximity (no session/entities),
+// we do NOT block.
+//
+
 import type { MudContext } from "../../MudContext";
 import type { CharacterState } from "../../../characters/CharacterTypes";
-import { isGMOrHigher } from "../../../shared/AuthTypes";
 
 type ServiceName = "bank" | "guildbank" | "vendor" | "auction" | "mail";
 
-function envBool(name: string): boolean {
-  const v = (process.env[name] ?? "").toString().trim().toLowerCase();
-  return v === "1" || v === "true" || v === "yes" || v === "on";
-}
+// Forge/station interactions generally use ~2.5 in the walk-to loop.
+const DEFAULT_SERVICE_RADIUS = 2.5;
 
-function envInt(name: string, fallback: number): number {
-  const raw = (process.env[name] ?? "").toString().trim();
-  if (!raw) return fallback;
-  const n = Number(raw);
-  if (!Number.isFinite(n)) return fallback;
-  return Math.trunc(n);
-}
-
-/**
- * Enable/disable world service gating.
- *
- * - default: OFF (dev friendly)
- * - enable: PW_SERVICE_GATES=1 (or WORLD_SERVICE_GATES=1)
- */
-export function serviceGatesEnabled(): boolean {
-  return envBool("PW_SERVICE_GATES") || envBool("WORLD_SERVICE_GATES");
-}
-
-/**
- * Strict anchor mode:
- * - If enabled, services REQUIRE a matching service anchor nearby.
- * - If disabled (default), missing anchors fall back to "town/safe_hub region" rule.
- */
-function strictAnchors(): boolean {
-  return envBool("PW_SERVICE_GATES_STRICT");
-}
-
-function serviceRadius(service: ServiceName): number {
-  // Allow per-service override later, but keep it simple now.
-  // Examples:
-  //   PW_SERVICE_RADIUS=12
-  //   PW_SERVICE_RADIUS_MAIL=10
-  const base = envInt("PW_SERVICE_RADIUS", 12);
-  const per =
-    envInt(
-      `PW_SERVICE_RADIUS_${service.toUpperCase()}`,
-      Number.NaN as any
-    );
-  return Number.isFinite(per) ? per : base;
-}
-
-function norm(s: any): string {
+function norm(s: unknown): string {
   return String(s ?? "").trim().toLowerCase();
 }
 
-function getPlayerXZ(ctx: MudContext, char: CharacterState): { x: number; z: number } {
-  const ent = (ctx.entities as any)?.getEntityByOwner?.(ctx.session.id) as any;
-  const x =
-    (typeof ent?.x === "number" ? ent.x : undefined) ??
-    (typeof (char as any)?.posX === "number" ? (char as any).posX : undefined) ??
-    0;
-  const z =
-    (typeof ent?.z === "number" ? ent.z : undefined) ??
-    (typeof (char as any)?.posZ === "number" ? (char as any).posZ : undefined) ??
-    0;
+function toNumber(x: unknown): number | null {
+  const n = Number(x);
+  return Number.isFinite(n) ? n : null;
+}
+
+function getRoomId(session: any): string | null {
+  const rid =
+    session?.roomId ??
+    session?.room?.id ??
+    session?.room?.roomId ??
+    session?.world?.roomId;
+  return rid ? String(rid) : null;
+}
+
+function getPlayerPos(char: any): { x: number; z: number } | null {
+  const x = toNumber(char?.pos?.x ?? char?.x ?? char?.posX);
+  const z = toNumber(char?.pos?.z ?? char?.z ?? char?.posZ);
+  if (x === null || z === null) return null;
   return { x, z };
 }
 
-function isStaffBypass(ctx: MudContext): boolean {
-  const flags = (ctx.session as any)?.identity?.flags;
-  return isGMOrHigher(flags);
+function dist2(ax: number, az: number, bx: number, bz: number): number {
+  const dx = ax - bx;
+  const dz = az - bz;
+  return dx * dx + dz * dz;
 }
 
-function isTownLike(ctx: MudContext, x: number, z: number): boolean {
-  const world: any = (ctx as any).world;
-  if (!world?.getRegionAt) return true; // permissive if world isn't wired
-  const region = world.getRegionAt(x, z);
-  const tags: string[] = Array.isArray(region?.tags) ? region.tags : [];
-  const flags: any = region?.flags ?? {};
-  return (
-    tags.includes("town") ||
-    tags.includes("safe_hub") ||
-    flags.isTown === true ||
-    flags.isSafeHub === true
-  );
+function serviceGatesEnabled(): boolean {
+  // Default: off for dev ergonomics.
+  // Vendor is enforced separately when possible.
+  const v = process.env.PW_SERVICE_GATES;
+  if (!v) return false;
+  const s = String(v).trim().toLowerCase();
+  return s === "1" || s === "true" || s === "yes" || s === "on";
 }
 
-type AnchorMatch = {
-  id: string;
-  name: string;
-  type: string;
-  x: number;
-  z: number;
-  dist: number;
-};
-
-function getRoomId(ctx: MudContext, char: CharacterState): string | null {
-  const roomId = (ctx.session as any)?.roomId;
-  if (typeof roomId === "string" && roomId.length > 0) return roomId;
-
-  const ent = (ctx.entities as any)?.getEntityByOwner?.(ctx.session.id) as any;
-  const r = ent?.roomId;
-  if (typeof r === "string" && r.length > 0) return r;
-
-  const lastRegion = (char as any)?.lastRegionId;
-  if (typeof lastRegion === "string" && lastRegion.length > 0) return lastRegion;
-
-  return null;
+function serviceRadius(): number {
+  const v = process.env.PW_SERVICE_RADIUS;
+  const n = Number(v);
+  return Number.isFinite(n) && n > 0 ? n : DEFAULT_SERVICE_RADIUS;
 }
 
-function getEntitiesInRoom(ctx: MudContext, roomId: string): any[] {
-  const ents = (ctx.entities as any)?.getEntitiesInRoom?.(roomId);
-  return Array.isArray(ents) ? ents : [];
+function strictRequiredFor(service: ServiceName): boolean {
+  // Vendor is a hard gameplay constraint: every town should have one,
+  // and you should not be able to buy/sell remotely.
+  if (service === "vendor") return true;
+
+  const v = process.env.PW_SERVICE_GATES_STRICT;
+  if (!v) return false;
+  const s = String(v).trim().toLowerCase();
+  return s === "1" || s === "true" || s === "yes" || s === "on";
+}
+
+function serviceKindFor(service: ServiceName): string {
+  return service;
 }
 
 function isServiceAnchorEntity(e: any, service: ServiceName): boolean {
-  if (!e) return false;
+  const t = norm(e?.type);
+  const tags: string[] = Array.isArray(e?.tags) ? e.tags.map((x: any) => norm(x)) : [];
+  const roles: string[] = Array.isArray(e?.roles) ? e.roles.map((x: any) => norm(x)) : [];
 
-  // Avoid targeting players.
-  const hasSpawnPoint = typeof e.spawnPointId === "number";
-  const isPlayerLike = !!e.ownerSessionId && !hasSpawnPoint;
-  if (isPlayerLike) return false;
+  const svc = serviceKindFor(service);
 
-  const t = norm(e.type);
-  const tags = Array.isArray(e.tags) ? e.tags.map(norm) : [];
-  const roles = Array.isArray(e.roles) ? e.roles.map(norm) : [];
-  const svcKind = norm(e.serviceKind);
+  // Type-based anchors.
+  if (t === svc) return true;
+  if (service === "vendor" && (t === "vendor" || t === "merchant" || t === "shop")) return true;
+  if (service === "guildbank" && (t === "guildbank" || t === "gbank")) return true;
+  if (service === "auction" && (t === "auction" || t === "ah" || t === "auctioneer")) return true;
+  if (service === "mail" && (t === "mail" || t === "mailbox")) return true;
 
-  const wantTag =
-    service === "guildbank" ? "service_bank" : `service_${service}`;
+  // Tag-based anchors.
+  const wantTag = `service_${svc}`;
+  if (tags.includes(wantTag)) return true;
 
-  // Types that count as anchors (you can expand later)
-  const typeMatches =
-    (service === "mail" && (t === "mailbox" || t === "mail")) ||
-    ((service === "bank" || service === "guildbank") && (t === "banker" || t === "bank")) ||
-    (service === "auction" && (t === "auctioneer" || t === "auction")) ||
-    (service === "vendor" && (t === "vendor" || t === "merchant"));
+  // Protected service NPCs (guards/immortal services) can be tagged in two layers.
+  // Example: protected_service + role vendor
+  if (tags.includes("protected_service") && (roles.includes(svc) || tags.includes(svc))) return true;
 
-  const tagMatches =
-    tags.includes(wantTag) ||
-    tags.includes("protected_service") && tags.some((x: string) => x.startsWith("service_")) &&
-      (tags.includes(wantTag) || svcKind === service);
+  // Back-compat / loose matching.
+  if (tags.includes(svc)) return true;
 
-  const roleMatches = roles.includes(wantTag) || roles.includes(service);
+  return false;
+}
 
-  const kindMatches = svcKind === service || (service === "guildbank" && svcKind === "bank");
+type AnchorMatch = {
+  entity: any;
+  dist: number;
+  serviceId: string; // protoId/templateId (best effort)
+};
 
-  return !!(typeMatches || tagMatches || roleMatches || kindMatches);
+function getServiceIdFromEntity(e: any): string {
+  // Prefer protoId (spawn_points.protoId) then templateId, then model/archetype.
+  const raw = e?.protoId ?? e?.templateId ?? e?.model ?? e?.archetype ?? "";
+  return String(raw ?? "").trim();
 }
 
 function findNearestAnchor(
   ctx: MudContext,
   char: CharacterState,
-  service: ServiceName
+  service: ServiceName,
+  opts?: { vendorIds?: Set<string> }
 ): AnchorMatch | null {
-  const roomId = getRoomId(ctx, char);
+  const roomId = getRoomId((ctx as any)?.session);
   if (!roomId) return null;
 
-  const { x: px, z: pz } = getPlayerXZ(ctx, char);
-  const ents = getEntitiesInRoom(ctx, roomId);
+  const em: any = (ctx as any)?.entities;
+  if (!em?.getEntitiesInRoom) return null;
+
+  const ents: any[] = em.getEntitiesInRoom(roomId) ?? [];
+  const pos = getPlayerPos(char as any);
+  if (!pos) return null;
+
+  const wantVendorIds = service === "vendor" ? opts?.vendorIds : undefined;
 
   let best: AnchorMatch | null = null;
   for (const e of ents) {
-    if (!isServiceAnchorEntity(e, service)) continue;
-    const ex = typeof e.x === "number" ? e.x : 0;
-    const ez = typeof e.z === "number" ? e.z : 0;
+    const isAnchor =
+      isServiceAnchorEntity(e, service) ||
+      (service === "vendor" &&
+        !!wantVendorIds &&
+        wantVendorIds.has(norm(getServiceIdFromEntity(e))));
 
-    const dx = ex - px;
-    const dz = ez - pz;
-    const dist = Math.sqrt(dx * dx + dz * dz);
+    if (!isAnchor) continue;
 
-    if (!best || dist < best.dist) {
-      best = {
-        id: String(e.id ?? ""),
-        name: String(e.name ?? e.id ?? "Service"),
-        type: norm(e.type),
-        x: ex,
-        z: ez,
-        dist,
-      };
-    }
+    const ex = toNumber(e?.x ?? e?.pos?.x);
+    const ez = toNumber(e?.z ?? e?.pos?.z);
+    if (ex === null || ez === null) continue;
+
+    const d = Math.sqrt(dist2(pos.x, pos.z, ex, ez));
+    const serviceId = getServiceIdFromEntity(e);
+
+    if (!best || d < best.dist) best = { entity: e, dist: d, serviceId };
   }
 
   return best;
 }
 
-// ---- Step estimate (cardinal movement) ----
-// We estimate minimum N/S/E/W steps needed to reach within radius R of target.
-// This is L1 distance to a circle; computed by maximizing u+v on the circle.
-function estimateStepsToRange(dx: number, dz: number, r: number): number {
-  const a = Math.abs(dx);
-  const b = Math.abs(dz);
-
-  // Already in range (Euclidean)
-  if (a * a + b * b <= r * r) return 0;
-
-  // Maximize u+v subject to u^2+v^2<=r^2, 0<=u<=a, 0<=v<=b
-  const R2 = r * r;
-  let sMax = 0;
-
-  // Candidate 1: unconstrained max on circle at (r/sqrt2, r/sqrt2)
-  const u0 = r / Math.SQRT2;
-  const v0 = r / Math.SQRT2;
-  if (a >= u0 && b >= v0) sMax = Math.max(sMax, u0 + v0);
-
-  // Candidate 2: u=a (if a<=r) and v = sqrt(r^2-a^2) (if <=b)
-  if (a <= r) {
-    const v = Math.sqrt(Math.max(0, R2 - a * a));
-    if (v <= b) sMax = Math.max(sMax, a + v);
+async function maybeLoadVendorIdSet(ctx: MudContext): Promise<Set<string> | null> {
+  const vendors: any = (ctx as any)?.vendors;
+  if (!vendors?.listVendors) return null;
+  try {
+    const list = await vendors.listVendors();
+    const s = new Set<string>();
+    for (const v of list ?? []) {
+      const id = norm((v as any)?.id);
+      if (id) s.add(id);
+    }
+    return s;
+  } catch {
+    return null;
   }
-
-  // Candidate 3: v=b (if b<=r) and u = sqrt(r^2-b^2) (if <=a)
-  if (b <= r) {
-    const u = Math.sqrt(Math.max(0, R2 - b * b));
-    if (u <= a) sMax = Math.max(sMax, b + u);
-  }
-
-  // Fallback: if nothing above applied, use unconstrained (still safe)
-  if (sMax <= 0) sMax = r * Math.SQRT2;
-
-  const need = (a + b) - sMax;
-  return Math.max(0, Math.ceil(need));
 }
 
-function moveHint(dx: number, dz: number): string {
-  const parts: string[] = [];
-  if (Math.abs(dx) >= 0.5) parts.push(dx > 0 ? "east" : "west");
-  if (Math.abs(dz) >= 0.5) parts.push(dz > 0 ? "south" : "north");
-  if (parts.length === 0) return "move closer";
-  if (parts.length === 1) return `move ${parts[0]}`;
-  return `move ${parts[0]} + ${parts[1]} (alternate for a diagonal)`;
+// Local bypass logic: do not import shared auth types from other packages.
+// This stays robust across builds by duck-typing.
+function canBypassServiceGates(auth: any): boolean {
+  if (!auth) return false;
+
+  if (auth.isAdmin === true || auth.isDev === true) return true;
+
+  const roles = Array.isArray(auth.roles) ? auth.roles.map(norm) : [];
+  const scopes = Array.isArray(auth.scopes) ? auth.scopes.map(norm) : [];
+  const perms = Array.isArray(auth.permissions) ? auth.permissions.map(norm) : [];
+
+  if (roles.includes("admin") || roles.includes("dev")) return true;
+  if (scopes.includes("admin") || scopes.includes("dev")) return true;
+  if (perms.includes("bypass_service_gates") || perms.includes("service_gates_bypass")) return true;
+
+  if (auth.flags && typeof auth.flags === "object") {
+    if (auth.flags.bypassServiceGates === true || auth.flags.bypass_service_gates === true) return true;
+  }
+
+  return false;
 }
 
-function niceServiceName(service: ServiceName): string {
-  return service === "guildbank"
-    ? "Guild Bank"
-    : service === "bank"
-    ? "Bank"
-    : service === "vendor"
-    ? "Vendor"
-    : service === "auction"
-    ? "Auction House"
-    : "Mail";
+function shouldBypass(ctx: MudContext): boolean {
+  try {
+    const auth = (ctx as any)?.session?.auth;
+    return canBypassServiceGates(auth);
+  } catch {
+    return false;
+  }
 }
 
 function denyNoAnchor(service: ServiceName): string {
-  const nice = niceServiceName(service);
-  return `${nice} isn't available here (no ${service} service anchor nearby).`;
+  return `[service] No ${service} service is available here.`;
 }
 
-function denyOutOfRange(service: ServiceName, anchor: AnchorMatch, steps: number, r: number, hint: string): string {
-  const nice = niceServiceName(service);
-  return `${nice} requires being within ${r} of a service anchor. Nearest is '${anchor.name}' at distance ${anchor.dist.toFixed(
+function denyOutOfRange(service: ServiceName, dist: number): string {
+  return `[service] You must be closer to use ${service}. (dist ${dist.toFixed(1)} > ${serviceRadius().toFixed(
     1
-  )}. You're about ~${steps} step(s) away — ${hint}.`;
+  )})`;
 }
 
 /**
- * Model B (anchor-based):
- * Service is available only if you are within serviceRadius(service) of the nearest service anchor.
+ * Gate a town service call.
  *
- * If PW_SERVICE_GATES_STRICT=0 (default):
- * - missing anchor falls back to town/safe_hub region rule.
+ * - If PW_SERVICE_GATES is disabled, we normally let the call through.
+ * - Vendor is special: if we can evaluate proximity (session+entities), we enforce it.
  */
 export async function requireTownService<T>(
   ctx: MudContext,
   char: CharacterState,
   service: ServiceName,
-  run: () => Promise<T>
+  run: () => Promise<T> | T
 ): Promise<T | string> {
-  if (!serviceGatesEnabled()) return await run();
-  if (isStaffBypass(ctx)) return await run();
+  const isVendor = service === "vendor";
+  const gatesOn = serviceGatesEnabled();
 
-  const { x: px, z: pz } = getPlayerXZ(ctx, char);
-  const anchor = findNearestAnchor(ctx, char, service);
-  const r = serviceRadius(service);
+  // If we can't reason about proximity (tests, headless contexts), don't block.
+  const canEvaluateProximity =
+    !!(ctx as any)?.session && !!(ctx as any)?.entities && !!getRoomId((ctx as any)?.session);
 
-  if (anchor) {
-    if (anchor.dist <= r) return await run();
+  const shouldGate = (gatesOn && !isVendor) || (isVendor && canEvaluateProximity);
 
-    const dx = anchor.x - px;
-    const dz = anchor.z - pz;
-    const steps = estimateStepsToRange(dx, dz, r);
-    return denyOutOfRange(service, anchor, steps, r, moveHint(dx, dz));
+  if (!shouldGate) return run();
+  if (shouldBypass(ctx)) return run();
+
+  const vendorIds = isVendor ? await maybeLoadVendorIdSet(ctx) : null;
+  const anchor = findNearestAnchor(ctx, char, service, { vendorIds: vendorIds ?? undefined });
+
+  if (!anchor) {
+    if (strictRequiredFor(service)) return denyNoAnchor(service);
+    return run();
   }
 
-  // No anchor found
-  if (strictAnchors()) return denyNoAnchor(service);
+  if (anchor.dist > serviceRadius()) return denyOutOfRange(service, anchor.dist);
 
-  // Non-strict fallback (helps during early dev before anchors exist everywhere)
-  if (isTownLike(ctx, px, pz)) return await run();
-  return denyNoAnchor(service);
+  return run();
 }

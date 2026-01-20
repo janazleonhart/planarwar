@@ -342,6 +342,20 @@ export const DEFAULT_NPC_PROTOTYPES: Record<NpcId, NpcPrototype> = {
     loot: [],
   },
 
+  starter_alchemist: {
+    id: "starter_alchemist",
+    name: "Shard Alchemist",
+    level: 10,
+    maxHp: 250,
+    baseDamageMin: 0,
+    baseDamageMax: 0,
+    model: "human_alchemist",
+    tags: ["humanoid", "civilian", "non_hostile", "protected_service", "service_vendor", "vendor", "merchant", "town"],
+    behavior: "neutral",
+    xpReward: 0,
+    loot: [],
+  },
+
   rat_pack_raider: {
     id: "rat_pack_raider",
     name: "Pack Rat",

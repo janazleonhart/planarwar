@@ -2024,7 +2024,8 @@
       ],
       "notes": [
         "Implements 'vendor list <id>' and 'vendor buy <id> <index> [qty]'.",
-        "Charges only for items that actually land in bags/mail; handles overflow via system mail."
+        "Charges only for items that actually land in bags/mail; handles overflow via system mail.",
+        "Now supports help/vendors/list/buy/sell"
       ]
     },
     "mud.commands.gathering.farming": {
@@ -3187,7 +3188,7 @@
       "path": "worldcore/npc/NpcTypes.ts",
       "notes": [
         "Defines NpcId, GuardProfile, NpcBehavior, NpcLootEntry, NpcPrototype, and NpcRuntimeState.",
-        "Includes DEFAULT_NPC_PROTOTYPES (training_dummy, town_rat, coward_rat, ore_vein_small, town_guard, rat_pack_raider, bandit_caster) plus guard call radius helpers and a live prototype registry."
+        "Includes DEFAULT_NPC_PROTOTYPES (training_dummy, town_rat, coward_rat, ore_vein_small, town_guard, rat_pack_raider, bandit_caster, starter_alchemist) plus guard call radius helpers and a live prototype registry."
       ]
     },
     "progression.core": {
@@ -3866,7 +3867,7 @@
       ],
       "owns": [],
       "notes": [
-        "Plans baseline services around towns (mailboxes/rest/guards/dummies/stations).",
+        "Plans baseline services around towns (mailboxes/rest/guards/dummies/stations/vendors).",
         "TownLikeSpawnRow now accepts townTier (DB) so station seeding can be tier-gated per town.",
         "Supports spawnIdMode: \"seed\" (seed:* spawnIds suitable for web placement ownership) vs \"legacy\" (svc_* ids for backwards compatibility).",
         "Made bounds typing structural so backend-provided bounds typechecks cleanly",
@@ -4707,7 +4708,8 @@
       "notes": [
         "Pure transaction logic for buying and selling with vendors.",
         "buyFromVendor checks gold, tries to add items, then spends gold only for successfully added quantity.",
-        "sellToVendor finds vendor price reference and pays 50% per unit, consuming items atomically."
+        "sellToVendor finds vendor price reference and pays 50% per unit, consuming items atomically.",
+        "Sell/Buy rules live here"
       ]
     },
     "vendors.types": {
