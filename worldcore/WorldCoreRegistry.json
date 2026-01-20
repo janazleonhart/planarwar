@@ -3506,6 +3506,27 @@
         "No auto-activation"
       ]
     },
+    "quests.generator": {
+      "kind": "module",
+      "service": "quests",
+      "path": "worldcore/quests/QuestGenerator.ts",
+      "class": "(module) QuestGenerator",
+      "lifecycle": "static",
+      "ctorArgs": [],
+      "dependsOn": [
+        "quests.types"
+      ],
+      "provides": [
+        "stableQuestGenSeed({townId,tier,epoch}): stable 32-bit seed",
+        "generateTownQuests({townId,tier,epoch,...}): deterministic town quest set",
+        "mergeRewards(a,b): helper to sum QuestReward bags"
+      ],
+      "notes": [
+        "Quest Generator v0: deterministic per (townId, tier, epoch).",
+        "Uses conservative objective pools (ids already present in QuestTypes examples) so generated quests are completable with current content.",
+        "Introduces small deterministic jitter on required counts and XP/gold rewards."
+      ]
+    },
     "quests.postgres": {
       "kind": "service",
       "path": "worldcore/quests/PostgresQuestService.ts",
@@ -4396,6 +4417,54 @@
       "notes": [
         "Behavior: 'reload spawns --region' reconciles spawn_points-driven shared NPCs for the current region.",
         "Locks down epoch swap flows (MotherBrain waves replacing themes) without requiring relog."
+      ]
+    },
+    "test.contract_reloadSpawnsInvalidatesHydratorCache": {
+      "kind": "test",
+      "service": "test",
+      "path": "worldcore/test/contract_reloadSpawnsInvalidatesHydratorCache.test.ts",
+      "dependsOn": [
+        "mud.commands.debug.reload",
+        "dev.hotReloadService",
+        "world.spawnHydrator"
+      ],
+      "provides": [
+        "[contract] reload spawns invalidates SpawnHydrator hydration cache before POI rehydrate",
+        "Asserts hot reload report includes SpawnHydrator=cleared"
+      ],
+      "notes": [
+        "Guards against stale POI hydration when spawn_points change at runtime."
+      ]
+    },
+    "test.contract_townQuestGeneratorDeterminism": {
+      "kind": "test",
+      "service": "test",
+      "path": "worldcore/test/contract_townQuestGeneratorDeterminism.test.ts",
+      "dependsOn": [
+        "quests.generator"
+      ],
+      "provides": [
+        "[contract] town quest generator is deterministic for identical inputs",
+        "[contract] different epoch changes output (seeded variance)"
+      ],
+      "notes": [
+        "Guards reproducibility for generated quest sets so server restarts and tooling yield identical results."
+      ]
+    },
+    "test.contract_townQuestGeneratorObjectivePool": {
+      "kind": "test",
+      "service": "test",
+      "path": "worldcore/test/contract_townQuestGeneratorObjectivePool.test.ts",
+      "dependsOn": [
+        "quests.generator",
+        "quests.types"
+      ],
+      "provides": [
+        "[contract] generated quest objectives only use safe ids from the current content set",
+        "[contract] generated quest ids are unique and town-prefixed"
+      ],
+      "notes": [
+        "Prevents the generator from emitting impossible objectives until content pools expand intentionally."
       ]
     },
     "tools.resourceBaseline": {
@@ -5636,75 +5705,6 @@
         "isSpawnAnchor/isSpawnSeed/isSpawnBrain helpers"
       ],
       "owns": []
-    },
-    "test.contract_reloadSpawnsInvalidatesHydratorCache": {
-      "kind": "test",
-      "service": "test",
-      "path": "worldcore/test/contract_reloadSpawnsInvalidatesHydratorCache.test.ts",
-      "dependsOn": [
-        "mud.commands.debug.reload",
-        "dev.hotReloadService",
-        "world.spawnHydrator"
-      ],
-      "provides": [
-        "[contract] reload spawns invalidates SpawnHydrator hydration cache before POI rehydrate",
-        "Asserts hot reload report includes SpawnHydrator=cleared"
-      ],
-      "notes": [
-        "Guards against stale POI hydration when spawn_points change at runtime."
-      ]
-    },
-    "quests.generator": {
-      "kind": "module",
-      "service": "quests",
-      "path": "worldcore/quests/QuestGenerator.ts",
-      "class": "(module) QuestGenerator",
-      "lifecycle": "static",
-      "ctorArgs": [],
-      "dependsOn": [
-        "quests.types"
-      ],
-      "provides": [
-        "stableQuestGenSeed({townId,tier,epoch}): stable 32-bit seed",
-        "generateTownQuests({townId,tier,epoch,...}): deterministic town quest set",
-        "mergeRewards(a,b): helper to sum QuestReward bags"
-      ],
-      "notes": [
-        "Quest Generator v0: deterministic per (townId, tier, epoch).",
-        "Uses conservative objective pools (ids already present in QuestTypes examples) so generated quests are completable with current content.",
-        "Introduces small deterministic jitter on required counts and XP/gold rewards."
-      ]
-    },
-    "test.contract_townQuestGeneratorDeterminism": {
-      "kind": "test",
-      "service": "test",
-      "path": "worldcore/test/contract_townQuestGeneratorDeterminism.test.ts",
-      "dependsOn": [
-        "quests.generator"
-      ],
-      "provides": [
-        "[contract] town quest generator is deterministic for identical inputs",
-        "[contract] different epoch changes output (seeded variance)"
-      ],
-      "notes": [
-        "Guards reproducibility for generated quest sets so server restarts and tooling yield identical results."
-      ]
-    },
-    "test.contract_townQuestGeneratorObjectivePool": {
-      "kind": "test",
-      "service": "test",
-      "path": "worldcore/test/contract_townQuestGeneratorObjectivePool.test.ts",
-      "dependsOn": [
-        "quests.generator",
-        "quests.types"
-      ],
-      "provides": [
-        "[contract] generated quest objectives only use safe ids from the current content set",
-        "[contract] generated quest ids are unique and town-prefixed"
-      ],
-      "notes": [
-        "Prevents the generator from emitting impossible objectives until content pools expand intentionally."
-      ]
     }
   }
 }
