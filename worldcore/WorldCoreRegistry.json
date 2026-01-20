@@ -157,7 +157,7 @@
         "mud.context"
       ],
       "notes": [
-        "Builds a one-line MUD description for a listing like '#12 Hematite Iron Ore [common] x20 \u2013 3g each (total 60g) by Testing [active]'.",
+        "Builds a one-line MUD description for a listing like '#12 Hematite Iron Ore [common] x20 – 3g each (total 60g) by Testing [active]'.",
         "Looks up item definitions via ctx.items?.get to resolve item name and rarity."
       ]
     },
@@ -417,7 +417,7 @@
         "classes.definitions"
       ],
       "notes": [
-        "Postgres-backed character service using the characters table and CharacterRow \u2192 CharacterState mapping.",
+        "Postgres-backed character service using the characters table and CharacterRow → CharacterState mapping.",
         "Supports partial JSONB patching, XP/level gains with per-class attribute growth, and spell/equipment updates."
       ]
     },
@@ -2017,15 +2017,18 @@
         "characters.service",
         "mail.service",
         "economy.gold",
-        "loot.OverflowDelivery"
+        "loot.OverflowDelivery",
+        "mud.commands.world.serviceGates"
       ],
       "invokedBy": [
         "mud.handler"
       ],
       "notes": [
-        "Implements 'vendor list <id>' and 'vendor buy <id> <index> [qty]'.",
-        "Charges only for items that actually land in bags/mail; handles overflow via system mail.",
-        "Now supports help/vendors/list/buy/sell"
+        "DB-backed vendor command layer (v0). DB vendor 'id' is authoritative; names/handles are display-only.",
+        "Commands: vendor help | vendors | list [vendorId|handle] | buy [vendorId|handle] <index|rowId> [qty] | sell [vendorId|handle] <itemId|index|rowId> [qty].",
+        "Quality-of-life: you can omit vendorId to infer the nearest vendor anchor in the current room; you can also pass an entity handle (e.g. alchemist.1).",
+        "Proximity gated via requireTownService(ctx, char, 'vendor', ...) to prevent remote shopping; use walkto vendor to get into range.",
+        "Buy/sell delegates to VendorTransactions; handles inventory overflow via system mail / OverflowDelivery policies."
       ]
     },
     "mud.commands.gathering.farming": {
@@ -2769,7 +2772,7 @@
         "Refreshes personal nodes, then lists nearby entities within radius with short handles like rat.1.",
         "filter/group/sort flags",
         "--limit / --max",
-        "safe caps + \u201cUI-friendly output shaping"
+        "safe caps + “UI-friendly output shaping"
       ]
     },
     "mud.commands.world.save": {
@@ -2788,6 +2791,27 @@
       "notes": [
         "Implements 'save'.",
         "Patch-updates the character record with position, attributes, inventory, equipment, spellbook, abilities, and progression."
+      ]
+    },
+    "mud.commands.world.serviceGates": {
+      "kind": "utility",
+      "path": "worldcore/mud/commands/world/serviceGates.ts",
+      "lifecycle": "stateless",
+      "dependsOn": [
+        "mud.context",
+        "core.entities",
+        "core.sessions",
+        "vendor.service"
+      ],
+      "functions": [
+        "requireTownService(ctx:MudContext, char:CharacterState, service:\"bank\"|\"guildbank\"|\"vendor\"|\"auction\"|\"mail\", run:()=>Promise<T>|T):Promise<T|string>"
+      ],
+      "notes": [
+        "Enforces proximity gating for town services (bank/guildbank/vendor/auction/mail) when session+entities context exists.",
+        "Vendor gating is always enforced when proximity can be evaluated (prevents remote shopping even if PW_SERVICE_GATES is off).",
+        "Test-friendly: if proximity cannot be evaluated, the call is not blocked.",
+        "Admin/dev bypass via duck-typed session.auth (roles/scopes/permissions flags).",
+        "Env: PW_SERVICE_GATES (enable non-vendor gates), PW_SERVICE_RADIUS (default 2.5), PW_SERVICE_GATES_STRICT (deny if no anchor exists)."
       ]
     },
     "mud.commands.world.talk": {
@@ -2831,7 +2855,8 @@
         "Implements 'walkto <handle|name|service>' auto-walk with per-step delay.",
         "Supports service keywords: bank/gbank/mail/ah/vendor by walking to nearest service anchor entity.",
         "Includes persistent risk-mode + coward toggle (stored on CharacterState progression.flags) to allow walking through combat with penalties.",
-        "Walk interrupted on hit unless risk, and that it mirrors flags to entity fields (_pw_walkto*)"
+        "Walk interrupted on hit unless risk, and that it mirrors flags to entity fields (_pw_walkto*)",
+        "Service targeting prefers service anchors (tags/serviceKind) and avoids ambiguous numeric-name matches (e.g. 'walkto 2' accidentally hitting guard.2)."
       ]
     },
     "mud.combatGates": {
@@ -3118,7 +3143,7 @@
         "Determines which NPCs are 'protected' (civilian, vendor, questgiver, protected_town, etc.) and records crimes against them on the attacker.",
         "Sets recentCrimeUntil and recentCrimeSeverity (minor|severe) on characters to drive guard response.",
         "law_exempt > law_protected > legacy tags precedence",
-        "guards/resources are never \u201cprotected\u201d for crime purposes"
+        "guards/resources are never “protected” for crime purposes"
       ]
     },
     "npc.manager": {
@@ -3138,7 +3163,7 @@
         "combat.damagePolicy"
       ],
       "notes": [
-        "Owns runtime NPC state, per-room maps, threat tables, and bridges EntityManager \u2194 AI brain \u2194 sessions/chat.",
+        "Owns runtime NPC state, per-room maps, threat tables, and bridges EntityManager ↔ AI brain ↔ sessions/chat.",
         "Spawns/Despawns NPCs, applies damage, records threat, coordinates guard/pack help, coward fleeing, gating, and drives AI decisions each tick."
       ]
     },
@@ -3723,7 +3748,7 @@
       "kind": "types",
       "path": "worldcore/sim/BrainActions.ts",
       "notes": [
-        "Types for Mother-Brain style planning outputs (audit \u2192 plan actions \u2192 apply).",
+        "Types for Mother-Brain style planning outputs (audit → plan actions → apply).",
         "Includes PlaceSpawnAction used by SettlementPlanner + simBrain apply."
       ]
     },
@@ -4097,7 +4122,7 @@
       ],
       "notes": [
         "Computes difficulty tier by radial distance from world center.",
-        "Uses max world radius \u2248 2048 units for current prime shard."
+        "Uses max world radius ≈ 2048 units for current prime shard."
       ]
     },
     "terrain.regionDisplay": {
@@ -4474,7 +4499,7 @@
       "notes": [
         "Dev Simulation Harness CLI entrypoint.",
         "Includes Mother Brain wave planning commands (mother-wave/mother-status) for brain-owned spawn_points pipelines.",
-        "Follows audit \u2192 plan \u2192 apply pattern with safe default rollback unless --commit.",
+        "Follows audit → plan → apply pattern with safe default rollback unless --commit.",
         "Safety rails: refuses literal '...' arg; refuses --commit without explicit --bounds (unless --allowDefaultBounds).",
         "Artifacts are dev-only outputs; keep them gitignored."
       ]
@@ -4886,7 +4911,7 @@
         "characters.types"
       ],
       "notes": [
-        "Tracks per-region dynamic danger score and effective tier (1\u20135) based on base distance ring + recent activity.",
+        "Tracks per-region dynamic danger score and effective tier (1–5) based on base distance ring + recent activity.",
         "Applies exponential-style decay over time so regions cool down naturally.",
         "Used by cowardice, Region Peril aura, debug_region_danger, and debug_bump_region_danger."
       ]
@@ -5470,7 +5495,7 @@
         "run(input:BiomeInput, ctx?:WorldGenContext):BiomeResult"
       ],
       "notes": [
-        "Stage 2.3.4 \u2013 biome assignment per cell + connected biome clusters.",
+        "Stage 2.3.4 – biome assignment per cell + connected biome clusters.",
         "Outputs biomeMap + cluster IDs + counts per biome."
       ]
     },
@@ -5489,7 +5514,7 @@
         "run(input:CivilizationInput, ctx?:WorldGenContext):CivilizationResult"
       ],
       "notes": [
-        "Stage 2.3.5 \u2013 settlements, roads, and POIs.",
+        "Stage 2.3.5 – settlements, roads, and POIs.",
         "Scores candidate cells, picks settlements with spacing, builds a road graph, scatters points of interest."
       ]
     },
@@ -5506,7 +5531,7 @@
         "run(input:ClimateInput, ctx?:WorldGenContext):ClimateResult"
       ],
       "notes": [
-        "Stage 2.3.3 \u2013 temperature, moisture, and compact climate zones.",
+        "Stage 2.3.3 – temperature, moisture, and compact climate zones.",
         "Can optionally use erosion outputs to bias humidity near rivers/lakes."
       ]
     },
@@ -5522,7 +5547,7 @@
         "run(input:{ landforms:LandformResult, params?:ErosionParams }, ctx?:WorldGenContext):ErosionResult"
       ],
       "notes": [
-        "Stage 2.3.2 \u2013 hydrology, erosion, rivers, lakes.",
+        "Stage 2.3.2 – hydrology, erosion, rivers, lakes.",
         "Outputs updated elevation, water, sediment, flow dirs, river/lake masks."
       ]
     },
@@ -5536,7 +5561,7 @@
         "run(input:ShardSeedInput, ctx?:WorldGenContext):LandformResult"
       ],
       "notes": [
-        "Stage 2.3.1 \u2013 base landforms: tectonics, continents, uplift, macro elevation.",
+        "Stage 2.3.1 – base landforms: tectonics, continents, uplift, macro elevation.",
         "First stage in the WGEv2 pipeline; everything else builds on its LandformResult."
       ]
     },
@@ -5556,7 +5581,7 @@
         "run(input:ResourceInput, ctx?:WorldGenContext):ResourceResult"
       ],
       "notes": [
-        "Stage 2.3.6 \u2013 resource node placement (ore/herb/wood/fish/rare) plus per-kind masks.",
+        "Stage 2.3.6 – resource node placement (ore/herb/wood/fish/rare) plus per-kind masks.",
         "Respects biome, elevation, climate, hydrology, and avoids city centers while tagging 'near settlement' nodes."
       ]
     },
