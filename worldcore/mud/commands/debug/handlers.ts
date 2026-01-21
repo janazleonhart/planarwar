@@ -4,6 +4,7 @@ import { Logger } from "../../../utils/logger";
 import { getStaffRole } from "../../../shared/AuthTypes";
 import { logStaffAction } from "../../../auth/StaffAuditLog";
 import { canGrantItemToPlayer } from "../../../items/ItemGrantRules";
+import { getItemTemplate, listAllItems } from "../../../items/ItemCatalog";
 import { defaultAttributes } from "../../../characters/CharacterTypes";
 import {
   applySimpleDamageToPlayer,
@@ -47,6 +48,50 @@ function parseDamageSchool(raw: unknown): DamageSchool | undefined {
   return (DAMAGE_SCHOOLS as string[]).includes(s) ? (s as DamageSchool) : undefined;
 }
 
+type ResolvedDebugGrantItem = {
+  id: string;
+  name: string;
+  maxStack: number;
+  /**
+   * ItemDefinition-ish shape for canGrantItemToPlayer.
+   * - DB items pass through as-is.
+   * - Catalog items get a safe default policy: grantMinRole="gm", isDevOnly=false.
+   */
+  rulesItem: any;
+};
+
+function resolveDebugGrantItem(ctx: any, token: string): ResolvedDebugGrantItem | null {
+  const t = String(token ?? "").trim();
+  if (!t) return null;
+
+  // Prefer DB items when available.
+  const def = ctx?.items?.get?.(t) ?? ctx?.items?.findByIdOrName?.(t);
+  if (def) {
+    return {
+      id: def.id,
+      name: def.name ?? def.id,
+      maxStack: typeof def.maxStack === "number" ? def.maxStack : 1,
+      rulesItem: def,
+    };
+  }
+
+  // Fall back to the static item catalog (bootstrap/dev items).
+  const tl = t.toLowerCase();
+  const tpl =
+    getItemTemplate(t) ??
+    listAllItems().find((x) => String(x.name ?? "").toLowerCase() === tl) ??
+    null;
+
+  if (!tpl) return null;
+
+  return {
+    id: tpl.id,
+    name: tpl.name ?? tpl.id,
+    maxStack: typeof (tpl as any).maxStack === "number" ? (tpl as any).maxStack : 1,
+    rulesItem: { id: tpl.id, grantMinRole: "gm", isDevOnly: false } as any,
+  };
+}
+
 const log = Logger.scope("MudDebug");
 
 type MudInput = {
@@ -75,21 +120,19 @@ export async function handleDebugGive(
   if (!token) return "Usage: debug_give <itemId|name> [qty]";
   if (!ctx.items) return "Item service unavailable.";
   if (!ctx.characters) return "Character service unavailable.";
-
-  const def =
-    ctx.items.get(token) ?? ctx.items.findByIdOrName?.(token);
-  if (!def) return `No DB item found for '${token}'.`;
+  const item = resolveDebugGrantItem(ctx, token);
+  if (!item) return `No item found for '${token}'.`;
 
   const d = await deliverItemToBagsOrMail(ctx, {
     inventory: char.inventory,
-    itemId: def.id,
+    itemId: item.id,
     qty,
-    displayName: def.name,
-    maxStack: def.maxStack,
+    displayName: item.name,
+    maxStack: item.maxStack,
     sourceVerb: "debug granting",
     sourceName: "an admin command",
     mailSubject: "Debug item overflow",
-    mailBody: `Your bags were full while receiving ${def.name} via a debug command.\nExtra items were delivered to your mailbox.`,
+    mailBody: `Your bags were full while receiving ${item.name} via a debug command.\nExtra items were delivered to your mailbox.`,
   });
 
   if (d.added === 0 && d.mailed === 0) {
@@ -98,7 +141,7 @@ export async function handleDebugGive(
 
   await ctx.characters.saveCharacter(char);
 
-  let msg = `[debug] Gave ${d.added}x ${def.name}.`;
+  let msg = `[debug] Gave ${d.added}x ${item.name}.`;
   if (d.mailed > 0) msg += ` (${d.mailed}x mailed)`;
   if (d.leftover > 0) msg += ` (${d.leftover}x dropped)`;
   return msg;
@@ -660,32 +703,27 @@ export async function handleEventMailReward(
   if (role !== "owner" && role !== "dev" && role !== "gm") {
     return "You are not allowed to send event reward mail.";
   }
-
-  const def =
-    ctx.items.get(token) ??
-    (ctx.items.findByIdOrName
-      ? ctx.items.findByIdOrName(token)
-      : undefined);
-  if (!def) return `No DB item found for '${token}'.`;
+  const item = resolveDebugGrantItem(ctx, token);
+  if (!item) return `No item found for '${token}'.`;
 
   //Explicit test/event mail; not overflow
   await ctx.mail.sendSystemMail(
     identity.userId,
     "account",
     "Event Reward",
-    `Thank you for participating in an event.\nYou have been awarded ${qty}x ${def.name}.`,
-    [{ itemId: def.id, qty }]
+    `Thank you for participating in an event.\nYou have been awarded ${qty}x ${item.name}.`,
+    [{ itemId: item.id, qty }]
   );
 
   await logStaffAction(ctx.session.identity, "event_mail_reward", {
     targetAccountId: identity.userId,
     targetDisplayName: identity.displayName,
-    itemId: def.id,
-    itemName: def.name,
+    itemId: item.id,
+    itemName: item.name,
     qty,
   });
 
-  return `Event reward mailed: ${qty} x ${def.name}.`;
+  return `Event reward mailed: ${qty} x ${item.name}.`;
 }
 
 // ---------------------------------------------------------------------------
@@ -707,28 +745,27 @@ export async function handleDebugGiveMat(
   if (!ctx.characters) {
     return "Character service unavailable (ctx.characters missing).";
   }
-
-  const def = ctx.items.findByIdOrName?.(token);
-  if (!def) return `No DB item found for '${token}'.`;
+  const item = resolveDebugGrantItem(ctx, token);
+  if (!item) return `No item found for '${token}'.`;
 
   const actorRole = getStaffRole(ctx.session.identity?.flags);
   const shardMode: "dev" | "live" =
     process.env.PW_SHARD_MODE === "live" ? "live" : "dev";
 
-  if (!canGrantItemToPlayer({ actorRole, shardMode }, def)) {
-    return `You are not allowed to grant '${def.id}'.`;
+  if (!canGrantItemToPlayer({ actorRole, shardMode }, item.rulesItem as any)) {
+    return `You are not allowed to grant '${item.id}'.`;
   }
 
   const d = await deliverItemToBagsOrMail(ctx, {
     inventory: char.inventory,
-    itemId: def.id,
+    itemId: item.id,
     qty,
-    displayName: def.name,
-    maxStack: def.maxStack,
+    displayName: item.name,
+    maxStack: item.maxStack,
     sourceVerb: "receiving materials",
     sourceName: "a debug command",
     mailSubject: "Overflow items",
-    mailBody: `Your bags were full while receiving ${def.name}.\nExtra items were delivered to your mailbox.`,
+    mailBody: `Your bags were full while receiving ${item.name}.\nExtra items were delivered to your mailbox.`,
   });
 
   if (d.added === 0 && d.mailed === 0) {
@@ -740,20 +777,20 @@ export async function handleDebugGiveMat(
   await logStaffAction(ctx.session.identity, "debug_give_mat", {
     targetCharacterId: char.id,
     targetCharacterName: char.name,
-    itemId: def.id,
-    itemName: def.name,
+    itemId: item.id,
+    itemName: item.name,
     requestedQty: qty,
     grantedQty: d.added,
     leftover: d.leftover,
     mailed: d.mailed,
   });
 
-  let msg = `You receive ${d.added} x ${def.name} (DB item).`;
+  let msg = `You receive ${d.added} x ${item.name} (DB item).`;
   if (d.mailed > 0) {
-    msg += ` ${d.mailed} x ${def.name} were sent to your mailbox.`;
+    msg += ` ${d.mailed} x ${item.name} were sent to your mailbox.`;
   }
   if (d.leftover > 0) {
-    msg += ` (Dropped: ${d.leftover} x ${def.name}.)`;
+    msg += ` (Dropped: ${d.leftover} x ${item.name}.)`;
   }
   return msg;
 }

@@ -72,6 +72,12 @@ export interface NewStatusEffectInput {
   // If effect already exists, this is how many stacks are added.
   initialStacks?: number;
 
+  /**
+   * Back-compat alias for initialStacks (some call sites used 'stacks').
+   * Prefer initialStacks going forward.
+   */
+  stacks?: number;
+
   modifiers: StatusEffectModifier;
   tags?: string[];
 }
@@ -149,7 +155,14 @@ export function applyStatusEffect(
   const existing = state.active[input.id];
 
   if (existing) {
-    const maxStacks =
+    const resolvedInitialStacks =
+    typeof input.initialStacks === "number" && input.initialStacks > 0
+      ? input.initialStacks
+      : typeof (input as any).stacks === "number" && (input as any).stacks > 0
+        ? Number((input as any).stacks)
+        : 1;
+
+  const maxStacks =
       typeof input.maxStacks === "number" && input.maxStacks > 0
         ? input.maxStacks
         : existing.maxStacks > 0
@@ -159,7 +172,9 @@ export function applyStatusEffect(
     const addStacks =
       typeof input.initialStacks === "number" && input.initialStacks > 0
         ? input.initialStacks
-        : 1;
+        : typeof (input as any).stacks === "number" && (input as any).stacks > 0
+          ? Number((input as any).stacks)
+          : 1;
 
     const stackCount = Math.min(maxStacks, existing.stackCount + addStacks);
 
@@ -184,16 +199,23 @@ export function applyStatusEffect(
     return updated;
   }
 
+  const resolvedInitialStacks =
+    typeof input.initialStacks === "number" && input.initialStacks > 0
+      ? input.initialStacks
+      : typeof (input as any).stacks === "number" && (input as any).stacks > 0
+        ? Number((input as any).stacks)
+        : 1;
+
   const maxStacks =
     typeof input.maxStacks === "number" && input.maxStacks > 0
       ? input.maxStacks
-      : input.initialStacks && input.initialStacks > 0
-        ? input.initialStacks
+      : resolvedInitialStacks && resolvedInitialStacks > 0
+        ? resolvedInitialStacks
         : 1;
 
   const stackCount =
-    typeof input.initialStacks === "number" && input.initialStacks > 0
-      ? input.initialStacks
+    typeof resolvedInitialStacks === "number" && resolvedInitialStacks > 0
+      ? resolvedInitialStacks
       : 1;
 
   const inst: StatusEffectInstance = {

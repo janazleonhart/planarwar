@@ -166,13 +166,18 @@ export async function initSpellUnlocksFromDbOnce(pool: PgPoolLoose): Promise<voi
       const code = String(err?.code ?? "");
       const msg = String(err?.message ?? err);
 
+      const shardMode = String(process.env.PW_SHARD_MODE ?? "").trim().toLowerCase();
+      const isLive = shardMode === "live";
+      const softLog: any = isLive ? log.warn : (log as any).info ?? (log as any).debug ?? log.warn;
+
       if (code === "42P01" || /relation .*spell_unlocks.* does not exist/i.test(msg)) {
-        log.warn("DB spell_unlocks table not found; keeping code fallback unlock list.", {
+        softLog("DB spell_unlocks table not found; keeping code fallback unlock list.", {
           code,
           message: msg,
         });
       } else {
-        log.warn("DB spell_unlocks load failed; keeping code fallback unlock list.", {
+        // Unexpected DB failure: still warn in live, soften in dev.
+        (isLive ? log.warn : softLog)("DB spell_unlocks load failed; keeping code fallback unlock list.", {
           code,
           message: msg,
         });

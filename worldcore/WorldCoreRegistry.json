@@ -1257,8 +1257,9 @@
         "items.types"
       ],
       "notes": [
-        "Static built-in item templates for starter gear, rat loot, and basic ore.",
-        "Used as a fallback when DB-backed items are missing."
+        "Static built-in item templates for starter gear, rat loot, and basic ore (plus a minimal instrument item for Virtuoso testing).",
+        "Used as a fallback when DB-backed items are missing (e.g., debug_give and early/dev-only items).",
+        "Convention: gear stats may include instrumentPct and instrumentPctBySchool for song scaling."
       ]
     },
     "items.config": {
@@ -1873,7 +1874,8 @@
         "Collection of staff/debug/event commands (debug_give, debug_xp, debug_spawn_npc, event_give_any, etc.).",
         "Many of these should be wrapped with withDebugGate before being exposed to normal command routing.",
         "Includes debug_hydrate_here to force region hydration from spawn_points for the current room.",
-        "Item grant commands (debug_give/event_give_any/debug_give_mat) route through OverflowDelivery (bags-first, overflow-to-mail).",
+        "Item grant commands (debug_give/event_give_any/debug_give_mat...) route through OverflowDelivery (bags-first, overflow-to-mail).",
+        "Item grants resolve DB items first, then fall back to ItemCatalog when an item is not present in the DB (dev convenience).",
         "event_mail_reward sends explicit system mail (mail as feature)."
       ]
     },
@@ -3109,7 +3111,10 @@
         "mud.actions.combat",
         "mud.helpers",
         "skills.progression",
-        "combat.damagePolicy"
+        "combat.damagePolicy",
+        "characters.stats",
+        "songs.songScaling",
+        "items.catalog"
       ],
       "provides": [
         "listKnownSpellsForChar(char):SpellDefinition[]",
@@ -3118,7 +3123,10 @@
       ],
       "notes": [
         "Implements 'spells' and 'cast <name> [target]'.",
-        "Supports damage_single_npc and heal_self kinds; others log as unhandled for now."
+        "Supports damage_single_npc and heal_self kinds.",
+        "Supports Virtuoso song casts (isSong + songSchool) including melody-driven auto-casts via SongEngine.",
+        "Applies song scaling from song school skill and an optional equipped instrument bonus (instrumentPct / instrumentPctBySchool) for deterministic song tuning.",
+        "Tracks cooldowns and power resource costs via CastingGates / PowerResources; trains song schools on successful song casts."
       ]
     },
     "mud.trainingDummy": {
@@ -4022,12 +4030,15 @@
         "computeSongScalar",
         "scaleSongHealFloor"
       ],
-      "dependsOn": ["skills.skillProgression"],
+      "dependsOn": [
+        "skills.skillProgression"
+      ],
       "provides": [],
       "owns": [],
       "notes": [
         "Central song scaling math to prevent drift across MudSpells/CombatEngine/SongEngine.",
-        "v0 rule: scalar = 1 + (songSkill/100)."
+        "Baseline scalar rule: 1 + (songSkill/100).",
+        "Supports an additional multiplicative instrument bonus (from equipped gear stats) so songs can scale with instruments without touching core attributes."
       ]
     },
     "spells.catalog": {
@@ -4075,7 +4086,8 @@
       ],
       "notes": [
         "DB-driven spell/song unlock rules that feed spellbook auto-grants.",
-        "Supports test overrides and a one-time DB hydration step."
+        "Supports test overrides and a one-time DB hydration step.",
+        "If the spell_unlocks table is missing, the system falls back to the code unlock list; creating the table/migrations is planned once class progression is stabilized."
       ]
     },
     "strategy.regionService": {
@@ -4790,6 +4802,26 @@
       ],
       "notes": [
         "Regression tests for SQL table-name extraction (CREATE/ALTER; ONLY; quoted identifiers)."
+      ]
+    },
+    "test.contractSongInstrumentGearBonus": {
+      "kind": "test",
+      "service": "test.contract",
+      "path": "worldcore/test/contract_songInstrumentGearBonus.test.ts",
+      "class": null,
+      "lifecycle": "test",
+      "ctorArgs": [],
+      "dependsOn": [
+        "test.utils",
+        "mud.spells",
+        "songs.songScaling",
+        "items.catalog"
+      ],
+      "provides": [],
+      "owns": [],
+      "notes": [
+        "Contract: equipped instrument bonus increases song healing deterministically (no RNG).",
+        "Protects the instrument scaling seam so future refactors of MudSpells/SongScaling cannot silently drop gear bonuses."
       ]
     },
     "tools.gapTableAuditLib": {

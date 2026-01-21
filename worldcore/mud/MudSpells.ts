@@ -23,9 +23,8 @@ import {
 } from "../combat/ServiceProtection";
 
 import { computeEffectiveAttributes } from "../characters/Stats";
-import { computeDamage, type CombatSource, type CombatTarget } from "../combat/CombatEngine";
-import { scaleSongHealFloor } from "../songs/SongScaling";
 import { getItemTemplate } from "../items/ItemCatalog";
+import { computeDamage, type CombatSource, type CombatTarget } from "../combat/CombatEngine";
 import { applyCombatResultToPlayer } from "../combat/entityCombat";
 import { gatePlayerDamageFromPlayerEntity } from "./MudCombatGates";
 import { DUEL_SERVICE } from "../pvp/DuelService";
@@ -33,11 +32,81 @@ import {
   getPrimaryPowerResourceForClass,
   trySpendPowerResource,
 } from "../resources/PowerResources";
-import { gainSpellSchoolSkill, gainSongSchoolSkill } from "../skills/SkillProgression";
+import {
+  gainSpellSchoolSkill,
+  gainSongSchoolSkill,
+  getSongSchoolSkill,
+} from "../skills/SkillProgression";
 import type { SongSchoolId } from "../skills/SkillProgression";
 import { applyStatusEffect } from "../combat/StatusEffects";
 
 const log = Logger.scope("MUD_SPELLS");
+
+function getItemStatsForScaling(itemId: string, itemService: any): Record<string, any> | undefined {
+  // 1) DB-backed item service (preferred)
+  try {
+    if (itemService && typeof itemService.get === "function") {
+      const def = itemService.get(itemId);
+      if (def && typeof def === "object" && (def as any).stats) {
+        return (def as any).stats as Record<string, any>;
+      }
+    }
+  } catch {
+    // ignore
+  }
+
+  // 2) Static catalog fallback (dev/starter gear)
+  try {
+    const tmpl = getItemTemplate(itemId);
+    if (tmpl && (tmpl as any).stats) return (tmpl as any).stats as Record<string, any>;
+  } catch {
+    // ignore
+  }
+
+  return undefined;
+}
+
+/**
+ * Compute an additive instrument bonus percent from equipped gear.
+ *
+ * Convention:
+ * - stats.instrumentPct: number (e.g. 0.25 = +25% to all songs)
+ * - stats.instrumentPctBySchool: { [songSchoolId]: number } (e.g. { voice: 0.5 } )
+ *
+ * Result is a fraction (0.5 => +50%) to be used as: final *= (1 + bonusPct).
+ */
+function getEquippedInstrumentBonusPct(
+  char: CharacterState,
+  itemService: any,
+  school?: SongSchoolId,
+): number {
+  const equip: any = (char as any).equipment || {};
+  let out = 0;
+
+  for (const slot of Object.keys(equip)) {
+    const stack: any = equip[slot];
+    if (!stack || !stack.itemId) continue;
+
+    const stats = getItemStatsForScaling(String(stack.itemId), itemService);
+    if (!stats) continue;
+
+    const global = Number((stats as any).instrumentPct);
+    if (Number.isFinite(global) && global !== 0) out += global;
+
+    if (school) {
+      const bySchool: any = (stats as any).instrumentPctBySchool;
+      if (bySchool && typeof bySchool === "object") {
+        const v = bySchool[school] ?? bySchool[String(school).toLowerCase()];
+        const n = Number(v);
+        if (Number.isFinite(n) && n !== 0) out += n;
+      }
+    }
+  }
+
+  // Never allow negative to create weird exploit loops.
+  if (!Number.isFinite(out)) return 0;
+  return Math.max(0, out);
+}
 
 function ensureSpellbook(char: CharacterState): SpellbookState {
   let sb: any = char.spellbook as any;
@@ -77,65 +146,6 @@ function canUseSpell(char: CharacterState, spell: SpellDefinition): string | nul
   return null;
 }
 
-function clampBonusPct(raw: unknown): number {
-  const n = typeof raw === "number" ? raw : Number(raw);
-  if (!Number.isFinite(n)) return 0;
-  return Math.max(-0.9, Math.min(5, n));
-}
-
-/**
- * Aggregate song instrument bonus percent from equipped items.
- *
- * Convention:
- * - item.stats.instrumentPct: number (0.10 = +10% song scaling)
- * - item.stats.instrumentPctBySchool?: { [songSchoolId]: number }
- *
- * DB-backed items come from ctx.items.get(itemId). Static/dev catalog items come from getItemTemplate().
- */
-function getInstrumentBonusPctFromEquipment(
-  char: CharacterState,
-  songSchool: SongSchoolId,
-  itemService?: { get(id: string): any }
-): number {
-  const equipment = (char as any).equipment || {};
-  let pct = 0;
-
-  for (const slot of Object.keys(equipment)) {
-    const stack: any = (equipment as any)[slot];
-    if (!stack || !stack.itemId) continue;
-    const itemId: string = String(stack.itemId);
-
-    let stats: any | undefined;
-
-    // DB-backed item
-    if (itemService) {
-      const def = itemService.get(itemId);
-      if (def && def.stats) stats = def.stats;
-    }
-
-    // Static fallback
-    if (!stats) {
-      const tmpl = getItemTemplate(itemId);
-      if (tmpl && (tmpl as any).stats) stats = (tmpl as any).stats;
-    }
-
-    if (!stats) continue;
-
-    // Broad bonus (applies to all song schools)
-    if (stats.instrumentPct !== undefined) pct += clampBonusPct(stats.instrumentPct);
-    if (stats.songInstrumentPct !== undefined) pct += clampBonusPct(stats.songInstrumentPct);
-
-    // Per-school bonus
-    const bySchool = stats.instrumentPctBySchool ?? stats.songInstrumentPctBySchool;
-    if (bySchool && typeof bySchool === "object") {
-      const v = (bySchool as any)[songSchool];
-      if (v !== undefined) pct += clampBonusPct(v);
-    }
-  }
-
-  return clampBonusPct(pct);
-}
-
 function startSpellCooldown(char: CharacterState, spell: SpellDefinition): void {
   if (!spell.cooldownMs || spell.cooldownMs <= 0) return;
 
@@ -168,6 +178,64 @@ function isServiceProtectedNpcTarget(ctx: MudContext, npc: any): boolean {
   return isServiceProtectedNpcProto(proto);
 }
 
+
+function resolvePlayerTargetInRoom(
+  ctx: MudContext,
+  roomId: string,
+  targetNameRaw: string
+):
+  | { sessionId: string; displayName: string; char: CharacterState; entity: any }
+  | { err: string } {
+  if (!ctx.sessions) return { err: "[world] Sessions not available." };
+  if (!ctx.entities) return { err: "[world] Entities not available." };
+
+  const needle = targetNameRaw.trim().toLowerCase();
+  if (!needle) return { err: "[world] Usage: cast <spell> <target>" };
+
+  const sessions = (ctx.sessions as any).getAllSessions?.() ?? [];
+  const exact = sessions.find(
+    (s: any) => (s?.character?.name ?? "").trim().toLowerCase() === needle
+  );
+  const candidates = exact ? [exact] : sessions.filter((s: any) => {
+    const n = (s?.character?.name ?? "").trim().toLowerCase();
+    return n && n.startsWith(needle);
+  });
+
+  if (!candidates.length) return { err: `[world] No such target: '${targetNameRaw}'.` };
+  if (candidates.length > 1) {
+    const names = candidates
+      .slice(0, 5)
+      .map((s: any) => s?.character?.name)
+      .filter(Boolean)
+      .join(", ");
+    return { err: `[world] Target name '${targetNameRaw}' is ambiguous. Matches: ${names}` };
+  }
+
+  const targetSession = candidates[0];
+  const sessionId = targetSession.id;
+  const displayName = targetSession?.character?.name ?? targetNameRaw;
+  const entity = ctx.entities.getEntityByOwner?.(sessionId);
+
+  if (!entity) return { err: `[world] Target '${displayName}' has no active entity.` };
+  if (entity.roomId !== roomId) return { err: `[world] Target '${displayName}' is not here.` };
+
+  const char = targetSession?.character as CharacterState | undefined;
+  if (!char) return { err: `[world] Target '${displayName}' has no character state loaded.` };
+
+  return { sessionId, displayName, char, entity };
+}
+
+function spellStatusEffectOrErr(spell: SpellDefinition): { ok: true; se: any } | { ok: false; err: string } {
+  const se = (spell as any).statusEffect;
+  if (!se || typeof se !== "object") {
+    return { ok: false, err: `[world] Spell '${spell.name}' is missing statusEffect data.` };
+  }
+  if (!se.id || !se.durationMs || !se.modifiers) {
+    return { ok: false, err: `[world] Spell '${spell.name}' statusEffect is incomplete (need id, durationMs, modifiers).` };
+  }
+  return { ok: true, se };
+}
+
 /**
  * Core spell-cast path used by both:
  * - MUD 'cast' command
@@ -192,15 +260,14 @@ export async function castSpellForCharacter(
   }
 
   const roomId = ctx.session.roomId ?? char.shardId;
-  const targetRaw = (targetNameRaw && targetNameRaw.trim()) || "rat";
+  const targetRaw = (targetNameRaw ?? "").trim();
 
   const isSong = (spell as any).isSong === true;
   const songSchool = isSong
     ? ((spell as any).songSchool as SongSchoolId | undefined)
     : undefined;
 
-  const instrumentBonusPct =
-    isSong && songSchool ? getInstrumentBonusPctFromEquipment(char, songSchool, ctx.items as any) : 0;
+  const instrumentBonusPct = isSong && songSchool ? getEquippedInstrumentBonusPct(char, ctx.items, songSchool) : 0;
 
   const spellResourceType =
     spell.resourceType ?? getPrimaryPowerResourceForClass(char.classId);
@@ -228,7 +295,9 @@ export async function castSpellForCharacter(
 
   switch (spell.kind) {
     case "damage_single_npc": {
-      const npc = findNpcTargetByName(ctx.entities, roomId, targetRaw);
+      const targetName = targetRaw || "rat";
+
+      const npc = findNpcTargetByName(ctx.entities, roomId, targetName);
 
       // Targeting helpers return { entity, name } (for stable display names). Normalize here.
       const playerFound = !npc ? findTargetPlayerEntityByName(ctx, roomId, targetRaw) : null;
@@ -347,7 +416,9 @@ export async function castSpellForCharacter(
           abilityName: spell.name,
           tagPrefix: "spell",
           channel: "spell",
-          damageMultiplier: (spell.damageMultiplier ?? 1) * (isSong ? 1 + instrumentBonusPct : 1),
+          damageMultiplier: isSong
+            ? (typeof spell.damageMultiplier === "number" ? spell.damageMultiplier : 1) * (1 + instrumentBonusPct)
+            : spell.damageMultiplier,
           flatBonus: spell.flatBonus,
           // Songs: treat spellSchool as "song" so CombatEngine can apply appropriate scaling.
           spellSchool: isSong ? "song" : spell.school,
@@ -379,7 +450,9 @@ export async function castSpellForCharacter(
       };
 
       const dmgRoll = computeDamage(source, target, {
-        damageMultiplier: (spell.damageMultiplier ?? 1) * (isSong ? 1 + instrumentBonusPct : 1),
+        damageMultiplier: isSong
+          ? (typeof spell.damageMultiplier === "number" ? spell.damageMultiplier : 1) * (1 + instrumentBonusPct)
+          : spell.damageMultiplier,
         flatBonus: spell.flatBonus,
       });
 
@@ -450,11 +523,13 @@ case "heal_self": {
       const baseHeal = spell.healAmount ?? 10;
       let heal = baseHeal;
 
-      // Songs: scale healing from instrument/vocal skill (+ instrument gear bonus)
+      // Songs: scale healing from instrument/vocal skill + optional equipped instrument bonus
       if (isSong && songSchool) {
-        heal = scaleSongHealFloor(baseHeal, char, songSchool, instrumentBonusPct);
+        const skill = getSongSchoolSkill(char, songSchool);
+        const factor = 1 + skill / 100; // 100 skill ~= 2x base, tune later
+        const instrumentFactor = 1 + instrumentBonusPct;
+        heal = Math.floor(baseHeal * factor * instrumentFactor);
       }
-
       let result: string;
 
       if (isDeadEntity(selfEntity)) {
@@ -495,6 +570,114 @@ case "heal_self": {
       applySchoolGains();
       return result;
     }
+
+    case "heal_single_ally": {
+      if (!ctx.entities) return "[world] Entities not available.";
+      if (!ctx.sessions) return "[world] Sessions not available.";
+
+      const res = resolvePlayerTargetInRoom(ctx, roomId, targetRaw);
+      if ("err" in res) return res.err;
+
+      const cdErr = cooldownGate();
+      if (cdErr) return cdErr;
+
+      const resErr = resourceGate();
+      if (resErr) return resErr;
+
+      startSpellCooldown(char, spell);
+
+      const baseHeal = Math.max(0, Math.floor(spell.healAmount ?? 0));
+      if (baseHeal <= 0) return "[world] That spell has no healing effect.";
+
+      let heal = baseHeal;
+      if (isSong && songSchool) {
+        const skill = getSongSchoolSkill(char, songSchool);
+        const factor = 1 + skill / 100;
+        const instrumentFactor = 1 + instrumentBonusPct;
+        heal = Math.floor(baseHeal * factor * instrumentFactor);
+      }
+
+      const before = res.entity.hp;
+      const after = Math.min(res.entity.maxHp, before + heal);
+      res.entity.hp = after;
+
+      if (spell.isSong && spell.songSchool) {
+        gainSongSchoolSkill(char, spell.songSchool, 1);
+      }
+
+      const gained = after - before;
+      return `[world] [spell:${spell.name}] You restore ${gained} health to ${res.displayName}. (${after}/${res.entity.maxHp} HP)`;
+    }
+
+    case "buff_self": {
+      const cdErr = cooldownGate();
+      if (cdErr) return cdErr;
+
+      const resErr = resourceGate();
+      if (resErr) return resErr;
+
+      const seRes = spellStatusEffectOrErr(spell);
+      if (!seRes.ok) return seRes.err;
+
+      startSpellCooldown(char, spell);
+
+      applyStatusEffect(char, {
+        id: seRes.se.id,
+        name: seRes.se.name ?? spell.name,
+        durationMs: seRes.se.durationMs,
+        maxStacks: seRes.se.maxStacks,
+        stacks: seRes.se.stacks ?? 1,
+        modifiers: seRes.se.modifiers,
+        tags: seRes.se.tags,
+      });
+
+      if (spell.isSong && spell.songSchool) {
+        gainSongSchoolSkill(char, spell.songSchool, 1);
+      }
+
+      return `[world] [spell:${spell.name}] You gain ${seRes.se.name ?? spell.name}.`;
+    }
+
+    case "buff_single_ally": {
+      if (!ctx.entities) return "[world] Entities not available.";
+      if (!ctx.sessions) return "[world] Sessions not available.";
+
+      const res = resolvePlayerTargetInRoom(ctx, roomId, targetRaw);
+      if ("err" in res) return res.err;
+
+      const cdErr = cooldownGate();
+      if (cdErr) return cdErr;
+
+      const resErr = resourceGate();
+      if (resErr) return resErr;
+
+      const seRes = spellStatusEffectOrErr(spell);
+      if (!seRes.ok) return seRes.err;
+
+      startSpellCooldown(char, spell);
+
+      applyStatusEffect(res.char, {
+        id: seRes.se.id,
+        name: seRes.se.name ?? spell.name,
+        durationMs: seRes.se.durationMs,
+        maxStacks: seRes.se.maxStacks,
+        stacks: seRes.se.stacks ?? 1,
+        modifiers: seRes.se.modifiers,
+        tags: seRes.se.tags,
+      });
+
+      if (spell.isSong && spell.songSchool) {
+        gainSongSchoolSkill(char, spell.songSchool, 1);
+      }
+
+      return `[world] [spell:${spell.name}] You bless ${res.displayName} with ${seRes.se.name ?? spell.name}.`;
+    }
+
+    case "debuff_single_npc":
+    case "damage_dot_single_npc": {
+      return "[world] That spell type is not wired up yet (NPC status effects / ticking is pending).";
+    }
+
 
     default: {
       log.warn("Unhandled spell kind", { spellId: spell.id, kind: spell.kind });

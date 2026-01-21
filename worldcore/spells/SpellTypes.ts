@@ -2,15 +2,48 @@
 
 import type { Pool } from "pg";
 import type { SpellSchoolId } from "../combat/CombatEngine";
+import type { SongSchoolId } from "../skills/SkillProgression";
 import type { PowerResourceKind } from "../resources/PowerResources";
 import { Logger } from "../utils/logger";
 import { loadSpellCatalogFromDb, type DbSpellRow } from "./SpellCatalog";
 import { getAutoGrantUnlocksFor, initSpellUnlocksFromDbOnce } from "./SpellUnlocks";
+import type { StatusEffectModifier } from "../combat/StatusEffects";
 
 const log = Logger.scope("SPELLS");
 
-// Expanded safely: new kinds must also be handled in MudSpells.ts.
-export type SpellKind = "damage_single_npc" | "heal_self" | "heal_single_ally";
+export type SpellKind =
+  | "damage_single_npc"
+  | "heal_self"
+  | "heal_single_ally"
+  | "buff_self"
+  | "buff_single_ally"
+  | "debuff_single_npc"
+  | "damage_dot_single_npc";
+
+const SONG_SCHOOL_IDS = ["voice", "strings", "winds", "percussion", "brass"] as const;
+
+function asSongSchoolId(v: unknown): SongSchoolId | undefined {
+  const s = typeof v === "string" ? v.trim().toLowerCase() : "";
+  return (SONG_SCHOOL_IDS as readonly string[]).includes(s) ? (s as SongSchoolId) : undefined;
+}
+
+
+export interface SpellStatusEffect {
+  /** Stable id for the status effect instance (used for stacking/refreshing). */
+  id: string;
+  /** Display name shown to the player. Defaults to the spell name if omitted. */
+  name?: string;
+  /** Duration in milliseconds. */
+  durationMs: number;
+  /** Max stacks for the effect. Defaults to 1. */
+  maxStacks?: number;
+  /** Stacks applied per cast. Defaults to 1. */
+  stacks?: number;
+  /** Stat/combat modifiers applied while the effect is active. */
+  modifiers: StatusEffectModifier;
+  /** Optional tags for UI / filtering. */
+  tags?: string[];
+}
 
 export interface SpellDefinition {
   id: string;
@@ -28,6 +61,8 @@ export interface SpellDefinition {
   damageMultiplier?: number;
   flatBonus?: number;
   healAmount?: number;
+  // For buff/debuff/DOT spells: apply a status effect on cast.
+  statusEffect?: SpellStatusEffect;
 
   // Resource + cooldown
   resourceType?: PowerResourceKind;
@@ -36,7 +71,7 @@ export interface SpellDefinition {
 
   // Songs
   isSong?: boolean;
-  songSchool?: string;
+  songSchool?: SongSchoolId;
 
   // Misc
   isDebug?: boolean;
@@ -254,6 +289,14 @@ function getSafeLevel(char: SpellbookCharLike): number {
   return Math.floor(n);
 }
 
+function matchesClass(spellClassId: string, charClassId: string): boolean {
+  const sc = norm(spellClassId);
+  if (sc === "any") return true;
+  const cc = norm(charClassId);
+  if (!cc) return false;
+  return cc === sc;
+}
+
 function ensureKnownMap(sb: any): SpellbookKnownMap {
   if (!sb.known || typeof sb.known !== "object") sb.known = {};
   return sb.known as SpellbookKnownMap;
@@ -275,7 +318,8 @@ export function ensureSpellbook(char: SpellbookCharLike): SpellbookStateLike {
 }
 
 /**
- * MVP spell acquisition: DB-driven unlock rules + safe fallback.
+ * MVP spell acquisition: auto-grant all spells that match class ("any" or exact classId)
+ * and are <= the character's current level.
  */
 export function ensureSpellbookAutogrants(
   char: SpellbookCharLike,
@@ -295,8 +339,8 @@ export function ensureSpellbookAutogrants(
   const charClass = norm(char.classId);
   const level = getSafeLevel(char);
 
-  // DB-driven unlock rules (with safe code fallback).
-  // Prevents "every spell definition becomes auto-granted forever" as catalog grows.
+    // DB-driven unlock rules (with safe code fallback).
+  // This prevents "every spell definition becomes auto-granted forever" once the catalog grows.
   const unlocks = getAutoGrantUnlocksFor(charClass, level);
 
   for (const u of unlocks) {
@@ -423,18 +467,14 @@ export function findSpellByNameOrId(raw: string): SpellDefinition | null {
 
 let dbInitPromise: Promise<void> | null = null;
 
-function isKnownKind(k: string): k is SpellKind {
-  return k === "heal_self" || k === "damage_single_npc" || k === "heal_single_ally";
-}
-
 function mapDbRowToSpellDef(row: DbSpellRow): SpellDefinition {
-  const rawKind = String(row.kind ?? "").trim();
-
   const def: SpellDefinition = {
     id: row.id,
     name: row.name,
     description: row.description ?? "",
-    kind: (isKnownKind(rawKind) ? rawKind : "damage_single_npc") as SpellKind,
+    kind: (row.kind === "heal_self" || row.kind === "damage_single_npc"
+      ? row.kind
+      : "damage_single_npc") as SpellKind,
     classId: row.class_id || "any",
     minLevel: Math.max(1, Number(row.min_level ?? 1)),
   };
@@ -449,7 +489,14 @@ function mapDbRowToSpellDef(row: DbSpellRow): SpellDefinition {
   def.cooldownMs = Number(row.cooldown_ms ?? 0);
 
   if (row.is_song) def.isSong = true;
-  if (row.song_school) def.songSchool = row.song_school;
+  if (row.song_school) {
+    const ss = asSongSchoolId(row.song_school);
+    if (ss) def.songSchool = ss;
+    else log.warn("Unknown song_school value in DB spell row; ignoring", {
+      spellId: row.id,
+      songSchool: row.song_school,
+    });
+  }
 
   if (row.is_debug || row.is_dev_only) def.isDebug = true;
 
