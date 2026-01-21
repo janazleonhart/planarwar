@@ -561,6 +561,17 @@
         "Provides helpers for per-level attribute gains, primary/secondary resources, favored schools/weapon skills, and armor/weapon access."
       ]
     },
+    "combat.castingGates": {
+      "kind": "service",
+      "path": "worldcore/combat/CastingGates.ts",
+      "functions": ["applyActionCostAndCooldownGates"],
+      "dependsOn": ["combat.cooldowns", "resources.power", "characters.types"],
+      "notes": [
+        "Centralized gates for action resource costs + cooldowns (spells/songs/abilities).",
+        "Guarantees: cooldowns do not start and resources are not consumed if the action fails.",
+        "Order: check cooldown remaining → spend resource → start cooldown."
+      ]
+    },
     "combat.cooldowns": {
       "kind": "service",
       "path": "worldcore/combat/Cooldowns.ts",
@@ -3959,16 +3970,6 @@
         "Skills are capped at level * 10 and default to 0 if missing."
       ]
     },
-    "spells.catalog": {
-      "kind": "service",
-      "path": "worldcore/spells/SpellCatalog.ts",
-      "summary": "Loads spell/song definitions + aliases from Postgres (spells + spell_aliases tables).",
-      "dependsOn": [],
-      "notes": [
-        "Used by spells.types to hydrate the runtime SPELLS map from DB.",
-        "Small loader module; safe to keep dumb and predictable."
-      ]
-    },
     "songs.engine": {
       "kind": "service",
       "path": "worldcore/songs/SongEngine.ts",
@@ -3988,11 +3989,55 @@
         "spells.types",
         "mud.spells",
         "utils.logger",
-        "core.entities"
+        "core.entities",
+        "songs.melodyScheduler"
       ],
       "notes": [
         "Manages Virtuoso song state and melodies stored under char.progression.songs.",
         "tickSongsForCharacter auto-casts a rotating list of Virtuoso songs on a timer using the normal spell pipeline."
+      ]
+    },
+    "songs.melodyScheduler": {
+      "kind": "service",
+      "path": "worldcore/songs/MelodyScheduler.ts",
+      "functions": [
+        "normalizeMelody",
+        "getPlaylist",
+        "currentSpellId",
+        "advanceAndSchedule"
+      ],
+      "dependsOn": [],
+      "provides": [],
+      "owns": [],
+      "notes": [
+        "Pure melody state machine helpers extracted from SongEngine.",
+        "Guarantee: advanceAndSchedule always advances index and schedules next tick even on cast failure.",
+        "Keeps spellIds and legacy songIds mirrored for back-compat."
+      ]
+    },
+    "songs.songScaling": {
+      "kind": "service",
+      "path": "worldcore/songs/SongScaling.ts",
+      "functions": [
+        "computeSongScalar",
+        "scaleSongHealFloor"
+      ],
+      "dependsOn": ["skills.skillProgression"],
+      "provides": [],
+      "owns": [],
+      "notes": [
+        "Central song scaling math to prevent drift across MudSpells/CombatEngine/SongEngine.",
+        "v0 rule: scalar = 1 + (songSkill/100)."
+      ]
+    },
+    "spells.catalog": {
+      "kind": "service",
+      "path": "worldcore/spells/SpellCatalog.ts",
+      "summary": "Loads spell/song definitions + aliases from Postgres (spells + spell_aliases tables).",
+      "dependsOn": [],
+      "notes": [
+        "Used by spells.types to hydrate the runtime SPELLS map from DB.",
+        "Small loader module; safe to keep dumb and predictable."
       ]
     },
     "spells.types": {
@@ -4006,11 +4051,31 @@
         "resources.power",
         "skills.progression",
         "spells.catalog",
-        "utils.logger"
+        "utils.logger",
+        "spells.unlockRules"
       ],
       "notes": [
         "Defines SpellDefinition and SpellKind plus the SPELLS registry.",
         "Includes debug_arcane_bolt, mage_fire_bolt, cleric_minor_heal, and Virtuoso song spells."
+      ]
+    },
+    "spells.unlocks": {
+      "kind": "helper",
+      "path": "worldcore/spells/SpellUnlocks.ts",
+      "functions": [
+        "getSpellUnlockSource",
+        "getAllSpellUnlockRules",
+        "getAutoGrantUnlocksFor",
+        "initSpellUnlocksFromDbOnce",
+        "__setSpellUnlocksForTest",
+        "__resetSpellUnlocksForTest"
+      ],
+      "dependsOn": [
+        "spells.types"
+      ],
+      "notes": [
+        "DB-driven spell/song unlock rules that feed spellbook auto-grants.",
+        "Supports test overrides and a one-time DB hydration step."
       ]
     },
     "strategy.regionService": {
@@ -4553,6 +4618,22 @@
         "Prevents UX regressions where command help stops advertising key turn-in shortcuts."
       ]
     },
+    "test.contractCastingGatesCostCooldown": {
+      "kind": "test",
+      "service": "test.contract",
+      "path": "worldcore/test/contract_castingGates_costCooldown.test.ts",
+      "class": null,
+      "lifecycle": "test",
+      "ctorArgs": [],
+      "dependsOn": ["test.utils", "combat.castingGates"],
+      "provides": [],
+      "owns": [],
+      "notes": [
+        "Contract: action cost+cooldown gates must never start cooldowns on resource failure.",
+        "Contract: cooldown blocks must not spend resource.",
+        "Contract: success spends resource and starts cooldown deterministically (with injected now)."
+      ]
+    },
     "test.songEngineMelody": {
       "kind": "test",
       "path": "worldcore/test/SongEngine.melody.test.ts",
@@ -4567,6 +4648,174 @@
       "notes": [
         "Ensures melody lists are normalized and stable.",
         "Protects against alias IDs and duplicates causing playlist inflation."
+      ]
+    },
+    "test.contractMelodyScheduler": {
+      "kind": "test",
+      "service": "test.contract",
+      "path": "worldcore/test/contract_melodyScheduler.test.ts",
+      "class": null,
+      "lifecycle": "test",
+      "ctorArgs": [],
+      "dependsOn": [
+        "test.utils",
+        "songs.melodyScheduler"
+      ],
+      "provides": [],
+      "owns": [],
+      "notes": [
+        "Contract: melody normalization supports legacy songIds and mirrors spellIds.",
+        "Contract: index clamps safely and advanceAndSchedule always advances + schedules next cast."
+      ]
+    },
+    "test.contractSongScaling": {
+      "kind": "test",
+      "service": "test.contract",
+      "path": "worldcore/test/contract_songScaling.test.ts",
+      "class": null,
+      "lifecycle": "test",
+      "ctorArgs": [],
+      "dependsOn": [
+        "test.utils",
+        "songs.songScaling"
+      ],
+      "provides": [],
+      "owns": [],
+      "notes": [
+        "Contract: song scalar math is deterministic (v0: 1 + skill/100).",
+        "Contract: safe behavior when progression blob is missing."
+      ]
+    },
+    "test.contractSongEngineMelodyThrowAdvance": {
+      "kind": "test",
+      "service": "test.contract",
+      "path": "worldcore/test/contract_songEngine_melodyAdvanceOnThrow.test.ts",
+      "lifecycle": "test",
+      "dependsOn": ["test.utils", "songs.engine"],
+      "notes": [
+        "Contract: SongEngine must advance melody index and schedule next tick even if cast path throws.",
+        "Prevents regressions where melody stalls due to exceptions."
+      ]
+    },
+    "test.contractTargetResolver": {
+      "kind": "test",
+      "service": "test.contract",
+      "path": "worldcore/test/contract_targetResolver_inRoomSelection.test.ts",
+      "lifecycle": "test",
+      "dependsOn": [
+        "test.utils",
+        "targeting.resolver"
+      ],
+      "notes": [
+        "Contract: TargetResolver.resolveTargetInRoom supports index-only and name.# syntax.",
+        "Contract: filter predicate is authoritative and selfId is excluded."
+      ]
+    },
+    "test.contractTargetFindersNpc": {
+      "kind": "test",
+      "service": "test.contract",
+      "path": "worldcore/test/contract_targetFinders_npcSelection.test.ts",
+      "lifecycle": "test",
+      "dependsOn": [
+        "test.utils",
+        "targeting.finders"
+      ],
+      "notes": [
+        "Contract: findNpcTargetByName provides stable ordering and supports index-only and name.# syntax."
+      ]
+    },
+    "test.contractTargetFindersPlayer": {
+      "kind": "test",
+      "service": "test.contract",
+      "path": "worldcore/test/contract_targetFinders_playerSelection.test.ts",
+      "lifecycle": "test",
+      "dependsOn": [
+        "test.utils",
+        "targeting.finders"
+      ],
+      "notes": [
+        "Contract: findTargetPlayerEntityByName resolves by session character name (case-insensitive) and requires same-room."
+      ]
+    },
+    "test.contractCastingDeniedDoesNotConsumeCostOrCooldown": {
+      "kind": "test",
+      "service": "test.contract",
+      "path": "worldcore/test/contract_castingDeniedDoesNotConsumeCostOrCooldown.test.ts",
+      "class": null,
+      "lifecycle": "test",
+      "ctorArgs": [],
+      "dependsOn": [
+        "mud.spells",
+        "mud.abilities",
+        "spells.types",
+        "abilities.types",
+        "combat.cooldowns",
+        "resources.powerResources",
+        "combat.serviceProtection"
+      ],
+      "provides": [],
+      "notes": [
+        "Contract: if casting is denied after resolving a valid target (e.g. service-protected NPC), do not consume resource cost and do not start cooldowns."
+      ]
+    },
+    "test.contractCastSpellPreGatesNoLeak": {
+      "kind": "test",
+      "service": "test.contract",
+      "path": "worldcore/test/contract_castSpell_preGates_noLeak.test.ts",
+      "class": null,
+      "lifecycle": "test",
+      "ctorArgs": [],
+      "dependsOn": [
+        "mud.spells",
+        "mud.combatGates",
+        "combat.damagePolicy",
+        "pvp.duels",
+        "combat.castingGates",
+        "test.utils"
+      ],
+      "provides": [],
+      "owns": [],
+      "notes": [
+        "Contract: castSpell must consult denial gates (region combat disabled, PvP/duel denial) BEFORE spending resources or starting cooldowns.",
+        "Also asserts duels end when a spell kill occurs."
+      ]
+    },
+    "test.gapTableAuditLib": {
+      "kind": "test",
+      "service": "test.contract",
+      "path": "worldcore/test/gapTableAuditLib.test.ts",
+      "lifecycle": "test",
+      "dependsOn": [
+        "tools.gapTableAuditLib"
+      ],
+      "notes": [
+        "Regression tests for SQL table-name extraction (CREATE/ALTER; ONLY; quoted identifiers)."
+      ]
+    },
+    "tools.gapTableAuditLib": {
+      "kind": "helper",
+      "path": "worldcore/tools/gapTableAuditLib.ts",
+      "functions": [
+        "stripSqlComments",
+        "extractTableRefsFromSql",
+        "extractTableNamesFromSql"
+      ],
+      "dependsOn": [],
+      "notes": [
+        "Milestone B: heuristic SQL table-name extraction for CREATE/ALTER statements.",
+        "Used by gapTableAudit tool and its unit tests."
+      ]
+    },
+    "tools.gapTableAudit": {
+      "kind": "tool",
+      "path": "worldcore/tools/gapTableAudit.ts",
+      "bin": "dist/worldcore/tools/gapTableAudit.js",
+      "dependsOn": [
+        "tools.gapTableAuditLib"
+      ],
+      "notes": [
+        "Milestone B: compares expected tables (migrations) vs existing tables (schema dump).",
+        "Outputs missing/orphan tables; supports --json and --strict."
       ]
     },
     "tools.resourceBaseline": {

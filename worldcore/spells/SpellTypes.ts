@@ -5,6 +5,7 @@ import type { SpellSchoolId } from "../combat/CombatEngine";
 import type { PowerResourceKind } from "../resources/PowerResources";
 import { Logger } from "../utils/logger";
 import { loadSpellCatalogFromDb, type DbSpellRow } from "./SpellCatalog";
+import { getAutoGrantUnlocksFor, initSpellUnlocksFromDbOnce } from "./SpellUnlocks";
 
 const log = Logger.scope("SPELLS");
 
@@ -302,14 +303,19 @@ export function ensureSpellbookAutogrants(
   const charClass = norm(char.classId);
   const level = getSafeLevel(char);
 
-  for (const spell of Object.values(SPELLS)) {
+    // DB-driven unlock rules (with safe code fallback).
+  // This prevents "every spell definition becomes auto-granted forever" once the catalog grows.
+  const unlocks = getAutoGrantUnlocksFor(charClass, level);
+
+  for (const u of unlocks) {
+    const canonicalId = (SPELL_ALIASES as any)[u.spellId] || u.spellId;
+    const spell = (SPELLS as any)[canonicalId] as SpellDefinition | undefined;
+    if (!spell) continue;
     if (spell.isDebug) continue;
-    if (spell.minLevel > level) continue;
-    if (!matchesClass(spell.classId, charClass)) continue;
 
     if (!known[spell.id]) {
       known[spell.id] = {
-        learnedAtLevel: spell.minLevel,
+        learnedAtLevel: u.minLevel || spell.minLevel,
         learnedAtMs: nowMs,
         source: "auto",
       };
@@ -493,6 +499,13 @@ export async function initSpellsFromDbOnce(pool: Pool): Promise<void> {
       }
     }
   })();
+
+  // Best-effort: also load spell unlock rules from DB. If missing, we keep code fallback.
+  try {
+    await initSpellUnlocksFromDbOnce(pool as any);
+  } catch {
+    // ignored; SpellUnlocks module already defaults safely
+  }
 
   return dbInitPromise;
 }

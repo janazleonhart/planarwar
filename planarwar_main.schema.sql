@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict SYDrGU1fSedBADrjyO6kgF04mrzPKwPIK6DyZVvNf9yVeNGZFu4AcCsQy3CZpom
+\restrict V7qaqxKMiN7HhzThzMrhuiaa31imiwHICAPMCdEMIRSqbnGW0evgOazES2BlPzp
 
 -- Dumped from database version 14.20 (Ubuntu 14.20-0ubuntu0.22.04.1)
 -- Dumped by pg_dump version 14.20 (Ubuntu 14.20-0ubuntu0.22.04.1)
@@ -729,6 +729,53 @@ ALTER SEQUENCE public.spawn_points_id_seq OWNED BY public.spawn_points.id;
 
 
 --
+-- Name: spell_aliases; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.spell_aliases (
+    alias_id text NOT NULL,
+    spell_id text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: spells; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.spells (
+    id text NOT NULL,
+    name text NOT NULL,
+    description text DEFAULT ''::text NOT NULL,
+    kind text NOT NULL,
+    class_id text NOT NULL,
+    min_level integer DEFAULT 1 NOT NULL,
+    school text,
+    is_song boolean DEFAULT false NOT NULL,
+    song_school text,
+    resource_type text,
+    resource_cost integer DEFAULT 0 NOT NULL,
+    cooldown_ms integer DEFAULT 0 NOT NULL,
+    damage_multiplier double precision,
+    flat_bonus integer,
+    heal_amount integer,
+    is_debug boolean DEFAULT false NOT NULL,
+    is_enabled boolean DEFAULT true NOT NULL,
+    flags jsonb DEFAULT '{}'::jsonb NOT NULL,
+    tags text[] DEFAULT '{}'::text[] NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    is_dev_only boolean DEFAULT false NOT NULL,
+    grant_min_role text DEFAULT 'player'::text NOT NULL,
+    CONSTRAINT spells_cooldown_ms_check CHECK ((cooldown_ms >= 0)),
+    CONSTRAINT spells_grant_min_role_valid CHECK ((grant_min_role = ANY (ARRAY['player'::text, 'guide'::text, 'gm'::text, 'dev'::text, 'owner'::text]))),
+    CONSTRAINT spells_min_level_check CHECK ((min_level >= 1)),
+    CONSTRAINT spells_resource_cost_check CHECK ((resource_cost >= 0))
+);
+
+
+--
 -- Name: staff_action_log; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -1284,6 +1331,22 @@ ALTER TABLE public.spawn_points
 
 
 --
+-- Name: spell_aliases spell_aliases_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.spell_aliases
+    ADD CONSTRAINT spell_aliases_pkey PRIMARY KEY (alias_id);
+
+
+--
+-- Name: spells spells_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.spells
+    ADD CONSTRAINT spells_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: staff_action_log staff_action_log_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -1601,6 +1664,41 @@ CREATE INDEX quests_tags_gin_idx ON public.quests USING gin (tags);
 
 
 --
+-- Name: spell_aliases_spell_id_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX spell_aliases_spell_id_idx ON public.spell_aliases USING btree (spell_id);
+
+
+--
+-- Name: spells_class_id_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX spells_class_id_idx ON public.spells USING btree (class_id);
+
+
+--
+-- Name: spells_is_enabled_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX spells_is_enabled_idx ON public.spells USING btree (is_enabled);
+
+
+--
+-- Name: spells_is_song_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX spells_is_song_idx ON public.spells USING btree (is_song);
+
+
+--
+-- Name: spells_min_level_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX spells_min_level_idx ON public.spells USING btree (min_level);
+
+
+--
 -- Name: npcs trg_npcs_updated_at; Type: TRIGGER; Schema: public; Owner: -
 --
 
@@ -1712,6 +1810,14 @@ ALTER TABLE ONLY public.spawn_points
 
 
 --
+-- Name: spell_aliases spell_aliases_spell_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.spell_aliases
+    ADD CONSTRAINT spell_aliases_spell_id_fkey FOREIGN KEY (spell_id) REFERENCES public.spells(id) ON DELETE CASCADE;
+
+
+--
 -- Name: trade_recipe_inputs trade_recipe_inputs_item_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -1763,5 +1869,5 @@ ALTER TABLE ONLY public.world_objects
 -- PostgreSQL database dump complete
 --
 
-\unrestrict SYDrGU1fSedBADrjyO6kgF04mrzPKwPIK6DyZVvNf9yVeNGZFu4AcCsQy3CZpom
+\unrestrict V7qaqxKMiN7HhzThzMrhuiaa31imiwHICAPMCdEMIRSqbnGW0evgOazES2BlPzp
 

@@ -1,37 +1,49 @@
 // worldcore/mud/MudAbilities.ts
+//
+// Ability execution entrypoint for MUD.
+//
+// Invariants (hardened by contract tests):
+// - Target validation + service protection checks happen BEFORE spending resources or starting cooldowns.
+// - Cost/cooldown gates are centralized (CastingGates) and must remain side-effect safe on denial.
+//
 
-import { MudContext } from "./MudContext";
+import type { MudContext } from "./MudContext";
 import type { CharacterState } from "../characters/CharacterTypes";
-import { findNpcTargetByName } from "./MudHelperFunctions";
-import { performNpcAttack } from "./MudActions";
+
+import { Logger } from "../utils/logger";
+import { applyActionCostAndCooldownGates } from "../combat/CastingGates";
+
 import {
   ABILITIES,
   findAbilityByNameOrId,
   type AbilityDefinition,
 } from "../abilities/AbilityTypes";
+
+import { getPrimaryPowerResourceForClass } from "../resources/PowerResources";
+
+import { performNpcAttack } from "./MudActions";
+import { findNpcTargetByName } from "./MudHelperFunctions";
+
 import {
-  getPrimaryPowerResourceForClass,
-  trySpendPowerResource,
-  // gainPowerResource, // kept in case we need it for future abilities
-} from "../resources/PowerResources";
-import { checkAndStartCooldown } from "../combat/Cooldowns";
-import { applyVulnerability } from "../combat/Vulnerability";
-import { Logger } from "../utils/logger";
+  isServiceProtectedEntity,
+  isServiceProtectedNpcProto,
+  serviceProtectedCombatLine,
+} from "../combat/ServiceProtection";
+import { getNpcPrototype } from "../npc/NpcTypes";
 
-const log = Logger.scope("MUD");
+const log = Logger.scope("MUD_ABILITIES");
 
-function canUseAbility(char: CharacterState, ability: AbilityDefinition): string | null {
-  const cls = (char.classId ?? "").toLowerCase();
-  if (cls && cls !== ability.classId.toLowerCase()) {
-    return `You cannot use ${ability.name} (class restricted to ${ability.classId}).`;
-  }
+function isServiceProtectedNpcTarget(ctx: MudContext, npc: any): boolean {
+  // 1) direct entity tag/flag
+  if (isServiceProtectedEntity(npc)) return true;
 
-  const level = char.level ?? 1;
-  if (level < ability.minLevel) {
-    return `${ability.name} requires level ${ability.minLevel}.`;
-  }
+  // 2) npc prototype tag (best effort)
+  const st = (ctx as any).npcs?.getNpcStateByEntityId?.(npc.id);
+  if (!st) return false;
 
-  return null;
+  const protoId = (st as any).templateId ?? (st as any).protoId ?? (st as any).proto_id;
+  const proto = protoId ? getNpcPrototype(String(protoId)) : null;
+  return isServiceProtectedNpcProto(proto as any);
 }
 
 /**
@@ -45,113 +57,79 @@ export async function handleAbilityCommand(
   abilityNameRaw: string,
   targetNameRaw?: string,
 ): Promise<string> {
-  if (!abilityNameRaw.trim()) {
-    return "Usage: ability <name> [target]";
-  }
+  const raw = (abilityNameRaw ?? "").trim();
+  if (!raw) return "Usage: ability <name> [target]";
 
-  const ability = findAbilityByNameOrId(abilityNameRaw);
-  if (!ability) {
-    return `You don't know an ability called '${abilityNameRaw}'.`;
-  }
+  const ability = findAbilityByNameOrId(raw);
+  if (!ability) return `[world] Unknown ability '${raw}'.`;
 
-  const error = canUseAbility(char, ability);
-  if (error) return error;
+  const entities = (ctx as any).entities;
+  if (!entities) return "[world] No world entity manager wired.";
 
-  // --- Cooldown gate ---
-  const abilityCooldownMs = ability.cooldownMs ?? 0;
-  if (abilityCooldownMs > 0) {
-    const cdErr = checkAndStartCooldown(
-      char,
-      "abilities",
-      ability.id,
-      abilityCooldownMs,
-      ability.name,
-    );
-    if (cdErr) return cdErr;
-  }
+  const roomId = (ctx as any).session?.roomId ?? (char as any).shardId;
+  const selfEntity = entities.getEntityByOwner?.((ctx as any).session?.id);
+  if (!selfEntity) return "[world] You are not currently present in the world.";
 
-  // --- Resource gate (fury/mana/etc.) ---
-  const abilityResourceType =
-    ability.resourceType ?? getPrimaryPowerResourceForClass(char.classId);
-  const abilityResourceCost = ability.resourceCost ?? 0;
-
-  const resourceErr = trySpendPowerResource(
-    char,
-    abilityResourceType,
-    abilityResourceCost,
-  );
-  if (resourceErr) return resourceErr;
-
-  if (!ctx.entities) {
-    return "The world is strangely empty right now.";
-  }
-
-  const selfEntity = ctx.entities.getEntityByOwner(ctx.session.id);
-  if (!selfEntity) {
-    return "You have no physical form here.";
-  }
-
-  // Default target if none provided (still handy for dummy/rats during testing)
-  const targetRaw = (targetNameRaw && targetNameRaw.trim()) || "rat";
-  const roomId = ctx.session.roomId ?? char.shardId;
-
-  switch (ability.kind) {
+  switch ((ability as any).kind) {
     case "melee_single": {
-      const npc = findNpcTargetByName(ctx.entities, roomId, targetRaw);
-      if (!npc) {
-        return `There is no '${targetRaw}' here to strike.`;
+      const target = (targetNameRaw ?? "").trim();
+      if (!target) return "Usage: ability <name> <target>";
+
+      // Target resolve (must pass entities, not ctx)
+      const npc = findNpcTargetByName(entities, roomId, target);
+      if (!npc) return `[world] There is no '${target}' here.`;
+
+      // Service protection gate: deny BEFORE consuming cooldown/resources.
+      if (isServiceProtectedNpcTarget(ctx, npc)) {
+        return serviceProtectedCombatLine(npc.name);
       }
+
+      // Centralized cost+cooldown gate (side-effect safe on denial)
+      const resourceType =
+        (ability as any).resourceType ?? getPrimaryPowerResourceForClass((char as any).classId);
+      const resourceCost = (ability as any).resourceCost ?? 0;
+
+      const gateErr = applyActionCostAndCooldownGates({
+        char: char as any,
+        bucket: "abilities",
+        key: (ability as any).id,
+        displayName: (ability as any).name,
+        cooldownMs: (ability as any).cooldownMs ?? 0,
+        resourceType: resourceType as any,
+        resourceCost,
+      });
+      if (gateErr) return gateErr;
 
       // Decide channel/tagging for the combat log
-      const channel = ability.channel ?? "ability";
+      const channel = (ability as any).channel ?? "ability";
       const tagPrefix = "ability";
 
-      const line = await performNpcAttack(ctx, char, selfEntity, npc, {
-        abilityName: ability.name,
+      log.debug("ability", { id: (ability as any).id, target: npc?.name, roomId });
+
+      return await performNpcAttack(ctx as any, char as any, selfEntity as any, npc as any, {
+        abilityName: (ability as any).name,
         tagPrefix,
         channel,
-        damageMultiplier: ability.damageMultiplier,
-        flatBonus: ability.flatBonus,
-        weaponSkill: ability.weaponSkill,
-        spellSchool: ability.spellSchool,
-      });
-
-      // Optional: some abilities (e.g. Reckless Assault) deliberately
-      // make the user more vulnerable as a tradeoff.
-      if (ability.selfVulnerabilityStacks && ability.selfVulnerabilityStacks > 0) {
-        try {
-          // We call with just (char); the helper handles default +1 stack
-          // and duration internally.
-          applyVulnerability(char);
-        } catch (err) {
-          log.warn("Failed to apply self-vulnerability from ability", {
-            abilityId: ability.id,
-            error: String(err),
-          });
-        }
-      }
-
-      return line;
+        damageMultiplier: (ability as any).damageMultiplier,
+        flatBonus: (ability as any).flatBonus,
+        weaponSkill: (ability as any).weaponSkill,
+        spellSchool: (ability as any).spellSchool,
+      } as any);
     }
 
     default:
-      log.warn("Unhandled ability kind", {
-        abilityId: ability.id,
-        kind: ability.kind,
-      });
       return "That kind of ability is not implemented yet.";
   }
 }
 
-export function listKnownAbilitiesForChar(
-  char: CharacterState,
-): AbilityDefinition[] {
-  const cls = (char.classId ?? "").toLowerCase();
-  const level = char.level ?? 1;
+export function listKnownAbilitiesForChar(char: CharacterState): AbilityDefinition[] {
+  const cls = String((char as any).classId ?? "").toLowerCase();
+  const level = (char as any).level ?? 1;
 
-  return Object.values(ABILITIES).filter((a) => {
-    if (cls && a.classId.toLowerCase() !== cls) return false;
-    if (level < a.minLevel) return false;
+  return Object.values(ABILITIES).filter((a: any) => {
+    const aClass = String(a.classId ?? "").toLowerCase();
+    if (cls && aClass && aClass !== cls) return false;
+    if (level < (a.minLevel ?? 1)) return false;
     return true;
   });
 }

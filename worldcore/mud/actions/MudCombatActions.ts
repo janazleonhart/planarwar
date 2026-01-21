@@ -174,7 +174,10 @@ export async function handleAttackAction(
   }
 
   // 2) Try another player – duel-gated PvP (open PvP zones can come later).
-  const playerTarget = findTargetPlayerEntityByName(ctx, roomId, targetNameRaw);
+  const playerFound = findTargetPlayerEntityByName(ctx, roomId, targetNameRaw);
+  const playerTarget: any = playerFound ? (playerFound as any).entity ?? playerFound : null;
+  const playerTargetName: string =
+    (playerFound as any)?.name ?? (playerTarget as any)?.name ?? targetNameRaw;
   if (playerTarget) {
     const gateRes = await gatePlayerDamageFromPlayerEntity(ctx, char, roomId, playerTarget);
     if (!gateRes.allowed) {
@@ -227,10 +230,10 @@ export async function handleAttackAction(
     if (killed) {
       // Skeleton rule: duel ends on death.
       if (ctxMode === "duel") DUEL_SERVICE.endDuelFor(char.id, "death", now);
-      return `[${label}] You hit ${playerTarget.name} for ${dmg} damage. You defeat them. (0/${maxHp} HP)`;
+      return `[${label}] You hit ${playerTargetName} for ${dmg} damage. You defeat them. (0/${maxHp} HP)`;
     }
 
-    return `[${label}] You hit ${playerTarget.name} for ${dmg} damage. (${newHp}/${maxHp} HP)`;
+    return `[${label}] You hit ${playerTargetName} for ${dmg} damage. (${newHp}/${maxHp} HP)`;
   }
 
   // 3) Fallback: name-only training dummy (if no NPC entity was matched)
