@@ -42,16 +42,18 @@ export async function handleQuestCommand(
 
   if (sub === "turnin" || sub === "turn-in" || sub === "complete") {
     const target = input.parts.slice(2).join(" ");
-    if (!target) return "Usage: quest turnin <id or name>";
+    if (!target) return "Usage: quest turnin <#|id|name> (or 'list'/'ready')";
     return turnInQuest(ctx, char, target);
   }
 
   return [
     "Usage:",
-    " quest                (shows quest log)",
-    " quest board           (shows available town quests)",
+    " quest                     (shows quest log)",
+    " quest board                (shows available town quests)",
     " quest accept <#|id>",
     " quest abandon <#|id>",
-    " quest turnin <id|name>",
+    " quest turnin list          (shows completed quests ready to turn in)",
+    " quest turnin ready         (alias of list)",
+    " quest turnin <#|id|name>   (turn in by quest-log index, id, or name)",
   ].join("\n");
 }
