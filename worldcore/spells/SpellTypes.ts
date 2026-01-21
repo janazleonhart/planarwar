@@ -9,7 +9,8 @@ import { getAutoGrantUnlocksFor, initSpellUnlocksFromDbOnce } from "./SpellUnloc
 
 const log = Logger.scope("SPELLS");
 
-export type SpellKind = "damage_single_npc" | "heal_self";
+// Expanded safely: new kinds must also be handled in MudSpells.ts.
+export type SpellKind = "damage_single_npc" | "heal_self" | "heal_single_ally";
 
 export interface SpellDefinition {
   id: string;
@@ -253,14 +254,6 @@ function getSafeLevel(char: SpellbookCharLike): number {
   return Math.floor(n);
 }
 
-function matchesClass(spellClassId: string, charClassId: string): boolean {
-  const sc = norm(spellClassId);
-  if (sc === "any") return true;
-  const cc = norm(charClassId);
-  if (!cc) return false;
-  return cc === sc;
-}
-
 function ensureKnownMap(sb: any): SpellbookKnownMap {
   if (!sb.known || typeof sb.known !== "object") sb.known = {};
   return sb.known as SpellbookKnownMap;
@@ -282,8 +275,7 @@ export function ensureSpellbook(char: SpellbookCharLike): SpellbookStateLike {
 }
 
 /**
- * MVP spell acquisition: auto-grant all spells that match class ("any" or exact classId)
- * and are <= the character's current level.
+ * MVP spell acquisition: DB-driven unlock rules + safe fallback.
  */
 export function ensureSpellbookAutogrants(
   char: SpellbookCharLike,
@@ -303,8 +295,8 @@ export function ensureSpellbookAutogrants(
   const charClass = norm(char.classId);
   const level = getSafeLevel(char);
 
-    // DB-driven unlock rules (with safe code fallback).
-  // This prevents "every spell definition becomes auto-granted forever" once the catalog grows.
+  // DB-driven unlock rules (with safe code fallback).
+  // Prevents "every spell definition becomes auto-granted forever" as catalog grows.
   const unlocks = getAutoGrantUnlocksFor(charClass, level);
 
   for (const u of unlocks) {
@@ -431,14 +423,18 @@ export function findSpellByNameOrId(raw: string): SpellDefinition | null {
 
 let dbInitPromise: Promise<void> | null = null;
 
+function isKnownKind(k: string): k is SpellKind {
+  return k === "heal_self" || k === "damage_single_npc" || k === "heal_single_ally";
+}
+
 function mapDbRowToSpellDef(row: DbSpellRow): SpellDefinition {
+  const rawKind = String(row.kind ?? "").trim();
+
   const def: SpellDefinition = {
     id: row.id,
     name: row.name,
     description: row.description ?? "",
-    kind: (row.kind === "heal_self" || row.kind === "damage_single_npc"
-      ? row.kind
-      : "damage_single_npc") as SpellKind,
+    kind: (isKnownKind(rawKind) ? rawKind : "damage_single_npc") as SpellKind,
     classId: row.class_id || "any",
     minLevel: Math.max(1, Number(row.min_level ?? 1)),
   };

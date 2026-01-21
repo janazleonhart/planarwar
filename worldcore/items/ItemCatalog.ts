@@ -10,7 +10,7 @@ import { ItemTemplate } from "./ItemTypes";
  *
  * NOTE:
  * - ItemTemplate requires `slot: string`
- * - ItemTemplate does NOT support `tags` (that’s DB-backed metadata, not template-level)
+ * - ItemTemplate may include `tags` (handy for dev/catalog items); DB-backed items also have category/specialization metadata.
  */
 const ITEMS: Record<string, ItemTemplate> = {
   // ---------------------------------------------------------------------------
@@ -49,6 +49,24 @@ const ITEMS: Record<string, ItemTemplate> = {
     rarity: "common",
   },
 
+
+  // Basic instrument (dev/bootstrap).
+  // Used by Virtuoso song scaling: item.stats.instrumentPct (percent as 0.10 = +10%).
+  instrument_lute_basic: {
+    id: "instrument_lute_basic",
+    name: "Simple Lute",
+    slot: "mainhand",
+    category: "gear",
+    description: "A battered lute. Still sounds better than silence.",
+    rarity: "common",
+    maxStack: 1,
+    baseValue: 8,
+    stats: {
+      // +15% to song scaling when equipped (applies to all song schools for now).
+      instrumentPct: 0.15,
+    },
+    tags: ["instrument", "song", "virtuoso"],
+  },
   // ---------------------------------------------------------------------------
   // Critter loot
   // ---------------------------------------------------------------------------

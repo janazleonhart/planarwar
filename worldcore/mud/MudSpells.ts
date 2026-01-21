@@ -24,6 +24,8 @@ import {
 
 import { computeEffectiveAttributes } from "../characters/Stats";
 import { computeDamage, type CombatSource, type CombatTarget } from "../combat/CombatEngine";
+import { scaleSongHealFloor } from "../songs/SongScaling";
+import { getItemTemplate } from "../items/ItemCatalog";
 import { applyCombatResultToPlayer } from "../combat/entityCombat";
 import { gatePlayerDamageFromPlayerEntity } from "./MudCombatGates";
 import { DUEL_SERVICE } from "../pvp/DuelService";
@@ -31,11 +33,7 @@ import {
   getPrimaryPowerResourceForClass,
   trySpendPowerResource,
 } from "../resources/PowerResources";
-import {
-  gainSpellSchoolSkill,
-  gainSongSchoolSkill,
-  getSongSchoolSkill,
-} from "../skills/SkillProgression";
+import { gainSpellSchoolSkill, gainSongSchoolSkill } from "../skills/SkillProgression";
 import type { SongSchoolId } from "../skills/SkillProgression";
 import { applyStatusEffect } from "../combat/StatusEffects";
 
@@ -77,6 +75,65 @@ function canUseSpell(char: CharacterState, spell: SpellDefinition): string | nul
   }
 
   return null;
+}
+
+function clampBonusPct(raw: unknown): number {
+  const n = typeof raw === "number" ? raw : Number(raw);
+  if (!Number.isFinite(n)) return 0;
+  return Math.max(-0.9, Math.min(5, n));
+}
+
+/**
+ * Aggregate song instrument bonus percent from equipped items.
+ *
+ * Convention:
+ * - item.stats.instrumentPct: number (0.10 = +10% song scaling)
+ * - item.stats.instrumentPctBySchool?: { [songSchoolId]: number }
+ *
+ * DB-backed items come from ctx.items.get(itemId). Static/dev catalog items come from getItemTemplate().
+ */
+function getInstrumentBonusPctFromEquipment(
+  char: CharacterState,
+  songSchool: SongSchoolId,
+  itemService?: { get(id: string): any }
+): number {
+  const equipment = (char as any).equipment || {};
+  let pct = 0;
+
+  for (const slot of Object.keys(equipment)) {
+    const stack: any = (equipment as any)[slot];
+    if (!stack || !stack.itemId) continue;
+    const itemId: string = String(stack.itemId);
+
+    let stats: any | undefined;
+
+    // DB-backed item
+    if (itemService) {
+      const def = itemService.get(itemId);
+      if (def && def.stats) stats = def.stats;
+    }
+
+    // Static fallback
+    if (!stats) {
+      const tmpl = getItemTemplate(itemId);
+      if (tmpl && (tmpl as any).stats) stats = (tmpl as any).stats;
+    }
+
+    if (!stats) continue;
+
+    // Broad bonus (applies to all song schools)
+    if (stats.instrumentPct !== undefined) pct += clampBonusPct(stats.instrumentPct);
+    if (stats.songInstrumentPct !== undefined) pct += clampBonusPct(stats.songInstrumentPct);
+
+    // Per-school bonus
+    const bySchool = stats.instrumentPctBySchool ?? stats.songInstrumentPctBySchool;
+    if (bySchool && typeof bySchool === "object") {
+      const v = (bySchool as any)[songSchool];
+      if (v !== undefined) pct += clampBonusPct(v);
+    }
+  }
+
+  return clampBonusPct(pct);
 }
 
 function startSpellCooldown(char: CharacterState, spell: SpellDefinition): void {
@@ -141,6 +198,9 @@ export async function castSpellForCharacter(
   const songSchool = isSong
     ? ((spell as any).songSchool as SongSchoolId | undefined)
     : undefined;
+
+  const instrumentBonusPct =
+    isSong && songSchool ? getInstrumentBonusPctFromEquipment(char, songSchool, ctx.items as any) : 0;
 
   const spellResourceType =
     spell.resourceType ?? getPrimaryPowerResourceForClass(char.classId);
@@ -287,7 +347,7 @@ export async function castSpellForCharacter(
           abilityName: spell.name,
           tagPrefix: "spell",
           channel: "spell",
-          damageMultiplier: spell.damageMultiplier,
+          damageMultiplier: (spell.damageMultiplier ?? 1) * (isSong ? 1 + instrumentBonusPct : 1),
           flatBonus: spell.flatBonus,
           // Songs: treat spellSchool as "song" so CombatEngine can apply appropriate scaling.
           spellSchool: isSong ? "song" : spell.school,
@@ -319,7 +379,7 @@ export async function castSpellForCharacter(
       };
 
       const dmgRoll = computeDamage(source, target, {
-        damageMultiplier: spell.damageMultiplier,
+        damageMultiplier: (spell.damageMultiplier ?? 1) * (isSong ? 1 + instrumentBonusPct : 1),
         flatBonus: spell.flatBonus,
       });
 
@@ -390,11 +450,9 @@ case "heal_self": {
       const baseHeal = spell.healAmount ?? 10;
       let heal = baseHeal;
 
-      // Songs: scale healing from instrument/vocal skill
+      // Songs: scale healing from instrument/vocal skill (+ instrument gear bonus)
       if (isSong && songSchool) {
-        const skill = getSongSchoolSkill(char, songSchool);
-        const factor = 1 + skill / 100; // 100 skill ~= 2x base, tune later
-        heal = Math.floor(baseHeal * factor);
+        heal = scaleSongHealFloor(baseHeal, char, songSchool, instrumentBonusPct);
       }
 
       let result: string;
