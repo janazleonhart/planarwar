@@ -18,7 +18,8 @@ export interface Entity {
   z: number;
 
   // Facing (yaw around Y axis)
-  rotY: number;
+  // Optional for older tests that construct Entities without orientation.
+  rotY?: number;
 
   // Basic health (stub for now)
   hp: number;
@@ -33,8 +34,12 @@ export interface Entity {
 
   // World-object metadata (nodes/resources/etc.)
   spawnPointId?: number; // DB spawn_points.id (used for personal depletion)
-  protoId?: string;      // stable prototype id (e.g. ore_vein_small)
+  protoId?: string; // stable prototype id (e.g. ore_vein_small)
 
   // Targeting (combat stub)
   targetId?: string;
+}
+
+export function getEntityRotY(e: Entity): number {
+  return typeof e.rotY === "number" ? e.rotY : 0;
 }

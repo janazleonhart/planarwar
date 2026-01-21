@@ -1,15 +1,11 @@
 // worldcore/characters/CharacterTypes.ts
 
-import { SimpleTask, QuestStateMap } from "../mud/MudProgression";
-import type {
-  GatheringKind,
-  GatheringStats,
-} from "../progression/ProgressEvents";
+import type { SimpleTask, QuestStateMap } from "../mud/MudProgression";
+import type { GatheringKind, GatheringStats } from "../progression/ProgressEvents";
 
 // -----------------------------
 // v1.5 JSONB scaffolding types
 // -----------------------------
-
 export type JsonObject = Record<string, any>;
 
 export interface Attributes {
@@ -19,51 +15,52 @@ export interface Attributes {
   sta: number;
   wis: number;
   cha: number;
-  // future-safe extras:
   [k: string]: any;
 }
 
 export interface ItemStack {
-  itemId: string; // string for now (later: canonical item db id)
-  qty: number; // stack count
-  meta?: JsonObject; // rolled stats, bound flags, etc.
+  itemId: string;
+  qty: number;
+  meta?: JsonObject;
 }
 
 export interface Bag {
-  bagId: string; // stable bag identifier
-  size: number; // slot count
+  bagId: string;
+  size: number;
   slots: Array<ItemStack | null>;
 }
 
 export interface InventoryState {
   bags: Bag[];
-  // e.g. { gold: 0, gems: 0 }
   currency?: Record<string, number>;
   [k: string]: any;
 }
 
-// slot -> stack
 export type EquipmentState = Record<string, ItemStack | null>;
 
+// -----------------------------
+// Spellbook
+// -----------------------------
 export interface SpellKnown {
   rank: number;
   learnedAt: number; // unix ms
 }
 
+/**
+ * Canonical spellbook shape used by runtime code.
+ *
+ * NOTE: `cooldowns` is optional to remain backward compatible with older tests
+ * that construct spellbook as `{ known: {} }`.
+ */
 export interface SpellbookState {
-  // spellId -> details
   known: Record<string, SpellKnown>;
-  // spellId -> unix ms when ready
   cooldowns?: Record<string, number>;
   [k: string]: any;
 }
 
-export type AbilitiesState = Record<string, any>;
-
 // -----------------------------
-// Pending reward delivery (never-drop safety net)
+// Rewards (mailbox overflow / deferred delivery)
 // -----------------------------
-
 export interface PendingRewardItem {
   itemId: string;
   qty: number;
@@ -71,63 +68,95 @@ export interface PendingRewardItem {
 }
 
 export interface PendingRewardEntry {
-  id: string;          // stable id for logging/debug
-  createdAt: number;   // unix ms
-  source: string;      // e.g. "task rewards", "quest turn-in: Rat Problem"
-  note?: string;       // optional extra context
+  id?: string;
+  createdAt?: number; // unix ms
+  reason?: string;
   items: PendingRewardItem[];
+  xp?: number;
+  gold?: number;
+  deliveredAt?: number; // unix ms
+  [k: string]: any;
 }
+
+// -----------------------------
+// Compatibility helpers (used by tests/tools)
+// -----------------------------
+export type ResistSchoolId =
+  | "arcane"
+  | "fire"
+  | "frost"
+  | "shadow"
+  | "holy"
+  | "nature";
+
+export type ResistState = Record<ResistSchoolId, number>;
+export function defaultResist(): ResistState {
+  return {
+    arcane: 0,
+    fire: 0,
+    frost: 0,
+    shadow: 0,
+    holy: 0,
+    nature: 0,
+  };
+}
+
+export type ResourcesState = Record<string, any>;
+export function defaultResources(): ResourcesState {
+  return {
+    hp: { cur: 100, max: 100 },
+    mana: { cur: 50, max: 50 },
+    stamina: { cur: 50, max: 50 },
+  };
+}
+
+export type SkillsState = Record<string, number>;
+export function defaultSkills(): SkillsState {
+  return {};
+}
+
+export type AbilitiesState = Record<string, any>;
 
 export interface ProgressionState {
   aa?: Record<string, any>;
   rebirth?: Record<string, any>;
   seeds?: Record<string, any>;
-
   [k: string]: any;
 
-  // v1.5 counters & state
   kills?: Record<string, number>;
   harvests?: Record<string, number>;
   actions?: Record<string, number>;
-
   tasks?: SimpleTask[];
-  quests?: QuestStateMap; // NEW v2 progression
+  quests?: QuestStateMap;
 
-  // itemId -> count
   collects?: Record<string, number>;
-
-  // story / quest / misc
   flags?: Record<string, any>;
-
-  // regionId -> visits
   exploration?: Record<string, number>;
 
-  // per-skill
   gathering?: Partial<Record<GatheringKind, GatheringStats>>;
-
-  // NEW: queued rewards when bags are full and mail is unavailable/fails
-  pendingRewards?: PendingRewardEntry[];
 }
 
 // -----------------------------
 // Raw DB row as it comes back from Postgres
 // -----------------------------
-
 export interface CharacterRow {
   id: string;
   user_id: string;
   shard_id: string;
   name: string;
   class_id: string;
+  race_id?: string | null;
+
   level: number;
   xp: number;
+
   pos_x: number;
   pos_y: number;
   pos_z: number;
+
   last_region_id: string | null;
   appearance_tag: string | null;
 
-  // v1.5 blobs
   attributes: JsonObject;
   inventory: JsonObject;
   equipment: JsonObject;
@@ -136,24 +165,26 @@ export interface CharacterRow {
   progression: JsonObject;
 
   state_version: number;
+
   created_at: Date;
   updated_at: Date;
+
   guild_id: string | null;
 }
 
 // -----------------------------
 // Full server-side state
 // -----------------------------
-
 export interface CharacterState {
   id: string;
   userId: string;
   shardId: string;
   name: string;
   classId: string;
+  raceId?: string;
 
-  // Crime / law heat (used by guards + Task F/G)
-  recentCrimeUntil?: number; // unix ms
+  // Crime / law heat
+  recentCrimeUntil?: number;
   recentCrimeSeverity?: "minor" | "severe";
 
   level: number;
@@ -162,25 +193,29 @@ export interface CharacterState {
   posX: number;
   posY: number;
   posZ: number;
-  lastRegionId: string | null;
 
+  lastRegionId: string | null;
   appearanceTag: string | null;
 
-  // v1.5 typed blobs
   attributes: Attributes;
   inventory: InventoryState;
   equipment: EquipmentState;
+
   spellbook: SpellbookState;
   abilities: AbilitiesState;
   progression: ProgressionState;
 
   stateVersion: number;
+
   createdAt: Date;
   updatedAt: Date;
+
   guildId?: string | null;
+
+  // Optional deferred rewards (some systems persist this elsewhere; keep optional)
+  pendingRewards?: PendingRewardEntry[];
 }
 
-// Lightweight DTO for listing on the web console
 export interface CharacterSummary {
   id: string;
   shardId: string;
@@ -192,37 +227,28 @@ export interface CharacterSummary {
   appearanceTag: string | null;
 }
 
-// Input from web-backend when creating a new character
 export interface CreateCharacterInput {
   userId: string;
   shardId: string;
   name: string;
   classId: string;
+  raceId?: string;
 }
 
 // -----------------------------
 // Defaults
 // -----------------------------
-
 export function defaultAttributes(): Attributes {
-  return {
-    str: 10,
-    agi: 10,
-    int: 10,
-    sta: 10,
-    wis: 10,
-    cha: 10,
-  };
+  return { str: 10, agi: 10, int: 10, sta: 10, wis: 10, cha: 10 };
 }
 
 export function defaultInventory(): InventoryState {
-  // 1 starter bag with 12 slots
   return {
     bags: [
       {
         bagId: "bag_0",
         size: 12,
-        slots: Array<ItemStack | null>(12).fill(null),
+        slots: Array(12).fill(null),
       },
     ],
     currency: { gold: 0 },
@@ -267,83 +293,110 @@ export function defaultProgression(): ProgressionState {
     flags: {},
     exploration: {},
     gathering: {},
-    pendingRewards: [], // NEW
   };
 }
 
 // -----------------------------
-// Crime "heat" helpers (Task F/G)
+// Normalizers
 // -----------------------------
-
-/**
- * Returns true if this character currently has active crime heat.
- * (Used by guards / NPC crime logic and respawn logging.)
- */
-export function hasActiveCrimeHeat(
-  char: CharacterState,
-  now: number = Date.now()
-): boolean {
-  if (!char.recentCrimeUntil) {
-    return false;
+function normalizeSpellbook(raw: any): SpellbookState {
+  // Legacy: [] or ["spell_a","spell_b"]
+  if (Array.isArray(raw)) {
+    const known: Record<string, SpellKnown> = {};
+    for (const v of raw) {
+      const spellId = typeof v === "string" ? v : null;
+      if (!spellId) continue;
+      known[spellId] = { rank: 1, learnedAt: 0 };
+    }
+    return { known, cooldowns: {} };
   }
-  return char.recentCrimeUntil > now;
+
+  if (raw && typeof raw === "object") {
+    // v2 shape
+    if (raw.known && typeof raw.known === "object") {
+      return {
+        known: raw.known as Record<string, SpellKnown>,
+        cooldowns:
+          (raw.cooldowns && typeof raw.cooldowns === "object"
+            ? raw.cooldowns
+            : {}) as Record<string, number>,
+        ...raw,
+      };
+    }
+
+    // Sometimes persisted as map spellId -> SpellKnown
+    const keys = Object.keys(raw);
+    if (keys.length && keys.every((k) => typeof raw[k] === "object")) {
+      return { known: raw as Record<string, SpellKnown>, cooldowns: {} };
+    }
+  }
+
+  return defaultSpellbook();
 }
 
-/**
- * Returns a coarse label for crime heat for logging / telemetry.
- */
+// -----------------------------
+// Crime helpers
+// -----------------------------
+export function hasActiveCrimeHeat(
+  char: CharacterState,
+  now: number = Date.now(),
+): boolean {
+  return !!char.recentCrimeUntil && char.recentCrimeUntil > now;
+}
+
 export function getCrimeHeatLabel(
   char: CharacterState,
-  now: number = Date.now()
+  now: number = Date.now(),
 ): "none" | "minor" | "severe" {
-  if (!hasActiveCrimeHeat(char, now)) {
-    return "none";
-  }
+  if (!hasActiveCrimeHeat(char, now)) return "none";
   return char.recentCrimeSeverity ?? "minor";
 }
 
 // -----------------------------
 // Row → state
 // -----------------------------
-
 export function rowToCharacterState(row: CharacterRow): CharacterState {
+  const attrs =
+    row.attributes && Object.keys(row.attributes ?? {}).length
+      ? (row.attributes as any)
+      : defaultAttributes();
+
+  const inv =
+    row.inventory && Object.keys(row.inventory ?? {}).length
+      ? (row.inventory as any)
+      : defaultInventory();
+
+  const equip =
+    row.equipment && Object.keys(row.equipment ?? {}).length
+      ? (row.equipment as any)
+      : defaultEquipment();
+
   return {
     id: row.id,
     userId: row.user_id,
     shardId: row.shard_id,
     name: row.name,
     classId: row.class_id,
+    raceId: row.race_id ?? undefined,
+
     level: row.level,
     xp: row.xp,
+
     posX: row.pos_x,
     posY: row.pos_y,
     posZ: row.pos_z,
+
     lastRegionId: row.last_region_id,
     appearanceTag: row.appearance_tag,
 
-    // v1.5: accept existing JSONB, but hard-default if empty/null-ish
-    attributes:
-      (row.attributes as any) &&
-      Object.keys(row.attributes ?? {}).length
-        ? (row.attributes as any)
-        : defaultAttributes(),
-    inventory:
-      (row.inventory as any) &&
-      Object.keys(row.inventory ?? {}).length
-        ? (row.inventory as any)
-        : defaultInventory(),
-    equipment:
-      (row.equipment as any) &&
-      Object.keys(row.equipment ?? {}).length
-        ? (row.equipment as any)
-        : defaultEquipment(),
-    spellbook:
-      (row.spellbook as any) &&
-      Object.keys(row.spellbook ?? {}).length
-        ? (row.spellbook as any)
-        : defaultSpellbook(),
-    abilities: (row.abilities as any) ?? defaultAbilities(),
-    progression: (row.progression as any) ?? defaultProgression(),
+    attributes: attrs,
+    inventory: inv,
+    equipment: equip,
+
+    spellbook: normalizeSpellbook(row.spellbook as any),
+
+    abilities: ((row.abilities as any) ?? defaultAbilities()) as any,
+    progression: ((row.progression as any) ?? defaultProgression()) as any,
 
     stateVersion: row.state_version ?? 1,
     createdAt: row.created_at,
@@ -352,10 +405,7 @@ export function rowToCharacterState(row: CharacterRow): CharacterState {
   };
 }
 
-// State → summary for UI list
-export function toCharacterSummary(
-  state: CharacterState
-): CharacterSummary {
+export function toCharacterSummary(state: CharacterState): CharacterSummary {
   return {
     id: state.id,
     shardId: state.shardId,

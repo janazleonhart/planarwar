@@ -2,12 +2,18 @@
 //
 // Central helper for “never drop rewards”.
 // Policy:
-//  1) Always attempt bags first.
-//  2) If overflow and mail exists -> mail overflow.
-//  3) If mail missing OR mail fails -> queue overflow in progression.pendingRewards.
-//  4) Provide claim logic to retry queued entries later.
+// 1) Always attempt bags first.
+// 2) If overflow and mail exists -> mail overflow.
+// 3) If mail missing OR mail fails -> queue overflow in progression.pendingRewards.
+// 4) Provide claim logic to retry queued entries later.
 
-import type { CharacterState, InventoryState, PendingRewardEntry, PendingRewardItem } from "../characters/CharacterTypes";
+import type {
+  CharacterState,
+  InventoryState,
+  PendingRewardEntry,
+  PendingRewardItem,
+} from "../characters/CharacterTypes";
+
 import { ensureProgression } from "../progression/ProgressionCore";
 import { addItemToBags } from "../items/InventoryHelpers";
 import { getItemTemplate } from "../items/ItemCatalog";
@@ -23,24 +29,20 @@ export type RewardDeliveryContext = {
       ownerKind: OwnerKind,
       subject: string,
       body: string,
-      attachments: { itemId: string; qty: number; meta?: any }[]
+      attachments: { itemId: string; qty: number; meta?: any }[],
     ): Promise<void>;
   };
   session?: { identity?: { userId: string } };
 };
 
-export type RewardItemInput = {
-  itemId: string;
-  qty: number;
-  meta?: any;
-};
+export type RewardItemInput = { itemId: string; qty: number; meta?: any };
 
 export type DeliverRewardsOptions = {
   source: string;
   note?: string;
 
   // Mail routing
-  ownerId?: string;      // default: ctx.session.identity.userId
+  ownerId?: string; // default: ctx.session.identity.userId
   ownerKind?: OwnerKind; // default: "account"
 
   // Mail copy
@@ -79,7 +81,7 @@ function makePendingId(): string {
 
 function resolveNameAndStack(
   ctx: RewardDeliveryContext,
-  itemId: string
+  itemId: string,
 ): { name: string; maxStack: number } {
   // Prefer DB-backed resolveItem if ctx.items exists.
   try {
@@ -112,10 +114,10 @@ export function enqueuePendingReward(
   char: CharacterState,
   source: string,
   items: PendingRewardItem[],
-  note?: string
+  note?: string,
 ): PendingRewardEntry | null {
   const cleaned = (items ?? [])
-    .map((it) => ({
+    .map((it: PendingRewardItem) => ({
       itemId: s(it.itemId),
       qty: clampQty(it.qty),
       meta: it.meta,
@@ -124,17 +126,16 @@ export function enqueuePendingReward(
 
   if (cleaned.length === 0) return null;
 
-  const prog = ensureProgression(char);
+  const prog: any = ensureProgression(char);
   const entry: PendingRewardEntry = {
     id: makePendingId(),
     createdAt: Date.now(),
     source: s(source) || "rewards",
     note: s(note) || undefined,
     items: cleaned,
-  };
+  } as any;
 
-  prog.pendingRewards ??= [];
-  prog.pendingRewards.push(entry);
+  (prog.pendingRewards ??= []).push(entry);
   return entry;
 }
 
@@ -146,7 +147,7 @@ export function enqueuePendingReward(
 export function preflightBagsForRewards(
   ctx: RewardDeliveryContext,
   inventory: InventoryState,
-  items: RewardItemInput[]
+  items: RewardItemInput[],
 ): { ok: boolean; missingSlotsFor?: { itemId: string; qty: number }[] } {
   if (ctx.mail) return { ok: true };
 
@@ -160,9 +161,7 @@ export function preflightBagsForRewards(
 
     const { maxStack } = resolveNameAndStack(ctx, itemId);
     const leftover = addItemToBags(sim, itemId, qty, maxStack);
-    if (leftover > 0) {
-      missing.push({ itemId, qty: leftover });
-    }
+    if (leftover > 0) missing.push({ itemId, qty: leftover });
   }
 
   return missing.length ? { ok: false, missingSlotsFor: missing } : { ok: true };
@@ -179,12 +178,11 @@ export async function deliverRewardItemsNeverDrop(
   char: CharacterState,
   inventory: InventoryState,
   items: RewardItemInput[],
-  opts: DeliverRewardsOptions
+  opts: DeliverRewardsOptions,
 ): Promise<DeliverRewardsResult> {
   const deliveredToBags: { itemId: string; qty: number }[] = [];
   const mailed: { itemId: string; qty: number }[] = [];
   const queued: { itemId: string; qty: number }[] = [];
-
   const toQueue: PendingRewardItem[] = [];
 
   for (const it of items ?? []) {
@@ -197,7 +195,6 @@ export async function deliverRewardItemsNeverDrop(
     // 1) Bags first
     const leftover = addItemToBags(inventory, itemId, qty, maxStack);
     const added = Math.max(0, qty - leftover);
-
     if (added > 0) deliveredToBags.push({ itemId, qty: added });
 
     // 2) Overflow handling
@@ -230,9 +227,7 @@ export async function deliverRewardItemsNeverDrop(
     }
   }
 
-  if (toQueue.length > 0) {
-    enqueuePendingReward(char, opts.source, toQueue, opts.note);
-  }
+  if (toQueue.length > 0) enqueuePendingReward(char, opts.source, toQueue, opts.note);
 
   return { deliveredToBags, mailed, queued };
 }
@@ -245,22 +240,22 @@ export async function claimPendingRewards(
   ctx: RewardDeliveryContext,
   char: CharacterState,
   inventory: InventoryState,
-  maxEntries: number = 9999
+  maxEntries: number = 9999,
 ): Promise<{
   claimedEntries: number;
   claimedItems: { itemId: string; qty: number }[];
   mailedItems: { itemId: string; qty: number }[];
   stillQueued: number;
 }> {
-  const prog = ensureProgression(char);
-  const q = (prog.pendingRewards ??= []);
+  const prog: any = ensureProgression(char);
+  const q = ((prog.pendingRewards ??= []) as unknown) as PendingRewardEntry[];
+
   if (q.length === 0) {
     return { claimedEntries: 0, claimedItems: [], mailedItems: [], stillQueued: 0 };
   }
 
   const claimedItems: { itemId: string; qty: number }[] = [];
   const mailedItems: { itemId: string; qty: number }[] = [];
-
   let claimedEntries = 0;
 
   // Process FIFO, but stop if we can’t fully process an entry (keeps semantics sane)
@@ -268,6 +263,7 @@ export async function claimPendingRewards(
 
   for (let i = 0; i < q.length; i++) {
     const entry = q[i];
+
     if (claimedEntries >= maxEntries) {
       keep.push(entry);
       continue;
@@ -278,18 +274,21 @@ export async function claimPendingRewards(
       ctx,
       char,
       inventory,
-      entry.items.map((it) => ({ itemId: it.itemId, qty: it.qty, meta: it.meta })),
+      (((entry as any).items ?? []) as PendingRewardItem[]).map((it: PendingRewardItem) => ({
+        itemId: it.itemId,
+        qty: it.qty,
+        meta: it.meta,
+      })),
       {
-        source: `reward claim: ${entry.source}`,
-        note: entry.note,
+        source: `reward claim: ${(entry as any).source}`,
+        note: (entry as any).note,
         mailSubject: "Reward delivery",
         mailBody: defaultMailBody("queued rewards"),
-      }
+      },
     );
 
     // If any items got re-queued, we treat this entry as NOT fully claimed and stop.
     if (res.queued.length > 0) {
-      // keep original entry + any later entries
       keep.push(entry);
       for (let j = i + 1; j < q.length; j++) keep.push(q[j]);
       break;

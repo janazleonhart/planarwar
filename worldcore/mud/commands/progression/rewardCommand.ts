@@ -1,7 +1,8 @@
 // worldcore/mud/commands/progression/rewardCommand.ts
 
 import type { MudContext } from "../../MudContext";
-import type { CharacterState } from "../../../characters/CharacterTypes";
+import type { CharacterState, PendingRewardEntry, PendingRewardItem } from "../../../characters/CharacterTypes";
+
 import { ensureProgression } from "../../../progression/ProgressionCore";
 import { claimPendingRewards } from "../../../rewards/RewardDelivery";
 
@@ -17,12 +18,13 @@ function toInt(v: unknown, def: number): number {
 export async function handleRewardCommand(
   ctx: MudContext,
   char: CharacterState,
-  args: string[]
+  args: string[],
 ): Promise<string> {
   const sub = (args?.[0] ?? "").toLowerCase();
+  const prog: any = ensureProgression(char);
 
-  const prog = ensureProgression(char);
-  const pending = (prog.pendingRewards ??= []);
+  // pending rewards live in progression.pendingRewards (not character root)
+  const pending = ((prog.pendingRewards ??= []) as unknown) as PendingRewardEntry[];
 
   if (!sub || sub === "help") {
     const n = pending.length;
@@ -41,18 +43,26 @@ export async function handleRewardCommand(
     const max = Math.min(pending.length, 10);
     for (let i = 0; i < max; i++) {
       const r = pending[i];
-      const items = (r.items ?? [])
+
+      const items = (((r as any).items ?? []) as PendingRewardItem[])
         .slice(0, 6)
-        .map((it) => `${it.qty}x ${it.itemId}`)
+        .map((it: PendingRewardItem) => `${it.qty}x ${it.itemId}`)
         .join(", ");
 
+      const source = s((r as any).source) || "rewards";
+      const note = s((r as any).note) || "";
+
       lines.push(
-        `- #${i + 1} ${r.source}${r.note ? ` (${r.note})` : ""}: ${items}${(r.items?.length ?? 0) > 6 ? ", ..." : ""}`
+        `- #${i + 1} ${source}${note ? ` (${note})` : ""}: ${items}${
+          (((r as any).items?.length ?? 0) as number) > 6 ? ", ..." : ""
+        }`,
       );
     }
 
     if (pending.length > max) {
-      lines.push(`[reward] Showing first ${max}. Use 'reward claim all' to attempt everything.`);
+      lines.push(
+        `[reward] Showing first ${max}. Use 'reward claim all' to attempt everything.`,
+      );
     }
 
     return lines.join("\n");
@@ -63,9 +73,7 @@ export async function handleRewardCommand(
 
     const how = (args?.[1] ?? "").toLowerCase();
     const maxEntries =
-      how === "all" || how === ""
-        ? 9999
-        : Math.max(1, toInt(how, 1));
+      how === "all" || how === "" ? 9999 : Math.max(1, toInt(how, 1));
 
     const res = await claimPendingRewards(
       {
@@ -75,7 +83,7 @@ export async function handleRewardCommand(
       },
       char,
       char.inventory,
-      maxEntries
+      maxEntries,
     );
 
     // Persist changes
@@ -90,17 +98,24 @@ export async function handleRewardCommand(
       return "[reward] Could not claim any rewards. Clear bag space (or enable mail) and try again.";
     }
 
-    const got = res.claimedItems.map((x) => `${x.qty}x ${x.itemId}`);
-    const mailed = res.mailedItems.map((x) => `${x.qty}x ${x.itemId}`);
+    const got = res.claimedItems.map((x: { qty: number; itemId: string }) => `${x.qty}x ${x.itemId}`);
+    const mailed = res.mailedItems.map((x: { qty: number; itemId: string }) => `${x.qty}x ${x.itemId}`);
 
     const lines: string[] = [];
-    lines.push(`[reward] Claimed ${res.claimedEntries} reward entr${res.claimedEntries === 1 ? "y" : "ies"}.`);
-
+    lines.push(
+      `[reward] Claimed ${res.claimedEntries} reward entr${
+        res.claimedEntries === 1 ? "y" : "ies"
+      }.`,
+    );
     if (got.length > 0) lines.push(`[reward] Added to bags: ${got.join(", ")}.`);
     if (mailed.length > 0) lines.push(`[reward] Mailed: ${mailed.join(", ")}.`);
 
     if (res.stillQueued > 0) {
-      lines.push(`[reward] Still queued: ${res.stillQueued} entr${res.stillQueued === 1 ? "y" : "ies"}.`);
+      lines.push(
+        `[reward] Still queued: ${res.stillQueued} entr${
+          res.stillQueued === 1 ? "y" : "ies"
+        }.`,
+      );
     } else {
       lines.push("[reward] All pending rewards cleared.");
     }

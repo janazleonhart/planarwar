@@ -1683,7 +1683,8 @@
       "notes": [
         "Implements 'harvest' actions (mining/herbalism/etc.).",
         "Handles node validation, loot rolls, depletion timestamps, and node/NPC despawn.",
-        "Includes skinning fallback helper used by tests; real skinning loot will become DB-driven."
+        "Includes skinning fallback helper used by tests; real skinning loot will become DB-driven.",
+        "Safety: harvest progression reactions are guarded (applyProgressionForEvent wrapped in try/catch) so gathering never hard-fails."
       ]
     },
     "mud.autoattack": {
@@ -2434,7 +2435,8 @@
       "notes": [
         "Implements 'quests' and 'quest ...' commands.",
         "Default shows quest log; subcommand 'turnin'/'turn-in'/'complete' turns in a quest by target string.",
-        "Provides board/accept/abandon"
+        "Provides board/accept/abandon",
+        "Help text advertises warfront-friendly turn-in: 'quest turnin list|ready' and 'quest turnin <#|id|name>'."
       ]
     },
     "mud.commands.progression.reward": {
@@ -3649,7 +3651,8 @@
       "notes": [
         "Handles quest turn-in: resolves quest by id/name, checks completion and repeatable caps, and revalidates objectives.",
         "Consumes collect_item requirements from inventory, applies XP via ctx.characters.grantXp, and grants gold/items via grantReward.",
-        "Unlocks title rewards, updates quest completions and state (active/turned_in), and patches character progression + inventory."
+        "Unlocks title rewards, updates quest completions and state (active/turned_in), and patches character progression + inventory.",
+        "Warfront-friendly: supports 'turnin list'/'ready' and numeric index turn-in (1-based) using stable quest log ordering (sorted ids)."
       ]
     },
     "quests.types": {
@@ -4482,6 +4485,57 @@
       ],
       "notes": [
         "Covers the minimal quest runtime loop: board -> accept -> questlog -> abandon."
+      ]
+    },
+    "test.contractHarvestProgressionHookWired": {
+      "kind": "test",
+      "service": "test.contract",
+      "path": "worldcore/test/contract_harvestProgressionHookWired.test.ts",
+      "class": null,
+      "lifecycle": "test",
+      "ctorArgs": [],
+      "dependsOn": [
+        "test.utils"
+      ],
+      "provides": [],
+      "owns": [],
+      "notes": [
+        "Contract: MudWorldActions wires harvest progression reactions and guards hook failures.",
+        "Ensures applyProgressionEvent(kind:'harvest') + applyProgressionForEvent(...,'harvests',...) remain present and non-fatal."
+      ]
+    },
+    "test.contractTurnInQuestWarfrontFriendly": {
+      "kind": "test",
+      "service": "test.contract",
+      "path": "worldcore/test/contract_turnInQuestWarfrontFriendly.test.ts",
+      "class": null,
+      "lifecycle": "test",
+      "ctorArgs": [],
+      "dependsOn": [
+        "test.utils"
+      ],
+      "provides": [],
+      "owns": [],
+      "notes": [
+        "Contract: turnInQuest is warfront-friendly (list/ready + numeric index) and keeps legacy blank prompt.",
+        "Prevents regressions where turn-in UX loses discoverability or stable ordering."
+      ]
+    },
+    "test.contractQuestsCommandHelpMentionsTurninListIndex": {
+      "kind": "test",
+      "service": "test.contract",
+      "path": "worldcore/test/contract_questsCommandHelpMentionsTurninListIndex.test.ts",
+      "class": null,
+      "lifecycle": "test",
+      "ctorArgs": [],
+      "dependsOn": [
+        "test.utils"
+      ],
+      "provides": [],
+      "owns": [],
+      "notes": [
+        "Contract: questsCommand help text mentions 'quest turnin list|ready' and index-based turn-in '<#|id|name>'.",
+        "Prevents UX regressions where command help stops advertising key turn-in shortcuts."
       ]
     },
     "tools.resourceBaseline": {
