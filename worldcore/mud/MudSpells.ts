@@ -1,12 +1,17 @@
 // worldcore/mud/MudSpells.ts
 
 import type { MudContext } from "./MudContext";
-import type { CharacterState, SpellbookState } from "../characters/CharacterTypes";
+import type { CharacterState } from "../characters/CharacterTypes";
 
 import { Logger } from "../utils/logger";
 import { canDamage } from "../combat/DamagePolicy";
-import { checkAndStartCooldown } from "../combat/Cooldowns";
-import { SPELLS, SpellDefinition, findSpellByNameOrId } from "../spells/SpellTypes";
+import { checkAndStartCooldown, getCooldownRemaining } from "../combat/Cooldowns";
+import {
+  SpellDefinition,
+  findSpellByNameOrId,
+  ensureSpellbookAutogrants,
+  isSpellKnownForChar,
+} from "../spells/SpellTypes";
 import { performNpcAttack } from "./MudActions";
 import {
   findNpcTargetByName,
@@ -41,21 +46,9 @@ import { applyStatusEffect } from "../combat/StatusEffects";
 
 const log = Logger.scope("MUD_SPELLS");
 
-function ensureSpellbook(char: CharacterState): SpellbookState {
-  let sb: any = char.spellbook as any;
-  if (!sb || typeof sb !== "object") {
-    sb = { known: {}, cooldowns: {} };
-    (char as any).spellbook = sb;
-  } else {
-    if (!sb.known) sb.known = {};
-    if (!sb.cooldowns) sb.cooldowns = {};
-  }
-  return sb as SpellbookState;
-}
-
 function canUseSpell(char: CharacterState, spell: SpellDefinition): string | null {
-  const cls = (char.classId ?? "").toLowerCase();
-  const spellClass = spell.classId.toLowerCase();
+  const cls = String(char.classId ?? "").toLowerCase();
+  const spellClass = String(spell.classId ?? "any").toLowerCase();
 
   if (spellClass !== "any" && cls && cls !== spellClass) {
     return `You cannot cast ${spell.name} (class restricted to ${spellClass}).`;
@@ -66,38 +59,21 @@ function canUseSpell(char: CharacterState, spell: SpellDefinition): string | nul
     return `${spell.name} requires level ${spell.minLevel}.`;
   }
 
-  const sb = ensureSpellbook(char);
-  const now = Date.now();
-  const readyAt = sb.cooldowns?.[spell.id];
+  // MVP spellbook: auto-grant eligible spells so players have a usable baseline.
+  ensureSpellbookAutogrants(char);
 
-  if (readyAt && readyAt > now) {
-    const ms = readyAt - now;
-    const sec = Math.ceil(ms / 1000);
+  // Debug spells are callable even if not learned.
+  if (!spell.isDebug && !isSpellKnownForChar(char, spell.id)) {
+    return `You have not learned ${spell.name}.`;
+  }
+
+  const remaining = getCooldownRemaining(char, "spells", spell.id);
+  if (remaining > 0) {
+    const sec = Math.ceil(remaining / 1000);
     return `${spell.name} is on cooldown for another ${sec}s.`;
   }
 
   return null;
-}
-
-function startSpellCooldown(char: CharacterState, spell: SpellDefinition): void {
-  if (!spell.cooldownMs || spell.cooldownMs <= 0) return;
-
-  const sb = ensureSpellbook(char);
-  const now = Date.now();
-  if (!sb.cooldowns) sb.cooldowns = {};
-  sb.cooldowns[spell.id] = now + spell.cooldownMs;
-}
-
-export function listKnownSpellsForChar(char: CharacterState): SpellDefinition[] {
-  const cls = (char.classId ?? "").toLowerCase();
-  const level = char.level ?? 1;
-
-  return Object.values(SPELLS).filter((s) => {
-    const spellClass = s.classId.toLowerCase();
-    if (spellClass !== "any" && cls && spellClass !== cls) return false;
-    if (level < s.minLevel) return false;
-    return true;
-  });
 }
 
 function isServiceProtectedNpcTarget(ctx: MudContext, npc: any): boolean {
@@ -137,13 +113,10 @@ export async function castSpellForCharacter(
   const roomId = ctx.session.roomId ?? char.shardId;
   const targetRaw = (targetNameRaw && targetNameRaw.trim()) || "rat";
 
-  const isSong = (spell as any).isSong === true;
-  const songSchool = isSong
-    ? ((spell as any).songSchool as SongSchoolId | undefined)
-    : undefined;
+  const isSong = spell.isSong === true;
+  const songSchool = isSong ? ((spell.songSchool as SongSchoolId | undefined) ?? undefined) : undefined;
 
-  const spellResourceType =
-    spell.resourceType ?? getPrimaryPowerResourceForClass(char.classId);
+  const spellResourceType = spell.resourceType ?? getPrimaryPowerResourceForClass(char.classId);
   const spellResourceCost = spell.resourceCost ?? 0;
 
   const applySchoolGains = () => {
@@ -177,7 +150,7 @@ export async function castSpellForCharacter(
         return `There is no '${targetRaw}' here to target with ${spell.name}.`;
       }
 
-      // Helper: Virtuoso "battle chant" song grants a short-lived outgoing damage buff on hit.
+      // Helper: Virtuoso battle chant grants a short-lived outgoing damage buff on hit.
       const maybeApplyVirtuosoBattleChantBuff = () => {
         if (!isSong) return;
         if (spell.id !== "song_virtuoso_battle_chant") return;
@@ -192,7 +165,6 @@ export async function castSpellForCharacter(
             maxStacks: 3,
             initialStacks: 1,
             modifiers: {
-              // +10% outgoing damage per stack (read by CombatEngine via computeCombatStatusSnapshot)
               damageDealtPct: 0.10,
             },
             tags: ["buff", "virtuoso", "song", "battle", "damage"],
@@ -238,7 +210,6 @@ export async function castSpellForCharacter(
         };
 
         // Lane D: async DamagePolicy backstop for player-vs-player damage.
-        // gatePlayerDamageFromPlayerEntity enforces duel consent; this enforces region combat/PvP flags + service protection.
         try {
           const policy = await canDamage(
             { entity: selfEntity as any, char },
@@ -251,7 +222,6 @@ export async function castSpellForCharacter(
         } catch {
           // Best-effort: never let policy lookup crash spell casting.
         }
-
       }
 
       const cdErr = cooldownGate();
@@ -259,8 +229,6 @@ export async function castSpellForCharacter(
 
       const resErr = resourceGate();
       if (resErr) return resErr;
-
-      startSpellCooldown(char, spell);
 
       // Execute
       if (npc) {
@@ -270,7 +238,6 @@ export async function castSpellForCharacter(
           channel: "spell",
           damageMultiplier: spell.damageMultiplier,
           flatBonus: spell.flatBonus,
-          // Songs: treat spellSchool as "song" so CombatEngine can apply appropriate scaling.
           spellSchool: isSong ? "song" : spell.school,
           songSchool,
           isSong,
@@ -335,7 +302,6 @@ export async function castSpellForCharacter(
       }
 
       if (killed && gate.mode === "duel") {
-        // Duel ends on death.
         DUEL_SERVICE.endDuelFor(char.id, "death", gate.now);
       }
 
@@ -349,7 +315,7 @@ export async function castSpellForCharacter(
       return `[${gate.label}] You hit ${playerTarget!.name} for ${dmgFinal} damage. (${newHp}/${maxHp} HP)`;
     }
 
-case "heal_self": {
+    case "heal_self": {
       const hp = (selfEntity as any).hp ?? 0;
       const maxHp = (selfEntity as any).maxHp ?? 0;
 
@@ -363,15 +329,13 @@ case "heal_self": {
       const resErr = resourceGate();
       if (resErr) return resErr;
 
-      startSpellCooldown(char, spell);
-
       const baseHeal = spell.healAmount ?? 10;
       let heal = baseHeal;
 
       // Songs: scale healing from instrument/vocal skill
       if (isSong && songSchool) {
         const skill = getSongSchoolSkill(char, songSchool);
-        const factor = 1 + skill / 100; // 100 skill ~= 2x base, tune later
+        const factor = 1 + skill / 100;
         heal = Math.floor(baseHeal * factor);
       }
 
@@ -387,7 +351,7 @@ case "heal_self": {
         result = `[spell:${spell.name}] You restore ${newHp - hp} health.\n(${newHp}/${maxHp} HP)`;
       }
 
-      // Simple Virtuoso buff: Song of Rising Courage → STA% buff
+      // Virtuoso buff: Song of Rising Courage → STA% buff
       if (isSong && spell.id === "virtuoso_song_rising_courage") {
         try {
           applyStatusEffect(char, {
@@ -395,11 +359,10 @@ case "heal_self": {
             sourceKind: "song",
             sourceId: spell.id,
             name: "Rising Courage",
-            durationMs: 20_000, // 20s buff
+            durationMs: 20_000,
             maxStacks: 3,
             initialStacks: 1,
             modifiers: {
-              // +10% STA per stack (applied in computeEffectiveAttributes)
               attributesPct: { sta: 0.1 },
             },
             tags: ["buff", "virtuoso", "song", "courage"],
@@ -417,7 +380,7 @@ case "heal_self": {
     }
 
     default: {
-      log.warn("Unhandled spell kind", { spellId: spell.id, kind: spell.kind });
+      log.warn("Unhandled spell kind", { spellId: spell.id, kind: (spell as any).kind });
       return "That kind of spell is not implemented yet.";
     }
   }

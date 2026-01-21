@@ -3500,12 +3500,15 @@
         "quests.state",
         "quests.registry",
         "items.inventoryHelpers",
-        "characters.types"
+        "characters.types",
+        "quests.TownQuestBoard"
       ],
       "notes": [
         "Scans all quests against kills, harvests, actions, flags, and inventory to update completion state.",
         "Marks active quests as completed when all objectives are satisfied and returns the completed list.",
-        "No auto-activation"
+        "No auto-activation",
+        "Evaluates accepted quest state entries (not only registry-known quests)",
+        "Supports generated TownQuestBoard quest IDs"
       ]
     },
     "quests.generator": {
@@ -3956,6 +3959,16 @@
         "Skills are capped at level * 10 and default to 0 if missing."
       ]
     },
+    "spells.catalog": {
+      "kind": "service",
+      "path": "worldcore/spells/SpellCatalog.ts",
+      "summary": "Loads spell/song definitions + aliases from Postgres (spells + spell_aliases tables).",
+      "dependsOn": [],
+      "notes": [
+        "Used by spells.types to hydrate the runtime SPELLS map from DB.",
+        "Small loader module; safe to keep dumb and predictable."
+      ]
+    },
     "songs.engine": {
       "kind": "service",
       "path": "worldcore/songs/SongEngine.ts",
@@ -3991,7 +4004,9 @@
       "dependsOn": [
         "combat.engine",
         "resources.power",
-        "skills.progression"
+        "skills.progression",
+        "spells.catalog",
+        "utils.logger"
       ],
       "notes": [
         "Defines SpellDefinition and SpellKind plus the SPELLS registry.",
@@ -4538,6 +4553,22 @@
         "Prevents UX regressions where command help stops advertising key turn-in shortcuts."
       ]
     },
+    "test.songEngineMelody": {
+      "kind": "test",
+      "path": "worldcore/test/SongEngine.melody.test.ts",
+      "summary": "Contract tests for melody normalization + alias/duplicate safety in SongEngine.",
+      "dependsOn": [
+        "test.utils",
+        "core.entityManager",
+        "mud.context",
+        "songs.songEngine",
+        "characters.types"
+      ],
+      "notes": [
+        "Ensures melody lists are normalized and stable.",
+        "Protects against alias IDs and duplicates causing playlist inflation."
+      ]
+    },
     "tools.resourceBaseline": {
       "kind": "dev_script",
       "path": "worldcore/tools/resourceBaseline.ts",
@@ -4951,7 +4982,10 @@
       "ctorArgs": [
         "seed?"
       ],
-      "dependsOn": [],
+      "dependsOn": [
+        "spells.types",
+        "db.Database"
+      ],
       "provides": [
         "getWorldBlueprintForRoom(roomId)",
         "getWorldBlueprint()",

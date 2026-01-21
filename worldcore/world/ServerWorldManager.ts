@@ -21,6 +21,9 @@ import {
   type RegionSemanticDefinition,
 } from "./PrimeShardRegions";
 
+import { db } from "../db/Database";
+import { initSpellsFromDbOnce } from "../spells/SpellTypes";
+
 export class ServerWorldManager implements WorldBlueprintProvider {
   private readonly log = Logger.scope("WORLD");
 
@@ -78,6 +81,12 @@ export class ServerWorldManager implements WorldBlueprintProvider {
       cellSize: this.regionMap.cellSize,
       semanticRegions: this.regionSemanticById.size,
     });
+
+    // One-time DB spell/song catalog load (definitions only).
+    // Safe during transition: if tables are missing, SpellTypes keeps code defaults.
+    if (process.env.WORLDCORE_TEST !== "1") {
+      void initSpellsFromDbOnce(db);
+    }
   }
 
   // -------------------------------------------------------------------------
