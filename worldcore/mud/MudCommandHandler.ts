@@ -11,7 +11,7 @@ import {
 import { COMMANDS } from "./commands/registry";
 import type { MudContext } from "./MudContext";
 import { DUEL_SERVICE } from "../pvp/DuelService";
-import { findTargetPlayerEntityByName } from "./MudHelperFunctions";
+import { findTargetPlayerEntityByName } from "../targeting/targetFinders";
 
 const MUD_SERVICES = {
   trainingDummy: {

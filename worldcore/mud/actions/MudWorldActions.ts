@@ -11,7 +11,8 @@ import {
 } from "../../progression/ProgressionCore";
 import { resolveItem } from "../../items/resolveItem";
 import { deliverItemToBagsOrMail } from "../../loot/OverflowDelivery";
-import { describeLootLine, rollInt } from "../MudHelperFunctions";
+import { describeLootLine } from "../../loot/lootText";
+import { rollInt } from "../../utils/random";
 import type { GatheringKind } from "../../progression/ProgressEvents";
 import { Logger } from "../../utils/logger";
 import { scheduleNpcCorpseAndRespawn } from "./MudCombatActions";

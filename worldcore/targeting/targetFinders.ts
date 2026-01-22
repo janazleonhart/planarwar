@@ -1,57 +1,117 @@
 // worldcore/targeting/targetFinders.ts
+//
+// Legacy targeting helpers that pre-date TargetResolver.
+// These are still used by a few combat/spell paths, but should trend toward:
+// - build candidates (players/NPCs) from the current context, then
+// - delegate selection to TargetResolver so tokens behave consistently.
+//
+// Player targeting in particular must NOT assume session.roomId exists.
+// Many tests (and some lightweight providers) omit it; entity.roomId is the
+// authoritative source of truth.
 
 import type { Entity } from "../shared/Entity";
+import { resolveTargetInRoom } from "./TargetResolver";
 
 export type TargetingContext = {
   session: { id: string };
   sessions: {
     getAllSessions(): Iterable<{
       id: string;
-      roomId?: string | null; // allow undefined too
+      roomId?: string | null; // optional: tests often omit it
       character?: { name: string } | null;
     }>;
   };
   entities?: {
-    getAll(): Iterable<Entity> | Entity[];
+    getAll?: () => Iterable<Entity> | Entity[];
     getEntityByOwner(ownerId: string): Entity | null | undefined;
   };
 };
 
+function normalizeName(s: any): string {
+  return String(s ?? "").trim().toLowerCase();
+}
+
+function isPlayerLikeEntity(ent: any): boolean {
+  if (!ent) return false;
+  const t = String(ent.type ?? "").toLowerCase();
+  const hasSpawnPoint = typeof ent.spawnPointId === "number";
+  return t === "player" || (!!ent.ownerSessionId && !hasSpawnPoint);
+}
+
 export function findTargetPlayerEntityByName(
   ctx: TargetingContext,
   meRoomId: string,
-  targetNameRaw: string
+  targetTokenRaw: string
 ): { entity: Entity; name: string } | null {
-  const targetName = targetNameRaw.toLowerCase().trim();
-  if (!targetName) return null;
+  const token = String(targetTokenRaw ?? "").trim();
+  if (!token) return null;
 
   const entities = ctx.entities;
-  if (!entities) return null;
+  if (!entities || typeof entities.getEntityByOwner !== "function") return null;
 
-  const sessions = ctx.sessions.getAllSessions();
-  let targetSessionId: string | null = null;
-  let displayName = "";
+  const selfSessionId = String(ctx.session?.id ?? "");
+  const selfEnt = entities.getEntityByOwner(selfSessionId) ?? null;
 
-  for (const s of sessions) {
-    if (s.id === ctx.session.id) continue;
-    if (s.roomId !== meRoomId) continue;
+  // Explicit self tokens: we do not return self as a "target other player" result.
+  const low = token.toLowerCase();
+  if (low === "me" || low === "self" || low === "myself") return null;
 
-    const c = s.character;
-    if (!c) continue;
+  const rows: Array<{ sid: string; name: string; ent: Entity }> = [];
 
-    if (c.name.toLowerCase() === targetName) {
-      targetSessionId = s.id;
-      displayName = c.name;
-      break;
-    }
+  for (const s of ctx.sessions.getAllSessions()) {
+    if (!s || !s.id) continue;
+    const sid = String(s.id);
+    if (sid === selfSessionId) continue;
+
+    const ent = entities.getEntityByOwner(sid);
+    if (!ent) continue;
+
+    const inRoom =
+      String((ent as any).roomId ?? "") === String(meRoomId ?? "") ||
+      String((s as any).roomId ?? "") === String(meRoomId ?? "");
+    if (!inRoom) continue;
+
+    if (!isPlayerLikeEntity(ent)) continue;
+
+    const name = String((s as any)?.character?.name ?? (ent as any)?.name ?? "").trim();
+    rows.push({ sid, name, ent });
   }
 
-  if (!targetSessionId) return null;
+  if (!rows.length) return null;
 
-  const ent = entities.getEntityByOwner(targetSessionId);
-  if (!ent) return null;
+  // Prefer TargetResolver semantics: entity id / nearby index / handle / base.
+  // We pass only player entities, so no extra filter is needed.
+  const originX = Number((selfEnt as any)?.x ?? (selfEnt as any)?.posX ?? 0);
+  const originZ = Number((selfEnt as any)?.z ?? (selfEnt as any)?.posZ ?? 0);
 
-  return { entity: ent, name: displayName || ent.name };
+  const candidates = rows.map((r) => r.ent);
+
+  const picked = resolveTargetInRoom(candidates as any, String(meRoomId ?? ""), token, {
+    selfId: selfEnt ? String((selfEnt as any).id ?? "") : undefined,
+    viewerSessionId: selfSessionId,
+    radius: 30,
+    originX,
+    originZ,
+  });
+
+  if (picked) {
+    const hit = rows.find((r) => String((r.ent as any).id ?? "") === String((picked as any).id ?? ""));
+    return { entity: picked, name: hit?.name || String((picked as any).name ?? token) };
+  }
+
+  // Legacy fallback: try to match by character name (case-insensitive) when user types plain text.
+  const needle = normalizeName(token);
+
+  const exact = rows.filter((r) => normalizeName(r.name) === needle);
+  if (exact.length === 1) return { entity: exact[0].ent, name: exact[0].name };
+
+  const prefix = rows.filter((r) => normalizeName(r.name).startsWith(needle));
+  if (prefix.length === 1) return { entity: prefix[0].ent, name: prefix[0].name };
+
+  const includes = rows.filter((r) => normalizeName(r.name).includes(needle));
+  if (includes.length === 1) return { entity: includes[0].ent, name: includes[0].name };
+
+  return null;
 }
 
 export function findNearestNpcByName(
@@ -60,23 +120,23 @@ export function findNearestNpcByName(
   targetNameRaw: string
 ): { entity: Entity; name: string } | null {
   const entities = ctx.entities;
-  if (!entities) return null;
+  if (!entities || typeof entities.getAll !== "function") return null;
 
   const name = targetNameRaw.toLowerCase().trim();
   if (!name) return null;
 
   const all: Entity[] = Array.from(
     entities.getAll() as Iterable<Entity>
-  ).filter((ent) => ent.type === "npc" && ent.roomId === roomId && !!ent.name);
+  ).filter((ent) => (ent as any).type === "npc" && String((ent as any).roomId ?? "") === String(roomId) && !!(ent as any).name);
 
   for (const ent of all as any) {
-    if (ent.type !== "npc") continue;
-    if (ent.roomId !== roomId) continue;
-    if (!ent.name) continue;
+    if ((ent as any).type !== "npc") continue;
+    if (String((ent as any).roomId ?? "") !== String(roomId)) continue;
+    if (!(ent as any).name) continue;
 
-    const entName = ent.name.toLowerCase();
+    const entName = String((ent as any).name).toLowerCase();
     if (entName === name || entName.includes(name)) {
-      return { entity: ent, name: ent.name };
+      return { entity: ent, name: (ent as any).name };
     }
   }
 
@@ -100,10 +160,10 @@ export function findNpcTargetByName(
   if (!raw) return null;
 
   const all: Entity[] = toArray(entities.getAll())
-    .filter((ent) => ent.type === "npc" && ent.roomId === roomId && !!ent.name);
+    .filter((ent) => (ent as any).type === "npc" && String((ent as any).roomId ?? "") === String(roomId) && !!(ent as any).name);
 
   // stable ordering
-  all.sort((a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id));
+  all.sort((a: any, b: any) => String((a as any).name).localeCompare(String((b as any).name)) || String((a as any).id).localeCompare(String((b as any).id)));
 
   // Case 1: "2" => 2nd NPC in room
   if (/^\d+$/.test(raw)) {
@@ -117,14 +177,14 @@ export function findNpcTargetByName(
     const namePart = normalize(m[1]);
     const want = Math.max(1, parseInt(m[2], 10)) - 1;
 
-    const matches = all.filter((e) => normalize(e.name).includes(namePart));
+    const matches = all.filter((e: any) => normalize(String((e as any).name)).includes(namePart));
     return matches[want] ?? null;
   }
 
   // Case 3: normal name search
   const name = normalize(raw);
-  return all.find((e) => {
-    const n = normalize(e.name);
+  return all.find((e: any) => {
+    const n = normalize(String((e as any).name));
     return n === name || n.includes(name);
   }) ?? null;
 }

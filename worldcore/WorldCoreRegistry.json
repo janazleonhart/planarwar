@@ -1771,8 +1771,7 @@
         "abilities.table",
         "resources.power",
         "combat.cooldowns",
-        "mud.actions.combat",
-        "mud.helpers"
+        "mud.actions.combat"
       ],
       "provides": [
         "handleAbilityCommand(ctx:MudContext, char:CharacterState, abilityName:string, targetName?:string):Promise<string>",
@@ -1806,7 +1805,6 @@
         "mud.trainingDummy",
         "mud.progressionHooks",
         "progression.core",
-        "mud.helpers",
         "combat.damagePolicy"
       ],
       "provides": [
@@ -1834,7 +1832,6 @@
         "progression.core",
         "mud.progressionHooks",
         "mud.trainingDummy",
-        "mud.helpers",
         "resources.power?",
         "skills.progression?",
         "world.respawns?"
@@ -1872,8 +1869,7 @@
         "world.manager",
         "items.service?",
         "progression.core",
-        "mud.progressionHooks",
-        "mud.helpers"
+        "mud.progressionHooks"
       ],
       "provides": [
         "handleGatherAction(ctx, char, targetNameRaw, gatheringKind, resourceTag):Promise<string>",
@@ -3191,40 +3187,6 @@
         "Source of truth for the MUD help text and visible commands."
       ]
     },
-    "mud.helpers": {
-      "kind": "legacy_facade",
-      "path": "worldcore/mud/MudHelperFunctions.ts",
-      "lifecycle": "stateless",
-      "dependsOn": [
-        "loot.text",
-        "utils.random",
-        "combat.entityCombat",
-        "targeting.finders",
-        "systems.regen",
-        "world.regionText"
-      ],
-      "provides": [
-        "describeLootLine",
-        "rollInt",
-        "grantTaskRewards",
-        "markInCombat",
-        "killEntity",
-        "isDeadEntity",
-        "resurrectEntity",
-        "applySimpleDamageToPlayer",
-        "computeNpcMeleeDamage",
-        "findTargetPlayerEntityByName",
-        "findNearestNpcByName",
-        "findNpcTargetByName",
-        "ensureRegenLoop",
-        "formatRegionLabel",
-        "prettyRegionName"
-      ],
-      "notes": [
-        "Transitional re-export hub; file header explicitly warns it is being dismantled.",
-        "New code should import helpers directly from their home modules instead."
-      ]
-    },
     "mud.map": {
       "kind": "utility",
       "path": "worldcore/mud/MapRenderer.ts",
@@ -3343,7 +3305,6 @@
         "resources.power",
         "combat.cooldowns",
         "mud.actions.combat",
-        "mud.helpers",
         "skills.progression",
         "combat.damagePolicy",
         "characters.stats",

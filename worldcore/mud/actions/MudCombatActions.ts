@@ -17,11 +17,7 @@ import { canDamage } from "../../combat/DamagePolicy";
 
 import { computeEffectiveAttributes } from "../../characters/Stats";
 
-import {
-  findTargetPlayerEntityByName,
-  markInCombat,
-} from "../MudHelperFunctions";
-
+import { findTargetPlayerEntityByName } from "../../targeting/targetFinders";
 import {
   getTrainingDummyForRoom,
   computeTrainingDummyDamage,
@@ -31,7 +27,7 @@ import {
 import { applyProgressionForEvent } from "../MudProgressionHooks";
 import { applyProgressionEvent } from "../../progression/ProgressionCore";
 
-import { applySimpleDamageToPlayer } from "../../combat/entityCombat";
+import { applySimpleDamageToPlayer, markInCombat } from "../../combat/entityCombat";
 import { gatePlayerDamageFromPlayerEntity } from "../MudCombatGates";
 import { DUEL_SERVICE } from "../../pvp/DuelService";
 

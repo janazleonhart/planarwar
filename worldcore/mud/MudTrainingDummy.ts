@@ -18,7 +18,7 @@ import {
   markInCombat,
   isDeadEntity,
   applySimpleDamageToPlayer,
-} from "./MudHelperFunctions";
+} from "../combat/entityCombat";
 import { Logger } from "../utils/logger";
 
 const log = Logger.scope("MUD");

@@ -9,12 +9,7 @@ import { checkAndStartCooldown } from "../combat/Cooldowns";
 import { SPELLS, SpellDefinition, findSpellByNameOrId } from "../spells/SpellTypes";
 import { performNpcAttack } from "./MudActions";
 import { resolveTargetInRoom } from "../targeting/TargetResolver";
-import {
-  findTargetPlayerEntityByName,
-  isDeadEntity,
-  resurrectEntity,
-  markInCombat,
-} from "./MudHelperFunctions";
+import { findTargetPlayerEntityByName } from "../targeting/targetFinders";
 import { getNpcPrototype } from "../npc/NpcTypes";
 import {
   isServiceProtectedEntity,
@@ -25,7 +20,7 @@ import {
 import { computeEffectiveAttributes } from "../characters/Stats";
 import { getItemTemplate } from "../items/ItemCatalog";
 import { computeDamage, type CombatSource, type CombatTarget } from "../combat/CombatEngine";
-import { applyCombatResultToPlayer } from "../combat/entityCombat";
+import { applyCombatResultToPlayer, isDeadEntity, resurrectEntity, markInCombat } from "../combat/entityCombat";
 import { gatePlayerDamageFromPlayerEntity } from "./MudCombatGates";
 import { DUEL_SERVICE } from "../pvp/DuelService";
 import {
@@ -182,48 +177,127 @@ function isServiceProtectedNpcTarget(ctx: MudContext, npc: any): boolean {
 function resolvePlayerTargetInRoom(
   ctx: MudContext,
   roomId: string,
-  targetNameRaw: string
+  targetTokenRaw: string
 ):
   | { sessionId: string; displayName: string; char: CharacterState; entity: any }
   | { err: string } {
   if (!ctx.sessions) return { err: "[world] Sessions not available." };
   if (!ctx.entities) return { err: "[world] Entities not available." };
 
-  const needle = targetNameRaw.trim().toLowerCase();
-  if (!needle) return { err: "[world] Usage: cast <spell> <target>" };
+  const token = String(targetTokenRaw ?? "").trim();
+  if (!token) return { err: "[world] Usage: cast <spell> <target>" };
 
-  const sessions = (ctx.sessions as any).getAllSessions?.() ?? [];
-  const exact = sessions.find(
-    (s: any) => (s?.character?.name ?? "").trim().toLowerCase() === needle
-  );
-  const candidates = exact ? [exact] : sessions.filter((s: any) => {
-    const n = (s?.character?.name ?? "").trim().toLowerCase();
-    return n && n.startsWith(needle);
-  });
+  const selfSessionId = String((ctx as any)?.session?.id ?? "");
+  const selfEntity = ctx.entities.getEntityByOwner?.(selfSessionId);
+  if (!selfEntity) return { err: "[world] You have no active entity." };
 
-  if (!candidates.length) return { err: `[world] No such target: '${targetNameRaw}'.` };
-  if (candidates.length > 1) {
-    const names = candidates
-      .slice(0, 5)
-      .map((s: any) => s?.character?.name)
-      .filter(Boolean)
-      .join(", ");
-    return { err: `[world] Target name '${targetNameRaw}' is ambiguous. Matches: ${names}` };
+  // Explicit self-target tokens.
+  const isSelfToken = (() => {
+    const n = token.toLowerCase();
+    return n === "me" || n === "self" || n === "myself";
+  })();
+
+  const sessions: any[] = Array.from((ctx.sessions as any).getAllSessions?.() ?? []);
+
+  const selfSession =
+    sessions.find((s) => s && String(s.id ?? "") === selfSessionId) ?? (ctx as any).session;
+  const selfChar = (selfSession?.character as CharacterState | undefined) ?? undefined;
+  const selfDisplayName = (selfChar?.name ?? "you").trim() || "you";
+
+  if (isSelfToken) {
+    if (!selfChar) return { err: "[world] Your character state is not loaded." };
+    return { sessionId: selfSessionId, displayName: selfDisplayName, char: selfChar, entity: selfEntity };
   }
 
-  const targetSession = candidates[0];
-  const sessionId = targetSession.id;
-  const displayName = targetSession?.character?.name ?? targetNameRaw;
-  const entity = ctx.entities.getEntityByOwner?.(sessionId);
+  // Candidate players in this room:
+  // - Prefer entity.roomId as the source of truth (tests often omit session.roomId).
+  // - Still accept session.roomId when entities are delayed.
+  const roomRows: Array<{ s: any; ent: any; name: string }> = [];
+  for (const s of sessions) {
+    if (!s || !s.id) continue;
+    const sid = String(s.id);
+    if (sid === selfSessionId) continue;
 
-  if (!entity) return { err: `[world] Target '${displayName}' has no active entity.` };
-  if (entity.roomId !== roomId) return { err: `[world] Target '${displayName}' is not here.` };
+    const ent = ctx.entities.getEntityByOwner?.(sid);
+    if (!ent) continue;
 
-  const char = targetSession?.character as CharacterState | undefined;
-  if (!char) return { err: `[world] Target '${displayName}' has no character state loaded.` };
+    const inRoom =
+      String(ent.roomId ?? "") === roomId || String((s as any).roomId ?? "") === roomId;
+    if (!inRoom) continue;
 
-  return { sessionId, displayName, char, entity };
+    // Player-like only (exclude spawned NPCs/nodes).
+    const t = String(ent.type ?? "").toLowerCase();
+    const hasSpawnPoint = typeof (ent as any).spawnPointId === "number";
+    const isPlayerLike = t === "player" || (!!(ent as any).ownerSessionId && !hasSpawnPoint);
+    if (!isPlayerLike) continue;
+
+    const name = String(s?.character?.name ?? ent?.name ?? "").trim();
+    roomRows.push({ s, ent, name });
+  }
+
+  const candidates = roomRows.map((r) => r.ent);
+  const byEntityId = new Map<string, any>();
+  for (const r of roomRows) {
+    const id = String(r.ent?.id ?? "").trim();
+    if (id) byEntityId.set(id, r.s);
+  }
+
+  // New: use TargetResolver semantics for players (id / index / handle / base).
+  const originX = Number((selfEntity as any).x ?? (selfEntity as any).posX ?? 0);
+  const originZ = Number((selfEntity as any).z ?? (selfEntity as any).posZ ?? 0);
+
+  const picked = candidates.length
+    ? resolveTargetInRoom(candidates as any, roomId, token, {
+        selfId: String((selfEntity as any).id ?? ""),
+        viewerSessionId: selfSessionId,
+        radius: 30,
+        originX,
+        originZ,
+      })
+    : null;
+
+  if (picked) {
+    const id = String((picked as any).id ?? "").trim();
+    const s = (id && byEntityId.get(id)) || null;
+    const displayName = String(s?.character?.name ?? (picked as any).name ?? token).trim() || token;
+
+    const targetChar = s?.character as CharacterState | undefined;
+    if (!targetChar) return { err: `[world] Target '${displayName}' has no character state loaded.` };
+
+    return { sessionId: String(s.id ?? ""), displayName, char: targetChar, entity: picked };
+  }
+
+  // Legacy fallback: allow partial character-name matching (case-insensitive), with ambiguity reporting.
+  const needle = token.toLowerCase();
+
+  const nameMatches = roomRows
+    .filter((r) => r && r.s && String(r.s.id ?? "") !== selfSessionId)
+    .filter((r) => String(r.name ?? "").toLowerCase().includes(needle));
+
+  if (!nameMatches.length) return { err: `[world] No such target: '${targetTokenRaw}'.` };
+
+  if (nameMatches.length > 1) {
+    const names = nameMatches
+      .slice(0, 5)
+      .map((r) => r?.name)
+      .filter(Boolean)
+      .join(", ");
+    return {
+      err: `[world] Target token '${targetTokenRaw}' is ambiguous. Matches: ${names} (use 'nearby' handles like name.2)`,
+    };
+  }
+
+  const row = nameMatches[0];
+  const sessionId = String(row.s.id ?? "");
+  const displayName = String(row.name ?? targetTokenRaw).trim() || targetTokenRaw;
+  const entity = row.ent;
+
+  const targetChar = row.s?.character as CharacterState | undefined;
+  if (!targetChar) return { err: `[world] Target '${displayName}' has no character state loaded.` };
+
+  return { sessionId, displayName, char: targetChar, entity };
 }
+
 
 function spellStatusEffectOrErr(spell: SpellDefinition): { ok: true; se: any } | { ok: false; err: string } {
   const se = (spell as any).statusEffect;

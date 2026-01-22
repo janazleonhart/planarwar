@@ -11,7 +11,8 @@
     "scripts": {
         "dev:web-frontend": "npm run dev --workspace web-frontend",
         "dev:web-backend": "npm run dev --workspace planarwar-web-backend",
-        "dev:mmo": "npm run dev --workspace planarwar-mmo-backend"
+        "dev:mmo": "npm run dev --workspace planarwar-mmo-backend",
+        "check:no-mud-helpers": "node .github/scripts/noMudHelperFunctionsCheck.js"
     },
     "dependencies": {
         "cors": "^2.8.5",

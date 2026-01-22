@@ -8,7 +8,7 @@ import {
   updateQuestsFromProgress,
 } from "./MudProgression";
 import { TITLES } from "../characters/TitleTypes";
-import { grantTaskRewards } from "./MudHelperFunctions";
+import { grantTaskRewards } from "../progression/rewards/grantTaskRewards";
 
 export type ProgressionCategory = "kills" | "harvests";
 
