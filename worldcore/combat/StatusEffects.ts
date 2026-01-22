@@ -734,6 +734,19 @@ export function tickEntityStatusEffectsAndApplyDots(
 ): void {
   const state = ensureEntityStatusState(entity);
 
+  const isDeadEntity = (): boolean => {
+    const hp = (entity as any)?.hp;
+    const alive = (entity as any)?.alive;
+    return (typeof hp === "number" && hp <= 0) || alive === false;
+  };
+
+  // If the entity is already dead (corpse), its combat status should be empty.
+  // (Corpse state is handled by other systems; status effects should not persist.)
+  if (isDeadEntity()) {
+    state.active = {};
+    return;
+  }
+
   // Prune first so we don't tick dead effects.
   tickStatusEffectsInternal(state, now);
 
@@ -764,6 +777,11 @@ export function tickEntityStatusEffectsAndApplyDots(
       const expiresAt = inst.expiresAtMs ?? Number.MAX_SAFE_INTEGER;
 
       while (dot.nextTickAtMs <= now && dot.nextTickAtMs <= expiresAt) {
+        if (isDeadEntity()) {
+          state.active = {};
+          return;
+        }
+
         let dmg = perTickDamageBase;
 
         // Apply defender taken modifiers at tick time (debuffs amplify DOTs too).
@@ -791,9 +809,21 @@ export function tickEntityStatusEffectsAndApplyDots(
           // DOT application must never crash the tick loop.
         }
 
+        // If the tick killed the entity, stop immediately and clear effects.
+        if (isDeadEntity()) {
+          state.active = {};
+          return;
+        }
+
         dot.nextTickAtMs += tickIntervalMs;
       }
     }
+  }
+
+  // If the entity died during this tick (e.g., via DOT damage), clear any remaining effects.
+  if (isDeadEntity()) {
+    state.active = {};
+    return;
   }
 
   // Prune again (expiry moment inclusive, so this will clean up on the next tick).

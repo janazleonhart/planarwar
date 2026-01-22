@@ -154,6 +154,11 @@ export class TickEngine {
       const type = String((ent as any)?.type ?? (ent as any)?.kind ?? "");
       if (type !== "npc") continue;
 
+      // Corpses should not tick DOTs. (Death clears effects, and tick should be a no-op.)
+      const hp = (ent as any)?.hp;
+      const alive = (ent as any)?.alive;
+      if ((typeof hp === "number" && hp <= 0) || alive === false) continue;
+
       tickEntityStatusEffectsAndApplyDots(ent as any, now, (amount, meta) => {
         if (!Number.isFinite(amount) || amount <= 0) return;
 

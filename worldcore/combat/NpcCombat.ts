@@ -25,7 +25,7 @@ import {
   type WeaponSkillId,
   type SpellSchoolId,
 } from "./CombatEngine";
-import { computeEntityCombatStatusSnapshot } from "./StatusEffects";
+import { computeEntityCombatStatusSnapshot, clearAllStatusEffectsFromEntity } from "./StatusEffects";
 import type { AttackChannel } from "../actions/ActionTypes";
 import {
   gainPowerResource,
@@ -274,6 +274,13 @@ export async function performNpcAttack(
 
   // --- NPC death: XP + loot ---
   (npc as any).alive = false;
+
+  // Death clears combat status effects (DOTs/debuffs) so corpses don't keep ticking.
+  try {
+    clearAllStatusEffectsFromEntity(npc as any);
+  } catch {
+    // ignore
+  }
 
   // Notify room listeners immediately (corpse state / client visuals / post-kill actions).
   // Safe no-op if the client ignores entity_update.

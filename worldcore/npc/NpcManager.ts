@@ -35,6 +35,7 @@ import {
 
 import { recordNpcCrimeAgainst, isProtectedNpc } from "./NpcCrime";
 import { isServiceProtectedNpcProto } from "../combat/ServiceProtection";
+import { clearAllStatusEffectsFromEntity } from "../combat/StatusEffects";
 
 import {
   markInCombat,
@@ -215,6 +216,14 @@ export class NpcManager {
     const st = this.npcsByEntityId.get(entityId);
     if (!st) return;
 
+    // Defensive cleanup: despawn implies removal from the world; status effects must not linger.
+    try {
+      const e = this.entities.get(entityId) as any;
+      if (e) clearAllStatusEffectsFromEntity(e);
+    } catch {
+      // ignore
+    }
+
     this.npcsByEntityId.delete(entityId);
     this.npcThreat.delete(entityId);
 
@@ -259,11 +268,23 @@ export class NpcManager {
       return st.hp;
     }
 
+    const wasAlive = st.alive;
+
     const newHp = Math.max(0, st.hp - Math.max(0, amount));
     st.hp = newHp;
     st.alive = newHp > 0;
     e.hp = newHp;
     e.alive = newHp > 0;
+
+    // Death implies all combat status effects should be cleared (DOTs, debuffs, etc.)
+    // so corpses don't keep ticking or carry modifiers into any respawn path.
+    if (wasAlive && newHp <= 0) {
+      try {
+        clearAllStatusEffectsFromEntity(e);
+      } catch {
+        // ignore
+      }
+    }
 
     if (attacker?.character && proto) {
       if (isProtectedNpc(proto)) {
