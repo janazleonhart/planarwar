@@ -8,6 +8,7 @@ import { Logger } from "../utils/logger";
 import { loadSpellCatalogFromDb, type DbSpellRow } from "./SpellCatalog";
 import { getAutoGrantUnlocksFor, initSpellUnlocksFromDbOnce } from "./SpellUnlocks";
 import type { StatusEffectModifier } from "../combat/StatusEffects";
+import type { StatusStackingPolicy } from "../combat/StatusStackingPolicy";
 
 const log = Logger.scope("SPELLS");
 
@@ -39,6 +40,20 @@ export interface SpellStatusEffect {
   maxStacks?: number;
   /** Stacks applied per cast. Defaults to 1. */
   stacks?: number;
+  /**
+   * Stacking policy for this status effect.
+   *
+   * Default is legacy behavior (single instance per id, stacks add). To enable
+   * the "different versions stack if different applier" gameplay, use:
+   *   stackingPolicy: "versioned_by_applier"
+   */
+  stackingPolicy?: StatusStackingPolicy;
+
+  /**
+   * Optional stacking group id. If set, effects sharing the same group are
+   * stacked together. If omitted, the status effect id is used.
+   */
+  stackingGroupId?: string;
   /** Stat/combat modifiers applied while the effect is active. */
   modifiers: StatusEffectModifier;
   /** Optional tags for UI / filtering. */

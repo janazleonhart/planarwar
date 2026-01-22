@@ -14,12 +14,20 @@
 //  - DOTs are stored as status effects with an optional `dot` payload.
 //  - TickEngine (and tests) can call tickEntityStatusEffectsAndApplyDots(...) to apply periodic damage.
 //
+// Stacking (extended):
+//  - Default behavior is legacy: one instance per id, stacks add, expiry extends.
+//  - Optional `stackingPolicy` adds additional behaviors including:
+//      - "refresh"              (no stack increase, refresh/extend only)
+//      - "stack_add"            (explicit stacks + refresh)
+//      - "versioned_by_applier" (distinct versions stack iff from distinct appliers, capped)
+//
 // NOTE: sourceKind/sourceId are OPTIONAL so tests/tools can apply ad-hoc effects
 // without needing to invent provenance every time.
 
 import type { CharacterState, Attributes } from "../characters/CharacterTypes";
 import type { Entity } from "../shared/Entity";
 import type { DamageSchool } from "./CombatEngine";
+import { resolveStatusStackingPolicy, type StatusStackingPolicy } from "./StatusStackingPolicy";
 
 export type StatusEffectId = string;
 
@@ -29,6 +37,8 @@ export type StatusEffectSourceKind =
   | "item"
   | "ability"
   | "environment";
+
+export type StatusEffectApplierKind = "character" | "npc" | "system" | "unknown";
 
 export interface StatusEffectModifier {
   // Flat attribute bonuses, e.g. { str: +5 }
@@ -81,6 +91,19 @@ export interface StatusEffectInstance {
 
   // Optional DOT payload (NPCs today; can be used on players later if desired)
   dot?: DotPayloadState;
+
+  // ────────────────────────────────────────────────────────────────────────────
+  // Optional extended stacking metadata (safe to ignore for legacy effects)
+  // ────────────────────────────────────────────────────────────────────────────
+  stackingPolicy?: StatusStackingPolicy;
+  stackingGroupId?: string;
+
+  /** Who applied this specific instance (used by versioned_by_applier). */
+  appliedByKind?: StatusEffectApplierKind;
+  appliedById?: string;
+
+  /** Version key (defaults to sourceId). Only relevant for versioned_by_applier. */
+  versionKey?: string;
 }
 
 export interface NewStatusEffectInput {
@@ -95,7 +118,7 @@ export interface NewStatusEffectInput {
   maxStacks?: number;
 
   // How many stacks to apply with this application (defaults to 1).
-  // If effect already exists, this is how many stacks are added.
+  // If effect already exists, this is how many stacks are added (legacy).
   initialStacks?: number;
 
   /**
@@ -109,10 +132,42 @@ export interface NewStatusEffectInput {
 
   // Optional DOT payload (stored on the status instance).
   dot?: DotPayloadInput;
+
+  // ────────────────────────────────────────────────────────────────────────────
+  // Optional extended stacking controls
+  // ────────────────────────────────────────────────────────────────────────────
+
+  /**
+   * Stacking policy (rules of the universe).
+   *
+   * Default: "legacy_add" (one instance per id; stacks add; expiry extends).
+   */
+  stackingPolicy?: StatusStackingPolicy;
+
+  /**
+   * Optional grouping key used for storage/stacking. Defaults to `id`.
+   * Useful if multiple different effect ids should share a stacking bucket.
+   */
+  stackingGroupId?: string;
+
+  /**
+   * Identity of the applier (caster). Used for versioned_by_applier:
+   * each applier can contribute at most one active instance in the bucket.
+   */
+  appliedByKind?: StatusEffectApplierKind;
+  appliedById?: string;
+
+  /**
+   * Version key for versioned_by_applier. Defaults to sourceId.
+   * Typically the spell id (rank1/rank2/etc).
+   */
+  versionKey?: string;
 }
 
+type ActiveBucket = StatusEffectInstance | StatusEffectInstance[];
+
 interface InternalStatusState {
-  active: Record<string, StatusEffectInstance>;
+  active: Record<string, ActiveBucket>;
 }
 
 /**
@@ -122,9 +177,9 @@ function ensureStatusState(char: CharacterState): InternalStatusState {
   const prog: any = (char as any).progression || {};
 
   if (!prog.statusEffects || typeof prog.statusEffects !== "object") {
-    prog.statusEffects = { active: {} as Record<string, StatusEffectInstance> };
+    prog.statusEffects = { active: {} as Record<string, ActiveBucket> };
   } else if (!prog.statusEffects.active) {
-    prog.statusEffects.active = {} as Record<string, StatusEffectInstance>;
+    prog.statusEffects.active = {} as Record<string, ActiveBucket>;
   }
 
   (char as any).progression = prog;
@@ -138,12 +193,29 @@ function ensureEntityStatusState(entity: Entity): InternalStatusState {
   const e: any = entity as any;
 
   if (!e.combatStatusEffects || typeof e.combatStatusEffects !== "object") {
-    e.combatStatusEffects = { active: {} as Record<string, StatusEffectInstance> };
+    e.combatStatusEffects = { active: {} as Record<string, ActiveBucket> };
   } else if (!e.combatStatusEffects.active) {
-    e.combatStatusEffects.active = {} as Record<string, StatusEffectInstance>;
+    e.combatStatusEffects.active = {} as Record<string, ActiveBucket>;
   }
 
   return e.combatStatusEffects as InternalStatusState;
+}
+
+function normalizeBucket(bucket: ActiveBucket | undefined | null): StatusEffectInstance[] {
+  if (!bucket) return [];
+  if (Array.isArray(bucket)) return bucket.filter(Boolean);
+  return bucket ? [bucket] : [];
+}
+
+function writeBucket(state: InternalStatusState, key: string, items: StatusEffectInstance[]): void {
+  const list = items.filter(Boolean);
+  if (list.length <= 0) {
+    delete state.active[key];
+  } else if (list.length === 1) {
+    state.active[key] = list[0]!;
+  } else {
+    state.active[key] = list;
+  }
 }
 
 function resolveInitialStacks(input: NewStatusEffectInput): number {
@@ -171,6 +243,31 @@ function resolveExpiresAt(now: number, durationMs: number): number {
   return dur > 0 ? now + dur : Number.MAX_SAFE_INTEGER;
 }
 
+function resolveDot(
+  input: NewStatusEffectInput,
+  now: number,
+  existingDot?: DotPayloadState,
+): DotPayloadState | undefined {
+  if (!input.dot) return existingDot;
+
+  const tickIntervalMs = Math.max(1, Math.floor(Number(input.dot.tickIntervalMs ?? 0)));
+  const perTickDamage = Math.max(1, Math.floor(Number(input.dot.perTickDamage ?? 0)));
+  const damageSchool: DamageSchool =
+    (input.dot.damageSchool as DamageSchool) ?? (existingDot?.damageSchool as any) ?? "pure";
+
+  return {
+    tickIntervalMs,
+    perTickDamage,
+    damageSchool,
+    nextTickAtMs: now + tickIntervalMs,
+  };
+}
+
+function resolvePolicy(input: NewStatusEffectInput): StatusStackingPolicy {
+  // Default is the historical behavior.
+  return resolveStatusStackingPolicy(input.stackingPolicy, "legacy_add");
+}
+
 /**
  * Drop expired effects and clamp stack counts.
  */
@@ -189,27 +286,32 @@ export function tickEntityStatusEffects(
 }
 
 function tickStatusEffectsInternal(state: InternalStatusState, now: number): void {
-  for (const [id, inst] of Object.entries(state.active)) {
-    if (!inst) {
-      delete state.active[id];
-      continue;
+  for (const [key, bucket] of Object.entries(state.active)) {
+    const items = normalizeBucket(bucket);
+    const kept: StatusEffectInstance[] = [];
+
+    for (const inst of items) {
+      if (!inst) continue;
+
+      const maxStacks = inst.maxStacks > 0 ? inst.maxStacks : 1;
+
+      if (inst.stackCount <= 0) {
+        continue;
+      }
+
+      if (inst.stackCount > maxStacks) {
+        inst.stackCount = maxStacks;
+      }
+
+      // NOTE: strict '<' so an effect expiring at now is still present for this moment.
+      if (inst.expiresAtMs > 0 && inst.expiresAtMs < now) {
+        continue;
+      }
+
+      kept.push(inst);
     }
 
-    const maxStacks = inst.maxStacks > 0 ? inst.maxStacks : 1;
-
-    if (inst.stackCount <= 0) {
-      delete state.active[id];
-      continue;
-    }
-
-    if (inst.stackCount > maxStacks) {
-      inst.stackCount = maxStacks;
-    }
-
-    // NOTE: strict '<' so an effect expiring at now is still present for this moment.
-    if (inst.expiresAtMs > 0 && inst.expiresAtMs < now) {
-      delete state.active[id];
-    }
+    writeBucket(state, key, kept);
   }
 }
 
@@ -235,6 +337,9 @@ export function applyStatusEffectToEntity(
   return applyStatusEffectInternal(ensureEntityStatusState(entity), input, now);
 }
 
+/**
+ * Internal apply logic (supports legacy + policy-based stacking).
+ */
 function applyStatusEffectInternal(
   state: InternalStatusState,
   input: NewStatusEffectInput,
@@ -243,30 +348,115 @@ function applyStatusEffectInternal(
   const sourceKind: StatusEffectSourceKind = input.sourceKind ?? "environment";
   const sourceId = input.sourceId ?? "unknown";
 
+  const bucketKey = (typeof input.stackingGroupId === "string" && input.stackingGroupId.trim())
+    ? input.stackingGroupId.trim()
+    : input.id;
+
+  const policy = resolvePolicy(input);
+
   const expiresAtMs = resolveExpiresAt(now, input.durationMs);
-  const existing = state.active[input.id];
+  const existingBucket = state.active[bucketKey];
+  const existingList = normalizeBucket(existingBucket);
 
   const initialStacks = resolveInitialStacks(input);
-  const maxStacks = resolveMaxStacks(input, existing?.maxStacks ?? initialStacks);
 
-  const dot: DotPayloadState | undefined = (() => {
-    if (!input.dot) return existing?.dot;
-    const tickIntervalMs = Math.max(1, Math.floor(Number(input.dot.tickIntervalMs ?? 0)));
-    const perTickDamage = Math.max(1, Math.floor(Number(input.dot.perTickDamage ?? 0)));
-    const damageSchool: DamageSchool =
-      (input.dot.damageSchool as DamageSchool) ?? (existing?.dot?.damageSchool as any) ?? "pure";
+  // For non-versioned policies, maxStacks is per-effect as before.
+  // For versioned_by_applier, maxStacks acts as a CONTRIBUTOR/VERSION CAP (bucket size cap).
+  const resolvedMaxStacks = resolveMaxStacks(
+    input,
+    existingList[0]?.maxStacks ?? initialStacks,
+  );
 
-    return {
-      tickIntervalMs,
-      perTickDamage,
-      damageSchool,
-      nextTickAtMs: now + tickIntervalMs,
+  // ────────────────────────────────────────────────────────────────────────────
+  // versioned_by_applier: multiple instances per bucket (distinct versions),
+  // but only if applied by different appliers.
+  // ────────────────────────────────────────────────────────────────────────────
+  if (policy === "versioned_by_applier") {
+    const versionKey =
+      typeof input.versionKey === "string" && input.versionKey.trim()
+        ? input.versionKey.trim()
+        : sourceId;
+
+    const appliedById =
+      typeof input.appliedById === "string" && input.appliedById.trim()
+        ? input.appliedById.trim()
+        : "unknown";
+
+    const appliedByKind: StatusEffectApplierKind = input.appliedByKind ?? "unknown";
+
+    const idxByApplier = existingList.findIndex((e) => (e.appliedById ?? "unknown") === appliedById);
+    const idxByVersion = existingList.findIndex((e) => (e.versionKey ?? e.sourceId ?? "unknown") === versionKey);
+
+    const pickIdx = idxByApplier >= 0 ? idxByApplier : idxByVersion;
+
+    const existing =
+      pickIdx >= 0 ? existingList[pickIdx] : undefined;
+
+    const dot = resolveDot(input, now, existing?.dot);
+
+    const inst: StatusEffectInstance = {
+      id: input.id,
+      sourceKind,
+      sourceId,
+      name: input.name ?? existing?.name,
+      appliedAtMs: now,
+      // Keep the later expiry if one already existed in this slot.
+      expiresAtMs:
+        existing?.expiresAtMs != null && existing.expiresAtMs > 0
+          ? Math.max(existing.expiresAtMs, expiresAtMs)
+          : expiresAtMs,
+      // Under versioned_by_applier, stacks are intentionally NOT the main axis;
+      // the bucket size is the cap. Keep per-instance stacks minimal and deterministic.
+      stackCount: 1,
+      maxStacks: resolvedMaxStacks,
+      modifiers: input.modifiers ?? existing?.modifiers ?? {},
+      tags: input.tags ?? existing?.tags,
+      dot,
+
+      stackingPolicy: policy,
+      stackingGroupId: bucketKey,
+      appliedByKind,
+      appliedById,
+      versionKey,
     };
-  })();
+
+    // Update/replace an existing slot
+    if (pickIdx >= 0) {
+      existingList[pickIdx] = inst;
+      writeBucket(state, bucketKey, existingList);
+      return inst;
+    }
+
+    // Add a new contributor slot if below cap.
+    if (existingList.length < resolvedMaxStacks) {
+      existingList.push(inst);
+      writeBucket(state, bucketKey, existingList);
+      return inst;
+    }
+
+    // Cap reached: reject new contribution, but still allow refresh if we had a match
+    // (handled above). Return the "oldest" as a stable return value.
+    const fallback = existingList[0];
+    return fallback ?? inst;
+  }
+
+  // ────────────────────────────────────────────────────────────────────────────
+  // Non-versioned policies: single instance per bucketKey
+  // ────────────────────────────────────────────────────────────────────────────
+  const existing = existingList[0];
+  const dot = resolveDot(input, now, existing?.dot);
 
   if (existing) {
-    const addStacks = initialStacks;
-    const stackCount = Math.min(maxStacks, existing.stackCount + addStacks);
+    const maxStacks = resolvedMaxStacks;
+
+    let stackCount = existing.stackCount;
+    if (policy !== "refresh") {
+      // legacy_add / stack_add: add stacks
+      stackCount = Math.min(maxStacks, existing.stackCount + initialStacks);
+    } else {
+      // refresh: keep current stackCount, but clamp to maxStacks
+      stackCount = Math.min(maxStacks, existing.stackCount);
+    }
 
     const updated: StatusEffectInstance = {
       ...existing,
@@ -282,9 +472,12 @@ function applyStatusEffectInternal(
       expiresAtMs:
         existing.expiresAtMs > 0 ? Math.max(existing.expiresAtMs, expiresAtMs) : expiresAtMs,
       dot,
+
+      stackingPolicy: policy,
+      stackingGroupId: bucketKey,
     };
 
-    state.active[input.id] = updated;
+    writeBucket(state, bucketKey, [updated]);
     return updated;
   }
 
@@ -296,13 +489,16 @@ function applyStatusEffectInternal(
     appliedAtMs: now,
     expiresAtMs,
     stackCount: initialStacks,
-    maxStacks,
+    maxStacks: resolvedMaxStacks,
     modifiers: input.modifiers ?? {},
     tags: input.tags,
     dot,
+
+    stackingPolicy: policy,
+    stackingGroupId: bucketKey,
   };
 
-  state.active[input.id] = inst;
+  writeBucket(state, bucketKey, [inst]);
   return inst;
 }
 
@@ -358,9 +554,13 @@ export function getActiveStatusEffects(
   tickStatusEffects(char, now);
   const state = ensureStatusState(char);
 
-  return Object.values(state.active).filter(
-    (inst): inst is StatusEffectInstance => !!inst,
-  );
+  const out: StatusEffectInstance[] = [];
+  for (const bucket of Object.values(state.active)) {
+    for (const inst of normalizeBucket(bucket)) {
+      if (inst) out.push(inst);
+    }
+  }
+  return out;
 }
 
 export function getActiveStatusEffectsForEntity(
@@ -370,9 +570,13 @@ export function getActiveStatusEffectsForEntity(
   tickEntityStatusEffects(entity, now);
   const state = ensureEntityStatusState(entity);
 
-  return Object.values(state.active).filter(
-    (inst): inst is StatusEffectInstance => !!inst,
-  );
+  const out: StatusEffectInstance[] = [];
+  for (const bucket of Object.values(state.active)) {
+    for (const inst of normalizeBucket(bucket)) {
+      if (inst) out.push(inst);
+    }
+  }
+  return out;
 }
 
 function addSchoolMap(
@@ -410,57 +614,59 @@ function computeSnapshotFromState(
   let armorFlat = 0;
   let armorPct = 0;
 
-  for (const inst of Object.values(state.active)) {
-    if (!inst) continue;
+  for (const bucket of Object.values(state.active)) {
+    for (const inst of normalizeBucket(bucket)) {
+      if (!inst) continue;
 
-    const stacks = inst.stackCount > 0 ? inst.stackCount : 1;
-    const mods = inst.modifiers || {};
+      const stacks = inst.stackCount > 0 ? inst.stackCount : 1;
+      const mods = inst.modifiers || {};
 
-    if (mods.attributes) {
-      for (const [k, v] of Object.entries(mods.attributes)) {
-        const key = k as keyof Attributes;
-        const val = Number(v);
-        if (!Number.isFinite(val) || val === 0) continue;
-        const cur = (attributesFlat as any)[key] ?? 0;
-        (attributesFlat as any)[key] = cur + val * stacks;
+      if (mods.attributes) {
+        for (const [k, v] of Object.entries(mods.attributes)) {
+          const key = k as keyof Attributes;
+          const val = Number(v);
+          if (!Number.isFinite(val) || val === 0) continue;
+          const cur = (attributesFlat as any)[key] ?? 0;
+          (attributesFlat as any)[key] = cur + val * stacks;
+        }
       }
-    }
 
-    if (mods.attributesPct) {
-      for (const [k, v] of Object.entries(mods.attributesPct)) {
-        const key = k as keyof Attributes;
-        const val = Number(v);
-        if (!Number.isFinite(val) || val === 0) continue;
-        const cur = (attributesPct as any)[key] ?? 0;
-        (attributesPct as any)[key] = cur + val * stacks;
+      if (mods.attributesPct) {
+        for (const [k, v] of Object.entries(mods.attributesPct)) {
+          const key = k as keyof Attributes;
+          const val = Number(v);
+          if (!Number.isFinite(val) || val === 0) continue;
+          const cur = (attributesPct as any)[key] ?? 0;
+          (attributesPct as any)[key] = cur + val * stacks;
+        }
       }
-    }
 
-    if (typeof mods.damageDealtPct === "number" && Number.isFinite(mods.damageDealtPct)) {
-      damageDealtPct += mods.damageDealtPct * stacks;
-    }
+      if (typeof mods.damageDealtPct === "number" && Number.isFinite(mods.damageDealtPct)) {
+        damageDealtPct += mods.damageDealtPct * stacks;
+      }
 
-    if (typeof mods.damageTakenPct === "number" && Number.isFinite(mods.damageTakenPct)) {
-      damageTakenPct += mods.damageTakenPct * stacks;
-    }
+      if (typeof mods.damageTakenPct === "number" && Number.isFinite(mods.damageTakenPct)) {
+        damageTakenPct += mods.damageTakenPct * stacks;
+      }
 
-    addSchoolMap(damageDealtPctBySchool, mods.damageDealtPctBySchool, stacks);
-    addSchoolMap(damageTakenPctBySchool, mods.damageTakenPctBySchool, stacks);
+      addSchoolMap(damageDealtPctBySchool, mods.damageDealtPctBySchool, stacks);
+      addSchoolMap(damageTakenPctBySchool, mods.damageTakenPctBySchool, stacks);
 
-    if (typeof mods.armorFlat === "number" && Number.isFinite(mods.armorFlat)) {
-      armorFlat += mods.armorFlat * stacks;
-    }
+      if (typeof mods.armorFlat === "number" && Number.isFinite(mods.armorFlat)) {
+        armorFlat += mods.armorFlat * stacks;
+      }
 
-    if (typeof mods.armorPct === "number" && Number.isFinite(mods.armorPct)) {
-      armorPct += mods.armorPct * stacks;
-    }
+      if (typeof mods.armorPct === "number" && Number.isFinite(mods.armorPct)) {
+        armorPct += mods.armorPct * stacks;
+      }
 
-    if (mods.resistFlat) {
-      addSchoolMap(resistFlat, mods.resistFlat, stacks);
-    }
+      if (mods.resistFlat) {
+        addSchoolMap(resistFlat, mods.resistFlat, stacks);
+      }
 
-    if (mods.resistPct) {
-      addSchoolMap(resistPct, mods.resistPct, stacks);
+      if (mods.resistPct) {
+        addSchoolMap(resistPct, mods.resistPct, stacks);
+      }
     }
   }
 
@@ -501,6 +707,9 @@ export function computeEntityCombatStatusSnapshot(
   return computeSnapshotFromState(state, now);
 }
 
+// Back-compat aliases for newer call sites (if any)
+export const computeCombatStatusSnapshotForEntity = computeEntityCombatStatusSnapshot;
+
 export type DotTickEvent = {
   effectId: StatusEffectId;
   damage: number;
@@ -535,53 +744,55 @@ export function tickEntityStatusEffectsAndApplyDots(
     defenderStatus = null;
   }
 
-  for (const inst of Object.values(state.active)) {
-    if (!inst?.dot) continue;
+  for (const bucket of Object.values(state.active)) {
+    for (const inst of normalizeBucket(bucket)) {
+      if (!inst?.dot) continue;
 
-    const dot = inst.dot;
-    const tickIntervalMs = Math.max(1, Math.floor(Number(dot.tickIntervalMs ?? 0)));
-    const perTickDamageBase = Math.max(1, Math.floor(Number(dot.perTickDamage ?? 0)));
-    const school: DamageSchool = (dot.damageSchool as DamageSchool) ?? "pure";
+      const dot = inst.dot;
+      const tickIntervalMs = Math.max(1, Math.floor(Number(dot.tickIntervalMs ?? 0)));
+      const perTickDamageBase = Math.max(1, Math.floor(Number(dot.perTickDamage ?? 0)));
+      const school: DamageSchool = (dot.damageSchool as DamageSchool) ?? "pure";
 
-    if (!Number.isFinite(tickIntervalMs) || tickIntervalMs <= 0) continue;
-    if (!Number.isFinite(perTickDamageBase) || perTickDamageBase <= 0) continue;
+      if (!Number.isFinite(tickIntervalMs) || tickIntervalMs <= 0) continue;
+      if (!Number.isFinite(perTickDamageBase) || perTickDamageBase <= 0) continue;
 
-    if (!Number.isFinite(dot.nextTickAtMs) || dot.nextTickAtMs <= 0) {
-      dot.nextTickAtMs = (inst.appliedAtMs ?? now) + tickIntervalMs;
-    }
+      if (!Number.isFinite(dot.nextTickAtMs) || dot.nextTickAtMs <= 0) {
+        dot.nextTickAtMs = (inst.appliedAtMs ?? now) + tickIntervalMs;
+      }
 
-    // Inclusive end: allow a tick exactly at expiresAtMs.
-    const expiresAt = inst.expiresAtMs ?? Number.MAX_SAFE_INTEGER;
+      // Inclusive end: allow a tick exactly at expiresAtMs.
+      const expiresAt = inst.expiresAtMs ?? Number.MAX_SAFE_INTEGER;
 
-    while (dot.nextTickAtMs <= now && dot.nextTickAtMs <= expiresAt) {
-      let dmg = perTickDamageBase;
+      while (dot.nextTickAtMs <= now && dot.nextTickAtMs <= expiresAt) {
+        let dmg = perTickDamageBase;
 
-      // Apply defender taken modifiers at tick time (debuffs amplify DOTs too).
-      if (defenderStatus) {
-        const globalTaken =
-          typeof defenderStatus.damageTakenPct === "number" ? defenderStatus.damageTakenPct : 0;
-        const bySchoolTaken = (defenderStatus.damageTakenPctBySchool as any)?.[school];
-        const bySchoolN = typeof bySchoolTaken === "number" ? bySchoolTaken : 0;
+        // Apply defender taken modifiers at tick time (debuffs amplify DOTs too).
+        if (defenderStatus) {
+          const globalTaken =
+            typeof defenderStatus.damageTakenPct === "number" ? defenderStatus.damageTakenPct : 0;
+          const bySchoolTaken = (defenderStatus.damageTakenPctBySchool as any)?.[school];
+          const bySchoolN = typeof bySchoolTaken === "number" ? bySchoolTaken : 0;
 
-        const takenPct =
-          (Number.isFinite(globalTaken) ? globalTaken : 0) +
-          (Number.isFinite(bySchoolN) ? bySchoolN : 0);
+          const takenPct =
+            (Number.isFinite(globalTaken) ? globalTaken : 0) +
+            (Number.isFinite(bySchoolN) ? bySchoolN : 0);
 
-        if (takenPct) {
-          const after = dmg * (1 + takenPct);
-          dmg = Number.isFinite(after) && after > 0 ? Math.floor(after) : dmg;
+          if (takenPct) {
+            const after = dmg * (1 + takenPct);
+            dmg = Number.isFinite(after) && after > 0 ? Math.floor(after) : dmg;
+          }
         }
+
+        if (!Number.isFinite(dmg) || dmg < 1) dmg = 1;
+
+        try {
+          applyDamage(dmg, { effectId: inst.id, damage: dmg, school });
+        } catch {
+          // DOT application must never crash the tick loop.
+        }
+
+        dot.nextTickAtMs += tickIntervalMs;
       }
-
-      if (!Number.isFinite(dmg) || dmg < 1) dmg = 1;
-
-      try {
-        applyDamage(dmg, { effectId: inst.id, damage: dmg, school });
-      } catch {
-        // DOT application must never crash the tick loop.
-      }
-
-      dot.nextTickAtMs += tickIntervalMs;
     }
   }
 

@@ -6113,6 +6113,102 @@
         "Contract: equipped instrument bonus increases song healing deterministically (no RNG).",
         "Protects the instrument scaling seam so future refactors of MudSpells/SongScaling cannot silently drop gear bonuses."
       ]
+    },
+    "test.contractStatusEffects": {
+      "kind": "test",
+      "path": "worldcore/test/contract_statusEffects.test.ts",
+      "class": "(test)",
+      "lifecycle": "test",
+      "dependsOn": [],
+      "provides": [],
+      "owns": [],
+      "notes": [
+        "Contract: status effects apply/expire/stack invariants"
+      ]
+    },
+    "test.statusEffectsContract": {
+      "kind": "test",
+      "path": "worldcore/test/statusEffects.contract.test.ts",
+      "class": "(test)",
+      "lifecycle": "test",
+      "dependsOn": [],
+      "provides": [],
+      "owns": [],
+      "notes": [
+        "Contract: status effect snapshot math + modifiers"
+      ]
+    },
+    "test.contractSpellBuffSelfStatusEffect": {
+      "kind": "test",
+      "path": "worldcore/test/contract_spellBuffSelfStatusEffect.test.ts",
+      "class": "(test)",
+      "lifecycle": "test",
+      "dependsOn": [],
+      "provides": [],
+      "owns": [],
+      "notes": [
+        "Contract: self buff status effect applies correctly"
+      ]
+    },
+    "test.contractSpellBuffSingleAllyStatusEffect": {
+      "kind": "test",
+      "path": "worldcore/test/contract_spellBuffSingleAllyStatusEffect.test.ts",
+      "class": "(test)",
+      "lifecycle": "test",
+      "dependsOn": [],
+      "provides": [],
+      "owns": [],
+      "notes": [
+        "Contract: single ally buff status effect applies correctly"
+      ]
+    },
+    "test.combatEngineContract": {
+      "kind": "test",
+      "path": "worldcore/test/combatEngine.contract.test.ts",
+      "class": "(test)",
+      "lifecycle": "test",
+      "dependsOn": [],
+      "provides": [],
+      "owns": [],
+      "notes": [
+        "Contract: CombatEngine invariants"
+      ]
+    },
+    "test.contractCombatEngine": {
+      "kind": "test",
+      "path": "worldcore/test/contract_combatEngine.test.ts",
+      "class": "(test)",
+      "lifecycle": "test",
+      "dependsOn": [],
+      "provides": [],
+      "owns": [],
+      "notes": [
+        "Contract: CombatEngine behavior surface"
+      ]
+    },
+    "test.statusDamageDealt": {
+      "kind": "test",
+      "path": "worldcore/test/statusDamageDealt.test.ts",
+      "class": "(test)",
+      "lifecycle": "test",
+      "dependsOn": [],
+      "provides": [],
+      "owns": [],
+      "notes": [
+        "Status: outgoing damage modifiers"
+      ]
+    },
+    "test.statusDamageTaken": {
+      "kind": "test",
+      "path": "worldcore/test/statusDamageTaken.test.ts",
+      "class": "(test)",
+      "lifecycle": "test",
+      "dependsOn": [],
+      "provides": [],
+      "owns": [],
+      "notes": [
+        "Status: incoming damage modifiers"
+      ]
     }
   }
 }
