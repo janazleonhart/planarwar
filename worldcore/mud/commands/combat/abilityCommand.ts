@@ -4,17 +4,19 @@ import type { MudContext } from "../../MudContext";
 import type { CharacterState } from "../../../characters/CharacterTypes";
 import type { MudCommandInput } from "../types";
 import { handleAbilityCommand } from "../../MudAbilities";
+import { parseHandleToken } from "../../handles/NearbyHandles";
 
 /**
  * MUD wrapper for the core ability handler.
  *
  * Supports:
  *   ability <idOrName>
- *   ability <idOrName> <targetHandle>
- *   ability <multi word name> <targetHandle>
+ *   ability <idOrName> <target>
+ *   ability <multi word name> <target>
  *
- * If the last arg looks like an entity handle (e.g. "rat.1"),
- * it is treated as target and the rest is joined as the ability name.
+ * If the last arg looks like a target token (nearby handle like "rat.1"
+ * OR an entity-id-like handle that ends with ".<digits>", e.g. "npc.rat.1"),
+ * it is treated as the target and the rest is joined as the ability name.
  */
 export async function handleAbilityMudCommand(
   ctx: MudContext,
@@ -26,31 +28,32 @@ export async function handleAbilityMudCommand(
   }
 
   const args = input.args;
+
   let abilityName = "";
   let targetRaw: string | undefined;
 
   if (args.length === 1) {
-    // Simple case: ability <name>
     abilityName = args[0];
     targetRaw = undefined;
   } else {
-    const last = args[args.length - 1];
+    const last = String(args[args.length - 1] ?? "").trim();
 
-    // Heuristic: if the last token looks like an entity handle (has a dot),
-    // treat it as the target; otherwise everything is part of the ability name.
-    if (last.includes(".")) {
-      abilityName = args.slice(0, -1).join(" ");
+    const parsed = parseHandleToken(last);
+    const looksLikeNearbyHandle = !!(parsed && typeof parsed.idx === "number");
+
+    // Allow entity ids that end with ".<digits>" too (common "npc.rat.1" style).
+    const looksLikeHandleishId = /\.[0-9]+$/.test(last) && !/\s/.test(last);
+
+    if (looksLikeNearbyHandle || looksLikeHandleishId) {
+      abilityName = args.slice(0, -1).join(" ").trim();
       targetRaw = last;
     } else {
-      abilityName = args.join(" ");
+      abilityName = args.join(" ").trim();
       targetRaw = undefined;
     }
   }
 
-  return handleAbilityCommand(
-    ctx,
-    char,
-    abilityName,
-    targetRaw && targetRaw.trim() ? targetRaw : undefined,
-  );
+  if (!abilityName) return "Usage: ability <name|id> [target]";
+
+  return handleAbilityCommand(ctx, char, abilityName, targetRaw && targetRaw.trim() ? targetRaw : undefined);
 }

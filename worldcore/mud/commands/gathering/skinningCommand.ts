@@ -9,11 +9,11 @@ import { deliverItemToBagsOrMail } from "../../../loot/OverflowDelivery";
 import { getItemTemplate } from "../../../items/ItemCatalog";
 import { resolveItem } from "../../../items/resolveItem";
 
-import { makeShortHandleBase, parseHandleToken } from "../../handles/NearbyHandles";
-
 import { applyFallbackSkinLoot } from "../../actions/MudWorldActions";
 import { applyProgressionForEvent } from "../../MudProgressionHooks";
 import { applyProgressionEvent } from "../../../progression/ProgressionCore";
+
+import { makeShortHandleBaseFromEntity, parseHandleToken } from "../../handles/NearbyHandles";
 
 function norm(s: string): string {
   return (s ?? "").trim();
@@ -85,22 +85,7 @@ function sortByDistance(entities: Entity[], player: Entity | null): Entity[] {
   return [...entities].sort((l: any, r: any) => entityDist2(l, player) - entityDist2(r, player));
 }
 
-function baseHandleFromEntity(e: Entity): string {
-  const rawName = String((e as any).name ?? "").trim();
-  if (rawName) {
-    const fromName = makeShortHandleBase(rawName);
-    // NearbyHandles defaults to "entity" when it can't derive a token.
-    if (fromName && fromName !== "entity") return fromName;
-  }
 
-  const protoId = norm(String((e as any).protoId ?? ""));
-  if (protoId) {
-    const tail = protoId.split(/[._]/g).filter(Boolean).pop();
-    if (tail) return tail.toLowerCase();
-  }
-
-  return String((e as any).type ?? "").toLowerCase();
-}
 
 function parseNumericSelection(token: string): number | null {
   if (!/^\d+$/.test(token)) return null;
@@ -108,6 +93,7 @@ function parseNumericSelection(token: string): number | null {
   if (!Number.isFinite(idx) || idx < 0) return null;
   return idx;
 }
+
 
 function isSkinnableCorpse(e: Entity): boolean {
   return (e as any).type === "npc" && isDeadEntity(e);
@@ -132,13 +118,13 @@ function findTargetByToken(entities: Entity[], tokenRaw: string, player: Entity 
 
     // For skinning, ALWAYS prefer dead entities first (this also fixes the duplicate handle bug
     // where living rat.1 and corpse rat.1 can coexist).
-    const dead = ordered.filter((e) => isSkinnableCorpse(e) && baseHandleFromEntity(e) === base);
+    const dead = ordered.filter((e) => isSkinnableCorpse(e) && makeShortHandleBaseFromEntity(e) === base);
     if (dead.length) {
       if (h.idx) return dead[h.idx - 1] ?? dead[0] ?? null;
       return dead[0] ?? null;
     }
 
-    const any = ordered.filter((e) => baseHandleFromEntity(e) === base);
+    const any = ordered.filter((e) => makeShortHandleBaseFromEntity(e) === base);
     if (any.length) {
       if (h.idx) return any[h.idx - 1] ?? preferDead(any);
       return preferDead(any);

@@ -30,6 +30,50 @@ function toNumber(v: any): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
+
+// Gate optional world spawn hydration (used by `nearby` refresh, etc).
+// Default is enabled unless explicitly disabled.
+export function isWorldSpawnsEnabled(): boolean {
+  const raw = String(process.env.WORLD_SPAWNS_ENABLED ?? "").trim().toLowerCase();
+  if (!raw) return true;
+  if (raw === "1" || raw === "true" || raw === "yes" || raw === "on") return true;
+  if (raw === "0" || raw === "false" || raw === "no" || raw === "off") return false;
+  return true;
+}
+
+// Prefer live entity coords when available; fall back to character state.
+export function getPlayerXZ(ctx: any, char: any): { x: number; z: number } {
+  const sessionId = String(ctx?.session?.id ?? "");
+  const ent =
+    (sessionId && typeof ctx?.entities?.getEntityByOwner === "function"
+      ? ctx.entities.getEntityByOwner(sessionId)
+      : null) ?? null;
+
+  const x =
+    toNumber(ent?.x) ??
+    toNumber(ent?.pos?.x) ??
+    toNumber(ent?.position?.x) ??
+    toNumber(ent?.coords?.x) ??
+    toNumber(char?.x) ??
+    toNumber(char?.pos?.x) ??
+    toNumber(char?.position?.x) ??
+    toNumber(char?.coords?.x) ??
+    0;
+
+  const z =
+    toNumber(ent?.z) ??
+    toNumber(ent?.pos?.z) ??
+    toNumber(ent?.position?.z) ??
+    toNumber(ent?.coords?.z) ??
+    toNumber(char?.z) ??
+    toNumber(char?.pos?.z) ??
+    toNumber(char?.position?.z) ??
+    toNumber(char?.coords?.z) ??
+    0;
+
+  return { x, z };
+}
+
 export function getEntityXZ(e: any): { x: number; z: number } {
   const x =
     toNumber(e?.x) ??
@@ -68,6 +112,25 @@ export function makeShortHandleBase(name: string): string {
 
   return words[words.length - 1] ?? "entity";
 }
+
+export function makeShortHandleBaseFromEntity(e: any): string {
+  const rawName = String(e?.name ?? "").trim();
+  if (rawName) {
+    const fromName = makeShortHandleBase(rawName);
+    // makeShortHandleBase defaults to "entity" when it can't derive a token.
+    if (fromName && fromName !== "entity") return fromName;
+  }
+
+  const protoId = String(e?.protoId ?? "").trim().toLowerCase();
+  if (protoId) {
+    const tail = protoId.split(/[._]/g).filter(Boolean).pop();
+    if (tail) return tail.toLowerCase();
+  }
+
+  const t = String(e?.type ?? "").trim().toLowerCase();
+  return t || "entity";
+}
+
 
 // Accept "rat", "rat.2", "guard_thing.10"
 export function parseHandleToken(token: string): { base: string; idx?: number } | null {
@@ -124,6 +187,15 @@ function classifyNearbyEntity(
 
   return { kindLabel, baseName, deadNpc };
 }
+
+export function classifyNearbyEntityForViewer(
+  e: any,
+  viewerSessionId: string
+): { kindLabel: string; baseName: string; deadNpc: boolean } | null {
+  return classifyNearbyEntity(e, viewerSessionId);
+}
+
+
 
 
 type BuildSnapshotOpts = {

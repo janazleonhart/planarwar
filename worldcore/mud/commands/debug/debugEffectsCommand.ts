@@ -11,10 +11,11 @@
 //
 // Notes:
 // - Tries EntityManager handle resolvers first (if present).
-// - Falls back to reconstructing the default `nearby` handle numbering (sort=dist, range=30).
+// - Falls back to NearbyHandles resolveNearbyHandleInRoom (nearby-style handle numbering, range=30).
 // - Also shows CharacterState status effects when target is a player (ownerSessionId -> session.character).
 
 import * as StatusEffects from "../../../combat/StatusEffects";
+import { getEntityXZ, resolveNearbyHandleInRoom } from "../../handles/NearbyHandles";
 
 type MudInput = {
   cmd: string;
@@ -158,73 +159,37 @@ function resolveByNearbyReconstruction(
   roomId: string,
   raw: string,
 ): any | null {
-  const parsed = parseNearbyHandle(raw);
-  if (!parsed) return null;
+  // System E: use the shared NearbyHandles resolver instead of re-implementing "nearby" sorting/numbering here.
+  const handleRaw = String(raw ?? "").trim();
+  if (!handleRaw) return null;
 
-  const originX = toNumber(char?.posX) ?? toNumber(char?.x) ?? toNumber(getSelfEntity(ctx)?.x) ?? 0;
-  const originZ = toNumber(char?.posZ) ?? toNumber(char?.z) ?? toNumber(getSelfEntity(ctx)?.z) ?? 0;
+  const entities = getRoomEntities(ctx, roomId);
+  if (!entities.length) return null;
 
-  const all = getRoomEntities(ctx, roomId);
-
-  // Exclude self by entity id (NOT by ownerSessionId), because personal nodes also have ownerSessionId.
   const self = getSelfEntity(ctx);
-  const selfId = self?.id;
+  const selfId = self?.id ? String(self.id) : null;
 
-  const entries: { e: any; dist: number; kindLabel: string; baseName: string; deadNpc: boolean }[] = [];
+  // Prefer character coords if present (CharacterState uses posX/posZ); otherwise fall back to the self entity.
+  const sxz = getEntityXZ(self ?? {});
+  const originX = toNumber((char as any)?.posX) ?? toNumber((char as any)?.x) ?? sxz.x;
+  const originZ = toNumber((char as any)?.posZ) ?? toNumber((char as any)?.z) ?? sxz.z;
 
-  for (const e of all) {
-    if (!e || !e.id) continue;
-    if (selfId && e.id === selfId) continue;
+  const viewerSessionId = String(ctx?.session?.id ?? "");
 
-    const ex = toNumber(e.x ?? e?.pos?.x) ?? 0;
-    const ez = toNumber(e.z ?? e?.pos?.z) ?? 0;
-
-    const dist = distanceXZ(ex, ez, originX, originZ);
-    if (dist > DEFAULT_NEARBY_RADIUS) continue;
-
-    const deadNpc = isDeadNpcLike(e);
-
-    // Preserve nearby visibility rules for nodes:
-    // hide other players' personal nodes entirely.
-    const hasSpawnPoint = typeof e?.spawnPointId === "number";
-    const isRealNode =
-      (e?.type === "node" || e?.type === "object") &&
-      hasSpawnPoint &&
-      (!e?.ownerSessionId || e?.ownerSessionId === (ctx?.session as any)?.id);
-    if ((e?.type === "node" || e?.type === "object") && !isRealNode) continue;
-
-    const kindLabel = kindLabelForEntity(ctx, e);
-    const baseName = String(e.name ?? e.id);
-
-    entries.push({ e, dist, kindLabel, baseName, deadNpc });
-  }
-
-  // Match nearby default sort: dist, then alive-before-corpse, then name, then id.
-  const sorted = entries.slice().sort((a, b) => {
-    if (a.dist !== b.dist) return a.dist - b.dist;
-    if (a.deadNpc !== b.deadNpc) return a.deadNpc ? 1 : -1;
-
-    const an = a.baseName.toLowerCase();
-    const bn = b.baseName.toLowerCase();
-    if (an !== bn) return an.localeCompare(bn);
-    return String(a.e?.id ?? "").localeCompare(String(b.e?.id ?? ""));
+  const hit = resolveNearbyHandleInRoom({
+    entities,
+    viewerSessionId,
+    originX: originX ?? 0,
+    originZ: originZ ?? 0,
+    radius: DEFAULT_NEARBY_RADIUS,
+    excludeEntityId: selfId,
+    limit: 200,
+    handleRaw,
   });
 
-  // Reconstruct the short-handle numbering with the same keying scheme as `nearby`.
-  const shortCounts = new Map<string, number>();
-
-  for (const it of sorted) {
-    const shortBase = makeShortHandleBase(it.baseName);
-    const key = `${it.kindLabel}:${shortBase}`;
-    const n = (shortCounts.get(key) ?? 0) + 1;
-    shortCounts.set(key, n);
-
-    const handle = `${shortBase}.${n}`;
-    if (handle === norm(raw)) return it.e;
-  }
-
-  return null;
+  return hit?.entity ?? null;
 }
+
 
 function resolveTargetEntity(ctx: any, char: any, input: MudInput): ResolveResult {
   const roomId = ctx?.session?.roomId;

@@ -1947,7 +1947,8 @@
       "function": "handleAbilityMudCommand",
       "dependsOn": [
         "mud.context",
-        "mud.abilities"
+        "mud.abilities",
+        "mud.handles.nearbyHandles"
       ],
       "invokedBy": [
         "mud.handler"
@@ -2094,7 +2095,8 @@
       ],
       "dependsOn": [
         "mud.context",
-        "combat.statusEffects"
+        "combat.statusEffects",
+        "mud.handles.nearbyHandles"
       ],
       "notes": [
         "Debug QoL: inspect active effects + (if available) computed combat snapshot for a target (entity id or nearby handle)."
@@ -2253,7 +2255,8 @@
         "mail.service",
         "economy.gold",
         "loot.OverflowDelivery",
-        "mud.commands.world.serviceGates"
+        "mud.commands.world.serviceGates",
+        "mud.handles.nearbyHandles"
       ],
       "invokedBy": [
         "mud.handler"
@@ -2388,7 +2391,8 @@
         "npc.types",
         "items.catalog",
         "items.inventory",
-        "loot.OverflowDelivery"
+        "loot.OverflowDelivery",
+        "mud.handles.nearbyHandles"
       ],
       "provides": [
         "skin <corpse>: validates corpse, resolves skin loot (DB-first, fallback), grants items, marks corpse skinned",
@@ -2997,7 +3001,8 @@
       "dependsOn": [
         "mud.context",
         "core.entities",
-        "npc.spawns"
+        "npc.spawns",
+        "mud.handles.nearbyHandles"
       ],
       "invokedBy": [
         "mud.handler",
@@ -3008,7 +3013,7 @@
         "Refreshes personal nodes, then lists nearby entities within radius with short handles like rat.1.",
         "filter/group/sort flags",
         "--limit / --max",
-        "safe caps + “UI-friendly output shaping"
+        "safe caps + \u201cUI-friendly output shaping"
       ]
     },
     "mud.commands.world.save": {
@@ -3061,7 +3066,8 @@
         "npc.state",
         "target.finders",
         "progression.core",
-        "mud.progression"
+        "mud.progression",
+        "mud.handles.nearbyHandles"
       ],
       "invokedBy": [
         "mud.handler",
@@ -3153,19 +3159,24 @@
       "kind": "utility",
       "path": "worldcore/mud/handles/NearbyHandles.ts",
       "functions": [
-        "getEntityXZ(entity)",
-        "distanceXZ(a,b)",
-        "isDeadNpcLike(entity)",
-        "makeShortHandleBase(name)",
-        "parseHandleToken(token)",
-        "buildNearbyTargetSnapshot(roomEntities, opts?)",
-        "resolveNearbyHandleInRoom(ctx, roomEntities, targetToken, opts?)"
+        "distanceXZ",
+        "getEntityXZ",
+        "isDeadNpcLike",
+        "makeShortHandleBase",
+        "makeShortHandleBaseFromEntity",
+        "parseHandleToken",
+        "classifyNearbyEntityForViewer",
+        "buildNearbyTargetSnapshot",
+        "resolveNearbyHandleInRoom",
+        "isWorldSpawnsEnabled",
+        "getPlayerXZ"
       ],
       "dependsOn": [],
       "notes": [
-        "Shared nearby-handle parsing + resolution utilities (e.g., guard.2, alchemist.1).",
-        "Produces a stable, UI-friendly snapshot ordered by distance and with alive entities preferred over corpses.",
-        "Hides personal nodes owned by other sessions by default (prevents cross-player leakage)."
+        "Shared nearby-handle + snapshot utilities for MUD commands (e.g. rat.1, alchemist.1).",
+        "Centralizes handle parsing, short-handle base derivation, dead/alive classification, and distance sorting.",
+        "Provides resolveNearbyHandleInRoom(...) for commands that accept nearby handles; uses last-write-wins on same handle and stable indexing by sorted snapshot.",
+        "Exports getPlayerXZ(...) and isWorldSpawnsEnabled() helpers used by nearby/vendor workflows."
       ]
     },
     "mud.help": {
@@ -5210,6 +5221,23 @@
         "Ensures debug_effects resolves nearby handles and can emit valid JSON."
       ]
     },
+    "test.contract_statusEffects_clearOnDeath": {
+      "kind": "test",
+      "service": "test.contract",
+      "path": "worldcore/test/contract_statusEffects_clearOnDeath.test.ts",
+      "class": null,
+      "lifecycle": "test",
+      "ctorArgs": [],
+      "dependsOn": [
+        "combat.statusEffects"
+      ],
+      "provides": [],
+      "owns": [],
+      "notes": [
+        "Contract: death clears combat status effects (DOTs, debuffs, etc.).",
+        "Guards that corpses do not keep ticking DOTs, and ticking stops immediately when lethal DOT damage is applied."
+      ]
+    },
     "test.utils": {
       "kind": "test_utility",
       "path": "worldcore/test/testUtils.ts",
@@ -6349,23 +6377,6 @@
       "notes": [
         "Stage 2.3.6 – resource node placement (ore/herb/wood/fish/rare) plus per-kind masks.",
         "Respects biome, elevation, climate, hydrology, and avoids city centers while tagging 'near settlement' nodes."
-      ]
-    },
-    "test.contract_statusEffects_clearOnDeath": {
-      "kind": "test",
-      "service": "test.contract",
-      "path": "worldcore/test/contract_statusEffects_clearOnDeath.test.ts",
-      "class": null,
-      "lifecycle": "test",
-      "ctorArgs": [],
-      "dependsOn": [
-        "combat.statusEffects"
-      ],
-      "provides": [],
-      "owns": [],
-      "notes": [
-        "Contract: death clears combat status effects (DOTs, debuffs, etc.).",
-        "Guards that corpses do not keep ticking DOTs, and ticking stops immediately when lethal DOT damage is applied."
       ]
     }
   }

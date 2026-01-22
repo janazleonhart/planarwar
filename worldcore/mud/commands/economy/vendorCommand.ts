@@ -31,7 +31,13 @@ import {
 } from "../../../vendors/VendorTransactions";
 
 import { requireTownService } from "../world/serviceGates";
-import { resolveNearbyHandleInRoom as resolveNearbyHandleInRoomShared } from "../../handles/NearbyHandles";
+
+import {
+  distanceXZ,
+  getPlayerXZ,
+  resolveNearbyHandleInRoom as resolveNearbyHandleInRoomShared,
+} from "../../handles/NearbyHandles";
+import type { HandleResolved } from "../../handles/NearbyHandles";
 
 function norm(v: unknown): string {
   return String(v ?? "").trim().toLowerCase();
@@ -78,33 +84,8 @@ function getRoomId(ctx: MudContext, char: CharacterState): string | null {
   return null;
 }
 
-function getPlayerXZ(ctx: MudContext, char: CharacterState): { x: number; z: number } {
-  // Prefer the live entity (authoritative for movement).
-  const ent = (ctx.entities as any)?.getEntityByOwner?.((ctx.session as any)?.id) as any;
-
-  const x =
-    (typeof ent?.x === "number" ? ent.x : undefined) ??
-    (typeof (char as any)?.pos?.x === "number" ? (char as any).pos.x : undefined) ??
-    (typeof (char as any)?.posX === "number" ? (char as any).posX : undefined) ??
-    0;
-
-  const z =
-    (typeof ent?.z === "number" ? ent.z : undefined) ??
-    (typeof (char as any)?.pos?.z === "number" ? (char as any).pos.z : undefined) ??
-    (typeof (char as any)?.posZ === "number" ? (char as any).posZ : undefined) ??
-    0;
-
-  return { x, z };
-}
-
-function distanceXZ(ax: number, az: number, bx: number, bz: number): number {
-  const dx = ax - bx;
-  const dz = az - bz;
-  return Math.sqrt(dx * dx + dz * dz);
-}
-
 function getEntitiesInRoom(ctx: MudContext, roomId: string): any[] {
-  const ents = (ctx.entities as any)?.getEntitiesInRoom?.(roomId);
+  const ents = (ctx as any)?.entities?.getEntitiesInRoom?.(roomId);
   return Array.isArray(ents) ? ents : [];
 }
 
@@ -188,40 +169,33 @@ async function maybeLoadVendorIdSet(ctx: MudContext): Promise<Set<string> | null
   }
 }
 
-type HandleResolved = {
-  entity: any;
-  dist: number;
-  handle: string;
-};
 
 function resolveNearbyHandleInRoom(
   ctx: MudContext,
   char: CharacterState,
   roomId: string,
-  handleRaw: string
+  handle: string
 ): HandleResolved | null {
-  const handle = norm(handleRaw);
-  if (!handle || !looksLikeEntityHandle(handle)) return null;
+  const entities = getEntitiesInRoom(ctx, roomId);
+  const viewerSessionId = String((ctx.session as any)?.id ?? "");
 
-  const sessionId = String((ctx.session as any)?.id ?? "");
-  const selfEnt = (ctx.entities as any)?.getEntityByOwner?.(sessionId) as any;
+  // Exclude self by entity id (NOT by ownerSessionId),
+  // because personal nodes also have ownerSessionId.
+  const self = (ctx as any)?.entities?.getEntityByOwner?.(viewerSessionId);
+  const selfId = self?.id;
 
-  const radius = getNearbyTargetRadius();
-  const origin = getPlayerXZ(ctx, char);
-  const all = getEntitiesInRoom(ctx, roomId);
+  const { x: originX, z: originZ } = getPlayerXZ(ctx, char);
 
-  const hit = resolveNearbyHandleInRoomShared({
-    entities: all,
-    viewerSessionId: sessionId,
-    originX: origin.x,
-    originZ: origin.z,
-    radius,
-    excludeEntityId: selfEnt?.id ? String(selfEnt.id) : null,
+  return resolveNearbyHandleInRoomShared({
+    entities,
+    viewerSessionId,
+    originX,
+    originZ,
+    radius: getNearbyTargetRadius(),
+    excludeEntityId: selfId,
+    limit: 200,
     handleRaw: handle,
   });
-
-  if (!hit) return null;
-  return { entity: hit.entity, dist: hit.dist, handle: hit.handle };
 }
 
 type VendorTarget =

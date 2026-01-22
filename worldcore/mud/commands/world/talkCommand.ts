@@ -5,83 +5,74 @@ import type { CharacterState } from "../../../characters/CharacterTypes";
 import { getNpcPrototype } from "../../../npc/NpcTypes";
 import { applyProgressionEvent } from "../../../progression/ProgressionCore";
 import { applyProgressionForEvent } from "../../MudProgressionHooks";
+import {
+  buildNearbyTargetSnapshot,
+  distanceXZ,
+  getEntityXZ,
+  resolveNearbyHandleInRoom,
+} from "../../handles/NearbyHandles";
 
 const MAX_TALK_RADIUS = 30; // keep consistent with nearbyCommand for v1
+const MAX_TALK_LIMIT = 200;
 
-function normalizeHandleBase(name: string): string {
-  const words = name
-    .toLowerCase()
-    .replace(/[^a-z0-9 ]/g, "")
-    .split(/\s+/)
-    .filter(Boolean);
-  return words[words.length - 1] ?? "entity";
+function getEntitiesInRoom(ctx: MudContext, roomId: string): any[] {
+  const em: any = ctx.entities as any;
+  const list = em?.getEntitiesInRoom?.(roomId);
+  return Array.isArray(list) ? list : [];
 }
 
-function buildTalkTargets(ctx: MudContext, char: CharacterState, roomId: string) {
-  const entities = (ctx.entities as any)?.getEntitiesInRoom?.(roomId) ?? [];
-  const self = (ctx.entities as any)?.getEntityByOwner?.(ctx.session.id) as any;
-  const selfId = self?.id;
+function getSelfEntity(ctx: MudContext): any | null {
+  const em: any = ctx.entities as any;
+  return (em?.getEntityByOwner?.(ctx.session.id) as any) ?? null;
+}
 
-  const originX =
-    (typeof (char as any)?.posX === "number" ? (char as any).posX : undefined) ??
-    (typeof self?.x === "number" ? self.x : undefined) ??
-    0;
-  const originZ =
-    (typeof (char as any)?.posZ === "number" ? (char as any).posZ : undefined) ??
-    (typeof self?.z === "number" ? self.z : undefined) ??
-    0;
+function getRoomId(ctx: MudContext, selfEntity: any, char: CharacterState): string {
+  return (
+    (ctx.session as any)?.roomId ??
+    selfEntity?.roomId ??
+    (char as any)?.roomId ??
+    (char as any)?.shardId
+  );
+}
 
-  const others = (entities as any[]).filter((e) => e && e.id && e.id !== selfId);
+function getOriginXZ(char: CharacterState, selfEntity: any): { x: number; z: number } {
+  const cx = (char as any)?.posX;
+  const cz = (char as any)?.posZ;
+  if (typeof cx === "number" && typeof cz === "number") return { x: cx, z: cz };
+  return getEntityXZ(selfEntity);
+}
 
-  // Same distance sorting as nearby (distance, then name, then id).
-  const withDist = others
-    .map((e) => {
-      const dx = (e.x ?? 0) - originX;
-      const dz = (e.z ?? 0) - originZ;
-      const dist = Math.sqrt(dx * dx + dz * dz);
-      return { e, dist };
-    })
-    .filter(({ dist }) => dist <= MAX_TALK_RADIUS)
-    .sort((a, b) => {
-      if (a.dist !== b.dist) return a.dist - b.dist;
-      const an = String(a.e?.name ?? "").toLowerCase();
-      const bn = String(b.e?.name ?? "").toLowerCase();
-      if (an !== bn) return an.localeCompare(bn);
-      return String(a.e?.id ?? "").localeCompare(String(b.e?.id ?? ""));
-    });
+function isPlayerLikeEntity(e: any): boolean {
+  const hasSpawnPoint = typeof e?.spawnPointId === "number";
+  return !!e?.ownerSessionId && !hasSpawnPoint;
+}
 
-  // Recreate the same handle numbering strategy as nearbyCommand
-  const shortCounts = new Map<string, number>();
+function resolveByHandleDuck(ctx: MudContext, roomId: string, handle: string): any | null {
+  const em: any = ctx.entities as any;
+  if (!em) return null;
 
-  const targets = withDist.map(({ e, dist }) => {
-    const hasSpawnPoint = typeof e?.spawnPointId === "number";
-    const isPlayerLike = !!e?.ownerSessionId && !hasSpawnPoint;
+  try {
+    if (typeof em.resolveInRoomByHandle === "function") {
+      const hit = em.resolveInRoomByHandle(roomId, handle);
+      if (hit) return hit;
+    }
+  } catch {}
 
-    let kind: string;
-    if (isPlayerLike) kind = "player";
-    else if (e.type === "npc" || e.type === "mob") kind = "npc";
-    else kind = e.type ?? "entity";
+  try {
+    if (typeof em.resolveHandleInRoom === "function") {
+      const hit = em.resolveHandleInRoom(roomId, handle);
+      if (hit) return hit;
+    }
+  } catch {}
 
-    const name = String(e.name ?? e.id);
-    const base = normalizeHandleBase(name);
-    const shortKey = `${kind}:${base}`;
-    const n = (shortCounts.get(shortKey) ?? 0) + 1;
-    shortCounts.set(shortKey, n);
+  try {
+    if (typeof em.resolveHandle === "function") {
+      const hit = em.resolveHandle(handle);
+      if (hit) return hit;
+    }
+  } catch {}
 
-    const hint = `${base}.${n}`;
-    return { e, dist, kind, name, hint };
-  });
-
-  const byIndex = targets; // 1-based externally
-  const byHint = new Map<string, any[]>();
-  for (const t of targets) {
-    const key = t.hint.toLowerCase();
-    const arr = byHint.get(key) ?? [];
-    arr.push(t);
-    byHint.set(key, arr);
-  }
-
-  return { self, byIndex, byHint };
+  return null;
 }
 
 function renderTownMenu(ctx: MudContext): string {
@@ -103,58 +94,94 @@ export async function handleTalkCommand(
   char: CharacterState,
   input: { cmd: string; args: string[]; parts: string[]; world?: any }
 ): Promise<any> {
-  const targetNameRaw = input.args.join(" ").trim();
-  if (!targetNameRaw) return "Usage: talk <target>";
+  const targetRaw = input.args.join(" ").trim();
+  if (!targetRaw) return "Usage: talk <target>";
 
-  const selfEntity = (ctx.entities as any)?.getEntityByOwner?.(ctx.session.id) as any;
+  const selfEntity = getSelfEntity(ctx);
   if (!selfEntity) return "You don't have a world entity yet.";
 
-  const roomId =
-    (ctx.session as any)?.roomId ??
-    selfEntity.roomId ??
-    (char as any).shardId;
+  const roomId = getRoomId(ctx, selfEntity, char);
+  const entities = getEntitiesInRoom(ctx, roomId);
 
-  // Build a target list consistent with nearby
-  const { byIndex, byHint } = buildTalkTargets(ctx, char, roomId);
+  const { x: originX, z: originZ } = getOriginXZ(char, selfEntity);
 
-  if (byIndex.length === 0) {
-    return `There is no '${targetNameRaw}' here to talk to.`;
+  // Build targets consistent with nearby ordering/handles.
+  const snapshot = buildNearbyTargetSnapshot({
+    entities,
+    viewerSessionId: String(ctx.session.id),
+    originX,
+    originZ,
+    radius: MAX_TALK_RADIUS,
+    excludeEntityId: String(selfEntity.id),
+    limit: MAX_TALK_LIMIT,
+  });
+
+  if (snapshot.length === 0) {
+    return `There is no '${targetRaw}' here to talk to.`;
   }
 
   let target: any | null = null;
 
-  // Case 1: "2" => 2nd item in the nearby-ordered list (within talk radius)
-  if (/^\d+$/.test(targetNameRaw)) {
-    const idx = Math.max(1, parseInt(targetNameRaw, 10)) - 1;
-    target = byIndex[idx]?.e ?? null;
+  // Case 1: "2" => 2nd item in nearby-ordered snapshot (within talk radius)
+  if (/^\d+$/.test(targetRaw)) {
+    const idx = Math.max(1, parseInt(targetRaw, 10)) - 1;
+    target = snapshot[idx]?.e ?? null;
   } else {
-    const key = targetNameRaw.toLowerCase().trim();
+    const token = targetRaw.trim();
 
-    // Case 2: exact handle match (rat.1 / towntest00.1)
-    const hinted = byHint.get(key);
-    if (hinted && hinted.length > 0) {
-      target = hinted[0].e;
+    // Case 2: nearby handle match ("rat.1", "guard.2", etc.)
+    const viaNearby = resolveNearbyHandleInRoom({
+      entities,
+      viewerSessionId: String(ctx.session.id),
+      originX,
+      originZ,
+      radius: MAX_TALK_RADIUS,
+      excludeEntityId: String(selfEntity.id),
+      limit: MAX_TALK_LIMIT,
+      handleRaw: token,
+    });
+    if (viaNearby) {
+      target = viaNearby.entity;
     } else {
-      // Case 3: fallback name substring match
-      const want = key.replace(/[^a-z0-9 ]/g, "").trim();
-      target =
-        byIndex.find((t) => String(t.name).toLowerCase().includes(want))?.e ?? null;
+      // Case 3: exact entity id match (if you happen to know it)
+      target = entities.find((e: any) => String(e?.id ?? "") === token) ?? null;
+
+      // Case 4: try EntityManager handle resolution (still enforce talk radius)
+      if (!target && token.includes(".")) {
+        const maybe = resolveByHandleDuck(ctx, roomId, token);
+        if (maybe) {
+          const { x: tx, z: tz } = getEntityXZ(maybe);
+          const dist = distanceXZ(tx, tz, originX, originZ);
+          if (dist <= MAX_TALK_RADIUS) target = maybe;
+        }
+      }
+
+      // Case 5: fallback name substring match (sanitized)
+      if (!target) {
+        const want = token.toLowerCase().replace(/[^a-z0-9 ]/g, "").trim();
+        if (want) {
+          target =
+            snapshot.find((t) => String(t.baseName ?? "").toLowerCase().includes(want))?.e ??
+            snapshot.find((t) => String(t.e?.name ?? "").toLowerCase().includes(want))?.e ??
+            null;
+        }
+      }
     }
   }
 
   if (!target) {
-    return `There is no '${targetNameRaw}' here to talk to.`;
+    return `There is no '${targetRaw}' here to talk to.`;
   }
 
   // POI talk (town, checkpoint, etc.)
   const tType = String(target?.type ?? "");
+
+  if (isPlayerLikeEntity(target)) {
+    return "That is another player. Use 'tell <name> <message>' to talk to them.";
+  }
+
   if (tType && tType !== "npc" && tType !== "mob") {
-    if (tType === "town") {
-      return renderTownMenu(ctx);
-    }
-    if (tType === "player") {
-      return "That is another player. Use 'tell <name> <message>' to talk to them.";
-    }
+    if (tType === "town") return renderTownMenu(ctx);
     return "You can't talk to that. (Try 'interact' or 'use' if it’s an object.)";
   }
 

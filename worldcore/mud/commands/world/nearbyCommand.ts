@@ -33,7 +33,15 @@
 //   nearby --type npc,corpse --sort type
 //   nearby --type node --range 12 --sort name --limit 50
 //   nearby --group --sort dist --limit 60
-import { isDeadNpcLike, makeShortHandleBase } from "../../handles/NearbyHandles";
+
+import {
+  classifyNearbyEntityForViewer,
+  distanceXZ,
+  getEntityXZ,
+  getPlayerXZ,
+  isWorldSpawnsEnabled,
+  makeShortHandleBase,
+} from "../../handles/NearbyHandles";
 
 type NearbyMode = "all" | "alive" | "dead";
 type NearbySort = "dist" | "name" | "type";
@@ -136,10 +144,11 @@ function parseTypeFilter(args: string[]): Set<string> | null {
   return set.size > 0 ? set : null;
 }
 
-function isWorldSpawnsEnabled(): boolean {
-  const v = String(process.env.WORLD_SPAWNS_ENABLED ?? "").trim().toLowerCase();
-  return v === "1" || v === "true" || v === "yes" || v === "on";
-}
+
+
+
+
+
 
 type NearbyEntry = {
   e: any;
@@ -200,8 +209,7 @@ export async function handleNearbyCommand(
 
   const typeFilter = parseTypeFilter(args);
 
-  const originX = char.posX ?? 0;
-  const originZ = char.posZ ?? 0;
+  const { x: originX, z: originZ } = getPlayerXZ(ctx, char);
 
   // --- Refresh on-demand before snapshotting entities ---
   try {
@@ -236,51 +244,29 @@ export async function handleNearbyCommand(
   const others = entities.filter((e: any) => e && e.id && e.id !== selfId);
   if (others.length === 0) return "No nearby entities.";
 
+  const viewerSessionId = String((ctx.session as any)?.id ?? "");
+
   const entries: NearbyEntry[] = [];
 
   for (const e of others) {
-    const dx = (e.x ?? 0) - originX;
-    const dz = (e.z ?? 0) - originZ;
-    const dist = Math.sqrt(dx * dx + dz * dz);
-    if (dist > radius) continue;
+    const { x: ex, z: ez } = getEntityXZ(e);
+const dist = distanceXZ(ex, ez, originX, originZ);
+if (dist > radius) continue;
 
-    const deadNpc = isDeadNpcLike(e);
+const meta = classifyNearbyEntityForViewer(e, viewerSessionId);
+if (!meta) continue;
 
-    // Mode filters
-    if (mode === "dead" && !deadNpc) continue;
-    if (mode === "alive" && e?.alive === false) continue;
+const deadNpc = meta.deadNpc;
+const kindLabel = meta.kindLabel;
+const baseName = meta.baseName;
 
-    const hasSpawnPoint = typeof e?.spawnPointId === "number";
+// Mode filters
+if (mode === "dead" && !deadNpc) continue;
+if (mode === "alive" && e?.alive === false) continue;
 
-    // If it has an ownerSessionId but NO spawnPointId, it's player-like.
-    const isPlayerLike = !!e?.ownerSessionId && !hasSpawnPoint;
-
-    // Real nodes must have spawnPointId and be shared or owned by you.
-    const isRealNode =
-      (e.type === "node" || e.type === "object") &&
-      hasSpawnPoint &&
-      (!e.ownerSessionId || e.ownerSessionId === ctx.session.id);
-
-    // Hide foreign/invalid personal nodes entirely.
-    if ((e.type === "node" || e.type === "object") && !isRealNode) continue;
-
-    // Normalize type into display label
-    let kindLabel: string;
-
-    if (isPlayerLike) {
-      kindLabel = "player";
-    } else if (e.type === "npc" || e.type === "mob") {
-      kindLabel = deadNpc ? "corpse" : "npc";
-    } else if (isRealNode) {
-      kindLabel = "node";
-    } else {
-      kindLabel = String(e.type ?? "entity");
-    }
-
-    // Type filter (post-normalization)
+// Type filter (post-normalization)
     if (typeFilter && !typeFilter.has(kindLabel)) continue;
 
-    const baseName = String(e.name ?? e.id);
     const suffix =
       deadNpc && e?.skinned ? " (skinned)"
       : deadNpc ? " (corpse)"
