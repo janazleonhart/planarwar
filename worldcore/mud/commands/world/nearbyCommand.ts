@@ -33,6 +33,7 @@
 //   nearby --type npc,corpse --sort type
 //   nearby --type node --range 12 --sort name --limit 50
 //   nearby --group --sort dist --limit 60
+import { isDeadNpcLike, makeShortHandleBase } from "../../handles/NearbyHandles";
 
 type NearbyMode = "all" | "alive" | "dead";
 type NearbySort = "dist" | "name" | "type";
@@ -138,20 +139,6 @@ function parseTypeFilter(args: string[]): Set<string> | null {
 function isWorldSpawnsEnabled(): boolean {
   const v = String(process.env.WORLD_SPAWNS_ENABLED ?? "").trim().toLowerCase();
   return v === "1" || v === "true" || v === "yes" || v === "on";
-}
-
-function isDeadNpcLike(e: any): boolean {
-  const t = String(e?.type ?? "");
-  return (t === "npc" || t === "mob") && e?.alive === false;
-}
-
-function makeShortHandleBase(name: string): string {
-  const words = String(name ?? "")
-    .toLowerCase()
-    .replace(/[^a-z0-9 ]/g, "")
-    .split(/\s+/)
-    .filter(Boolean);
-  return words[words.length - 1] ?? "entity";
 }
 
 type NearbyEntry = {

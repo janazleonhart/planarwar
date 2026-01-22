@@ -157,7 +157,7 @@
         "mud.context"
       ],
       "notes": [
-        "Builds a one-line MUD description for a listing like '#12 Hematite Iron Ore [common] x20 \u2013 3g each (total 60g) by Testing [active]'.",
+        "Builds a one-line MUD description for a listing like '#12 Hematite Iron Ore [common] x20 – 3g each (total 60g) by Testing [active]'.",
         "Looks up item definitions via ctx.items?.get to resolve item name and rarity."
       ]
     },
@@ -417,7 +417,7 @@
         "classes.definitions"
       ],
       "notes": [
-        "Postgres-backed character service using the characters table and CharacterRow \u2192 CharacterState mapping.",
+        "Postgres-backed character service using the characters table and CharacterRow → CharacterState mapping.",
         "Supports partial JSONB patching, XP/level gains with per-class attribute growth, and spell/equipment updates."
       ]
     },
@@ -575,7 +575,7 @@
       "notes": [
         "Centralized gates for action resource costs + cooldowns (spells/songs/abilities).",
         "Guarantees: cooldowns do not start and resources are not consumed if the action fails.",
-        "Order: check cooldown remaining \u2192 spend resource \u2192 start cooldown."
+        "Order: check cooldown remaining → spend resource → start cooldown."
       ]
     },
     "combat.cooldowns": {
@@ -814,32 +814,44 @@
       "kind": "service",
       "path": "worldcore/combat/StatusEffects.ts",
       "functions": [
-        "applyStatusEffect",
         "applyStatusEffect(char,input)",
-        "clearAllStatusEffects",
-        "clearStatusEffect",
-        "computeCombatStatusSnapshot",
-        "computeCombatStatusSnapshot(char, nowMs?)",
-        "getActiveStatusEffects",
+        "applyStatusEffectToEntity(entity,input)",
+        "clearAllStatusEffects(char)",
+        "clearAllStatusEffectsFromEntity(entity)",
+        "clearStatusEffect(char,id)",
+        "clearStatusEffectFromEntity(entity,id)",
         "getActiveStatusEffects(char, nowMs?)",
-        "tickStatusEffects",
-        "tickStatusEffects(char, nowMs?)"
+        "getActiveStatusEffectsForEntity(entity, nowMs?)",
+        "computeCombatStatusSnapshot(char, nowMs?)",
+        "computeEntityCombatStatusSnapshot(entity, nowMs?)",
+        "computeCombatStatusSnapshotForEntity (alias of computeEntityCombatStatusSnapshot)",
+        "tickStatusEffects(char, nowMs?)",
+        "tickEntityStatusEffects(entity, nowMs?)",
+        "tickEntityStatusEffectsAndApplyDots(entity, nowMs?)"
       ],
       "dependsOn": [
-        "characters.types"
+        "characters.types",
+        "combat.statusStackingPolicy",
+        "shared.entities"
       ],
       "provides": [
-        "StatusEffect storage under char.progression.statusEffects.active",
-        "CombatStatusSnapshot aggregation (attributes, damageDealtPct, damageTakenPct, damageDealtPctBySchool, damageTakenPctBySchool, armor/resist bonuses)"
+        "CombatStatusSnapshot aggregation (attributes, damageDealtPct, damageTakenPct, damageDealtPctBySchool, damageTakenPctBySchool, armor/resist bonuses)",
+        "DOT ticking helper for entities (applies damage and can trigger death).",
+        "Stacking policy resolver support (refresh|unique|stack|refresh_stack|versioned_by_applier).",
+        "StatusEffect storage for characters and entities (NPCs).",
+        "StatusEffect storage under char.progression.statusEffects.active"
       ],
       "notes": [
-        "Status effect spine used by vulnerability, region peril auras, and outgoing/incoming damage modifiers.",
-        "Imports DamageSchool as a type from CombatEngine (type-only); no runtime circular dependency.",
+        "Status effects are stored under character.progression.statusEffects (JSONB) and are ticked/expired via tickStatusEffects().",
+        "Back-compat: NewStatusEffectInput accepts `stacks` as an alias for `initialStacks` (older call-sites/tests).",
         "damageTakenPct and damageDealtPct are FRACTIONS (0.05 = +5%).",
         "damageDealtPctBySchool and damageTakenPctBySchool are FRACTIONS (0.05 = +5%).",
-        "Back-compat: NewStatusEffectInput accepts `stacks` as an alias for `initialStacks` (older call-sites/tests).",
-        "Status effects are stored under character.progression.statusEffects (JSONB) and are ticked/expired via tickStatusEffects().",
-        "NPC/Entity status-effects carrier + DOT ticking implemented; effects clear on death/despawn and DOT ticking stops immediately on death."
+        "Status effect spine used by vulnerability, region peril auras, and outgoing/incoming damage modifiers.",
+        "NPC/Entity status-effects carrier + DOT ticking implemented; effects clear on death/despawn and DOT ticking stops immediately on death.",
+        "Entity tick helpers can optionally apply DOT damage and must stop immediately if entity dies.",
+        "Stacking behavior is governed by StatusStackingPolicy (including versioned_by_applier).",
+        "Entity/NPC effects are stored under entity.statusEffects.active (mirrors character progression storage).",
+        "Imports DamageSchool as a type from CombatEngine (type-only); no runtime circular dependency."
       ]
     },
     "combat.statusStackingPolicy": {
@@ -2074,10 +2086,19 @@
     "mud.commands.debug.debugEffectsCommand": {
       "kind": "mud_command_group",
       "path": "worldcore/mud/commands/debug/debugEffectsCommand.ts",
-      "functions": ["handleDebugEffects"],
-      "invokedBy": ["mud.commands.debug.debug_effects (via mud/commands/registry.ts)"],
-      "dependsOn": ["combat.statusEffects", "mud.entityManager", "mud.session"],
-      "notes": ["Debug QoL: inspect active effects + (if available) computed combat snapshot for a target (entity id or nearby handle)."]
+      "functions": [
+        "handleDebugEffects"
+      ],
+      "invokedBy": [
+        "mud.commands.debug.debug_effects (via mud/commands/registry.ts)"
+      ],
+      "dependsOn": [
+        "mud.context",
+        "combat.statusEffects"
+      ],
+      "notes": [
+        "Debug QoL: inspect active effects + (if available) computed combat snapshot for a target (entity id or nearby handle)."
+      ]
     },
     "mud.commands.debug.hydrateHere": {
       "kind": "mud_command",
@@ -2987,7 +3008,7 @@
         "Refreshes personal nodes, then lists nearby entities within radius with short handles like rat.1.",
         "filter/group/sort flags",
         "--limit / --max",
-        "safe caps + \u201cUI-friendly output shaping"
+        "safe caps + “UI-friendly output shaping"
       ]
     },
     "mud.commands.world.save": {
@@ -3126,6 +3147,25 @@
       "notes": [
         "Parses MUD command lines and routes them to the appropriate action/utility.",
         "Commands roughly correspond 1:1 to HELP_ENTRIES in MudHelpMenu.ts."
+      ]
+    },
+    "mud.handles.nearbyHandles": {
+      "kind": "utility",
+      "path": "worldcore/mud/handles/NearbyHandles.ts",
+      "functions": [
+        "getEntityXZ(entity)",
+        "distanceXZ(a,b)",
+        "isDeadNpcLike(entity)",
+        "makeShortHandleBase(name)",
+        "parseHandleToken(token)",
+        "buildNearbyTargetSnapshot(roomEntities, opts?)",
+        "resolveNearbyHandleInRoom(ctx, roomEntities, targetToken, opts?)"
+      ],
+      "dependsOn": [],
+      "notes": [
+        "Shared nearby-handle parsing + resolution utilities (e.g., guard.2, alchemist.1).",
+        "Produces a stable, UI-friendly snapshot ordered by distance and with alive entities preferred over corpses.",
+        "Hides personal nodes owned by other sessions by default (prevents cross-player leakage)."
       ]
     },
     "mud.help": {
@@ -3347,7 +3387,7 @@
         "Determines which NPCs are 'protected' (civilian, vendor, questgiver, protected_town, etc.) and records crimes against them on the attacker.",
         "Sets recentCrimeUntil and recentCrimeSeverity (minor|severe) on characters to drive guard response.",
         "law_exempt > law_protected > legacy tags precedence",
-        "guards/resources are never \u201cprotected\u201d for crime purposes"
+        "guards/resources are never “protected” for crime purposes"
       ]
     },
     "npc.manager": {
@@ -3367,7 +3407,7 @@
         "combat.damagePolicy"
       ],
       "notes": [
-        "Owns runtime NPC state, per-room maps, threat tables, and bridges EntityManager \u2194 AI brain \u2194 sessions/chat.",
+        "Owns runtime NPC state, per-room maps, threat tables, and bridges EntityManager ↔ AI brain ↔ sessions/chat.",
         "Spawns/Despawns NPCs, applies damage, records threat, coordinates guard/pack help, coward fleeing, gating, and drives AI decisions each tick.",
         "On lethal damage and before despawn, clears combat status effects so corpses don't keep ticking DOTs or carry modifiers."
       ]
@@ -3978,7 +4018,7 @@
       "kind": "types",
       "path": "worldcore/sim/BrainActions.ts",
       "notes": [
-        "Types for Mother-Brain style planning outputs (audit \u2192 plan actions \u2192 apply).",
+        "Types for Mother-Brain style planning outputs (audit → plan actions → apply).",
         "Includes PlaceSpawnAction used by SettlementPlanner + simBrain apply."
       ]
     },
@@ -4425,7 +4465,7 @@
       ],
       "notes": [
         "Computes difficulty tier by radial distance from world center.",
-        "Uses max world radius \u2248 2048 units for current prime shard."
+        "Uses max world radius ≈ 2048 units for current prime shard."
       ]
     },
     "terrain.regionDisplay": {
@@ -4890,7 +4930,7 @@
       "provides": [],
       "owns": [],
       "notes": [
-        "Contract: NPC debuffs + DOT vertical slice works end-to-end (cast \u2192 status apply \u2192 tick \u2192 damage).",
+        "Contract: NPC debuffs + DOT vertical slice works end-to-end (cast → status apply → tick → damage).",
         "Guards the DOT tick + defender snapshot seam so damageTakenPct modifiers influence both direct hits and DOT ticks."
       ]
     },
@@ -5141,12 +5181,34 @@
         "Contract: status effect snapshot math + modifiers"
       ]
     },
+    "test.contract_nearbyHandles_resolution": {
+      "kind": "test",
+      "service": "test.contract",
+      "path": "worldcore/test/contract_nearbyHandles_resolution.test.ts",
+      "class": null,
+      "lifecycle": "test",
+      "ctorArgs": [],
+      "dependsOn": [
+        "mud.handles.nearbyHandles"
+      ],
+      "provides": [],
+      "owns": [],
+      "notes": [
+        "Contract: nearby-handle snapshot prefers alive entities over corpses when distance ties (corpse should sort last).",
+        "Contract: nearby-handle snapshot hides personal nodes owned by other sessions (no cross-player leakage)."
+      ]
+    },
     "test.contractDebugEffectsCommand": {
       "kind": "test",
       "service": "test.contract",
       "path": "worldcore/test/contract_debugEffectsCommand.test.ts",
-      "dependsOn": ["mud.debug.debugEffectsCommand", "test.utils"],
-      "notes": ["Ensures debug_effects resolves nearby handles and can emit valid JSON."]
+      "dependsOn": [
+        "mud.commands.debug.debugEffectsCommand",
+        "test.utils"
+      ],
+      "notes": [
+        "Ensures debug_effects resolves nearby handles and can emit valid JSON."
+      ]
     },
     "test.utils": {
       "kind": "test_utility",
@@ -5288,7 +5350,7 @@
       "notes": [
         "Dev Simulation Harness CLI entrypoint.",
         "Includes Mother Brain wave planning commands (mother-wave/mother-status) for brain-owned spawn_points pipelines.",
-        "Follows audit \u2192 plan \u2192 apply pattern with safe default rollback unless --commit.",
+        "Follows audit → plan → apply pattern with safe default rollback unless --commit.",
         "Safety rails: refuses literal '...' arg; refuses --commit without explicit --bounds (unless --allowDefaultBounds).",
         "Artifacts are dev-only outputs; keep them gitignored."
       ]
@@ -5669,7 +5731,7 @@
         "characters.types"
       ],
       "notes": [
-        "Tracks per-region dynamic danger score and effective tier (1\u20135) based on base distance ring + recent activity.",
+        "Tracks per-region dynamic danger score and effective tier (1–5) based on base distance ring + recent activity.",
         "Applies exponential-style decay over time so regions cool down naturally.",
         "Used by cowardice, Region Peril aura, debug_region_danger, and debug_bump_region_danger."
       ]
@@ -6199,7 +6261,7 @@
         "run(input:BiomeInput, ctx?:WorldGenContext):BiomeResult"
       ],
       "notes": [
-        "Stage 2.3.4 \u2013 biome assignment per cell + connected biome clusters.",
+        "Stage 2.3.4 – biome assignment per cell + connected biome clusters.",
         "Outputs biomeMap + cluster IDs + counts per biome."
       ]
     },
@@ -6218,7 +6280,7 @@
         "run(input:CivilizationInput, ctx?:WorldGenContext):CivilizationResult"
       ],
       "notes": [
-        "Stage 2.3.5 \u2013 settlements, roads, and POIs.",
+        "Stage 2.3.5 – settlements, roads, and POIs.",
         "Scores candidate cells, picks settlements with spacing, builds a road graph, scatters points of interest."
       ]
     },
@@ -6235,7 +6297,7 @@
         "run(input:ClimateInput, ctx?:WorldGenContext):ClimateResult"
       ],
       "notes": [
-        "Stage 2.3.3 \u2013 temperature, moisture, and compact climate zones.",
+        "Stage 2.3.3 – temperature, moisture, and compact climate zones.",
         "Can optionally use erosion outputs to bias humidity near rivers/lakes."
       ]
     },
@@ -6251,7 +6313,7 @@
         "run(input:{ landforms:LandformResult, params?:ErosionParams }, ctx?:WorldGenContext):ErosionResult"
       ],
       "notes": [
-        "Stage 2.3.2 \u2013 hydrology, erosion, rivers, lakes.",
+        "Stage 2.3.2 – hydrology, erosion, rivers, lakes.",
         "Outputs updated elevation, water, sediment, flow dirs, river/lake masks."
       ]
     },
@@ -6265,7 +6327,7 @@
         "run(input:ShardSeedInput, ctx?:WorldGenContext):LandformResult"
       ],
       "notes": [
-        "Stage 2.3.1 \u2013 base landforms: tectonics, continents, uplift, macro elevation.",
+        "Stage 2.3.1 – base landforms: tectonics, continents, uplift, macro elevation.",
         "First stage in the WGEv2 pipeline; everything else builds on its LandformResult."
       ]
     },
@@ -6285,7 +6347,7 @@
         "run(input:ResourceInput, ctx?:WorldGenContext):ResourceResult"
       ],
       "notes": [
-        "Stage 2.3.6 \u2013 resource node placement (ore/herb/wood/fish/rare) plus per-kind masks.",
+        "Stage 2.3.6 – resource node placement (ore/herb/wood/fish/rare) plus per-kind masks.",
         "Respects biome, elevation, climate, hydrology, and avoids city centers while tagging 'near settlement' nodes."
       ]
     },

@@ -4,6 +4,7 @@ import type { MudContext } from "../../MudContext";
 import type { CharacterState } from "../../../characters/CharacterTypes";
 import { moveCharacterAndSync } from "../../../movement/moveOps";
 import { parseMoveDir } from "../../../movement/MovementCommands";
+import { buildNearbyTargetSnapshot as buildNearbyTargetSnapshotShared } from "../../handles/NearbyHandles";
 
 // NOTE: this command intentionally does NOT depend on a global MudInput type.
 // Different command handlers in this repo accept slightly different input shapes.
@@ -30,7 +31,6 @@ type NearbyTargetSnapshotEntry = {
   baseName: string;
   handle: string;
 };
-
 
 type WalkOptions = {
   radiusOverride?: number;
@@ -298,7 +298,6 @@ async function findNearestVendorAnchorFromDb(
   return { x: best.x ?? 0, z: best.z ?? 0, name: best.name ?? best.id };
 }
 
-
 function parseOptions(argv: string[]): WalkOptions {
   const out: WalkOptions = { keep: [] };
 
@@ -447,22 +446,6 @@ function stepDirTowards(dx: number, dz: number, preferX: boolean): string {
   }
 }
 
-
-
-function isDeadNpcLike(e: any): boolean {
-  const t = String(e?.type ?? "");
-  return (t === "npc" || t === "mob") && e?.alive === false;
-}
-
-function makeShortHandleBase(name: string): string {
-  const words = String(name ?? "")
-    .toLowerCase()
-    .replace(/[^a-z0-9 ]/g, "")
-    .split(/\s+/)
-    .filter(Boolean);
-  return words[words.length - 1] ?? "entity";
-}
-
 type _NearbySnapWork = {
   e: any;
   dist: number;
@@ -477,89 +460,21 @@ function buildNearbyTargetSnapshot(
   roomId: string,
   radius: number
 ): NearbyTargetSnapshotEntry[] {
-  const entities: any[] = (ctx.entities as any)?.getEntitiesInRoom?.(roomId) ?? [];
-  if (!Array.isArray(entities) || entities.length === 0) return [];
+  const sessionId = String((ctx.session as any)?.id ?? "");
+  const selfEnt = (ctx.entities as any)?.getEntityByOwner?.(sessionId) as any;
 
-  const viewerSessionId = String((ctx as any)?.session?.id ?? "");
+  const origin = getPlayerXZ(ctx, char);
+  const entities = (ctx.entities as any)?.getEntitiesInRoom?.(roomId);
+  const all = Array.isArray(entities) ? entities : [];
 
-  // Exclude self by entity id (NOT by ownerSessionId), because personal nodes also have ownerSessionId.
-  const self = (ctx.entities as any)?.getEntityByOwner?.(viewerSessionId);
-  const selfId = self?.id;
-
-  const { x: originX, z: originZ } = getPlayerXZ(ctx, char);
-
-  const work: _NearbySnapWork[] = [];
-
-  for (const e of entities) {
-    if (!e || !e.id) continue;
-    if (selfId && e.id === selfId) continue;
-
-    const ex = typeof e.x === "number" ? e.x : 0;
-    const ez = typeof e.z === "number" ? e.z : 0;
-    const dist = distanceXZ(ex, ez, originX, originZ);
-    if (dist > radius) continue;
-
-    const deadNpc = isDeadNpcLike(e);
-    const hasSpawnPoint = typeof e?.spawnPointId === "number";
-
-    // If it has an ownerSessionId but NO spawnPointId, it's player-like.
-    const isPlayerLike = !!e?.ownerSessionId && !hasSpawnPoint;
-
-    // Real nodes must have spawnPointId and be shared or owned by you.
-    const isRealNode =
-      (e.type === "node" || e.type === "object") &&
-      hasSpawnPoint &&
-      (!e.ownerSessionId || e.ownerSessionId === viewerSessionId);
-
-    // Hide foreign/invalid personal nodes entirely.
-    if ((e.type === "node" || e.type === "object") && !isRealNode) continue;
-
-    // Normalize type into display label
-    let kindLabel: string;
-
-    if (isPlayerLike) {
-      kindLabel = "player";
-    } else if (e.type === "npc" || e.type === "mob") {
-      kindLabel = deadNpc ? "corpse" : "npc";
-    } else if (isRealNode) {
-      kindLabel = "node";
-    } else {
-      kindLabel = String(e.type ?? "entity");
-    }
-
-    const baseName = String(e.name ?? e.id);
-
-    work.push({ e, dist, kindLabel, baseName, deadNpc });
-  }
-
-  // Default nearby ordering: dist asc; if tied, alive first, then name/id.
-  work.sort((a, b) => {
-    if (a.dist !== b.dist) return a.dist - b.dist;
-    if (a.deadNpc !== b.deadNpc) return a.deadNpc ? 1 : -1;
-
-    const an = a.baseName.toLowerCase();
-    const bn = b.baseName.toLowerCase();
-    if (an !== bn) return an.localeCompare(bn);
-    return String(a.e?.id ?? "").localeCompare(String(b.e?.id ?? ""));
-  });
-
-  // Build handles like guard.2 / table.1 in the same pass/order as nearby.
-  const shortCounts = new Map<string, number>();
-  const buildHandle = (kindLabel: string, baseName: string): string => {
-    const shortBase = makeShortHandleBase(baseName);
-    const key = `${kindLabel}:${shortBase}`;
-    const n = (shortCounts.get(key) ?? 0) + 1;
-    shortCounts.set(key, n);
-    return `${shortBase}.${n}`;
-  };
-
-  return work.map((it) => ({
-    e: it.e,
-    dist: it.dist,
-    kindLabel: it.kindLabel,
-    baseName: it.baseName,
-    handle: buildHandle(it.kindLabel, it.baseName),
-  }));
+  return buildNearbyTargetSnapshotShared({
+    entities: all,
+    viewerSessionId: sessionId,
+    originX: origin.x,
+    originZ: origin.z,
+    radius,
+    excludeEntityId: selfEnt?.id ? String(selfEnt.id) : null,
+  }) as any;
 }
 async function resolveTarget(
   ctx: MudContext,
@@ -727,7 +642,6 @@ async function resolveTarget(
     z: typeof best.z === "number" ? best.z : 0,
   };
 }
-
 
 export async function handleWalkToCommand(
   ctx: MudContext,

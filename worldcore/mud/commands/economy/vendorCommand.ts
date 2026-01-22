@@ -31,6 +31,7 @@ import {
 } from "../../../vendors/VendorTransactions";
 
 import { requireTownService } from "../world/serviceGates";
+import { resolveNearbyHandleInRoom as resolveNearbyHandleInRoomShared } from "../../handles/NearbyHandles";
 
 function norm(v: unknown): string {
   return String(v ?? "").trim().toLowerCase();
@@ -105,20 +106,6 @@ function distanceXZ(ax: number, az: number, bx: number, bz: number): number {
 function getEntitiesInRoom(ctx: MudContext, roomId: string): any[] {
   const ents = (ctx.entities as any)?.getEntitiesInRoom?.(roomId);
   return Array.isArray(ents) ? ents : [];
-}
-
-function isDeadNpcLike(e: any): boolean {
-  const t = String(e?.type ?? "");
-  return (t === "npc" || t === "mob") && e?.alive === false;
-}
-
-function makeShortHandleBase(name: string): string {
-  const words = String(name ?? "")
-    .toLowerCase()
-    .replace(/[^a-z0-9 ]/g, "")
-    .split(/\s+/)
-    .filter(Boolean);
-  return words[words.length - 1] ?? "entity";
 }
 
 function getNearbyTargetRadius(): number {
@@ -214,87 +201,27 @@ function resolveNearbyHandleInRoom(
   handleRaw: string
 ): HandleResolved | null {
   const handle = norm(handleRaw);
-  if (!handle || !looksLikeEntityHandle(handleRaw)) return null;
+  if (!handle || !looksLikeEntityHandle(handle)) return null;
+
+  const sessionId = String((ctx.session as any)?.id ?? "");
+  const selfEnt = (ctx.entities as any)?.getEntityByOwner?.(sessionId) as any;
 
   const radius = getNearbyTargetRadius();
-
   const origin = getPlayerXZ(ctx, char);
   const all = getEntitiesInRoom(ctx, roomId);
 
-  // Exclude self by entity id (NOT by ownerSessionId), because personal nodes also have ownerSessionId.
-  const self = (ctx.entities as any)?.getEntityByOwner?.((ctx.session as any)?.id);
-  const selfId = self?.id;
+  const hit = resolveNearbyHandleInRoomShared({
+    entities: all,
+    viewerSessionId: sessionId,
+    originX: origin.x,
+    originZ: origin.z,
+    radius,
+    excludeEntityId: selfEnt?.id ? String(selfEnt.id) : null,
+    handleRaw: handle,
+  });
 
-  // Build candidates using the same visibility rules as nearby.
-  const entries: { e: any; dist: number; kindLabel: string; baseName: string; deadNpc: boolean }[] = [];
-
-  for (const e of all) {
-    if (!e || !e.id) continue;
-    if (selfId && e.id === selfId) continue;
-
-    const ex = toNumber(e.x ?? e?.pos?.x) ?? 0;
-    const ez = toNumber(e.z ?? e?.pos?.z) ?? 0;
-
-    const dist = distanceXZ(ex, ez, origin.x, origin.z);
-    if (dist > radius) continue;
-
-    const deadNpc = isDeadNpcLike(e);
-
-    const hasSpawnPoint = typeof e?.spawnPointId === "number";
-    const isPlayerLike = !!e?.ownerSessionId && !hasSpawnPoint;
-
-    const isRealNode =
-      (e.type === "node" || e.type === "object") &&
-      hasSpawnPoint &&
-      (!e.ownerSessionId || e.ownerSessionId === (ctx.session as any)?.id);
-
-    // Hide foreign/invalid personal nodes entirely.
-    if ((e.type === "node" || e.type === "object") && !isRealNode) continue;
-
-    let kindLabel: string;
-    if (isPlayerLike) {
-      kindLabel = "player";
-    } else if (e.type === "npc" || e.type === "mob") {
-      kindLabel = deadNpc ? "corpse" : "npc";
-    } else if (isRealNode) {
-      kindLabel = "node";
-    } else {
-      kindLabel = String(e.type ?? "entity");
-    }
-
-    const baseName = String(e.name ?? e.id);
-
-    entries.push({ e, dist, kindLabel, baseName, deadNpc });
-  }
-
-  if (entries.length === 0) return null;
-
-  // Sort like nearby default (dist)
-  const sorted = entries
-    .slice()
-    .sort((a, b) => {
-      if (a.dist !== b.dist) return a.dist - b.dist;
-      if (a.deadNpc !== b.deadNpc) return a.deadNpc ? 1 : -1;
-      const an = a.baseName.toLowerCase();
-      const bn = b.baseName.toLowerCase();
-      if (an !== bn) return an.localeCompare(bn);
-      return String(a.e?.id ?? "").localeCompare(String(b.e?.id ?? ""));
-    })
-    .slice(0, 200);
-
-  const shortCounts = new Map<string, number>();
-  const handleToEntry = new Map<string, HandleResolved>();
-
-  for (const it of sorted) {
-    const shortBase = makeShortHandleBase(it.baseName);
-    const key = `${it.kindLabel}:${shortBase}`;
-    const n = (shortCounts.get(key) ?? 0) + 1;
-    shortCounts.set(key, n);
-    const h = `${shortBase}.${n}`;
-    handleToEntry.set(h.toLowerCase(), { entity: it.e, dist: it.dist, handle: h });
-  }
-
-  return handleToEntry.get(handle.toLowerCase()) ?? null;
+  if (!hit) return null;
+  return { entity: hit.entity, dist: hit.dist, handle: hit.handle };
 }
 
 type VendorTarget =

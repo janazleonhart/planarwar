@@ -9,6 +9,8 @@ import { deliverItemToBagsOrMail } from "../../../loot/OverflowDelivery";
 import { getItemTemplate } from "../../../items/ItemCatalog";
 import { resolveItem } from "../../../items/resolveItem";
 
+import { makeShortHandleBase, parseHandleToken } from "../../handles/NearbyHandles";
+
 import { applyFallbackSkinLoot } from "../../actions/MudWorldActions";
 import { applyProgressionForEvent } from "../../MudProgressionHooks";
 import { applyProgressionEvent } from "../../../progression/ProgressionCore";
@@ -83,22 +85,20 @@ function sortByDistance(entities: Entity[], player: Entity | null): Entity[] {
   return [...entities].sort((l: any, r: any) => entityDist2(l, player) - entityDist2(r, player));
 }
 
-function baseHandleFromName(name: string): string {
-  const n = (name ?? "").trim().toLowerCase();
-  if (!n) return "";
-  const parts = n.split(/[^a-z0-9]+/g).filter(Boolean);
-  if (!parts.length) return "";
-  return parts[parts.length - 1] ?? "";
-}
-
 function baseHandleFromEntity(e: Entity): string {
-  const fromName = baseHandleFromName((e as any).name ?? "");
-  if (fromName) return fromName;
+  const rawName = String((e as any).name ?? "").trim();
+  if (rawName) {
+    const fromName = makeShortHandleBase(rawName);
+    // NearbyHandles defaults to "entity" when it can't derive a token.
+    if (fromName && fromName !== "entity") return fromName;
+  }
+
   const protoId = norm(String((e as any).protoId ?? ""));
   if (protoId) {
     const tail = protoId.split(/[._]/g).filter(Boolean).pop();
     if (tail) return tail.toLowerCase();
   }
+
   return String((e as any).type ?? "").toLowerCase();
 }
 
@@ -107,22 +107,6 @@ function parseNumericSelection(token: string): number | null {
   const idx = Number(token) - 1;
   if (!Number.isFinite(idx) || idx < 0) return null;
   return idx;
-}
-
-function parseHandleToken(token: string): { base: string; idx?: number } | null {
-  const t = token.trim().toLowerCase();
-  if (!t) return null;
-  const m = /^([a-z0-9_]+)(?:\.(\d+))?$/.exec(t);
-  if (!m) return null;
-  const base = m[1] ?? "";
-  const idxStr = m[2];
-  if (!base) return null;
-  if (idxStr) {
-    const idx = Number(idxStr);
-    if (!Number.isFinite(idx) || idx <= 0) return null;
-    return { base, idx };
-  }
-  return { base };
 }
 
 function isSkinnableCorpse(e: Entity): boolean {
