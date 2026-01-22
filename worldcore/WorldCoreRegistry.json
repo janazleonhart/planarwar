@@ -5238,6 +5238,19 @@
         "Guards that corpses do not keep ticking DOTs, and ticking stops immediately when lethal DOT damage is applied."
       ]
     },
+    "test.contractTargetResolverNearbyHandles": {
+      "kind": "test",
+      "path": "worldcore/test/contract_targetResolver_nearbyHandles.test.ts",
+      "dependsOn": [
+        "test.utils",
+        "targeting.resolver",
+        "mud.handles.nearbyHandles"
+      ],
+      "notes": [
+        "Contract: TargetResolver resolves NPC targets consistently with NearbyHandles ordering (index '2' == snapshot index, handle 'rat.1' == same entity).",
+        "Contract: exact entity id wins over index/handle/name matching."
+      ]
+    },
     "test.utils": {
       "kind": "test_utility",
       "path": "worldcore/test/testUtils.ts",
