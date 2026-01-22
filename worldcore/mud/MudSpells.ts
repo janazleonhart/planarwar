@@ -38,7 +38,7 @@ import {
   getSongSchoolSkill,
 } from "../skills/SkillProgression";
 import type { SongSchoolId } from "../skills/SkillProgression";
-import { applyStatusEffect } from "../combat/StatusEffects";
+import { applyStatusEffect, applyStatusEffectToEntity } from "../combat/StatusEffects";
 
 const log = Logger.scope("MUD_SPELLS");
 
@@ -675,7 +675,121 @@ case "heal_self": {
 
     case "debuff_single_npc":
     case "damage_dot_single_npc": {
-      return "[world] That spell type is not wired up yet (NPC status effects / ticking is pending).";
+      const targetName = targetRaw || "rat";
+      const npc = findNpcTargetByName(ctx.entities, roomId, targetName);
+
+      if (!npc) {
+        return `There is no '${targetRaw}' here to target with ${spell.name}.`;
+      }
+
+      // Protected NPCs (vendors/bankers/etc) are never valid combat targets.
+      if (isServiceProtectedNpcTarget(ctx, npc)) {
+        return serviceProtectedCombatLine(npc.name);
+      }
+
+      // Region / policy gate BEFORE consuming cooldown/resource.
+      try {
+        const policy = await canDamage(
+          { entity: selfEntity as any, char },
+          { entity: npc as any },
+          { shardId: char.shardId, regionId: roomId, inDuel: false },
+        );
+        if (policy && policy.allowed === false) {
+          return policy.reason ?? "You cannot affect that target here.";
+        }
+      } catch {
+        // Best-effort: never let policy lookup crash spell casting.
+      }
+
+      const cdErr = cooldownGate();
+      if (cdErr) return cdErr;
+
+      const resErr = resourceGate();
+      if (resErr) return resErr;
+
+      startSpellCooldown(char, spell);
+
+      const se = spell.statusEffect;
+      if (!se) {
+        return `[world] [spell:${spell.name}] That spell has no status effect definition.`;
+      }
+
+      const now = Date.now();
+
+      if (spell.kind === "debuff_single_npc") {
+        // Apply a pure modifier-only effect to the NPC.
+        applyStatusEffectToEntity(npc as any, {
+          id: se.id,
+          sourceKind: isSong ? "song" : "spell",
+          sourceId: spell.id,
+          name: se.name ?? spell.name,
+          durationMs: se.durationMs,
+          maxStacks: se.maxStacks,
+          initialStacks: se.stacks,
+          modifiers: se.modifiers ?? {},
+          tags: se.tags ?? ["debuff"],
+        }, now);
+
+        markInCombat(selfEntity);
+        markInCombat(npc as any);
+
+        applySchoolGains();
+        return `[world] [spell:${spell.name}] You afflict ${npc.name} with ${se.name ?? spell.name}.`;
+      }
+
+      // DOT: compute a base total damage roll, then distribute it across ticks.
+      const tickIntervalMs = Math.max(250, Math.floor(Number(se.dot?.tickIntervalMs ?? 2000)));
+      const ticks = Math.max(1, Math.floor(se.durationMs / tickIntervalMs));
+
+      const effective = computeEffectiveAttributes(char, ctx.items);
+
+      const source: CombatSource = {
+        char,
+        effective,
+        channel: "spell",
+        spellSchool: isSong ? "song" : spell.school,
+        songSchool,
+      };
+
+      const target: CombatTarget = {
+        entity: npc as any,
+        armor: (npc as any).armor ?? 0,
+        resist: (npc as any).resist ?? {},
+      };
+
+      const dmgRoll = computeDamage(source, target, {
+        damageMultiplier: isSong
+          ? (typeof spell.damageMultiplier === "number" ? spell.damageMultiplier : 1) * (1 + instrumentBonusPct)
+          : spell.damageMultiplier,
+        flatBonus: spell.flatBonus,
+      });
+
+      const total = Math.max(1, Math.floor(dmgRoll.damage));
+      const spread = se.dot?.spreadDamageAcrossTicks !== false;
+      const perTick = spread ? Math.max(1, Math.floor(total / ticks)) : total;
+
+      applyStatusEffectToEntity(npc as any, {
+        id: se.id,
+        sourceKind: isSong ? "song" : "spell",
+        sourceId: spell.id,
+        name: se.name ?? spell.name,
+        durationMs: se.durationMs,
+        maxStacks: se.maxStacks,
+        initialStacks: se.stacks,
+        modifiers: se.modifiers ?? {},
+        tags: se.tags ?? ["dot", "debuff"],
+        dot: {
+          tickIntervalMs,
+          perTickDamage: perTick,
+          damageSchool: (spell.school as any) ?? "pure",
+        },
+      }, now);
+
+      markInCombat(selfEntity);
+      markInCombat(npc as any);
+
+      applySchoolGains();
+      return `[world] [spell:${spell.name}] You afflict ${npc.name} with ${se.name ?? spell.name}.`;
     }
 
 

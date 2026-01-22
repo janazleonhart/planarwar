@@ -2,13 +2,23 @@
 //
 // v1 status-effect spine for combat.
 //
-// Storage: CharacterState.progression.statusEffects (JSON-ish)
-// Snapshot: computeCombatStatusSnapshot() returns a pure aggregated view.
+// Storage:
+//  - Characters: CharacterState.progression.statusEffects (JSON-ish)
+//  - Entities (NPCs): (entity as any).combatStatusEffects (JSON-ish)
+//
+// Snapshot:
+//  - computeCombatStatusSnapshot(char) returns a pure aggregated view.
+//  - computeEntityCombatStatusSnapshot(entity) does the same for NPCs.
+//
+// DOT:
+//  - DOTs are stored as status effects with an optional `dot` payload.
+//  - TickEngine (and tests) can call tickEntityStatusEffectsAndApplyDots(...) to apply periodic damage.
 //
 // NOTE: sourceKind/sourceId are OPTIONAL so tests/tools can apply ad-hoc effects
 // without needing to invent provenance every time.
 
 import type { CharacterState, Attributes } from "../characters/CharacterTypes";
+import type { Entity } from "../shared/Entity";
 import type { DamageSchool } from "./CombatEngine";
 
 export type StatusEffectId = string;
@@ -44,17 +54,33 @@ export interface StatusEffectModifier {
   resistPct?: Partial<Record<DamageSchool, number>>;
 }
 
+export interface DotPayloadInput {
+  tickIntervalMs: number;
+  /** Base damage per tick (before defender damageTaken modifiers). */
+  perTickDamage: number;
+  /** Damage school for defender taken modifiers / resists (default: "pure"). */
+  damageSchool?: DamageSchool;
+}
+
+export interface DotPayloadState extends DotPayloadInput {
+  /** Internal scheduler: next time we should tick. */
+  nextTickAtMs: number;
+}
+
 export interface StatusEffectInstance {
   id: StatusEffectId;
   sourceKind: StatusEffectSourceKind;
   sourceId: string;
   name?: string;
   appliedAtMs: number;
-  expiresAtMs: number; // <= now => expired
+  expiresAtMs: number; // < now => expired (note: strict '<' so expiry moment is inclusive)
   stackCount: number;
   maxStacks: number;
   modifiers: StatusEffectModifier;
   tags?: string[];
+
+  // Optional DOT payload (NPCs today; can be used on players later if desired)
+  dot?: DotPayloadState;
 }
 
 export interface NewStatusEffectInput {
@@ -80,12 +106,18 @@ export interface NewStatusEffectInput {
 
   modifiers: StatusEffectModifier;
   tags?: string[];
+
+  // Optional DOT payload (stored on the status instance).
+  dot?: DotPayloadInput;
 }
 
 interface InternalStatusState {
   active: Record<string, StatusEffectInstance>;
 }
 
+/**
+ * Character storage: CharacterState.progression.statusEffects.active
+ */
 function ensureStatusState(char: CharacterState): InternalStatusState {
   const prog: any = (char as any).progression || {};
 
@@ -100,14 +132,63 @@ function ensureStatusState(char: CharacterState): InternalStatusState {
 }
 
 /**
+ * Entity storage (NPCs): (entity as any).combatStatusEffects.active
+ */
+function ensureEntityStatusState(entity: Entity): InternalStatusState {
+  const e: any = entity as any;
+
+  if (!e.combatStatusEffects || typeof e.combatStatusEffects !== "object") {
+    e.combatStatusEffects = { active: {} as Record<string, StatusEffectInstance> };
+  } else if (!e.combatStatusEffects.active) {
+    e.combatStatusEffects.active = {} as Record<string, StatusEffectInstance>;
+  }
+
+  return e.combatStatusEffects as InternalStatusState;
+}
+
+function resolveInitialStacks(input: NewStatusEffectInput): number {
+  return typeof input.initialStacks === "number" && input.initialStacks > 0
+    ? input.initialStacks
+    : typeof (input as any).stacks === "number" && (input as any).stacks > 0
+      ? Number((input as any).stacks)
+      : 1;
+}
+
+function resolveMaxStacks(input: NewStatusEffectInput, fallback: number): number {
+  return typeof input.maxStacks === "number" && input.maxStacks > 0
+    ? input.maxStacks
+    : fallback > 0
+      ? fallback
+      : 1;
+}
+
+function resolveExpiresAt(now: number, durationMs: number): number {
+  const dur =
+    typeof durationMs === "number" && Number.isFinite(durationMs) && durationMs > 0
+      ? durationMs
+      : 0;
+
+  return dur > 0 ? now + dur : Number.MAX_SAFE_INTEGER;
+}
+
+/**
  * Drop expired effects and clamp stack counts.
  */
 export function tickStatusEffects(
   char: CharacterState,
   now: number = Date.now(),
 ): void {
-  const state = ensureStatusState(char);
+  tickStatusEffectsInternal(ensureStatusState(char), now);
+}
 
+export function tickEntityStatusEffects(
+  entity: Entity,
+  now: number = Date.now(),
+): void {
+  tickStatusEffectsInternal(ensureEntityStatusState(entity), now);
+}
+
+function tickStatusEffectsInternal(state: InternalStatusState, now: number): void {
   for (const [id, inst] of Object.entries(state.active)) {
     if (!inst) {
       delete state.active[id];
@@ -125,7 +206,8 @@ export function tickStatusEffects(
       inst.stackCount = maxStacks;
     }
 
-    if (inst.expiresAtMs > 0 && inst.expiresAtMs <= now) {
+    // NOTE: strict '<' so an effect expiring at now is still present for this moment.
+    if (inst.expiresAtMs > 0 && inst.expiresAtMs < now) {
       delete state.active[id];
     }
   }
@@ -139,43 +221,51 @@ export function applyStatusEffect(
   input: NewStatusEffectInput,
   now: number = Date.now(),
 ): StatusEffectInstance {
-  const state = ensureStatusState(char);
+  return applyStatusEffectInternal(ensureStatusState(char), input, now);
+}
 
+/**
+ * Apply or refresh a status effect on an entity (NPC).
+ */
+export function applyStatusEffectToEntity(
+  entity: Entity,
+  input: NewStatusEffectInput,
+  now: number = Date.now(),
+): StatusEffectInstance {
+  return applyStatusEffectInternal(ensureEntityStatusState(entity), input, now);
+}
+
+function applyStatusEffectInternal(
+  state: InternalStatusState,
+  input: NewStatusEffectInput,
+  now: number,
+): StatusEffectInstance {
   const sourceKind: StatusEffectSourceKind = input.sourceKind ?? "environment";
   const sourceId = input.sourceId ?? "unknown";
 
-  const durationMs =
-    typeof input.durationMs === "number" && input.durationMs > 0
-      ? input.durationMs
-      : 0;
-
-  const expiresAtMs =
-    durationMs > 0 ? now + durationMs : Number.MAX_SAFE_INTEGER;
-
+  const expiresAtMs = resolveExpiresAt(now, input.durationMs);
   const existing = state.active[input.id];
 
+  const initialStacks = resolveInitialStacks(input);
+  const maxStacks = resolveMaxStacks(input, existing?.maxStacks ?? initialStacks);
+
+  const dot: DotPayloadState | undefined = (() => {
+    if (!input.dot) return existing?.dot;
+    const tickIntervalMs = Math.max(1, Math.floor(Number(input.dot.tickIntervalMs ?? 0)));
+    const perTickDamage = Math.max(1, Math.floor(Number(input.dot.perTickDamage ?? 0)));
+    const damageSchool: DamageSchool =
+      (input.dot.damageSchool as DamageSchool) ?? (existing?.dot?.damageSchool as any) ?? "pure";
+
+    return {
+      tickIntervalMs,
+      perTickDamage,
+      damageSchool,
+      nextTickAtMs: now + tickIntervalMs,
+    };
+  })();
+
   if (existing) {
-    const resolvedInitialStacks =
-    typeof input.initialStacks === "number" && input.initialStacks > 0
-      ? input.initialStacks
-      : typeof (input as any).stacks === "number" && (input as any).stacks > 0
-        ? Number((input as any).stacks)
-        : 1;
-
-  const maxStacks =
-      typeof input.maxStacks === "number" && input.maxStacks > 0
-        ? input.maxStacks
-        : existing.maxStacks > 0
-          ? existing.maxStacks
-          : 1;
-
-    const addStacks =
-      typeof input.initialStacks === "number" && input.initialStacks > 0
-        ? input.initialStacks
-        : typeof (input as any).stacks === "number" && (input as any).stacks > 0
-          ? Number((input as any).stacks)
-          : 1;
-
+    const addStacks = initialStacks;
     const stackCount = Math.min(maxStacks, existing.stackCount + addStacks);
 
     const updated: StatusEffectInstance = {
@@ -190,33 +280,13 @@ export function applyStatusEffect(
       appliedAtMs: now,
       // Keep the later expiry if one already existed
       expiresAtMs:
-        existing.expiresAtMs > 0
-          ? Math.max(existing.expiresAtMs, expiresAtMs)
-          : expiresAtMs,
+        existing.expiresAtMs > 0 ? Math.max(existing.expiresAtMs, expiresAtMs) : expiresAtMs,
+      dot,
     };
 
     state.active[input.id] = updated;
     return updated;
   }
-
-  const resolvedInitialStacks =
-    typeof input.initialStacks === "number" && input.initialStacks > 0
-      ? input.initialStacks
-      : typeof (input as any).stacks === "number" && (input as any).stacks > 0
-        ? Number((input as any).stacks)
-        : 1;
-
-  const maxStacks =
-    typeof input.maxStacks === "number" && input.maxStacks > 0
-      ? input.maxStacks
-      : resolvedInitialStacks && resolvedInitialStacks > 0
-        ? resolvedInitialStacks
-        : 1;
-
-  const stackCount =
-    typeof resolvedInitialStacks === "number" && resolvedInitialStacks > 0
-      ? resolvedInitialStacks
-      : 1;
 
   const inst: StatusEffectInstance = {
     id: input.id,
@@ -225,10 +295,11 @@ export function applyStatusEffect(
     name: input.name,
     appliedAtMs: now,
     expiresAtMs,
-    stackCount,
+    stackCount: initialStacks,
     maxStacks,
     modifiers: input.modifiers ?? {},
     tags: input.tags,
+    dot,
   };
 
   state.active[input.id] = inst;
@@ -242,6 +313,16 @@ export function clearStatusEffect(char: CharacterState, id: StatusEffectId): voi
 
 export function clearAllStatusEffects(char: CharacterState): void {
   const state = ensureStatusState(char);
+  state.active = {};
+}
+
+export function clearStatusEffectFromEntity(entity: Entity, id: StatusEffectId): void {
+  const state = ensureEntityStatusState(entity);
+  delete state.active[id];
+}
+
+export function clearAllStatusEffectsFromEntity(entity: Entity): void {
+  const state = ensureEntityStatusState(entity);
   state.active = {};
 }
 
@@ -282,6 +363,18 @@ export function getActiveStatusEffects(
   );
 }
 
+export function getActiveStatusEffectsForEntity(
+  entity: Entity,
+  now: number = Date.now(),
+): StatusEffectInstance[] {
+  tickEntityStatusEffects(entity, now);
+  const state = ensureEntityStatusState(entity);
+
+  return Object.values(state.active).filter(
+    (inst): inst is StatusEffectInstance => !!inst,
+  );
+}
+
 function addSchoolMap(
   dst: Partial<Record<DamageSchool, number>>,
   src: Partial<Record<DamageSchool, number>> | undefined,
@@ -297,20 +390,12 @@ function addSchoolMap(
   }
 }
 
-/**
- * Aggregate active status effects for combat / stats.
- *
- * - Cleans up expired effects.
- * - Sums contributions (taking stacks into account).
- * - Returns a pure snapshot; does not modify attributes directly.
- */
-export function computeCombatStatusSnapshot(
-  char: CharacterState,
-  now: number = Date.now(),
+function computeSnapshotFromState(
+  state: InternalStatusState,
+  now: number,
 ): CombatStatusSnapshot {
   // First pass: prune expired
-  tickStatusEffects(char, now);
-  const state = ensureStatusState(char);
+  tickStatusEffectsInternal(state, now);
 
   const attributesFlat: Partial<Attributes> = {};
   const attributesPct: Partial<Attributes> = {};
@@ -391,4 +476,115 @@ export function computeCombatStatusSnapshot(
     resistFlat,
     resistPct,
   };
+}
+
+/**
+ * Aggregate active status effects for combat / stats.
+ *
+ * - Cleans up expired effects.
+ * - Sums contributions (taking stacks into account).
+ * - Returns a pure snapshot; does not modify attributes directly.
+ */
+export function computeCombatStatusSnapshot(
+  char: CharacterState,
+  now: number = Date.now(),
+): CombatStatusSnapshot {
+  const state = ensureStatusState(char);
+  return computeSnapshotFromState(state, now);
+}
+
+export function computeEntityCombatStatusSnapshot(
+  entity: Entity,
+  now: number = Date.now(),
+): CombatStatusSnapshot {
+  const state = ensureEntityStatusState(entity);
+  return computeSnapshotFromState(state, now);
+}
+
+export type DotTickEvent = {
+  effectId: StatusEffectId;
+  damage: number;
+  school: DamageSchool;
+};
+
+/**
+ * Tick DOT payloads on an entity (NPC) and apply damage via callback.
+ *
+ * This function:
+ *  - prunes expired effects
+ *  - computes defender taken modifiers ONCE per call
+ *  - emits one or more dot ticks if time advanced beyond the next tick time
+ *
+ * Note: damage application is intentionally handled externally so callers can route it
+ * through NpcManager (crime/aggro hooks) or just subtract hp in tests.
+ */
+export function tickEntityStatusEffectsAndApplyDots(
+  entity: Entity,
+  now: number,
+  applyDamage: (amount: number, meta: DotTickEvent) => void,
+): void {
+  const state = ensureEntityStatusState(entity);
+
+  // Prune first so we don't tick dead effects.
+  tickStatusEffectsInternal(state, now);
+
+  let defenderStatus: CombatStatusSnapshot | null = null;
+  try {
+    defenderStatus = computeSnapshotFromState(state, now);
+  } catch {
+    defenderStatus = null;
+  }
+
+  for (const inst of Object.values(state.active)) {
+    if (!inst?.dot) continue;
+
+    const dot = inst.dot;
+    const tickIntervalMs = Math.max(1, Math.floor(Number(dot.tickIntervalMs ?? 0)));
+    const perTickDamageBase = Math.max(1, Math.floor(Number(dot.perTickDamage ?? 0)));
+    const school: DamageSchool = (dot.damageSchool as DamageSchool) ?? "pure";
+
+    if (!Number.isFinite(tickIntervalMs) || tickIntervalMs <= 0) continue;
+    if (!Number.isFinite(perTickDamageBase) || perTickDamageBase <= 0) continue;
+
+    if (!Number.isFinite(dot.nextTickAtMs) || dot.nextTickAtMs <= 0) {
+      dot.nextTickAtMs = (inst.appliedAtMs ?? now) + tickIntervalMs;
+    }
+
+    // Inclusive end: allow a tick exactly at expiresAtMs.
+    const expiresAt = inst.expiresAtMs ?? Number.MAX_SAFE_INTEGER;
+
+    while (dot.nextTickAtMs <= now && dot.nextTickAtMs <= expiresAt) {
+      let dmg = perTickDamageBase;
+
+      // Apply defender taken modifiers at tick time (debuffs amplify DOTs too).
+      if (defenderStatus) {
+        const globalTaken =
+          typeof defenderStatus.damageTakenPct === "number" ? defenderStatus.damageTakenPct : 0;
+        const bySchoolTaken = (defenderStatus.damageTakenPctBySchool as any)?.[school];
+        const bySchoolN = typeof bySchoolTaken === "number" ? bySchoolTaken : 0;
+
+        const takenPct =
+          (Number.isFinite(globalTaken) ? globalTaken : 0) +
+          (Number.isFinite(bySchoolN) ? bySchoolN : 0);
+
+        if (takenPct) {
+          const after = dmg * (1 + takenPct);
+          dmg = Number.isFinite(after) && after > 0 ? Math.floor(after) : dmg;
+        }
+      }
+
+      if (!Number.isFinite(dmg) || dmg < 1) dmg = 1;
+
+      try {
+        applyDamage(dmg, { effectId: inst.id, damage: dmg, school });
+      } catch {
+        // DOT application must never crash the tick loop.
+      }
+
+      dot.nextTickAtMs += tickIntervalMs;
+    }
+  }
+
+  // Prune again (expiry moment inclusive, so this will clean up on the next tick).
+  tickStatusEffectsInternal(state, now);
 }

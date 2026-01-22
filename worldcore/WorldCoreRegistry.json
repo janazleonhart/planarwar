@@ -564,8 +564,14 @@
     "combat.castingGates": {
       "kind": "service",
       "path": "worldcore/combat/CastingGates.ts",
-      "functions": ["applyActionCostAndCooldownGates"],
-      "dependsOn": ["combat.cooldowns", "resources.power", "characters.types"],
+      "functions": [
+        "applyActionCostAndCooldownGates"
+      ],
+      "dependsOn": [
+        "combat.cooldowns",
+        "resources.power",
+        "characters.types"
+      ],
       "notes": [
         "Centralized gates for action resource costs + cooldowns (spells/songs/abilities).",
         "Guarantees: cooldowns do not start and resources are not consumed if the action fails.",
@@ -807,12 +813,16 @@
       "kind": "service",
       "path": "worldcore/combat/StatusEffects.ts",
       "functions": [
-        "tickStatusEffects",
         "applyStatusEffect",
-        "clearStatusEffect",
+        "applyStatusEffect(char,input)",
         "clearAllStatusEffects",
+        "clearStatusEffect",
+        "computeCombatStatusSnapshot",
+        "computeCombatStatusSnapshot(char, nowMs?)",
         "getActiveStatusEffects",
-        "computeCombatStatusSnapshot"
+        "getActiveStatusEffects(char, nowMs?)",
+        "tickStatusEffects",
+        "tickStatusEffects(char, nowMs?)"
       ],
       "dependsOn": [
         "characters.types"
@@ -825,7 +835,10 @@
         "Status effect spine used by vulnerability, region peril auras, and outgoing/incoming damage modifiers.",
         "Imports DamageSchool as a type from CombatEngine (type-only); no runtime circular dependency.",
         "damageTakenPct and damageDealtPct are FRACTIONS (0.05 = +5%).",
-        "damageDealtPctBySchool and damageTakenPctBySchool are FRACTIONS (0.05 = +5%)."
+        "damageDealtPctBySchool and damageTakenPctBySchool are FRACTIONS (0.05 = +5%).",
+        "Back-compat: NewStatusEffectInput accepts `stacks` as an alias for `initialStacks` (older call-sites/tests).",
+        "Status effects are stored under character.progression.statusEffects (JSONB) and are ticked/expired via tickStatusEffects().",
+        "Planned: NPC/Entity status-effects carrier + DOT ticking will reuse this module's state shape."
       ]
     },
     "combat.vulnerability": {
@@ -4067,7 +4080,10 @@
       ],
       "notes": [
         "Defines SpellDefinition and SpellKind plus the SPELLS registry.",
-        "Includes debug_arcane_bolt, mage_fire_bolt, cleric_minor_heal, and Virtuoso song spells."
+        "Includes debug_arcane_bolt, mage_fire_bolt, cleric_minor_heal, and Virtuoso song spells.",
+        "SpellKind includes buff/debuff/DOT kinds (buff_self, buff_single_ally, debuff_single_npc, damage_dot_single_npc).",
+        "SpellStatusEffect payloads define status effect id/modifiers/duration/maxStacks for buff/debuff/DOT spells.",
+        "Current wiring: buff_self and buff_single_ally are implemented in MudSpells; NPC debuffs/DOTs remain a TODO until NPC statusEffects + ticking lands."
       ]
     },
     "spells.unlocks": {
@@ -4637,7 +4653,10 @@
       "class": null,
       "lifecycle": "test",
       "ctorArgs": [],
-      "dependsOn": ["test.utils", "combat.castingGates"],
+      "dependsOn": [
+        "test.utils",
+        "combat.castingGates"
+      ],
       "provides": [],
       "owns": [],
       "notes": [
@@ -4703,7 +4722,10 @@
       "service": "test.contract",
       "path": "worldcore/test/contract_songEngine_melodyAdvanceOnThrow.test.ts",
       "lifecycle": "test",
-      "dependsOn": ["test.utils", "songs.engine"],
+      "dependsOn": [
+        "test.utils",
+        "songs.engine"
+      ],
       "notes": [
         "Contract: SongEngine must advance melody index and schedule next tick even if cast path throws.",
         "Prevents regressions where melody stalls due to exceptions."
@@ -4802,26 +4824,6 @@
       ],
       "notes": [
         "Regression tests for SQL table-name extraction (CREATE/ALTER; ONLY; quoted identifiers)."
-      ]
-    },
-    "test.contractSongInstrumentGearBonus": {
-      "kind": "test",
-      "service": "test.contract",
-      "path": "worldcore/test/contract_songInstrumentGearBonus.test.ts",
-      "class": null,
-      "lifecycle": "test",
-      "ctorArgs": [],
-      "dependsOn": [
-        "test.utils",
-        "mud.spells",
-        "songs.songScaling",
-        "items.catalog"
-      ],
-      "provides": [],
-      "owns": [],
-      "notes": [
-        "Contract: equipped instrument bonus increases song healing deterministically (no RNG).",
-        "Protects the instrument scaling seam so future refactors of MudSpells/SongScaling cannot silently drop gear bonuses."
       ]
     },
     "tools.gapTableAuditLib": {
@@ -6091,6 +6093,26 @@
         "isSpawnAnchor/isSpawnSeed/isSpawnBrain helpers"
       ],
       "owns": []
+    },
+    "test.contractSongInstrumentGearBonus": {
+      "kind": "test",
+      "service": "test.contract",
+      "path": "worldcore/test/contract_songInstrumentGearBonus.test.ts",
+      "class": null,
+      "lifecycle": "test",
+      "ctorArgs": [],
+      "dependsOn": [
+        "test.utils",
+        "mud.spells",
+        "songs.songScaling",
+        "items.catalog"
+      ],
+      "provides": [],
+      "owns": [],
+      "notes": [
+        "Contract: equipped instrument bonus increases song healing deterministically (no RNG).",
+        "Protects the instrument scaling seam so future refactors of MudSpells/SongScaling cannot silently drop gear bonuses."
+      ]
     }
   }
 }

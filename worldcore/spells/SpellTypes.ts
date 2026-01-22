@@ -43,6 +43,14 @@ export interface SpellStatusEffect {
   modifiers: StatusEffectModifier;
   /** Optional tags for UI / filtering. */
   tags?: string[];
+
+  /** Optional DOT metadata (used when spell.kind === "damage_dot_single_npc"). */
+  dot?: {
+    /** Tick interval in milliseconds (default: 2000ms). */
+    tickIntervalMs?: number;
+    /** If true (default), total damage is distributed across ticks. */
+    spreadDamageAcrossTicks?: boolean;
+  };
 }
 
 export interface SpellDefinition {

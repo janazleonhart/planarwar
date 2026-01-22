@@ -25,6 +25,7 @@ import {
   type WeaponSkillId,
   type SpellSchoolId,
 } from "./CombatEngine";
+import { computeEntityCombatStatusSnapshot } from "./StatusEffects";
 import type { AttackChannel } from "../actions/ActionTypes";
 import {
   gainPowerResource,
@@ -157,15 +158,25 @@ export async function performNpcAttack(
     songSchool: opts.songSchool,
   };
 
+  let defenderStatus: any = undefined;
+  try {
+    defenderStatus = computeEntityCombatStatusSnapshot(npc as any);
+  } catch {
+    // Defender snapshot must never crash NPC combat; ignore on error.
+  }
+
   const target: CombatTarget = {
     entity: npc,
     armor: (npc as any).armor ?? 0,
     resist: (npc as any).resist ?? {},
+    defenderStatus,
   };
 
   const result = computeDamage(source, target, {
     damageMultiplier: opts.damageMultiplier,
     flatBonus: opts.flatBonus,
+    // Enable defender taken modifiers when we have a snapshot (NPC debuffs).
+    applyDefenderDamageTakenMods: true,
   });
 
   // rawDamage = what CombatEngine rolled

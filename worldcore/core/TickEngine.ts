@@ -6,6 +6,7 @@ import { SessionManager } from "./SessionManager";
 import { ServerWorldManager } from "../world/ServerWorldManager";
 import { Logger } from "../utils/logger";
 import { NpcManager } from "../npc/NpcManager";
+import { tickEntityStatusEffectsAndApplyDots } from "../combat/StatusEffects";
 
 export interface TickEngineConfig {
   intervalMs: number; // tick interval (e.g. 50ms for 20 TPS)
@@ -103,7 +104,15 @@ export class TickEngine {
       }
     }
 
-    // Global hook for systems that want a heartbeat (SongEngine, etc.)
+    
+    // NPC status effects + DOTs (periodic damage). This is intentionally best-effort.
+    try {
+      this.tickNpcStatusDots(now);
+    } catch (err: any) {
+      this.log.warn("Error during NPC status DOT tick", { error: String(err) });
+    }
+
+// Global hook for systems that want a heartbeat (SongEngine, etc.)
     try {
       this.cfg.onTick?.(now, this.tickCount, deltaMs);
     } catch (err: any) {
@@ -132,4 +141,48 @@ export class TickEngine {
       });
     }
   }
+  private tickNpcStatusDots(now: number): void {
+    const all = (() => {
+      try {
+        return this.entities.getAll();
+      } catch {
+        return [];
+      }
+    })();
+
+    for (const ent of all as any[]) {
+      const type = String((ent as any)?.type ?? (ent as any)?.kind ?? "");
+      if (type !== "npc") continue;
+
+      tickEntityStatusEffectsAndApplyDots(ent as any, now, (amount, meta) => {
+        if (!Number.isFinite(amount) || amount <= 0) return;
+
+        // Prefer routing through NpcManager so downstream hooks (aggro/crime/logging) can run.
+        const nm: any = this.npcs as any;
+        if (nm && typeof nm.applyDamage === "function") {
+          try {
+            nm.applyDamage((ent as any).id, amount, {
+              system: "dot",
+              effectId: meta.effectId,
+              school: meta.school,
+            });
+            return;
+          } catch {
+            // fall through
+          }
+        }
+
+        // Fallback: mutate the in-memory entity HP directly (tests/dev).
+        const hp0 =
+          typeof (ent as any).hp === "number"
+            ? (ent as any).hp
+            : typeof (ent as any).maxHp === "number"
+              ? (ent as any).maxHp
+              : 0;
+
+        (ent as any).hp = Math.max(0, Math.floor(hp0) - Math.floor(amount));
+      });
+    }
+  }
+
 }
