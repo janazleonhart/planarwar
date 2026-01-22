@@ -13,6 +13,8 @@ import type { CharacterState } from "../characters/CharacterTypes";
 import { Logger } from "../utils/logger";
 import { applyActionCostAndCooldownGates } from "../combat/CastingGates";
 
+import { resolveTargetInRoom } from "../targeting/TargetResolver";
+
 import {
   ABILITIES,
   findAbilityByNameOrId,
@@ -22,7 +24,6 @@ import {
 import { getPrimaryPowerResourceForClass } from "../resources/PowerResources";
 
 import { performNpcAttack } from "./MudActions";
-import { findNpcTargetByName } from "./MudHelperFunctions";
 
 import {
   isServiceProtectedEntity,
@@ -72,12 +73,17 @@ export async function handleAbilityCommand(
 
   switch ((ability as any).kind) {
     case "melee_single": {
-      const target = (targetNameRaw ?? "").trim();
-      if (!target) return "Usage: ability <name> <target>";
+      const targetRaw = (targetNameRaw ?? "").trim();
+      if (!targetRaw) return "Usage: ability <name> <target>";
 
-      // Target resolve (must pass entities, not ctx)
-      const npc = findNpcTargetByName(entities, roomId, target);
-      if (!npc) return `[world] There is no '${target}' here.`;
+      // Resolve using shared TargetResolver so numeric + nearby handles line up with `nearby` output.
+      const npc = resolveTargetInRoom(entities as any, roomId, targetRaw, {
+        selfId: String(selfEntity.id),
+        filter: (e: any) => e?.type === "npc" || e?.type === "mob",
+        radius: 30,
+      });
+
+      if (!npc) return `[world] There is no '${targetRaw}' here.`;
 
       // Service protection gate: deny BEFORE consuming cooldown/resources.
       if (isServiceProtectedNpcTarget(ctx, npc)) {

@@ -8,8 +8,8 @@ import { canDamage } from "../combat/DamagePolicy";
 import { checkAndStartCooldown } from "../combat/Cooldowns";
 import { SPELLS, SpellDefinition, findSpellByNameOrId } from "../spells/SpellTypes";
 import { performNpcAttack } from "./MudActions";
+import { resolveTargetInRoom } from "../targeting/TargetResolver";
 import {
-  findNpcTargetByName,
   findTargetPlayerEntityByName,
   isDeadEntity,
   resurrectEntity,
@@ -297,7 +297,11 @@ export async function castSpellForCharacter(
     case "damage_single_npc": {
       const targetName = targetRaw || "rat";
 
-      const npc = findNpcTargetByName(ctx.entities, roomId, targetName);
+      const npc = resolveTargetInRoom(ctx.entities as any, roomId, targetName, {
+        selfId: selfEntity.id,
+        filter: (e: any) => e?.type === "npc" || e?.type === "mob",
+        radius: 30,
+      });
 
       // Targeting helpers return { entity, name } (for stable display names). Normalize here.
       const playerFound = !npc ? findTargetPlayerEntityByName(ctx, roomId, targetRaw) : null;
@@ -688,7 +692,11 @@ case "heal_self": {
     case "debuff_single_npc":
     case "damage_dot_single_npc": {
       const targetName = targetRaw || "rat";
-      const npc = findNpcTargetByName(ctx.entities, roomId, targetName);
+      const npc = resolveTargetInRoom(ctx.entities as any, roomId, targetName, {
+        selfId: selfEntity.id,
+        filter: (e: any) => e?.type === "npc" || e?.type === "mob",
+        radius: 30,
+      });
 
       if (!npc) {
         return `There is no '${targetRaw}' here to target with ${spell.name}.`;

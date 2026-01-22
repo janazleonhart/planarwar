@@ -12,12 +12,12 @@
 import { MudContext } from "../MudContext";
 import type { CharacterState } from "../../characters/CharacterTypes";
 import type { Entity } from "../../shared/Entity";
+import { resolveTargetInRoom } from "../../targeting/TargetResolver";
 import { canDamage } from "../../combat/DamagePolicy";
 
 import { computeEffectiveAttributes } from "../../characters/Stats";
 
 import {
-  findNpcTargetByName,
   findTargetPlayerEntityByName,
   markInCombat,
 } from "../MudHelperFunctions";
@@ -129,7 +129,13 @@ export async function handleAttackAction(
   const roomId = selfEntity.roomId ?? char.shardId;
 
   // 1) Try NPC target first (rats, ore, dummies, etc.)
-  const npcTarget = findNpcTargetByName(ctx.entities, roomId, targetNameRaw);
+  const npcTarget = resolveTargetInRoom(ctx.entities as any, roomId, targetNameRaw, {
+    selfId: selfEntity.id,
+    // Only NPC-like entities are eligible here. Player targets are handled separately below.
+    filter: (e: any) => e?.type === "npc" || e?.type === "mob",
+    // Keep consistent with nearby output unless a command enforces something tighter downstream.
+    radius: 30,
+  });
   if (npcTarget) {
     // Prevent double-kills / double-loot / double-respawn scheduling.
     // If the entity is already dead, you shouldn't be able to attack it.
