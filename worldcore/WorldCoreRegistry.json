@@ -2071,6 +2071,14 @@
         "event_mail_reward sends explicit system mail (mail as feature)."
       ]
     },
+    "mud.commands.debug.debugEffectsCommand": {
+      "kind": "mud_command_group",
+      "path": "worldcore/mud/commands/debug/debugEffectsCommand.ts",
+      "functions": ["handleDebugEffects"],
+      "invokedBy": ["mud.commands.debug.debug_effects (via mud/commands/registry.ts)"],
+      "dependsOn": ["combat.statusEffects", "mud.entityManager", "mud.session"],
+      "notes": ["Debug QoL: inspect active effects + (if available) computed combat snapshot for a target (entity id or nearby handle)."]
+    },
     "mud.commands.debug.hydrateHere": {
       "kind": "mud_command",
       "path": "worldcore/mud/commands/debug/hydrateHere.ts",
@@ -5132,6 +5140,13 @@
       "notes": [
         "Contract: status effect snapshot math + modifiers"
       ]
+    },
+    "test.contractDebugEffectsCommand": {
+      "kind": "test",
+      "service": "test.contract",
+      "path": "worldcore/test/contract_debugEffectsCommand.test.ts",
+      "dependsOn": ["mud.debug.debugEffectsCommand", "test.utils"],
+      "notes": ["Ensures debug_effects resolves nearby handles and can emit valid JSON."]
     },
     "test.utils": {
       "kind": "test_utility",
