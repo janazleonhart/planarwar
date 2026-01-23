@@ -253,8 +253,19 @@ export interface CityBuilding {
     specializationStarsHistory: Record<string, number>;
   }
   
-  export const API_BASE_URL =
-    (import.meta as any).env.VITE_API_BASE_URL ?? "http://localhost:4000";
+  export const API_BASE_URL = (() => {
+  // IMPORTANT:
+  // - Default is same-origin (empty string), so running on a VM works from any client machine.
+  // - Override with VITE_API_BASE_URL (e.g. "http://<vm-ip>:4000") if you intentionally want a remote API.
+  const env = ((import.meta as any).env ?? {}) as Record<string, any>;
+  const raw = String(env.VITE_API_BASE_URL ?? "").trim();
+
+  // Empty => relative "/api/..." requests against the current origin.
+  if (!raw) return "";
+
+  // Normalize: strip trailing slashes to avoid "//api/..." surprises.
+  return raw.replace(/\/+$/, "");
+})();
   
   export async function fetchMe(): Promise<MeProfile> {
     const res = await fetch(`${API_BASE_URL}/api/me`);
@@ -282,7 +293,8 @@ export interface CityBuilding {
     path: string,
     init: RequestInit = {}
   ): Promise<T> {
-    const res = await fetch(`${API_BASE_URL}${path}`, {
+    const normalizedPath = path.startsWith("/") ? path : `/${path}`;
+    const res = await fetch(`${API_BASE_URL}${normalizedPath}`, {
       // include cookies if you later gate this behind auth
       credentials: "include",
       headers: {
@@ -293,7 +305,20 @@ export interface CityBuilding {
     });
   
     if (!res.ok) {
-      throw new Error(`Failed to fetch ${path}: ${res.status}`);
+      const contentType = res.headers.get("content-type") || "";
+      let detail = "";
+      try {
+        if (contentType.includes("application/json")) {
+          const body = await res.json();
+          detail = (body as any)?.error ? `: ${(body as any).error}` : "";
+        } else {
+          const text = await res.text();
+          detail = text ? `: ${text}` : "";
+        }
+      } catch {
+        // ignore
+      }
+      throw new Error(`Failed to fetch ${normalizedPath}: ${res.status}${detail}`);
     }
   
     return res.json() as Promise<T>;

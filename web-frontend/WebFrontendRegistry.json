@@ -310,6 +310,24 @@
       "notes": [
         "Simple table UI with filters + pagination. Backed by /api/admin/vendor_audit."
       ]
+    },
+    "web-frontend.pages.adminVendorEconomy": {
+      "kind": "page",
+      "service": "web.adminPages",
+      "path": "web-frontend/pages/AdminVendorEconomyPage.tsx",
+      "class": "AdminVendorEconomyPage",
+      "lifecycle": "page",
+      "ctorArgs": [],
+      "dependsOn": [],
+      "provides": [
+        "/admin/vendor_economy"
+      ],
+      "owns": [
+        "Admin UI for vendor_item_economy"
+      ],
+      "notes": [
+        "Editable vendor economy knobs (stockMax/restock cadence/price mults) with per-row save + optional stock reset."
+      ]
     }
   },
   "conventions": {

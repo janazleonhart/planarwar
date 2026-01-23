@@ -7,6 +7,7 @@ import { AdminNpcsPage } from "./pages/AdminNpcsPage";
 import { AdminItemsPage } from "./pages/AdminItemsPage";
 import { AdminSpawnPointsPage } from "./pages/AdminSpawnPointsPage"
 import { AdminVendorAuditPage } from "./pages/AdminVendorAuditPage"
+import { AdminVendorEconomyPage } from "./pages/AdminVendorEconomyPage"
 
 const API_BASE =
   window.location.hostname === "localhost"
@@ -99,6 +100,10 @@ function App() {
 
   if (path === "/admin/vendor_audit" || path === "/admin/vendor-audit") {
     return <AdminVendorAuditPage />;
+  }
+
+  if (path === "/admin/vendor_economy" || path === "/admin/vendor-economy") {
+    return <AdminVendorEconomyPage />;
   }
 
   const [authMode, setAuthMode] = useState<AuthMode>("login");

@@ -922,6 +922,27 @@
       "notes": [
         "Admin read-only viewer endpoint for vendor_log with filters + pagination."
       ]
+    },
+    "web-backend.routes.adminVendorEconomy": {
+      "kind": "module",
+      "service": "http.adminRoutes",
+      "path": "web-backend/routes/adminVendorEconomy.ts",
+      "class": null,
+      "lifecycle": "singleton",
+      "ctorArgs": [],
+      "dependsOn": [
+        "npm:express",
+        "worldcore:db/Database"
+      ],
+      "provides": [
+        "GET /api/admin/vendor_economy/vendors",
+        "GET /api/admin/vendor_economy/items",
+        "POST /api/admin/vendor_economy/items/:vendorItemId"
+      ],
+      "owns": [],
+      "notes": [
+        "Admin editor endpoints for vendor_item_economy (stock/restock/price multipliers) with optional stock reset."
+      ]
     }
   }
 }

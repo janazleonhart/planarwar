@@ -32,6 +32,103 @@ export type TownServiceId =
   | "auction"
   | "guildbank";
 
+// -----------------------------------------------------------------------------
+// Vendor economy defaults by town tier
+// -----------------------------------------------------------------------------
+//
+// Economy Realism v1.1 introduces restock cadence and tier-aware defaults.
+// We keep the policy here so tools + services can share the same intent.
+//
+// IMPORTANT:
+// - These values are applied ONLY when economy rows are first created for a
+//   vendor's items (best-effort insert). Existing rows are not overwritten.
+// - "Per-town" in v1.1 is implemented as "per-vendor-id" defaults, where the
+//   vendor id can include a tier token (e.g. "starter_alchemist_tier3").
+//   If no token exists, we treat it as tier 1.
+// -----------------------------------------------------------------------------
+
+export interface VendorEconomyTierPolicy {
+  tier: TownTierId;
+
+  /** Maximum stock to restock up to (<=0 means infinite, but we keep it >0 by default). */
+  stockMax: number;
+
+  /** Cadence: every N seconds, add restockAmount units. */
+  restockEverySec: number;
+  restockAmount: number;
+
+  /** Dynamic pricing bounds (see computeVendorUnitPriceGold). */
+  priceMinMult: number;
+  priceMaxMult: number;
+
+  /** Optional text for humans. */
+  notes?: string;
+}
+
+const VENDOR_ECONOMY_TIER_POLICY: Record<TownTierId, VendorEconomyTierPolicy> = {
+  1: {
+    tier: 1,
+    stockMax: 25,
+    restockEverySec: 300,
+    restockAmount: 1,
+    priceMinMult: 0.90,
+    priceMaxMult: 1.60,
+    notes: "Small outpost: low stock, slower restock, harsher scarcity.",
+  },
+  2: {
+    tier: 2,
+    stockMax: 40,
+    restockEverySec: 240,
+    restockAmount: 1,
+    priceMinMult: 0.88,
+    priceMaxMult: 1.55,
+    notes: "Market hamlet: modest stock and cadence.",
+  },
+  3: {
+    tier: 3,
+    stockMax: 60,
+    restockEverySec: 180,
+    restockAmount: 2,
+    priceMinMult: 0.85,
+    priceMaxMult: 1.50,
+    notes: "Town: better supply chain.",
+  },
+  4: {
+    tier: 4,
+    stockMax: 90,
+    restockEverySec: 150,
+    restockAmount: 3,
+    priceMinMult: 0.82,
+    priceMaxMult: 1.45,
+    notes: "Trade hub: robust restock.",
+  },
+  5: {
+    tier: 5,
+    stockMax: 120,
+    restockEverySec: 120,
+    restockAmount: 4,
+    priceMinMult: 0.80,
+    priceMaxMult: 1.40,
+    notes: "Capital: deep inventory and fast restock.",
+  },
+};
+
+/** Get the vendor economy defaults for a town tier (clamps tier to [1..5]). */
+export function getVendorEconomyPolicyForTier(tier: number): VendorEconomyTierPolicy {
+  const t = clampTier(tier);
+  return { ...(VENDOR_ECONOMY_TIER_POLICY[t] ?? VENDOR_ECONOMY_TIER_POLICY[1]) };
+}
+
+/** Try to infer a town tier token (tier_3, tier-3, etc.) from an arbitrary id string. */
+export function tryInferTownTierFromIdToken(id: string | null | undefined): TownTierId | null {
+  const s = String(id ?? "");
+  const m = /tier[_-]?(\d+)/i.exec(s);
+  if (!m) return null;
+  const n = parseInt(m[1], 10);
+  if (!Number.isFinite(n)) return null;
+  return clampTier(n);
+}
+
 /**
  * Station proto ids (spawn_points.protoId for type="station").
  *

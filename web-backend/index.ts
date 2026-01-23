@@ -23,6 +23,7 @@ import adminNpcsRouter from "./routes/adminNpcs";
 import adminItemsRouter from "./routes/adminItems";
 import adminSpawnPointsRouter from "./routes/adminSpawnPoints";
 import { adminVendorAuditRouter } from "./routes/adminVendorAudit";
+import { adminVendorEconomyRouter } from "./routes/adminVendorEconomy";
 
 dotenv.config();
 
@@ -61,6 +62,7 @@ app.use("/api/admin/npcs", adminNpcsRouter);
 app.use("/api/admin/items", adminItemsRouter);
 app.use("/api/admin/spawn_points", adminSpawnPointsRouter);
 app.use("/api/admin/vendor_audit", adminVendorAuditRouter);
+app.use("/api/admin/vendor_economy", adminVendorEconomyRouter);
 
 app.listen(PORT, () => {
   console.log(`Backend listening on http://localhost:${PORT}`);

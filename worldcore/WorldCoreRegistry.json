@@ -1459,6 +1459,20 @@
         "Economy Realism v1: persistent vendor stock + restock knobs + price curve multipliers."
       ]
     },
+
+    "infra.schema.047_vendor_economy_realism_v1_1": {
+      "kind": "migration",
+      "path": "worldcore/infra/schema/047_vendor_economy_realism_v1_1.sql",
+      "dependsOn": [
+        "infra.schema.046_vendor_economy_realism_v1"
+      ],
+      "provides": [
+        "vendor_item_economy cadence fields (restock_every_sec, restock_amount)"
+      ],
+      "notes": [
+        "Economy Realism v1.1: adds cadence fields to vendor_item_economy and backfills them from legacy restock_per_hour."
+      ]
+    },
     "interaction.ops": {
       "kind": "service",
       "path": "worldcore/interaction/interactOps.ts",
@@ -5383,6 +5397,22 @@
       "owns": [],
       "notes": [
         "Contract: vendor economy price curve is monotonic with scarcity; invalid stockMax disables dynamic pricing."
+      ]
+    },
+    "test.contractVendorEconomyTierPolicy": {
+      "kind": "test",
+      "service": "test.contract",
+      "path": "worldcore/test/contract_vendorEconomyTierPolicy.test.ts",
+      "class": null,
+      "lifecycle": "test",
+      "ctorArgs": [],
+      "dependsOn": [
+        "world.townTierRules"
+      ],
+      "provides": [],
+      "owns": [],
+      "notes": [
+        "Contract: vendor economy tier policy clamps tiers and provides monotonic supply/restock knobs; tier token inference works for vendor ids."
       ]
     },
     "test.utils": {

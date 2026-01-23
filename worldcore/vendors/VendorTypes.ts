@@ -1,10 +1,12 @@
 // worldcore/vendors/VendorTypes.ts
 
 export interface VendorItemEconomyConfig {
-  stockMax: number;       // <=0 means infinite
-  restockPerHour: number; // <=0 means no restock
-  priceMinMult: number;
-  priceMaxMult: number;
+  stockMax?: number;       // <=0 means infinite
+  restockPerHour?: number; // <=0 means no restock
+  restockEverySec?: number;     // v1.1 cadence
+  restockAmount?: number;       // v1.1 cadence
+  priceMinMult?: number;
+  priceMaxMult?: number;
 }
 
 export interface VendorItem {
