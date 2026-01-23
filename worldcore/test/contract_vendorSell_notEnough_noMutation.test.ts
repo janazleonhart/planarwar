@@ -67,7 +67,17 @@ function makeVendor(): VendorDefinition {
     id: "vendor_test_1",
     vendorId: "vendor_test_1",
     name: "Test Vendor",
-    items: [{ id: 1, itemId: "rat_tail", priceGold: 2 }],
+    items: [
+      {
+        id: 1,
+        itemId: "rat_tail",
+        basePriceGold: 2,
+        priceGold: 2,
+        stock: null,
+        stockMax: null,
+        econ: null,
+      },
+    ],
   };
 }
 

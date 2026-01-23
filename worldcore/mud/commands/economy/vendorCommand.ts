@@ -335,7 +335,7 @@ async function loadVendorOrError(
   vendorId: string
 ): Promise<{ vendor: VendorDefinition } | { error: string }> {
   if (!ctx?.vendors?.getVendor) return { error: "Vendor service is not available." };
-  const vendor = (await (ctx.vendors as any).getVendor(vendorId)) as VendorDefinition | null;
+  const vendor = (await (ctx.vendors as any).getVendor(vendorId, { forTrade: true })) as VendorDefinition | null;
   if (!vendor) return { error: `[vendor] No vendor found with id '${vendorId}'.` };
   return { vendor };
 }
@@ -396,7 +396,17 @@ async function listAction(ctx: MudContext, char: CharacterState, args: string[])
       const def = (ctx.items as any)?.getItemDefinition?.(vi.itemId) ?? (ctx.items as any)?.getItemDefinition?.(vi.itemId);
       const name = def?.name ?? vi.itemId;
       const rarity = def?.rarity ?? "common";
-      lines.push(`${idx + 1}) ${name} [${rarity}] - ${vi.priceGold} gold (itemId: ${vi.itemId}, rowId=${vi.id})`);
+
+      const stockMax = vi?.stockMax ?? null;
+      const stock = vi?.stock ?? null;
+      const stockLabel = stock == null || stockMax == null ? "∞" : `${stock}/${stockMax}`;
+
+      const base = vi?.basePriceGold ?? vi?.priceGold;
+      const baseSuffix = base != null && Number(base) !== Number(vi.priceGold) ? ` (base ${base}g)` : "";
+
+      lines.push(
+        `${idx + 1}) ${name} [${rarity}] - ${vi.priceGold}g${baseSuffix} (stock ${stockLabel}) (itemId: ${vi.itemId}, rowId=${vi.id})`
+      );
     });
 
     lines.push("Buy: vendor buy [vendorId|handle] <index|rowId> [qty]");
@@ -440,11 +450,58 @@ async function buyAction(ctx: MudContext, char: CharacterState, args: string[]):
     const selector = parsePositiveInt(selectorStr, 0);
     if (selector <= 0) return "[vendor] Invalid selector. Use the list index or rowId.";
 
-    const qty = parsePositiveInt(qtyStr, 1);
+    const qtyRequested = parsePositiveInt(qtyStr, 1);
+
+    // Economy realism v1: enforce stock if the vendor service provides it.
+    const chosenItem = resolveVendorItem(vendor, selector);
+    if (!chosenItem) return "[vendor] That item is not recognized by this vendor.";
+
+    const stockBefore = (chosenItem as any)?.stock ?? null;
+    const stockMax = (chosenItem as any)?.stockMax ?? null;
+
+    let qty = qtyRequested;
+    if (stockBefore != null && stockMax != null) {
+      const available = Math.max(0, Math.floor(Number(stockBefore)));
+      qty = Math.min(qtyRequested, available);
+      if (qty <= 0) {
+        // Best-effort audit log for out-of-stock denies.
+        await logVendorEvent({
+          ts: new Date().toISOString(),
+          shardId: (char as any)?.shardId ?? null,
+          actorCharId: (char as any)?.id ?? null,
+          actorCharName: (char as any)?.name ?? null,
+          vendorId: vendor.id,
+          vendorName: vendor.name ?? null,
+          action: "buy",
+          itemId: chosenItem?.itemId ?? null,
+          quantity: qtyRequested,
+          unitPriceGold: (chosenItem as any)?.priceGold ?? null,
+          totalGold: null,
+          goldBefore: (char as any)?.gold ?? null,
+          goldAfter: (char as any)?.gold ?? null,
+          result: "deny",
+          reason: "out_of_stock",
+          meta: { selector, qtyRequested, stockBefore, stockMax },
+        });
+
+        return "[vendor] Out of stock.";
+      }
+    }
 
     const res = buyFromVendor(char, vendor, selector, qty);
     if (res.ok) {
       await (ctx.characters as any)?.saveCharacter?.(char);
+
+      // Best-effort: apply stock change in vendor economy (never blocks gameplay).
+      try {
+        const rowId = (res as any)?.item?.id;
+        const q = (res as any)?.quantity;
+        if (rowId != null && q != null) {
+          await (ctx.vendors as any)?.applyPurchase?.(Number(rowId), Number(q));
+        }
+      } catch {
+        // ignore
+      }
 
       // Best-effort audit log (never blocks gameplay).
       await logVendorEvent({
@@ -462,7 +519,7 @@ async function buyAction(ctx: MudContext, char: CharacterState, args: string[]):
         goldBefore: res.goldBefore ?? null,
         goldAfter: res.goldAfter ?? null,
         result: "ok",
-        meta: { selector, qtyRequested: qty },
+        meta: { selector, qtyRequested, qtyUsed: qty, stockBefore, stockMax },
       });
     }
     return res.message;
@@ -515,6 +572,18 @@ async function sellAction(ctx: MudContext, char: CharacterState, args: string[])
     const res = sellToVendor(char, itemId, qty, vendor);
     if (res.ok) {
       await (ctx.characters as any)?.saveCharacter?.(char);
+
+      // Best-effort: apply stock change in vendor economy (never blocks gameplay).
+      try {
+        const vendorItem = vendor.items.find((i: any) => i.itemId === itemId);
+        const rowId = (vendorItem as any)?.id;
+        const q = (res as any)?.quantity;
+        if (rowId != null && q != null) {
+          await (ctx.vendors as any)?.applySale?.(Number(rowId), Number(q));
+        }
+      } catch {
+        // ignore
+      }
 
       // Best-effort audit log (never blocks gameplay).
       // Sell price per unit is derived from vendor price reference.

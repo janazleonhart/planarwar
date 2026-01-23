@@ -1,4 +1,4 @@
-// webend-backend/src/routes/auth.ts
+// webend-backend/routes/auth.ts
 
 import { Router } from "express";
 import { PostgresAuthService } from "../../worldcore/auth/PostgresAuthService";

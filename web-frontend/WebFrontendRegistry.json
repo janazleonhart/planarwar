@@ -118,7 +118,7 @@
         "client-side form state"
       ],
       "notes": [
-        "Uses a hard-coded ADMIN_API_BASE (http://192.168.0.74:4000) — should be replaced with a hostname-derived URL or VITE_* config.",
+        "Uses a hard-coded ADMIN_API_BASE (http://192.168.0.74:4000) \u2014 should be replaced with a hostname-derived URL or VITE_* config.",
         "Endpoints: GET /api/admin/quests; POST /api/admin/quests; then refreshes list."
       ]
     },
@@ -291,6 +291,24 @@
       "owns": [],
       "notes": [
         "axios is listed as a dependency but is not currently used in the checked-in TSX/TS files."
+      ]
+    },
+    "web-frontend.pages.adminVendorAudit": {
+      "kind": "page",
+      "service": "web.adminPages",
+      "path": "web-frontend/pages/AdminVendorAuditPage.tsx",
+      "class": "AdminVendorAuditPage",
+      "lifecycle": "page",
+      "ctorArgs": [],
+      "dependsOn": [],
+      "provides": [
+        "/admin/vendor_audit"
+      ],
+      "owns": [
+        "Admin UI for vendor_log"
+      ],
+      "notes": [
+        "Simple table UI with filters + pagination. Backed by /api/admin/vendor_audit."
       ]
     }
   },

@@ -56,7 +56,17 @@ function makeVendor(): VendorDefinition {
     id: "vendor_test_1",
     vendorId: "vendor_test_1",
     name: "Test Vendor",
-    items: [{ id: 1, itemId: "potion_heal_minor", priceGold: 3 }],
+    items: [
+      {
+        id: 1,
+        itemId: "potion_heal_minor",
+        basePriceGold: 3,
+        priceGold: 3,
+        stock: null,
+        stockMax: null,
+        econ: null,
+      },
+    ],
   };
 }
 

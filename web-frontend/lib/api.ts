@@ -1,4 +1,4 @@
-//frontend/src/lib/api.ts
+//web-frontend/lib/api.ts
 
 export interface CityBuilding {
     id: string;

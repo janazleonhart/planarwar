@@ -6,6 +6,7 @@ import { AdminQuestsPage } from "./pages/AdminQuestsPage";
 import { AdminNpcsPage } from "./pages/AdminNpcsPage";
 import { AdminItemsPage } from "./pages/AdminItemsPage";
 import { AdminSpawnPointsPage } from "./pages/AdminSpawnPointsPage"
+import { AdminVendorAuditPage } from "./pages/AdminVendorAuditPage"
 
 const API_BASE =
   window.location.hostname === "localhost"
@@ -94,6 +95,10 @@ function App() {
 
   if (path === "/admin/spawn_points") {
     return <AdminSpawnPointsPage />;
+  }
+
+  if (path === "/admin/vendor_audit" || path === "/admin/vendor-audit") {
+    return <AdminVendorAuditPage />;
   }
 
   const [authMode, setAuthMode] = useState<AuthMode>("login");

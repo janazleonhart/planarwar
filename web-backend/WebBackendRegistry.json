@@ -903,6 +903,25 @@
       "notes": [
         "Workshop crafting job endpoints for demo city builder."
       ]
+    },
+    "web-backend.routes.adminVendorAudit": {
+      "kind": "module",
+      "service": "http.adminRoutes",
+      "path": "web-backend/routes/adminVendorAudit.ts",
+      "class": null,
+      "lifecycle": "singleton",
+      "ctorArgs": [],
+      "dependsOn": [
+        "npm:express",
+        "worldcore:db/Database"
+      ],
+      "provides": [
+        "GET /api/admin/vendor_audit"
+      ],
+      "owns": [],
+      "notes": [
+        "Admin read-only viewer endpoint for vendor_log with filters + pagination."
+      ]
     }
   }
 }

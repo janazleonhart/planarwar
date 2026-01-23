@@ -36,7 +36,7 @@ type ItemRow = {
 // GET /api/admin/items  -> list items
 router.get("/", async (_req, res) => {
   try {
-    const result = await db.query<ItemRow>(
+    const result = (await db.query(
       `
       SELECT
         id,
@@ -54,9 +54,9 @@ router.get("/", async (_req, res) => {
       ORDER BY id
       LIMIT 500
       `
-    );
+    )) as { rows: ItemRow[] };
 
-    const items = result.rows.map((row) => ({
+    const items = result.rows.map((row: ItemRow) => ({
       id: row.id,
       item_key: row.item_key,
       name: row.name,
