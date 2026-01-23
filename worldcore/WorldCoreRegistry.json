@@ -5448,20 +5448,20 @@
         "preview/apply: deterministic outpost planning (dry-run vs --commit)",
         "report/status: respawn coverage audit across bounds (status supports --topGaps)",
         "fill-gaps: place checkpoints/graveyards to patch coverage gaps (dry-run vs --commit)",
-        "era: orchestrated outposts + gapfill run with safe-mode caps + artifact output",
+        "era: orchestrated outposts + gapfill run with safe-mode caps + artifact output (optionally seeds baseline town vendors; default enabled)",
         "mother-wave: plan/apply deterministic Mother Brain wave (dry-run vs --commit), with --append/--theme/--epoch controls",
         "mother-status: summarize Mother Brain (brain-owned) spawn_points within bounds (optionally list)",
         "trim-outposts: enforce per-faction cap by deleting extras within bounds",
         "snapshot-spawns/restore-spawns: export + reapply spawn_points slices",
         "wipe-placements: delete spawn_points of selected types within bounds",
-        "town-baseline command: seed town/outpost baseline spawn_points (mailbox/rest/guards) into spawn_points table",
+        "town-baseline command: seed town/outpost baseline spawn_points (mailbox/rest/stations/vendors/guards/dummies) into spawn_points table",
         "CLI: town-baseline",
         "CLI: mother-status",
         "CLI: mother-wave",
         "Flag: --stations",
         "Flag: --respectTierStations / --tierStations",
         "Flag: --townTier <1..5>",
-        "DB seeding: town services + stations + guards + dummies"
+        "DB seeding: town services + stations + vendors + guards + dummies"
       ],
       "owns": [
         "artifacts/brain/*"
@@ -5471,7 +5471,8 @@
         "Includes Mother Brain wave planning commands (mother-wave/mother-status) for brain-owned spawn_points pipelines.",
         "Follows audit \u2192 plan \u2192 apply pattern with safe default rollback unless --commit.",
         "Safety rails: refuses literal '...' arg; refuses --commit without explicit --bounds (unless --allowDefaultBounds).",
-        "Artifacts are dev-only outputs; keep them gitignored."
+        "Artifacts are dev-only outputs; keep them gitignored.",
+        "Era vendor wiring: by default, `simBrain era` seeds vendor anchors for town-like spawns (disable with --noTownVendors)."
       ]
     },
     "trade.auditLog": {

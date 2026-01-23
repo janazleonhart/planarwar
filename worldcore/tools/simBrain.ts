@@ -150,6 +150,13 @@ Era options (orchestrated run):
   --noArtifact         don't write artifact file
   --json               print artifact JSON (still writes unless --noArtifact)
 
+Era town vendor baseline (era):
+  --noTownVendors     disable baseline vendor seeding during era (default: enabled)
+  --townVendorTypes   comma list of town-like spawn types (default: town,outpost)
+  --townVendorProtoId vendor id/protoId to seed (default: starter_alchemist)
+  --townVendorCount   vendors per town (default: 1)
+  --townVendorRadius  vendor offset radius from town center (default: 11)
+
 Snapshot-spawns options:
   --types          comma list of spawn_points.type to snapshot (default: outpost,checkpoint,graveyard,town,npc)
   --pad            world-units expansion of bounds box (default: 0)
@@ -416,6 +423,71 @@ async function loadSpawnsForArea(args: {
     client.release();
   }
 }
+
+
+async function loadTownLikeSpawnsForArea(args: {
+  shardId: string;
+  bounds: Bounds;
+  cellSize: number;
+  types: string[];
+}): Promise<TownLikeSpawnRow[]> {
+  const cellSize = Math.max(1, Math.floor(args.cellSize));
+  const minX = args.bounds.minCx * cellSize;
+  const maxX = (args.bounds.maxCx + 1) * cellSize;
+  const minZ = args.bounds.minCz * cellSize;
+  const maxZ = (args.bounds.maxCz + 1) * cellSize;
+
+  const types = (args.types ?? []).map((t) => String(t).trim()).filter(Boolean);
+  if (!types.length) return [];
+
+  type Row = {
+    shard_id: string;
+    spawn_id: string;
+    type: string;
+    archetype: string;
+    proto_id: string;
+    variant_id: string | null;
+    x: number;
+    y: number;
+    z: number;
+    region_id: string | null;
+    town_tier: number | null;
+  };
+
+  const client = await db.connect();
+  try {
+    const res = await client.query(
+      `
+      SELECT shard_id, spawn_id, type, archetype, proto_id, variant_id, x, y, z, region_id, town_tier
+      FROM spawn_points
+      WHERE shard_id = $1
+        AND x >= $2 AND x < $3
+        AND z >= $4 AND z < $5
+        AND type = ANY($6::text[])
+      ORDER BY spawn_id
+      `,
+      [args.shardId, minX, maxX, minZ, maxZ, types],
+    );
+
+    const rows = (res.rows ?? []) as Row[];
+    return rows.map((r) => ({
+      shardId: String(r.shard_id),
+      spawnId: String(r.spawn_id),
+      type: String(r.type),
+      archetype: r.archetype != null ? String(r.archetype) : undefined,
+      protoId: r.proto_id != null ? String(r.proto_id) : undefined,
+      variantId: r.variant_id != null ? String(r.variant_id) : null,
+      x: Number(r.x ?? 0),
+      y: Number(r.y ?? 0),
+      z: Number(r.z ?? 0),
+      regionId: r.region_id ? String(r.region_id) : null,
+      townTier: r.town_tier != null ? Number(r.town_tier) : null,
+    }));
+  } finally {
+    client.release();
+  }
+}
+
 
 // ---------------------------------------------------------------------------
 // SAFE MODE (append-only) outpost caps
@@ -899,6 +971,14 @@ async function runEra(args: {
   gapArchetype: string;
   gapBorderMargin: number;
 
+
+  // Optional: seed baseline town vendors during era orchestration.
+  seedTownVendors: boolean;
+  townVendorTypes: string[];
+  townVendorProtoId: string;
+  townVendorCount: number;
+  townVendorRadius: number;
+
   artifactDir: string;
   noArtifact: boolean;
   json: boolean;
@@ -988,6 +1068,106 @@ async function runEra(args: {
     respawnRadius: radius,
   });
 
+  // -----------------------------------------------------------------------
+  // Optional: seed baseline town vendors (service anchors) so towns/outposts
+  // actually have a shop after an orchestrated era run.
+  // -----------------------------------------------------------------------
+  let townVendorActions: BrainAction[] = [];
+  let townVendorPlanned = 0;
+  let townVendorTypes: string[] = [];
+
+  if (args.seedTownVendors) {
+    townVendorTypes = (args.townVendorTypes ?? [])
+      .map((t) => String(t).trim().toLowerCase())
+      .filter(Boolean);
+
+    const vendorCount = Math.max(0, Math.floor(args.townVendorCount ?? 0));
+    const vendorRadius = Math.max(0, Number(args.townVendorRadius ?? 11) || 11);
+    const vendorProtoId = String(args.townVendorProtoId ?? "starter_alchemist").trim().toLowerCase() || "starter_alchemist";
+
+    if (townVendorTypes.length > 0 && vendorCount > 0) {
+      const townTypeSet = new Set(townVendorTypes);
+
+      const existingTownSpawns = await loadTownLikeSpawnsForArea({
+        shardId: args.shardId,
+        bounds: args.bounds,
+        cellSize,
+        types: townVendorTypes,
+      });
+
+      // Include newly planned outposts in this era run so they also get a vendor
+      // even on dry-run preview artifacts.
+      const plannedTownSpawns: TownLikeSpawnRow[] = [];
+      for (const a of outpostActions) {
+        if ((a as PlaceSpawnAction).kind !== "place_spawn") continue;
+        const s = (a as PlaceSpawnAction).spawn;
+        if (!townTypeSet.has(String(s.type ?? "").trim().toLowerCase())) continue;
+
+        plannedTownSpawns.push({
+          shardId: String(s.shardId),
+          spawnId: String(s.spawnId),
+          type: String(s.type),
+          archetype: s.archetype != null ? String(s.archetype) : undefined,
+          protoId: s.protoId != null ? String(s.protoId) : undefined,
+          variantId: (s as any).variantId != null ? String((s as any).variantId) : null,
+          x: Number(s.x ?? 0),
+          y: Number(s.y ?? 0),
+          z: Number(s.z ?? 0),
+          regionId: s.regionId != null ? String(s.regionId) : null,
+          townTier: null,
+        });
+      }
+
+      const merged = new Map<string, TownLikeSpawnRow>();
+      for (const r of [...existingTownSpawns, ...plannedTownSpawns]) {
+        merged.set(String(r.spawnId), r);
+      }
+
+      const townOpts: TownBaselinePlanOptions = {
+        bounds: args.bounds,
+        cellSize,
+        townTypes: townVendorTypes,
+
+        // Only seed vendors here (avoid surprising extra baselines in era).
+        seedMailbox: false,
+        mailboxType: "mailbox",
+        mailboxProtoId: "mailbox_basic",
+        mailboxRadius: 8,
+
+        seedRest: false,
+        restType: "rest",
+        restProtoId: "rest_spot_basic",
+        restRadius: 10,
+
+        seedStations: false,
+        stationType: "station",
+        stationProtoIds: [],
+        stationRadius: 9,
+
+        respectTownTierStations: false,
+        townTierOverride: null,
+
+        seedVendors: true,
+        vendorCount,
+        vendorProtoId,
+        vendorRadius,
+
+        guardCount: 0,
+        guardProtoId: "town_guard",
+        guardRadius: 12,
+
+        dummyCount: 0,
+        dummyProtoId: "training_dummy_big",
+        dummyRadius: 10,
+      };
+
+      const plan = planTownBaselines([...merged.values()], townOpts);
+      townVendorActions = plan.actions as unknown as BrainAction[];
+      townVendorPlanned = plan.actions.length;
+    }
+  }
+
+
   const artifact = {
     kind: "simBrain.era",
     version: 3,
@@ -1020,17 +1200,26 @@ async function runEra(args: {
       plannedCount: plannedGapSpawns.length,
     },
 
+    townVendors: {
+      enabled: args.seedTownVendors,
+      types: townVendorTypes,
+      vendorProtoId: args.townVendorProtoId,
+      vendorCount: args.townVendorCount,
+      vendorRadius: args.townVendorRadius,
+      plannedCount: townVendorPlanned,
+    },
+
     coverage: {
       before: before.summary as CoverageSummary,
       after: after.summary as CoverageSummary,
     },
 
-    actions: [...outpostActions, ...gapActions],
+    actions: [...outpostActions, ...gapActions, ...townVendorActions],
   };
 
   console.log(`[era] shard=${args.shardId} bounds=${boundsSlug(args.bounds)} cellSize=${cellSize} respawnRadius=${radius}`);
   console.log(
-    `[era] outposts_planned=${artifact.outposts.plannedCount} gapfills_planned=${artifact.gapFill.plannedCount} commit=${String(
+    `[era] outposts_planned=${artifact.outposts.plannedCount} gapfills_planned=${artifact.gapFill.plannedCount} townVendors_planned=${artifact.townVendors.plannedCount} commit=${String(
       args.commit,
     )}`,
   );
@@ -1046,7 +1235,7 @@ async function runEra(args: {
     console.log(`[era] artifact=${outPath}`);
   }
 
-  const actionsToApply = [...outpostActions, ...gapActions];
+  const actionsToApply = [...outpostActions, ...gapActions, ...townVendorActions];
   if (actionsToApply.length === 0) {
     console.log("[era] nothing to apply.");
     return;
@@ -2515,6 +2704,14 @@ stationRadius,
   const noArtifact = hasFlag(argv, "--noArtifact");
   const json = hasFlag(argv, "--json");
 
+  // Optional: seed baseline town vendors during era (so towns/outposts actually have shops).
+  // Default: ON (use --noTownVendors to disable).
+  const seedTownVendors = !hasFlag(argv, "--noTownVendors");
+  const townVendorTypes = parseTypes(getFlag(argv, "--townVendorTypes"), ["town", "outpost"]);
+  const townVendorProtoId = getFlag(argv, "--townVendorProtoId") ?? "starter_alchemist";
+  const townVendorCount = parseIntFlag(argv, "--townVendorCount", 1) || 1;
+  const townVendorRadius = parseIntFlag(argv, "--townVendorRadius", 11) || 11;
+
   await runEra({
     shardId,
     bounds,
@@ -2540,6 +2737,12 @@ stationRadius,
     gapProtoId,
     gapArchetype,
     gapBorderMargin,
+
+    seedTownVendors,
+    townVendorTypes,
+    townVendorProtoId,
+    townVendorCount,
+    townVendorRadius,
 
     artifactDir,
     noArtifact,
