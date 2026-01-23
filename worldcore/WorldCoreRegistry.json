@@ -5212,6 +5212,25 @@
         "Contract: exact entity id wins over index/handle/name matching."
       ]
     },
+    "test.contractAttackNoSuchTargetMessage": {
+      "kind": "test",
+      "service": "test.contract",
+      "path": "worldcore/test/contract_attack_noSuchTargetMessage.test.ts",
+      "class": null,
+      "lifecycle": "test",
+      "ctorArgs": [],
+      "dependsOn": [
+        "test.utils",
+        "mud.handler",
+        "mud.commands.combat.attack",
+        "mud.actions.combat",
+        "targeting.resolver"
+      ],
+      "provides": [],
+      "notes": [
+        "Contract: attack invalid target token emits standardized message: [world] No such target: '<token>'."
+      ]
+    },
     "test.utils": {
       "kind": "test_utility",
       "path": "worldcore/test/testUtils.ts",

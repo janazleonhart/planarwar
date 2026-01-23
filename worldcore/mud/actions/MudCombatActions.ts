@@ -266,5 +266,5 @@ export async function handleAttackAction(
   }
 
   // 4) No valid target.
-  return `There is no '${targetNameRaw}' here to attack.`;
+  return `[world] No such target: '${targetNameRaw}'.`;
 }

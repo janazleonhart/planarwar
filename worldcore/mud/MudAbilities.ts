@@ -83,7 +83,7 @@ export async function handleAbilityCommand(
         radius: 30,
       });
 
-      if (!npc) return `[world] There is no '${targetRaw}' here.`;
+      if (!npc) return `[world] No such target: '${targetRaw}'.`;
 
       // Service protection gate: deny BEFORE consuming cooldown/resources.
       if (isServiceProtectedNpcTarget(ctx, npc)) {

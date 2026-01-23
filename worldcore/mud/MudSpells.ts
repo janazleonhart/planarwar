@@ -384,7 +384,8 @@ export async function castSpellForCharacter(
         (playerFound as any)?.name ?? (playerTarget as any)?.name ?? targetRaw;
 
       if (!npc && !playerTarget) {
-        return `There is no '${targetRaw}' here to target with ${spell.name}.`;
+        const denyToken = targetRaw || targetName;
+        return `[world] No such target: '${denyToken}'.`;
       }
 
       // Helper: Virtuoso "battle chant" song grants a short-lived outgoing damage buff on hit.
@@ -773,7 +774,8 @@ case "heal_self": {
       });
 
       if (!npc) {
-        return `There is no '${targetRaw}' here to target with ${spell.name}.`;
+        const denyToken = targetRaw || targetName;
+        return `[world] No such target: '${denyToken}'.`;
       }
 
       // Protected NPCs (vendors/bankers/etc) are never valid combat targets.
