@@ -5445,6 +5445,20 @@
         "Used by smokeChecklist and damage-by-school regression tests."
       ]
     },
+    "tools.auditVendorTags": {
+      "kind": "service",
+      "path": "worldcore/tools/auditVendorTags.ts",
+      "class": "ToolScript",
+      "lifecycle": "tool",
+      "ctorArgs": [],
+      "dependsOn": ["worldcore/db/Database.ts"],
+      "provides": [
+        "Audits + migrates public.npcs.tags vendor tagging (canonical 'vendor', legacy 'service_vendor')",
+        "Supports --apply, --removeLegacy, --limit=N"
+      ],
+      "owns": [],
+      "notes": []
+    },
     "tools.applySchema": {
       "kind": "service",
       "path": "worldcore/tools/applySchema.ts",
