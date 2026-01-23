@@ -519,7 +519,7 @@ async function buyAction(ctx: MudContext, char: CharacterState, args: string[]):
         goldBefore: res.goldBefore ?? null,
         goldAfter: res.goldAfter ?? null,
         result: "ok",
-        meta: { selector, qtyRequested, qtyUsed: qty, stockBefore, stockMax },
+        meta: { selector, qtyRequested, qtyAttempted: qty, qtyGranted: res.quantity ?? null, stockBefore, stockMax },
       });
     }
     return res.message;

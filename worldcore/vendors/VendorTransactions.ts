@@ -106,12 +106,33 @@ export function buyFromVendor(
     };
   }
 
-  const qty = quantity > 0 ? quantity : 1;
+  const qtyRequested = quantity > 0 ? quantity : 1;
+  let qty = qtyRequested;
+
+  // Economy realism: if the vendor exposes finite stock, cap the purchase to what is available.
+  // This is a second line of defense (the command layer also enforces it).
+  const finiteStock = (item as any)?.stock != null && (item as any)?.stockMax != null && Number((item as any).stockMax) > 0;
+  const availableStock = finiteStock ? Math.max(0, Math.floor(Number((item as any).stock))) : null;
+  const stockLimited = finiteStock && availableStock != null && qtyRequested > availableStock;
+  if (finiteStock && availableStock != null) qty = Math.min(qtyRequested, availableStock);
+
   const requestedTotalCost = item.priceGold * qty;
 
   const goldBefore = getCharacterGold(char);
   const invBeforeSnapshot = cloneInventory(char.inventory);
   const itemCountBefore = countItem(invBeforeSnapshot, item.itemId);
+
+  if (finiteStock && (availableStock ?? 0) <= 0) {
+    return {
+      ok: false,
+      message: "[vendor] Out of stock.",
+      item,
+      quantity: 0,
+      goldSpent: 0,
+      goldBefore,
+      goldAfter: goldBefore,
+    };
+  }
 
   if (goldBefore < requestedTotalCost) {
     return {
@@ -183,10 +204,13 @@ export function buyFromVendor(
     };
   }
 
-  // If some requested quantity could not be added, warn the player
+  // If some requested quantity could not be added, warn the player.
+  // Note: qty may already be capped by stock; appliedQty may still be reduced by inventory capacity.
   let msg: string;
   if (appliedQty < qty) {
     msg = `[vendor] You buy ${appliedQty}x ${item.itemId} for ${actualCost} gold (bags were too full for the rest).`;
+  } else if (stockLimited) {
+    msg = `[vendor] Limited stock: you buy ${appliedQty}x ${item.itemId} for ${actualCost} gold.`;
   } else {
     msg = `[vendor] You buy ${appliedQty}x ${item.itemId} for ${actualCost} gold.`;
   }

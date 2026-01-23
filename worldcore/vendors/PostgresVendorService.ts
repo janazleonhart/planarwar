@@ -350,11 +350,16 @@ export class PostgresVendorService implements VendorService {
     if (qty <= 0) return;
 
     try {
+      // Only apply stock deltas when the vendor item has a finite stock_max configured.
+      // (stock_max <= 0 is treated as "infinite" in this project.)
       await db.query(
         `
-        UPDATE vendor_item_state
-        SET stock = GREATEST(0, COALESCE(stock, 0) - $2)
-        WHERE vendor_item_id = $1
+        UPDATE vendor_item_state s
+        SET stock = GREATEST(0, COALESCE(s.stock, 0) - $2)
+        FROM vendor_item_economy e
+        WHERE s.vendor_item_id = $1
+          AND e.vendor_item_id = s.vendor_item_id
+          AND COALESCE(e.stock_max, 0) > 0
         `,
         [vendorItemRowId, qty]
       );
@@ -368,10 +373,15 @@ export class PostgresVendorService implements VendorService {
     if (qty <= 0) return;
 
     try {
+      // For finite stock_max, clamp additions to stock_max.
+      // For stock_max <= 0 (infinite), allow stock to increase without a cap (state becomes informational only).
       await db.query(
         `
         UPDATE vendor_item_state s
-        SET stock = LEAST(COALESCE(e.stock_max, 0), COALESCE(s.stock, 0) + $2)
+        SET stock = CASE
+          WHEN COALESCE(e.stock_max, 0) > 0 THEN LEAST(COALESCE(e.stock_max, 0), COALESCE(s.stock, 0) + $2)
+          ELSE COALESCE(s.stock, 0) + $2
+        END
         FROM vendor_item_economy e
         WHERE s.vendor_item_id = $1
           AND e.vendor_item_id = s.vendor_item_id
