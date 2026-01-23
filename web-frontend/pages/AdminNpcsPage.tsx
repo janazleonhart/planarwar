@@ -1,6 +1,11 @@
 // web-frontend/pages/AdminNpcsPage.tsx
+//
+// NPC Editor (v0)
+// - DB-backed NPC prototypes + loot
+// - Tags are stored in DB as TEXT[] and edited here as a comma-separated string.
+// - Convenience toggles are provided for common tags (notably: vendor)
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 type AdminNpcLootRow = {
   itemId: string;
@@ -21,6 +26,53 @@ type AdminNpc = {
   xpReward: number;
   loot: AdminNpcLootRow[];
 };
+
+function normTag(t: string): string {
+  return String(t ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, "_");
+}
+
+function parseTagsText(text?: string): string[] {
+  const raw = String(text ?? "");
+  const parts = raw
+    .split(",")
+    .map((s) => normTag(s))
+    .filter(Boolean);
+
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const t of parts) {
+    if (seen.has(t)) continue;
+    seen.add(t);
+    out.push(t);
+  }
+  return out;
+}
+
+function toTagsText(tags: string[]): string {
+  // Keep a nice stable representation for the text box.
+  return tags.map(normTag).filter(Boolean).join(", ");
+}
+
+function hasTag(tags: string[], tag: string): boolean {
+  const n = normTag(tag);
+  return tags.some((t) => normTag(t) === n);
+}
+
+function toggleTag(tags: string[], tag: string, enabled: boolean): string[] {
+  const n = normTag(tag);
+  const next = tags.map(normTag).filter(Boolean);
+  const seen = new Set(next);
+
+  if (enabled) {
+    if (!seen.has(n)) next.push(n);
+    return next;
+  }
+
+  return next.filter((t) => t !== n);
+}
 
 export function AdminNpcsPage() {
   const [npcs, setNpcs] = useState<AdminNpc[]>([]);
@@ -88,11 +140,7 @@ export function AdminNpcsPage() {
     setForm((prev) => (prev ? { ...prev, [key]: value } : prev));
   };
 
-  const updateLootRow = (
-    index: number,
-    key: keyof AdminNpcLootRow,
-    value: string | number
-  ) => {
+  const updateLootRow = (index: number, key: keyof AdminNpcLootRow, value: string | number) => {
     setForm((prev) => {
       if (!prev) return prev;
       const nextLoot = [...(prev.loot || [])];
@@ -138,28 +186,63 @@ export function AdminNpcsPage() {
     });
   };
 
+  const formTags = useMemo(() => parseTagsText(form?.tagsText), [form?.tagsText]);
+
+  const setTagEnabled = (tag: string, enabled: boolean) => {
+    setForm((prev) => {
+      if (!prev) return prev;
+      const tags = parseTagsText(prev.tagsText);
+      const next = toggleTag(tags, tag, enabled);
+      return { ...prev, tagsText: toTagsText(next) };
+    });
+  };
+
+  const migrateLegacyVendorTag = () => {
+    setForm((prev) => {
+      if (!prev) return prev;
+      let tags = parseTagsText(prev.tagsText);
+      // Remove legacy tag, ensure canonical.
+      tags = toggleTag(tags, "service_vendor", false);
+      tags = toggleTag(tags, "vendor", true);
+      return { ...prev, tagsText: toTagsText(tags) };
+    });
+  };
+
+  const normalizeTags = () => {
+    setForm((prev) => {
+      if (!prev) return prev;
+      const tags = parseTagsText(prev.tagsText);
+      return { ...prev, tagsText: toTagsText(tags) };
+    });
+  };
+
   const handleSave = async () => {
     if (!form) return;
     setSaving(true);
     setError(null);
     try {
+      // Normalize tags before sending, so the DB never sees weird casing/whitespace duplicates.
+      const payload: AdminNpc = {
+        ...form,
+        tagsText: toTagsText(parseTagsText(form.tagsText)),
+      };
+
       const res = await fetch(`/api/admin/npcs`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(form),
+        body: JSON.stringify(payload),
       });
 
-      let payload: { ok?: boolean; error?: string; npcs?: AdminNpc[] } = {};
+      let body: { ok?: boolean; error?: string; npcs?: AdminNpc[] } = {};
 
       try {
-        payload = await res.json();
+        body = await res.json();
       } catch {
         // If response wasn't JSON, we'll fall back to status text.
       }
 
-      if (!res.ok || payload.ok === false) {
-        const msg =
-          payload.error || `Save failed (HTTP ${res.status})`;
+      if (!res.ok || body.ok === false) {
+        const msg = body.error || `Save failed (HTTP ${res.status})`;
         throw new Error(msg);
       }
 
@@ -171,9 +254,7 @@ export function AdminNpcsPage() {
         error?: string;
       } = await res2.json();
       if (!res2.ok || !data2.ok) {
-        throw new Error(
-          data2.error || `Reload failed (HTTP ${res2.status})`
-        );
+        throw new Error(data2.error || `Reload failed (HTTP ${res2.status})`);
       }
       setNpcs(data2.npcs);
 
@@ -217,10 +298,7 @@ export function AdminNpcsPage() {
                 style={{
                   padding: 6,
                   marginBottom: 4,
-                  border:
-                    n.id === selectedId
-                      ? "2px solid #4caf50"
-                      : "1px solid #ccc",
+                  border: n.id === selectedId ? "2px solid #4caf50" : "1px solid #ccc",
                   borderRadius: 4,
                   cursor: "pointer",
                 }}
@@ -288,9 +366,7 @@ export function AdminNpcsPage() {
                     type="number"
                     style={{ width: 80, marginLeft: 4 }}
                     value={form.level}
-                    onChange={(e) =>
-                      updateField("level", Number(e.target.value || 1))
-                    }
+                    onChange={(e) => updateField("level", Number(e.target.value || 1))}
                   />
                 </label>
                 <label>
@@ -299,9 +375,7 @@ export function AdminNpcsPage() {
                     type="number"
                     style={{ width: 80, marginLeft: 4 }}
                     value={form.maxHp}
-                    onChange={(e) =>
-                      updateField("maxHp", Number(e.target.value || 1))
-                    }
+                    onChange={(e) => updateField("maxHp", Number(e.target.value || 1))}
                   />
                 </label>
                 <label>
@@ -310,9 +384,7 @@ export function AdminNpcsPage() {
                     type="number"
                     style={{ width: 80, marginLeft: 4 }}
                     value={form.dmgMin}
-                    onChange={(e) =>
-                      updateField("dmgMin", Number(e.target.value || 0))
-                    }
+                    onChange={(e) => updateField("dmgMin", Number(e.target.value || 0))}
                   />
                 </label>
                 <label>
@@ -321,9 +393,7 @@ export function AdminNpcsPage() {
                     type="number"
                     style={{ width: 80, marginLeft: 4 }}
                     value={form.dmgMax}
-                    onChange={(e) =>
-                      updateField("dmgMax", Number(e.target.value || 0))
-                    }
+                    onChange={(e) => updateField("dmgMax", Number(e.target.value || 0))}
                   />
                 </label>
               </div>
@@ -350,6 +420,49 @@ export function AdminNpcsPage() {
                 </label>
               </div>
 
+              <div style={{ marginBottom: 10 }}>
+                <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+                  <label style={{ display: "flex", gap: 6, alignItems: "center" }} title="Canonical vendor anchor tag">
+                    <input
+                      type="checkbox"
+                      checked={hasTag(formTags, "vendor")}
+                      onChange={(e) => setTagEnabled("vendor", e.target.checked)}
+                    />
+                    Vendor (tag: <code>vendor</code>)
+                  </label>
+
+                  <label
+                    style={{ display: "flex", gap: 6, alignItems: "center" }}
+                    title="Legacy vendor service tag. Prefer 'vendor' going forward."
+                  >
+                    <input
+                      type="checkbox"
+                      checked={hasTag(formTags, "service_vendor")}
+                      onChange={(e) => setTagEnabled("service_vendor", e.target.checked)}
+                    />
+                    Legacy (tag: <code>service_vendor</code>)
+                  </label>
+
+                  <button type="button" onClick={migrateLegacyVendorTag} disabled={saving}>
+                    Migrate legacy → vendor
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={normalizeTags}
+                    disabled={saving}
+                    title="Lowercase, dedupe, normalize spacing"
+                  >
+                    Normalize tags
+                  </button>
+                </div>
+
+                <div style={{ fontSize: 12, opacity: 0.75, marginTop: 6 }}>
+                  Tip: The canonical vendor anchor is <code>vendor</code>. <code>service_vendor</code> is accepted for
+                  compatibility but should fade out over time.
+                </div>
+              </div>
+
               <div style={{ marginBottom: 8 }}>
                 <label>
                   XP Reward:
@@ -357,9 +470,7 @@ export function AdminNpcsPage() {
                     type="number"
                     style={{ width: 120, marginLeft: 4 }}
                     value={form.xpReward}
-                    onChange={(e) =>
-                      updateField("xpReward", Number(e.target.value || 0))
-                    }
+                    onChange={(e) => updateField("xpReward", Number(e.target.value || 0))}
                   />
                 </label>
               </div>
@@ -382,9 +493,7 @@ export function AdminNpcsPage() {
                         placeholder="itemId"
                         style={{ minWidth: 140 }}
                         value={row.itemId}
-                        onChange={(e) =>
-                          updateLootRow(idx, "itemId", e.target.value)
-                        }
+                        onChange={(e) => updateLootRow(idx, "itemId", e.target.value)}
                       />
                       <input
                         type="number"
@@ -392,32 +501,23 @@ export function AdminNpcsPage() {
                         placeholder="chance"
                         style={{ width: 80 }}
                         value={row.chance}
-                        onChange={(e) =>
-                          updateLootRow(idx, "chance", e.target.value)
-                        }
+                        onChange={(e) => updateLootRow(idx, "chance", e.target.value)}
                       />
                       <input
                         type="number"
                         placeholder="min"
                         style={{ width: 60 }}
                         value={row.minQty}
-                        onChange={(e) =>
-                          updateLootRow(idx, "minQty", e.target.value)
-                        }
+                        onChange={(e) => updateLootRow(idx, "minQty", e.target.value)}
                       />
                       <input
                         type="number"
                         placeholder="max"
                         style={{ width: 60 }}
                         value={row.maxQty}
-                        onChange={(e) =>
-                          updateLootRow(idx, "maxQty", e.target.value)
-                        }
+                        onChange={(e) => updateLootRow(idx, "maxQty", e.target.value)}
                       />
-                      <button
-                        type="button"
-                        onClick={() => removeLootRow(idx)}
-                      >
+                      <button type="button" onClick={() => removeLootRow(idx)}>
                         X
                       </button>
                     </div>

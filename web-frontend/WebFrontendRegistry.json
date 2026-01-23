@@ -314,7 +314,8 @@
         "Admin UI for vendor_log"
       ],
       "notes": [
-        "Simple table UI with filters + pagination. Backed by /api/admin/vendor_audit."
+        "Simple table UI with filters + pagination. Backed by /api/admin/vendor_audit.",
+        "Server streaming CSV export"
       ]
     },
     "web-frontend.pages.adminVendorEconomy": {

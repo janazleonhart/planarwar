@@ -916,7 +916,8 @@
         "worldcore:db/Database"
       ],
       "provides": [
-        "GET /api/admin/vendor_audit"
+        "GET /api/admin/vendor_audit",
+        "GET /api/admin/vendor_audit/csv"
       ],
       "owns": [],
       "notes": [

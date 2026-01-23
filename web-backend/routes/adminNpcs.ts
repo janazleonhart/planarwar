@@ -17,6 +17,7 @@ type AdminNpcPayload = {
   dmgMax: number;
   model?: string;
   tagsText?: string; // comma-separated from UI
+  tags?: string[]; // optional future-friendly form
   xpReward: number;
   loot: {
     itemId: string;
@@ -25,6 +26,46 @@ type AdminNpcPayload = {
     maxQty: number;
   }[];
 };
+
+function normTag(t: string): string {
+  return String(t ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, "_");
+}
+
+function parseTags(tagsText?: string): string[] {
+  const raw = String(tagsText ?? "");
+  const parts = raw
+    .split(",")
+    .map((s) => normTag(s))
+    .filter(Boolean);
+
+  // dedupe preserving order
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const t of parts) {
+    if (seen.has(t)) continue;
+    seen.add(t);
+    out.push(t);
+  }
+  return out;
+}
+
+function normalizeTags(tags: unknown, tagsText?: string): string[] {
+  if (Array.isArray(tags)) {
+    const out: string[] = [];
+    const seen = new Set<string>();
+    for (const t of tags) {
+      const n = normTag(String(t));
+      if (!n || seen.has(n)) continue;
+      seen.add(n);
+      out.push(n);
+    }
+    return out;
+  }
+  return parseTags(tagsText);
+}
 
 router.get("/", async (_req, res) => {
   try {
@@ -64,11 +105,7 @@ router.post("/", async (req, res) => {
     });
   }
 
-  const tags =
-    body.tagsText
-      ?.split(",")
-      .map((s) => s.trim())
-      .filter(Boolean) ?? [];
+  const tags = normalizeTags(body.tags, body.tagsText);
 
   try {
     // upsert npc
@@ -104,10 +141,7 @@ router.post("/", async (req, res) => {
     for (const row of body.loot ?? []) {
       if (!row.itemId) continue;
 
-      const itemCheck = await db.query(
-        "SELECT 1 FROM items WHERE id = $1",
-        [row.itemId]
-      );
+      const itemCheck = await db.query("SELECT 1 FROM items WHERE id = $1", [row.itemId]);
 
       if (itemCheck.rowCount === 0) {
         return res.status(400).json({
