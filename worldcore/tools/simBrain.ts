@@ -150,7 +150,7 @@ Era options (orchestrated run):
   --noArtifact         don't write artifact file
   --json               print artifact JSON (still writes unless --noArtifact)
 
-Era town vendor baseline (era):
+Town vendor baseline (era,mother-wave):
   --noTownVendors     disable baseline vendor seeding during era (default: enabled)
   --townVendorTypes   comma list of town-like spawn types (default: town,outpost)
   --townVendorProtoId vendor id/protoId to seed (default: starter_alchemist)
@@ -2011,6 +2011,15 @@ if (cmd === "mother-wave") {
   const seed = (getFlag(argv, "--seed") ?? "seed:mother").trim() || "seed:mother";
   const append = hasFlag(argv, "--append");
 
+// Optional: seed baseline town vendors after mother-wave apply so towns/outposts are shop-ready.
+// Default: ON (use --noTownVendors to disable).
+const seedTownVendors = !hasFlag(argv, "--noTownVendors");
+const townVendorTypes = parseTypes(getFlag(argv, "--townVendorTypes"), ["town", "outpost"]);
+const townVendorProtoId = getFlag(argv, "--townVendorProtoId") ?? "starter_alchemist";
+const townVendorCount = parseIntFlag(argv, "--townVendorCount", 1) || 1;
+const townVendorRadius = parseIntFlag(argv, "--townVendorRadius", 11) || 11;
+
+
   // bounds padding in CELLS (for selecting/deleting existing brain:* rows)
   const borderMargin = Math.max(0, Math.min(25, parseIntFlag(argv, "--borderMargin", 0) || 0));
 
@@ -2205,6 +2214,181 @@ if (cmd === "mother-wave") {
       skipped = applyPlan.wouldSkip;
     }
 
+
+// ---------------------------------------------------------------------
+// Optional: Town vendor baselines (service anchors) so towns/outposts in
+// this area always have at least one shop after mother-wave.
+// ---------------------------------------------------------------------
+let townVendorPlanned = 0;
+let townVendorInserted = 0;
+let townVendorUpdated = 0;
+let townVendorSkipped = 0;
+
+const normTypes = (townVendorTypes ?? []).map((t) => String(t).trim().toLowerCase()).filter(Boolean);
+const vendorCount = Math.max(0, Math.floor(townVendorCount ?? 0));
+const vendorRadius = Math.max(0, Number(townVendorRadius ?? 11) || 11);
+const vendorProto = String(townVendorProtoId ?? "starter_alchemist").trim().toLowerCase() || "starter_alchemist";
+
+if (seedTownVendors && normTypes.length > 0 && vendorCount > 0) {
+  // Load town-like spawns using THIS transaction so uncommitted changes are visible.
+  const minTX = bounds.minCx * cellSize;
+  const maxTX = (bounds.maxCx + 1) * cellSize;
+  const minTZ = bounds.minCz * cellSize;
+  const maxTZ = (bounds.maxCz + 1) * cellSize;
+
+  const townRes = await client.query(
+    `
+      SELECT shard_id, spawn_id, type, archetype, proto_id, variant_id, x, y, z, region_id, town_tier
+      FROM spawn_points
+      WHERE shard_id = $1
+        AND x >= $2 AND x < $3
+        AND z >= $4 AND z < $5
+        AND type = ANY($6::text[])
+      ORDER BY spawn_id
+    `,
+    [shardId, minTX, maxTX, minTZ, maxTZ, normTypes],
+  );
+
+  const townRows: TownLikeSpawnRow[] = (townRes.rows ?? []).map((r: any) => ({
+    shardId: String(r.shard_id),
+    spawnId: String(r.spawn_id),
+    type: String(r.type),
+    archetype: r.archetype != null ? String(r.archetype) : undefined,
+    protoId: r.proto_id != null ? String(r.proto_id) : undefined,
+    variantId: r.variant_id != null ? String(r.variant_id) : null,
+    x: Number(r.x ?? 0),
+    y: Number(r.y ?? 0),
+    z: Number(r.z ?? 0),
+    regionId: r.region_id ? String(r.region_id) : null,
+    townTier: r.town_tier != null ? Number(r.town_tier) : null,
+  }));
+
+  const townOpts: TownBaselinePlanOptions = {
+    bounds,
+    cellSize,
+    townTypes: normTypes,
+
+    // Only seed vendors here (avoid surprising extra baselines).
+    seedMailbox: false,
+    mailboxType: "mailbox",
+    mailboxProtoId: "mailbox_basic",
+    mailboxRadius: 8,
+
+    seedRest: false,
+    restType: "rest",
+    restProtoId: "rest_spot_basic",
+    restRadius: 10,
+
+    seedStations: false,
+    stationType: "station",
+    stationProtoIds: [],
+    stationRadius: 9,
+
+    respectTownTierStations: false,
+    townTierOverride: null,
+
+    seedVendors: true,
+    vendorCount,
+    vendorProtoId: vendorProto,
+    vendorRadius,
+
+    guardCount: 0,
+    guardProtoId: "town_guard",
+    guardRadius: 12,
+
+    dummyCount: 0,
+    dummyProtoId: "training_dummy_big",
+    dummyRadius: 10,
+  };
+
+  const vendorPlan = planTownBaselines(townRows, townOpts);
+  const vendorActions = (vendorPlan.actions ?? []) as unknown as BrainAction[];
+  townVendorPlanned = vendorActions.length;
+
+  const vendorSpawnIds: string[] = vendorActions
+    .map((a: any) => String(a?.spawn?.spawnId ?? ""))
+    .filter(Boolean);
+
+  const vendorExisting = new Set<string>();
+  if (vendorSpawnIds.length > 0) {
+    const existRes = await client.query(
+      `SELECT spawn_id FROM spawn_points WHERE shard_id = $1 AND spawn_id = ANY($2::text[])`,
+      [shardId, vendorSpawnIds],
+    );
+    for (const r of existRes.rows ?? []) vendorExisting.add(String(r.spawn_id ?? ""));
+  }
+
+  for (const a of vendorActions) {
+    if (!a || (a as any).kind !== "place_spawn") continue;
+    const s = (a as any).spawn ?? null;
+    const sid = String(s?.spawnId ?? "");
+    if (!sid) continue;
+
+    const exists = vendorExisting.has(sid);
+    if (exists) {
+      if (!updateExisting) {
+        townVendorSkipped += 1;
+        continue;
+      }
+
+      if (commit) {
+        await client.query(
+          `
+            UPDATE spawn_points
+            SET type = $3,
+                archetype = $4,
+                proto_id = $5,
+                variant_id = $6,
+                x = $7,
+                y = $8,
+                z = $9,
+                region_id = $10
+            WHERE shard_id = $1 AND spawn_id = $2
+          `,
+          [
+            shardId,
+            sid,
+            String(s?.type ?? "npc"),
+            String(s?.archetype ?? vendorProto),
+            s?.protoId != null ? String(s.protoId) : vendorProto,
+            s?.variantId != null ? String(s.variantId) : null,
+            Number(s?.x ?? 0),
+            Number(s?.y ?? 0),
+            Number(s?.z ?? 0),
+            s?.regionId != null ? String(s.regionId) : null,
+          ],
+        );
+      }
+
+      townVendorUpdated += 1;
+      continue;
+    }
+
+    if (commit) {
+      await client.query(
+        `
+          INSERT INTO spawn_points (shard_id, spawn_id, type, archetype, proto_id, variant_id, x, y, z, region_id)
+          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+        `,
+        [
+          shardId,
+          sid,
+          String(s?.type ?? "npc"),
+          String(s?.archetype ?? vendorProto),
+          s?.protoId != null ? String(s.protoId) : vendorProto,
+          s?.variantId != null ? String(s.variantId) : null,
+          Number(s?.x ?? 0),
+          Number(s?.y ?? 0),
+          Number(s?.z ?? 0),
+          s?.regionId != null ? String(s.regionId) : null,
+        ],
+      );
+    }
+
+    townVendorInserted += 1;
+  }
+}
+
     if (commit) await client.query("COMMIT");
     else await client.query("ROLLBACK");
 
@@ -2225,6 +2409,17 @@ if (cmd === "mother-wave") {
           budgetReport,
           budgetFilter,
           applyPlan,
+          townVendors: {
+            enabled: seedTownVendors,
+            types: normTypes,
+            vendorProtoId: vendorProto,
+            vendorCount,
+            vendorRadius,
+            planned: townVendorPlanned,
+            inserted: townVendorInserted,
+            updated: townVendorUpdated,
+            skipped: townVendorSkipped,
+          },
           deleted,
           inserted,
           updated,
@@ -2246,6 +2441,17 @@ if (cmd === "mother-wave") {
           budgetReport,
           budgetFilter,
           applyPlan,
+          townVendors: {
+            enabled: seedTownVendors,
+            types: normTypes,
+            vendorProtoId: vendorProto,
+            vendorCount,
+            vendorRadius,
+            planned: townVendorPlanned,
+            wouldInsert: townVendorInserted,
+            wouldUpdate: townVendorUpdated,
+            wouldSkip: townVendorSkipped,
+          },
           wouldDelete,
           wouldInsert: applyPlan.wouldInsert,
           wouldUpdate: applyPlan.wouldUpdate,
@@ -2271,6 +2477,19 @@ if (cmd === "mother-wave") {
           `[mother-wave] wouldDelete=${wouldDelete} wouldInsert=${applyPlan.wouldInsert} wouldUpdate=${applyPlan.wouldUpdate} wouldSkip=${applyPlan.wouldSkip} (budget keptInserts=${budgetFilter.keptInserts} dropped=${budgetFilter.droppedDueToBudget})`,
         );
       }
+
+
+if (seedTownVendors && normTypes.length > 0 && vendorCount > 0) {
+  if (commit) {
+    console.log(
+      `[mother-wave] townVendors planned=${townVendorPlanned} inserted=${townVendorInserted} updated=${townVendorUpdated} skipped=${townVendorSkipped} (types=${normTypes.join(",") || "(none)"} proto=${vendorProto} count=${vendorCount} radius=${vendorRadius})`,
+    );
+  } else {
+    console.log(
+      `[mother-wave] townVendors planned=${townVendorPlanned} wouldInsert=${townVendorInserted} wouldUpdate=${townVendorUpdated} wouldSkip=${townVendorSkipped} (types=${normTypes.join(",") || "(none)"} proto=${vendorProto} count=${vendorCount} radius=${vendorRadius})`,
+    );
+  }
+}
 
       if (budgetReport.limitingCaps.length > 0) {
         console.log(`  [budget] limitingCaps=${budgetReport.limitingCaps.join(",")}; allowedNewInserts=${budgetReport.allowedNewInserts}`);

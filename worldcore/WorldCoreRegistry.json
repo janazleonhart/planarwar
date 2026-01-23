@@ -5449,7 +5449,7 @@
         "report/status: respawn coverage audit across bounds (status supports --topGaps)",
         "fill-gaps: place checkpoints/graveyards to patch coverage gaps (dry-run vs --commit)",
         "era: orchestrated outposts + gapfill run with safe-mode caps + artifact output (optionally seeds baseline town vendors; default enabled)",
-        "mother-wave: plan/apply deterministic Mother Brain wave (dry-run vs --commit), with --append/--theme/--epoch controls",
+        "mother-wave: plan/apply deterministic Mother Brain wave (dry-run vs --commit), with --append/--theme/--epoch controls (also seeds baseline town vendors by default; disable with --noTownVendors)",
         "mother-status: summarize Mother Brain (brain-owned) spawn_points within bounds (optionally list)",
         "trim-outposts: enforce per-faction cap by deleting extras within bounds",
         "snapshot-spawns/restore-spawns: export + reapply spawn_points slices",
@@ -5472,7 +5472,7 @@
         "Follows audit \u2192 plan \u2192 apply pattern with safe default rollback unless --commit.",
         "Safety rails: refuses literal '...' arg; refuses --commit without explicit --bounds (unless --allowDefaultBounds).",
         "Artifacts are dev-only outputs; keep them gitignored.",
-        "Era vendor wiring: by default, `simBrain era` seeds vendor anchors for town-like spawns (disable with --noTownVendors)."
+        "Town vendor wiring: by default, `simBrain era` AND `simBrain mother-wave` seed vendor anchors for town-like spawns (disable with --noTownVendors)."
       ]
     },
     "trade.auditLog": {
