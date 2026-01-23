@@ -230,7 +230,8 @@
       ],
       "notes": [
         "Not currently routed from App.tsx.",
-        "Uses fetchMe() (GET /api/me)."
+        "Uses fetchMe() (GET /api/me).",
+        "CityBuilder legacy payload: mission fields may be absent; treat activeMissions/missionId as optional to avoid TS drift."
       ]
     },
     "web-frontend.config.vite": {
@@ -294,7 +295,8 @@
       ],
       "owns": [],
       "notes": [
-        "axios is listed as a dependency but is not currently used in the checked-in TSX/TS files."
+        "axios is listed as a dependency but is not currently used in the checked-in TSX/TS files.",
+        "Includes a 'typecheck' script (tsc --noEmit) for CI/local TS sanity checks."
       ]
     },
     "web-frontend.pages.adminVendorAudit": {

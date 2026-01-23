@@ -30,7 +30,6 @@
         "Runs registryCheck.js in CI mode to enforce registry freshness."
       ]
     },
-
     "scripts.registryIndexPathsCheck": {
       "kind": "script",
       "service": "ci.guard",
@@ -56,7 +55,6 @@
         "Conservative: missing paths fail CI; glob patterns must match >= 1 file."
       ]
     },
-
     "workflows.registryIndexPathsCheck": {
       "kind": "workflow",
       "service": "ci.guard",
@@ -79,6 +77,27 @@
       "notes": [
         "Prevents broken registry navigation from creeping in.",
         "Path filters target RegistryIndex.json, any *Registry.json, and this workflow/script."
+      ]
+    },
+    "scripts.noMudHelperFunctionsCheck": {
+      "kind": "script",
+      "service": "ci.guard",
+      "path": ".github/scripts/noMudHelperFunctionsCheck.js",
+      "functions": [
+        "Scan the repo for disallowed MudHelperFunctions legacy facade usage"
+      ],
+      "dependsOn": [
+        "node:fs",
+        "node:path"
+      ],
+      "provides": [
+        "CLI: node .github/scripts/noMudHelperFunctionsCheck.js"
+      ],
+      "owns": [
+        "Guardrail: prevent reintroducing MudHelperFunctions legacy facade"
+      ],
+      "notes": [
+        "Used as a preflight/CI guardrail to keep the codebase on the unified nearby-handle + TargetResolver path."
       ]
     }
   }
