@@ -1,12 +1,10 @@
 // web-frontend/pages/AdminVendorEconomyPage.tsx
 //
 // Admin editor for vendor_item_economy knobs (stock/restock/price multipliers).
-// This is intentionally simple HTML so it matches the other dev admin pages.
+// Polished UX: dirty tracking, bulk save, filters, and same-origin API via lib/api.ts.
 
 import { useEffect, useMemo, useState } from "react";
-
-// Keep consistent with other admin pages in this repo.
-const ADMIN_API_BASE = "http://192.168.0.74:4000";
+import { api } from "../lib/api";
 
 type VendorSummary = {
   id: string;
@@ -44,7 +42,15 @@ type ItemsResponse = {
 type UpdateResponse = {
   ok: boolean;
   vendorItemId: number;
-  applied?: any;
+  applied?: {
+    stockMax: number;
+    restockEverySec: number;
+    restockAmount: number;
+    priceMinMult: number;
+    priceMaxMult: number;
+    restockPerHour: number;
+    resetStock: boolean;
+  };
   error?: string;
 };
 
@@ -62,11 +68,52 @@ function numStr(v: number | null | undefined): string {
   return String(v);
 }
 
+function clampStrNum(s: string): string {
+  // Keep raw user input; just normalize whitespace.
+  return String(s ?? "").trim();
+}
+
+function parseOptionalNumber(s: string): number | null {
+  const t = clampStrNum(s);
+  if (!t) return null;
+  const n = Number(t);
+  return Number.isFinite(n) ? n : null;
+}
+
+function baselineForRow(r: VendorEconomyItem): Omit<EditRow, "resetStock"> {
+  // IMPORTANT: Admin endpoint defaults to these values when omitted/invalid.
+  // Baseline mirrors what the UI *suggests* as “default safe settings”.
+  return {
+    stockMax: numStr(r.stock_max ?? 50),
+    restockEverySec: numStr(r.restock_every_sec ?? 0),
+    restockAmount: numStr(r.restock_amount ?? 0),
+    priceMinMult: numStr(r.price_min_mult ?? 0.85),
+    priceMaxMult: numStr(r.price_max_mult ?? 1.5),
+  };
+}
+
+function isFiniteStockMax(stockMax: number | null): boolean {
+  return stockMax != null && stockMax > 0;
+}
+
+function isRestocking(everySec: number | null, amount: number | null): boolean {
+  return (everySec ?? 0) > 0 && (amount ?? 0) > 0;
+}
+
+function formatStockLabel(stock: number | null, stockMax: number | null): string {
+  // Treat <=0 as infinite-ish (server uses 0 to represent “infinite / disabled”).
+  const infinite = stock == null || stockMax == null || stockMax <= 0;
+  if (infinite) return "∞";
+  return `${stock}/${stockMax}`;
+}
+
 export function AdminVendorEconomyPage() {
   const [vendors, setVendors] = useState<VendorSummary[]>([]);
   const [vendorId, setVendorId] = useState<string>("");
+
   const [items, setItems] = useState<VendorEconomyItem[]>([]);
   const [edits, setEdits] = useState<Record<number, EditRow>>({});
+
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -75,13 +122,19 @@ export function AdminVendorEconomyPage() {
   const [offset, setOffset] = useState(0);
   const [total, setTotal] = useState(0);
 
+  // UX polish controls
+  const [qItem, setQItem] = useState("");
+  const [onlyFinite, setOnlyFinite] = useState(false);
+  const [onlyRestock, setOnlyRestock] = useState(false);
+  const [onlyDirty, setOnlyDirty] = useState(false);
+
   async function loadVendors() {
     setBusy(true);
     setError(null);
     try {
-      const res = await fetch(`${ADMIN_API_BASE}/api/admin/vendor_economy/vendors`);
-      if (!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text()}`);
-      const data = await res.json();
+      const data = await api<{ ok: boolean; vendors: VendorSummary[]; error?: string }>(
+        "/api/admin/vendor_economy/vendors"
+      );
       if (!data?.ok) throw new Error(data?.error || "Unknown error");
       const vs = (data.vendors || []) as VendorSummary[];
       setVendors(vs);
@@ -99,18 +152,15 @@ export function AdminVendorEconomyPage() {
     q.set("vendorId", vendorId);
     q.set("limit", String(limit));
     q.set("offset", String(offset));
-    return `${ADMIN_API_BASE}/api/admin/vendor_economy/items?${q.toString()}`;
+    return `/api/admin/vendor_economy/items?${q.toString()}`;
   }, [vendorId, limit, offset]);
 
   function seedEdits(rows: VendorEconomyItem[]) {
     const next: Record<number, EditRow> = {};
     for (const r of rows) {
+      const b = baselineForRow(r);
       next[r.vendor_item_id] = {
-        stockMax: numStr(r.stock_max ?? 50),
-        restockEverySec: numStr(r.restock_every_sec ?? 0),
-        restockAmount: numStr(r.restock_amount ?? 0),
-        priceMinMult: numStr(r.price_min_mult ?? 0.85),
-        priceMaxMult: numStr(r.price_max_mult ?? 1.5),
+        ...b,
         resetStock: false,
       };
     }
@@ -123,12 +173,14 @@ export function AdminVendorEconomyPage() {
     setNotice(null);
     setError(null);
     try {
-      const res = await fetch(itemsUrl);
-      if (!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text()}`);
-      const data = (await res.json()) as ItemsResponse;
+      const data = (await api<ItemsResponse>(itemsUrl)) as ItemsResponse;
       if (!data?.ok) throw new Error(data?.error || "Unknown error");
+
       setItems(data.items || []);
       setTotal(Number(data.total || 0));
+
+      // NOTE: this will reset edits for the page.
+      // That’s OK for explicit refresh/paging/vendor change.
       seedEdits(data.items || []);
     } catch (e: any) {
       setError(e?.message || String(e));
@@ -156,37 +208,172 @@ export function AdminVendorEconomyPage() {
   const page = Math.floor(offset / limit) + 1;
   const pageCount = Math.max(1, Math.ceil(total / limit));
 
-  async function saveRow(vendorItemId: number) {
-    const e = edits[vendorItemId];
-    if (!e) return;
+  function getEditForRow(r: VendorEconomyItem): EditRow {
+    const existing = edits[r.vendor_item_id];
+    if (existing) return existing;
+    const b = baselineForRow(r);
+    return { ...b, resetStock: false };
+  }
 
-    setBusy(true);
-    setNotice(null);
-    setError(null);
+  function rowDirty(r: VendorEconomyItem): boolean {
+    const e = getEditForRow(r);
+    const b = baselineForRow(r);
+    return (
+      clampStrNum(e.stockMax) !== clampStrNum(b.stockMax) ||
+      clampStrNum(e.restockEverySec) !== clampStrNum(b.restockEverySec) ||
+      clampStrNum(e.restockAmount) !== clampStrNum(b.restockAmount) ||
+      clampStrNum(e.priceMinMult) !== clampStrNum(b.priceMinMult) ||
+      clampStrNum(e.priceMaxMult) !== clampStrNum(b.priceMaxMult) ||
+      Boolean(e.resetStock)
+    );
+  }
+
+  const filteredItems = useMemo(() => {
+    const needle = qItem.trim().toLowerCase();
+
+    return items.filter((r) => {
+      if (needle) {
+        if (!r.item_id?.toLowerCase().includes(needle)) return false;
+      }
+
+      if (onlyFinite) {
+        if (!isFiniteStockMax(r.stock_max ?? null)) return false;
+      }
+
+      if (onlyRestock) {
+        if (!isRestocking(r.restock_every_sec ?? null, r.restock_amount ?? null)) return false;
+      }
+
+      if (onlyDirty) {
+        if (!rowDirty(r)) return false;
+      }
+
+      return true;
+    });
+  }, [items, qItem, onlyFinite, onlyRestock, onlyDirty, edits]);
+
+  const dirtyCountAll = useMemo(() => items.filter((r) => rowDirty(r)).length, [items, edits]);
+  const dirtyCountVisible = useMemo(
+    () => filteredItems.filter((r) => rowDirty(r)).length,
+    [filteredItems, edits]
+  );
+
+  function setRowEdit(vendorItemId: number, patch: Partial<EditRow>, fallback?: EditRow) {
+    setEdits((prev) => {
+      const base = prev[vendorItemId] ?? fallback;
+      if (!base) return prev;
+      return { ...prev, [vendorItemId]: { ...base, ...patch } };
+    });
+  }
+
+  async function saveRowInternal(vendorItemId: number): Promise<void> {
+    const row = items.find((x) => x.vendor_item_id === vendorItemId);
+    if (!row) throw new Error(`Unknown vendor_item_id=${vendorItemId}`);
+
+    const e = getEditForRow(row);
+
+    // Quick client-side sanity (server clamps anyway, but we can avoid obvious footguns).
+    const minM = parseOptionalNumber(e.priceMinMult);
+    const maxM = parseOptionalNumber(e.priceMaxMult);
+    if (minM != null && maxM != null && minM > maxM) {
+      throw new Error(`priceMinMult (${minM}) must be <= priceMaxMult (${maxM})`);
+    }
+
+    const payload = {
+      stockMax: parseOptionalNumber(e.stockMax),
+      restockEverySec: parseOptionalNumber(e.restockEverySec),
+      restockAmount: parseOptionalNumber(e.restockAmount),
+      priceMinMult: parseOptionalNumber(e.priceMinMult),
+      priceMaxMult: parseOptionalNumber(e.priceMaxMult),
+      resetStock: Boolean(e.resetStock),
+    };
+
+    const data = await api<UpdateResponse>(`/api/admin/vendor_economy/items/${vendorItemId}`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+
+    if (!data?.ok) throw new Error(data?.error || "Unknown error");
+
+    const applied = data.applied;
+    if (!applied) {
+      // Shouldn’t happen, but keep safe.
+      setNotice(`Saved vendor_item_id=${vendorItemId}`);
+      setRowEdit(vendorItemId, { resetStock: false });
+      return;
+    }
+
+    // Update local table row (don’t reload the whole page — preserve other edits).
+    setItems((prev) =>
+      prev.map((r) => {
+        if (r.vendor_item_id !== vendorItemId) return r;
+
+        const nowIso = new Date().toISOString();
+        const newStockMax = applied.stockMax;
+
+        return {
+          ...r,
+          stock_max: newStockMax,
+          restock_every_sec: applied.restockEverySec,
+          restock_amount: applied.restockAmount,
+          restock_per_hour: applied.restockPerHour,
+          price_min_mult: applied.priceMinMult,
+          price_max_mult: applied.priceMaxMult,
+          ...(applied.resetStock
+            ? {
+                stock: newStockMax > 0 ? newStockMax : 0,
+                last_restock_ts: nowIso,
+              }
+            : {}),
+        };
+      })
+    );
+
+    // Align edit values with applied (clears dirty state for that row).
+    setEdits((prev) => ({
+      ...prev,
+      [vendorItemId]: {
+        stockMax: String(applied.stockMax),
+        restockEverySec: String(applied.restockEverySec),
+        restockAmount: String(applied.restockAmount),
+        priceMinMult: String(applied.priceMinMult),
+        priceMaxMult: String(applied.priceMaxMult),
+        resetStock: false,
+      },
+    }));
+
+    setNotice(`Saved vendor_item_id=${vendorItemId}`);
+  }
+
+  async function saveRow(vendorItemId: number) {
+    try {
+      setBusy(true);
+      setNotice(null);
+      setError(null);
+      await saveRowInternal(vendorItemId);
+    } catch (e: any) {
+      setError(e?.message || String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function saveDirtyVisible() {
+    const targets = filteredItems.filter((r) => rowDirty(r)).map((r) => r.vendor_item_id);
+    if (targets.length === 0) return;
 
     try {
-      const payload = {
-        stockMax: e.stockMax.trim() === "" ? null : Number(e.stockMax),
-        restockEverySec: e.restockEverySec.trim() === "" ? null : Number(e.restockEverySec),
-        restockAmount: e.restockAmount.trim() === "" ? null : Number(e.restockAmount),
-        priceMinMult: e.priceMinMult.trim() === "" ? null : Number(e.priceMinMult),
-        priceMaxMult: e.priceMaxMult.trim() === "" ? null : Number(e.priceMaxMult),
-        resetStock: Boolean(e.resetStock),
-      };
+      setBusy(true);
+      setNotice(null);
+      setError(null);
 
-      const res = await fetch(`${ADMIN_API_BASE}/api/admin/vendor_economy/items/${vendorItemId}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
+      // Sequential is safer for DB + easier to reason about.
+      // If you want concurrency later, we can cap at 3–5 workers.
+      for (const id of targets) {
+        await saveRowInternal(id);
+      }
 
-      if (!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text()}`);
-      const data = (await res.json()) as UpdateResponse;
-      if (!data?.ok) throw new Error(data?.error || "Unknown error");
-
-      setNotice(`Saved vendor_item_id=${vendorItemId}`);
-      // Reload to reflect DB clamps / derived per-hour.
-      await loadItems();
+      setNotice(`Saved ${targets.length} dirty row(s).`);
     } catch (e: any) {
       setError(e?.message || String(e));
     } finally {
@@ -201,7 +388,12 @@ export function AdminVendorEconomyPage() {
       <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 12, alignItems: "center" }}>
         <label style={{ display: "flex", gap: 6, alignItems: "center" }}>
           Vendor
-          <select value={vendorId} onChange={(e) => setVendorId(e.target.value)} disabled={busy} style={{ minWidth: 280 }}>
+          <select
+            value={vendorId}
+            onChange={(e) => setVendorId(e.target.value)}
+            disabled={busy}
+            style={{ minWidth: 280 }}
+          >
             {vendors.map((v) => (
               <option key={v.id} value={v.id}>
                 {v.name ? `${v.name} (${v.id})` : v.id}
@@ -211,36 +403,82 @@ export function AdminVendorEconomyPage() {
           </select>
         </label>
 
-        <button onClick={() => loadItems()} disabled={busy || !vendorId}>Refresh</button>
+        <button onClick={() => loadItems()} disabled={busy || !vendorId}>
+          Refresh
+        </button>
+
+        <button onClick={saveDirtyVisible} disabled={busy || dirtyCountVisible === 0}>
+          Save dirty ({dirtyCountVisible})
+        </button>
+
+        <span style={{ opacity: 0.85 }}>
+          dirty: <b>{dirtyCountAll}</b> (visible {dirtyCountVisible})
+        </span>
 
         <span style={{ marginLeft: "auto" }}>
-          <a href="/" style={{ marginRight: 12 }}>Back</a>
+          <a href="/" style={{ marginRight: 12 }}>
+            Back
+          </a>
           <a href="/admin/vendor_audit">Audit Viewer</a>
         </span>
       </div>
 
-      <div style={{ display: "flex", gap: 12, alignItems: "center", marginBottom: 12 }}>
+      <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center", marginBottom: 12 }}>
         <label style={{ display: "flex", gap: 6, alignItems: "center" }}>
-          Limit
+          Search item
           <input
-            type="number"
-            value={limit}
-            min={1}
-            max={5000}
-            onChange={(e) => { setOffset(0); setLimit(Math.max(1, Math.min(5000, Number(e.target.value) || 500))); }}
-            style={{ width: 110 }}
+            value={qItem}
+            onChange={(e) => setQItem(e.target.value)}
+            placeholder="e.g. potion_"
+            disabled={busy}
+            style={{ width: 240 }}
           />
         </label>
 
-        <button onClick={() => setOffset(Math.max(0, offset - limit))} disabled={busy || offset <= 0}>
-          Prev
-        </button>
-        <button onClick={() => setOffset(Math.min((pageCount - 1) * limit, offset + limit))} disabled={busy || page >= pageCount}>
-          Next
-        </button>
+        <label style={{ display: "flex", gap: 6, alignItems: "center" }}>
+          <input type="checkbox" checked={onlyFinite} onChange={(e) => setOnlyFinite(e.target.checked)} />
+          finite only
+        </label>
 
-        <span style={{ opacity: 0.8 }}>
-          page {page}/{pageCount} · total {total}
+        <label style={{ display: "flex", gap: 6, alignItems: "center" }}>
+          <input type="checkbox" checked={onlyRestock} onChange={(e) => setOnlyRestock(e.target.checked)} />
+          restocking only
+        </label>
+
+        <label style={{ display: "flex", gap: 6, alignItems: "center" }}>
+          <input type="checkbox" checked={onlyDirty} onChange={(e) => setOnlyDirty(e.target.checked)} />
+          dirty only
+        </label>
+
+        <span style={{ marginLeft: 18, display: "flex", gap: 12, alignItems: "center" }}>
+          <label style={{ display: "flex", gap: 6, alignItems: "center" }}>
+            Limit
+            <input
+              type="number"
+              value={limit}
+              min={1}
+              max={5000}
+              onChange={(e) => {
+                setOffset(0);
+                setLimit(Math.max(1, Math.min(5000, Number(e.target.value) || 500)));
+              }}
+              style={{ width: 110 }}
+            />
+          </label>
+
+          <button onClick={() => setOffset(Math.max(0, offset - limit))} disabled={busy || offset <= 0}>
+            Prev
+          </button>
+          <button
+            onClick={() => setOffset(Math.min((pageCount - 1) * limit, offset + limit))}
+            disabled={busy || page >= pageCount}
+          >
+            Next
+          </button>
+
+          <span style={{ opacity: 0.8 }}>
+            page {page}/{pageCount} · total {total} · showing {filteredItems.length}
+          </span>
         </span>
       </div>
 
@@ -262,6 +500,7 @@ export function AdminVendorEconomyPage() {
         <table cellPadding={6} style={{ borderCollapse: "collapse", width: "100%" }}>
           <thead>
             <tr style={{ textAlign: "left", borderBottom: "2px solid #ddd" }}>
+              <th />
               <th>rowId</th>
               <th>item</th>
               <th>base</th>
@@ -269,6 +508,7 @@ export function AdminVendorEconomyPage() {
               <th>stockMax</th>
               <th>restockEverySec</th>
               <th>restockAmount</th>
+              <th>restock/hr</th>
               <th>priceMinMult</th>
               <th>priceMaxMult</th>
               <th>lastRestock</th>
@@ -278,56 +518,108 @@ export function AdminVendorEconomyPage() {
           </thead>
 
           <tbody>
-            {items.map((r) => {
-              const e = edits[r.vendor_item_id];
-              const stockLabel =
-                r.stock === null || r.stock_max === null ? "∞" : `${r.stock}/${r.stock_max}`;
+            {filteredItems.map((r) => {
+              const e = getEditForRow(r);
+              const dirty = rowDirty(r);
+
+              const stockLabel = formatStockLabel(r.stock, r.stock_max);
+              const restockActive = isRestocking(r.restock_every_sec ?? null, r.restock_amount ?? null);
+
+              // Inline edit parsing (lightweight hints)
+              const minM = parseOptionalNumber(e.priceMinMult);
+              const maxM = parseOptionalNumber(e.priceMaxMult);
+              const multBad = minM != null && maxM != null && minM > maxM;
+
+              const rowStyle: React.CSSProperties = {
+                borderBottom: "1px solid #eee",
+                verticalAlign: "top",
+                background: dirty ? "#fff9e6" : undefined,
+              };
+
+              const dirtyDotStyle: React.CSSProperties = {
+                width: 12,
+                textAlign: "center",
+                color: dirty ? "#d07a00" : "#ccc",
+                fontWeight: 900,
+              };
 
               return (
-                <tr key={r.vendor_item_id} style={{ borderBottom: "1px solid #eee", verticalAlign: "top" }}>
+                <tr key={r.vendor_item_id} style={rowStyle}>
+                  <td style={dirtyDotStyle} title={dirty ? "Unsaved changes" : "Clean"}>
+                    {dirty ? "●" : "·"}
+                  </td>
+
                   <td style={{ whiteSpace: "nowrap" }}>{r.vendor_item_id}</td>
                   <td style={{ whiteSpace: "nowrap" }}>{r.item_id}</td>
                   <td style={{ whiteSpace: "nowrap" }}>{r.base_price_gold}</td>
-                  <td style={{ whiteSpace: "nowrap" }}>{stockLabel}</td>
+
+                  <td style={{ whiteSpace: "nowrap" }}>
+                    {stockLabel}
+                    {isFiniteStockMax(r.stock_max) ? (
+                      <span style={{ marginLeft: 6, fontSize: 12, opacity: 0.75 }}>(finite)</span>
+                    ) : (
+                      <span style={{ marginLeft: 6, fontSize: 12, opacity: 0.75 }}>(∞/disabled)</span>
+                    )}
+                  </td>
 
                   <td>
                     <input
-                      value={e?.stockMax ?? ""}
-                      onChange={(ev) => setEdits((prev) => ({ ...prev, [r.vendor_item_id]: { ...(prev[r.vendor_item_id] ?? e), stockMax: ev.target.value } }))}
+                      value={e.stockMax ?? ""}
+                      onChange={(ev) => setRowEdit(r.vendor_item_id, { stockMax: ev.target.value }, e)}
                       style={{ width: 90 }}
                     />
                   </td>
 
                   <td>
                     <input
-                      value={e?.restockEverySec ?? ""}
-                      onChange={(ev) => setEdits((prev) => ({ ...prev, [r.vendor_item_id]: { ...(prev[r.vendor_item_id] ?? e), restockEverySec: ev.target.value } }))}
+                      value={e.restockEverySec ?? ""}
+                      onChange={(ev) => setRowEdit(r.vendor_item_id, { restockEverySec: ev.target.value }, e)}
                       style={{ width: 120 }}
                     />
                   </td>
 
                   <td>
                     <input
-                      value={e?.restockAmount ?? ""}
-                      onChange={(ev) => setEdits((prev) => ({ ...prev, [r.vendor_item_id]: { ...(prev[r.vendor_item_id] ?? e), restockAmount: ev.target.value } }))}
+                      value={e.restockAmount ?? ""}
+                      onChange={(ev) => setRowEdit(r.vendor_item_id, { restockAmount: ev.target.value }, e)}
                       style={{ width: 120 }}
                     />
                   </td>
 
+                  <td style={{ whiteSpace: "nowrap" }}>
+                    {r.restock_per_hour ?? 0}
+                    {restockActive ? (
+                      <span style={{ marginLeft: 6, fontSize: 12, opacity: 0.75 }}>(active)</span>
+                    ) : (
+                      <span style={{ marginLeft: 6, fontSize: 12, opacity: 0.75 }}>(off)</span>
+                    )}
+                  </td>
+
                   <td>
                     <input
-                      value={e?.priceMinMult ?? ""}
-                      onChange={(ev) => setEdits((prev) => ({ ...prev, [r.vendor_item_id]: { ...(prev[r.vendor_item_id] ?? e), priceMinMult: ev.target.value } }))}
-                      style={{ width: 110 }}
+                      value={e.priceMinMult ?? ""}
+                      onChange={(ev) => setRowEdit(r.vendor_item_id, { priceMinMult: ev.target.value }, e)}
+                      style={{
+                        width: 110,
+                        borderColor: multBad ? "#d00" : undefined,
+                        outlineColor: multBad ? "#d00" : undefined,
+                      }}
                     />
                   </td>
 
                   <td>
                     <input
-                      value={e?.priceMaxMult ?? ""}
-                      onChange={(ev) => setEdits((prev) => ({ ...prev, [r.vendor_item_id]: { ...(prev[r.vendor_item_id] ?? e), priceMaxMult: ev.target.value } }))}
-                      style={{ width: 110 }}
+                      value={e.priceMaxMult ?? ""}
+                      onChange={(ev) => setRowEdit(r.vendor_item_id, { priceMaxMult: ev.target.value }, e)}
+                      style={{
+                        width: 110,
+                        borderColor: multBad ? "#d00" : undefined,
+                        outlineColor: multBad ? "#d00" : undefined,
+                      }}
                     />
+                    {multBad && (
+                      <div style={{ fontSize: 11, color: "#d00", marginTop: 2 }}>min must be ≤ max</div>
+                    )}
                   </td>
 
                   <td style={{ whiteSpace: "nowrap" }}>{r.last_restock_ts ?? ""}</td>
@@ -335,22 +627,24 @@ export function AdminVendorEconomyPage() {
                   <td style={{ textAlign: "center" }}>
                     <input
                       type="checkbox"
-                      checked={Boolean(e?.resetStock)}
-                      onChange={(ev) => setEdits((prev) => ({ ...prev, [r.vendor_item_id]: { ...(prev[r.vendor_item_id] ?? e), resetStock: ev.target.checked } }))}
+                      checked={Boolean(e.resetStock)}
+                      onChange={(ev) => setRowEdit(r.vendor_item_id, { resetStock: ev.target.checked }, e)}
                     />
                   </td>
 
                   <td>
-                    <button onClick={() => saveRow(r.vendor_item_id)} disabled={busy}>Save</button>
+                    <button onClick={() => saveRow(r.vendor_item_id)} disabled={busy || !dirty}>
+                      Save
+                    </button>
                   </td>
                 </tr>
               );
             })}
 
-            {items.length === 0 && (
+            {filteredItems.length === 0 && (
               <tr>
-                <td colSpan={12} style={{ padding: 12, opacity: 0.7 }}>
-                  No vendor items.
+                <td colSpan={14} style={{ padding: 12, opacity: 0.7 }}>
+                  No vendor items match your filters.
                 </td>
               </tr>
             )}
@@ -359,7 +653,8 @@ export function AdminVendorEconomyPage() {
       </div>
 
       <div style={{ marginTop: 12, fontSize: 12, opacity: 0.75 }}>
-        Backend: <code>/api/admin/vendor_economy</code> · Edits are clamped server-side to keep configs safe.
+        Backend: <code>/api/admin/vendor_economy</code> · Edits are clamped server-side to keep configs safe. · This page
+        uses same-origin API via <code>web-frontend/lib/api.ts</code>.
       </div>
     </div>
   );
