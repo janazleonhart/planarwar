@@ -74,8 +74,9 @@
         "WebSocket connection + log buffer"
       ],
       "notes": [
-        "Computes API_BASE (http://<host>:4000) and SHARD_WS (ws://<host>:7777/ws) based on window.location.hostname.",
-        "Uses /api/auth/login, /api/auth/register, /api/characters (GET/POST), /api/characters/:id (GET).",
+        "Legacy App.tsx contains its own API_BASE/SHARD_WS computed from window.location.hostname (with localhost fallback).",
+        "Admin pages now use same-origin /api (recommended) via Vite proxy in dev.",
+        "Endpoints used by the legacy App layer include: /api/auth/login, /api/auth/register, /api/characters (GET/POST), /api/characters/:id (GET).",
         "WebSocket sends ops: whereami, mud; expects mud_result, whereami_result, chat payloads.",
         "City-builder pages (MePage/OperationsPage) exist but are not currently routed from App.tsx."
       ]
@@ -90,13 +91,15 @@
       "dependsOn": [],
       "provides": [
         "Typed DTOs for city-builder UI (MeProfile, missions, armies, heroes, tech, etc.)",
-        "API_BASE_URL from VITE_API_BASE_URL (fallback http://localhost:4000)",
-        "fetchMe(), startTech(), api(path, init)"
+        "API_BASE_URL from VITE_API_BASE_URL (default same-origin)",
+        "fetchMe(), startTech(), api(path, init) with JSON/HTML guardrails"
       ],
       "owns": [],
       "notes": [
-        "Used by MePage and OperationsPage (city-builder/operations UI).",
-        "Caution: this package also contains a .env file with server secrets; Vite only exposes VITE_* at runtime, but secrets in-repo are still a security risk."
+        "Default behavior is same-origin (API_BASE_URL=\"\") to work cleanly with Vite dev proxy and avoid CORS.",
+        "Set VITE_API_BASE_URL only when you intentionally want cross-origin calls (and have CORS configured).",
+        "Used by vendor admin pages (AdminVendorEconomyPage/AdminVendorAuditPage) and city-builder pages (MePage/OperationsPage).",
+        "Caution: keep secrets out of repo .env; Vite only exposes VITE_* at runtime, but secrets in-repo are still a security risk."
       ]
     },
     "web-frontend.pages.adminQuests": {
@@ -106,9 +109,7 @@
       "class": null,
       "lifecycle": "singleton",
       "ctorArgs": [],
-      "dependsOn": [
-        "web-frontend.lib.api"
-      ],
+      "dependsOn": [],
       "provides": [
         "Quest list + edit/create UI",
         "Objective kinds: kill/harvest/collect_item/talk_to",
@@ -118,7 +119,7 @@
         "client-side form state"
       ],
       "notes": [
-        "Uses a hard-coded ADMIN_API_BASE (http://192.168.0.74:4000) \u2014 should be replaced with a hostname-derived URL or VITE_* config.",
+        "Uses same-origin /api requests (dev via Vite proxy; prod via reverse proxy / same host).",
         "Endpoints: GET /api/admin/quests; POST /api/admin/quests; then refreshes list."
       ]
     },
@@ -138,7 +139,7 @@
         "client-side form state"
       ],
       "notes": [
-        "Uses hard-coded ADMIN_API_BASE (http://192.168.0.74:4000).",
+        "Uses same-origin /api requests (dev via Vite proxy; prod via reverse proxy / same host).",
         "Endpoints: GET /api/admin/npcs; POST /api/admin/npcs; then refreshes list."
       ]
     },
@@ -158,7 +159,7 @@
         "client-side form state"
       ],
       "notes": [
-        "Uses hard-coded ADMIN_API_BASE (http://192.168.0.74:4000).",
+        "Uses same-origin /api requests (dev via Vite proxy; prod via reverse proxy / same host).",
         "Endpoints: GET /api/admin/items; POST /api/admin/items; then refreshes list."
       ]
     },
@@ -182,11 +183,10 @@
         "Mother Brain wave/wipe responses"
       ],
       "notes": [
-        "Uses hard-coded ADMIN_API_BASE (http://192.168.0.74:4000).",
+        "Uses same-origin /api requests (dev via Vite proxy; prod via reverse proxy / same host).",
         "Endpoints: GET /api/admin/spawn_points?..., POST /api/admin/spawn_points (create), PUT /api/admin/spawn_points/:id, bulk_delete, bulk_move, clone, scatter.",
-        "Mother Brain endpoints: GET /api/admin/spawn_points/mother_brain/status, POST /mother_brain/wave, POST /mother_brain/wipe.",
-        "UI prints JSON responses in <pre>; styling was recently improved to avoid unreadable dark output.",
-        "Town Baseline endpoints: POST /api/admin/spawn_points/town_baseline/plan and /town_baseline/apply."
+        "Mother Brain endpoints: GET /api/admin/spawn_points/mother_brain/status, POST /api/admin/spawn_points/mother_brain/wave, POST /api/admin/spawn_points/mother_brain/wipe.",
+        "Town Baseline endpoints: POST /api/admin/spawn_points/town_baseline/plan and /api/admin/spawn_points/town_baseline/apply."
       ]
     },
     "web-frontend.pages.me": {
@@ -243,10 +243,14 @@
       "dependsOn": [],
       "provides": [
         "Vite dev server settings (host 0.0.0.0, port 5173)",
-        "React SWC plugin"
+        "Dev proxy: /api -> http://127.0.0.1:4000 (web-backend)",
+        "Optional WS proxy: /ws -> ws://127.0.0.1:7777/ws"
       ],
       "owns": [],
-      "notes": []
+      "notes": [
+        "Proxy is required for same-origin /api requests when running the frontend on :5173 and backend on :4000; avoids CORS and index.html fallbacks.",
+        "Plugin may be @vitejs/plugin-react or @vitejs/plugin-react-swc depending on installed deps."
+      ]
     },
     "web-frontend.config.ts": {
       "kind": "data",
@@ -338,8 +342,8 @@
       "/admin/spawn_points"
     ],
     "apiConfig": {
-      "preferred": "VITE_API_BASE_URL",
-      "currentAdminPages": "hard-coded ADMIN_API_BASE"
+      "preferred": "(dev) Vite /api proxy; (override) VITE_API_BASE_URL when cross-origin is intentional",
+      "currentAdminPages": "same-origin /api via Vite dev proxy (no hard-coded ADMIN_API_BASE)"
     },
     "runtimePorts": {
       "web-backend": 4000,
