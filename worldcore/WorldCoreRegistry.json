@@ -5231,6 +5231,42 @@
         "Contract: attack invalid target token emits standardized message: [world] No such target: '<token>'."
       ]
     },
+    "test.contractSpellHotSelfTicks": {
+      "kind": "test",
+      "path": "worldcore/test/contract_spellHotSelfTicks.test.ts",
+      "class": "(test)",
+      "lifecycle": "test",
+      "dependsOn": [],
+      "provides": [],
+      "owns": [],
+      "notes": [
+        "Contract: heal_hot_self applies HOT and ticks deterministically"
+      ]
+    },
+    "test.contractSpellShieldAbsorbsDamage": {
+      "kind": "test",
+      "path": "worldcore/test/contract_spellShieldAbsorbsDamage.test.ts",
+      "class": "(test)",
+      "lifecycle": "test",
+      "dependsOn": [],
+      "provides": [],
+      "owns": [],
+      "notes": [
+        "Contract: shield_self absorbs incoming player damage (can reduce to 0)"
+      ]
+    },
+    "test.contractSpellCleanseSelfRemovesDebuff": {
+      "kind": "test",
+      "path": "worldcore/test/contract_spellCleanseSelfRemovesDebuff.test.ts",
+      "class": "(test)",
+      "lifecycle": "test",
+      "dependsOn": [],
+      "provides": [],
+      "owns": [],
+      "notes": [
+        "Contract: cleanse_self removes tagged debuffs from caster"
+      ]
+    },
     "test.utils": {
       "kind": "test_utility",
       "path": "worldcore/test/testUtils.ts",

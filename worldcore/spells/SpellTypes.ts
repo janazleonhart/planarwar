@@ -1,7 +1,7 @@
 // worldcore/spells/SpellTypes.ts
 
 import type { Pool } from "pg";
-import type { SpellSchoolId } from "../combat/CombatEngine";
+import type { SpellSchoolId, DamageSchool } from "../combat/CombatEngine";
 import type { SongSchoolId } from "../skills/SkillProgression";
 import type { PowerResourceKind } from "../resources/PowerResources";
 import { Logger } from "../utils/logger";
@@ -16,6 +16,12 @@ export type SpellKind =
   | "damage_single_npc"
   | "heal_self"
   | "heal_single_ally"
+  | "heal_hot_self"
+  | "heal_hot_single_ally"
+  | "shield_self"
+  | "shield_single_ally"
+  | "cleanse_self"
+  | "cleanse_single_ally"
   | "buff_self"
   | "buff_single_ally"
   | "debuff_single_npc"
@@ -66,6 +72,22 @@ export interface SpellStatusEffect {
     /** If true (default), total damage is distributed across ticks. */
     spreadDamageAcrossTicks?: boolean;
   };
+
+  /** Optional HOT metadata (used when spell.kind starts with 'heal_hot_'). */
+  hot?: {
+    /** Tick interval in milliseconds. */
+    tickIntervalMs?: number;
+    /** Heal per tick. */
+    perTickHeal?: number;
+  };
+
+  /** Optional absorb/shield metadata (used when spell.kind starts with 'shield_'). */
+  absorb?: {
+    /** Total amount of damage this shield can absorb. */
+    amount?: number;
+    /** Restrict absorption to these schools; omit to absorb any. */
+    schools?: DamageSchool[];
+  };
 }
 
 export interface SpellDefinition {
@@ -95,6 +117,14 @@ export interface SpellDefinition {
   // Songs
   isSong?: boolean;
   songSchool?: SongSchoolId;
+
+  // Cleanse/dispel spells
+  cleanse?: {
+    /** Tags to remove (e.g. ["debuff", "dot"]). */
+    tags: string[];
+    /** Max number of effects to remove. Defaults to unlimited. */
+    maxToRemove?: number;
+  };
 
   // Misc
   isDebug?: boolean;

@@ -77,6 +77,27 @@ export interface DotPayloadState extends DotPayloadInput {
   nextTickAtMs: number;
 }
 
+export interface HotPayloadInput {
+  tickIntervalMs: number;
+  /** Base healing per tick. */
+  perTickHeal: number;
+}
+
+export interface HotPayloadState extends HotPayloadInput {
+  nextTickAtMs: number;
+}
+
+export interface AbsorbPayloadInput {
+  /** Total amount of damage this shield can absorb. */
+  amount: number;
+  /** Optional: only absorb these schools. If omitted, absorb any. */
+  schools?: DamageSchool[];
+}
+
+export interface AbsorbPayloadState extends AbsorbPayloadInput {
+  remaining: number;
+}
+
 export interface StatusEffectInstance {
   id: StatusEffectId;
   sourceKind: StatusEffectSourceKind;
@@ -91,6 +112,12 @@ export interface StatusEffectInstance {
 
   // Optional DOT payload (NPCs today; can be used on players later if desired)
   dot?: DotPayloadState;
+
+  // Optional HOT payload (players today; can be used on NPCs later if desired)
+  hot?: HotPayloadState;
+
+  // Optional absorb/shield payload
+  absorb?: AbsorbPayloadState;
 
   // ────────────────────────────────────────────────────────────────────────────
   // Optional extended stacking metadata (safe to ignore for legacy effects)
@@ -132,6 +159,13 @@ export interface NewStatusEffectInput {
 
   // Optional DOT payload (stored on the status instance).
   dot?: DotPayloadInput;
+
+
+  // Optional HOT payload (stored on the status instance).
+  hot?: HotPayloadInput;
+
+  // Optional absorb/shield payload.
+  absorb?: AbsorbPayloadInput;
 
   // ────────────────────────────────────────────────────────────────────────────
   // Optional extended stacking controls
@@ -260,6 +294,39 @@ function resolveDot(
     perTickDamage,
     damageSchool,
     nextTickAtMs: now + tickIntervalMs,
+  };
+}
+
+function resolveHot(
+  input: NewStatusEffectInput,
+  now: number,
+  existingHot?: HotPayloadState,
+): HotPayloadState | undefined {
+  if (!input.hot) return existingHot;
+
+  const tickIntervalMs = Math.max(1, Math.floor(Number(input.hot.tickIntervalMs ?? 0)));
+  const perTickHeal = Math.max(1, Math.floor(Number(input.hot.perTickHeal ?? 0)));
+
+  return {
+    tickIntervalMs,
+    perTickHeal,
+    nextTickAtMs: now + tickIntervalMs,
+  };
+}
+
+function resolveAbsorb(
+  input: NewStatusEffectInput,
+  existingAbsorb?: AbsorbPayloadState,
+): AbsorbPayloadState | undefined {
+  if (!input.absorb) return existingAbsorb;
+
+  const amount = Math.max(0, Math.floor(Number(input.absorb.amount ?? 0)));
+  const schools = Array.isArray(input.absorb.schools) ? input.absorb.schools.slice() : undefined;
+
+  return {
+    amount,
+    remaining: amount,
+    schools,
   };
 }
 
@@ -393,6 +460,8 @@ function applyStatusEffectInternal(
       pickIdx >= 0 ? existingList[pickIdx] : undefined;
 
     const dot = resolveDot(input, now, existing?.dot);
+    const hot = resolveHot(input, now, existing?.hot);
+    const absorb = resolveAbsorb(input, existing?.absorb);
 
     const inst: StatusEffectInstance = {
       id: input.id,
@@ -412,6 +481,8 @@ function applyStatusEffectInternal(
       modifiers: input.modifiers ?? existing?.modifiers ?? {},
       tags: input.tags ?? existing?.tags,
       dot,
+      hot,
+      absorb,
 
       stackingPolicy: policy,
       stackingGroupId: bucketKey,
@@ -445,6 +516,8 @@ function applyStatusEffectInternal(
   // ────────────────────────────────────────────────────────────────────────────
   const existing = existingList[0];
   const dot = resolveDot(input, now, existing?.dot);
+  const hot = resolveHot(input, now, existing?.hot);
+  const absorb = resolveAbsorb(input, existing?.absorb);
 
   if (existing) {
     const maxStacks = resolvedMaxStacks;
@@ -472,6 +545,8 @@ function applyStatusEffectInternal(
       expiresAtMs:
         existing.expiresAtMs > 0 ? Math.max(existing.expiresAtMs, expiresAtMs) : expiresAtMs,
       dot,
+      hot,
+      absorb,
 
       stackingPolicy: policy,
       stackingGroupId: bucketKey,
@@ -493,6 +568,8 @@ function applyStatusEffectInternal(
     modifiers: input.modifiers ?? {},
     tags: input.tags,
     dot,
+    hot,
+    absorb,
 
     stackingPolicy: policy,
     stackingGroupId: bucketKey,
@@ -715,6 +792,291 @@ export type DotTickEvent = {
   damage: number;
   school: DamageSchool;
 };
+
+export type HotTickEvent = {
+  effectId: StatusEffectId;
+  heal: number;
+};
+
+/**
+ * Tick HOT payloads on a character and emit healing ticks via callback.
+ *
+ * Caller owns applying the heal to an entity / persistence; this keeps StatusEffects pure.
+ */
+export function tickStatusEffectsAndApplyHots(
+  char: CharacterState,
+  now: number,
+  applyHeal: (amount: number, meta: HotTickEvent) => void,
+): void {
+  const state = ensureStatusState(char);
+
+  // Prune first so we don't tick dead/expired effects.
+  tickStatusEffectsInternal(state, now);
+
+  for (const bucket of Object.values(state.active)) {
+    for (const inst of normalizeBucket(bucket)) {
+      if (!inst?.hot) continue;
+
+      const hot = inst.hot;
+      const tickIntervalMs = Math.max(1, Math.floor(Number(hot.tickIntervalMs ?? 0)));
+      const perTickHealBase = Math.max(1, Math.floor(Number(hot.perTickHeal ?? 0)));
+
+      if (!Number.isFinite(tickIntervalMs) || tickIntervalMs <= 0) continue;
+      if (!Number.isFinite(perTickHealBase) || perTickHealBase <= 0) continue;
+
+      if (!Number.isFinite(hot.nextTickAtMs) || hot.nextTickAtMs <= 0) {
+        hot.nextTickAtMs = (inst.appliedAtMs ?? now) + tickIntervalMs;
+      }
+
+      const expiresAt = inst.expiresAtMs ?? Number.MAX_SAFE_INTEGER;
+
+      while (hot.nextTickAtMs <= now && hot.nextTickAtMs <= expiresAt) {
+        const heal = perTickHealBase;
+
+        try {
+          applyHeal(heal, { effectId: inst.id, heal });
+        } catch {
+          // Healing application must never crash the tick loop.
+        }
+
+        hot.nextTickAtMs += tickIntervalMs;
+      }
+    }
+  }
+}
+
+/**
+ * Tick HOT payloads on an entity (NPC) and emit healing ticks.
+ * (Useful for later; safe no-op today.)
+ */
+export function tickEntityStatusEffectsAndApplyHots(
+  entity: Entity,
+  now: number,
+  applyHeal: (amount: number, meta: HotTickEvent) => void,
+): void {
+  const state = ensureEntityStatusState(entity);
+
+  tickStatusEffectsInternal(state, now);
+
+  for (const bucket of Object.values(state.active)) {
+    for (const inst of normalizeBucket(bucket)) {
+      if (!inst?.hot) continue;
+
+      const hot = inst.hot;
+      const tickIntervalMs = Math.max(1, Math.floor(Number(hot.tickIntervalMs ?? 0)));
+      const perTickHealBase = Math.max(1, Math.floor(Number(hot.perTickHeal ?? 0)));
+
+      if (!Number.isFinite(tickIntervalMs) || tickIntervalMs <= 0) continue;
+      if (!Number.isFinite(perTickHealBase) || perTickHealBase <= 0) continue;
+
+      if (!Number.isFinite(hot.nextTickAtMs) || hot.nextTickAtMs <= 0) {
+        hot.nextTickAtMs = (inst.appliedAtMs ?? now) + tickIntervalMs;
+      }
+
+      const expiresAt = inst.expiresAtMs ?? Number.MAX_SAFE_INTEGER;
+
+      while (hot.nextTickAtMs <= now && hot.nextTickAtMs <= expiresAt) {
+        const heal = perTickHealBase;
+
+        try {
+          applyHeal(heal, { effectId: inst.id, heal });
+        } catch {
+          // Best-effort only.
+        }
+
+        hot.nextTickAtMs += tickIntervalMs;
+      }
+    }
+  }
+}
+
+function tagsIntersect(a?: string[], b?: string[]): boolean {
+  if (!a || a.length <= 0) return false;
+  if (!b || b.length <= 0) return false;
+  const set = new Set(b.map((x) => String(x).toLowerCase()));
+  for (const t of a) {
+    if (set.has(String(t).toLowerCase())) return true;
+  }
+  return false;
+}
+
+/**
+ * Remove active status effects whose tags match any of the provided tags.
+ * Returns number removed.
+ *
+ * Determinism:
+ * - Removes newest-applied first (highest appliedAtMs), then stable by id.
+ */
+export function clearStatusEffectsByTags(
+  char: CharacterState,
+  tags: string[],
+  maxToRemove?: number,
+  now: number = Date.now(),
+): number {
+  const state = ensureStatusState(char);
+  return clearStatusEffectsByTagsInternal(state, tags, maxToRemove, now);
+}
+
+export function clearEntityStatusEffectsByTags(
+  entity: Entity,
+  tags: string[],
+  maxToRemove?: number,
+  now: number = Date.now(),
+): number {
+  const state = ensureEntityStatusState(entity);
+  return clearStatusEffectsByTagsInternal(state, tags, maxToRemove, now);
+}
+
+function clearStatusEffectsByTagsInternal(
+  state: InternalStatusState,
+  tags: string[],
+  maxToRemove?: number,
+  now: number = Date.now(),
+): number {
+  tickStatusEffectsInternal(state, now);
+
+  const lim = typeof maxToRemove === "number" && maxToRemove > 0 ? Math.floor(maxToRemove) : Number.MAX_SAFE_INTEGER;
+
+  type Ref = { bucketKey: string; inst: StatusEffectInstance };
+  const matches: Ref[] = [];
+
+  for (const [bucketKey, bucket] of Object.entries(state.active)) {
+    for (const inst of normalizeBucket(bucket)) {
+      if (!inst) continue;
+      if (tagsIntersect(inst.tags, tags)) {
+        matches.push({ bucketKey, inst });
+      }
+    }
+  }
+
+  matches.sort((a, b) => {
+    const ta = a.inst.appliedAtMs ?? 0;
+    const tb = b.inst.appliedAtMs ?? 0;
+    if (ta !== tb) return tb - ta; // newest first
+    const ida = a.inst.id ?? "";
+    const idb = b.inst.id ?? "";
+    return ida.localeCompare(idb);
+  });
+
+  const toRemove = new Set<StatusEffectInstance>();
+  for (const m of matches) {
+    if (toRemove.size >= lim) break;
+    toRemove.add(m.inst);
+  }
+
+  let removed = 0;
+
+  for (const [bucketKey, bucket] of Object.entries(state.active)) {
+    const items = normalizeBucket(bucket);
+    const kept = items.filter((inst) => {
+      if (toRemove.has(inst)) {
+        removed++;
+        return false;
+      }
+      return true;
+    });
+
+    writeBucket(state, bucketKey, kept);
+  }
+
+  return removed;
+}
+
+/**
+ * Consume absorb shields on the character and return remaining damage.
+ *
+ * Determinism:
+ * - Shields are consumed oldest-first (lowest appliedAtMs).
+ */
+export function absorbIncomingDamageFromStatusEffects(
+  char: CharacterState,
+  amount: number,
+  school: DamageSchool,
+  now: number = Date.now(),
+): { remainingDamage: number; absorbed: number } {
+  const state = ensureStatusState(char);
+  return absorbIncomingDamageFromState(state, amount, school, now);
+}
+
+export function absorbIncomingDamageFromEntityStatusEffects(
+  entity: Entity,
+  amount: number,
+  school: DamageSchool,
+  now: number = Date.now(),
+): { remainingDamage: number; absorbed: number } {
+  const state = ensureEntityStatusState(entity);
+  return absorbIncomingDamageFromState(state, amount, school, now);
+}
+
+function absorbIncomingDamageFromState(
+  state: InternalStatusState,
+  amount: number,
+  school: DamageSchool,
+  now: number,
+): { remainingDamage: number; absorbed: number } {
+  tickStatusEffectsInternal(state, now);
+
+  let remaining = Math.max(0, Math.floor(Number(amount ?? 0)));
+  if (!Number.isFinite(remaining) || remaining <= 0) return { remainingDamage: 0, absorbed: 0 };
+
+  type Ref = { bucketKey: string; inst: StatusEffectInstance };
+  const shields: Ref[] = [];
+
+  for (const [bucketKey, bucket] of Object.entries(state.active)) {
+    for (const inst of normalizeBucket(bucket)) {
+      const abs = (inst as any)?.absorb as AbsorbPayloadState | undefined;
+      if (!abs) continue;
+      if (!Number.isFinite(abs.remaining) || abs.remaining <= 0) continue;
+
+      const schools = abs.schools;
+      if (Array.isArray(schools) && schools.length > 0) {
+        if (!schools.includes(school)) continue;
+      }
+
+      shields.push({ bucketKey, inst });
+    }
+  }
+
+  shields.sort((a, b) => {
+    const ta = a.inst.appliedAtMs ?? 0;
+    const tb = b.inst.appliedAtMs ?? 0;
+    if (ta !== tb) return ta - tb; // oldest first
+    const ida = a.inst.id ?? "";
+    const idb = b.inst.id ?? "";
+    return ida.localeCompare(idb);
+  });
+
+  let absorbed = 0;
+  const depleted = new Set<StatusEffectInstance>();
+
+  for (const ref of shields) {
+    if (remaining <= 0) break;
+    const abs = (ref.inst as any).absorb as AbsorbPayloadState | undefined;
+    if (!abs) continue;
+
+    const take = Math.min(remaining, Math.max(0, Math.floor(Number(abs.remaining ?? 0))));
+    if (take <= 0) continue;
+
+    abs.remaining -= take;
+    remaining -= take;
+    absorbed += take;
+
+    if (!Number.isFinite(abs.remaining) || abs.remaining <= 0) {
+      abs.remaining = 0;
+      depleted.add(ref.inst);
+    }
+  }
+
+  if (depleted.size > 0) {
+    for (const [bucketKey, bucket] of Object.entries(state.active)) {
+      const items = normalizeBucket(bucket);
+      const kept = items.filter((inst) => !depleted.has(inst));
+      writeBucket(state, bucketKey, kept);
+    }
+  }
+
+  return { remainingDamage: remaining, absorbed };
+}
 
 /**
  * Tick DOT payloads on an entity (NPC) and apply damage via callback.

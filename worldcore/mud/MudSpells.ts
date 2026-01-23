@@ -33,7 +33,7 @@ import {
   getSongSchoolSkill,
 } from "../skills/SkillProgression";
 import type { SongSchoolId } from "../skills/SkillProgression";
-import { applyStatusEffect, applyStatusEffectToEntity } from "../combat/StatusEffects";
+import { applyStatusEffect, applyStatusEffectToEntity, clearStatusEffectsByTags } from "../combat/StatusEffects";
 
 const log = Logger.scope("MUD_SPELLS");
 
@@ -689,6 +689,236 @@ case "heal_self": {
       const gained = after - before;
       return `[world] [spell:${spell.name}] You restore ${gained} health to ${res.displayName}. (${after}/${res.entity.maxHp} HP)`;
     }
+
+
+    case "heal_hot_self": {
+      const cdErr = cooldownGate();
+      if (cdErr) return cdErr;
+
+      const resErr = resourceGate();
+      if (resErr) return resErr;
+
+      const seRes = spellStatusEffectOrErr(spell);
+      if (!seRes.ok) return seRes.err;
+
+      const hot = (seRes.se as any).hot;
+      if (!hot || typeof hot !== "object") {
+        return `[world] [spell:${spell.name}] That spell has no HOT definition.`;
+      }
+
+      const tickIntervalMs = Math.max(1, Math.floor(Number(hot.tickIntervalMs ?? 2000)));
+      const perTickHeal = Math.max(1, Math.floor(Number(hot.perTickHeal ?? 1)));
+
+      startSpellCooldown(char, spell);
+
+      applyStatusEffect(char, {
+        id: seRes.se.id,
+        sourceKind: spell.isSong ? "song" : "spell",
+        sourceId: spell.id,
+        stackingPolicy: seRes.se.stackingPolicy,
+        stackingGroupId: seRes.se.stackingGroupId,
+        appliedByKind: "character",
+        appliedById: char.id,
+        name: seRes.se.name ?? spell.name,
+        durationMs: seRes.se.durationMs,
+        maxStacks: seRes.se.maxStacks,
+        initialStacks: seRes.se.stacks ?? 1,
+        modifiers: seRes.se.modifiers ?? {},
+        tags: seRes.se.tags,
+        hot: { tickIntervalMs, perTickHeal },
+      });
+
+      applySchoolGains();
+      return `[world] [spell:${spell.name}] You begin regenerating health.`;
+    }
+
+    case "heal_hot_single_ally": {
+      if (!ctx.entities) return "[world] Entities not available.";
+      if (!ctx.sessions) return "[world] Sessions not available.";
+
+      const res = resolvePlayerTargetInRoom(ctx, roomId, targetRaw);
+      if ("err" in res) return res.err;
+
+      const cdErr = cooldownGate();
+      if (cdErr) return cdErr;
+
+      const resErr = resourceGate();
+      if (resErr) return resErr;
+
+      const seRes = spellStatusEffectOrErr(spell);
+      if (!seRes.ok) return seRes.err;
+
+      const hot = (seRes.se as any).hot;
+      if (!hot || typeof hot !== "object") {
+        return `[world] [spell:${spell.name}] That spell has no HOT definition.`;
+      }
+
+      const tickIntervalMs = Math.max(1, Math.floor(Number(hot.tickIntervalMs ?? 2000)));
+      const perTickHeal = Math.max(1, Math.floor(Number(hot.perTickHeal ?? 1)));
+
+      startSpellCooldown(char, spell);
+
+      applyStatusEffect(res.char, {
+        id: seRes.se.id,
+        sourceKind: spell.isSong ? "song" : "spell",
+        sourceId: spell.id,
+        stackingPolicy: seRes.se.stackingPolicy,
+        stackingGroupId: seRes.se.stackingGroupId,
+        appliedByKind: "character",
+        appliedById: char.id,
+        name: seRes.se.name ?? spell.name,
+        durationMs: seRes.se.durationMs,
+        maxStacks: seRes.se.maxStacks,
+        initialStacks: seRes.se.stacks ?? 1,
+        modifiers: seRes.se.modifiers ?? {},
+        tags: seRes.se.tags,
+        hot: { tickIntervalMs, perTickHeal },
+      });
+
+      applySchoolGains();
+      return `[world] [spell:${spell.name}] You weave regeneration onto ${res.displayName}.`;
+    }
+
+    case "shield_self": {
+      const cdErr = cooldownGate();
+      if (cdErr) return cdErr;
+
+      const resErr = resourceGate();
+      if (resErr) return resErr;
+
+      const seRes = spellStatusEffectOrErr(spell);
+      if (!seRes.ok) return seRes.err;
+
+      const absorb = (seRes.se as any).absorb;
+      if (!absorb || typeof absorb !== "object") {
+        return `[world] [spell:${spell.name}] That spell has no shield definition.`;
+      }
+
+      const amount = Math.max(0, Math.floor(Number(absorb.amount ?? 0)));
+      if (amount <= 0) return `[world] [spell:${spell.name}] That shield has no strength.`;
+
+      startSpellCooldown(char, spell);
+
+      applyStatusEffect(char, {
+        id: seRes.se.id,
+        sourceKind: spell.isSong ? "song" : "spell",
+        sourceId: spell.id,
+        stackingPolicy: seRes.se.stackingPolicy,
+        stackingGroupId: seRes.se.stackingGroupId,
+        appliedByKind: "character",
+        appliedById: char.id,
+        name: seRes.se.name ?? spell.name,
+        durationMs: seRes.se.durationMs,
+        maxStacks: seRes.se.maxStacks,
+        initialStacks: seRes.se.stacks ?? 1,
+        modifiers: seRes.se.modifiers ?? {},
+        tags: seRes.se.tags,
+        absorb: { amount, schools: Array.isArray(absorb.schools) ? absorb.schools : undefined },
+      });
+
+      applySchoolGains();
+      return `[world] [spell:${spell.name}] A shimmering ward surrounds you.`;
+    }
+
+    case "shield_single_ally": {
+      if (!ctx.entities) return "[world] Entities not available.";
+      if (!ctx.sessions) return "[world] Sessions not available.";
+
+      const res = resolvePlayerTargetInRoom(ctx, roomId, targetRaw);
+      if ("err" in res) return res.err;
+
+      const cdErr = cooldownGate();
+      if (cdErr) return cdErr;
+
+      const resErr = resourceGate();
+      if (resErr) return resErr;
+
+      const seRes = spellStatusEffectOrErr(spell);
+      if (!seRes.ok) return seRes.err;
+
+      const absorb = (seRes.se as any).absorb;
+      if (!absorb || typeof absorb !== "object") {
+        return `[world] [spell:${spell.name}] That spell has no shield definition.`;
+      }
+
+      const amount = Math.max(0, Math.floor(Number(absorb.amount ?? 0)));
+      if (amount <= 0) return `[world] [spell:${spell.name}] That shield has no strength.`;
+
+      startSpellCooldown(char, spell);
+
+      applyStatusEffect(res.char, {
+        id: seRes.se.id,
+        sourceKind: spell.isSong ? "song" : "spell",
+        sourceId: spell.id,
+        stackingPolicy: seRes.se.stackingPolicy,
+        stackingGroupId: seRes.se.stackingGroupId,
+        appliedByKind: "character",
+        appliedById: char.id,
+        name: seRes.se.name ?? spell.name,
+        durationMs: seRes.se.durationMs,
+        maxStacks: seRes.se.maxStacks,
+        initialStacks: seRes.se.stacks ?? 1,
+        modifiers: seRes.se.modifiers ?? {},
+        tags: seRes.se.tags,
+        absorb: { amount, schools: Array.isArray(absorb.schools) ? absorb.schools : undefined },
+      });
+
+      applySchoolGains();
+      return `[world] [spell:${spell.name}] A ward settles over ${res.displayName}.`;
+    }
+
+    case "cleanse_self": {
+      const cdErr = cooldownGate();
+      if (cdErr) return cdErr;
+
+      const resErr = resourceGate();
+      if (resErr) return resErr;
+
+      const cleanse = (spell as any).cleanse;
+      if (!cleanse || !Array.isArray(cleanse.tags) || cleanse.tags.length <= 0) {
+        return `[world] [spell:${spell.name}] That spell has no cleanse definition.`;
+      }
+
+      startSpellCooldown(char, spell);
+
+      const removed = clearStatusEffectsByTags(char, cleanse.tags, cleanse.maxToRemove);
+      applySchoolGains();
+
+      if (removed <= 0) {
+        return `[world] [spell:${spell.name}] Nothing clings to you.`;
+      }
+      return `[world] [spell:${spell.name}] You cleanse ${removed} effect(s).`;
+    }
+
+    case "cleanse_single_ally": {
+      if (!ctx.entities) return "[world] Entities not available.";
+      if (!ctx.sessions) return "[world] Sessions not available.";
+
+      const res = resolvePlayerTargetInRoom(ctx, roomId, targetRaw);
+      if ("err" in res) return res.err;
+
+      const cdErr = cooldownGate();
+      if (cdErr) return cdErr;
+
+      const resErr = resourceGate();
+      if (resErr) return resErr;
+
+      const cleanse = (spell as any).cleanse;
+      if (!cleanse || !Array.isArray(cleanse.tags) || cleanse.tags.length <= 0) {
+        return `[world] [spell:${spell.name}] That spell has no cleanse definition.`;
+      }
+
+      startSpellCooldown(char, spell);
+
+      const removed = clearStatusEffectsByTags(res.char, cleanse.tags, cleanse.maxToRemove);
+      applySchoolGains();
+
+      if (removed <= 0) {
+        return `[world] [spell:${spell.name}] ${res.displayName} has nothing to cleanse.`;
+      }
+      return `[world] [spell:${spell.name}] You cleanse ${removed} effect(s) from ${res.displayName}.`;
+    }
+
 
     case "buff_self": {
       const cdErr = cooldownGate();

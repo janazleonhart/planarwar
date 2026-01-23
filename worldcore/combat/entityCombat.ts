@@ -3,7 +3,7 @@
 import type { Entity } from "../shared/Entity";
 import type { CharacterState } from "../characters/CharacterTypes";
 import type { CombatResult, DamageSchool } from "./CombatEngine";
-import { computeCombatStatusSnapshot } from "./StatusEffects";
+import { computeCombatStatusSnapshot, absorbIncomingDamageFromStatusEffects } from "./StatusEffects";
 import { computeCowardiceDamageTakenMultiplier } from "./Cowardice";
 import { bumpRegionDanger } from "../world/RegionDanger";
 import { isServiceProtectedEntity } from "./ServiceProtection";
@@ -201,6 +201,17 @@ function applyDamageToPlayerInternal(
 
   // Min-damage rule final guard
   if (amt > 0 && dmg < 1) dmg = 1;
+
+  // Absorb shields: allow shields to reduce damage to 0 (exception to min-damage rule).
+  if (char && dmg > 0) {
+    try {
+      const schoolN: DamageSchool = (school as DamageSchool) ?? "physical";
+      const absorbed = absorbIncomingDamageFromStatusEffects(char, dmg, schoolN, Date.now());
+      dmg = Math.max(0, Math.floor(absorbed.remainingDamage));
+    } catch {
+      // Best-effort only.
+    }
+  }
 
   const newHp = Math.max(0, oldHp - dmg);
   e.maxHp = maxHp;
