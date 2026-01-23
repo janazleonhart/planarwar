@@ -30,6 +30,8 @@ import {
   sellToVendor,
 } from "../../../vendors/VendorTransactions";
 
+import { logVendorEvent } from "../../../vendors/VendorAuditLog";
+
 import { requireTownService } from "../world/serviceGates";
 
 import {
@@ -443,6 +445,25 @@ async function buyAction(ctx: MudContext, char: CharacterState, args: string[]):
     const res = buyFromVendor(char, vendor, selector, qty);
     if (res.ok) {
       await (ctx.characters as any)?.saveCharacter?.(char);
+
+      // Best-effort audit log (never blocks gameplay).
+      await logVendorEvent({
+        ts: new Date().toISOString(),
+        shardId: (char as any)?.shardId ?? null,
+        actorCharId: (char as any)?.id ?? null,
+        actorCharName: (char as any)?.name ?? null,
+        vendorId: vendor.id,
+        vendorName: vendor.name ?? null,
+        action: "buy",
+        itemId: res.item?.itemId ?? null,
+        quantity: res.quantity ?? null,
+        unitPriceGold: res.item?.priceGold ?? null,
+        totalGold: res.goldSpent ?? null,
+        goldBefore: res.goldBefore ?? null,
+        goldAfter: res.goldAfter ?? null,
+        result: "ok",
+        meta: { selector, qtyRequested: qty },
+      });
     }
     return res.message;
   })) as string;
@@ -494,6 +515,29 @@ async function sellAction(ctx: MudContext, char: CharacterState, args: string[])
     const res = sellToVendor(char, itemId, qty, vendor);
     if (res.ok) {
       await (ctx.characters as any)?.saveCharacter?.(char);
+
+      // Best-effort audit log (never blocks gameplay).
+      // Sell price per unit is derived from vendor price reference.
+      const vendorItem = vendor.items.find((i: any) => i.itemId === itemId);
+      const unitPriceGold = vendorItem?.priceGold != null ? Math.floor(Number(vendorItem.priceGold) * 0.5) : null;
+
+      await logVendorEvent({
+        ts: new Date().toISOString(),
+        shardId: (char as any)?.shardId ?? null,
+        actorCharId: (char as any)?.id ?? null,
+        actorCharName: (char as any)?.name ?? null,
+        vendorId: vendor.id,
+        vendorName: vendor.name ?? null,
+        action: "sell",
+        itemId,
+        quantity: res.quantity ?? null,
+        unitPriceGold,
+        totalGold: res.goldGained ?? null,
+        goldBefore: res.goldBefore ?? null,
+        goldAfter: res.goldAfter ?? null,
+        result: "ok",
+        meta: { qtyRequested: qty },
+      });
     }
     return res.message;
   })) as string;

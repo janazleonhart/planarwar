@@ -1,6 +1,14 @@
 // worldcore/vendors/VendorTransactions.ts
+//
+// Vendor transaction logic (v0+) with anti-dupe guardrails.
+//
+// Goals:
+// - Never charge gold unless we can deliver items.
+// - Never deliver items unless gold is charged.
+// - Never partially mutate state on failure (atomic via snapshot/rollback).
+// - Keep command layer thin; this module returns structured results.
 
-import type { CharacterState } from "../characters/CharacterTypes";
+import type { CharacterState, InventoryState } from "../characters/CharacterTypes";
 import {
   getCharacterGold,
   trySpendGold,
@@ -17,6 +25,8 @@ export type VendorBuyResult = {
   item?: VendorItem;
   quantity?: number;
   goldSpent?: number;
+  goldBefore?: number;
+  goldAfter?: number;
 };
 
 export type VendorSellResult = {
@@ -25,7 +35,29 @@ export type VendorSellResult = {
   itemId?: string;
   quantity?: number;
   goldGained?: number;
+  goldBefore?: number;
+  goldAfter?: number;
 };
+
+function cloneInventory(inv: InventoryState): InventoryState {
+  // InventoryState is JSON-safe in this project. A structural clone is enough.
+  return JSON.parse(JSON.stringify(inv)) as InventoryState;
+}
+
+function restoreInventory(char: CharacterState, snapshot: InventoryState): void {
+  // Restore by replacing the whole inventory object.
+  (char as any).inventory = snapshot;
+}
+
+function countItem(inv: InventoryState, itemId: string): number {
+  let total = 0;
+  for (const bag of inv.bags ?? []) {
+    for (const slot of bag.slots ?? []) {
+      if (slot?.itemId === itemId) total += Number((slot as any).qty ?? 0);
+    }
+  }
+  return total;
+}
 
 /**
  * Find a vendor item either by row id or by index (1-based).
@@ -55,6 +87,10 @@ export function resolveVendorItem(
  * - Checks gold first (no partial purchase if they can't afford).
  * - Then tries to add items to inventory.
  * - Only spends gold for the quantity actually added.
+ *
+ * Anti-dupe guardrails:
+ * - Snapshot + rollback if payment fails.
+ * - Validate gold & item deltas are exactly what we expect.
  */
 export function buyFromVendor(
   char: CharacterState,
@@ -73,42 +109,77 @@ export function buyFromVendor(
   const qty = quantity > 0 ? quantity : 1;
   const requestedTotalCost = item.priceGold * qty;
 
-  const currentGold = getCharacterGold(char);
-  if (currentGold < requestedTotalCost) {
+  const goldBefore = getCharacterGold(char);
+  const invBeforeSnapshot = cloneInventory(char.inventory);
+  const itemCountBefore = countItem(invBeforeSnapshot, item.itemId);
+
+  if (goldBefore < requestedTotalCost) {
     return {
       ok: false,
       message: `[vendor] You cannot afford that. Cost: ${requestedTotalCost} gold.`,
+      item,
+      quantity: 0,
+      goldSpent: 0,
+      goldBefore,
+      goldAfter: goldBefore,
     };
   }
 
   // Try to add items first, so we never charge gold if we can't deliver.
-  const giveResult = giveItemsToCharacter(char, [
-    { itemId: item.itemId, quantity: qty },
-  ]);
+  const giveResult = giveItemsToCharacter(char, [{ itemId: item.itemId, quantity: qty }]);
 
-  const applied = giveResult.applied.find(
-    (s) => s.itemId === item.itemId
-  );
+  const applied = giveResult.applied.find((s) => s.itemId === item.itemId);
   const appliedQty = applied?.quantity ?? 0;
 
   if (appliedQty <= 0) {
+    // Ensure no partial state (bags full might still be no-op, but snapshot makes it explicit).
+    restoreInventory(char, invBeforeSnapshot);
     return {
       ok: false,
-      message:
-        "[vendor] Your bags are full; you can't carry that purchase.",
+      message: "[vendor] Your bags are full; you can't carry that purchase.",
+      item,
+      quantity: 0,
+      goldSpent: 0,
+      goldBefore,
+      goldAfter: goldBefore,
     };
   }
 
   const actualCost = appliedQty * item.priceGold;
 
-  // Spend gold for what we actually added
+  // Spend gold for what we actually added.
   if (!trySpendGold(char, actualCost)) {
-    // Extremely unlikely given we checked affordability above,
-    // but if it happens we just warn and leave the items as-is.
+    // Roll back item grant if payment fails (prevents silent dupes).
+    restoreInventory(char, invBeforeSnapshot);
     return {
       ok: false,
-      message:
-        "[vendor] An error occurred while processing payment. Please try again.",
+      message: "[vendor] An error occurred while processing payment. Please try again.",
+      item,
+      quantity: 0,
+      goldSpent: 0,
+      goldBefore,
+      goldAfter: goldBefore,
+    };
+  }
+
+  // Validate invariants: gold and item counts match exactly what we expect.
+  const goldAfter = getCharacterGold(char);
+  const itemCountAfter = countItem(char.inventory, item.itemId);
+
+  const expectedGoldAfter = goldBefore - actualCost;
+  const expectedItemAfter = itemCountBefore + appliedQty;
+
+  if (goldAfter !== expectedGoldAfter || itemCountAfter !== expectedItemAfter) {
+    // Something mutated unexpectedly (bad stacking logic, re-entrancy, etc). Roll back.
+    restoreInventory(char, invBeforeSnapshot);
+    return {
+      ok: false,
+      message: "[vendor] Transaction integrity check failed. No changes were applied.",
+      item,
+      quantity: 0,
+      goldSpent: 0,
+      goldBefore,
+      goldAfter: goldBefore,
     };
   }
 
@@ -126,6 +197,8 @@ export function buyFromVendor(
     item,
     quantity: appliedQty,
     goldSpent: actualCost,
+    goldBefore,
+    goldAfter,
   };
 }
 
@@ -134,6 +207,10 @@ export function buyFromVendor(
  *
  * For v0 we use a simple rule:
  *   vendor pays 50% of their sell price (rounded down).
+ *
+ * Anti-dupe guardrails:
+ * - Snapshot + rollback if any part fails.
+ * - Validate gold & item deltas exactly match what we expect.
  */
 export function sellToVendor(
   char: CharacterState,
@@ -148,8 +225,12 @@ export function sellToVendor(
   if (!vendorItem) {
     return {
       ok: false,
-      message:
-        "[vendor] This vendor is not interested in buying that item.",
+      message: "[vendor] This vendor is not interested in buying that item.",
+      itemId,
+      quantity: 0,
+      goldGained: 0,
+      goldBefore: getCharacterGold(char),
+      goldAfter: getCharacterGold(char),
     };
   }
 
@@ -160,23 +241,56 @@ export function sellToVendor(
     return {
       ok: false,
       message: "[vendor] That item has no resale value.",
+      itemId,
+      quantity: 0,
+      goldGained: 0,
+      goldBefore: getCharacterGold(char),
+      goldAfter: getCharacterGold(char),
     };
   }
 
+  const goldBefore = getCharacterGold(char);
+  const invBeforeSnapshot = cloneInventory(char.inventory);
+  const itemCountBefore = countItem(invBeforeSnapshot, itemId);
+
   // Remove items as an all-or-nothing cost
-  const ok = tryConsumeItems(char, [
-    { itemId, quantity: qty } as SimpleItemStack,
-  ]);
+  const ok = tryConsumeItems(char, [{ itemId, quantity: qty } as SimpleItemStack]);
 
   if (!ok) {
+    // Ensure no partial state (tryConsumeItems should be atomic, but snapshot makes it explicit).
+    restoreInventory(char, invBeforeSnapshot);
     return {
       ok: false,
       message: "[vendor] You do not have enough of that item to sell.",
+      itemId,
+      quantity: 0,
+      goldGained: 0,
+      goldBefore,
+      goldAfter: goldBefore,
     };
   }
 
   const goldGain = sellPricePerUnit * qty;
   giveGold(char, goldGain);
+
+  const goldAfter = getCharacterGold(char);
+  const itemCountAfter = countItem(char.inventory, itemId);
+
+  const expectedGoldAfter = goldBefore + goldGain;
+  const expectedItemAfter = itemCountBefore - qty;
+
+  if (goldAfter !== expectedGoldAfter || itemCountAfter !== expectedItemAfter) {
+    restoreInventory(char, invBeforeSnapshot);
+    return {
+      ok: false,
+      message: "[vendor] Transaction integrity check failed. No changes were applied.",
+      itemId,
+      quantity: 0,
+      goldGained: 0,
+      goldBefore,
+      goldAfter: goldBefore,
+    };
+  }
 
   return {
     ok: true,
@@ -184,5 +298,7 @@ export function sellToVendor(
     itemId,
     quantity: qty,
     goldGained: goldGain,
+    goldBefore,
+    goldAfter,
   };
 }
