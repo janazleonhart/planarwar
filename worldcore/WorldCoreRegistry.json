@@ -5415,6 +5415,23 @@
         "Contract: vendor economy tier policy clamps tiers and provides monotonic supply/restock knobs; tier token inference works for vendor ids."
       ]
     },
+    "test.contractVendorRestockCadenceTicks": {
+      "kind": "test",
+      "service": "test.contract",
+      "path": "worldcore/test/contract_vendorRestockCadenceTicks.test.ts",
+      "class": null,
+      "lifecycle": "test",
+      "ctorArgs": [],
+      "dependsOn": [
+        "vendors.types"
+      ],
+      "provides": [],
+      "owns": [],
+      "notes": [
+        "Contract: vendor restock cadence tick math stays stable (ticks are floored, stock caps, and lastRestock advances by whole ticks).",
+        "Includes the 'full stock still advances lastRestock' rule to prevent perpetual DUE states and time drift."
+      ]
+    },
     "test.utils": {
       "kind": "test_utility",
       "path": "worldcore/test/testUtils.ts",
@@ -5817,7 +5834,8 @@
       "path": "worldcore/vendors/VendorTypes.ts",
       "notes": [
         "Defines VendorItem (id,itemId,priceGold) and VendorDefinition (id,name,items).",
-        "Shared shape for vendor services, economy helpers, and MUD commands."
+        "Shared shape for vendor services, economy helpers, admin tooling, and MUD commands.",
+        "Includes pure helper computeVendorRestockCadence(...) that mirrors PostgresVendorService cadence tick semantics (ticks, stock cap, lastRestock advancement)."
       ]
     },
     "world.boundary": {

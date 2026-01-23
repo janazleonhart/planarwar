@@ -76,3 +76,65 @@ export function computeVendorUnitPriceGold(
 
   return Math.max(1, Math.ceil(base * mult));
 }
+
+export type VendorRestockCadenceResult = {
+  tickSec: number;
+  tickAmount: number;
+  ticks: number;
+  newStock: number;
+  newLastRestockMs: number;
+};
+
+/**
+ * Pure restock cadence math that mirrors the SQL logic used by PostgresVendorService.
+ *
+ * SQL semantics (mirrored):
+ * - Determine tick_sec/tick_amount from cadence fields, else approximate from restockPerHour.
+ * - ticks = floor((now - last) / tick_sec)
+ * - stock += ticks * tick_amount, capped at stockMax
+ * - lastRestock advances by ticks * tick_sec (even if stock was already full)
+ */
+export function computeVendorRestockCadence(args: {
+  stock: number;
+  stockMax: number;
+  lastRestockMs: number;
+  nowMs: number;
+  restockEverySec?: number | null;
+  restockAmount?: number | null;
+  restockPerHour?: number | null;
+}): VendorRestockCadenceResult {
+  const stockMax = Math.max(0, Math.floor(Number(args.stockMax) || 0));
+  const stock = clampNumber(Math.floor(Number(args.stock) || 0), 0, stockMax > 0 ? stockMax : 0);
+
+  const last = Number(args.lastRestockMs);
+  const now = Number(args.nowMs);
+
+  const everySec = Math.floor(Number(args.restockEverySec ?? 0) || 0);
+  const amount = Math.floor(Number(args.restockAmount ?? 0) || 0);
+  const perHour = Math.floor(Number(args.restockPerHour ?? 0) || 0);
+
+  let tickSec = 0;
+  let tickAmount = 0;
+
+  if (everySec > 0 && amount > 0) {
+    tickSec = everySec;
+    tickAmount = amount;
+  } else if (perHour > 0) {
+    tickSec = Math.max(1, Math.floor(3600 / perHour));
+    tickAmount = 1;
+  }
+
+  const elapsedMs = Number.isFinite(now) && Number.isFinite(last) ? Math.max(0, now - last) : 0;
+  const ticks = tickSec > 0 && tickAmount > 0 ? Math.floor(elapsedMs / (tickSec * 1000)) : 0;
+
+  const newLastRestockMs = ticks > 0 && tickSec > 0 ? last + ticks * tickSec * 1000 : last;
+  const newStock = stockMax > 0 ? Math.min(stockMax, stock + ticks * tickAmount) : stock;
+
+  return {
+    tickSec,
+    tickAmount,
+    ticks,
+    newStock,
+    newLastRestockMs,
+  };
+}

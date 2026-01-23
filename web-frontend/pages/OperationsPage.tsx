@@ -1,9 +1,27 @@
-//frontend/src/pages/OperationsPage.tsx
+// web-frontend/pages/OperationsPage.tsx
 
 import { useEffect, useState } from "react";
 import { fetchMe } from "../lib/api";
 
 import type { MeProfile } from "../lib/api";
+
+// Legacy (pre-MeProfile-v2) mission payload shape.
+// We keep this ONLY for optional display if the backend still returns it for CityBuilder.
+type LegacyActiveMission = {
+  instanceId: string;
+  finishesAt: string;
+  mission: {
+    title: string;
+    kind: string;
+    difficulty: string;
+    regionId: string;
+  };
+};
+
+function getLegacyActiveMissions(me: MeProfile): LegacyActiveMission[] {
+  const legacy = (me as unknown as { activeMissions?: unknown }).activeMissions;
+  return Array.isArray(legacy) ? (legacy as LegacyActiveMission[]) : [];
+}
 
 export function OperationsPage() {
   const [me, setMe] = useState<MeProfile | null>(null);
@@ -28,12 +46,10 @@ export function OperationsPage() {
   if (error) return <p style={{ color: "red" }}>{error}</p>;
   if (!me) return <p>No data loaded.</p>;
 
-  const active = me.activeMissions;
+  const active = getLegacyActiveMissions(me);
 
   return (
-    <section
-      style={{ maxWidth: 900, margin: "0 auto", display: "grid", gap: 24 }}
-    >
+    <section style={{ maxWidth: 900, margin: "0 auto", display: "grid", gap: 24 }}>
       <h2>Operations</h2>
 
       <div
@@ -46,9 +62,20 @@ export function OperationsPage() {
         }}
       >
         <p style={{ margin: 0, opacity: 0.8, fontSize: 14 }}>
-          This is an early read-only view of your current operations. Mission
-          start/complete actions are wired on the <code>/me</code> page for now.
+          This is an early read-only view of your current operations.
+          Mission start/complete actions are wired on the <code>/me</code> page for now.
         </p>
+
+        <div style={{ fontSize: 13, opacity: 0.85, display: "grid", gap: 2 }}>
+          <div>
+            <strong>User:</strong> {me.username}{" "}
+            <span style={{ opacity: 0.7 }}>({me.userId})</span>
+          </div>
+          <div>
+            <strong>City:</strong>{" "}
+            {me.city ? `${me.city.name} (Tier ${me.city.tier})` : "None"}
+          </div>
+        </div>
       </div>
 
       <div
@@ -60,9 +87,13 @@ export function OperationsPage() {
           gap: 12,
         }}
       >
-        <h3 style={{ marginTop: 0 }}>Active Missions</h3>
+        <h3 style={{ marginTop: 0 }}>Active Missions (legacy)</h3>
+
         {active.length === 0 ? (
-          <p>No active missions.</p>
+          <p style={{ margin: 0, opacity: 0.85 }}>
+            No mission data available in the current <code>/api/me</code> payload.
+            (This section only renders if the backend sends legacy mission fields.)
+          </p>
         ) : (
           <div
             style={{
@@ -97,10 +128,9 @@ export function OperationsPage() {
                     <strong>Region:</strong> {am.mission.regionId}
                   </div>
                   <div style={{ marginBottom: 4 }}>
-                    <strong>Finishes:</strong>{" "}
-                    {finishTime.toLocaleString()}
+                    <strong>Finishes:</strong> {finishTime.toLocaleString()}
                   </div>
-                  <div style={{ marginBottom: 4 }}>
+                  <div style={{ marginBottom: 0 }}>
                     <strong>Status:</strong>{" "}
                     {isComplete ? "Ready to complete (see /me)" : "In progress"}
                   </div>

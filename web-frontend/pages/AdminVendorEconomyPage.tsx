@@ -100,6 +100,63 @@ function isRestocking(everySec: number | null, amount: number | null): boolean {
   return (everySec ?? 0) > 0 && (amount ?? 0) > 0;
 }
 
+function parseIsoMs(iso: string | null): number | null {
+  if (!iso) return null;
+  const ms = Date.parse(iso);
+  return Number.isFinite(ms) ? ms : null;
+}
+
+function formatHms(totalSeconds: number): string {
+  const s = Math.max(0, Math.floor(totalSeconds));
+  const hh = Math.floor(s / 3600);
+  const mm = Math.floor((s % 3600) / 60);
+  const ss = s % 60;
+
+  const pad2 = (n: number) => String(n).padStart(2, "0");
+  if (hh > 0) return `${hh}:${pad2(mm)}:${pad2(ss)}`;
+  return `${mm}:${pad2(ss)}`;
+}
+
+function getNextRestockLabel(
+  r: VendorEconomyItem,
+  nowMs: number
+): { line: string; title?: string } | null {
+  // Only meaningful for finite + cadence-enabled items.
+  if (!isFiniteStockMax(r.stock_max ?? null)) return null;
+  if (!isRestocking(r.restock_every_sec ?? null, r.restock_amount ?? null)) return null;
+
+  const lastMs = parseIsoMs(r.last_restock_ts);
+  const everySec = Number(r.restock_every_sec ?? 0);
+
+  if (!lastMs || !Number.isFinite(everySec) || everySec <= 0) {
+    return { line: "next: ?", title: "Missing/invalid last_restock_ts or restock_every_sec" };
+  }
+
+  const nextMs = lastMs + everySec * 1000;
+  const nextIso = new Date(nextMs).toISOString();
+  const nextLocal = new Date(nextMs).toLocaleString();
+
+  const full =
+    r.stock != null && r.stock_max != null && r.stock_max > 0 && Number(r.stock) >= Number(r.stock_max);
+
+  // Polish: "DUE (full)" reads like an error state.
+  // If stock is already capped, we show "full" and keep the exact tick timing in the tooltip.
+  if (full) {
+    const when = nowMs >= nextMs ? "next tick is due" : `next tick in ${formatHms(Math.ceil((nextMs - nowMs) / 1000))}`;
+    return { line: "full", title: `Stock is at cap; ${when}. Next tick at ${nextLocal} (${nextIso})` };
+  }
+
+  if (nowMs >= nextMs) {
+    return { line: "next: DUE", title: `next at ${nextLocal} (${nextIso})` };
+  }
+
+  const remainingSec = Math.ceil((nextMs - nowMs) / 1000);
+  return {
+    line: `next: ${formatHms(remainingSec)}`,
+    title: `next at ${nextLocal} (${nextIso})`,
+  };
+}
+
 function formatStockLabel(stock: number | null, stockMax: number | null): string {
   // Treat <=0 as infinite-ish (server uses 0 to represent “infinite / disabled”).
   const infinite = stock == null || stockMax == null || stockMax <= 0;
@@ -117,6 +174,8 @@ export function AdminVendorEconomyPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+
+  const [nowMs, setNowMs] = useState(() => Date.now());
 
   const [limit, setLimit] = useState(500);
   const [offset, setOffset] = useState(0);
@@ -192,6 +251,11 @@ export function AdminVendorEconomyPage() {
   useEffect(() => {
     loadVendors();
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    const id = window.setInterval(() => setNowMs(Date.now()), 1000);
+    return () => window.clearInterval(id);
   }, []);
 
   useEffect(() => {
@@ -622,7 +686,25 @@ export function AdminVendorEconomyPage() {
                     )}
                   </td>
 
-                  <td style={{ whiteSpace: "nowrap" }}>{r.last_restock_ts ?? ""}</td>
+                  <td style={{ whiteSpace: "nowrap" }}>
+                    <div style={{ fontFamily: "monospace", fontSize: 12 }}>
+                      {(() => {
+                        if (!r.last_restock_ts) return "—";
+                        const ms = parseIsoMs(r.last_restock_ts);
+                        if (!ms) return r.last_restock_ts;
+                        return new Date(ms).toLocaleString();
+                      })()}
+                    </div>
+                    {(() => {
+                      const t = getNextRestockLabel(r, nowMs);
+                      if (!t) return null;
+                      return (
+                        <div style={{ marginTop: 2, fontSize: 11, opacity: 0.75 }} title={t.title}>
+                          {t.line}
+                        </div>
+                      );
+                    })()}
+                  </td>
 
                   <td style={{ textAlign: "center" }}>
                     <input
