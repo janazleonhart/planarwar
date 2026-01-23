@@ -2,9 +2,6 @@
 
 import { useEffect, useState } from "react";
 
-// TEMP: hard-code backend URL for dev tools (match what you used for NPCs/spawn points)
-const ADMIN_API_BASE = "http://192.168.0.74:4000";
-
 type ObjectiveKind = "kill" | "harvest" | "collect_item" | "craft" | "talk_to" | "city";
 
 type AdminQuest = {
@@ -49,7 +46,7 @@ export function AdminQuestsPage() {
   const [error, setError] = useState<string | null>(null);
 
   async function reloadList() {
-    const res = await fetch(`${ADMIN_API_BASE}/api/admin/quests`);
+    const res = await fetch(`/api/admin/quests`);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data: { ok: boolean; quests: AdminQuest[]; error?: string } = await res.json();
     if (!data.ok) throw new Error(data.error || "failed");
@@ -101,7 +98,7 @@ export function AdminQuestsPage() {
     setError(null);
 
     try {
-      const res = await fetch(`${ADMIN_API_BASE}/api/admin/quests`, {
+      const res = await fetch(`/api/admin/quests`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(form),
@@ -133,8 +130,8 @@ export function AdminQuestsPage() {
     <div style={{ padding: 16 }}>
       <h1>Quest Editor (v0)</h1>
 
-      <div style={{ fontSize: 12, opacity: 0.7, marginBottom: 8 }}>
-        API: <code>{ADMIN_API_BASE}</code>
+            <div style={{ fontSize: 12, opacity: 0.7, marginBottom: 8 }}>
+        API: <code>/api</code> (same-origin via Vite proxy)
       </div>
 
       {error && (

@@ -2,8 +2,6 @@
 
 import { useEffect, useMemo, useState } from "react";
 
-const ADMIN_API_BASE = "http://192.168.0.74:4000";
-
 // ----- UI state persistence (safe on SSR) -----
 const SPAWN_UI_LS_KEY = 'adminSpawnPointsPage.ui.v1';
 
@@ -417,7 +415,7 @@ export function AdminSpawnPointsPage() {
       if (filterProtoId.trim()) qs.set("protoId", filterProtoId.trim());
       if (filterSpawnId.trim()) qs.set("spawnId", filterSpawnId.trim());
 
-      const url = `${ADMIN_API_BASE}/api/admin/spawn_points?${qs.toString()}`;
+      const url = `/api/admin/spawn_points?${qs.toString()}`;
 
       const res = await fetch(url);
       if (!res.ok) throw new Error(`Load failed (HTTP ${res.status})`);
@@ -463,7 +461,7 @@ export function AdminSpawnPointsPage() {
         qs.set("limit", String(Number(mbLimit) || 15));
       }
 
-      const url = `${ADMIN_API_BASE}/api/admin/spawn_points/mother_brain/status?${qs.toString()}`;
+      const url = `/api/admin/spawn_points/mother_brain/status?${qs.toString()}`;
       const res = await fetch(url);
       if (!res.ok) throw new Error(`MotherBrain status failed (HTTP ${res.status})`);
       const data: MotherBrainStatusResponse = await res.json();
@@ -480,7 +478,7 @@ export function AdminSpawnPointsPage() {
     setWaveLoading(true);
     setError(null);
     try {
-      const url = `${ADMIN_API_BASE}/api/admin/spawn_points/mother_brain/wave`;
+      const url = `/api/admin/spawn_points/mother_brain/wave`;
       const res = await fetch(url, {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -517,7 +515,7 @@ export function AdminSpawnPointsPage() {
     setWipeLoading(true);
     setError(null);
     try {
-      const url = `${ADMIN_API_BASE}/api/admin/spawn_points/mother_brain/wipe`;
+      const url = `/api/admin/spawn_points/mother_brain/wipe`;
 
       const theme = wipeTheme.trim();
       const epochRaw = wipeEpoch.trim();
@@ -706,7 +704,7 @@ export function AdminSpawnPointsPage() {
     setError(null);
 
     try {
-      const res = await fetch(`${ADMIN_API_BASE}/api/admin/spawn_points`, {
+      const res = await fetch(`/api/admin/spawn_points`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -751,7 +749,7 @@ export function AdminSpawnPointsPage() {
     setError(null);
 
     try {
-      const url = `${ADMIN_API_BASE}/api/admin/spawn_points/${form.id}?shardId=${encodeURIComponent(
+      const url = `/api/admin/spawn_points/${form.id}?shardId=${encodeURIComponent(
         shardId.trim() || "prime_shard"
       )}`;
 
@@ -780,7 +778,7 @@ export function AdminSpawnPointsPage() {
     setBulkWorking(true);
     setError(null);
     try {
-      const res = await fetch(`${ADMIN_API_BASE}/api/admin/spawn_points/bulk_delete`, {
+      const res = await fetch(`/api/admin/spawn_points/bulk_delete`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
@@ -809,7 +807,7 @@ export function AdminSpawnPointsPage() {
     setBulkWorking(true);
     setError(null);
     try {
-      const res = await fetch(`${ADMIN_API_BASE}/api/admin/spawn_points/bulk_move`, {
+      const res = await fetch(`/api/admin/spawn_points/bulk_move`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
@@ -872,7 +870,7 @@ export function AdminSpawnPointsPage() {
     setCloneResult(null);
 
     try {
-      const res = await fetch(`${ADMIN_API_BASE}/api/admin/spawn_points/clone`, {
+      const res = await fetch(`/api/admin/spawn_points/clone`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
@@ -906,7 +904,7 @@ export function AdminSpawnPointsPage() {
     setScatterResult(null);
 
     try {
-      const res = await fetch(`${ADMIN_API_BASE}/api/admin/spawn_points/scatter`, {
+      const res = await fetch(`/api/admin/spawn_points/scatter`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
@@ -952,7 +950,7 @@ export function AdminSpawnPointsPage() {
       if (form.x == null || form.z == null) throw new Error("Selected spawn is missing X/Z coords.");
 
       const shard = shardId.trim() || "prime_shard";
-      const url = `${ADMIN_API_BASE}/api/admin/spawn_points/town_baseline/${commit ? "apply" : "plan"}`;
+      const url = `/api/admin/spawn_points/town_baseline/${commit ? "apply" : "plan"}`;
 
       const boundsStr = baselineBounds.trim();
       const tierOverrideRaw = baselineTownTierOverride.trim();

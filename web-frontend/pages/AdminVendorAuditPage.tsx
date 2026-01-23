@@ -1,9 +1,6 @@
 // web-frontend/pages/AdminVendorAuditPage.tsx
-
 import { useEffect, useMemo, useState } from "react";
-
-// Keep consistent with other admin pages in this repo.
-const ADMIN_API_BASE = "http://192.168.0.74:4000";
+import { api } from "../lib/api";
 
 type VendorAuditRow = {
   ts: string;
@@ -22,6 +19,13 @@ type VendorAuditRow = {
   result: string;
   reason: string | null;
   meta: any | null;
+};
+
+type VendorAuditResponse = {
+  ok: boolean;
+  rows: VendorAuditRow[];
+  total: number;
+  error?: string;
 };
 
 export function AdminVendorAuditPage() {
@@ -44,7 +48,7 @@ export function AdminVendorAuditPage() {
   const [offset, setOffset] = useState(0);
   const [total, setTotal] = useState(0);
 
-  const queryUrl = useMemo(() => {
+  const queryPath = useMemo(() => {
     const q = new URLSearchParams();
     q.set("limit", String(limit));
     q.set("offset", String(offset));
@@ -57,19 +61,14 @@ export function AdminVendorAuditPage() {
     if (since.trim()) q.set("since", since.trim());
     if (until.trim()) q.set("until", until.trim());
 
-    return `${ADMIN_API_BASE}/api/admin/vendor_audit?${q.toString()}`;
+    return `/api/admin/vendor_audit?${q.toString()}`;
   }, [vendorId, actorCharId, actorCharName, action, result, itemId, since, until, limit, offset]);
 
   async function load() {
     setBusy(true);
     setError(null);
     try {
-      const res = await fetch(queryUrl);
-      if (!res.ok) {
-        const text = await res.text();
-        throw new Error(`HTTP ${res.status}: ${text}`);
-      }
-      const data = await res.json();
+      const data = await api<VendorAuditResponse>(queryPath);
       if (!data?.ok) throw new Error(data?.error || "Unknown error");
       setRows(data.rows || []);
       setTotal(Number(data.total || 0));
@@ -83,7 +82,7 @@ export function AdminVendorAuditPage() {
   useEffect(() => {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [queryUrl]);
+  }, [queryPath]);
 
   const page = Math.floor(offset / limit) + 1;
   const pageCount = Math.max(1, Math.ceil(total / limit));
@@ -93,15 +92,80 @@ export function AdminVendorAuditPage() {
       <h1 style={{ marginTop: 0 }}>Vendor Audit Viewer</h1>
 
       <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 12 }}>
-        <input placeholder="vendorId" value={vendorId} onChange={(e) => { setOffset(0); setVendorId(e.target.value); }} />
-        <input placeholder="actorCharId" value={actorCharId} onChange={(e) => { setOffset(0); setActorCharId(e.target.value); }} />
-        <input placeholder="actorCharName contains" value={actorCharName} onChange={(e) => { setOffset(0); setActorCharName(e.target.value); }} />
-        <input placeholder="action (buy|sell)" value={action} onChange={(e) => { setOffset(0); setAction(e.target.value); }} />
-        <input placeholder="result (ok|deny|error)" value={result} onChange={(e) => { setOffset(0); setResult(e.target.value); }} />
-        <input placeholder="itemId" value={itemId} onChange={(e) => { setOffset(0); setItemId(e.target.value); }} />
-        <input placeholder="since (ISO)" value={since} onChange={(e) => { setOffset(0); setSince(e.target.value); }} style={{ minWidth: 220 }} />
-        <input placeholder="until (ISO)" value={until} onChange={(e) => { setOffset(0); setUntil(e.target.value); }} style={{ minWidth: 220 }} />
-        <button onClick={() => load()} disabled={busy}>Refresh</button>
+        <input
+          placeholder="vendorId"
+          value={vendorId}
+          onChange={(e) => {
+            setOffset(0);
+            setVendorId(e.target.value);
+          }}
+        />
+        <input
+          placeholder="actorCharId"
+          value={actorCharId}
+          onChange={(e) => {
+            setOffset(0);
+            setActorCharId(e.target.value);
+          }}
+        />
+        <input
+          placeholder="actorCharName contains"
+          value={actorCharName}
+          onChange={(e) => {
+            setOffset(0);
+            setActorCharName(e.target.value);
+          }}
+        />
+        <input
+          placeholder="action (buy|sell)"
+          value={action}
+          onChange={(e) => {
+            setOffset(0);
+            setAction(e.target.value);
+          }}
+        />
+        <input
+          placeholder="result (ok|deny|error)"
+          value={result}
+          onChange={(e) => {
+            setOffset(0);
+            setResult(e.target.value);
+          }}
+        />
+        <input
+          placeholder="itemId"
+          value={itemId}
+          onChange={(e) => {
+            setOffset(0);
+            setItemId(e.target.value);
+          }}
+        />
+        <input
+          placeholder="since (ISO)"
+          value={since}
+          onChange={(e) => {
+            setOffset(0);
+            setSince(e.target.value);
+          }}
+          style={{ minWidth: 220 }}
+        />
+        <input
+          placeholder="until (ISO)"
+          value={until}
+          onChange={(e) => {
+            setOffset(0);
+            setUntil(e.target.value);
+          }}
+          style={{ minWidth: 220 }}
+        />
+        <button onClick={() => load()} disabled={busy}>
+          Refresh
+        </button>
+
+        <span style={{ marginLeft: "auto", display: "flex", gap: 12, alignItems: "center" }}>
+          <a href="/admin/vendor_economy">Economy Config</a>
+          <a href="/">Back</a>
+        </span>
       </div>
 
       <div style={{ display: "flex", gap: 12, alignItems: "center", marginBottom: 12 }}>
@@ -112,7 +176,10 @@ export function AdminVendorAuditPage() {
             value={limit}
             min={1}
             max={1000}
-            onChange={(e) => { setOffset(0); setLimit(Math.max(1, Math.min(1000, Number(e.target.value) || 200))); }}
+            onChange={(e) => {
+              setOffset(0);
+              setLimit(Math.max(1, Math.min(1000, Number(e.target.value) || 200)));
+            }}
             style={{ width: 90 }}
           />
         </label>
@@ -127,8 +194,6 @@ export function AdminVendorAuditPage() {
         <span style={{ opacity: 0.8 }}>
           page {page}/{pageCount} · total {total}
         </span>
-
-        <a href="/" style={{ marginLeft: "auto" }}>Back</a>
       </div>
 
       {error && (
@@ -173,7 +238,9 @@ export function AdminVendorAuditPage() {
                 <td style={{ whiteSpace: "nowrap" }}>
                   {r.gold_before ?? ""} → {r.gold_after ?? ""}
                 </td>
-                <td style={{ whiteSpace: "nowrap" }}><b>{r.result}</b></td>
+                <td style={{ whiteSpace: "nowrap" }}>
+                  <b>{r.result}</b>
+                </td>
                 <td style={{ whiteSpace: "nowrap" }}>{r.reason || ""}</td>
                 <td style={{ maxWidth: 360 }}>
                   <pre style={{ margin: 0, whiteSpace: "pre-wrap" }}>{r.meta ? JSON.stringify(r.meta, null, 2) : ""}</pre>

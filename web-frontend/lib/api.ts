@@ -1,178 +1,188 @@
-//web-frontend/lib/api.ts
+// web-frontend/lib/api.ts
+//
+// Shared API helper for web-frontend.
+//
+// Dev trap to avoid:
+// - Never default to "localhost" (it points at the *browser* machine, not the VM).
+// - Prefer SAME-ORIGIN (/api/...) so Vite can proxy to web-backend without CORS.
+// - If you *want* direct cross-origin calls, set VITE_API_BASE_URL and ensure CORS on web-backend.
+//
+// Recommended on the VM (when using Vite proxy):
+//   (no env needed)  -> API calls go to /api/... and Vite proxies them.
+//
+// Optional override:
+//   VITE_API_BASE_URL=http://192.168.0.74:4000
 
 export interface CityBuilding {
-    id: string;
-    kind: "housing" | "farmland" | "mine" | "arcane_spire";
-    level: number;
-    name: string;
-  }
-  
-  export interface CityStats {
-    population: number;
-    stability: number;
-    prosperity: number;
-    security: number;
-    infrastructure: number;
-    arcaneSaturation: number;
-    influence: number;
-    unity: number;
-  }
-  
-  export interface CityProduction {
-    foodPerTick: number;
-    materialsPerTick: number;
-    wealthPerTick: number;
-    manaPerTick: number;
-    knowledgePerTick: number;
-    unityPerTick: number;
-  }
-  
-  export interface CitySummary {
-    id: string;
-    name: string;
-    shardId: string;
-    regionId: string;
-    tier: number;
-    maxBuildingSlots: number;
-    stats: CityStats;
-    buildings: CityBuilding[];
-    // 🔹 NEW: specialization info
-    specializationId: string | null;
-    specializationStars: number;
-    specializationStarsHistory: Record<string, number>;
-    buildingSlotsUsed: number;
-    buildingSlotsMax: number;
-    production: CityProduction;
-  }
-  
-  export interface MissionRisk {
-    casualtyRisk: string;
-    heroInjuryRisk?: string;
-    notes?: string;
-  }
-  
-  export interface RewardBundle {
-    wealth?: number;
-    food?: number;
-    materials?: number;
-    mana?: number;
-    knowledge?: number;
-    influence?: number;
-  }
-  
-  export interface MissionOffer {
-    id: string;
-    kind: "hero" | "army";
-    difficulty: "low" | "medium" | "high" | "extreme";
-    title: string;
-    description: string;
-    regionId: string;
-    recommendedPower: number;
-    expectedRewards: RewardBundle;
-    risk: MissionRisk;
-  }
-  
-  export interface ActiveMission {
-    instanceId: string;
-    mission: MissionOffer;
-    startedAt: string;  // ISO string
-    finishesAt: string; // ISO string
-    assignedHeroId?: string;
-    assignedArmyId?: string;
-  }
-  
-  export interface Resources {
-    food: number;
-    materials: number;
-    wealth: number;
-    mana: number;
-    knowledge: number;
-    unity: number;
-  }
-  
-  export interface PoliciesState {
-    highTaxes: boolean;
-    openTrade: boolean;
-    conscription: boolean;
-    arcaneFreedom: boolean;
-  }
-  
-  export type HeroRole = "champion" | "scout" | "tactician" | "mage";
-  export type HeroStatus = "idle" | "on_mission";
-  
-  export interface Hero {
-    id: string;
-    ownerId: string;
-    name: string;
-    role: "champion" | "scout" | "tactician" | "mage";
-    power: number;
-    tags: string[];
-    status: "idle" | "on_mission";
-    currentMissionId?: string;
+  id: string;
+  kind: "housing" | "farmland" | "mine" | "arcane_spire";
+  level: number;
+  name: string;
+}
 
-    // 🔹 progression (optional so old data doesn’t explode)
-    level?: number;
-    xp?: number;
-    xpToNext?: number;
+export interface CityStats {
+  population: number;
+  stability: number;
+  prosperity: number;
+  security: number;
+  infrastructure: number;
+  arcaneSaturation: number;
+  influence: number;
+  unity: number;
+}
 
-    // if you’re using attachments in the UI:
-    attachments?: { id: string; name: string; kind: string }[];
-  }
+export interface CityProduction {
+  foodPerTick: number;
+  materialsPerTick: number;
+  wealthPerTick: number;
+  manaPerTick: number;
+  knowledgePerTick: number;
+  unityPerTick: number;
+}
 
-  export interface HeroAttachment {
-    id: string;
-    kind: "valor_charm" | "scouting_cloak" | "arcane_focus";
-    name: string;
-  }
+export interface CitySummary {
+  id: string;
+  name: string;
+  shardId: string;
+  regionId: string;
+  tier: number;
+  maxBuildingSlots: number;
+  stats: CityStats;
+  buildings: CityBuilding[];
+  specializationId: string | null;
+  specializationStars: number;
+  specializationStarsHistory: Record<string, number>;
+  buildingSlotsUsed: number;
+  buildingSlotsMax: number;
+  production: CityProduction;
+}
 
-  export interface WorkshopJob {
-    id: string;
-    attachmentKind: "valor_charm" | "scouting_cloak" | "arcane_focus";
-    startedAt: string;
-    finishesAt: string;
-    completed: boolean;
-  }
-  
-  export type ArmyType = "militia" | "line" | "vanguard";
-  export type ArmyStatus = "idle" | "on_mission";
-  
-  export interface Army {
-    id: string;
-    cityId: string;
-    name: string;
-    type: ArmyType;
-    power: number;
-    size: number;
-    status: ArmyStatus;
-    currentMissionId?: string;
-  }
-  
-  export type TechCategory = "infrastructure" | "agriculture" | "military";
-  
-  export interface TechSummary {
-    id: string;
-    name: string;
-    description: string;
-    category: TechCategory;
-    cost: number;
-  }
-  
-  export interface ActiveResearchView {
-    techId: string;
-    name: string;
-    description: string;
-    category: string;
-    cost: number;
-    progress: number;
-  }
-  
-  export interface RegionWarState {
-    regionId: string;
-    control: number; // 0–100
-    threat: number;  // 0–100
-  }
+export interface MissionRisk {
+  casualtyRisk: string;
+  heroInjuryRisk?: string;
+  notes?: string;
+}
 
-  export type GameEventKind =
+export interface RewardBundle {
+  wealth?: number;
+  food?: number;
+  materials?: number;
+  mana?: number;
+  knowledge?: number;
+  influence?: number;
+}
+
+export interface MissionOffer {
+  id: string;
+  kind: "hero" | "army";
+  difficulty: "low" | "medium" | "high" | "extreme";
+  title: string;
+  description: string;
+  regionId: string;
+  recommendedPower: number;
+  expectedRewards: RewardBundle;
+  risk: MissionRisk;
+}
+
+export interface ActiveMission {
+  instanceId: string;
+  mission: MissionOffer;
+  startedAt: string; // ISO string
+  finishesAt: string; // ISO string
+  assignedHeroId?: string;
+  assignedArmyId?: string;
+}
+
+export interface Resources {
+  food: number;
+  materials: number;
+  wealth: number;
+  mana: number;
+  knowledge: number;
+  unity: number;
+}
+
+export interface PoliciesState {
+  highTaxes: boolean;
+  openTrade: boolean;
+  conscription: boolean;
+  arcaneFreedom: boolean;
+}
+
+export type HeroRole = "champion" | "scout" | "tactician" | "mage";
+export type HeroStatus = "idle" | "on_mission";
+
+export interface Hero {
+  id: string;
+  ownerId: string;
+  name: string;
+  role: "champion" | "scout" | "tactician" | "mage";
+  power: number;
+  tags: string[];
+  status: "idle" | "on_mission";
+  currentMissionId?: string;
+
+  level?: number;
+  xp?: number;
+  xpToNext?: number;
+
+  attachments?: { id: string; name: string; kind: string }[];
+}
+
+export interface HeroAttachment {
+  id: string;
+  kind: "valor_charm" | "scouting_cloak" | "arcane_focus";
+  name: string;
+}
+
+export interface WorkshopJob {
+  id: string;
+  attachmentKind: "valor_charm" | "scouting_cloak" | "arcane_focus";
+  startedAt: string;
+  finishesAt: string;
+  completed: boolean;
+}
+
+export type ArmyType = "militia" | "line" | "vanguard";
+export type ArmyStatus = "idle" | "on_mission";
+
+export interface Army {
+  id: string;
+  cityId: string;
+  name: string;
+  type: ArmyType;
+  power: number;
+  size: number;
+  status: ArmyStatus;
+  currentMissionId?: string;
+}
+
+export type TechCategory = "infrastructure" | "agriculture" | "military";
+
+export interface TechSummary {
+  id: string;
+  name: string;
+  description: string;
+  category: TechCategory;
+  cost: number;
+}
+
+export interface ActiveResearchView {
+  techId: string;
+  name: string;
+  description: string;
+  category: string;
+  cost: number;
+  progress: number;
+}
+
+export interface RegionWarState {
+  regionId: string;
+  control: number; // 0–100
+  threat: number; // 0–100
+}
+
+export type GameEventKind =
   | "mission_start"
   | "mission_complete"
   | "tech_start"
@@ -191,136 +201,117 @@ export interface CityBuilding {
   | "city_morph"
   | "resource_tier_up";
 
-  export interface GameEvent {
-    id: string;
-    timestamp: string;
-    kind: GameEventKind;
-    message: string;
-    techId?: string;
-    missionId?: string;
-    armyId?: string;
-    heroId?: string;
-    regionId?: string;
-    outcome?: "success" | "partial" | "failure";
-  }
+export interface GameEvent {
+  id: string;
+  timestamp: string;
+  kind: GameEventKind;
+  message: string;
+  techId?: string;
+  missionId?: string;
+}
 
-  export interface ResourceTierState {
-    resourceKey: string;  // was ResourceKey
-    tier: number;
-    stars: number;
-    totalInvested: number;
-  }
-  
+export interface CityStressState {
+  hunger: number;
+  unrest: number;
+  corruption: number;
+  arcaneHazard: number;
+}
 
-  export type CityStressStage = "stable" | "strained" | "crisis" | "lockdown";
+export interface MeProfile {
+  ok?: boolean;
+  userId: string;
+  username: string;
+  city: CitySummary | null;
+  resources: Resources;
+  policies: PoliciesState;
+  heroes: Hero[];
+  armies: Army[];
+  researchedTechIds: string[];
+  availableTechs: TechSummary[];
+  activeResearch: ActiveResearchView | null;
+  regionWar: RegionWarState[];
+  events: GameEvent[];
+  workshopJobs: WorkshopJob[];
+  cityStress: CityStressState;
+  specializationId: string | null;
+  specializationStars: number;
+  specializationStarsHistory: Record<string, number>;
+}
 
-    export interface CityStressState {
-    stage: CityStressStage;
-    total: number;
-    foodPressure: number;
-    threatPressure: number;
-    unityPressure: number;
-    lastUpdatedAt: string;
-    }
-  
-  export interface MeProfile {
-    id: string;
-    displayName: string;
-    faction: string;
-    rank: string;
-    lastLoginAt: string;
-    lastTickAt: string;
-    tickMs: number;
-    playerId: string;
-    city: CitySummary;
-    missions: MissionOffer[];
-    activeMissions: ActiveMission[];
-    resources: Resources;
-    resourceTiers?: Record<string, ResourceTierState>;
-    policies: PoliciesState;
-    heroes: Hero[];
-    armies: Army[];
-    researchedTechIds: string[];
-    availableTechs: TechSummary[];
-    activeResearch: ActiveResearchView | null;
-    regionWar: RegionWarState[];
-    events: GameEvent[];
-    workshopJobs: WorkshopJob[];
-    cityStress: CityStressState;
-    // 🔹 NEW: specialization info
-    specializationId: string | null;
-    specializationStars: number;
-    specializationStarsHistory: Record<string, number>;
-  }
-  
-  export const API_BASE_URL = (() => {
-  // IMPORTANT:
-  // - Default is same-origin (empty string), so running on a VM works from any client machine.
-  // - Override with VITE_API_BASE_URL (e.g. "http://<vm-ip>:4000") if you intentionally want a remote API.
+function normalizeBase(raw: string): string {
+  return raw.replace(/\/+$/, "");
+}
+
+export const API_BASE_URL = (() => {
   const env = ((import.meta as any).env ?? {}) as Record<string, any>;
   const raw = String(env.VITE_API_BASE_URL ?? "").trim();
 
-  // Empty => relative "/api/..." requests against the current origin.
-  if (!raw) return "";
+  // Explicit override (requires CORS on web-backend if cross-origin)
+  if (raw) return normalizeBase(raw);
 
-  // Normalize: strip trailing slashes to avoid "//api/..." surprises.
-  return raw.replace(/\/+$/, "");
+  // Default: SAME-ORIGIN.
+  // In dev, Vite should proxy /api -> web-backend (no CORS headaches).
+  return "";
 })();
-  
-  export async function fetchMe(): Promise<MeProfile> {
-    const res = await fetch(`${API_BASE_URL}/api/me`);
-    if (!res.ok) {
-      throw new Error(`Failed to fetch /api/me: ${res.status}`);
-    }
+
+async function parseJsonOrThrow(res: Response, normalizedPath: string) {
+  const contentType = res.headers.get("content-type") || "";
+
+  if (contentType.includes("application/json")) {
     return res.json();
   }
-  
-  export async function startTech(techId: string): Promise<void> {
-    const res = await fetch(`${API_BASE_URL}/api/tech/start`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ techId }),
-    });
-  
-    if (!res.ok) {
-      const body = await res.json().catch(() => ({} as any));
-      const msg = (body as any).error || `Tech start failed: ${res.status}`;
-      throw new Error(msg);
+
+  const text = await res.text().catch(() => "");
+  const head = text.slice(0, 220).replace(/\s+/g, " ").trim();
+
+  throw new Error(
+    `Expected JSON from ${normalizedPath} but got ${contentType || "unknown content-type"}.\n` +
+      `API_BASE_URL="${API_BASE_URL || "(same-origin)"}" response head="${head}".\n` +
+      `If you're on Vite dev server, ensure it proxies /api to web-backend (or set VITE_API_BASE_URL and enable CORS).`
+  );
+}
+
+export async function fetchMe(): Promise<MeProfile> {
+  return api<MeProfile>("/api/me");
+}
+
+export async function startTech(techId: string): Promise<void> {
+  await api("/api/tech/start", {
+    method: "POST",
+    body: JSON.stringify({ techId }),
+  });
+}
+
+export async function api<T = any>(path: string, init: RequestInit = {}): Promise<T> {
+  const normalizedPath = path.startsWith("/") ? path : `/${path}`;
+
+  const res = await fetch(`${API_BASE_URL}${normalizedPath}`, {
+    credentials: "include",
+    headers: {
+      "Content-Type": "application/json",
+      ...(init.headers || {}),
+    },
+    ...init,
+  });
+
+  if (!res.ok) {
+    const contentType = res.headers.get("content-type") || "";
+    let detail = "";
+    try {
+      if (contentType.includes("application/json")) {
+        const body = await res.json();
+        detail = (body as any)?.error ? `: ${(body as any).error}` : "";
+      } else {
+        const text = await res.text();
+        detail = text ? `: ${text}` : "";
+      }
+    } catch {
+      // ignore
     }
+    throw new Error(`Failed to fetch ${normalizedPath}: ${res.status}${detail}`);
   }
 
-  export async function api<T = any>(
-    path: string,
-    init: RequestInit = {}
-  ): Promise<T> {
-    const normalizedPath = path.startsWith("/") ? path : `/${path}`;
-    const res = await fetch(`${API_BASE_URL}${normalizedPath}`, {
-      // include cookies if you later gate this behind auth
-      credentials: "include",
-      headers: {
-        "Content-Type": "application/json",
-        ...(init.headers || {}),
-      },
-      ...init,
-    });
-  
-    if (!res.ok) {
-      const contentType = res.headers.get("content-type") || "";
-      let detail = "";
-      try {
-        if (contentType.includes("application/json")) {
-          const body = await res.json();
-          detail = (body as any)?.error ? `: ${(body as any).error}` : "";
-        } else {
-          const text = await res.text();
-          detail = text ? `: ${text}` : "";
-        }
-      } catch {
-        // ignore
-      }
-      throw new Error(`Failed to fetch ${normalizedPath}: ${res.status}${detail}`);
-    }
-  
-    return res.json() as Promise<T>;
-  }
-  
+  if (res.status === 204) return undefined as any;
+
+  return (await parseJsonOrThrow(res, normalizedPath)) as T;
+}

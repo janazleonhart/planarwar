@@ -2,8 +2,6 @@
 
 import { useEffect, useState } from "react";
 
-const ADMIN_API_BASE = "http://192.168.0.74:4000";
-
 type AdminItem = {
   id: string;
   item_key: string;
@@ -29,7 +27,7 @@ export function AdminItemsPage() {
   useEffect(() => {
     (async () => {
       try {
-        const res = await fetch(`${ADMIN_API_BASE}/api/admin/items`);
+        const res = await fetch(`/api/admin/items`);
         if (!res.ok) {
           throw new Error(`Load failed (HTTP ${res.status})`);
         }
@@ -90,7 +88,7 @@ export function AdminItemsPage() {
     setError(null);
 
     try {
-      const res = await fetch(`${ADMIN_API_BASE}/api/admin/items`, {
+      const res = await fetch(`/api/admin/items`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(form),
@@ -110,7 +108,7 @@ export function AdminItemsPage() {
       }
 
       // Reload list
-      const res2 = await fetch(`${ADMIN_API_BASE}/api/admin/items`);
+      const res2 = await fetch(`/api/admin/items`);
       const data2: {
         ok: boolean;
         items: AdminItem[];

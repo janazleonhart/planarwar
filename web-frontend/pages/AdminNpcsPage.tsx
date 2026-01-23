@@ -2,9 +2,6 @@
 
 import { useEffect, useState } from "react";
 
-// TEMP: hard-code backend URL for dev tools (match what you used for quests)
-const ADMIN_API_BASE = "http://192.168.0.74:4000";
-
 type AdminNpcLootRow = {
   itemId: string;
   chance: number;
@@ -36,7 +33,7 @@ export function AdminNpcsPage() {
   useEffect(() => {
     (async () => {
       try {
-        const res = await fetch(`${ADMIN_API_BASE}/api/admin/npcs`);
+        const res = await fetch(`/api/admin/npcs`);
         if (!res.ok) {
           throw new Error(`Load failed (HTTP ${res.status})`);
         }
@@ -146,7 +143,7 @@ export function AdminNpcsPage() {
     setSaving(true);
     setError(null);
     try {
-      const res = await fetch(`${ADMIN_API_BASE}/api/admin/npcs`, {
+      const res = await fetch(`/api/admin/npcs`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(form),
@@ -167,7 +164,7 @@ export function AdminNpcsPage() {
       }
 
       // Reload list (prefer the existing GET route so we stay consistent)
-      const res2 = await fetch(`${ADMIN_API_BASE}/api/admin/npcs`);
+      const res2 = await fetch(`/api/admin/npcs`);
       const data2: {
         ok: boolean;
         npcs: AdminNpc[];
