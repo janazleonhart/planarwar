@@ -464,26 +464,6 @@ async function buyAction(ctx: MudContext, char: CharacterState, args: string[]):
       const available = Math.max(0, Math.floor(Number(stockBefore)));
       qty = Math.min(qtyRequested, available);
       if (qty <= 0) {
-        // Best-effort audit log for out-of-stock denies.
-        await logVendorEvent({
-          ts: new Date().toISOString(),
-          shardId: (char as any)?.shardId ?? null,
-          actorCharId: (char as any)?.id ?? null,
-          actorCharName: (char as any)?.name ?? null,
-          vendorId: vendor.id,
-          vendorName: vendor.name ?? null,
-          action: "buy",
-          itemId: chosenItem?.itemId ?? null,
-          quantity: qtyRequested,
-          unitPriceGold: (chosenItem as any)?.priceGold ?? null,
-          totalGold: null,
-          goldBefore: (char as any)?.gold ?? null,
-          goldAfter: (char as any)?.gold ?? null,
-          result: "deny",
-          reason: "out_of_stock",
-          meta: { selector, qtyRequested, stockBefore, stockMax },
-        });
-
         return "[vendor] Out of stock.";
       }
     }
@@ -519,7 +499,7 @@ async function buyAction(ctx: MudContext, char: CharacterState, args: string[]):
         goldBefore: res.goldBefore ?? null,
         goldAfter: res.goldAfter ?? null,
         result: "ok",
-        meta: { selector, qtyRequested, qtyAttempted: qty, qtyGranted: res.quantity ?? null, stockBefore, stockMax },
+        meta: { rule: "vendor.buy.ok", inferredVendor: chosen.inferred, selector, qtyRequested, qtyAttempted: qty, qtyGranted: res.quantity ?? null, stockBefore, stockMax },
       });
     }
     return res.message;
@@ -605,7 +585,7 @@ async function sellAction(ctx: MudContext, char: CharacterState, args: string[])
         goldBefore: res.goldBefore ?? null,
         goldAfter: res.goldAfter ?? null,
         result: "ok",
-        meta: { qtyRequested: qty },
+        meta: { rule: "vendor.sell.ok", inferredVendor: chosen.inferred, qtyRequested: qty },
       });
     }
     return res.message;

@@ -121,9 +121,17 @@ test("[contract] vendor audit: buy + sell emits events; deny does not", async ()
     assert.equal(evs[0].result, "ok");
     assert.equal(evs[0].vendorId, vendor.id);
 
+    assert.ok(evs[0].meta, "Expected meta on buy audit event");
+    assert.equal((evs[0].meta as any)?.schemaVersion, 1);
+    assert.equal((evs[0].meta as any)?.rule, "vendor.buy.ok");
+
     assert.equal(evs[1].action, "sell");
     assert.equal(evs[1].result, "ok");
     assert.equal(evs[1].vendorId, vendor.id);
+
+    assert.ok(evs[1].meta, "Expected meta on sell audit event");
+    assert.equal((evs[1].meta as any)?.schemaVersion, 1);
+    assert.equal((evs[1].meta as any)?.rule, "vendor.sell.ok");
 
     // Deny path: can't afford should emit NO new audit
     __resetCapturedVendorEvents();

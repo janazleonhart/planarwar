@@ -7,6 +7,13 @@
 // - Unit tests must not touch Postgres (WORLDCORE_TEST=1), but tests can still validate
 //   the emitted audit events via capture mode.
 // - Capture mode: PW_TEST_CAPTURE_VENDOR_AUDIT=1 collects events in memory for tests.
+//
+// Step 3 hardening:
+// - Ensure audit events carry stable metadata:
+//     meta.schemaVersion = 1
+//     meta.rule          = <stable rule id>
+// - Ensure non-ok audit events have a stable reason code (never empty).
+// - Never introduce new audit emissions; this module only normalizes what callers send.
 
 import { db } from "../db/Database";
 import { Logger } from "../utils/logger";
@@ -39,8 +46,10 @@ export type VendorAuditEvent = {
   goldAfter?: number | null;
 
   result: VendorAuditResult;
+  /** Stable reason code for deny/error (e.g. out_of_stock, bags_full, integrity_failed). */
   reason?: string | null;
 
+  /** Arbitrary metadata for ops/debugging. Persisted as JSON. */
   meta?: Record<string, unknown> | null;
 };
 
@@ -64,8 +73,45 @@ function captureIfEnabled(ev: VendorAuditEvent): void {
   captured.push(ev);
 }
 
+function isPlainObject(v: unknown): v is Record<string, unknown> {
+  return !!v && typeof v === "object" && !Array.isArray(v);
+}
+
+function normReason(v: unknown): string | null {
+  const s = String(v ?? "").trim();
+  return s.length > 0 ? s : null;
+}
+
+function defaultRuleFor(ev: VendorAuditEvent): string {
+  // Stable fallback rule id if caller didn't provide one.
+  // Prefer explicit rule assignment in command layer for critical events.
+  return `vendor.${ev.action}.${ev.result}`;
+}
+
+function normalizeEvent(input: VendorAuditEvent): VendorAuditEvent {
+  const metaIn = isPlainObject(input.meta) ? input.meta : {};
+
+  const meta = {
+    schemaVersion: 1,
+    rule: typeof metaIn.rule === "string" && metaIn.rule.trim() ? metaIn.rule : defaultRuleFor(input),
+    ...metaIn,
+  } as Record<string, unknown>;
+
+  // For deny/error, ensure reason is never empty (stable code).
+  let reason = normReason(input.reason);
+  if (input.result !== "ok" && !reason) reason = "unspecified";
+
+  return {
+    ...input,
+    reason,
+    meta,
+  };
+}
+
 export async function logVendorEvent(ev: VendorAuditEvent): Promise<void> {
-  captureIfEnabled(ev);
+  const normalized = normalizeEvent(ev);
+
+  captureIfEnabled(normalized);
 
   // Never touch DB under unit tests.
   if (UNIT_TEST_MODE()) return;
@@ -98,22 +144,22 @@ export async function logVendorEvent(ev: VendorAuditEvent): Promise<void> {
       )
       `,
       [
-        ev.ts,
-        ev.shardId ?? null,
-        ev.actorCharId ?? null,
-        ev.actorCharName ?? null,
-        ev.vendorId,
-        ev.vendorName ?? null,
-        ev.action,
-        ev.itemId ?? null,
-        ev.quantity ?? null,
-        ev.unitPriceGold ?? null,
-        ev.totalGold ?? null,
-        ev.goldBefore ?? null,
-        ev.goldAfter ?? null,
-        ev.result,
-        ev.reason ?? null,
-        ev.meta ? JSON.stringify(ev.meta) : null,
+        normalized.ts,
+        normalized.shardId ?? null,
+        normalized.actorCharId ?? null,
+        normalized.actorCharName ?? null,
+        normalized.vendorId,
+        normalized.vendorName ?? null,
+        normalized.action,
+        normalized.itemId ?? null,
+        normalized.quantity ?? null,
+        normalized.unitPriceGold ?? null,
+        normalized.totalGold ?? null,
+        normalized.goldBefore ?? null,
+        normalized.goldAfter ?? null,
+        normalized.result,
+        normalized.reason ?? null,
+        normalized.meta ? JSON.stringify(normalized.meta) : null,
       ],
     );
   } catch (err) {
