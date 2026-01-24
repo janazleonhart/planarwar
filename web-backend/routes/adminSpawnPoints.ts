@@ -2,6 +2,9 @@
 
 import { Router } from "express";
 import { createHash } from "crypto";
+import { promises as fs } from "node:fs";
+import { Buffer } from "node:buffer";
+import path from "node:path";
 import { db } from "../../worldcore/db/Database";
 import { clearSpawnPointCache } from "../../worldcore/world/SpawnPointCache";
 import { getSpawnAuthority, isSpawnEditable } from "../../worldcore/world/spawnAuthority";
@@ -181,6 +184,98 @@ type SpawnSliceOpsPreview = {
   skipSpawnIds: string[];
   readOnlySpawnIds: string[];
 };
+
+type StoredSpawnSnapshotDoc = {
+  kind: "admin.stored-spawn-snapshot";
+  version: 1;
+  id: string;
+  name: string;
+  savedAt: string;
+  snapshot: SpawnSliceSnapshot;
+};
+
+type StoredSpawnSnapshotMeta = {
+  id: string;
+  name: string;
+  savedAt: string;
+  shardId: string;
+  rows: number;
+  bounds: CellBounds;
+  cellSize: number;
+  pad: number;
+  types: string[];
+  bytes: number;
+};
+
+const SNAPSHOT_DIR =
+  typeof process.env.PLANARWAR_SPAWN_SNAPSHOT_DIR === "string" && process.env.PLANARWAR_SPAWN_SNAPSHOT_DIR.trim()
+    ? path.resolve(process.env.PLANARWAR_SPAWN_SNAPSHOT_DIR.trim())
+    : path.resolve(process.cwd(), "data", "spawn_snapshots");
+
+async function ensureSnapshotDir(): Promise<string> {
+  await fs.mkdir(SNAPSHOT_DIR, { recursive: true });
+  return SNAPSHOT_DIR;
+}
+
+function safeSnapshotName(name: string): string {
+  const base = name.trim().slice(0, 80);
+  const cleaned = base.replace(/[^a-zA-Z0-9._ -]+/g, "_").replace(/\s+/g, " ");
+  return cleaned || "snapshot";
+}
+
+function makeSnapshotId(name: string, shardId: string, bounds: CellBounds, types: string[]): string {
+  const seed = { name: safeSnapshotName(name), shardId, bounds, types: [...types].sort() };
+  return `snap_${Date.now()}_${hashToken(seed).slice(0, 12)}`;
+}
+
+function metaFromStoredDoc(doc: StoredSpawnSnapshotDoc, bytes: number): StoredSpawnSnapshotMeta {
+  return {
+    id: doc.id,
+    name: doc.name,
+    savedAt: doc.savedAt,
+    shardId: doc.snapshot.shardId,
+    rows: doc.snapshot.rows,
+    bounds: doc.snapshot.bounds,
+    cellSize: doc.snapshot.cellSize,
+    pad: doc.snapshot.pad,
+    types: doc.snapshot.types,
+    bytes,
+  };
+}
+
+async function readStoredSnapshotById(id: string): Promise<{ doc: StoredSpawnSnapshotDoc; bytes: number }> {
+  const dir = await ensureSnapshotDir();
+  const file = path.join(dir, `${id}.json`);
+  const raw = await fs.readFile(file, "utf8");
+  const bytes = Buffer.byteLength(raw, "utf8");
+  const doc = JSON.parse(raw) as StoredSpawnSnapshotDoc;
+  if (!doc || doc.kind !== "admin.stored-spawn-snapshot") {
+    throw new Error("Invalid stored snapshot file.");
+  }
+  return { doc, bytes };
+}
+
+async function listStoredSnapshots(): Promise<StoredSpawnSnapshotMeta[]> {
+  const dir = await ensureSnapshotDir();
+  const names = await fs.readdir(dir).catch(() => []);
+  const metas: StoredSpawnSnapshotMeta[] = [];
+  for (const n of names) {
+    if (!n.endsWith(".json")) continue;
+    const file = path.join(dir, n);
+    try {
+      const raw = await fs.readFile(file, "utf8");
+      const bytes = Buffer.byteLength(raw, "utf8");
+      const doc = JSON.parse(raw) as StoredSpawnSnapshotDoc;
+      if (!doc || doc.kind !== "admin.stored-spawn-snapshot") continue;
+      metas.push(metaFromStoredDoc(doc, bytes));
+    } catch {
+      // ignore junk
+    }
+  }
+  metas.sort((a, b) => String(b.savedAt).localeCompare(String(a.savedAt)));
+  return metas;
+}
+
 
 function coerceSnapshotSpawns(doc: unknown): { snapshotShard: string; bounds?: CellBounds; cellSize?: number; pad?: number; types?: string[]; spawns: SnapshotSpawnRow[] } {
   if (!doc || typeof doc !== "object") throw new Error("Invalid snapshot: not an object.");
@@ -1939,43 +2034,43 @@ function parseBrainSpawnId(spawnId: string): { epoch: number | null; theme: stri
 // POST /api/admin/spawn_points/snapshot
 // Body:
 //   shardId, bounds ("-1..1,-1..1"), cellSize, pad, types[]
-router.post("/snapshot", async (req, res) => {
+async function computeSpawnSliceSnapshot(args: {
+  shardId: string;
+  boundsRaw: string;
+  cellSize: number;
+  pad: number;
+  types: string[];
+}): Promise<{ snapshot: SpawnSliceSnapshot; filename: string }> {
+  const shardId = args.shardId.trim() || "prime_shard";
+  const bounds = parseCellBounds(args.boundsRaw);
+
+  const cellSize = Math.max(1, Math.floor(Number(args.cellSize || 512)));
+  const pad = Math.max(0, Math.floor(Number(args.pad || 0)));
+
+  const minX = bounds.minCx * cellSize - pad;
+  const maxX = (bounds.maxCx + 1) * cellSize + pad;
+  const minZ = bounds.minCz * cellSize - pad;
+  const maxZ = (bounds.maxCz + 1) * cellSize + pad;
+
+  type Row = {
+    shard_id: string;
+    spawn_id: string;
+    type: string;
+    proto_id: string | null;
+    archetype: string;
+    variant_id: string | null;
+    x: number | null;
+    y: number | null;
+    z: number | null;
+    region_id: string | null;
+    town_tier: number | null;
+  };
+
+  const client = await db.connect();
+  let rows: Row[] = [];
   try {
-    const shardId = String(req.body?.shardId ?? req.query?.shardId ?? "prime_shard").trim() || "prime_shard";
-    const boundsRaw = String(req.body?.bounds ?? "").trim();
-    const cellSize = Math.max(1, Math.floor(Number(req.body?.cellSize ?? 512)));
-    const pad = Math.max(0, Math.floor(Number(req.body?.pad ?? 0)));
-    const typesRaw = req.body?.types;
-    const types = Array.isArray(typesRaw) ? typesRaw.map((t: any) => String(t).trim()).filter(Boolean) : [];
-    if (!boundsRaw) return res.status(400).json({ kind: "spawn_points.snapshot", ok: false, error: "bounds_required" });
-    if (!types.length) return res.status(400).json({ kind: "spawn_points.snapshot", ok: false, error: "types_required" });
-
-    const bounds = parseCellBounds(boundsRaw);
-
-    const minX = bounds.minCx * cellSize - pad;
-    const maxX = (bounds.maxCx + 1) * cellSize + pad;
-    const minZ = bounds.minCz * cellSize - pad;
-    const maxZ = (bounds.maxCz + 1) * cellSize + pad;
-
-    type Row = {
-      shard_id: string;
-      spawn_id: string;
-      type: string;
-      proto_id: string | null;
-      archetype: string;
-      variant_id: string | null;
-      x: number | null;
-      y: number | null;
-      z: number | null;
-      region_id: string | null;
-      town_tier: number | null;
-    };
-
-    const client = await db.connect();
-    let rows: Row[] = [];
-    try {
-      const q = await client.query(
-        `
+    const q = await client.query(
+      `
         SELECT shard_id, spawn_id, type, proto_id, archetype, variant_id, x, y, z, region_id, town_tier
         FROM spawn_points
         WHERE shard_id = $1
@@ -1984,52 +2079,156 @@ router.post("/snapshot", async (req, res) => {
           AND z >= $5 AND z <= $6
         ORDER BY type, spawn_id
       `,
-        [shardId, types, minX, maxX, minZ, maxZ],
-      );
-      rows = q.rows as Row[];
-    } finally {
-      client.release();
-    }
+      [shardId, args.types, minX, maxX, minZ, maxZ],
+    );
+    rows = q.rows as Row[];
+  } finally {
+    client.release();
+  }
 
-    const spawns: SnapshotSpawnRow[] = rows.map((r) => ({
-      shardId: String(r.shard_id),
-      spawnId: String(r.spawn_id),
-      type: String(r.type),
-      protoId: String(r.proto_id ?? r.spawn_id),
-      archetype: String(r.archetype),
-      variantId: r.variant_id == null ? null : String(r.variant_id),
-      x: r.x == null ? 0 : Number(r.x),
-      y: r.y == null ? 0 : Number(r.y),
-      z: r.z == null ? 0 : Number(r.z),
-      regionId: String(r.region_id ?? ""),
-      townTier: r.town_tier == null ? null : Number(r.town_tier),
-    }));
+  const spawns: SnapshotSpawnRow[] = rows.map((r) => ({
+    shardId: String(r.shard_id),
+    spawnId: String(r.spawn_id),
+    type: String(r.type),
+    protoId: String(r.proto_id ?? r.spawn_id),
+    archetype: String(r.archetype),
+    variantId: r.variant_id == null ? null : String(r.variant_id),
+    x: r.x == null ? 0 : Number(r.x),
+    y: r.y == null ? 0 : Number(r.y),
+    z: r.z == null ? 0 : Number(r.z),
+    regionId: String(r.region_id ?? ""),
+    townTier: r.town_tier == null ? null : Number(r.town_tier),
+  }));
 
-    const snapshot: SpawnSliceSnapshot = {
-      kind: "admin.snapshot-spawns",
-      version: 1,
-      createdAt: new Date().toISOString(),
-      shardId,
-      bounds,
-      cellSize,
-      pad,
-      types,
-      rows: spawns.length,
-      spawns,
-    };
+  const snapshot: SpawnSliceSnapshot = {
+    kind: "admin.snapshot-spawns",
+    version: 1,
+    createdAt: new Date().toISOString(),
+    shardId,
+    bounds,
+    cellSize,
+    pad,
+    types: [...args.types],
+    rows: spawns.length,
+    spawns,
+  };
 
-    const safeBounds = `${bounds.minCx}..${bounds.maxCx},${bounds.minCz}..${bounds.maxCz}`;
-    const filename = `snapshot_${new Date().toISOString().replace(/[:.]/g, "-")}_${shardId}_${safeBounds}.json`;
+  const safeBounds = `${bounds.minCx}..${bounds.maxCx},${bounds.minCz}..${bounds.maxCz}`;
+  const filename = `snapshot_${new Date().toISOString().replace(/[:.]/g, "-")}_${shardId}_${safeBounds}.json`;
 
-    res.json({
-      kind: "spawn_points.snapshot",
-      ok: true,
-      filename,
-      snapshot,
-    });
+  return { snapshot, filename };
+}
+
+router.post("/snapshot", async (req, res) => {
+  try {
+    const shardId = strOrNull(req.body?.shardId) ?? "prime_shard";
+    const boundsRaw = strOrNull(req.body?.bounds);
+    if (!boundsRaw) return res.status(400).json({ kind: "spawn_points.snapshot", ok: false, error: "missing_bounds" });
+
+    const types = Array.isArray(req.body?.types) ? (req.body.types as any[]).map((t) => String(t)).filter(Boolean) : [];
+    if (!types.length) return res.status(400).json({ kind: "spawn_points.snapshot", ok: false, error: "missing_types" });
+
+    const cellSize = Math.max(1, Number(req.body?.cellSize) || 512);
+    const pad = Math.max(0, Number(req.body?.pad) || 0);
+
+    const { snapshot, filename } = await computeSpawnSliceSnapshot({ shardId, boundsRaw, cellSize, pad, types });
+
+    return res.json({ kind: "spawn_points.snapshot", ok: true, filename, snapshot });
   } catch (err: any) {
     console.error("[ADMIN/SPAWN_POINTS] snapshot error", err);
-    res.status(500).json({ kind: "spawn_points.snapshot", ok: false, error: "server_error" });
+    return res.status(500).json({ kind: "spawn_points.snapshot", ok: false, error: err.message || String(err) });
+  }
+});
+
+
+
+// GET /api/admin/spawn_points/snapshots
+router.get("/snapshots", async (_req, res) => {
+  try {
+    const snapshots = await listStoredSnapshots();
+    return res.json({ kind: "spawn_points.snapshots", ok: true, snapshots });
+  } catch (err: any) {
+    console.error("[ADMIN/SPAWN_POINTS] snapshots list error", err);
+    return res.status(500).json({ kind: "spawn_points.snapshots", ok: false, error: err.message || String(err) });
+  }
+});
+
+// POST /api/admin/spawn_points/snapshots/save
+router.post("/snapshots/save", async (req, res) => {
+  try {
+    const nameRaw = strOrNull(req.body?.name);
+    if (!nameRaw) return res.status(400).json({ kind: "spawn_points.snapshots.save", ok: false, error: "missing_name" });
+
+    const shardId = strOrNull(req.body?.shardId) ?? "prime_shard";
+    const boundsRaw = strOrNull(req.body?.bounds);
+    if (!boundsRaw) return res.status(400).json({ kind: "spawn_points.snapshots.save", ok: false, error: "missing_bounds" });
+
+    const types = Array.isArray(req.body?.types) ? (req.body.types as any[]).map((t) => String(t)).filter(Boolean) : [];
+    if (!types.length) return res.status(400).json({ kind: "spawn_points.snapshots.save", ok: false, error: "missing_types" });
+
+    const cellSize = Math.max(1, Number(req.body?.cellSize) || 512);
+    const pad = Math.max(0, Number(req.body?.pad) || 0);
+
+    const { snapshot } = await computeSpawnSliceSnapshot({ shardId, boundsRaw, cellSize, pad, types });
+
+    const name = safeSnapshotName(nameRaw);
+    const id = makeSnapshotId(name, shardId, snapshot.bounds, snapshot.types);
+    const savedAt = new Date().toISOString();
+
+    const doc: StoredSpawnSnapshotDoc = {
+      kind: "admin.stored-spawn-snapshot",
+      version: 1,
+      id,
+      name,
+      savedAt,
+      snapshot,
+    };
+
+    const dir = await ensureSnapshotDir();
+    const file = path.join(dir, `${id}.json`);
+    const raw = JSON.stringify(doc, null, 2);
+    await fs.writeFile(file, raw, "utf8");
+
+    const meta = metaFromStoredDoc(doc, Buffer.byteLength(raw, "utf8"));
+    return res.json({ kind: "spawn_points.snapshots.save", ok: true, snapshot: meta });
+  } catch (err: any) {
+    console.error("[ADMIN/SPAWN_POINTS] snapshots save error", err);
+    return res.status(500).json({ kind: "spawn_points.snapshots.save", ok: false, error: err.message || String(err) });
+  }
+});
+
+// GET /api/admin/spawn_points/snapshots/:id
+router.get("/snapshots/:id", async (req, res) => {
+  try {
+    const id = strOrNull(req.params?.id);
+    if (!id) return res.status(400).json({ kind: "spawn_points.snapshots.get", ok: false, error: "missing_id" });
+
+    const { doc } = await readStoredSnapshotById(id);
+    return res.json({ kind: "spawn_points.snapshots.get", ok: true, doc });
+  } catch (err: any) {
+    const msg = err.message || String(err);
+    const status = /no such file/i.test(msg) || /ENOENT/i.test(msg) ? 404 : 500;
+    console.error("[ADMIN/SPAWN_POINTS] snapshots get error", err);
+    return res.status(status).json({ kind: "spawn_points.snapshots.get", ok: false, error: msg });
+  }
+});
+
+// DELETE /api/admin/spawn_points/snapshots/:id
+router.delete("/snapshots/:id", async (req, res) => {
+  try {
+    const id = strOrNull(req.params?.id);
+    if (!id) return res.status(400).json({ kind: "spawn_points.snapshots.delete", ok: false, error: "missing_id" });
+
+    const dir = await ensureSnapshotDir();
+    const file = path.join(dir, `${id}.json`);
+    await fs.unlink(file);
+
+    return res.json({ kind: "spawn_points.snapshots.delete", ok: true, id });
+  } catch (err: any) {
+    const msg = err.message || String(err);
+    const status = /no such file/i.test(msg) || /ENOENT/i.test(msg) ? 404 : 500;
+    console.error("[ADMIN/SPAWN_POINTS] snapshots delete error", err);
+    return res.status(status).json({ kind: "spawn_points.snapshots.delete", ok: false, error: msg });
   }
 });
 

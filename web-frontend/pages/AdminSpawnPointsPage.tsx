@@ -44,6 +44,7 @@ const SPAWN_UI_LS_KEY = 'adminSpawnPointsPage.ui.v1';
   snapshotCellSize?: number;
   snapshotPad?: number;
   snapshotTypes?: string;
+  snapshotSaveName?: string;
 
   restoreTargetShard?: string;
   restoreUpdateExisting?: boolean;
@@ -139,6 +140,48 @@ type SpawnSnapshotResponse = {
   filename?: string;
   snapshot?: any;
 };
+
+type StoredSpawnSnapshotMeta = {
+  id: string;
+  name: string;
+  savedAt: string;
+  shardId: string;
+  rows: number;
+  bounds: any;
+  cellSize: number;
+  pad: number;
+  types: string[];
+  bytes: number;
+};
+
+type SpawnSnapshotsListResponse = {
+  kind: "spawn_points.snapshots";
+  ok: boolean;
+  error?: string;
+  snapshots?: StoredSpawnSnapshotMeta[];
+};
+
+type SpawnSnapshotsSaveResponse = {
+  kind: "spawn_points.snapshots.save";
+  ok: boolean;
+  error?: string;
+  snapshot?: StoredSpawnSnapshotMeta;
+};
+
+type SpawnSnapshotsGetResponse = {
+  kind: "spawn_points.snapshots.get";
+  ok: boolean;
+  error?: string;
+  doc?: { id: string; name: string; savedAt: string; snapshot: any };
+};
+
+type SpawnSnapshotsDeleteResponse = {
+  kind: "spawn_points.snapshots.delete";
+  ok: boolean;
+  error?: string;
+  id?: string;
+};
+
 
 type SpawnRestoreResponse = {
   kind: "spawn_points.restore";
@@ -455,6 +498,16 @@ export function AdminSpawnPointsPage() {
   );
   const [snapshotWorking, setSnapshotWorking] = useState(false);
   const [snapshotResult, setSnapshotResult] = useState<SpawnSnapshotResponse | null>(null);
+
+
+const [snapshotSaveName, setSnapshotSaveName] = useState(savedUi.snapshotSaveName || "");
+const [savedSnapshots, setSavedSnapshots] = useState<StoredSpawnSnapshotMeta[]>([]);
+const [savedSnapshotsLoading, setSavedSnapshotsLoading] = useState(false);
+const [snapshotSaveWorking, setSnapshotSaveWorking] = useState(false);
+const [snapshotLoadWorking, setSnapshotLoadWorking] = useState(false);
+const [snapshotDeleteWorking, setSnapshotDeleteWorking] = useState<string | null>(null);
+const [selectedSavedSnapshotId, setSelectedSavedSnapshotId] = useState<string>("");
+
 
   const [restoreJsonText, setRestoreJsonText] = useState("");
   const [restoreTargetShard, setRestoreTargetShard] = useState(savedUi.restoreTargetShard || "");
@@ -810,6 +863,7 @@ export function AdminSpawnPointsPage() {
       snapshotCellSize,
       snapshotPad,
       snapshotTypes,
+      snapshotSaveName,
       restoreTargetShard,
       restoreUpdateExisting,
       restoreAllowBrainOwned,
@@ -850,6 +904,7 @@ export function AdminSpawnPointsPage() {
     snapshotCellSize,
     snapshotPad,
     snapshotTypes,
+    snapshotSaveName,
     restoreTargetShard,
     restoreUpdateExisting,
     restoreAllowBrainOwned,
@@ -1265,6 +1320,108 @@ export function AdminSpawnPointsPage() {
       setSnapshotWorking(false);
     }
   };
+
+const refreshSavedSnapshots = async () => {
+  setSavedSnapshotsLoading(true);
+  try {
+    const res = await authedFetch(`/api/admin/spawn_points/snapshots`, { method: "GET" });
+    const data: SpawnSnapshotsListResponse = await res.json().catch(() => ({} as any));
+    if (!res.ok || !data.ok) throw new Error(data.error || `List snapshots failed (HTTP ${res.status})`);
+    setSavedSnapshots(data.snapshots || []);
+  } catch (e: any) {
+    console.error(e);
+    setError(e.message || String(e));
+  } finally {
+    setSavedSnapshotsLoading(false);
+  }
+};
+
+const runSaveSnapshotToServer = async () => {
+  setSnapshotSaveWorking(true);
+  try {
+    const name = snapshotSaveName.trim();
+    if (!name) throw new Error("Snapshot name is required.");
+
+    const boundsStr = snapshotBounds.trim();
+    if (!boundsStr) throw new Error("Snapshot requires bounds (e.g. -1..1,-1..1).");
+
+    const types = snapshotTypes
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
+
+    if (!types.length) throw new Error("Snapshot requires at least one type (comma list).");
+
+    const res = await authedFetch(`/api/admin/spawn_points/snapshots/save`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name,
+        shardId: shardId || "prime_shard",
+        bounds: boundsStr,
+        cellSize: snapshotCellSize,
+        pad: snapshotPad,
+        types,
+      }),
+    });
+
+    const data: SpawnSnapshotsSaveResponse = await res.json().catch(() => ({} as any));
+    if (!res.ok || !data.ok) throw new Error(data.error || `Save snapshot failed (HTTP ${res.status})`);
+
+    await refreshSavedSnapshots();
+    if (data.snapshot?.id) setSelectedSavedSnapshotId(data.snapshot.id);
+  } catch (e: any) {
+    console.error(e);
+    setError(e.message || String(e));
+  } finally {
+    setSnapshotSaveWorking(false);
+  }
+};
+
+const runLoadSavedSnapshot = async (id: string) => {
+  setSnapshotLoadWorking(true);
+  try {
+    if (!id) throw new Error("Pick a saved snapshot first.");
+
+    const res = await authedFetch(`/api/admin/spawn_points/snapshots/${encodeURIComponent(id)}`, { method: "GET" });
+    const data: SpawnSnapshotsGetResponse = await res.json().catch(() => ({} as any));
+    if (!res.ok || !data.ok) throw new Error(data.error || `Load snapshot failed (HTTP ${res.status})`);
+
+    const snap = (data.doc as any)?.snapshot;
+    if (!snap) throw new Error("Saved snapshot is missing payload.");
+
+    setRestoreJsonText(JSON.stringify(snap, null, 2));
+    setRestoreConfirm("");
+    setRestoreConfirmExpected(null);
+    setRestoreConfirmRequired(false);
+  } catch (e: any) {
+    console.error(e);
+    setError(e.message || String(e));
+  } finally {
+    setSnapshotLoadWorking(false);
+  }
+};
+
+const runDeleteSavedSnapshot = async (id: string) => {
+  setSnapshotDeleteWorking(id);
+  try {
+    if (!id) throw new Error("Pick a saved snapshot first.");
+
+    const res = await authedFetch(`/api/admin/spawn_points/snapshots/${encodeURIComponent(id)}`, { method: "DELETE" });
+    const data: SpawnSnapshotsDeleteResponse = await res.json().catch(() => ({} as any));
+    if (!res.ok || !data.ok) throw new Error(data.error || `Delete snapshot failed (HTTP ${res.status})`);
+
+    if (selectedSavedSnapshotId === id) setSelectedSavedSnapshotId("");
+    await refreshSavedSnapshots();
+  } catch (e: any) {
+    console.error(e);
+    setError(e.message || String(e));
+  } finally {
+    setSnapshotDeleteWorking(null);
+  }
+};
+
+
 
   const onRestoreFilePicked = async (file: File | null) => {
     if (!file) return;
@@ -2506,7 +2663,110 @@ export function AdminSpawnPointsPage() {
                   </div>
                 ) : null}
 
-                <hr style={{ margin: "14px 0", opacity: 0.4 }} />
+                
+<div style={{ marginTop: 12, border: "1px solid #333", borderRadius: 8, padding: 10 }}>
+  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+    <strong>Server snapshots</strong>
+    <button
+      onClick={refreshSavedSnapshots}
+      disabled={savedSnapshotsLoading}
+      style={{
+        padding: "6px 10px",
+        borderRadius: 8,
+        border: "1px solid #ccc",
+        background: "white",
+        cursor: savedSnapshotsLoading ? "not-allowed" : "pointer",
+        fontWeight: 700,
+        fontSize: 12,
+      }}
+      title="Refresh the list of snapshots saved on the web-backend host"
+    >
+      {savedSnapshotsLoading ? "Refreshing..." : "Refresh"}
+    </button>
+  </div>
+
+  <div style={{ display: "flex", flexWrap: "wrap", gap: 10, alignItems: "flex-end" }}>
+    <label style={{ display: "grid", gap: 4, minWidth: 260 }}>
+      <span style={{ fontSize: 12, opacity: 0.85 }}>Name</span>
+      <input
+        value={snapshotSaveName}
+        onChange={(e) => setSnapshotSaveName(e.target.value)}
+        placeholder="e.g. elwynn-town-v1"
+        style={{ width: "100%", padding: "6px 8px", borderRadius: 6, border: "1px solid #ccc" }}
+      />
+    </label>
+
+    <button
+      onClick={runSaveSnapshotToServer}
+      disabled={snapshotSaveWorking}
+      style={{
+        padding: "8px 12px",
+        borderRadius: 8,
+        border: "1px solid #ccc",
+        background: snapshotSaveWorking ? "#f6f6f6" : "white",
+        cursor: snapshotSaveWorking ? "not-allowed" : "pointer",
+        fontWeight: 700,
+      }}
+      title="Generates a snapshot from the bounds/types above and stores it on the server"
+    >
+      {snapshotSaveWorking ? "Saving..." : "Save to server"}
+    </button>
+
+    <label style={{ display: "grid", gap: 4, minWidth: 320, flex: 1 }}>
+      <span style={{ fontSize: 12, opacity: 0.85 }}>Saved snapshots</span>
+      <select
+        value={selectedSavedSnapshotId}
+        onChange={(e) => setSelectedSavedSnapshotId(e.target.value)}
+        style={{ width: "100%", padding: "6px 8px", borderRadius: 6, border: "1px solid #ccc" }}
+      >
+        <option value="">(none)</option>
+        {savedSnapshots.map((s) => (
+          <option key={s.id} value={s.id}>
+            {s.name} — {s.rows} rows — {new Date(s.savedAt).toLocaleString()}
+          </option>
+        ))}
+      </select>
+    </label>
+
+    <button
+      onClick={() => runLoadSavedSnapshot(selectedSavedSnapshotId)}
+      disabled={snapshotLoadWorking}
+      style={{
+        padding: "8px 12px",
+        borderRadius: 8,
+        border: "1px solid #ccc",
+        background: snapshotLoadWorking ? "#f6f6f6" : "white",
+        cursor: snapshotLoadWorking ? "not-allowed" : "pointer",
+        fontWeight: 700,
+      }}
+      title="Loads the selected saved snapshot into the restore box below"
+    >
+      {snapshotLoadWorking ? "Loading..." : "Load into restore"}
+    </button>
+
+    <button
+      onClick={() => runDeleteSavedSnapshot(selectedSavedSnapshotId)}
+      disabled={!selectedSavedSnapshotId || snapshotDeleteWorking === selectedSavedSnapshotId}
+      style={{
+        padding: "8px 12px",
+        borderRadius: 8,
+        border: "1px solid #ccc",
+        background: "white",
+        cursor: !selectedSavedSnapshotId || snapshotDeleteWorking === selectedSavedSnapshotId ? "not-allowed" : "pointer",
+        fontWeight: 700,
+      }}
+      title="Deletes the selected saved snapshot from the server"
+    >
+      {snapshotDeleteWorking === selectedSavedSnapshotId ? "Deleting..." : "Delete"}
+    </button>
+  </div>
+
+  <div style={{ marginTop: 8, fontSize: 12, opacity: 0.8 }}>
+    Stored under <code>data/spawn_snapshots</code> on the web-backend host (override with <code>PLANARWAR_SPAWN_SNAPSHOT_DIR</code>).
+  </div>
+</div>
+
+<hr style={{ margin: "14px 0", opacity: 0.4 }} />
 
                 <div style={{ display: "grid", gap: 10 }}>
                   <div style={{ display: "flex", flexWrap: "wrap", gap: 10, alignItems: "center" }}>

@@ -233,7 +233,8 @@
         "Wipe confirm adds an extra human-speed lock: type 'WIPE' before token entry/commit enables.",
         "Adds diff preview panel for Mother Brain wave/wipe (delete/insert/update/skip + export JSON).",
         "UI renders opsPreview diff previews for Mother Brain wave/wipe AND Town baseline plan/apply (with JSON export).",
-        "Snapshot/Restore endpoints: POST /api/admin/spawn_points/snapshot, POST /api/admin/spawn_points/restore."
+        "Snapshot/Restore endpoints: POST /api/admin/spawn_points/snapshot, POST /api/admin/spawn_points/restore.",
+        "Server snapshot endpoints: GET /api/admin/spawn_points/snapshots, POST /api/admin/spawn_points/snapshots/save, GET/DELETE /api/admin/spawn_points/snapshots/:id"
       ],
       "owns": [
         "UI persistence in localStorage (adminSpawnPointsPage.ui.v1)",

@@ -600,7 +600,12 @@
         "Mother Brain wave/wipe responses now include opsPreview (truncated spawnId lists) for UI diff preview/export.",
         "Town baseline plan/apply responses include opsPreview (insert/update/skip/readOnly spawnId lists, truncated) for UI diff previews.",
         "POST /api/admin/spawn_points/snapshot",
-        "POST /api/admin/spawn_points/restore"
+        "POST /api/admin/spawn_points/restore",
+        "GET /api/admin/spawn_points/snapshots",
+        "POST /api/admin/spawn_points/snapshots/save",
+        "GET /api/admin/spawn_points/snapshots/:id",
+        "DELETE /api/admin/spawn_points/snapshots/:id",
+        "Server-side stored snapshots live under data/spawn_snapshots (override PLANARWAR_SPAWN_SNAPSHOT_DIR)."
       ],
       "owns": [],
       "path": "web-backend/routes/adminSpawnPoints.ts",

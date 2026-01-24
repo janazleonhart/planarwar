@@ -5596,6 +5596,24 @@
       "path": "worldcore/test/statusEffects.contract.test.ts",
       "provides": []
     },
+    "test.contractAdminSpawnPointsSnapshotRestoreRoutes": {
+      "service": "test.contract",
+      "kind": "test",
+      "path": "worldcore/test/contract_adminSpawnPointsSnapshotRestoreRoutes.test.ts",
+      "class": null,
+      "lifecycle": "test",
+      "ctorArgs": [],
+      "dependsOn": [
+        "web-backend.routes.adminSpawnPoints",
+        "web-frontend.pages.adminSpawnPoints"
+      ],
+      "provides": [],
+      "owns": [],
+      "notes": [
+        "Contract: admin spawn points must expose snapshot/restore endpoints and UI must call them.",
+        "Static scan only (no DB)."
+      ]
+    },
     "test.utils": {
       "dependsOn": [],
       "functions": [
@@ -6793,24 +6811,6 @@
       "path": "worldcore/terrain/worldgen/WGEv2Resources.ts",
       "provides": [
         "run(input:ResourceInput, ctx?:WorldGenContext):ResourceResult"
-      ]
-    },
-    "test.contractAdminSpawnPointsSnapshotRestoreRoutes": {
-      "service": "test.contract",
-      "kind": "test",
-      "path": "worldcore/test/contract_adminSpawnPointsSnapshotRestoreRoutes.test.ts",
-      "class": null,
-      "lifecycle": "test",
-      "ctorArgs": [],
-      "dependsOn": [
-        "web-backend.routes.adminSpawnPoints",
-        "web-frontend.pages.adminSpawnPoints"
-      ],
-      "provides": [],
-      "owns": [],
-      "notes": [
-        "Contract: admin spawn points must expose snapshot/restore endpoints and UI must call them.",
-        "Static scan only (no DB)."
       ]
     }
   }
