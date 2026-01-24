@@ -45,6 +45,11 @@ const SPAWN_UI_LS_KEY = 'adminSpawnPointsPage.ui.v1';
   snapshotPad?: number;
   snapshotTypes?: string;
   snapshotSaveName?: string;
+  snapshotSaveTags?: string;
+  snapshotSaveNotes?: string;
+  savedSnapshotsFilterTag?: string;
+  savedSnapshotsSearch?: string;
+  savedSnapshotsSort?: string;
 
   restoreTargetShard?: string;
   restoreUpdateExisting?: boolean;
@@ -152,6 +157,10 @@ type StoredSpawnSnapshotMeta = {
   pad: number;
   types: string[];
   bytes: number;
+
+  // P3: metadata for discoverability
+  tags: string[];
+  notes?: string | null;
 };
 
 type SpawnSnapshotsListResponse = {
@@ -172,7 +181,7 @@ type SpawnSnapshotsGetResponse = {
   kind: "spawn_points.snapshots.get";
   ok: boolean;
   error?: string;
-  doc?: { id: string; name: string; savedAt: string; snapshot: any };
+  doc?: { id: string; name: string; savedAt: string; tags?: string[]; notes?: string | null; snapshot: any };
 };
 
 type SpawnSnapshotsDeleteResponse = {
@@ -511,6 +520,15 @@ export function AdminSpawnPointsPage() {
 
 
 const [snapshotSaveName, setSnapshotSaveName] = useState(savedUi.snapshotSaveName || "");
+const [snapshotSaveTags, setSnapshotSaveTags] = useState(savedUi.snapshotSaveTags || "");
+const [snapshotSaveNotes, setSnapshotSaveNotes] = useState(savedUi.snapshotSaveNotes || "");
+
+const [savedSnapshotsFilterTag, setSavedSnapshotsFilterTag] = useState(savedUi.savedSnapshotsFilterTag || "");
+const [savedSnapshotsSearch, setSavedSnapshotsSearch] = useState(savedUi.savedSnapshotsSearch || "");
+const [savedSnapshotsSort, setSavedSnapshotsSort] = useState<"newest" | "oldest" | "name">(
+  (savedUi.savedSnapshotsSort as any) || "newest"
+);
+
 const [savedSnapshots, setSavedSnapshots] = useState<StoredSpawnSnapshotMeta[]>([]);
 const [savedSnapshotsLoading, setSavedSnapshotsLoading] = useState(false);
 const [snapshotSaveWorking, setSnapshotSaveWorking] = useState(false);
@@ -545,6 +563,10 @@ const [selectedSavedSnapshotId, setSelectedSavedSnapshotId] = useState<string>("
       return "";
     }
   }, [restoreJsonText]);
+
+  const selectedSavedSnapshotMeta = useMemo(() => {
+    return savedSnapshots.find((s) => s.id === selectedSavedSnapshotId) || null;
+  }, [savedSnapshots, selectedSavedSnapshotId]);
 
   const effectiveRestoreTargetShard = (restoreTargetShard.trim() || shardId || "").trim() || "prime_shard";
   const restoreCrossShard =
@@ -853,6 +875,14 @@ const [selectedSavedSnapshotId, setSelectedSavedSnapshotId] = useState<string>("
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // When entering the snapshot tools tab, refresh server snapshots so the list is not stale.
+  useEffect(() => {
+    if (activeTab === "tools" && toolsSubtab === "snapshot") {
+      void refreshSavedSnapshots();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab, toolsSubtab]);
+
   // When selecting a spawn point, populate form
   useEffect(() => {
     if (selectedId == null) {
@@ -902,6 +932,11 @@ const [selectedSavedSnapshotId, setSelectedSavedSnapshotId] = useState<string>("
       snapshotPad,
       snapshotTypes,
       snapshotSaveName,
+      snapshotSaveTags,
+      snapshotSaveNotes,
+      savedSnapshotsFilterTag,
+      savedSnapshotsSearch,
+      savedSnapshotsSort,
       restoreTargetShard,
       restoreUpdateExisting,
       restoreAllowBrainOwned,
@@ -943,6 +978,11 @@ const [selectedSavedSnapshotId, setSelectedSavedSnapshotId] = useState<string>("
     snapshotPad,
     snapshotTypes,
     snapshotSaveName,
+    snapshotSaveTags,
+    snapshotSaveNotes,
+    savedSnapshotsFilterTag,
+    savedSnapshotsSearch,
+    savedSnapshotsSort,
     restoreTargetShard,
     restoreUpdateExisting,
     restoreAllowBrainOwned,
@@ -1362,13 +1402,19 @@ const [selectedSavedSnapshotId, setSelectedSavedSnapshotId] = useState<string>("
 const refreshSavedSnapshots = async () => {
   setSavedSnapshotsLoading(true);
   try {
-    const res = await authedFetch(`/api/admin/spawn_points/snapshots`, { method: "GET" });
+    const qs = new URLSearchParams();
+    if (savedSnapshotsSort) qs.set("sort", savedSnapshotsSort);
+    if (savedSnapshotsFilterTag.trim()) qs.set("tag", savedSnapshotsFilterTag.trim());
+    if (savedSnapshotsSearch.trim()) qs.set("q", savedSnapshotsSearch.trim());
+    qs.set("limit", "250");
+
+    const url = `/api/admin/spawn_points/snapshots?${qs.toString()}`;
+    const res = await authedFetch(url, { method: "GET" });
     const data: SpawnSnapshotsListResponse = await res.json().catch(() => ({} as any));
     if (!res.ok || !data.ok) throw new Error(data.error || `List snapshots failed (HTTP ${res.status})`);
     setSavedSnapshots(data.snapshots || []);
-  } catch (e: any) {
-    console.error(e);
-    setError(e.message || String(e));
+  } catch (err: any) {
+    setError(err.message || String(err));
   } finally {
     setSavedSnapshotsLoading(false);
   }
@@ -1400,6 +1446,8 @@ const runSaveSnapshotToServer = async () => {
         cellSize: snapshotCellSize,
         pad: snapshotPad,
         types,
+        tags: snapshotSaveTags,
+        notes: snapshotSaveNotes,
       }),
     });
 
@@ -2751,6 +2799,26 @@ const runDeleteSavedSnapshot = async (id: string) => {
       />
     </label>
 
+    <label style={{ display: "grid", gap: 4, minWidth: 260 }}>
+      <span style={{ fontSize: 12, opacity: 0.85 }}>Tags (comma list)</span>
+      <input
+        value={snapshotSaveTags}
+        onChange={(e) => setSnapshotSaveTags(e.target.value)}
+        placeholder="e.g. town,prime,baseline"
+        style={{ width: "100%", padding: "6px 8px", borderRadius: 6, border: "1px solid #ccc" }}
+      />
+    </label>
+
+    <label style={{ display: "grid", gap: 4, minWidth: 320, flex: 1 }}>
+      <span style={{ fontSize: 12, opacity: 0.85 }}>Notes</span>
+      <input
+        value={snapshotSaveNotes}
+        onChange={(e) => setSnapshotSaveNotes(e.target.value)}
+        placeholder="optional short note..."
+        style={{ width: "100%", padding: "6px 8px", borderRadius: 6, border: "1px solid #ccc" }}
+      />
+    </label>
+
     <button
       onClick={runSaveSnapshotToServer}
       disabled={snapshotSaveWorking}
@@ -2767,6 +2835,39 @@ const runDeleteSavedSnapshot = async (id: string) => {
       {snapshotSaveWorking ? "Saving..." : "Save to server"}
     </button>
 
+    <label style={{ display: "grid", gap: 4, minWidth: 160 }}>
+      <span style={{ fontSize: 12, opacity: 0.85 }}>Sort</span>
+      <select
+        value={savedSnapshotsSort}
+        onChange={(e) => setSavedSnapshotsSort(e.target.value as any)}
+        style={{ width: "100%", padding: "6px 8px", borderRadius: 6, border: "1px solid #ccc" }}
+      >
+        <option value="newest">Newest</option>
+        <option value="oldest">Oldest</option>
+        <option value="name">Name</option>
+      </select>
+    </label>
+
+    <label style={{ display: "grid", gap: 4, minWidth: 200 }}>
+      <span style={{ fontSize: 12, opacity: 0.85 }}>Filter tag</span>
+      <input
+        value={savedSnapshotsFilterTag}
+        onChange={(e) => setSavedSnapshotsFilterTag(e.target.value)}
+        placeholder="e.g. town"
+        style={{ width: "100%", padding: "6px 8px", borderRadius: 6, border: "1px solid #ccc" }}
+      />
+    </label>
+
+    <label style={{ display: "grid", gap: 4, minWidth: 240 }}>
+      <span style={{ fontSize: 12, opacity: 0.85 }}>Search</span>
+      <input
+        value={savedSnapshotsSearch}
+        onChange={(e) => setSavedSnapshotsSearch(e.target.value)}
+        placeholder="name / tag / notes..."
+        style={{ width: "100%", padding: "6px 8px", borderRadius: 6, border: "1px solid #ccc" }}
+      />
+    </label>
+
     <label style={{ display: "grid", gap: 4, minWidth: 320, flex: 1 }}>
       <span style={{ fontSize: 12, opacity: 0.85 }}>Saved snapshots</span>
       <select
@@ -2777,10 +2878,25 @@ const runDeleteSavedSnapshot = async (id: string) => {
         <option value="">(none)</option>
         {savedSnapshots.map((s) => (
           <option key={s.id} value={s.id}>
-            {s.name} — {s.rows} rows — {new Date(s.savedAt).toLocaleString()}
+            {s.name}{s.tags && s.tags.length ? ` — [${s.tags.join(", ")}]` : ""} — {s.rows} rows — {new Date(s.savedAt).toLocaleString()}
           </option>
         ))}
       </select>
+      {selectedSavedSnapshotMeta ? (
+        <div style={{ fontSize: 12, opacity: 0.85, lineHeight: 1.3 }}>
+          <div>
+            <strong>Tags:</strong>{" "}
+            {selectedSavedSnapshotMeta.tags && selectedSavedSnapshotMeta.tags.length
+              ? selectedSavedSnapshotMeta.tags.join(", ")
+              : "(none)"}
+          </div>
+          {selectedSavedSnapshotMeta.notes ? (
+            <div>
+              <strong>Notes:</strong> {String(selectedSavedSnapshotMeta.notes)}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
     </label>
 
     <button

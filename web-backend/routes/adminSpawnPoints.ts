@@ -187,10 +187,15 @@ type SpawnSliceOpsPreview = {
 
 type StoredSpawnSnapshotDoc = {
   kind: "admin.stored-spawn-snapshot";
-  version: 1;
+  version: 1 | 2;
   id: string;
   name: string;
   savedAt: string;
+
+  // P3: metadata for discoverability
+  tags: string[];
+  notes?: string | null;
+
   snapshot: SpawnSliceSnapshot;
 };
 
@@ -205,6 +210,10 @@ type StoredSpawnSnapshotMeta = {
   pad: number;
   types: string[];
   bytes: number;
+
+  // P3: metadata for discoverability
+  tags: string[];
+  notes?: string | null;
 };
 
 const SNAPSHOT_DIR =
@@ -223,6 +232,44 @@ function safeSnapshotName(name: string): string {
   return cleaned || "snapshot";
 }
 
+
+function normalizeSnapshotTags(input: unknown): string[] {
+  // Accept: ["tag1", "tag2"] OR "tag1, tag2" OR single string.
+  // Normalize: lowercase, trim, spaces -> "-", allow [a-z0-9._-], dedupe, cap.
+  const raw: string[] = [];
+  if (Array.isArray(input)) {
+    for (const it of input) raw.push(String(it ?? ""));
+  } else if (typeof input === "string") {
+    raw.push(...input.split(","));
+  } else if (input != null) {
+    raw.push(String(input));
+  }
+
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const r of raw) {
+    const t0 = String(r ?? "").trim().toLowerCase();
+    if (!t0) continue;
+    const t1 = t0.replace(/\s+/g, "-").replace(/[^a-z0-9._-]+/g, "");
+    const t = t1.slice(0, 32);
+    if (!t) continue;
+    if (seen.has(t)) continue;
+    seen.add(t);
+    out.push(t);
+    if (out.length >= 12) break;
+  }
+  return out;
+}
+
+function safeSnapshotNotes(input: unknown): string | null {
+  const s = String(input ?? "").trim();
+  if (!s) return null;
+  // Keep it boring: strip control chars, cap length.
+  const cleaned = s.replace(/[\u0000-\u001F\u007F]/g, " ").replace(/\s+/g, " ").trim();
+  return cleaned.slice(0, 600);
+}
+
+
 function makeSnapshotId(name: string, shardId: string, bounds: CellBounds, types: string[]): string {
   const seed = { name: safeSnapshotName(name), shardId, bounds, types: [...types].sort() };
   return `snap_${Date.now()}_${hashToken(seed).slice(0, 12)}`;
@@ -240,6 +287,8 @@ function metaFromStoredDoc(doc: StoredSpawnSnapshotDoc, bytes: number): StoredSp
     pad: doc.snapshot.pad,
     types: doc.snapshot.types,
     bytes,
+    tags: Array.isArray((doc as any).tags) ? (doc as any).tags : [],
+    notes: (doc as any).notes ?? null,
   };
 }
 
@@ -2143,15 +2192,50 @@ router.post("/snapshot", async (req, res) => {
 
 
 // GET /api/admin/spawn_points/snapshots
-router.get("/snapshots", async (_req, res) => {
+router.get("/snapshots", async (req, res) => {
   try {
-    const snapshots = await listStoredSnapshots();
+    let snapshots = await listStoredSnapshots();
+
+    const tagRaw = strOrNull((req as any).query?.tag);
+    const qRaw = strOrNull((req as any).query?.q);
+    const sortRaw = (strOrNull((req as any).query?.sort) || "newest").toLowerCase();
+    const limitRaw = Number((req as any).query?.limit);
+
+    const tag = tagRaw ? normalizeSnapshotTags(tagRaw)[0] : null;
+    const q = qRaw ? qRaw.trim().toLowerCase() : "";
+
+    if (tag) {
+      snapshots = snapshots.filter((s) => Array.isArray((s as any).tags) && (s as any).tags.includes(tag));
+    }
+
+    if (q) {
+      snapshots = snapshots.filter((s) => {
+        const name = String((s as any).name || "").toLowerCase();
+        const notes = String((s as any).notes || "").toLowerCase();
+        const tags = Array.isArray((s as any).tags) ? (s as any).tags.join(" ").toLowerCase() : "";
+        return name.includes(q) || notes.includes(q) || tags.includes(q);
+      });
+    }
+
+    if (sortRaw === "oldest") {
+      snapshots = snapshots.slice().sort((a, b) => String(a.savedAt).localeCompare(String(b.savedAt)));
+    } else if (sortRaw === "name") {
+      snapshots = snapshots.slice().sort((a, b) => String(a.name).localeCompare(String(b.name)));
+    } else {
+      // newest (default)
+      snapshots = snapshots.slice().sort((a, b) => String(b.savedAt).localeCompare(String(a.savedAt)));
+    }
+
+    const limit = Number.isFinite(limitRaw) ? Math.max(0, Math.min(500, Math.floor(limitRaw))) : 0;
+    if (limit > 0) snapshots = snapshots.slice(0, limit);
+
     return res.json({ kind: "spawn_points.snapshots", ok: true, snapshots });
   } catch (err: any) {
-    console.error("[ADMIN/SPAWN_POINTS] snapshots list error", err);
-    return res.status(500).json({ kind: "spawn_points.snapshots", ok: false, error: err.message || String(err) });
+    console.error("[ADMIN/SPAWN_POINTS] list snapshots error", err);
+    return res.status(500).json({ kind: "spawn_points.snapshots", ok: false, error: "internal_error" });
   }
 });
+
 
 // POST /api/admin/spawn_points/snapshots/save
 router.post("/snapshots/save", async (req, res) => {
@@ -2175,12 +2259,17 @@ router.post("/snapshots/save", async (req, res) => {
     const id = makeSnapshotId(name, shardId, snapshot.bounds, snapshot.types);
     const savedAt = new Date().toISOString();
 
+    const tags = normalizeSnapshotTags(req.body?.tags);
+    const notes = safeSnapshotNotes(req.body?.notes);
+
     const doc: StoredSpawnSnapshotDoc = {
       kind: "admin.stored-spawn-snapshot",
-      version: 1,
+      version: 2,
       id,
       name,
       savedAt,
+      tags,
+      notes,
       snapshot,
     };
 

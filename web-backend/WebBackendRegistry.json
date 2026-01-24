@@ -606,7 +606,10 @@
         "GET /api/admin/spawn_points/snapshots/:id",
         "DELETE /api/admin/spawn_points/snapshots/:id",
         "Server-side stored snapshots live under data/spawn_snapshots (override PLANARWAR_SPAWN_SNAPSHOT_DIR).",
-        "Restore safety: commit restore requires confirm phrase 'RESTORE' when cross-shard and/or allowBrainOwned is enabled (in addition to confirm token when updating existing rows)."
+        "Restore safety: commit restore requires confirm phrase 'RESTORE' when cross-shard and/or allowBrainOwned is enabled (in addition to confirm token when updating existing rows).",
+        "P2\u2013P3: Server-side spawn snapshot storage under web-backend (admin-owned JSON docs).",
+        "GET /api/admin/spawn_points/snapshots supports query params: sort=(newest|oldest|name), tag=<tag>, q=<search>, limit=<n>.",
+        "POST /api/admin/spawn_points/snapshots/save accepts optional metadata: tags (comma list or array) + notes (string)."
       ],
       "owns": [],
       "path": "web-backend/routes/adminSpawnPoints.ts",
