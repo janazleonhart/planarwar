@@ -11,6 +11,7 @@
  */
 
 import { planBrainWave } from "../sim/MotherBrainWavePlanner";
+import { createHash } from "crypto";
 import type {
   Bounds,
   BrainWaveTheme,
@@ -160,6 +161,7 @@ Wave options:
 
 Wave safety:
   --commit        actually write to DB (default: dry-run / rollback)
+  --confirm <token> required when --commit would delete rows (printed on dry-run)
   --append        do NOT delete existing brain:* spawns in bounds (default: false)
 
 Status options:
@@ -197,6 +199,16 @@ function parseIntFlag(argv: string[], name: string, fallback: number): number {
   if (raw == null) return fallback;
   const n = parseInt(raw, 10);
   return Number.isFinite(n) ? n : fallback;
+}
+
+
+function hashToken(input: unknown): string {
+  const s = typeof input === "string" ? input : JSON.stringify(input);
+  return createHash("sha256").update(s).digest("hex").slice(0, 10);
+}
+
+function makeConfirmToken(prefix: "REPLACE", shardId: string, scope: unknown): string {
+  return `${prefix}:${shardId}:${hashToken(scope)}`;
 }
 
 function parseBounds(input: string): Bounds {
@@ -382,6 +394,7 @@ async function upsertActions(
 async function applyWaveToDb(args: {
   commit: boolean;
   append: boolean;
+  confirm: string | null | undefined;
   shardId: string;
   bounds: Bounds;
   cellSize: number;
@@ -408,12 +421,38 @@ async function applyWaveToDb(args: {
     ? []
     : await loadBrainSpawnIdsInBox({ shardId: args.shardId, ...box });
 
+
+const expectedConfirmToken =
+  !args.append && brainSpawnIds.length > 0
+    ? makeConfirmToken("REPLACE", args.shardId, {
+        bounds: args.bounds,
+        cellSize: args.cellSize,
+        borderMargin: args.borderMargin,
+        deleteScope: "brain:* in selection box",
+      })
+    : null;
+
+if (args.commit && expectedConfirmToken) {
+  const confirm = String(args.confirm ?? "").trim();
+  if (confirm !== expectedConfirmToken) {
+    console.error(
+      `[motherBrain] REFUSING commit: would_delete=${brainSpawnIds.length}. Re-run with --confirm ${expectedConfirmToken}`,
+    );
+    return;
+  }
+}
+
+
   console.log(
     `[motherBrain] shard=${args.shardId} bounds=${args.bounds.minCx}..${args.bounds.maxCx},${args.bounds.minCz}..${args.bounds.maxCz} cellSize=${args.cellSize} epoch=${args.epoch} theme=${args.theme} count=${args.count}`,
   );
   console.log(
     `[motherBrain] planned=${planned.length} delete_existing_brain=${brainSpawnIds.length} commit=${String(args.commit)} append=${String(args.append)}`,
   );
+
+  if (!args.commit && expectedConfirmToken) {
+    console.log(`[motherBrain] confirm_token=${expectedConfirmToken} (required for --commit when deletions > 0)`);
+  }
 
   const db = await getDb();
   const client = await db.connect();
@@ -593,10 +632,12 @@ async function main(): Promise<void> {
   const count = parseIntFlag(argv, "--count", 8);
 
   const append = hasFlag(argv, "--append");
+  const confirm = getFlag(argv, "--confirm");
 
   await applyWaveToDb({
     commit,
     append,
+    confirm,
     shardId,
     bounds,
     cellSize,

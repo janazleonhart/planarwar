@@ -1,6 +1,7 @@
 // web-backend/routes/adminSpawnPoints.ts
 
 import { Router } from "express";
+import { createHash } from "crypto";
 import { db } from "../../worldcore/db/Database";
 import { clearSpawnPointCache } from "../../worldcore/world/SpawnPointCache";
 import { getSpawnAuthority, isSpawnEditable } from "../../worldcore/world/spawnAuthority";
@@ -101,6 +102,17 @@ function summarizePlannedSpawns(
     total,
     ...(total > 0 ? { byType, byProtoId } : null),
   } as AdminSummary;
+}
+
+
+function hashToken(input: unknown): string {
+  const s = typeof input === "string" ? input : JSON.stringify(input);
+  return createHash("sha256").update(s).digest("hex").slice(0, 10);
+}
+
+function makeConfirmToken(prefix: "WIPE" | "REPLACE", shardId: string, scope: unknown): string {
+  // Token format: PREFIX:<shardId>:<shortHash>
+  return `${prefix}:${shardId}:${hashToken(scope)}`;
 }
 
 function cloneScatterFail(error: string): CloneScatterFailure {
@@ -1029,9 +1041,12 @@ type TownBaselinePlanResponse = {
   kind?: AdminApiKind;
   summary?: AdminSummary;
   ok: boolean;
-  shardId: string;
-  bounds: string;
-  cellSize: number;
+
+  // request echo (useful for audits / UI confirm flows)
+  shardId?: string;
+  bounds?: string;
+  cellSize?: number;
+  borderMargin?: number;
   seedBase: string;
   spawnIdMode: "seed" | "legacy";
   includeStations: boolean;
@@ -1580,12 +1595,20 @@ type MotherBrainWaveRequest = {
   budget?: MotherBrainWaveBudgetConfig;
 
   commit?: boolean;
+  confirm?: string;
 };
 
 type MotherBrainWaveResponse = {
   kind?: AdminApiKind;
   summary?: AdminSummary;
   ok: boolean;
+
+  // request echo (useful for UI confirmation prompts)
+  shardId?: string;
+  bounds?: string;
+  cellSize?: number;
+  borderMargin?: number;
+
 
   // dry-run (commit=false)
   wouldDelete?: number;
@@ -1609,6 +1632,10 @@ type MotherBrainWaveResponse = {
   budgetReport?: any;
   budgetFilter?: any;
   applyPlan?: any;
+
+  // confirm-token safety (when commit would delete rows)
+  expectedConfirmToken?: string;
+  error?: string;
 };
 
 
@@ -1621,6 +1648,7 @@ type MotherBrainWipeRequest = {
   theme?: string | null;
   epoch?: number | null;
   commit?: boolean;
+  confirm?: string;
   list?: boolean;
   limit?: number;
 };
@@ -1639,6 +1667,9 @@ type MotherBrainWipeResponse = {
   wouldDelete?: number;
   deleted?: number;
   list?: MotherBrainListRow[];
+
+  // confirm-token safety (when commit would delete rows)
+  expectedConfirmToken?: string;
   error?: string;
 };
 
@@ -1875,6 +1906,41 @@ router.post("/mother_brain/wave", async (req, res) => {
       .map((r: any) => String(r.spawn_id ?? ""))
       .filter(Boolean);
 
+const expectedConfirmToken =
+  !append && existingBrainIds.length > 0
+    ? makeConfirmToken("REPLACE", shardId, {
+        bounds: rawBounds,
+        cellSize,
+        borderMargin,
+        // box is derived from bounds/cellSize/borderMargin but included for human sanity.
+        box,
+        deleteScope: "brain:* in selection box",
+      })
+    : null;
+
+// Destructive safety: replace-mode commits that would delete rows require a confirm token.
+// This makes it much harder to fat-finger a wipe from the UI.
+const confirm = strOrNull((body as any).confirm);
+if (commit && expectedConfirmToken && confirm !== expectedConfirmToken) {
+  await client.query("ROLLBACK");
+  res.status(409).json({
+    kind: "mother_brain.wave",
+    ok: false,
+    error: "confirm_required",
+    expectedConfirmToken,
+    shardId,
+    bounds: rawBounds,
+    cellSize,
+    borderMargin,
+    theme,
+    epoch,
+    append,
+    wouldDelete: existingBrainIds.length,
+  } satisfies MotherBrainWaveResponse);
+  return;
+}
+
+
     const plannedActions = planBrainWave({
       shardId,
       bounds: parsedBounds,
@@ -2029,6 +2095,7 @@ router.post("/mother_brain/wave", async (req, res) => {
           theme,
           epoch,
           append,
+          expectedConfirmToken: expectedConfirmToken ?? undefined,
           budget,
           budgetReport,
           budgetFilter,
@@ -2047,6 +2114,7 @@ router.post("/mother_brain/wave", async (req, res) => {
           theme,
           epoch,
           append,
+          expectedConfirmToken: expectedConfirmToken ?? undefined,
           budget,
           budgetReport,
           budgetFilter,
@@ -2156,6 +2224,43 @@ router.post("/mother_brain/wipe", async (req, res) => {
       const wouldDelete = ids.length;
       let deleted = 0;
 
+const expectedConfirmToken =
+  commit && wouldDelete > 0
+    ? makeConfirmToken("WIPE", shardId, {
+        bounds,
+        cellSize: Number.isFinite(cellSize) ? cellSize : 64,
+        borderMargin,
+        theme,
+        epoch,
+        box,
+        deleteScope: "brain:* selection (filtered by theme/epoch)",
+      })
+    : null;
+
+const confirm = strOrNull((body as any).confirm);
+
+if (commit && expectedConfirmToken && confirm !== expectedConfirmToken) {
+  await client.query("ROLLBACK");
+  const payload: MotherBrainWipeResponse = {
+    kind: "mother_brain.wipe",
+    ok: false,
+    error: "confirm_required",
+    expectedConfirmToken,
+    shardId,
+    bounds,
+    cellSize: Number.isFinite(cellSize) ? cellSize : 64,
+    borderMargin,
+    theme,
+    epoch,
+    commit,
+    wouldDelete,
+    ...(wantList ? { list: listRows } : null),
+  };
+  res.status(409).json(payload);
+  return;
+}
+
+
       if (commit && ids.length > 0) {
         await client.query(`DELETE FROM spawn_points WHERE id = ANY($1::int[])`, [ids]);
         deleted = ids.length;
@@ -2181,6 +2286,7 @@ router.post("/mother_brain/wipe", async (req, res) => {
             epoch,
             commit,
             deleted,
+            expectedConfirmToken: expectedConfirmToken ?? undefined,
             ...(wantList ? { list: listRows } : null),
           }
         : {
@@ -2195,6 +2301,7 @@ router.post("/mother_brain/wipe", async (req, res) => {
             epoch,
             commit,
             wouldDelete,
+            expectedConfirmToken: expectedConfirmToken ?? undefined,
             ...(wantList ? { list: listRows } : null),
           };
 

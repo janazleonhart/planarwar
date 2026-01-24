@@ -3,6 +3,7 @@
 
 import * as fs from "fs/promises";
 import * as path from "path";
+import { createHash } from "crypto";
 
 import { db } from "../db/Database";
 
@@ -101,6 +102,7 @@ Town baseline options (town-baseline):
 
 Safety:
   --commit                commit to DB (otherwise rollback)
+  --confirm <token>       required when a --commit would delete rows (printed on dry-run)
   --updateExisting        allow updating existing spawn_ids (default: insert-only)
   --allowDefaultBounds    allow --commit without explicitly passing --bounds (default: false)
 
@@ -206,6 +208,16 @@ function getFlag(argv: string[], name: string): string | null {
   const v = argv[idx + 1];
   if (!v || v.startsWith("--")) return null;
   return v;
+}
+
+
+function hashToken(input: unknown): string {
+  const s = typeof input === "string" ? input : JSON.stringify(input);
+  return createHash("sha256").update(s).digest("hex").slice(0, 10);
+}
+
+function makeConfirmToken(prefix: "WIPE" | "REPLACE", shardId: string, scope: unknown): string {
+  return `${prefix}:${shardId}:${hashToken(scope)}`;
 }
 
 function parseIntFlag(argv: string[], name: string, fallback: number): number {
@@ -2084,6 +2096,28 @@ const townVendorRadius = parseIntFlag(argv, "--townVendorRadius", 11) || 11;
       .filter((s: string) => Boolean(s));
 
     const wouldDelete = append ? 0 : existingBrainIds.length;
+
+const expectedConfirmToken =
+  wouldDelete > 0
+    ? makeConfirmToken("REPLACE", shardId, {
+        bounds: boundsSlug(bounds),
+        cellSize,
+        borderMargin,
+        deleteScope: "brain:* in selection box",
+      })
+    : null;
+
+if (commit && expectedConfirmToken) {
+  const confirm = (getFlag(argv, "--confirm") ?? "").trim();
+  if (confirm !== expectedConfirmToken) {
+    await client.query("ROLLBACK");
+    console.error(
+      `[mother-wave] REFUSING commit: wouldDelete=${wouldDelete}. Re-run with --confirm ${expectedConfirmToken}`,
+    );
+    return;
+  }
+}
+
     let deleted = 0;
 
     // Plan the wave (planner expects an actual Bounds; do NOT pass the slug string).
@@ -2112,6 +2146,16 @@ const townVendorRadius = parseIntFlag(argv, "--townVendorRadius", 11) || 11;
       for (const r of existRes.rows ?? []) existingSpawnIds.add(String(r.spawn_id ?? ""));
     }
 
+
+// Replace-mode subtlety:
+// If append=false, we delete existing brain:* rows in the selection box before applying the wave.
+// Those spawn_ids must be treated as "non-existing" for insert/skip/update decisions.
+const effectiveExistingSpawnIds = new Set<string>(existingSpawnIds);
+if (!append) {
+  for (const sid of existingBrainSpawnIds) effectiveExistingSpawnIds.delete(String(sid ?? ""));
+}
+
+
     const budgetReport = computeBrainWaveBudgetReport({
       existingBrainSpawnIdsInBox: existingBrainSpawnIds,
       append,
@@ -2122,14 +2166,14 @@ const townVendorRadius = parseIntFlag(argv, "--townVendorRadius", 11) || 11;
 
     const budgetFilter = filterPlannedActionsToBudget({
       plannedActions: plannedActions as any,
-      existingSpawnIds,
+      existingSpawnIds: effectiveExistingSpawnIds,
       updateExisting,
       allowedNewInserts: budgetReport.allowedNewInserts,
     });
 
     const applyPlan = computeBrainWaveApplyPlan({
       plannedActions: budgetFilter.filteredActions as any,
-      existingSpawnIds,
+      existingSpawnIds: effectiveExistingSpawnIds,
       existingBrainSpawnIdsInBox: existingBrainSpawnIds,
       append,
       updateExisting,
@@ -2152,7 +2196,7 @@ const townVendorRadius = parseIntFlag(argv, "--townVendorRadius", 11) || 11;
         const sid = String(s?.spawnId ?? "");
         if (!sid) continue;
 
-        const exists = existingSpawnIds.has(sid);
+        const exists = effectiveExistingSpawnIds.has(sid);
         if (exists) {
           if (!updateExisting) {
             skipped += 1;
@@ -2582,6 +2626,30 @@ if (seedTownVendors && normTypes.length > 0 && vendorCount > 0) {
       const ids = filtered.map((r) => Number(r.id)).filter((n) => Number.isFinite(n));
 
       const wouldDelete = ids.length;
+
+const expectedConfirmToken =
+  wouldDelete > 0
+    ? makeConfirmToken("WIPE", shardId, {
+        bounds: boundsSlug(bounds),
+        cellSize,
+        borderMargin,
+        theme: themeQ,
+        epoch: epochQ,
+        deleteScope: "brain:* selection (filtered by theme/epoch)",
+      })
+    : null;
+
+if (commit && expectedConfirmToken) {
+  const confirm = (getFlag(argv, "--confirm") ?? "").trim();
+  if (confirm !== expectedConfirmToken) {
+    await client.query("ROLLBACK");
+    console.error(
+      `[mother-wipe] REFUSING commit: wouldDelete=${wouldDelete}. Re-run with --confirm ${expectedConfirmToken}`,
+    );
+    return;
+  }
+}
+
       let deleted = 0;
 
       if (commit && ids.length > 0) {
