@@ -65,6 +65,44 @@ type CloneScatterFailure = {
 
 type CloneScatterResponse = CloneScatterSuccess | CloneScatterFailure;
 
+type AdminApiKind =
+  | "spawn_points.list"
+  | "spawn_points.upsert"
+  | "spawn_points.delete"
+  | "spawn_points.bulk_delete"
+  | "spawn_points.bulk_move"
+  | "spawn_points.clone"
+  | "spawn_points.scatter"
+  | "town_baseline.plan"
+  | "town_baseline.apply"
+  | "mother_brain.status"
+  | "mother_brain.wave"
+  | "mother_brain.wipe";
+
+type AdminSummary = {
+  total: number;
+  byType?: Record<string, number>;
+  byProtoId?: Record<string, number>;
+};
+
+function summarizePlannedSpawns(
+  spawns: Array<{ type?: string | null; protoId?: string | null }>,
+): AdminSummary {
+  const byType: Record<string, number> = {};
+  const byProtoId: Record<string, number> = {};
+  for (const s of spawns) {
+    const t = String(s.type ?? "(unknown)");
+    const p = String(s.protoId ?? "(none)");
+    byType[t] = (byType[t] ?? 0) + 1;
+    byProtoId[p] = (byProtoId[p] ?? 0) + 1;
+  }
+  const total = spawns.length;
+  return {
+    total,
+    ...(total > 0 ? { byType, byProtoId } : null),
+  } as AdminSummary;
+}
+
 function cloneScatterFail(error: string): CloneScatterFailure {
   return {
     ok: false,
@@ -988,6 +1026,8 @@ type TownBaselinePlanItem = {
 };
 
 type TownBaselinePlanResponse = {
+  kind?: AdminApiKind;
+  summary?: AdminSummary;
   ok: boolean;
   shardId: string;
   bounds: string;
@@ -1253,7 +1293,10 @@ router.post("/town_baseline/plan", async (req, res) => {
   try {
     const plan = await computeTownBaselinePlan(body);
 
+    const allPlannedSpawns = plan.planItems.map((p) => p.spawn);
     const response: TownBaselinePlanResponse = {
+      kind: "town_baseline.plan",
+      summary: summarizePlannedSpawns(allPlannedSpawns),
       ok: true,
       shardId: plan.shardId,
       bounds: plan.bounds,
@@ -1300,7 +1343,11 @@ router.post("/town_baseline/apply", async (req, res) => {
     const plan = await computeTownBaselinePlan(body);
 
     if (!commit) {
+      const allPlannedSpawns = plan.planItems.map((p) => p.spawn);
+
       const response: TownBaselinePlanResponse = {
+        kind: "town_baseline.apply",
+        summary: summarizePlannedSpawns(allPlannedSpawns),
         ok: true,
         shardId: plan.shardId,
         bounds: plan.bounds,
@@ -1418,7 +1465,10 @@ router.post("/town_baseline/apply", async (req, res) => {
 
     clearSpawnPointCache();
 
+    const allPlannedSpawns = plan.planItems.map((p) => p.spawn);
     const response: TownBaselinePlanResponse = {
+      kind: "town_baseline.apply",
+      summary: summarizePlannedSpawns(allPlannedSpawns),
       ok: true,
       shardId: plan.shardId,
       bounds: plan.bounds,
@@ -1481,6 +1531,8 @@ type MotherBrainListRow = {
 };
 
 type MotherBrainStatusResponse = {
+  kind?: AdminApiKind;
+  summary?: AdminSummary;
   ok: boolean;
   shardId: string;
   bounds: string;
@@ -1531,6 +1583,8 @@ type MotherBrainWaveRequest = {
 };
 
 type MotherBrainWaveResponse = {
+  kind?: AdminApiKind;
+  summary?: AdminSummary;
   ok: boolean;
 
   // dry-run (commit=false)
@@ -1572,6 +1626,8 @@ type MotherBrainWipeRequest = {
 };
 
 type MotherBrainWipeResponse = {
+  kind?: AdminApiKind;
+  summary?: AdminSummary;
   ok: boolean;
   shardId: string;
   bounds: string;
@@ -1706,6 +1762,8 @@ router.get("/mother_brain/status", async (req, res) => {
     }
 
     const response: MotherBrainStatusResponse = {
+      kind: "mother_brain.status",
+      summary: { total: filtered.length, byType, byProtoId: topProto },
       ok: true,
       shardId,
       bounds,
@@ -1949,8 +2007,11 @@ router.post("/mother_brain/wave", async (req, res) => {
       await client.query("ROLLBACK");
     }
 
+    const wouldDelete = append ? 0 : existingBrainIds.length;
     const out: MotherBrainWaveResponse = commit
       ? {
+          kind: "mother_brain.wave",
+          summary: { total: inserted + updated + deleted },
           ok: true,
           deleted,
           inserted,
@@ -1965,6 +2026,8 @@ router.post("/mother_brain/wave", async (req, res) => {
           applyPlan,
         }
       : {
+          kind: "mother_brain.wave",
+          summary: { total: wouldDelete + applyPlan.wouldInsert + applyPlan.wouldUpdate },
           ok: true,
           wouldDelete: append ? 0 : existingBrainIds.length,
           wouldInsert: applyPlan.wouldInsert,
@@ -2098,6 +2161,8 @@ router.post("/mother_brain/wipe", async (req, res) => {
 
       const payload: MotherBrainWipeResponse = commit
         ? {
+            kind: "mother_brain.wipe",
+            summary: { total: deleted },
             ok: true,
             shardId,
             bounds,
@@ -2110,6 +2175,8 @@ router.post("/mother_brain/wipe", async (req, res) => {
             ...(wantList ? { list: listRows } : null),
           }
         : {
+            kind: "mother_brain.wipe",
+            summary: { total: wouldDelete },
             ok: true,
             shardId,
             bounds,

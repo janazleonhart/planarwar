@@ -295,7 +295,7 @@ export const DEFAULT_NPC_PROTOTYPES: Record<NpcId, NpcPrototype> = {
     baseDamageMin: 0,
     baseDamageMax: 0,
     model: "node_grain_wheat",
-    tags: ["resource", "resource_grain", "grain", "gatherable", "non_hostile"],
+    tags: ["resource", "resource_grain", "grain", "gatherable", "non_hostile",],
     behavior: "neutral",
     xpReward: 0,
     loot: [{ itemId: "grain_wheat", chance: 1.0, minQty: 2, maxQty: 5 }],

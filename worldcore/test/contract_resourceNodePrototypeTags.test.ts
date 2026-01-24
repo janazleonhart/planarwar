@@ -42,11 +42,132 @@ const RESOURCE_TAGS = [
   "resource_mana",
 ];
 
+type ScanState = {
+  inSQuote: boolean;
+  inDQuote: boolean;
+  inTemplate: boolean;
+  inLineComment: boolean;
+  inBlockComment: boolean;
+  escape: boolean;
+};
+
+function scanPrototypeObjectLiteral(src: string, id: string): string {
+  const idNeedle = `id: "${id}"`;
+  const idIdx = src.indexOf(idNeedle);
+  assert.ok(idIdx >= 0, `NpcTypes.ts must define prototype '${id}'`);
+
+  // Prefer the object key opener:  <id>: {
+  let keyIdx = src.lastIndexOf(`${id}: {`, idIdx);
+  let startIdx: number;
+
+  if (keyIdx >= 0) {
+    startIdx = src.indexOf("{", keyIdx);
+  } else {
+    // Fallback: nearest '{' before id field (best effort)
+    startIdx = src.lastIndexOf("{", idIdx);
+  }
+
+  assert.ok(startIdx >= 0, `Failed to locate opening '{' for '${id}' prototype`);
+
+  let depth = 0;
+  const st: ScanState = {
+    inSQuote: false,
+    inDQuote: false,
+    inTemplate: false,
+    inLineComment: false,
+    inBlockComment: false,
+    escape: false,
+  };
+
+  for (let i = startIdx; i < src.length; i++) {
+    const c = src[i];
+    const n = src[i + 1] ?? "";
+
+    // Handle comment states
+    if (st.inLineComment) {
+      if (c === "\n") st.inLineComment = false;
+      continue;
+    }
+    if (st.inBlockComment) {
+      if (c === "*" && n === "/") {
+        st.inBlockComment = false;
+        i++;
+      }
+      continue;
+    }
+
+    // Enter comments (only when not in string)
+    const inString = st.inSQuote || st.inDQuote || st.inTemplate;
+    if (!inString) {
+      if (c === "/" && n === "/") {
+        st.inLineComment = true;
+        i++;
+        continue;
+      }
+      if (c === "/" && n === "*") {
+        st.inBlockComment = true;
+        i++;
+        continue;
+      }
+    }
+
+    // Handle strings
+    if (st.escape) {
+      st.escape = false;
+      continue;
+    }
+    if (inString && c === "\\") {
+      st.escape = true;
+      continue;
+    }
+
+    if (!st.inDQuote && !st.inTemplate && c === "'" ) {
+      st.inSQuote = !st.inSQuote;
+      continue;
+    }
+    if (!st.inSQuote && !st.inTemplate && c === '"' ) {
+      st.inDQuote = !st.inDQuote;
+      continue;
+    }
+    if (!st.inSQuote && !st.inDQuote && c === "`") {
+      st.inTemplate = !st.inTemplate;
+      continue;
+    }
+
+    // Brace tracking (only when not in string)
+    if (!inString) {
+      if (c === "{") depth++;
+      if (c === "}") {
+        depth--;
+        if (depth === 0) {
+          return src.slice(startIdx, i + 1);
+        }
+      }
+    }
+  }
+
+  assert.fail(`Failed to find closing '}' for '${id}' prototype`);
+}
+
+function extractTagsFromPrototype(protoSrc: string): string[] {
+  // Find tags: [ ... ] inside the prototype object literal.
+  const m = protoSrc.match(/tags\s*:\s*\[([\s\S]*?)\]/m);
+  assert.ok(m, "Prototype must define a tags: [...] array");
+
+  const body = m[1] ?? "";
+  const tags: string[] = [];
+  const re = /"([^"]+)"/g;
+  let mm: RegExpExecArray | null;
+  while ((mm = re.exec(body))) tags.push(mm[1]);
+
+  assert.ok(tags.length > 0, "tags array must include at least one string literal");
+  return tags;
+}
+
 test("[contract] resource node prototypes must have correct resource_* subtype tag", () => {
   const root = findRepoRoot();
   const src = readAt(root, "worldcore/npc/NpcTypes.ts");
 
-  // Cheap static checks: ensure each starter node includes its expected resource tag.
   const starterNodeIds = [
     "herb_peacebloom",
     "ore_iron_hematite",
@@ -61,21 +182,18 @@ test("[contract] resource node prototypes must have correct resource_* subtype t
     const expected = expectedTagFromId(id);
     assert.ok(expected, `Expected resource tag for '${id}'`);
 
-    // Find a small window around the prototype id and ensure the expected tag appears.
-    const idx = src.indexOf(`id: "${id}"`);
-    assert.ok(idx >= 0, `NpcTypes.ts must define prototype '${id}'`);
+    const proto = scanPrototypeObjectLiteral(src, id);
+    const tags = extractTagsFromPrototype(proto);
 
-    const window = src.slice(Math.max(0, idx - 200), Math.min(src.length, idx + 600));
     assert.ok(
-      window.includes(expected),
+      tags.includes(expected),
       `Prototype '${id}' must include '${expected}'`
     );
 
-    // Ensure we don't accidentally include a different resource subtype in that same window.
     const others = RESOURCE_TAGS.filter((t) => t !== expected);
     for (const other of others) {
       assert.ok(
-        !window.includes(other),
+        !tags.includes(other),
         `Prototype '${id}' must not include '${other}'`
       );
     }
