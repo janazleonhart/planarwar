@@ -175,6 +175,8 @@
       "dependsOn": [],
       "provides": [
         "Spawn Points Editor (v1): browse/edit",
+        "Client-side quick search (type/archetype/proto/spawn/region) over the loaded list",
+        "Diff/summary panels for Mother Brain wave/wipe and Town Baseline plan/apply (plus expandable raw JSON)",
         "Batch tools: bulk delete/move, clone, scatter",
         "Mother Brain: status, list, wave (plan/commit), wipe (plan/commit)",
         "Town Baseline tool: plan/apply deterministic town/outpost services around a selected town spawn (mailbox/rest/guards/dummies/stations)",
@@ -190,7 +192,10 @@
         "Endpoints: GET /api/admin/spawn_points?..., POST /api/admin/spawn_points (create), PUT /api/admin/spawn_points/:id, bulk_delete, bulk_move, clone, scatter.",
         "Mother Brain endpoints: GET /api/admin/spawn_points/mother_brain/status, POST /api/admin/spawn_points/mother_brain/wave, POST /api/admin/spawn_points/mother_brain/wipe.",
         "Town Baseline endpoints: POST /api/admin/spawn_points/town_baseline/plan and /api/admin/spawn_points/town_baseline/apply.",
-        "Handles Mother Brain destructive confirm_required (HTTP 409) flow: displays expectedConfirmToken and requires re-run with confirm token for commit when deletions would occur."
+        "Handles Mother Brain destructive confirm_required (HTTP 409) flow: displays expectedConfirmToken and requires re-run with confirm token for commit when deletions would occur.",
+        "Adds client-side quick search to narrow the loaded list without re-querying the server.",
+        "Shows compact summary panels for wave/wipe/baseline results; raw JSON is tucked into <details> for sanity.",
+        "Displays confirm token both when required (HTTP 409 confirm_required) and when merely available for later commit."
       ]
     },
     "web-frontend.pages.me": {

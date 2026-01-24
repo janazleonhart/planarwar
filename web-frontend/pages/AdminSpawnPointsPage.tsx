@@ -22,6 +22,7 @@ const SPAWN_UI_LS_KEY = 'adminSpawnPointsPage.ui.v1';
   filterSpawnId?: string;
   limit?: number;
   recommendedOrder?: boolean;
+  quickSearch?: string;
 
   // Tools: town baseline
   baselineSeedBase?: string;
@@ -291,6 +292,27 @@ function SmallKeyValue(props: { title: string; map?: Record<string, number> }) {
 }
 
 
+function SummaryPanel(props: { title: string; tone?: "neutral" | "danger" | "good"; rows: Array<[string, any]>; children?: any }) {
+  const tone = props.tone ?? "neutral";
+  const border = tone === "danger" ? "1px solid #b71c1c" : tone === "good" ? "1px solid #2e7d32" : "1px solid #555";
+  const bg = tone === "danger" ? "#140a0a" : tone === "good" ? "#0b140b" : "#0b0b0b";
+  const fg = "#eee";
+
+  return (
+    <div style={{ border, borderRadius: 8, padding: 10, background: bg, color: fg }}>
+      <div style={{ fontWeight: 800, marginBottom: 8 }}>{props.title}</div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 8, fontFamily: "monospace", fontSize: 12 }}>
+        {props.rows.map(([k, v]) => (
+          <div key={k}>
+            <span style={{ opacity: 0.85 }}>{k}</span>: <span style={{ opacity: 0.95 }}>{String(v ?? "")}</span>
+          </div>
+        ))}
+      </div>
+      {props.children ? <div style={{ marginTop: 8 }}>{props.children}</div> : null}
+    </div>
+  );
+}
+
 const authedFetch: typeof fetch = (input: any, init?: any) => {
   const token = getAuthToken();
   const headers = new Headers(init?.headers ?? {});
@@ -325,6 +347,7 @@ export function AdminSpawnPointsPage() {
   const [filterArchetype, setFilterArchetype] = useState(savedUi.filterArchetype || "");
   const [filterProtoId, setFilterProtoId] = useState(savedUi.filterProtoId || "");
   const [filterSpawnId, setFilterSpawnId] = useState(savedUi.filterSpawnId || "");
+  const [quickSearch, setQuickSearch] = useState(savedUi.quickSearch || "");
   const [limit, setLimit] = useState(savedUi.limit ?? 200);
   const [recommendedOrder, setRecommendedOrder] = useState(savedUi.recommendedOrder ?? true);
 
@@ -380,6 +403,7 @@ export function AdminSpawnPointsPage() {
   const [baselineTownTierOverride, setBaselineTownTierOverride] = useState(savedUi.baselineTownTierOverride || "");
   const [baselineWorking, setBaselineWorking] = useState(false);
   const [baselineResult, setBaselineResult] = useState<TownBaselinePlanResponse | null>(null);
+  const [baselineLastCommit, setBaselineLastCommit] = useState(false);
 
 
   const [saving, setSaving] = useState(false);
@@ -405,6 +429,7 @@ export function AdminSpawnPointsPage() {
   const [waveResult, setWaveResult] = useState<MotherBrainWaveResponse | null>(null);
   const [waveConfirmExpected, setWaveConfirmExpected] = useState<string | null>(null);
   const [waveConfirmInput, setWaveConfirmInput] = useState("");
+  const [waveConfirmRequired, setWaveConfirmRequired] = useState(false);
 
 
   // Mother Brain (wipe)
@@ -417,15 +442,32 @@ export function AdminSpawnPointsPage() {
   const [wipeResult, setWipeResult] = useState<MotherBrainWipeResponse | null>(null);
   const [wipeConfirmExpected, setWipeConfirmExpected] = useState<string | null>(null);
   const [wipeConfirmInput, setWipeConfirmInput] = useState("");
+  const [wipeConfirmRequired, setWipeConfirmRequired] = useState(false);
 
   const selectedSet = useMemo(() => new Set(selectedIds), [selectedIds]);
 
   const visibleSpawnPoints = useMemo(() => {
-    if (!recommendedOrder) return spawnPoints;
-    const arr = [...spawnPoints];
-    arr.sort(compareSpawnPointsRecommended);
-    return arr;
-  }, [spawnPoints, recommendedOrder]);
+    const ordered = !recommendedOrder ? [...spawnPoints] : (() => {
+      const arr = [...spawnPoints];
+      arr.sort(compareSpawnPointsRecommended);
+      return arr;
+    })();
+
+    const q = normStr(quickSearch);
+    if (!q) return ordered;
+
+    return ordered.filter((p) => {
+      const hay = [
+        p.type,
+        p.archetype,
+        p.spawnId,
+        p.protoId ?? "",
+        p.variantId ?? "",
+        p.regionId ?? "",
+      ].join(" ");
+      return normStr(hay).includes(q);
+    });
+  }, [spawnPoints, recommendedOrder, quickSearch]);
 
 
   const load = async () => {
@@ -543,6 +585,7 @@ export function AdminSpawnPointsPage() {
       if (res.status === 409 && data && (data as any).error === "confirm_required" && (data as any).expectedConfirmToken) {
         setWaveConfirmExpected((data as any).expectedConfirmToken);
         setWaveConfirmInput("");
+        setWaveConfirmRequired(true);
         setWaveResult(data);
         return;
       }
@@ -552,7 +595,8 @@ export function AdminSpawnPointsPage() {
       if (!data.ok) throw new Error(data.error || "MotherBrain wave failed");
 
       // Success: clear confirm state.
-      setWaveConfirmExpected(null);
+      setWaveConfirmRequired(false);
+      setWaveConfirmExpected((data as any).expectedConfirmToken ? String((data as any).expectedConfirmToken) : null);
       setWaveConfirmInput("");
       setWaveResult(data);
 
@@ -605,6 +649,7 @@ export function AdminSpawnPointsPage() {
       if (res.status === 409 && data && (data as any).error === "confirm_required" && (data as any).expectedConfirmToken) {
         setWipeConfirmExpected((data as any).expectedConfirmToken);
         setWipeConfirmInput("");
+        setWipeConfirmRequired(true);
         setWipeResult(data);
         return;
       }
@@ -614,7 +659,8 @@ export function AdminSpawnPointsPage() {
       if (!data.ok) throw new Error(data.error || "MotherBrain wipe failed");
 
       // Success: clear confirm state.
-      setWipeConfirmExpected(null);
+      setWipeConfirmRequired(false);
+      setWipeConfirmExpected((data as any).expectedConfirmToken ? String((data as any).expectedConfirmToken) : null);
       setWipeConfirmInput("");
       setWipeResult(data);
 
@@ -632,12 +678,14 @@ export function AdminSpawnPointsPage() {
   useEffect(() => {
     setWaveConfirmExpected(null);
     setWaveConfirmInput("");
+    setWaveConfirmRequired(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mbBounds, mbCellSize, waveTheme, waveEpoch, waveCount, waveSeed, waveAppend]);
 
   useEffect(() => {
     setWipeConfirmExpected(null);
     setWipeConfirmInput("");
+    setWipeConfirmRequired(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mbBounds, mbCellSize, wipeTheme, wipeEpoch, wipeBorderMargin]);
 
@@ -673,6 +721,7 @@ export function AdminSpawnPointsPage() {
       filterArchetype,
       filterProtoId,
       filterSpawnId,
+      quickSearch,
       limit,
       recommendedOrder,
 
@@ -704,6 +753,7 @@ export function AdminSpawnPointsPage() {
     filterArchetype,
     filterProtoId,
     filterSpawnId,
+    quickSearch,
     limit,
     recommendedOrder,
 
@@ -1034,6 +1084,8 @@ export function AdminSpawnPointsPage() {
     setBaselineWorking(true);
     setError(null);
 
+    setBaselineLastCommit(commit);
+
     try {
       if (!form) throw new Error("Select a town/outpost spawn point in the list first.");
       if (form.x == null || form.z == null) throw new Error("Selected spawn is missing X/Z coords.");
@@ -1094,6 +1146,7 @@ export function AdminSpawnPointsPage() {
     if (filterArchetype.trim()) parts.push(`arch~${filterArchetype.trim()}`);
     if (filterProtoId.trim()) parts.push(`proto~${filterProtoId.trim()}`);
     if (filterSpawnId.trim()) parts.push(`spawn~${filterSpawnId.trim()}`);
+    if (quickSearch.trim()) parts.push(`q~${quickSearch.trim()}`);
     return parts.length ? parts.join(", ") : "none";
   }, [filterAuthority, filterType, filterArchetype, filterProtoId, filterSpawnId]);
 
@@ -1218,8 +1271,25 @@ export function AdminSpawnPointsPage() {
             </button>
           </div>
 
-          <div style={{ fontSize: 12, opacity: 0.8 }}>
-            Loaded: {spawnPoints.length} • Visible: {visibleSpawnPoints.length} • Selected: {selectedSet.size}
+          <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center", fontSize: 12, opacity: 0.85 }}>
+            <div>
+              Loaded: {spawnPoints.length} • Matched: {visibleSpawnPoints.length} • Selected: {selectedSet.size}
+            </div>
+
+            <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+              <span style={{ opacity: 0.9 }}>Quick search</span>
+              <input
+                style={{ width: 260 }}
+                value={quickSearch}
+                onChange={(e) => setQuickSearch(e.target.value)}
+                placeholder="type / archetype / proto / spawn / region"
+              />
+              {quickSearch.trim() ? (
+                <button type="button" onClick={() => setQuickSearch("")}>
+                  Clear
+                </button>
+              ) : null}
+            </div>
           </div>
 
           <details>
@@ -1257,6 +1327,22 @@ export function AdminSpawnPointsPage() {
                 <span style={{ opacity: 0.8 }}>spawnId contains</span>
                 <input style={{ width: 180 }} value={filterSpawnId} onChange={(e) => setFilterSpawnId(e.target.value)} placeholder="seed:camp / anchor:..." />
               </label>
+
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setFilterAuthority("");
+                    setFilterType("");
+                    setFilterArchetype("");
+                    setFilterProtoId("");
+                    setFilterSpawnId("");
+                    setQuickSearch("");
+                  }}
+                >
+                  Clear filters
+                </button>
+              </div>
             </div>
           </details>
         </div>
@@ -1396,7 +1482,31 @@ export function AdminSpawnPointsPage() {
                 </button>
               </div>
 
-              {waveConfirmExpected && (
+              {waveConfirmExpected && !waveConfirmRequired ? (
+                <div style={{ marginTop: 10, border: "1px solid #555", borderRadius: 8, padding: 10, background: "#0b0b0b", color: "#eee" }}>
+                  <div style={{ fontWeight: 700, marginBottom: 6 }}>Confirm token available</div>
+                  <div style={{ fontSize: 12, opacity: 0.9, marginBottom: 8 }}>
+                    Replace-mode commits that delete existing <code>brain:*</code> spawns may require this token. (The server will also re-issue it on commit.)
+                  </div>
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                    <div style={{ fontFamily: "monospace", fontSize: 12, wordBreak: "break-all", opacity: 0.95, flex: 1, minWidth: 260 }}>
+                      {waveConfirmExpected}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        try {
+                          void navigator.clipboard?.writeText(waveConfirmExpected);
+                        } catch {}
+                      }}
+                    >
+                      Copy
+                    </button>
+                  </div>
+                </div>
+              ) : null}
+
+              {waveConfirmExpected && waveConfirmRequired && (
                 <div style={{ marginTop: 10, border: "1px solid #b71c1c", borderRadius: 8, padding: 10, background: "#140a0a" }}>
                   <div style={{ fontWeight: 700, marginBottom: 6 }}>Confirm required</div>
                   <div style={{ fontSize: 12, opacity: 0.9, marginBottom: 8 }}>
@@ -1435,11 +1545,35 @@ export function AdminSpawnPointsPage() {
                 </div>
               )}
 
-              {waveResult && (
-                <pre style={{ marginTop: 10, background: "#111", color: "#eee", border: "1px solid #333", padding: 8, borderRadius: 6, overflow: "auto" }}>
-                  {JSON.stringify(waveResult, null, 2)}
-                </pre>
-              )}
+              {waveResult ? (
+                <div style={{ marginTop: 10, display: "grid", gap: 8 }}>
+                  <SummaryPanel
+                    title="Wave summary"
+                    tone={
+                      Number((waveResult as any).wouldDelete ?? (waveResult as any).deleted ?? 0) > 0 && !waveAppend
+                        ? "danger"
+                        : "neutral"
+                    }
+                    rows={[
+                      ["mode", waveAppend ? "append" : "replace"],
+                      ["commit", (waveResult as any).commit ? "yes" : "no (dry-run)"],
+                      ["wouldInsert", (waveResult as any).wouldInsert ?? 0],
+                      ["wouldDelete", (waveResult as any).wouldDelete ?? 0],
+                      ["inserted", (waveResult as any).inserted ?? 0],
+                      ["deleted", (waveResult as any).deleted ?? 0],
+                      ["theme", (waveResult as any).theme ?? waveTheme],
+                      ["epoch", (waveResult as any).epoch ?? waveEpoch],
+                    ]}
+                  />
+
+                  <details>
+                    <summary style={{ cursor: "pointer", userSelect: "none", opacity: 0.9 }}>Raw response JSON</summary>
+                    <pre style={{ marginTop: 10, background: "#111", color: "#eee", border: "1px solid #333", padding: 8, borderRadius: 6, overflow: "auto" }}>
+                      {JSON.stringify(waveResult, null, 2)}
+                    </pre>
+                  </details>
+                </div>
+              ) : null}
             </div>
 
             <div style={{ borderTop: "1px solid #333", marginTop: 12, paddingTop: 12 }}>
@@ -1477,19 +1611,38 @@ export function AdminSpawnPointsPage() {
                 </button>
                 <button
                   disabled={wipeLoading || !canRoot}
-                  onClick={() => {
-                    const ok = window.confirm(
-                      `Commit Mother Brain wipe?\n\nThis will DELETE brain:* spawns in bounds ${mbBounds.trim() || "-1..1,-1..1"}.\nTheme=${wipeTheme.trim() || "(any)"} Epoch=${wipeEpoch.trim() || "(any)"}`
-                    );
-                    if (ok) void runMotherBrainWipe(true);
-                  }}
+                  onClick={() => void runMotherBrainWipe(true)}
                   style={{ border: "1px solid #b71c1c" }}
                 >
                   {wipeLoading ? "Working..." : "Commit wipe"}
                 </button>
               </div>
 
-              {wipeConfirmExpected && (
+              {wipeConfirmExpected && !wipeConfirmRequired ? (
+                <div style={{ marginTop: 10, border: "1px solid #555", borderRadius: 8, padding: 10, background: "#0b0b0b", color: "#eee" }}>
+                  <div style={{ fontWeight: 700, marginBottom: 6 }}>Confirm token available</div>
+                  <div style={{ fontSize: 12, opacity: 0.9, marginBottom: 8 }}>
+                    Commits that delete existing <code>brain:*</code> spawns may require this token. (The server will also re-issue it on commit.)
+                  </div>
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                    <div style={{ fontFamily: "monospace", fontSize: 12, wordBreak: "break-all", opacity: 0.95, flex: 1, minWidth: 260 }}>
+                      {wipeConfirmExpected}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        try {
+                          void navigator.clipboard?.writeText(wipeConfirmExpected);
+                        } catch {}
+                      }}
+                    >
+                      Copy
+                    </button>
+                  </div>
+                </div>
+              ) : null}
+
+              {wipeConfirmExpected && wipeConfirmRequired && (
                 <div style={{ marginTop: 10, border: "1px solid #b71c1c", borderRadius: 8, padding: 10, background: "#140a0a" }}>
                   <div style={{ fontWeight: 700, marginBottom: 6 }}>Confirm required</div>
                   <div style={{ fontSize: 12, opacity: 0.9, marginBottom: 8 }}>
@@ -1528,11 +1681,30 @@ export function AdminSpawnPointsPage() {
                 </div>
               )}
 
-              {wipeResult && (
-                <pre style={{ marginTop: 10, background: "#111", color: "#eee", border: "1px solid #333", padding: 8, borderRadius: 6, overflow: "auto" }}>
-                  {JSON.stringify(wipeResult, null, 2)}
-                </pre>
-              )}
+              {wipeResult ? (
+                <div style={{ marginTop: 10, display: "grid", gap: 8 }}>
+                  <SummaryPanel
+                    title="Wipe summary"
+                    tone={Number((wipeResult as any).wouldDelete ?? (wipeResult as any).deleted ?? 0) > 0 ? "danger" : "neutral"}
+                    rows={[
+                      ["commit", (wipeResult as any).commit ? "yes" : "no (dry-run)"],
+                      ["theme", (wipeResult as any).theme ?? "(any)"],
+                      ["epoch", (wipeResult as any).epoch ?? "(any)"],
+                      ["borderMargin", (wipeResult as any).borderMargin ?? wipeBorderMargin],
+                      ["wouldDelete", (wipeResult as any).wouldDelete ?? 0],
+                      ["deleted", (wipeResult as any).deleted ?? 0],
+                      ["listed", Array.isArray((wipeResult as any).list) ? (wipeResult as any).list.length : 0],
+                    ]}
+                  />
+
+                  <details>
+                    <summary style={{ cursor: "pointer", userSelect: "none", opacity: 0.9 }}>Raw response JSON</summary>
+                    <pre style={{ marginTop: 10, background: "#111", color: "#eee", border: "1px solid #333", padding: 8, borderRadius: 6, overflow: "auto" }}>
+                      {JSON.stringify(wipeResult, null, 2)}
+                    </pre>
+                  </details>
+                </div>
+              ) : null}
             </div>
 
 
@@ -1920,9 +2092,29 @@ export function AdminSpawnPointsPage() {
                   </div>
 
                   {baselineResult ? (
-                    <pre style={{ marginTop: 10, background: "#111", color: "#eee", border: "1px solid #333", padding: 8, borderRadius: 6, overflow: "auto" }}>
-                      {JSON.stringify(baselineResult, null, 2)}
-                    </pre>
+                    <div style={{ marginTop: 10, display: "grid", gap: 8 }}>
+                      <SummaryPanel
+                        title={`Town baseline ${baselineLastCommit ? "apply" : "plan"} summary`}
+                        tone={baselineLastCommit ? "good" : "neutral"}
+                        rows={[
+                          ["bounds", baselineResult.bounds ?? baselineBounds ?? ""],
+                          ["cellSize", baselineResult.cellSize ?? baselineCellSize],
+                          ["seedBase", baselineResult.seedBase ?? baselineSeedBase],
+                          ["spawnIdMode", baselineResult.spawnIdMode ?? baselineSpawnIdMode],
+                          ["wouldInsert", baselineResult.wouldInsert ?? 0],
+                          ["wouldUpdate", baselineResult.wouldUpdate ?? 0],
+                          ["wouldSkip", baselineResult.wouldSkip ?? 0],
+                          ["skippedReadOnly", baselineResult.skippedReadOnly ?? 0],
+                        ]}
+/>
+
+                      <details>
+                        <summary style={{ cursor: "pointer", userSelect: "none", opacity: 0.9 }}>Raw response JSON</summary>
+                        <pre style={{ marginTop: 10, background: "#111", color: "#eee", border: "1px solid #333", padding: 8, borderRadius: 6, overflow: "auto" }}>
+                          {JSON.stringify(baselineResult, null, 2)}
+                        </pre>
+                      </details>
+                    </div>
                   ) : null}
                 </div>
               </div>
