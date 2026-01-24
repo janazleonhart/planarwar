@@ -35,7 +35,7 @@ function Card(props: { item: LinkCard; onGo: (path: string) => void }) {
   );
 }
 
-export function AdminHubPage(props: { onGo: (path: string) => void }) {
+export function AdminHubPage(props: { onGo: (path: string) => void; role?: string }) {
   const links: LinkCard[] = [
     {
       title: "Spawn Points Editor",
@@ -73,7 +73,14 @@ export function AdminHubPage(props: { onGo: (path: string) => void }) {
   return (
     <section style={{ display: "grid", gap: 14 }}>
       <div style={{ display: "grid", gap: 6 }}>
-        <h2 style={{ margin: 0 }}>Admin tools</h2>
+        <h2 style={{ margin: 0 }}>
+          Admin tools{" "}
+          {props.role ? (
+            <span style={{ fontSize: 12, opacity: 0.8, marginLeft: 8 }}>
+              <code>role:{props.role}</code>
+            </span>
+          ) : null}
+        </h2>
         <div style={{ fontSize: 13, opacity: 0.85 }}>
           Because memorizing URLs is a crime against both ergonomics and sanity.
         </div>
@@ -92,8 +99,8 @@ export function AdminHubPage(props: { onGo: (path: string) => void }) {
       </div>
 
       <div style={{ fontSize: 12, opacity: 0.75 }}>
-        Note: admin APIs are currently exposed via the web-backend on <code>/api/admin/*</code>.
-        Lockdown/auth can be layered later once the UX stabilizes.
+        Note: The UI link is just a shortcut — real enforcement happens on the server via{" "}
+        <code>/api/admin/*</code> auth. This hub is now hidden for non-admin accounts.
       </div>
     </section>
   );

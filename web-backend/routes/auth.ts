@@ -1,4 +1,4 @@
-// webend-backend/routes/auth.ts
+// web-backend/routes/auth.ts
 
 import { Router } from "express";
 import { PostgresAuthService } from "../../worldcore/auth/PostgresAuthService";
@@ -11,11 +11,11 @@ const auth = new PostgresAuthService();
  * body: { email, displayName, password }
  */
 router.post("/register", async (req, res) => {
-  const { email, displayName, password } = req.body as {
-    email?: string;
-    displayName?: string;
-    password?: string;
-  };
+  const body = (req.body ?? {}) as any;
+
+  const email = body.email as string | undefined;
+  const displayName = (body.displayName ?? body.display_name) as string | undefined;
+  const password = body.password as string | undefined;
 
   if (!email || !displayName || !password) {
     return res.status(400).json({ error: "email, displayName, password required" });
@@ -44,12 +44,16 @@ router.post("/register", async (req, res) => {
 /**
  * POST /auth/login
  * body: { emailOrName, password }
+ *
+ * Compatibility:
+ * - older UIs may send { email, password }
  */
 router.post("/login", async (req, res) => {
-  const { emailOrName, password } = req.body as {
-    emailOrName?: string;
-    password?: string;
-  };
+  const body = (req.body ?? {}) as any;
+
+  const emailOrName =
+    (body.emailOrName ?? body.email ?? body.username ?? body.name) as string | undefined;
+  const password = body.password as string | undefined;
 
   if (!emailOrName || !password) {
     return res.status(400).json({ error: "emailOrName and password required" });

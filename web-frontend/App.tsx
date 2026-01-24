@@ -17,11 +17,20 @@ import { ModeHubPage, type AppModeId, type ModeCard } from "./pages/ModeHubPage"
 
 type AuthMode = "login" | "register";
 
+type AccountFlags = {
+  isDev?: boolean;
+  isGM?: boolean;
+  isGuide?: boolean;
+  [k: string]: any;
+};
+
 type Account = {
   id: string;
   email: string;
   displayName?: string | null;
   createdAt: string;
+  // Optional: returned by backend (accounts.flags JSONB). If absent, we treat as non-admin.
+  flags?: AccountFlags;
 };
 
 type Character = {
@@ -129,12 +138,37 @@ function hasHubOverride(): boolean {
   return params.get("hub") === "1";
 }
 
+function safeParseErrorMessage(txt: string): string {
+  // Backend sometimes returns JSON like {"error":"..."} but as text.
+  const t = (txt ?? "").trim();
+  if (!t) return "Unknown error.";
+  if (t.startsWith("{") && t.endsWith("}")) {
+    try {
+      const j = JSON.parse(t);
+      const msg = j?.error ?? j?.message;
+      if (typeof msg === "string" && msg.trim()) return msg.trim();
+    } catch {
+      // ignore
+    }
+  }
+  return t;
+}
+
+function getAdminRole(account: Account | null): "none" | "guide" | "gm" | "dev" {
+  const flags: AccountFlags = (account as any)?.flags ?? {};
+  if (flags?.isDev) return "dev";
+  if (flags?.isGM) return "gm";
+  if (flags?.isGuide) return "guide";
+  return "none";
+}
+
 export function App() {
   const [authMode, setAuthMode] = useState<AuthMode>("login");
   const [token, setToken] = useState<string>(() => readStoredAuth()?.token ?? "");
   const [account, setAccount] = useState<Account | null>(() => readStoredAuth()?.account ?? null);
 
-  const [email, setEmail] = useState("");
+  // Login/Register form
+  const [emailOrName, setEmailOrName] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [password, setPassword] = useState("");
 
@@ -156,6 +190,9 @@ export function App() {
 
   const pathname = window.location.pathname;
   const currentMode = useMemo(() => modeFromPath(pathname), [pathname]);
+
+  const adminRole = useMemo(() => getAdminRole(account), [account]);
+  const isAdmin = adminRole !== "none";
 
   const appendLog = (line: string) => {
     setWsLog((prev) => {
@@ -179,8 +216,11 @@ export function App() {
     const last = readLastMode();
     if (!last) return;
 
+    // If the last mode was admin but you don't have the flags, do NOT auto-teleport into a 403 wall.
+    if (last === "admin" && !isAdmin) return;
+
     window.location.assign(pathForMode(last));
-  }, [account]);
+  }, [account, isAdmin]);
 
   const go = (path: string, modeHint?: AppModeId) => {
     if (modeHint) writeLastMode(modeHint);
@@ -261,13 +301,15 @@ export function App() {
     setError(null);
 
     try {
-      const endpoint =
-        authMode === "register" ? "/api/auth/register" : "/api/auth/login";
+      const endpoint = authMode === "register" ? "/api/auth/register" : "/api/auth/login";
 
+      // ✅ IMPORTANT:
+      // Backend expects { emailOrName, password } for login now.
+      // Register still expects { email, password, displayName }.
       const body =
         authMode === "register"
-          ? { email, password, displayName }
-          : { email, password };
+          ? { email: emailOrName, password, displayName }
+          : { emailOrName, password };
 
       const res = await fetch(`${API_BASE}${endpoint}`, {
         method: "POST",
@@ -277,7 +319,7 @@ export function App() {
 
       if (!res.ok) {
         const txt = await res.text();
-        throw new Error(txt || `HTTP ${res.status}`);
+        throw new Error(safeParseErrorMessage(txt) || `HTTP ${res.status}`);
       }
 
       const data = (await res.json()) as { token: string; account: Account };
@@ -331,9 +373,7 @@ export function App() {
       setWsStatus("connecting");
 
       const socket = new WebSocket(
-        `${SHARD_WS}?token=${encodeURIComponent(token)}&charId=${encodeURIComponent(
-          selectedCharId
-        )}`
+        `${SHARD_WS}?token=${encodeURIComponent(token)}&charId=${encodeURIComponent(selectedCharId)}`
       );
 
       socket.onopen = () => {
@@ -399,8 +439,30 @@ export function App() {
   const adminPage = useMemo(() => {
     if (!pathname.startsWith("/admin")) return null;
 
+    // Client-side UX gate (server still enforces the real rule).
+    if (!isAdmin) {
+      return (
+        <div style={{ padding: 16 }}>
+          <h2 style={{ marginTop: 0 }}>Admin tools are locked</h2>
+          <p style={{ opacity: 0.85, maxWidth: 760 }}>
+            Your account doesn’t have admin flags (<code>isDev</code>/<code>isGM</code>/<code>isGuide</code>),
+            so the Admin UI is hidden and this route is blocked client-side.
+          </p>
+          <p style={{ opacity: 0.85, maxWidth: 760 }}>
+            If you believe this is wrong, log in with your admin test account (the one that has flags set in
+            <code> accounts.flags</code>).
+          </p>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <button onClick={() => go("/?hub=1")}>Back to Modes</button>
+            <button onClick={() => go("/city/me", "city")}>Go to City</button>
+            <button onClick={() => go("/mud", "mud")}>Go to MUD</button>
+          </div>
+        </div>
+      );
+    }
+
     if (pathname === "/admin" || pathname === "/admin/") {
-      return <AdminHubPage onGo={(p) => go(p, "admin")} />;
+      return <AdminHubPage onGo={(p) => go(p, "admin")} role={adminRole} />;
     }
 
     if (pathname.startsWith("/admin/spawn_points")) return <AdminSpawnPointsPage />;
@@ -419,7 +481,7 @@ export function App() {
         <button onClick={() => go("/admin", "admin")}>Back to Admin Hub</button>
       </div>
     );
-  }, [pathname]);
+  }, [pathname, isAdmin, adminRole]);
 
   const cityPage = useMemo(() => {
     if (!pathname.startsWith("/city")) return null;
@@ -438,31 +500,39 @@ export function App() {
   const isMud = pathname === "/mud";
 
   // Cards shown on the launcher.
-  const modeCards: ModeCard[] = [
-    {
-      id: "mud",
-      title: "MUD",
-      description: "Text-first gameplay loop: move, fight, gather, quests, economy, and all the weirdness.",
-      path: "/mud",
-      enabled: true,
-    },
-    {
-      id: "city",
-      title: "City Builder",
-      description: "Account-owned city management demo UI. Buildings/tech/armies/heroes/policies.",
-      path: "/city/me",
-      enabled: true,
-    },
-    {
-      id: "admin",
-      title: "Admin Tools",
-      description: "Spawn points, quests, items, NPCs, vendor economy + audit. (Soon: auth/ACL.)",
-      path: "/admin",
-      enabled: true,
-    },
-  ];
+  const modeCards: ModeCard[] = useMemo(() => {
+    const cards: ModeCard[] = [
+      {
+        id: "mud",
+        title: "MUD",
+        description: "Text-first gameplay loop: move, fight, gather, quests, economy, and all the weirdness.",
+        path: "/mud",
+        enabled: true,
+      },
+      {
+        id: "city",
+        title: "City Builder",
+        description: "Account-owned city management demo UI. Buildings/tech/armies/heroes/policies.",
+        path: "/city/me",
+        enabled: true,
+      },
+    ];
 
-  // Top nav appears when logged in (and not on raw admin leaf pages where the pages already have their own header).
+    // ✅ Hide Admin mode entirely unless your account has flags.
+    if (isAdmin) {
+      cards.push({
+        id: "admin",
+        title: `Admin Tools (${adminRole})`,
+        description: "Spawn points, quests, items, NPCs, vendor economy + audit.",
+        path: "/admin",
+        enabled: true,
+      });
+    }
+
+    return cards;
+  }, [isAdmin, adminRole]);
+
+  // Top nav appears when logged in
   const showTopNav = Boolean(account);
 
   // -----------------------------------------
@@ -483,6 +553,11 @@ export function App() {
           <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
             <div style={{ fontSize: 12, opacity: 0.85 }}>
               <strong>{account.displayName || account.email}</strong>
+              {isAdmin && (
+                <span style={{ marginLeft: 8, fontSize: 11, opacity: 0.85 }}>
+                  <code>role:{adminRole}</code>
+                </span>
+              )}
             </div>
             <button type="button" onClick={logout}>
               Logout
@@ -518,9 +593,14 @@ export function App() {
           <button type="button" onClick={() => go("/city/me", "city")} disabled={currentMode === "city"}>
             City
           </button>
-          <button type="button" onClick={() => go("/admin", "admin")} disabled={currentMode === "admin"}>
-            Admin
-          </button>
+
+          {/* ✅ Hide Admin tab unless allowed */}
+          {isAdmin && (
+            <button type="button" onClick={() => go("/admin", "admin")} disabled={currentMode === "admin"}>
+              Admin
+            </button>
+          )}
+
           <span style={{ marginLeft: "auto", fontSize: 12, opacity: 0.7 }}>
             Last mode: <code>{readLastMode() ?? "none"}</code>
           </span>
@@ -538,18 +618,10 @@ export function App() {
           }}
         >
           <header style={{ display: "flex", gap: 8, marginBottom: 8 }}>
-            <button
-              type="button"
-              onClick={() => setAuthMode("login")}
-              disabled={authMode === "login"}
-            >
+            <button type="button" onClick={() => setAuthMode("login")} disabled={authMode === "login"}>
               Login
             </button>
-            <button
-              type="button"
-              onClick={() => setAuthMode("register")}
-              disabled={authMode === "register"}
-            >
+            <button type="button" onClick={() => setAuthMode("register")} disabled={authMode === "register"}>
               Register
             </button>
           </header>
@@ -557,11 +629,11 @@ export function App() {
           <form onSubmit={submitAuth}>
             <div style={{ marginBottom: 8 }}>
               <label>
-                Email{" "}
+                {authMode === "register" ? "Email" : "Email or Display Name"}{" "}
                 <input
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
+                  type={authMode === "register" ? "email" : "text"}
+                  value={emailOrName}
+                  onChange={(e) => setEmailOrName(e.target.value)}
                   required
                 />
               </label>
@@ -612,10 +684,7 @@ export function App() {
             marginTop: 16,
           }}
         >
-          <ModeHubPage
-            cards={modeCards}
-            onPick={(m) => go(pathForMode(m), m)}
-          />
+          <ModeHubPage cards={modeCards} onPick={(m) => go(pathForMode(m), m)} />
         </section>
       )}
 
@@ -705,17 +774,13 @@ export function App() {
                 borderRadius: 8,
               }}
             >
-              <div style={{ fontWeight: 700, marginBottom: 8 }}>
-                CharacterState v1.5
-              </div>
+              <div style={{ fontWeight: 700, marginBottom: 8 }}>CharacterState v1.5</div>
               {selectedCharState ? (
                 <pre style={{ whiteSpace: "pre-wrap", margin: 0, fontSize: 12 }}>
                   {JSON.stringify(selectedCharState, null, 2)}
                 </pre>
               ) : (
-                <div style={{ opacity: 0.8 }}>
-                  No character selected / state not loaded.
-                </div>
+                <div style={{ opacity: 0.8 }}>No character selected / state not loaded.</div>
               )}
             </div>
 
@@ -734,8 +799,7 @@ export function App() {
                         onChange={() => setSelectedCharId(c.id)}
                         style={{ marginRight: 6 }}
                       />
-                      <strong>{c.name}</strong> — {c.classId} (lvl {c.level}) on{" "}
-                      {c.shardId}
+                      <strong>{c.name}</strong> — {c.classId} (lvl {c.level}) on {c.shardId}
                     </label>
                   </li>
                 ))}
