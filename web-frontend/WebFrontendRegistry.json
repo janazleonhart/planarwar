@@ -234,7 +234,8 @@
         "Adds diff preview panel for Mother Brain wave/wipe (delete/insert/update/skip + export JSON).",
         "UI renders opsPreview diff previews for Mother Brain wave/wipe AND Town baseline plan/apply (with JSON export).",
         "Snapshot/Restore endpoints: POST /api/admin/spawn_points/snapshot, POST /api/admin/spawn_points/restore.",
-        "Server snapshot endpoints: GET /api/admin/spawn_points/snapshots, POST /api/admin/spawn_points/snapshots/save, GET/DELETE /api/admin/spawn_points/snapshots/:id"
+        "Server snapshot endpoints: GET /api/admin/spawn_points/snapshots, POST /api/admin/spawn_points/snapshots/save, GET/DELETE /api/admin/spawn_points/snapshots/:id",
+        "Restore safety UI: shows high-risk restore warning and requires confirm phrase 'RESTORE' for cross-shard and/or brain-owned restores, plus confirm token for destructive updates."
       ],
       "owns": [
         "UI persistence in localStorage (adminSpawnPointsPage.ui.v1)",

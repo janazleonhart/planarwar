@@ -189,20 +189,30 @@ type SpawnRestoreResponse = {
   error?: string;
 
   commit?: boolean;
+
+  snapshotShard?: string;
   targetShard?: string;
+  crossShard?: boolean;
+  allowBrainOwned?: boolean;
+
   rows?: number;
   inserted?: number;
   updated?: number;
   skipped?: number;
   skippedReadOnly?: number;
 
+  // For confirm_required (updates to existing rows) and/or confirm_phrase_required (high-risk restore modes).
+  expectedConfirmToken?: string;
+  expectedConfirmPhrase?: string;
+
+  // dry-run preview buckets for operations (insert/update/skip/duplicates/etc)
+  opsPreview?: any;
+
+  // legacy shape for older callers/tests
   wouldInsert?: number;
   wouldUpdate?: number;
   wouldSkip?: number;
   wouldReadOnly?: number;
-
-  expectedConfirmToken?: string;
-  opsPreview?: any;
 };
 
 // Mother Brain admin responses (kept structural on purpose)
@@ -518,6 +528,34 @@ const [selectedSavedSnapshotId, setSelectedSavedSnapshotId] = useState<string>("
   const [restoreResult, setRestoreResult] = useState<SpawnRestoreResponse | null>(null);
   const [restoreConfirmExpected, setRestoreConfirmExpected] = useState<string | null>(null);
   const [restoreConfirmRequired, setRestoreConfirmRequired] = useState(false);
+
+  const [restoreConfirmPhrase, setRestoreConfirmPhrase] = useState("");
+  const [restoreConfirmPhraseExpected, setRestoreConfirmPhraseExpected] = useState<string | null>(null);
+  const [restoreConfirmPhraseRequired, setRestoreConfirmPhraseRequired] = useState(false);
+
+  const restoreSnapshotShard = useMemo(() => {
+    try {
+      const obj = JSON.parse(restoreJsonText || "{}");
+      const shard =
+        (obj && typeof obj === "object" && (obj as any).shardId) ||
+        (obj && typeof obj === "object" && (obj as any).snapshot?.shardId) ||
+        "";
+      return String(shard || "").trim();
+    } catch {
+      return "";
+    }
+  }, [restoreJsonText]);
+
+  const effectiveRestoreTargetShard = (restoreTargetShard.trim() || shardId || "").trim() || "prime_shard";
+  const restoreCrossShard =
+    !!restoreSnapshotShard && effectiveRestoreTargetShard !== restoreSnapshotShard;
+
+  // Phrase confirm is required for especially risky restore modes (cross-shard, brain-owned).
+  const restoreNeedsPhrase =
+    restoreAllowBrainOwned || restoreCrossShard || restoreConfirmPhraseRequired;
+
+  const restoreExpectedPhrase =
+    restoreConfirmPhraseExpected || (restoreNeedsPhrase ? "RESTORE" : "");
 
 
 
@@ -1437,12 +1475,15 @@ const runDeleteSavedSnapshot = async (id: string) => {
     setRestoreWorking(true);
     setError(null);
     setRestoreResult(null);
+
+    // reset gates; they'll be re-set if the server asks for them
     setRestoreConfirmExpected(null);
     setRestoreConfirmRequired(false);
+    setRestoreConfirmPhraseExpected(null);
+    setRestoreConfirmPhraseRequired(false);
 
     try {
-      const shard = shardId.trim() || "prime_shard";
-      const targetShard = (restoreTargetShard || shard).trim() || "prime_shard";
+      const targetShard = effectiveRestoreTargetShard;
 
       const raw = restoreJsonText.trim();
       if (!raw) throw new Error("Paste a snapshot JSON (or pick a file) first.");
@@ -1459,28 +1500,42 @@ const runDeleteSavedSnapshot = async (id: string) => {
           allowBrainOwned: !!restoreAllowBrainOwned,
           commit: !!commit,
           confirm: restoreConfirm.trim() || undefined,
+          confirmPhrase: (restoreConfirmPhrase.trim() || undefined),
         }),
       });
 
       const data: SpawnRestoreResponse = await res.json().catch(() => ({} as any));
 
-      // confirm_required comes back with 409 (or sometimes 200 ok:false depending on future changes)
+      // confirm gates: phrase first (more dangerous), then token
+      if ((data as any).error === "confirm_phrase_required") {
+        setRestoreResult(data);
+        setRestoreConfirmPhraseExpected((data as any).expectedConfirmPhrase ?? "RESTORE");
+        setRestoreConfirmPhraseRequired(true);
+        // keep token info too if the server included it
+        if ((data as any).expectedConfirmToken) {
+          setRestoreConfirmExpected((data as any).expectedConfirmToken ?? null);
+          setRestoreConfirmRequired(true);
+        }
+        return;
+      }
+
       if ((data as any).error === "confirm_required") {
         setRestoreResult(data);
         setRestoreConfirmExpected((data as any).expectedConfirmToken ?? null);
         setRestoreConfirmRequired(true);
+        // server may also include phrase expectation in some cases
+        if ((data as any).expectedConfirmPhrase) {
+          setRestoreConfirmPhraseExpected((data as any).expectedConfirmPhrase ?? "RESTORE");
+          setRestoreConfirmPhraseRequired(true);
+        }
         return;
       }
 
       if (!res.ok || !data.ok) throw new Error(data.error || `Restore failed (HTTP ${res.status})`);
 
       setRestoreResult(data);
-
-      if (commit) {
-        await load();
-      }
     } catch (err: any) {
-      setError(err.message || String(err));
+      setError(String(err?.message || err));
     } finally {
       setRestoreWorking(false);
     }
@@ -2691,7 +2746,7 @@ const runDeleteSavedSnapshot = async (id: string) => {
       <input
         value={snapshotSaveName}
         onChange={(e) => setSnapshotSaveName(e.target.value)}
-        placeholder="e.g. elwynn-town-v1"
+        placeholder="e.g. newbie-town-v1"
         style={{ width: "100%", padding: "6px 8px", borderRadius: 6, border: "1px solid #ccc" }}
       />
     </label>
@@ -2808,6 +2863,22 @@ const runDeleteSavedSnapshot = async (id: string) => {
                       />
                     </label>
 
+                    <label style={{ display: "grid", gap: 4 }}>
+                      <span style={{ fontSize: 12, opacity: 0.85 }}>Confirm phrase (only when required)</span>
+                      <input
+                        value={restoreConfirmPhrase}
+                        onChange={(e) => setRestoreConfirmPhrase(e.target.value)}
+                        placeholder={restoreExpectedPhrase || ""}
+                        style={{
+                          width: 220,
+                          padding: "6px 8px",
+                          borderRadius: 6,
+                          border: restoreNeedsPhrase ? "1px solid #c62828" : "1px solid #ccc",
+                          background: restoreNeedsPhrase ? "#fff5f5" : "white",
+                        }}
+                      />
+                    </label>
+
                     <input
                       type="file"
                       accept="application/json"
@@ -2833,7 +2904,12 @@ const runDeleteSavedSnapshot = async (id: string) => {
 
                     <button
                       onClick={() => runRestore(true)}
-                      disabled={restoreWorking || (restoreConfirmRequired && restoreConfirm.trim() !== (restoreConfirmExpected || ""))}
+                      disabled={
+                        restoreWorking ||
+                        !canWrite ||
+                        (restoreNeedsPhrase && restoreConfirmPhrase.trim() !== (restoreExpectedPhrase || "")) ||
+                        (restoreConfirmRequired && restoreConfirm.trim() !== (restoreConfirmExpected || ""))
+                      }
                       style={{
                         padding: "8px 12px",
                         borderRadius: 8,
@@ -2847,6 +2923,16 @@ const runDeleteSavedSnapshot = async (id: string) => {
                       Commit restore
                     </button>
                   </div>
+
+                  {restoreNeedsPhrase ? (
+                    <div style={{ padding: 10, borderRadius: 8, border: "1px solid #c62828", background: "#fff5f5" }}>
+                      <div style={{ fontWeight: 800, marginBottom: 6 }}>High-risk restore</div>
+                      <div style={{ fontSize: 13, opacity: 0.9 }}>
+                        This restore is flagged as risky because it {restoreCrossShard ? "crosses shards" : ""}{restoreCrossShard && restoreAllowBrainOwned ? " and " : ""}{restoreAllowBrainOwned ? "can touch brain:* spawn_ids" : ""}.
+                        To commit, enter the phrase <code>{restoreExpectedPhrase}</code> in the Confirm phrase box.
+                      </div>
+                    </div>
+                  ) : null}
 
                   <label style={{ display: "grid", gap: 6 }}>
                     <span style={{ fontSize: 12, opacity: 0.85 }}>Snapshot JSON (paste here)</span>
@@ -2864,6 +2950,15 @@ const runDeleteSavedSnapshot = async (id: string) => {
                       <div style={{ fontWeight: 800, marginBottom: 6 }}>Confirm required</div>
                       <div style={{ fontSize: 13, opacity: 0.9 }}>
                         Re-run commit with confirm token: <code>{restoreConfirmExpected}</code>
+                      </div>
+                    </div>
+                  ) : null}
+
+                  {restoreConfirmPhraseRequired && restoreConfirmPhraseExpected ? (
+                    <div style={{ padding: 10, borderRadius: 8, border: "1px solid #c62828", background: "#fff5f5" }}>
+                      <div style={{ fontWeight: 800, marginBottom: 6 }}>Confirm phrase required</div>
+                      <div style={{ fontSize: 13, opacity: 0.9 }}>
+                        Re-run commit with confirm phrase: <code>{restoreConfirmPhraseExpected}</code>
                       </div>
                     </div>
                   ) : null}

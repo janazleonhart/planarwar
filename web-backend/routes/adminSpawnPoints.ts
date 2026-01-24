@@ -2296,18 +2296,51 @@ router.post("/restore", async (req, res) => {
     });
 
     const expectedConfirmToken =
-      updateExisting && updateIds.length > 0 ? makeConfirmToken("REPLACE", targetShard, { op: "restore", updateIds, rows: spawns.length }) : null;
+      updateExisting && updateIds.length > 0
+        ? makeConfirmToken("REPLACE", targetShard, { op: "restore", updateIds, rows: spawns.length })
+        : null;
 
-    // Confirm gate (only relevant for destructive updates)
+    // Additional destructive safety: when committing a restore that (a) crosses shards or (b) allows brain-owned spawn_ids,
+    // require a human-confirm phrase in addition to any token gate.
+    const expectedConfirmPhrase =
+      commit && (targetShard !== snapshotShard || allowBrainOwned) ? "RESTORE" : null;
+    const confirmPhrase = String(req.body?.confirmPhrase ?? "").trim() || null;
+
+    // Confirm phrase gate (high-risk restore modes)
+    if (commit && expectedConfirmPhrase && confirmPhrase !== expectedConfirmPhrase) {
+      return res.status(409).json({
+        kind: "spawn_points.restore",
+        ok: false,
+        error: "confirm_phrase_required",
+        expectedConfirmPhrase,
+        expectedConfirmToken: expectedConfirmToken ?? undefined,
+        opsPreview,
+        snapshotShard,
+        targetShard,
+        rows: spawns.length,
+        crossShard: targetShard !== snapshotShard,
+        allowBrainOwned,
+        wouldInsert: insertIds.length,
+        wouldUpdate: updateIds.length,
+        wouldSkip: skipIds.length,
+        wouldReadOnly: readOnlyIds.length,
+      });
+    }
+
+    // Confirm token gate (destructive updates to existing rows)
     if (commit && expectedConfirmToken && confirm !== expectedConfirmToken) {
       return res.status(409).json({
         kind: "spawn_points.restore",
         ok: false,
         error: "confirm_required",
         expectedConfirmToken,
+        expectedConfirmPhrase: expectedConfirmPhrase ?? undefined,
         opsPreview,
+        snapshotShard,
         targetShard,
         rows: spawns.length,
+        crossShard: targetShard !== snapshotShard,
+        allowBrainOwned,
         wouldInsert: insertIds.length,
         wouldUpdate: updateIds.length,
         wouldSkip: skipIds.length,
@@ -2393,13 +2426,17 @@ router.post("/restore", async (req, res) => {
       kind: "spawn_points.restore",
       ok: true,
       commit,
+      snapshotShard,
       targetShard,
+      crossShard: targetShard !== snapshotShard,
+      allowBrainOwned,
       rows: spawns.length,
       inserted,
       updated,
       skipped,
       skippedReadOnly,
       expectedConfirmToken: expectedConfirmToken ?? undefined,
+      expectedConfirmPhrase: expectedConfirmPhrase ?? undefined,
       opsPreview,
     });
   } catch (err: any) {
