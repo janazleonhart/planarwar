@@ -38,6 +38,17 @@ const SPAWN_UI_LS_KEY = 'adminSpawnPointsPage.ui.v1';
   baselineIncludeDummies?: boolean;
   baselineDummyCount?: number;
   baselineTownTierOverride?: string;
+
+  // Tools: snapshot/restore (spawn_points slices)
+  snapshotBounds?: string;
+  snapshotCellSize?: number;
+  snapshotPad?: number;
+  snapshotTypes?: string;
+
+  restoreTargetShard?: string;
+  restoreUpdateExisting?: boolean;
+  restoreAllowBrainOwned?: boolean;
+
 };
 
 function safeLoadSpawnUiState(): SpawnUiSaved {
@@ -119,6 +130,36 @@ type TownBaselinePlanResponse = {
 
   plan?: TownBaselinePlanItem[];
   error?: string;
+};
+
+type SpawnSnapshotResponse = {
+  kind: "spawn_points.snapshot";
+  ok: boolean;
+  error?: string;
+  filename?: string;
+  snapshot?: any;
+};
+
+type SpawnRestoreResponse = {
+  kind: "spawn_points.restore";
+  ok: boolean;
+  error?: string;
+
+  commit?: boolean;
+  targetShard?: string;
+  rows?: number;
+  inserted?: number;
+  updated?: number;
+  skipped?: number;
+  skippedReadOnly?: number;
+
+  wouldInsert?: number;
+  wouldUpdate?: number;
+  wouldSkip?: number;
+  wouldReadOnly?: number;
+
+  expectedConfirmToken?: string;
+  opsPreview?: any;
 };
 
 // Mother Brain admin responses (kept structural on purpose)
@@ -332,7 +373,7 @@ export function AdminSpawnPointsPage() {
 
   const [shardId, setShardId] = useState(savedUi.shardId || "prime_shard");
   const [activeTab, setActiveTab] = useState<AdminTab>((savedUi.activeTab as AdminTab) || "browse");
-  const [toolsSubtab, setToolsSubtab] = useState<"bulk" | "paint" | "baseline">((savedUi.toolsSubtab as any) || "bulk");
+  const [toolsSubtab, setToolsSubtab] = useState<"bulk" | "paint" | "baseline" | "snapshot">((savedUi.toolsSubtab as any) || "bulk");
 
   // Load controls
   const [loadMode, setLoadMode] = useState<LoadMode>((savedUi.loadMode as LoadMode) || "region");
@@ -404,6 +445,27 @@ export function AdminSpawnPointsPage() {
   const [baselineWorking, setBaselineWorking] = useState(false);
   const [baselineResult, setBaselineResult] = useState<TownBaselinePlanResponse | null>(null);
   const [baselineLastCommit, setBaselineLastCommit] = useState(false);
+
+  // Snapshot / Restore (spawn_points slices)
+  const [snapshotBounds, setSnapshotBounds] = useState(savedUi.snapshotBounds || "");
+  const [snapshotCellSize, setSnapshotCellSize] = useState(savedUi.snapshotCellSize ?? 64);
+  const [snapshotPad, setSnapshotPad] = useState(savedUi.snapshotPad ?? 0);
+  const [snapshotTypes, setSnapshotTypes] = useState(
+    savedUi.snapshotTypes || "town,outpost,checkpoint,graveyard,npc,node,station,mailbox,rest,vendor,guard,dummy"
+  );
+  const [snapshotWorking, setSnapshotWorking] = useState(false);
+  const [snapshotResult, setSnapshotResult] = useState<SpawnSnapshotResponse | null>(null);
+
+  const [restoreJsonText, setRestoreJsonText] = useState("");
+  const [restoreTargetShard, setRestoreTargetShard] = useState(savedUi.restoreTargetShard || "");
+  const [restoreUpdateExisting, setRestoreUpdateExisting] = useState(savedUi.restoreUpdateExisting ?? true);
+  const [restoreAllowBrainOwned, setRestoreAllowBrainOwned] = useState(savedUi.restoreAllowBrainOwned ?? false);
+  const [restoreConfirm, setRestoreConfirm] = useState("");
+  const [restoreWorking, setRestoreWorking] = useState(false);
+  const [restoreResult, setRestoreResult] = useState<SpawnRestoreResponse | null>(null);
+  const [restoreConfirmExpected, setRestoreConfirmExpected] = useState<string | null>(null);
+  const [restoreConfirmRequired, setRestoreConfirmRequired] = useState(false);
+
 
 
   const [saving, setSaving] = useState(false);
@@ -743,6 +805,14 @@ export function AdminSpawnPointsPage() {
       baselineIncludeDummies,
       baselineDummyCount,
       baselineTownTierOverride,
+
+      snapshotBounds,
+      snapshotCellSize,
+      snapshotPad,
+      snapshotTypes,
+      restoreTargetShard,
+      restoreUpdateExisting,
+      restoreAllowBrainOwned,
     });
   }, [
     shardId,
@@ -775,6 +845,14 @@ export function AdminSpawnPointsPage() {
     baselineIncludeDummies,
     baselineDummyCount,
     baselineTownTierOverride,
+
+    snapshotBounds,
+    snapshotCellSize,
+    snapshotPad,
+    snapshotTypes,
+    restoreTargetShard,
+    restoreUpdateExisting,
+    restoreAllowBrainOwned,
   ]);
 
   const startNew = () => {
@@ -1143,6 +1221,114 @@ export function AdminSpawnPointsPage() {
       setBaselineWorking(false);
     }
   };
+
+  const runSnapshot = async () => {
+    setSnapshotWorking(true);
+    setError(null);
+    setSnapshotResult(null);
+
+    try {
+      const shard = shardId.trim() || "prime_shard";
+      const boundsStr = snapshotBounds.trim();
+      if (!boundsStr) throw new Error("Snapshot requires bounds (e.g. -1..1,-1..1).");
+
+      const types = snapshotTypes
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean);
+      if (!types.length) throw new Error("Snapshot requires at least one type (comma list).");
+
+      const res = await authedFetch(`/api/admin/spawn_points/snapshot`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          shardId: shard,
+          bounds: boundsStr,
+          cellSize: Math.max(1, Number(snapshotCellSize) || 512),
+          pad: Math.max(0, Number(snapshotPad) || 0),
+          types,
+        }),
+      });
+
+      const data: SpawnSnapshotResponse = await res.json().catch(() => ({} as any));
+      if (!res.ok || !data.ok) throw new Error(data.error || `Snapshot failed (HTTP ${res.status})`);
+
+      setSnapshotResult(data);
+
+      // Convenience: auto-download the snapshot when available
+      if (data.filename && data.snapshot) {
+        downloadJson(data.filename, data.snapshot);
+      }
+    } catch (err: any) {
+      setError(err.message || String(err));
+    } finally {
+      setSnapshotWorking(false);
+    }
+  };
+
+  const onRestoreFilePicked = async (file: File | null) => {
+    if (!file) return;
+    try {
+      const txt = await file.text();
+      setRestoreJsonText(txt);
+    } catch (err: any) {
+      setError(err.message || String(err));
+    }
+  };
+
+  const runRestore = async (commit: boolean) => {
+    setRestoreWorking(true);
+    setError(null);
+    setRestoreResult(null);
+    setRestoreConfirmExpected(null);
+    setRestoreConfirmRequired(false);
+
+    try {
+      const shard = shardId.trim() || "prime_shard";
+      const targetShard = (restoreTargetShard || shard).trim() || "prime_shard";
+
+      const raw = restoreJsonText.trim();
+      if (!raw) throw new Error("Paste a snapshot JSON (or pick a file) first.");
+
+      const snapshot = JSON.parse(raw);
+
+      const res = await authedFetch(`/api/admin/spawn_points/restore`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          snapshot,
+          targetShard,
+          updateExisting: !!restoreUpdateExisting,
+          allowBrainOwned: !!restoreAllowBrainOwned,
+          commit: !!commit,
+          confirm: restoreConfirm.trim() || undefined,
+        }),
+      });
+
+      const data: SpawnRestoreResponse = await res.json().catch(() => ({} as any));
+
+      // confirm_required comes back with 409 (or sometimes 200 ok:false depending on future changes)
+      if ((data as any).error === "confirm_required") {
+        setRestoreResult(data);
+        setRestoreConfirmExpected((data as any).expectedConfirmToken ?? null);
+        setRestoreConfirmRequired(true);
+        return;
+      }
+
+      if (!res.ok || !data.ok) throw new Error(data.error || `Restore failed (HTTP ${res.status})`);
+
+      setRestoreResult(data);
+
+      if (commit) {
+        await load();
+      }
+    } catch (err: any) {
+      setError(err.message || String(err));
+    } finally {
+      setRestoreWorking(false);
+    }
+  };
+
 
   const filterSummary = useMemo(() => {
     const parts: string[] = [];
@@ -1845,6 +2031,20 @@ export function AdminSpawnPointsPage() {
                 >
                   Town Baseline
                 </button>
+
+                <button
+                  onClick={() => setToolsSubtab("snapshot")}
+                  style={{
+                    padding: "6px 10px",
+                    borderRadius: 8,
+                    border: toolsSubtab === "snapshot" ? "2px solid #4caf50" : "1px solid #ccc",
+                    background: "white",
+                    cursor: "pointer",
+                    fontWeight: toolsSubtab === "snapshot" ? 700 : 500,
+                  }}
+                >
+                  Snapshot / Restore
+                </button>
               </div>
           {toolsSubtab === "bulk" ? (
             <>
@@ -2208,6 +2408,233 @@ export function AdminSpawnPointsPage() {
                         <summary style={{ cursor: "pointer", userSelect: "none", opacity: 0.9 }}>Raw response JSON</summary>
                         <pre style={{ marginTop: 10, background: "#111", color: "#eee", border: "1px solid #333", padding: 8, borderRadius: 6, overflow: "auto" }}>
                           {JSON.stringify(baselineResult, null, 2)}
+                        </pre>
+                      </details>
+                    </div>
+                  ) : null}
+                </div>
+              </div>
+            </>
+          ) : null}
+
+          {toolsSubtab === "snapshot" ? (
+            <>
+              <div style={{ border: "1px solid #333", borderRadius: 8, padding: 12, marginBottom: 12 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                  <strong>Snapshot / Restore</strong>
+                  <span style={{ fontSize: 12, opacity: 0.8 }}>
+                    Export/import a slice of <code>spawn_points</code> by bounds + type list. Great for moving towns between shards or sharing layouts.
+                  </span>
+                </div>
+
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 10, alignItems: "flex-end" }}>
+                  <label style={{ display: "grid", gap: 4 }}>
+                    <span style={{ fontSize: 12, opacity: 0.85 }}>Bounds (required)</span>
+                    <input
+                      value={snapshotBounds}
+                      onChange={(e) => setSnapshotBounds(e.target.value)}
+                      placeholder="-1..1,-1..1"
+                      style={{ width: 180, padding: "6px 8px", borderRadius: 6, border: "1px solid #ccc" }}
+                    />
+                  </label>
+
+                  <label style={{ display: "grid", gap: 4 }}>
+                    <span style={{ fontSize: 12, opacity: 0.85 }}>Cell size</span>
+                    <input
+                      type="number"
+                      value={snapshotCellSize}
+                      onChange={(e) => setSnapshotCellSize(Number(e.target.value))}
+                      style={{ width: 120, padding: "6px 8px", borderRadius: 6, border: "1px solid #ccc" }}
+                    />
+                  </label>
+
+                  <label style={{ display: "grid", gap: 4 }}>
+                    <span style={{ fontSize: 12, opacity: 0.85 }}>Pad</span>
+                    <input
+                      type="number"
+                      value={snapshotPad}
+                      onChange={(e) => setSnapshotPad(Number(e.target.value))}
+                      style={{ width: 120, padding: "6px 8px", borderRadius: 6, border: "1px solid #ccc" }}
+                    />
+                  </label>
+
+                  <label style={{ display: "grid", gap: 4, flex: 1, minWidth: 320 }}>
+                    <span style={{ fontSize: 12, opacity: 0.85 }}>Types (comma list)</span>
+                    <input
+                      value={snapshotTypes}
+                      onChange={(e) => setSnapshotTypes(e.target.value)}
+                      placeholder="town,outpost,npc,node,station,..."
+                      style={{ width: "100%", padding: "6px 8px", borderRadius: 6, border: "1px solid #ccc" }}
+                    />
+                  </label>
+
+                  <button
+                    onClick={runSnapshot}
+                    disabled={snapshotWorking}
+                    style={{
+                      padding: "8px 12px",
+                      borderRadius: 8,
+                      border: "1px solid #ccc",
+                      background: snapshotWorking ? "#f6f6f6" : "white",
+                      cursor: snapshotWorking ? "not-allowed" : "pointer",
+                      fontWeight: 700,
+                    }}
+                    title="Generates a snapshot JSON and auto-downloads it"
+                  >
+                    {snapshotWorking ? "Snapshotting..." : "Snapshot (download)"}
+                  </button>
+                </div>
+
+                {snapshotResult ? (
+                  <div style={{ marginTop: 10, display: "grid", gap: 8 }}>
+                    <SummaryPanel
+                      title={"Snapshot summary"}
+                      tone={snapshotResult.ok ? "good" : "danger"}
+                      rows={[
+                        ["filename", snapshotResult.filename ?? ""],
+                        ["rows", (snapshotResult.snapshot as any)?.rows ?? ""],
+                        ["types", (snapshotResult.snapshot as any)?.types?.join?.(", ") ?? ""],
+                        ["bounds", (snapshotResult.snapshot as any)?.bounds ? JSON.stringify((snapshotResult.snapshot as any).bounds) : ""],
+                      ]}
+                    />
+                    <details>
+                      <summary style={{ cursor: "pointer", userSelect: "none", opacity: 0.9 }}>Raw snapshot JSON</summary>
+                      <pre style={{ marginTop: 10, background: "#111", color: "#eee", border: "1px solid #333", padding: 8, borderRadius: 6, overflow: "auto" }}>
+                        {JSON.stringify(snapshotResult.snapshot, null, 2)}
+                      </pre>
+                    </details>
+                  </div>
+                ) : null}
+
+                <hr style={{ margin: "14px 0", opacity: 0.4 }} />
+
+                <div style={{ display: "grid", gap: 10 }}>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 10, alignItems: "center" }}>
+                    <label style={{ display: "grid", gap: 4 }}>
+                      <span style={{ fontSize: 12, opacity: 0.85 }}>Target shard</span>
+                      <input
+                        value={restoreTargetShard}
+                        onChange={(e) => setRestoreTargetShard(e.target.value)}
+                        placeholder={shardId || "prime_shard"}
+                        style={{ width: 180, padding: "6px 8px", borderRadius: 6, border: "1px solid #ccc" }}
+                      />
+                    </label>
+
+                    <label style={{ display: "flex", gap: 6, alignItems: "center", fontSize: 13 }}>
+                      <input
+                        type="checkbox"
+                        checked={restoreUpdateExisting}
+                        onChange={(e) => setRestoreUpdateExisting(e.target.checked)}
+                      />
+                      Update existing spawn_ids
+                    </label>
+
+                    <label style={{ display: "flex", gap: 6, alignItems: "center", fontSize: 13 }}>
+                      <input
+                        type="checkbox"
+                        checked={restoreAllowBrainOwned}
+                        onChange={(e) => setRestoreAllowBrainOwned(e.target.checked)}
+                      />
+                      Allow brain:* spawn_ids (danger)
+                    </label>
+
+                    <label style={{ display: "grid", gap: 4 }}>
+                      <span style={{ fontSize: 12, opacity: 0.85 }}>Confirm token (only when required)</span>
+                      <input
+                        value={restoreConfirm}
+                        onChange={(e) => setRestoreConfirm(e.target.value)}
+                        placeholder={restoreConfirmExpected || ""}
+                        style={{ width: 220, padding: "6px 8px", borderRadius: 6, border: "1px solid #ccc" }}
+                      />
+                    </label>
+
+                    <input
+                      type="file"
+                      accept="application/json"
+                      onChange={(e) => onRestoreFilePicked(e.target.files?.[0] ?? null)}
+                      title="Load snapshot JSON from file"
+                    />
+
+                    <button
+                      onClick={() => runRestore(false)}
+                      disabled={restoreWorking}
+                      style={{
+                        padding: "8px 12px",
+                        borderRadius: 8,
+                        border: "1px solid #ccc",
+                        background: "white",
+                        cursor: restoreWorking ? "not-allowed" : "pointer",
+                        fontWeight: 700,
+                      }}
+                      title="Dry run restore (no DB writes)"
+                    >
+                      {restoreWorking ? "Working..." : "Dry-run restore"}
+                    </button>
+
+                    <button
+                      onClick={() => runRestore(true)}
+                      disabled={restoreWorking || (restoreConfirmRequired && restoreConfirm.trim() !== (restoreConfirmExpected || ""))}
+                      style={{
+                        padding: "8px 12px",
+                        borderRadius: 8,
+                        border: "2px solid #c62828",
+                        background: "white",
+                        cursor: restoreWorking ? "not-allowed" : "pointer",
+                        fontWeight: 800,
+                      }}
+                      title="Commit restore (writes DB). If deletions are involved, a confirm token may be required."
+                    >
+                      Commit restore
+                    </button>
+                  </div>
+
+                  <label style={{ display: "grid", gap: 6 }}>
+                    <span style={{ fontSize: 12, opacity: 0.85 }}>Snapshot JSON (paste here)</span>
+                    <textarea
+                      value={restoreJsonText}
+                      onChange={(e) => setRestoreJsonText(e.target.value)}
+                      placeholder="Paste snapshot JSON here..."
+                      rows={8}
+                      style={{ width: "100%", padding: 10, borderRadius: 8, border: "1px solid #ccc", fontFamily: "monospace" }}
+                    />
+                  </label>
+
+                  {restoreConfirmRequired && restoreConfirmExpected ? (
+                    <div style={{ padding: 10, borderRadius: 8, border: "1px solid #c62828", background: "#fff5f5" }}>
+                      <div style={{ fontWeight: 800, marginBottom: 6 }}>Confirm required</div>
+                      <div style={{ fontSize: 13, opacity: 0.9 }}>
+                        Re-run commit with confirm token: <code>{restoreConfirmExpected}</code>
+                      </div>
+                    </div>
+                  ) : null}
+
+                  {restoreResult ? (
+                    <div style={{ display: "grid", gap: 8 }}>
+                      <SummaryPanel
+                        title={`Restore ${(restoreResult as any).commit ? "commit" : "dry-run"} summary`}
+                        tone={restoreResult.ok ? "good" : "danger"}
+                        rows={[
+                          ["targetShard", String((restoreResult as any).targetShard ?? "")],
+                          ["rows", String((restoreResult as any).rows ?? "")],
+                          ["inserted", String((restoreResult as any).inserted ?? (restoreResult as any).wouldInsert ?? "")],
+                          ["updated", String((restoreResult as any).updated ?? (restoreResult as any).wouldUpdate ?? "")],
+                          ["skipped", String((restoreResult as any).skipped ?? (restoreResult as any).wouldSkip ?? "")],
+                          ["skippedReadOnly", String((restoreResult as any).skippedReadOnly ?? (restoreResult as any).wouldReadOnly ?? "")],
+                        ]}
+                      />
+
+                      {(restoreResult as any).opsPreview ? (
+                        <OpsPreviewPanel
+                          title="Restore ops preview"
+                          preview={(restoreResult as any).opsPreview}
+                          downloadName="spawn_slice_restore_ops_preview.json"
+                        />
+                      ) : null}
+
+                      <details>
+                        <summary style={{ cursor: "pointer", userSelect: "none", opacity: 0.9 }}>Raw response JSON</summary>
+                        <pre style={{ marginTop: 10, background: "#111", color: "#eee", border: "1px solid #333", padding: 8, borderRadius: 6, overflow: "auto" }}>
+                          {JSON.stringify(restoreResult, null, 2)}
                         </pre>
                       </details>
                     </div>

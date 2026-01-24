@@ -598,7 +598,9 @@
         "Important invariant: brain-owned spawnIds are not editable through the admin UI (spawnAuthority enforcement).",
         "Town baseline endpoints call into worldcore TownBaselinePlanner and clear SpawnPointCache after commit.",
         "Mother Brain wave/wipe responses now include opsPreview (truncated spawnId lists) for UI diff preview/export.",
-        "Town baseline plan/apply responses include opsPreview (insert/update/skip/readOnly spawnId lists, truncated) for UI diff previews."
+        "Town baseline plan/apply responses include opsPreview (insert/update/skip/readOnly spawnId lists, truncated) for UI diff previews.",
+        "POST /api/admin/spawn_points/snapshot",
+        "POST /api/admin/spawn_points/restore"
       ],
       "owns": [],
       "path": "web-backend/routes/adminSpawnPoints.ts",

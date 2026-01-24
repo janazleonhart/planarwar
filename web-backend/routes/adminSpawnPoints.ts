@@ -74,6 +74,8 @@ type AdminApiKind =
   | "spawn_points.bulk_move"
   | "spawn_points.clone"
   | "spawn_points.scatter"
+  | "spawn_points.snapshot"
+  | "spawn_points.restore"
   | "town_baseline.plan"
   | "town_baseline.apply"
   | "mother_brain.status"
@@ -143,6 +145,129 @@ function buildTownBaselineOpsPreview(planItems: TownBaselinePlanItem[], limit = 
   };
 }
 
+
+type SnapshotSpawnRow = {
+  shardId: string;
+  spawnId: string;
+  type: string;
+  protoId: string;
+  archetype: string;
+  variantId: string | null;
+  x: number;
+  y: number;
+  z: number;
+  regionId: string;
+  townTier?: number | null;
+};
+
+type SpawnSliceSnapshot = {
+  kind: "admin.snapshot-spawns";
+  version: 1;
+  createdAt: string;
+  shardId: string;
+  bounds: CellBounds;
+  cellSize: number;
+  pad: number;
+  types: string[];
+  rows: number;
+  spawns: SnapshotSpawnRow[];
+};
+
+type SpawnSliceOpsPreview = {
+  limit: number;
+  truncated: boolean;
+  insertSpawnIds: string[];
+  updateSpawnIds: string[];
+  skipSpawnIds: string[];
+  readOnlySpawnIds: string[];
+};
+
+function coerceSnapshotSpawns(doc: unknown): { snapshotShard: string; bounds?: CellBounds; cellSize?: number; pad?: number; types?: string[]; spawns: SnapshotSpawnRow[] } {
+  if (!doc || typeof doc !== "object") throw new Error("Invalid snapshot: not an object.");
+  const anyDoc = doc as Record<string, unknown>;
+
+  const shardIdRaw = anyDoc["shardId"];
+  const snapshotShard = typeof shardIdRaw === "string" && shardIdRaw.length ? shardIdRaw : "prime_shard";
+
+  const spawnsRaw = anyDoc["spawns"];
+  if (!Array.isArray(spawnsRaw)) throw new Error("Invalid snapshot: missing 'spawns' array.");
+
+  const spawns: SnapshotSpawnRow[] = [];
+  for (const it of spawnsRaw) {
+    const o = it as Record<string, unknown>;
+    const spawnId = String(o["spawnId"] ?? "");
+    if (!spawnId) continue;
+
+    spawns.push({
+      shardId: String(o["shardId"] ?? snapshotShard),
+      spawnId,
+      type: String(o["type"] ?? "unknown"),
+      protoId: String(o["protoId"] ?? o["proto_id"] ?? "unknown"),
+      archetype: String(o["archetype"] ?? "unknown"),
+      variantId: o["variantId"] == null ? null : String(o["variantId"]),
+      x: Number(o["x"] ?? 0),
+      y: Number(o["y"] ?? 0),
+      z: Number(o["z"] ?? 0),
+      regionId: String(o["regionId"] ?? o["region_id"] ?? ""),
+      townTier: o["townTier"] == null ? null : Number(o["townTier"]),
+    });
+  }
+
+  // Optional passthrough metadata (used only for UI display)
+  let bounds: CellBounds | undefined;
+  const boundsRaw = anyDoc["bounds"];
+  if (boundsRaw && typeof boundsRaw === "object") {
+    const b = boundsRaw as any;
+    const minCx = Number(b.minCx);
+    const maxCx = Number(b.maxCx);
+    const minCz = Number(b.minCz);
+    const maxCz = Number(b.maxCz);
+    if ([minCx, maxCx, minCz, maxCz].every((n) => Number.isFinite(n))) {
+      bounds = { minCx, maxCx, minCz, maxCz };
+    }
+  }
+
+  const cellSize = Number(anyDoc["cellSize"]);
+  const pad = Number(anyDoc["pad"]);
+  const types = Array.isArray(anyDoc["types"]) ? (anyDoc["types"] as any[]).map((t) => String(t)) : undefined;
+
+  return {
+    snapshotShard,
+    bounds,
+    cellSize: Number.isFinite(cellSize) ? cellSize : undefined,
+    pad: Number.isFinite(pad) ? pad : undefined,
+    types,
+    spawns,
+  };
+}
+
+function buildSpawnSliceOpsPreview(args: {
+  insertIds: string[];
+  updateIds: string[];
+  skipIds: string[];
+  readOnlyIds: string[];
+  limit?: number;
+}): SpawnSliceOpsPreview {
+  const limit = Math.max(1, Math.floor(args.limit ?? 75));
+  const sort = (arr: string[]) => arr.sort((a, b) => a.localeCompare(b));
+  const ins = [...args.insertIds];
+  const upd = [...args.updateIds];
+  const skp = [...args.skipIds];
+  const ro = [...args.readOnlyIds];
+  sort(ins);
+  sort(upd);
+  sort(skp);
+  sort(ro);
+  const truncated = ins.length > limit || upd.length > limit || skp.length > limit || ro.length > limit;
+  return {
+    limit,
+    truncated,
+    insertSpawnIds: ins.slice(0, limit),
+    updateSpawnIds: upd.slice(0, limit),
+    skipSpawnIds: skp.slice(0, limit),
+    readOnlySpawnIds: ro.slice(0, limit),
+  };
+}
 
 function hashToken(input: unknown): string {
   const s = typeof input === "string" ? input : JSON.stringify(input);
@@ -1806,6 +1931,283 @@ function parseBrainSpawnId(spawnId: string): { epoch: number | null; theme: stri
   // Fall back: brain:<theme>:...
   return { epoch: null, theme: a };
 }
+
+// ------------------------------
+// Snapshot / Restore spawn slices (admin UX)
+// ------------------------------
+
+// POST /api/admin/spawn_points/snapshot
+// Body:
+//   shardId, bounds ("-1..1,-1..1"), cellSize, pad, types[]
+router.post("/snapshot", async (req, res) => {
+  try {
+    const shardId = String(req.body?.shardId ?? req.query?.shardId ?? "prime_shard").trim() || "prime_shard";
+    const boundsRaw = String(req.body?.bounds ?? "").trim();
+    const cellSize = Math.max(1, Math.floor(Number(req.body?.cellSize ?? 512)));
+    const pad = Math.max(0, Math.floor(Number(req.body?.pad ?? 0)));
+    const typesRaw = req.body?.types;
+    const types = Array.isArray(typesRaw) ? typesRaw.map((t: any) => String(t).trim()).filter(Boolean) : [];
+    if (!boundsRaw) return res.status(400).json({ kind: "spawn_points.snapshot", ok: false, error: "bounds_required" });
+    if (!types.length) return res.status(400).json({ kind: "spawn_points.snapshot", ok: false, error: "types_required" });
+
+    const bounds = parseCellBounds(boundsRaw);
+
+    const minX = bounds.minCx * cellSize - pad;
+    const maxX = (bounds.maxCx + 1) * cellSize + pad;
+    const minZ = bounds.minCz * cellSize - pad;
+    const maxZ = (bounds.maxCz + 1) * cellSize + pad;
+
+    type Row = {
+      shard_id: string;
+      spawn_id: string;
+      type: string;
+      proto_id: string | null;
+      archetype: string;
+      variant_id: string | null;
+      x: number | null;
+      y: number | null;
+      z: number | null;
+      region_id: string | null;
+      town_tier: number | null;
+    };
+
+    const client = await db.connect();
+    let rows: Row[] = [];
+    try {
+      const q = await client.query(
+        `
+        SELECT shard_id, spawn_id, type, proto_id, archetype, variant_id, x, y, z, region_id, town_tier
+        FROM spawn_points
+        WHERE shard_id = $1
+          AND type = ANY($2::text[])
+          AND x >= $3 AND x <= $4
+          AND z >= $5 AND z <= $6
+        ORDER BY type, spawn_id
+      `,
+        [shardId, types, minX, maxX, minZ, maxZ],
+      );
+      rows = q.rows as Row[];
+    } finally {
+      client.release();
+    }
+
+    const spawns: SnapshotSpawnRow[] = rows.map((r) => ({
+      shardId: String(r.shard_id),
+      spawnId: String(r.spawn_id),
+      type: String(r.type),
+      protoId: String(r.proto_id ?? r.spawn_id),
+      archetype: String(r.archetype),
+      variantId: r.variant_id == null ? null : String(r.variant_id),
+      x: r.x == null ? 0 : Number(r.x),
+      y: r.y == null ? 0 : Number(r.y),
+      z: r.z == null ? 0 : Number(r.z),
+      regionId: String(r.region_id ?? ""),
+      townTier: r.town_tier == null ? null : Number(r.town_tier),
+    }));
+
+    const snapshot: SpawnSliceSnapshot = {
+      kind: "admin.snapshot-spawns",
+      version: 1,
+      createdAt: new Date().toISOString(),
+      shardId,
+      bounds,
+      cellSize,
+      pad,
+      types,
+      rows: spawns.length,
+      spawns,
+    };
+
+    const safeBounds = `${bounds.minCx}..${bounds.maxCx},${bounds.minCz}..${bounds.maxCz}`;
+    const filename = `snapshot_${new Date().toISOString().replace(/[:.]/g, "-")}_${shardId}_${safeBounds}.json`;
+
+    res.json({
+      kind: "spawn_points.snapshot",
+      ok: true,
+      filename,
+      snapshot,
+    });
+  } catch (err: any) {
+    console.error("[ADMIN/SPAWN_POINTS] snapshot error", err);
+    res.status(500).json({ kind: "spawn_points.snapshot", ok: false, error: "server_error" });
+  }
+});
+
+// POST /api/admin/spawn_points/restore
+// Body:
+//   snapshot (object|string), targetShard?, updateExisting?, allowBrainOwned?, commit?, confirm?
+router.post("/restore", async (req, res) => {
+  try {
+    const snapshotRaw = req.body?.snapshot ?? req.body;
+    const snapshotObj =
+      typeof snapshotRaw === "string" ? JSON.parse(snapshotRaw) : snapshotRaw;
+
+    const { snapshotShard, spawns } = coerceSnapshotSpawns(snapshotObj);
+
+    const targetShard = String(req.body?.targetShard ?? snapshotShard ?? "prime_shard").trim() || "prime_shard";
+    const updateExisting = Boolean(req.body?.updateExisting);
+    const allowBrainOwned = Boolean(req.body?.allowBrainOwned);
+    const commit = Boolean(req.body?.commit);
+    const confirm = String(req.body?.confirm ?? "").trim() || null;
+
+    const spawnIds = spawns.map((s) => String(s.spawnId)).filter(Boolean);
+    if (spawnIds.length === 0) {
+      return res.status(400).json({ kind: "spawn_points.restore", ok: false, error: "empty_snapshot" });
+    }
+
+    // Preload which spawnIds already exist in target shard
+    const client = await db.connect();
+    let existingSet = new Set<string>();
+    try {
+      const q = await client.query(
+        `SELECT spawn_id FROM spawn_points WHERE shard_id = $1 AND spawn_id = ANY($2::text[])`,
+        [targetShard, spawnIds],
+      );
+      for (const r of q.rows as any[]) existingSet.add(String(r.spawn_id));
+    } finally {
+      client.release();
+    }
+
+    const insertIds: string[] = [];
+    const updateIds: string[] = [];
+    const skipIds: string[] = [];
+    const readOnlyIds: string[] = [];
+
+    for (const s of spawns) {
+      const sid = String(s.spawnId);
+      if (!sid) continue;
+
+      if (!allowBrainOwned && !isSpawnEditable(sid)) {
+        readOnlyIds.push(sid);
+        continue;
+      }
+
+      const exists = existingSet.has(sid);
+      if (!exists) insertIds.push(sid);
+      else if (updateExisting) updateIds.push(sid);
+      else skipIds.push(sid);
+    }
+
+    const opsPreview = buildSpawnSliceOpsPreview({
+      insertIds,
+      updateIds,
+      skipIds,
+      readOnlyIds,
+      limit: 75,
+    });
+
+    const expectedConfirmToken =
+      updateExisting && updateIds.length > 0 ? makeConfirmToken("REPLACE", targetShard, { op: "restore", updateIds, rows: spawns.length }) : null;
+
+    // Confirm gate (only relevant for destructive updates)
+    if (commit && expectedConfirmToken && confirm !== expectedConfirmToken) {
+      return res.status(409).json({
+        kind: "spawn_points.restore",
+        ok: false,
+        error: "confirm_required",
+        expectedConfirmToken,
+        opsPreview,
+        targetShard,
+        rows: spawns.length,
+        wouldInsert: insertIds.length,
+        wouldUpdate: updateIds.length,
+        wouldSkip: skipIds.length,
+        wouldReadOnly: readOnlyIds.length,
+      });
+    }
+
+    const txn = await db.connect();
+    let inserted = 0;
+    let updated = 0;
+    let skipped = 0;
+    let skippedReadOnly = 0;
+
+    try {
+      await txn.query("BEGIN");
+
+      for (const s of spawns) {
+        const sid = String(s.spawnId);
+        if (!sid) continue;
+
+        if (!allowBrainOwned && !isSpawnEditable(sid)) {
+          skippedReadOnly++;
+          continue;
+        }
+
+        const exists = existingSet.has(sid);
+        const protoId = String(s.protoId ?? sid);
+        const archetype = String(s.archetype ?? "");
+        const type = String(s.type ?? "");
+        const variantId = s.variantId == null ? null : String(s.variantId);
+        const x = Number.isFinite(s.x) ? Number(s.x) : 0;
+        const y = Number.isFinite(s.y) ? Number(s.y) : 0;
+        const z = Number.isFinite(s.z) ? Number(s.z) : 0;
+        const regionId = String(s.regionId ?? "");
+        const townTier = s.townTier == null || !Number.isFinite(Number(s.townTier)) ? null : Number(s.townTier);
+
+        if (!exists) {
+          await txn.query(
+            `
+            INSERT INTO spawn_points (shard_id, spawn_id, type, archetype, proto_id, variant_id, x, y, z, region_id, town_tier)
+            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+          `,
+            [targetShard, sid, type, archetype, protoId, variantId, x, y, z, regionId, townTier],
+          );
+          inserted++;
+          continue;
+        }
+
+        if (updateExisting) {
+          await txn.query(
+            `
+            UPDATE spawn_points
+            SET type=$3, archetype=$4, proto_id=$5, variant_id=$6, x=$7, y=$8, z=$9, region_id=$10, town_tier=$11
+            WHERE shard_id=$1 AND spawn_id=$2
+          `,
+            [targetShard, sid, type, archetype, protoId, variantId, x, y, z, regionId, townTier],
+          );
+          updated++;
+        } else {
+          skipped++;
+        }
+      }
+
+      if (commit) {
+        await txn.query("COMMIT");
+      } else {
+        await txn.query("ROLLBACK");
+      }
+    } catch (err) {
+      try {
+        await txn.query("ROLLBACK");
+      } catch {}
+      throw err;
+    } finally {
+      txn.release();
+    }
+
+    if (commit) {
+      clearSpawnPointCache();
+    }
+
+    res.json({
+      kind: "spawn_points.restore",
+      ok: true,
+      commit,
+      targetShard,
+      rows: spawns.length,
+      inserted,
+      updated,
+      skipped,
+      skippedReadOnly,
+      expectedConfirmToken: expectedConfirmToken ?? undefined,
+      opsPreview,
+    });
+  } catch (err: any) {
+    console.error("[ADMIN/SPAWN_POINTS] restore error", err);
+    res.status(500).json({ kind: "spawn_points.restore", ok: false, error: "server_error" });
+  }
+});
 
 router.get("/mother_brain/status", async (req, res) => {
   try {

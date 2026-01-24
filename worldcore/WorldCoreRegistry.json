@@ -6794,6 +6794,24 @@
       "provides": [
         "run(input:ResourceInput, ctx?:WorldGenContext):ResourceResult"
       ]
+    },
+    "test.contractAdminSpawnPointsSnapshotRestoreRoutes": {
+      "service": "test.contract",
+      "kind": "test",
+      "path": "worldcore/test/contract_adminSpawnPointsSnapshotRestoreRoutes.test.ts",
+      "class": null,
+      "lifecycle": "test",
+      "ctorArgs": [],
+      "dependsOn": [
+        "web-backend.routes.adminSpawnPoints",
+        "web-frontend.pages.adminSpawnPoints"
+      ],
+      "provides": [],
+      "owns": [],
+      "notes": [
+        "Contract: admin spawn points must expose snapshot/restore endpoints and UI must call them.",
+        "Static scan only (no DB)."
+      ]
     }
   }
 }

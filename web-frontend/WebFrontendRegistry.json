@@ -232,7 +232,8 @@
         "Mother Brain ops UX: supports confirm_required flow with copy/fill token controls and per-parameter token scoping (token resets when inputs change).",
         "Wipe confirm adds an extra human-speed lock: type 'WIPE' before token entry/commit enables.",
         "Adds diff preview panel for Mother Brain wave/wipe (delete/insert/update/skip + export JSON).",
-        "UI renders opsPreview diff previews for Mother Brain wave/wipe AND Town baseline plan/apply (with JSON export)."
+        "UI renders opsPreview diff previews for Mother Brain wave/wipe AND Town baseline plan/apply (with JSON export).",
+        "Snapshot/Restore endpoints: POST /api/admin/spawn_points/snapshot, POST /api/admin/spawn_points/restore."
       ],
       "owns": [
         "UI persistence in localStorage (adminSpawnPointsPage.ui.v1)",
