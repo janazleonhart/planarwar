@@ -6,7 +6,7 @@
 // - Convenience toggles are provided for common tags (notably: vendor)
 
 import { useEffect, useMemo, useState } from "react";
-import { getAuthToken } from "../lib/api";
+import { explainAdminError, getAdminCaps, getAuthToken } from "../lib/api";
 
 type AdminNpcLootRow = {
   itemId: string;
@@ -84,6 +84,7 @@ const authedFetch: typeof fetch = (input: any, init?: any) => {
 };
 
 export function AdminNpcsPage() {
+  const { canWrite } = getAdminCaps();
   const [npcs, setNpcs] = useState<AdminNpc[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [form, setForm] = useState<AdminNpc | null>(null);
@@ -542,7 +543,7 @@ export function AdminNpcsPage() {
               </fieldset>
 
               <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
-                <button onClick={handleSave} disabled={saving}>
+                <button onClick={handleSave} disabled={saving || !canWrite}>
                   {saving ? "Saving..." : "Save NPC"}
                 </button>
                 <button type="button" onClick={startNew} disabled={saving}>
@@ -557,4 +558,4 @@ export function AdminNpcsPage() {
       </div>
     </div>
   );
-}
+} 

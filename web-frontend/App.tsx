@@ -5,6 +5,7 @@
 // behind a single login + character list.
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { resolveAdminRoleFromFlags, type AdminRole } from "./lib/api";
 import { AdminSpawnPointsPage } from "./pages/AdminSpawnPointsPage";
 import { AdminQuestsPage } from "./pages/AdminQuestsPage";
 import { AdminNpcsPage } from "./pages/AdminNpcsPage";
@@ -154,13 +155,6 @@ function safeParseErrorMessage(txt: string): string {
   return t;
 }
 
-function getAdminRole(account: Account | null): "none" | "guide" | "gm" | "dev" {
-  const flags: AccountFlags = (account as any)?.flags ?? {};
-  if (flags?.isDev) return "dev";
-  if (flags?.isGM) return "gm";
-  if (flags?.isGuide) return "guide";
-  return "none";
-}
 
 export function App() {
   const [authMode, setAuthMode] = useState<AuthMode>("login");
@@ -191,8 +185,8 @@ export function App() {
   const pathname = window.location.pathname;
   const currentMode = useMemo(() => modeFromPath(pathname), [pathname]);
 
-  const adminRole = useMemo(() => getAdminRole(account), [account]);
-  const isAdmin = adminRole !== "none";
+  const adminRole = useMemo<AdminRole | null>(() => resolveAdminRoleFromFlags(account?.flags), [account]);
+  const isAdmin = adminRole !== null;
 
   const appendLog = (line: string) => {
     setWsLog((prev) => {

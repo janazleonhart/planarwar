@@ -1,7 +1,7 @@
 // web-frontend/pages/AdminSpawnPointsPage.tsx
 
 import { useEffect, useMemo, useState } from "react";
-import { getAuthToken } from "../lib/api";
+import { getAdminCaps, getAuthToken } from "../lib/api";
 
 // ----- UI state persistence (safe on SSR) -----
 const SPAWN_UI_LS_KEY = 'adminSpawnPointsPage.ui.v1';
@@ -176,6 +176,8 @@ function getAuthority(spawnId: string): SpawnAuthority {
 }
 
 function canEditSpawn(spawnId: string): boolean {
+  const caps = getAdminCaps();
+  if (!caps.canWrite) return false;
   return getAuthority(spawnId) !== "brain";
 }
 
@@ -280,6 +282,10 @@ const authedFetch: typeof fetch = (input: any, init?: any) => {
 };
 
 export function AdminSpawnPointsPage() {
+  const caps = getAdminCaps();
+  const canWrite = caps.canWrite;
+  const canRoot = caps.canRoot;
+
   const savedUi = useMemo(() => safeLoadSpawnUiState(), []);
   const [spawnPoints, setSpawnPoints] = useState<AdminSpawnPoint[]>([]);
   const [selectedId, setSelectedId] = useState<number | null>(null);
@@ -1308,10 +1314,10 @@ export function AdminSpawnPointsPage() {
               </div>
 
               <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
-                <button disabled={waveLoading} onClick={() => void runMotherBrainWave(false)}>
+                <button disabled={waveLoading || !canWrite} onClick={() => void runMotherBrainWave(false)}>
                   {waveLoading ? "Working..." : "Plan (dry-run)"}
                 </button>
-                <button disabled={waveLoading} onClick={() => void runMotherBrainWave(true)}>
+                <button disabled={waveLoading || !canWrite} onClick={() => void runMotherBrainWave(true)}>
                   {waveLoading ? "Working..." : "Commit"}
                 </button>
               </div>
@@ -1353,11 +1359,11 @@ export function AdminSpawnPointsPage() {
               </div>
 
               <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
-                <button disabled={wipeLoading} onClick={() => void runMotherBrainWipe(false)}>
+                <button disabled={wipeLoading || !canRoot} onClick={() => void runMotherBrainWipe(false)}>
                   {wipeLoading ? "Working..." : "Plan wipe (dry-run)"}
                 </button>
                 <button
-                  disabled={wipeLoading}
+                  disabled={wipeLoading || !canRoot}
                   onClick={() => {
                     const ok = window.confirm(
                       `Commit Mother Brain wipe?\n\nThis will DELETE brain:* spawns in bounds ${mbBounds.trim() || "-1..1,-1..1"}.\nTheme=${wipeTheme.trim() || "(any)"} Epoch=${wipeEpoch.trim() || "(any)"}`
@@ -1462,41 +1468,41 @@ export function AdminSpawnPointsPage() {
                 </label>
 
                 <button
-                  disabled={bulkWorking || selectedIds.length === 0}
+                  disabled={bulkWorking || !canWrite || selectedIds.length === 0}
                   onClick={() => void bulkMove(bulkDx, bulkDy, bulkDz)}
                 >
                   {bulkWorking ? "Working..." : "Bulk Move"}
                 </button>
 
-                <button disabled={bulkWorking || selectedIds.length === 0} onClick={() => void bulkDelete()}>
+                <button disabled={bulkWorking || !canRoot || selectedIds.length === 0} onClick={() => void bulkDelete()}>
                   {bulkWorking ? "Working..." : "Bulk Delete"}
                 </button>
               </div>
 
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                 <span style={{ fontSize: 12, opacity: 0.8, alignSelf: "center" }}>Quick nudge (dx,dz):</span>
-                <button disabled={bulkWorking || selectedIds.length === 0} onClick={() => void bulkNudge(-1, 0)}>
+                <button disabled={bulkWorking || !canWrite || selectedIds.length === 0} onClick={() => void bulkNudge(-1, 0)}>
                   -1,0
                 </button>
-                <button disabled={bulkWorking || selectedIds.length === 0} onClick={() => void bulkNudge(1, 0)}>
+                <button disabled={bulkWorking || !canWrite || selectedIds.length === 0} onClick={() => void bulkNudge(1, 0)}>
                   +1,0
                 </button>
-                <button disabled={bulkWorking || selectedIds.length === 0} onClick={() => void bulkNudge(0, -1)}>
+                <button disabled={bulkWorking || !canWrite || selectedIds.length === 0} onClick={() => void bulkNudge(0, -1)}>
                   0,-1
                 </button>
-                <button disabled={bulkWorking || selectedIds.length === 0} onClick={() => void bulkNudge(0, 1)}>
+                <button disabled={bulkWorking || !canWrite || selectedIds.length === 0} onClick={() => void bulkNudge(0, 1)}>
                   0,+1
                 </button>
-                <button disabled={bulkWorking || selectedIds.length === 0} onClick={() => void bulkNudge(-5, 0)}>
+                <button disabled={bulkWorking || !canWrite || selectedIds.length === 0} onClick={() => void bulkNudge(-5, 0)}>
                   -5,0
                 </button>
-                <button disabled={bulkWorking || selectedIds.length === 0} onClick={() => void bulkNudge(5, 0)}>
+                <button disabled={bulkWorking || !canWrite || selectedIds.length === 0} onClick={() => void bulkNudge(5, 0)}>
                   +5,0
                 </button>
-                <button disabled={bulkWorking || selectedIds.length === 0} onClick={() => void bulkNudge(0, -5)}>
+                <button disabled={bulkWorking || !canWrite || selectedIds.length === 0} onClick={() => void bulkNudge(0, -5)}>
                   0,-5
                 </button>
-                <button disabled={bulkWorking || selectedIds.length === 0} onClick={() => void bulkNudge(0, 5)}>
+                <button disabled={bulkWorking || !canWrite || selectedIds.length === 0} onClick={() => void bulkNudge(0, 5)}>
                   0,+5
                 </button>
               </div>
@@ -1550,7 +1556,7 @@ export function AdminSpawnPointsPage() {
                     <input style={{ width: 180 }} value={cloneRegionOverride} onChange={(e) => setCloneRegionOverride(e.target.value)} placeholder="(optional)" />
                   </label>
 
-                  <button disabled={cloneWorking || selectedIds.length === 0} onClick={() => void cloneSelected()}>
+                  <button disabled={cloneWorking || !canWrite || selectedIds.length === 0} onClick={() => void cloneSelected()}>
                     {cloneWorking ? "Working..." : "Clone"}
                   </button>
                 </div>
@@ -1626,7 +1632,7 @@ export function AdminSpawnPointsPage() {
                     <span style={{ opacity: 0.8 }}>whereami paste</span>
                     <input value={whereamiPaste} onChange={(e) => setWhereamiPaste(e.target.value)} placeholder='Paste: pos=(22.34, 0.00, 137.27)' />
                   </label>
-                  <button onClick={applyWhereamiToScatter}>Apply</button>
+                  <button onClick={applyWhereamiToScatter} disabled={!canWrite}>Apply</button>
                 </div>
 
                 <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10, alignItems: "flex-end" }}>
@@ -1651,7 +1657,7 @@ export function AdminSpawnPointsPage() {
                     <input style={{ width: 160 }} value={scatterSeedBase} onChange={(e) => setScatterSeedBase(e.target.value)} placeholder="seed:editor" />
                   </label>
 
-                  <button disabled={scatterWorking} onClick={() => void scatterNew()}>
+                  <button disabled={scatterWorking || !canWrite} onClick={() => void scatterNew()}>
                     {scatterWorking ? "Working..." : "Scatter"}
                   </button>
                 </div>
@@ -1753,10 +1759,10 @@ export function AdminSpawnPointsPage() {
                   </div>
 
                   <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                    <button disabled={baselineWorking} onClick={() => void runTownBaseline(false)}>
+                    <button disabled={baselineWorking || !canWrite} onClick={() => void runTownBaseline(false)}>
                       {baselineWorking ? "Working..." : "Plan (dry-run)"}
                     </button>
-                    <button disabled={baselineWorking} onClick={() => void runTownBaseline(true)} style={{ border: "1px solid #b71c1c" }}>
+                    <button disabled={baselineWorking || !canWrite} onClick={() => void runTownBaseline(true)} style={{ border: "1px solid #b71c1c" }}>
                       {baselineWorking ? "Working..." : "Commit apply"}
                     </button>
                   </div>

@@ -1,7 +1,7 @@
 // web-frontend/pages/AdminQuestsPage.tsx
 
 import { useEffect, useState } from "react";
-import { getAuthToken } from "../lib/api";
+import { explainAdminError, getAdminCaps, getAuthToken } from "../lib/api";
 
 type ObjectiveKind = "kill" | "harvest" | "collect_item" | "craft" | "talk_to" | "city";
 
@@ -48,6 +48,7 @@ const authedFetch: typeof fetch = (input: any, init?: any) => {
 };
 
 export function AdminQuestsPage() {
+  const { canWrite } = getAdminCaps();
   const [quests, setQuests] = useState<AdminQuest[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [form, setForm] = useState<AdminQuest | null>(null);
@@ -311,7 +312,7 @@ export function AdminQuestsPage() {
               </fieldset>
 
               <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
-                <button onClick={handleSave} disabled={saving}>
+                <button onClick={handleSave} disabled={saving || !canWrite}>
                   {saving ? "Saving..." : "Save Quest"}
                 </button>
                 <button type="button" onClick={startNew} disabled={saving}>

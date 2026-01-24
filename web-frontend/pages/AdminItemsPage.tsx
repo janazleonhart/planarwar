@@ -1,7 +1,7 @@
 // web-frontend/pages/AdminItemsPage.tsx
 
 import { useEffect, useState } from "react";
-import { getAuthToken } from "../lib/api";
+import { explainAdminError, getAdminCaps, getAuthToken } from "../lib/api";
 
 type AdminItem = {
   id: string;
@@ -26,6 +26,7 @@ const authedFetch: typeof fetch = (input: any, init?: any) => {
 };
 
 export function AdminItemsPage() {
+  const { canWrite } = getAdminCaps();
   const [items, setItems] = useState<AdminItem[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [form, setForm] = useState<AdminItem | null>(null);
@@ -347,7 +348,7 @@ export function AdminItemsPage() {
               </div>
 
               <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
-                <button onClick={handleSave} disabled={saving}>
+                <button onClick={handleSave} disabled={saving || !canWrite}>
                   {saving ? "Saving..." : "Save Item"}
                 </button>
                 <button type="button" onClick={startNew} disabled={saving}>

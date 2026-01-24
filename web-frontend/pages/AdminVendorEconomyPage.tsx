@@ -4,8 +4,7 @@
 // Polished UX: dirty tracking, bulk save, filters, and same-origin API via lib/api.ts.
 
 import { useEffect, useMemo, useState } from "react";
-import { api } from "../lib/api";
-import { getAuthToken } from "../lib/api";
+import { api, explainAdminError, getAdminCaps, getAuthToken } from "../lib/api";
 
 type VendorSummary = {
   id: string;
@@ -174,6 +173,7 @@ const authedFetch: typeof fetch = (input: any, init?: any) => {
 };
 
 export function AdminVendorEconomyPage() {
+  const { canWrite } = getAdminCaps();
   const [vendors, setVendors] = useState<VendorSummary[]>([]);
   const [vendorId, setVendorId] = useState<string>("");
 
@@ -480,7 +480,7 @@ export function AdminVendorEconomyPage() {
           Refresh
         </button>
 
-        <button onClick={saveDirtyVisible} disabled={busy || dirtyCountVisible === 0}>
+        <button onClick={saveDirtyVisible} disabled={busy || !canWrite || dirtyCountVisible === 0}>
           Save dirty ({dirtyCountVisible})
         </button>
 
@@ -724,7 +724,7 @@ export function AdminVendorEconomyPage() {
                   </td>
 
                   <td>
-                    <button onClick={() => saveRow(r.vendor_item_id)} disabled={busy || !dirty}>
+                    <button onClick={() => saveRow(r.vendor_item_id)} disabled={busy || !canWrite || !dirty}>
                       Save
                     </button>
                   </td>

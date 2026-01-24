@@ -66,7 +66,7 @@
         "Character list + create character",
         "CharacterState debug viewer",
         "Shard WebSocket console (MUD command input)",
-        "Dev-only admin shortcuts via pathname (/admin/*)"
+        "Admin UI routes via pathname (/admin/*) gated by account flags/adminRole"
       ],
       "owns": [
         "auth token persistence in localStorage (pw_auth_v1)",

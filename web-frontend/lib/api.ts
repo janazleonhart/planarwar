@@ -298,6 +298,91 @@ export function getAuthToken(): string | null {
   }
 }
 
+
+// --- Admin RBAC helpers (System L) ------------------------------------
+
+export type AdminRole = "readonly" | "editor" | "root";
+
+export type AdminCaps = {
+  role: AdminRole | null;
+  isAdmin: boolean;
+  canWrite: boolean;
+  canRoot: boolean;
+  flags: Record<string, any>;
+};
+
+function normalizeAdminRole(v: any): AdminRole | null {
+  const s = String(v ?? "").trim().toLowerCase();
+  if (s === "readonly" || s === "editor" || s === "root") return s as AdminRole;
+  return null;
+}
+
+// Canonical modern key:
+//   flags.adminRole: "readonly" | "editor" | "root"
+// Back-compat fallbacks:
+//   flags.isDev -> root, flags.isGM -> editor, flags.isGuide -> readonly
+//   flags.admin / flags.isAdmin / flags.role==="admin" -> editor
+export function resolveAdminRoleFromFlags(flags: any): AdminRole | null {
+  if (!flags || typeof flags !== "object") return null;
+
+  const direct = normalizeAdminRole((flags as any).adminRole);
+  if (direct) return direct;
+
+  if ((flags as any).isDev === true) return "root";
+  if ((flags as any).isGM === true) return "editor";
+  if ((flags as any).isGuide === true) return "readonly";
+
+  if ((flags as any).admin === true || (flags as any).isAdmin === true || (flags as any).role === "admin") {
+    return "editor";
+  }
+
+  return null;
+}
+
+function safeReadFlagsFromLocalStorage(): Record<string, any> {
+  try {
+    if (typeof window === "undefined") return {};
+    const raw = window.localStorage.getItem("pw_auth_v1");
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+
+    // Old format might be a string token only.
+    if (typeof parsed === "string") return {};
+
+    const account = (parsed as any)?.account;
+    const flags = account?.flags;
+    return flags && typeof flags === "object" ? flags : {};
+  } catch {
+    return {};
+  }
+}
+
+export function getAdminCaps(): AdminCaps {
+  const flags = safeReadFlagsFromLocalStorage();
+  const role = resolveAdminRoleFromFlags(flags);
+  const isAdmin = role !== null;
+  const canWrite = role === "editor" || role === "root";
+  const canRoot = role === "root";
+  return { role, isAdmin, canWrite, canRoot, flags };
+}
+
+export function explainAdminError(code: string): string {
+  const c = String(code || "").trim();
+  switch (c) {
+    case "admin_required":
+      return "Admin access required.";
+    case "admin_readonly":
+      return "Your admin role is readonly (view-only).";
+    case "admin_root_required":
+      return "This action requires root admin role.";
+    case "missing_token":
+    case "invalid_token":
+      return "Not logged in (missing/invalid token).";
+    default:
+      return c || "Unknown error.";
+  }
+}
+
 export async function api<T = any>(path: string, init: RequestInit = {}): Promise<T> {
   const normalizedPath = path.startsWith("/") ? path : `/${path}`;
   const method = init.method ?? "GET";
