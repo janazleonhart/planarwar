@@ -1899,6 +1899,15 @@ router.post("/mother_brain/wave", async (req, res) => {
       for (const r of existRes.rows ?? []) existingSpawnIds.add(String(r.spawn_id ?? ""));
     }
 
+    // Replace-mode subtlety:
+    // If append=false, we will delete existing brain:* spawns in the box before applying the wave.
+    // Those spawn_ids must be treated as "non-existing" for insert/skip/update decisions,
+    // otherwise we can accidentally delete everything and then skip re-inserting it.
+    const effectiveExistingSpawnIds = new Set<string>(existingSpawnIds);
+    if (!append) {
+      for (const sid of existingBrainSpawnIds) effectiveExistingSpawnIds.delete(String(sid ?? ""));
+    }
+
     const budgetReport = computeBrainWaveBudgetReport({
       existingBrainSpawnIdsInBox: existingBrainSpawnIds,
       append,
@@ -1909,14 +1918,14 @@ router.post("/mother_brain/wave", async (req, res) => {
 
     const budgetFilter = filterPlannedActionsToBudget({
       plannedActions: plannedActions as any,
-      existingSpawnIds,
+      existingSpawnIds: effectiveExistingSpawnIds,
       updateExisting,
       allowedNewInserts: budgetReport.allowedNewInserts,
     });
 
     const applyPlan = computeBrainWaveApplyPlan({
       plannedActions: budgetFilter.filteredActions as any,
-      existingSpawnIds,
+      existingSpawnIds: effectiveExistingSpawnIds,
       existingBrainSpawnIdsInBox: existingBrainSpawnIds,
       append,
       updateExisting,
@@ -1939,7 +1948,7 @@ router.post("/mother_brain/wave", async (req, res) => {
         const sid = String(s?.spawnId ?? "");
         if (!sid) continue;
 
-        const exists = existingSpawnIds.has(sid);
+        const exists = effectiveExistingSpawnIds.has(sid);
         if (exists) {
           if (!updateExisting) {
             skipped += 1;

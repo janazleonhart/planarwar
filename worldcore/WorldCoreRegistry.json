@@ -1459,7 +1459,6 @@
         "Economy Realism v1: persistent vendor stock + restock knobs + price curve multipliers."
       ]
     },
-
     "infra.schema.047_vendor_economy_realism_v1_1": {
       "kind": "migration",
       "path": "worldcore/infra/schema/047_vendor_economy_realism_v1_1.sql",
@@ -5467,13 +5466,130 @@
       "class": "ToolScript",
       "lifecycle": "tool",
       "ctorArgs": [],
-      "dependsOn": ["worldcore/db/Database.ts"],
+      "dependsOn": [
+        "worldcore/db/Database.ts"
+      ],
       "provides": [
         "Audits + migrates public.npcs.tags vendor tagging (canonical 'vendor', legacy 'service_vendor')",
         "Supports --apply, --removeLegacy, --limit=N"
       ],
       "owns": [],
       "notes": []
+    },
+    "test.contractMotherBrainDryRunNoMutation": {
+      "kind": "test",
+      "service": "test.contract",
+      "path": "worldcore/test/contract_motherBrainDryRunNoMutation.test.ts",
+      "class": null,
+      "lifecycle": "test",
+      "ctorArgs": [],
+      "dependsOn": [
+        "web-backend.routes.adminSpawnPoints"
+      ],
+      "provides": [],
+      "owns": [],
+      "notes": [
+        "Contract: Mother Brain admin endpoints must use transaction ROLLBACK for dry-run (no DB mutation).",
+        "Static scan of web-backend/routes/adminSpawnPoints.ts for BEGIN/ROLLBACK in mother_brain/wave + mother_brain/wipe."
+      ]
+    },
+    "test.contractMotherBrainToolHasStatusCommand": {
+      "kind": "test",
+      "service": "test.contract",
+      "path": "worldcore/test/contract_motherBrainToolHasStatusCommand.test.ts",
+      "class": null,
+      "lifecycle": "test",
+      "ctorArgs": [],
+      "dependsOn": [],
+      "provides": [],
+      "owns": [],
+      "notes": [
+        "Contract: compiled motherBrain CLI tool must support a 'status' command (dispatch present).",
+        "Test reads dist/worldcore/tools/motherBrain.js built from the corresponding worldcore/tools source."
+      ]
+    },
+    "test.contractMotherBrainWaveIdempotence": {
+      "kind": "test",
+      "service": "test.contract",
+      "path": "worldcore/test/contract_motherBrainWaveIdempotence.test.ts",
+      "class": null,
+      "lifecycle": "test",
+      "ctorArgs": [],
+      "dependsOn": [
+        "web-backend.routes.adminSpawnPoints"
+      ],
+      "provides": [],
+      "owns": [],
+      "notes": [
+        "Contract: mother_brain/wave must guard against duplicate spawn_id inserts (ON CONFLICT DO NOTHING or pre-filter existing)."
+      ]
+    },
+    "test.contractMotherBrainWaveReplaceTreatsDeletedAsNew": {
+      "kind": "test",
+      "service": "test.contract",
+      "path": "worldcore/test/contract_motherBrainWaveReplaceTreatsDeletedAsNew.test.ts",
+      "class": null,
+      "lifecycle": "test",
+      "ctorArgs": [],
+      "dependsOn": [
+        "web-backend.routes.adminSpawnPoints"
+      ],
+      "provides": [],
+      "owns": [],
+      "notes": [
+        "Contract: replace-mode (append=false) must not skip re-inserting spawn_ids that will be deleted inside the wave box."
+      ]
+    },
+    "test.motherBrainWaveBudgetOps": {
+      "kind": "test",
+      "path": "worldcore/test/motherBrainWaveBudgetOps.test.ts",
+      "dependsOn": [
+        "sim.motherBrainWaveOps"
+      ],
+      "notes": [
+        "Unit: budgeting + caps for Mother Brain wave planning (allowedNewInserts + limiting caps)."
+      ]
+    },
+    "test.motherBrainWaveOps": {
+      "kind": "test",
+      "path": "worldcore/test/motherBrainWaveOps.test.ts",
+      "dependsOn": [
+        "sim.motherBrainWavePlanner",
+        "sim.motherBrainWaveOps"
+      ],
+      "notes": [
+        "Unit: computeBrainWaveApplyPlan + computeBrainWipePlan invariants and filtering semantics."
+      ]
+    },
+    "test.motherBrainWavePlanner": {
+      "kind": "test",
+      "path": "worldcore/test/motherBrainWavePlanner.test.ts",
+      "dependsOn": [
+        "sim.motherBrainWavePlanner"
+      ],
+      "notes": [
+        "Unit: deterministic planning for Mother Brain waves (stable spawnIds, bounds parsing)."
+      ]
+    },
+    "test.motherBrainSpawnIdParsing": {
+      "kind": "test",
+      "path": "worldcore/test/motherBrain_spawnIdParsing.test.ts",
+      "dependsOn": [
+        "sim.motherBrainWaveOps"
+      ],
+      "notes": [
+        "Unit: loose parsing of brain:* spawnId tokens for theme/epoch selection + wipe tooling."
+      ]
+    },
+    "test.spawnAuthority": {
+      "kind": "test",
+      "path": "worldcore/test/spawnAuthority.test.ts",
+      "dependsOn": [
+        "world.spawnAuthority"
+      ],
+      "notes": [
+        "Unit: spawnAuthority and editability rules (anchor/seed/manual/brain)."
+      ]
     },
     "tools.applySchema": {
       "kind": "service",
@@ -5584,6 +5700,7 @@
         "era: orchestrated outposts + gapfill run with safe-mode caps + artifact output (optionally seeds baseline town vendors; default enabled)",
         "mother-wave: plan/apply deterministic Mother Brain wave (dry-run vs --commit), with --append/--theme/--epoch controls (also seeds baseline town vendors by default; disable with --noTownVendors)",
         "mother-status: summarize Mother Brain (brain-owned) spawn_points within bounds (optionally list)",
+        "mother-wipe: delete Mother Brain (brain-owned) spawn_points within bounds (optional theme/epoch filters; dry-run vs --commit)",
         "trim-outposts: enforce per-faction cap by deleting extras within bounds",
         "snapshot-spawns/restore-spawns: export + reapply spawn_points slices",
         "wipe-placements: delete spawn_points of selected types within bounds",
@@ -5591,6 +5708,7 @@
         "CLI: town-baseline",
         "CLI: mother-status",
         "CLI: mother-wave",
+        "CLI: mother-wipe",
         "Flag: --stations",
         "Flag: --respectTierStations / --tierStations",
         "Flag: --townTier <1..5>",
@@ -6621,6 +6739,26 @@
       "notes": [
         "Stage 2.3.6 \u2013 resource node placement (ore/herb/wood/fish/rare) plus per-kind masks.",
         "Respects biome, elevation, climate, hydrology, and avoids city centers while tagging 'near settlement' nodes."
+      ]
+    },
+    "tools.motherBrain": {
+      "kind": "dev_script",
+      "path": "worldcore/tools/motherBrain.ts",
+      "dependsOn": [
+        "sim.motherBrainWavePlanner",
+        "db.Database",
+        "infra.schema"
+      ],
+      "provides": [
+        "wave: plan/apply deterministic Mother Brain wave directly to spawn_points (dry-run by default; --commit to write; --append to preserve existing brain:* in-bounds)",
+        "status: summarize existing brain:* spawn_points within bounds (counts by theme/epoch/type/proto; optional --list; optional --json)",
+        "Safety: refuses --commit unless --bounds is explicitly provided",
+        "DB access is lazy-imported so unit tests can import without holding open pools"
+      ],
+      "notes": [
+        "Mother Brain (v0) DB writer + status CLI for brain-owned spawn_points.",
+        "Designed to be safe to import in tests (no DB/pool at module load; no auto-run main()).",
+        "Tooling entrypoint (like simBrain), not the long-running Mother Brain service process."
       ]
     }
   }
