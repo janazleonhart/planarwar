@@ -2195,6 +2195,15 @@ export function AdminSpawnPointsPage() {
                         ]}
 />
 
+                      {(baselineResult as any).opsPreview ? (
+                        <OpsPreviewPanel
+                          title="Town baseline diff preview"
+                          preview={(baselineResult as any).opsPreview}
+                          downloadName="town_baseline_preview.json"
+                        />
+                      ) : null}
+
+
                       <details>
                         <summary style={{ cursor: "pointer", userSelect: "none", opacity: 0.9 }}>Raw response JSON</summary>
                         <pre style={{ marginTop: 10, background: "#111", color: "#eee", border: "1px solid #333", padding: 8, borderRadius: 6, overflow: "auto" }}>
@@ -2463,14 +2472,30 @@ export function AdminSpawnPointsPage() {
 
 type OpsPreviewBucket = { count: number; spawnIds: string[]; truncated: boolean };
 
-type MotherBrainOpsPreview = {
-  deletes?: OpsPreviewBucket;
-  inserts?: OpsPreviewBucket;
-  updates?: OpsPreviewBucket;
-  skips?: OpsPreviewBucket;
-  duplicates?: OpsPreviewBucket;
-  droppedBudget?: OpsPreviewBucket;
-};
+type AnyOpsPreview =
+  | {
+      // bucket-style (client-normalized)
+      deletes?: OpsPreviewBucket;
+      inserts?: OpsPreviewBucket;
+      updates?: OpsPreviewBucket;
+      skips?: OpsPreviewBucket;
+      duplicates?: OpsPreviewBucket;
+      droppedBudget?: OpsPreviewBucket;
+      readOnly?: OpsPreviewBucket;
+    }
+  | {
+      // list-style (server payload)
+      limit: number;
+      truncated: boolean;
+      deleteSpawnIds?: string[];
+      insertSpawnIds?: string[];
+      updateSpawnIds?: string[];
+      skipSpawnIds?: string[];
+      duplicatePlannedSpawnIds?: string[];
+      droppedPlannedSpawnIds?: string[];
+      readOnlySpawnIds?: string[];
+    };
+
 
 function downloadJson(filename: string, data: unknown) {
   const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
@@ -2484,15 +2509,44 @@ function downloadJson(filename: string, data: unknown) {
   setTimeout(() => URL.revokeObjectURL(url), 250);
 }
 
-function OpsPreviewPanel(props: { title: string; preview: MotherBrainOpsPreview; downloadName: string }) {
+function normalizeOpsPreview(preview: AnyOpsPreview): Exclude<AnyOpsPreview, { limit: number }> {
+  const anyPreview: any = preview as any;
+
+  // If it already looks like bucket-style, trust it.
+  if (anyPreview && (anyPreview.deletes || anyPreview.inserts || anyPreview.updates || anyPreview.skips || anyPreview.readOnly)) {
+    return anyPreview;
+  }
+
+  const truncated = Boolean(anyPreview?.truncated);
+
+  const toBucket = (ids: string[] | undefined): OpsPreviewBucket => {
+    const list = Array.isArray(ids) ? ids.filter(Boolean) : [];
+    return { count: list.length, spawnIds: list, truncated };
+  };
+
+  return {
+    deletes: toBucket(anyPreview?.deleteSpawnIds),
+    inserts: toBucket(anyPreview?.insertSpawnIds),
+    updates: toBucket(anyPreview?.updateSpawnIds),
+    skips: toBucket(anyPreview?.skipSpawnIds),
+    duplicates: toBucket(anyPreview?.duplicatePlannedSpawnIds),
+    droppedBudget: toBucket(anyPreview?.droppedPlannedSpawnIds),
+    readOnly: toBucket(anyPreview?.readOnlySpawnIds),
+  };
+}
+
+function OpsPreviewPanel(props: { title: string; preview: AnyOpsPreview; downloadName: string }) {
   const { title, preview, downloadName } = props;
-  const buckets: Array<[string, OpsPreviewBucket | undefined]> = [
-    ["delete", preview.deletes],
-    ["insert", preview.inserts],
-    ["update", preview.updates],
-    ["skip", preview.skips],
-    ["duplicates", preview.duplicates],
-    ["droppedBudget", preview.droppedBudget],
+  const norm = normalizeOpsPreview(preview) as any;
+
+  const buckets: Array<[string, OpsPreviewBucket]> = [
+    ["delete", norm.deletes],
+    ["insert", norm.inserts],
+    ["update", norm.updates],
+    ["skip", norm.skips],
+    ["readOnly", norm.readOnly],
+    ["duplicates", norm.duplicates],
+    ["droppedBudget", norm.droppedBudget],
   ];
 
   return (
@@ -2510,34 +2564,31 @@ function OpsPreviewPanel(props: { title: string; preview: MotherBrainOpsPreview;
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 10, marginTop: 10 }}>
         {buckets
-          .filter(([, b]) => !!b && (b!.count > 0 || b!.spawnIds.length > 0))
+          .filter(([, b]) => b.count > 0 || b.spawnIds.length > 0)
           .map(([label, b]) => (
             <div key={label} style={{ border: "1px solid #222", borderRadius: 8, padding: 8, background: "#0f0f0f" }}>
               <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 700, marginBottom: 6 }}>
                 <span>{label}</span>
                 <span style={{ opacity: 0.9 }}>
-                  {b!.count}
-                  {b!.truncated ? "+" : ""}
+                  {b.count}
+                  {b.truncated ? "+" : ""}
                 </span>
               </div>
-              {b!.spawnIds.length ? (
+              {b.spawnIds.length ? (
                 <div style={{ maxHeight: 160, overflow: "auto", border: "1px solid #222", borderRadius: 6, padding: 6, background: "#0b0b0b" }}>
-                  {b!.spawnIds.map((id) => (
+                  {b.spawnIds.map((id) => (
                     <div key={id} style={{ fontFamily: "monospace", fontSize: 12, opacity: 0.95 }}>
                       {id}
                     </div>
                   ))}
                 </div>
               ) : (
-                <div style={{ fontSize: 12, opacity: 0.7 }}>No sample</div>
+                <div style={{ fontSize: 12, opacity: 0.6 }}>none</div>
               )}
-              {b!.truncated ? <div style={{ fontSize: 12, opacity: 0.7, marginTop: 6 }}>List truncated</div> : null}
             </div>
           ))}
       </div>
     </div>
   );
 }
-
-
 }

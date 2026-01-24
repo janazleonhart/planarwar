@@ -1,192 +1,225 @@
 {
-  "registryVersion": "1.0",
-  "root": "web-frontend",
+  "conventions": {
+    "adminPages": [
+      "/admin/quests",
+      "/admin/npcs",
+      "/admin/items",
+      "/admin/spawn_points"
+    ],
+    "apiConfig": {
+      "currentAdminPages": "same-origin /api via Vite dev proxy (no hard-coded ADMIN_API_BASE)",
+      "preferred": "(dev) Vite /api proxy; (override) VITE_API_BASE_URL when cross-origin is intentional"
+    },
+    "runtimePorts": {
+      "mmo-backend.ws": 7777,
+      "vite.dev": 5173,
+      "web-backend": 4000
+    }
+  },
   "package": {
     "name": "planarwar-web-frontend",
-    "version": "0.1.0",
     "runtime": "browser",
     "stack": [
       "vite",
       "react 18",
       "typescript"
-    ]
+    ],
+    "version": "0.1.0"
   },
+  "registryVersion": "1.0",
+  "root": "web-frontend",
   "services": {
-    "web-frontend.entry.indexHtml": {
-      "kind": "doc",
-      "service": "vite.entry",
-      "path": "web-frontend/index.html",
+    "web-frontend.config.ts": {
       "class": null,
-      "lifecycle": "static",
       "ctorArgs": [],
       "dependsOn": [],
+      "kind": "data",
+      "lifecycle": "static",
+      "notes": [],
+      "owns": [],
+      "path": "web-frontend/tsconfig.json",
+      "provides": [
+        "TypeScript build configuration for Vite"
+      ],
+      "service": "tsconfig"
+    },
+    "web-frontend.config.vite": {
+      "class": null,
+      "ctorArgs": [],
+      "dependsOn": [],
+      "kind": "module",
+      "lifecycle": "static",
+      "notes": [
+        "Proxy is required for same-origin /api requests when running the frontend on :5173 and backend on :4000; avoids CORS and index.html fallbacks.",
+        "Plugin may be @vitejs/plugin-react or @vitejs/plugin-react-swc depending on installed deps."
+      ],
+      "owns": [],
+      "path": "web-frontend/vite.config.ts",
+      "provides": [
+        "Vite dev server settings (host 0.0.0.0, port 5173)",
+        "Dev proxy: /api -> http://127.0.0.1:4000 (web-backend)",
+        "Optional WS proxy: /ws -> ws://127.0.0.1:7777/ws"
+      ],
+      "service": "vite.config"
+    },
+    "web-frontend.entry.indexHtml": {
+      "class": null,
+      "ctorArgs": [],
+      "dependsOn": [],
+      "kind": "doc",
+      "lifecycle": "static",
+      "notes": [
+        "Client bootstrap for the Planar War web console + admin tools UI."
+      ],
+      "owns": [],
+      "path": "web-frontend/index.html",
       "provides": [
         "Vite HTML entrypoint (mounts #root)"
       ],
-      "owns": [],
-      "notes": [
-        "Client bootstrap for the Planar War web console + admin tools UI."
-      ]
+      "service": "vite.entry"
     },
     "web-frontend.entry.main": {
-      "kind": "ui",
-      "service": "react.bootstrap",
-      "path": "web-frontend/main.tsx",
       "class": null,
-      "lifecycle": "static",
       "ctorArgs": [],
       "dependsOn": [
         "web-frontend.ui.app"
       ],
-      "provides": [
-        "ReactDOM root render (StrictMode)"
+      "kind": "ui",
+      "lifecycle": "static",
+      "notes": [
+        "Vite entrypoint; renders <App/>."
       ],
       "owns": [
         "DOM mount to #root"
       ],
-      "notes": [
-        "Vite entrypoint; renders <App/>."
-      ]
-    },
-    "web-frontend.ui.app": {
-      "kind": "ui",
-      "service": "webConsole.app",
-      "path": "web-frontend/App.tsx",
-      "class": null,
-      "lifecycle": "singleton",
-      "ctorArgs": [],
-      "dependsOn": [
-        "web-frontend.pages.adminQuests",
-        "web-frontend.pages.adminNpcs",
-        "web-frontend.pages.adminItems",
-        "web-frontend.pages.adminSpawnPoints"
-      ],
+      "path": "web-frontend/main.tsx",
       "provides": [
-        "Login/register UI (JWT)",
-        "Character list + create character",
-        "CharacterState debug viewer",
-        "Shard WebSocket console (MUD command input)",
-        "Admin UI routes via pathname (/admin/*) gated by account flags/adminRole"
+        "ReactDOM root render (StrictMode)"
       ],
-      "owns": [
-        "auth token persistence in localStorage (pw_auth_v1)",
-        "selected character id",
-        "WebSocket connection + log buffer"
-      ],
-      "notes": [
-        "Legacy App.tsx contains its own API_BASE/SHARD_WS computed from window.location.hostname (with localhost fallback).",
-        "Admin pages now use same-origin /api (recommended) via Vite proxy in dev.",
-        "Endpoints used by the legacy App layer include: /api/auth/login, /api/auth/register, /api/characters (GET/POST), /api/characters/:id (GET).",
-        "WebSocket sends ops: whereami, mud; expects mud_result, whereami_result, chat payloads.",
-        "City-builder pages (MePage/OperationsPage) exist but are not currently routed from App.tsx."
-      ]
+      "service": "react.bootstrap"
     },
     "web-frontend.lib.api": {
-      "kind": "module",
-      "service": "api.client",
-      "path": "web-frontend/lib/api.ts",
       "class": null,
-      "lifecycle": "static",
       "ctorArgs": [],
       "dependsOn": [],
-      "provides": [
-        "Typed DTOs for city-builder UI (MeProfile, missions, armies, heroes, tech, etc.)",
-        "API_BASE_URL from VITE_API_BASE_URL (default same-origin)",
-        "fetchMe(), startTech(), api(path, init) with JSON/HTML guardrails",
-        "auth header injection (pw_auth_v1)"
-      ],
-      "owns": [],
+      "kind": "module",
+      "lifecycle": "static",
       "notes": [
         "Default behavior is same-origin (API_BASE_URL=\"\") to work cleanly with Vite dev proxy and avoid CORS.",
         "Set VITE_API_BASE_URL only when you intentionally want cross-origin calls (and have CORS configured).",
         "Used by vendor admin pages (AdminVendorEconomyPage/AdminVendorAuditPage) and city-builder pages (MePage/OperationsPage).",
         "Caution: keep secrets out of repo .env; Vite only exposes VITE_* at runtime, but secrets in-repo are still a security risk.",
         "Now attaches Authorization: Bearer <token> automatically if localStorage pw_auth_v1 is present (shared auth across MUD/CityBuilder)."
-      ]
+      ],
+      "owns": [],
+      "path": "web-frontend/lib/api.ts",
+      "provides": [
+        "Typed DTOs for city-builder UI (MeProfile, missions, armies, heroes, tech, etc.)",
+        "API_BASE_URL from VITE_API_BASE_URL (default same-origin)",
+        "fetchMe(), startTech(), api(path, init) with JSON/HTML guardrails",
+        "auth header injection (pw_auth_v1)"
+      ],
+      "service": "api.client"
     },
-    "web-frontend.pages.adminQuests": {
-      "kind": "ui",
-      "service": "admin.quests",
-      "path": "web-frontend/pages/AdminQuestsPage.tsx",
+    "web-frontend.meta.envD": {
       "class": null,
-      "lifecycle": "singleton",
       "ctorArgs": [],
       "dependsOn": [],
+      "kind": "module",
+      "lifecycle": "static",
+      "notes": [],
+      "owns": [],
+      "path": "web-frontend/vite-env.d.ts",
+      "provides": [
+        "Vite TS env type declarations"
+      ],
+      "service": "vite.env"
+    },
+    "web-frontend.meta.package": {
+      "class": null,
+      "ctorArgs": [],
+      "dependsOn": [],
+      "kind": "data",
+      "lifecycle": "static",
+      "notes": [
+        "axios is listed as a dependency but is not currently used in the checked-in TSX/TS files.",
+        "Includes a 'typecheck' script (tsc --noEmit) for CI/local TS sanity checks."
+      ],
+      "owns": [],
+      "path": "web-frontend/package.json",
+      "provides": [
+        "NPM scripts: dev/build/preview",
+        "Dependencies: react/react-dom, devDependencies: vite, typescript"
+      ],
+      "service": "npm.package"
+    },
+    "web-frontend.pages.adminItems": {
+      "class": null,
+      "ctorArgs": [],
+      "dependsOn": [],
+      "kind": "ui",
+      "lifecycle": "singleton",
+      "notes": [
+        "Uses same-origin /api requests (dev via Vite proxy; prod via reverse proxy / same host).",
+        "Endpoints: GET /api/admin/items; POST /api/admin/items; then refreshes list."
+      ],
+      "owns": [
+        "client-side form state"
+      ],
+      "path": "web-frontend/pages/AdminItemsPage.tsx",
+      "provides": [
+        "Item list + edit/create UI",
+        "Edits flagsText/statsText serialized fields"
+      ],
+      "service": "admin.items"
+    },
+    "web-frontend.pages.adminNpcs": {
+      "class": null,
+      "ctorArgs": [],
+      "dependsOn": [],
+      "kind": "ui",
+      "lifecycle": "singleton",
+      "notes": [
+        "Uses same-origin /api requests (dev via Vite proxy; prod via reverse proxy / same host).",
+        "Endpoints: GET /api/admin/npcs; POST /api/admin/npcs; then refreshes list."
+      ],
+      "owns": [
+        "client-side form state"
+      ],
+      "path": "web-frontend/pages/AdminNpcsPage.tsx",
+      "provides": [
+        "NPC list + edit/create UI",
+        "Loot editor (chance/min/max)"
+      ],
+      "service": "admin.npcs"
+    },
+    "web-frontend.pages.adminQuests": {
+      "class": null,
+      "ctorArgs": [],
+      "dependsOn": [],
+      "kind": "ui",
+      "lifecycle": "singleton",
+      "notes": [
+        "Uses same-origin /api requests (dev via Vite proxy; prod via reverse proxy / same host).",
+        "Endpoints: GET /api/admin/quests; POST /api/admin/quests; then refreshes list."
+      ],
+      "owns": [
+        "client-side form state"
+      ],
+      "path": "web-frontend/pages/AdminQuestsPage.tsx",
       "provides": [
         "Quest list + edit/create UI",
         "Objective kinds: kill/harvest/collect_item/talk_to",
         "Writes to /api/admin/quests"
       ],
-      "owns": [
-        "client-side form state"
-      ],
-      "notes": [
-        "Uses same-origin /api requests (dev via Vite proxy; prod via reverse proxy / same host).",
-        "Endpoints: GET /api/admin/quests; POST /api/admin/quests; then refreshes list."
-      ]
-    },
-    "web-frontend.pages.adminNpcs": {
-      "kind": "ui",
-      "service": "admin.npcs",
-      "path": "web-frontend/pages/AdminNpcsPage.tsx",
-      "class": null,
-      "lifecycle": "singleton",
-      "ctorArgs": [],
-      "dependsOn": [],
-      "provides": [
-        "NPC list + edit/create UI",
-        "Loot editor (chance/min/max)"
-      ],
-      "owns": [
-        "client-side form state"
-      ],
-      "notes": [
-        "Uses same-origin /api requests (dev via Vite proxy; prod via reverse proxy / same host).",
-        "Endpoints: GET /api/admin/npcs; POST /api/admin/npcs; then refreshes list."
-      ]
-    },
-    "web-frontend.pages.adminItems": {
-      "kind": "ui",
-      "service": "admin.items",
-      "path": "web-frontend/pages/AdminItemsPage.tsx",
-      "class": null,
-      "lifecycle": "singleton",
-      "ctorArgs": [],
-      "dependsOn": [],
-      "provides": [
-        "Item list + edit/create UI",
-        "Edits flagsText/statsText serialized fields"
-      ],
-      "owns": [
-        "client-side form state"
-      ],
-      "notes": [
-        "Uses same-origin /api requests (dev via Vite proxy; prod via reverse proxy / same host).",
-        "Endpoints: GET /api/admin/items; POST /api/admin/items; then refreshes list."
-      ]
+      "service": "admin.quests"
     },
     "web-frontend.pages.adminSpawnPoints": {
-      "kind": "ui",
-      "service": "admin.spawnPoints",
-      "path": "web-frontend/pages/AdminSpawnPointsPage.tsx",
       "class": null,
-      "lifecycle": "singleton",
       "ctorArgs": [],
       "dependsOn": [],
-      "provides": [
-        "Spawn Points Editor (v1): browse/edit",
-        "Client-side quick search (type/archetype/proto/spawn/region) over the loaded list",
-        "Diff/summary panels for Mother Brain wave/wipe and Town Baseline plan/apply (plus expandable raw JSON)",
-        "Batch tools: bulk delete/move, clone, scatter",
-        "Mother Brain: status, list, wave (plan/commit), wipe (plan/commit)",
-        "Town Baseline tool: plan/apply deterministic town/outpost services around a selected town spawn (mailbox/rest/guards/dummies/stations)",
-        "Confirm-token safety UX for Mother Brain wave/wipe commits (409 confirm_required -> expectedConfirmToken -> Confirm + Commit)."
-      ],
-      "owns": [
-        "UI persistence in localStorage (adminSpawnPointsPage.ui.v1)",
-        "selected rows + filter state",
-        "Mother Brain wave/wipe responses"
-      ],
+      "kind": "ui",
+      "lifecycle": "singleton",
       "notes": [
         "Uses same-origin /api requests (dev via Vite proxy; prod via reverse proxy / same host).",
         "Endpoints: GET /api/admin/spawn_points?..., POST /api/admin/spawn_points (create), PUT /api/admin/spawn_points/:id, bulk_delete, bulk_move, clone, scatter.",
@@ -198,172 +231,140 @@
         "Displays confirm token both when required (HTTP 409 confirm_required) and when merely available for later commit.",
         "Mother Brain ops UX: supports confirm_required flow with copy/fill token controls and per-parameter token scoping (token resets when inputs change).",
         "Wipe confirm adds an extra human-speed lock: type 'WIPE' before token entry/commit enables.",
-        "Adds diff preview panel for Mother Brain wave/wipe (delete/insert/update/skip + export JSON)."
-      ]
+        "Adds diff preview panel for Mother Brain wave/wipe (delete/insert/update/skip + export JSON).",
+        "UI renders opsPreview diff previews for Mother Brain wave/wipe AND Town baseline plan/apply (with JSON export)."
+      ],
+      "owns": [
+        "UI persistence in localStorage (adminSpawnPointsPage.ui.v1)",
+        "selected rows + filter state",
+        "Mother Brain wave/wipe responses"
+      ],
+      "path": "web-frontend/pages/AdminSpawnPointsPage.tsx",
+      "provides": [
+        "Spawn Points Editor (v1): browse/edit",
+        "Client-side quick search (type/archetype/proto/spawn/region) over the loaded list",
+        "Diff/summary panels for Mother Brain wave/wipe and Town Baseline plan/apply (plus expandable raw JSON)",
+        "Batch tools: bulk delete/move, clone, scatter",
+        "Mother Brain: status, list, wave (plan/commit), wipe (plan/commit)",
+        "Town Baseline tool: plan/apply deterministic town/outpost services around a selected town spawn (mailbox/rest/guards/dummies/stations)",
+        "Confirm-token safety UX for Mother Brain wave/wipe commits (409 confirm_required -> expectedConfirmToken -> Confirm + Commit)."
+      ],
+      "service": "admin.spawnPoints"
+    },
+    "web-frontend.pages.adminVendorAudit": {
+      "class": "AdminVendorAuditPage",
+      "ctorArgs": [],
+      "dependsOn": [],
+      "kind": "page",
+      "lifecycle": "page",
+      "notes": [
+        "Simple table UI with filters + pagination. Backed by /api/admin/vendor_audit.",
+        "Server streaming CSV export"
+      ],
+      "owns": [
+        "Admin UI for vendor_log"
+      ],
+      "path": "web-frontend/pages/AdminVendorAuditPage.tsx",
+      "provides": [
+        "/admin/vendor_audit"
+      ],
+      "service": "web.adminPages"
+    },
+    "web-frontend.pages.adminVendorEconomy": {
+      "class": "AdminVendorEconomyPage",
+      "ctorArgs": [],
+      "dependsOn": [],
+      "kind": "page",
+      "lifecycle": "page",
+      "notes": [
+        "Editable vendor economy knobs (stockMax/restock cadence/price mults) with per-row save + optional stock reset."
+      ],
+      "owns": [
+        "Admin UI for vendor_item_economy"
+      ],
+      "path": "web-frontend/pages/AdminVendorEconomyPage.tsx",
+      "provides": [
+        "/admin/vendor_economy"
+      ],
+      "service": "web.adminPages"
     },
     "web-frontend.pages.me": {
-      "kind": "ui",
-      "service": "cityBuilder.me",
-      "path": "web-frontend/pages/MePage.tsx",
       "class": null,
-      "lifecycle": "singleton",
       "ctorArgs": [],
       "dependsOn": [
         "web-frontend.lib.api"
       ],
-      "provides": [
-        "City-builder dashboard: city status + buildings + tech + missions + armies/heroes + policies",
-        "Action buttons that POST to various /api/* endpoints"
+      "kind": "ui",
+      "lifecycle": "singleton",
+      "notes": [
+        "Not currently routed from App.tsx.",
+        "Endpoints used include: /api/me, /api/tech/start, /api/missions/start, /api/missions/complete, /api/missions/refresh_region, /api/buildings/construct, /api/buildings/upgrade, /api/city/tier-up, /api/warfront/assault, /api/armies/raise, /api/armies/reinforce, /api/garrisons/strike, /api/heroes/equip_attachment, /api/heroes/recruit, /api/workshop/craft, /api/workshop/collect, /api/policies/toggle."
       ],
       "owns": [
         "client-side UI state for selected actions",
         "optimistic refresh loops calling fetchMe()"
       ],
-      "notes": [
-        "Not currently routed from App.tsx.",
-        "Endpoints used include: /api/me, /api/tech/start, /api/missions/start, /api/missions/complete, /api/missions/refresh_region, /api/buildings/construct, /api/buildings/upgrade, /api/city/tier-up, /api/warfront/assault, /api/armies/raise, /api/armies/reinforce, /api/garrisons/strike, /api/heroes/equip_attachment, /api/heroes/recruit, /api/workshop/craft, /api/workshop/collect, /api/policies/toggle."
-      ]
+      "path": "web-frontend/pages/MePage.tsx",
+      "provides": [
+        "City-builder dashboard: city status + buildings + tech + missions + armies/heroes + policies",
+        "Action buttons that POST to various /api/* endpoints"
+      ],
+      "service": "cityBuilder.me"
     },
     "web-frontend.pages.operations": {
-      "kind": "ui",
-      "service": "cityBuilder.operations",
-      "path": "web-frontend/pages/OperationsPage.tsx",
       "class": null,
-      "lifecycle": "singleton",
       "ctorArgs": [],
       "dependsOn": [
         "web-frontend.lib.api"
       ],
-      "provides": [
-        "Read-only operations view (active missions)"
-      ],
-      "owns": [
-        "client-side fetchMe() state"
-      ],
+      "kind": "ui",
+      "lifecycle": "singleton",
       "notes": [
         "Not currently routed from App.tsx.",
         "Uses fetchMe() (GET /api/me).",
         "CityBuilder legacy payload: mission fields may be absent; treat activeMissions/missionId as optional to avoid TS drift."
-      ]
-    },
-    "web-frontend.config.vite": {
-      "kind": "module",
-      "service": "vite.config",
-      "path": "web-frontend/vite.config.ts",
-      "class": null,
-      "lifecycle": "static",
-      "ctorArgs": [],
-      "dependsOn": [],
-      "provides": [
-        "Vite dev server settings (host 0.0.0.0, port 5173)",
-        "Dev proxy: /api -> http://127.0.0.1:4000 (web-backend)",
-        "Optional WS proxy: /ws -> ws://127.0.0.1:7777/ws"
-      ],
-      "owns": [],
-      "notes": [
-        "Proxy is required for same-origin /api requests when running the frontend on :5173 and backend on :4000; avoids CORS and index.html fallbacks.",
-        "Plugin may be @vitejs/plugin-react or @vitejs/plugin-react-swc depending on installed deps."
-      ]
-    },
-    "web-frontend.config.ts": {
-      "kind": "data",
-      "service": "tsconfig",
-      "path": "web-frontend/tsconfig.json",
-      "class": null,
-      "lifecycle": "static",
-      "ctorArgs": [],
-      "dependsOn": [],
-      "provides": [
-        "TypeScript build configuration for Vite"
-      ],
-      "owns": [],
-      "notes": []
-    },
-    "web-frontend.meta.envD": {
-      "kind": "module",
-      "service": "vite.env",
-      "path": "web-frontend/vite-env.d.ts",
-      "class": null,
-      "lifecycle": "static",
-      "ctorArgs": [],
-      "dependsOn": [],
-      "provides": [
-        "Vite TS env type declarations"
-      ],
-      "owns": [],
-      "notes": []
-    },
-    "web-frontend.meta.package": {
-      "kind": "data",
-      "service": "npm.package",
-      "path": "web-frontend/package.json",
-      "class": null,
-      "lifecycle": "static",
-      "ctorArgs": [],
-      "dependsOn": [],
-      "provides": [
-        "NPM scripts: dev/build/preview",
-        "Dependencies: react/react-dom, devDependencies: vite, typescript"
-      ],
-      "owns": [],
-      "notes": [
-        "axios is listed as a dependency but is not currently used in the checked-in TSX/TS files.",
-        "Includes a 'typecheck' script (tsc --noEmit) for CI/local TS sanity checks."
-      ]
-    },
-    "web-frontend.pages.adminVendorAudit": {
-      "kind": "page",
-      "service": "web.adminPages",
-      "path": "web-frontend/pages/AdminVendorAuditPage.tsx",
-      "class": "AdminVendorAuditPage",
-      "lifecycle": "page",
-      "ctorArgs": [],
-      "dependsOn": [],
-      "provides": [
-        "/admin/vendor_audit"
       ],
       "owns": [
-        "Admin UI for vendor_log"
+        "client-side fetchMe() state"
       ],
-      "notes": [
-        "Simple table UI with filters + pagination. Backed by /api/admin/vendor_audit.",
-        "Server streaming CSV export"
-      ]
-    },
-    "web-frontend.pages.adminVendorEconomy": {
-      "kind": "page",
-      "service": "web.adminPages",
-      "path": "web-frontend/pages/AdminVendorEconomyPage.tsx",
-      "class": "AdminVendorEconomyPage",
-      "lifecycle": "page",
-      "ctorArgs": [],
-      "dependsOn": [],
+      "path": "web-frontend/pages/OperationsPage.tsx",
       "provides": [
-        "/admin/vendor_economy"
+        "Read-only operations view (active missions)"
+      ],
+      "service": "cityBuilder.operations"
+    },
+    "web-frontend.ui.app": {
+      "class": null,
+      "ctorArgs": [],
+      "dependsOn": [
+        "web-frontend.pages.adminQuests",
+        "web-frontend.pages.adminNpcs",
+        "web-frontend.pages.adminItems",
+        "web-frontend.pages.adminSpawnPoints"
+      ],
+      "kind": "ui",
+      "lifecycle": "singleton",
+      "notes": [
+        "Legacy App.tsx contains its own API_BASE/SHARD_WS computed from window.location.hostname (with localhost fallback).",
+        "Admin pages now use same-origin /api (recommended) via Vite proxy in dev.",
+        "Endpoints used by the legacy App layer include: /api/auth/login, /api/auth/register, /api/characters (GET/POST), /api/characters/:id (GET).",
+        "WebSocket sends ops: whereami, mud; expects mud_result, whereami_result, chat payloads.",
+        "City-builder pages (MePage/OperationsPage) exist but are not currently routed from App.tsx."
       ],
       "owns": [
-        "Admin UI for vendor_item_economy"
+        "auth token persistence in localStorage (pw_auth_v1)",
+        "selected character id",
+        "WebSocket connection + log buffer"
       ],
-      "notes": [
-        "Editable vendor economy knobs (stockMax/restock cadence/price mults) with per-row save + optional stock reset."
-      ]
-    }
-  },
-  "conventions": {
-    "adminPages": [
-      "/admin/quests",
-      "/admin/npcs",
-      "/admin/items",
-      "/admin/spawn_points"
-    ],
-    "apiConfig": {
-      "preferred": "(dev) Vite /api proxy; (override) VITE_API_BASE_URL when cross-origin is intentional",
-      "currentAdminPages": "same-origin /api via Vite dev proxy (no hard-coded ADMIN_API_BASE)"
-    },
-    "runtimePorts": {
-      "web-backend": 4000,
-      "mmo-backend.ws": 7777,
-      "vite.dev": 5173
+      "path": "web-frontend/App.tsx",
+      "provides": [
+        "Login/register UI (JWT)",
+        "Character list + create character",
+        "CharacterState debug viewer",
+        "Shard WebSocket console (MUD command input)",
+        "Admin UI routes via pathname (/admin/*) gated by account flags/adminRole"
+      ],
+      "service": "webConsole.app"
     }
   }
 }

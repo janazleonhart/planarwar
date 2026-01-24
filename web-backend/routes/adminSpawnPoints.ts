@@ -105,6 +105,45 @@ function summarizePlannedSpawns(
 }
 
 
+function buildTownBaselineOpsPreview(planItems: TownBaselinePlanItem[], limit = 75): TownBaselineOpsPreview {
+  const inserts: string[] = [];
+  const updates: string[] = [];
+  const skips: string[] = [];
+  const readOnly: string[] = [];
+
+  for (const item of planItems) {
+    const sid = String(item?.spawn?.spawnId ?? "").trim();
+    if (!sid) continue;
+
+    if (!isSpawnEditable(sid)) {
+      readOnly.push(sid);
+      continue;
+    }
+
+    if (item.op === "insert") inserts.push(sid);
+    else if (item.op === "update") updates.push(sid);
+    else skips.push(sid);
+  }
+
+  const sort = (arr: string[]) => arr.sort((a, b) => a.localeCompare(b));
+  sort(inserts);
+  sort(updates);
+  sort(skips);
+  sort(readOnly);
+
+  const truncated = inserts.length > limit || updates.length > limit || skips.length > limit || readOnly.length > limit;
+
+  return {
+    limit,
+    truncated,
+    insertSpawnIds: inserts.slice(0, limit),
+    updateSpawnIds: updates.slice(0, limit),
+    skipSpawnIds: skips.slice(0, limit),
+    readOnlySpawnIds: readOnly.slice(0, limit),
+  };
+}
+
+
 function hashToken(input: unknown): string {
   const s = typeof input === "string" ? input : JSON.stringify(input);
   return createHash("sha256").update(s).digest("hex").slice(0, 10);
@@ -1058,6 +1097,8 @@ type TownBaselinePlanResponse = {
   wouldSkip?: number;
   skippedReadOnly?: number;
 
+  opsPreview?: TownBaselineOpsPreview;
+
   plan?: TownBaselinePlanItem[];
   error?: string;
 };
@@ -1324,6 +1365,7 @@ router.post("/town_baseline/plan", async (req, res) => {
       wouldInsert: plan.wouldInsert,
       wouldUpdate: plan.wouldUpdate,
       wouldSkip: plan.wouldSkip,
+            opsPreview: buildTownBaselineOpsPreview(plan.planItems),
       plan: plan.planItems,
     };
 
@@ -1375,7 +1417,8 @@ router.post("/town_baseline/apply", async (req, res) => {
         wouldInsert: plan.wouldInsert,
         wouldUpdate: plan.wouldUpdate,
         wouldSkip: plan.wouldSkip,
-        plan: plan.planItems,
+              opsPreview: buildTownBaselineOpsPreview(plan.planItems),
+      plan: plan.planItems,
       };
       return res.json(response);
     }
@@ -1497,6 +1540,7 @@ router.post("/town_baseline/apply", async (req, res) => {
       wouldUpdate: updated,
       wouldSkip: skipped,
       skippedReadOnly,
+            opsPreview: buildTownBaselineOpsPreview(plan.planItems),
       plan: plan.planItems,
     };
 
@@ -1555,6 +1599,15 @@ type MotherBrainOpsPreview = {
   skipSpawnIds?: string[];
   duplicatePlannedSpawnIds?: string[];
   droppedPlannedSpawnIds?: string[];
+};
+
+type TownBaselineOpsPreview = {
+  limit: number;
+  truncated: boolean;
+  insertSpawnIds?: string[];
+  updateSpawnIds?: string[];
+  skipSpawnIds?: string[];
+  readOnlySpawnIds?: string[];
 };
 
 
