@@ -443,6 +443,8 @@ export function AdminSpawnPointsPage() {
   const [wipeConfirmExpected, setWipeConfirmExpected] = useState<string | null>(null);
   const [wipeConfirmInput, setWipeConfirmInput] = useState("");
   const [wipeConfirmRequired, setWipeConfirmRequired] = useState(false);
+  const [wipeUnlockInput, setWipeUnlockInput] = useState("");
+
 
   const selectedSet = useMemo(() => new Set(selectedIds), [selectedIds]);
 
@@ -649,6 +651,7 @@ export function AdminSpawnPointsPage() {
       if (res.status === 409 && data && (data as any).error === "confirm_required" && (data as any).expectedConfirmToken) {
         setWipeConfirmExpected((data as any).expectedConfirmToken);
         setWipeConfirmInput("");
+        setWipeUnlockInput("");
         setWipeConfirmRequired(true);
         setWipeResult(data);
         return;
@@ -662,6 +665,7 @@ export function AdminSpawnPointsPage() {
       setWipeConfirmRequired(false);
       setWipeConfirmExpected((data as any).expectedConfirmToken ? String((data as any).expectedConfirmToken) : null);
       setWipeConfirmInput("");
+      setWipeUnlockInput("");
       setWipeResult(data);
 
       // Refresh status + reload list so it feels immediate.
@@ -685,6 +689,7 @@ export function AdminSpawnPointsPage() {
   useEffect(() => {
     setWipeConfirmExpected(null);
     setWipeConfirmInput("");
+    setWipeUnlockInput("");
     setWipeConfirmRequired(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mbBounds, mbCellSize, wipeTheme, wipeEpoch, wipeBorderMargin]);
@@ -1477,7 +1482,19 @@ export function AdminSpawnPointsPage() {
                 <button disabled={waveLoading || !canWrite} onClick={() => void runMotherBrainWave(false)}>
                   {waveLoading ? "Working..." : "Plan (dry-run)"}
                 </button>
-                <button disabled={waveLoading || !canWrite} onClick={() => void runMotherBrainWave(true)}>
+                <button
+                  disabled={waveLoading || !canWrite}
+                  onClick={() => {
+                    const wouldDelete = Number((waveResult as any)?.wouldDelete ?? 0);
+                    // If we already have a token from a prior plan, don't even try the commit without it.
+                    if (!waveAppend && waveConfirmExpected && wouldDelete > 0) {
+                      setWaveConfirmRequired(true);
+                      setWaveConfirmInput("");
+                      return;
+                    }
+                    void runMotherBrainWave(true);
+                  }}
+                >
                   {waveLoading ? "Working..." : "Commit"}
                 </button>
               </div>
@@ -1496,11 +1513,22 @@ export function AdminSpawnPointsPage() {
                       type="button"
                       onClick={() => {
                         try {
-                          void navigator.clipboard?.writeText(waveConfirmExpected);
+                          void navigator.clipboard?.writeText(String(waveConfirmExpected));
                         } catch {}
                       }}
                     >
                       Copy
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setWaveConfirmInput(String(waveConfirmExpected));
+                        try {
+                          void navigator.clipboard?.writeText(String(waveConfirmExpected));
+                        } catch {}
+                      }}
+                    >
+                      Copy + Fill
                     </button>
                   </div>
                 </div>
@@ -1511,6 +1539,9 @@ export function AdminSpawnPointsPage() {
                   <div style={{ fontWeight: 700, marginBottom: 6 }}>Confirm required</div>
                   <div style={{ fontSize: 12, opacity: 0.9, marginBottom: 8 }}>
                     This commit would delete existing <code>brain:*</code> spawns in-bounds. Re-run with the confirm token below.
+                  </div>
+                  <div style={{ fontFamily: "monospace", fontSize: 12, opacity: 0.9, marginBottom: 8 }}>
+                    shard={shardId.trim() || "prime_shard"} bounds={mbBounds.trim() || "-1..1,-1..1"} cell={Number(mbCellSize) || 64} mode={waveAppend ? "append" : "replace"} wouldDelete={Number((waveResult as any)?.wouldDelete ?? 0)}
                   </div>
 
                   <div style={{ display: "grid", gap: 6 }}>
@@ -1526,11 +1557,22 @@ export function AdminSpawnPointsPage() {
                         type="button"
                         onClick={() => {
                           try {
-                            void navigator.clipboard?.writeText(waveConfirmExpected);
+                            void navigator.clipboard?.writeText(String(waveConfirmExpected));
                           } catch {}
                         }}
                       >
                         Copy
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setWaveConfirmInput(String(waveConfirmExpected));
+                          try {
+                            void navigator.clipboard?.writeText(String(waveConfirmExpected));
+                          } catch {}
+                        }}
+                      >
+                        Copy + Fill
                       </button>
                       <button
                         type="button"
@@ -1611,7 +1653,16 @@ export function AdminSpawnPointsPage() {
                 </button>
                 <button
                   disabled={wipeLoading || !canRoot}
-                  onClick={() => void runMotherBrainWipe(true)}
+                  onClick={() => {
+                    const wouldDelete = Number((wipeResult as any)?.wouldDelete ?? 0);
+                    if (wipeConfirmExpected && wouldDelete > 0) {
+                      setWipeConfirmRequired(true);
+                      setWipeConfirmInput("");
+                      setWipeUnlockInput("");
+                      return;
+                    }
+                    void runMotherBrainWipe(true);
+                  }}
                   style={{ border: "1px solid #b71c1c" }}
                 >
                   {wipeLoading ? "Working..." : "Commit wipe"}
@@ -1632,11 +1683,22 @@ export function AdminSpawnPointsPage() {
                       type="button"
                       onClick={() => {
                         try {
-                          void navigator.clipboard?.writeText(wipeConfirmExpected);
+                          void navigator.clipboard?.writeText(String(wipeConfirmExpected));
                         } catch {}
                       }}
                     >
                       Copy
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setWipeConfirmInput(String(wipeConfirmExpected));
+                        try {
+                          void navigator.clipboard?.writeText(String(wipeConfirmExpected));
+                        } catch {}
+                      }}
+                    >
+                      Copy + Fill
                     </button>
                   </div>
                 </div>
@@ -1648,6 +1710,9 @@ export function AdminSpawnPointsPage() {
                   <div style={{ fontSize: 12, opacity: 0.9, marginBottom: 8 }}>
                     This wipe would delete existing <code>brain:*</code> spawns in-bounds. Re-run with the confirm token below.
                   </div>
+                  <div style={{ fontFamily: "monospace", fontSize: 12, opacity: 0.9, marginBottom: 8 }}>
+                    shard={shardId.trim() || "prime_shard"} bounds={mbBounds.trim() || "-1..1,-1..1"} cell={Number(mbCellSize) || 64} borderMargin={Number(wipeBorderMargin) || 0} wouldDelete={Number((wipeResult as any)?.wouldDelete ?? 0)}
+                  </div>
 
                   <div style={{ display: "grid", gap: 6 }}>
                     <div style={{ fontFamily: "monospace", fontSize: 12, wordBreak: "break-all", opacity: 0.95 }}>
@@ -1655,14 +1720,28 @@ export function AdminSpawnPointsPage() {
                     </div>
                     <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
                       <label style={{ display: "grid", gap: 4, flex: 1, minWidth: 260 }}>
+                        <span style={{ opacity: 0.85, fontSize: 12 }}>Type WIPE to unlock</span>
+                        <input
+                          value={wipeUnlockInput}
+                          onChange={(e) => setWipeUnlockInput(e.target.value)}
+                          placeholder="WIPE"
+                        />
+                      </label>
+
+                      <label style={{ display: "grid", gap: 4, flex: 1, minWidth: 260 }}>
                         <span style={{ opacity: 0.85, fontSize: 12 }}>Confirm token</span>
-                        <input value={wipeConfirmInput} onChange={(e) => setWipeConfirmInput(e.target.value)} placeholder={wipeConfirmExpected} />
+                        <input
+                          disabled={wipeUnlockInput.trim().toUpperCase() !== "WIPE"}
+                          value={wipeConfirmInput}
+                          onChange={(e) => setWipeConfirmInput(e.target.value)}
+                          placeholder={wipeConfirmExpected}
+                        />
                       </label>
                       <button
                         type="button"
                         onClick={() => {
                           try {
-                            void navigator.clipboard?.writeText(wipeConfirmExpected);
+                            void navigator.clipboard?.writeText(String(wipeConfirmExpected));
                           } catch {}
                         }}
                       >
@@ -1670,7 +1749,7 @@ export function AdminSpawnPointsPage() {
                       </button>
                       <button
                         type="button"
-                        disabled={wipeLoading || wipeConfirmInput.trim() !== wipeConfirmExpected}
+                        disabled={wipeLoading || wipeUnlockInput.trim().toUpperCase() !== "WIPE" || wipeConfirmInput.trim() !== wipeConfirmExpected}
                         onClick={() => void runMotherBrainWipe(true, wipeConfirmInput)}
                         style={{ border: "1px solid #b71c1c" }}
                       >
