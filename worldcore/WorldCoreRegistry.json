@@ -3775,13 +3775,13 @@
     },
     "quests.TownQuestBoard": {
       "dependsOn": [
-        "quests.QuestGenerator",
-        "quests.QuestRegistry",
-        "quests.QuestState",
+        "quests.generator",
+        "quests.registry",
+        "quests.state",
         "progression.core",
         "characters.service",
-        "core.EntityManager",
-        "core.RoomManager"
+        "core.entities",
+        "core.rooms"
       ],
       "functions": [
         "renderTownQuestBoard(ctx, char)",

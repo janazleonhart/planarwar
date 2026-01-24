@@ -3380,18 +3380,30 @@ type AnyOpsPreview =
       duplicates?: OpsPreviewBucket;
       droppedBudget?: OpsPreviewBucket;
       readOnly?: OpsPreviewBucket;
+      extraTarget?: OpsPreviewBucket;
     }
   | {
       // list-style (server payload)
       limit: number;
       truncated: boolean;
       deleteSpawnIds?: string[];
+      deleteCount?: number;
       insertSpawnIds?: string[];
+      insertCount?: number;
       updateSpawnIds?: string[];
+      updateCount?: number;
       skipSpawnIds?: string[];
+      skipCount?: number;
       duplicatePlannedSpawnIds?: string[];
+      duplicatePlannedCount?: number;
       droppedPlannedSpawnIds?: string[];
+      droppedPlannedCount?: number;
       readOnlySpawnIds?: string[];
+      readOnlyCount?: number;
+
+      // P5: mismatch signal (rows currently in target slice but not present in snapshot)
+      extraTargetSpawnIds?: string[];
+      extraTargetCount?: number;
     };
 
 
@@ -3417,19 +3429,22 @@ function normalizeOpsPreview(preview: AnyOpsPreview): Exclude<AnyOpsPreview, { l
 
   const truncated = Boolean(anyPreview?.truncated);
 
-  const toBucket = (ids: string[] | undefined): OpsPreviewBucket => {
+  const toBucket = (ids: string[] | undefined, countOverride?: unknown): OpsPreviewBucket => {
     const list = Array.isArray(ids) ? ids.filter(Boolean) : [];
-    return { count: list.length, spawnIds: list, truncated };
+    const n = Number(countOverride);
+    const count = Number.isFinite(n) ? n : list.length;
+    return { count, spawnIds: list, truncated };
   };
 
   return {
-    deletes: toBucket(anyPreview?.deleteSpawnIds),
-    inserts: toBucket(anyPreview?.insertSpawnIds),
-    updates: toBucket(anyPreview?.updateSpawnIds),
-    skips: toBucket(anyPreview?.skipSpawnIds),
-    duplicates: toBucket(anyPreview?.duplicatePlannedSpawnIds),
-    droppedBudget: toBucket(anyPreview?.droppedPlannedSpawnIds),
-    readOnly: toBucket(anyPreview?.readOnlySpawnIds),
+    deletes: toBucket(anyPreview?.deleteSpawnIds, anyPreview?.deleteCount),
+    inserts: toBucket(anyPreview?.insertSpawnIds, anyPreview?.insertCount),
+    updates: toBucket(anyPreview?.updateSpawnIds, anyPreview?.updateCount),
+    skips: toBucket(anyPreview?.skipSpawnIds, anyPreview?.skipCount),
+    duplicates: toBucket(anyPreview?.duplicatePlannedSpawnIds, anyPreview?.duplicatePlannedCount),
+    droppedBudget: toBucket(anyPreview?.droppedPlannedSpawnIds, anyPreview?.droppedPlannedCount),
+    readOnly: toBucket(anyPreview?.readOnlySpawnIds, anyPreview?.readOnlyCount),
+    extraTarget: toBucket(anyPreview?.extraTargetSpawnIds, anyPreview?.extraTargetCount),
   };
 }
 
@@ -3443,9 +3458,24 @@ function OpsPreviewPanel(props: { title: string; preview: AnyOpsPreview; downloa
     ["update", norm.updates],
     ["skip", norm.skips],
     ["readOnly", norm.readOnly],
+    ["extraTarget", (norm as any).extraTarget],
     ["duplicates", norm.duplicates],
     ["droppedBudget", norm.droppedBudget],
   ];
+
+
+  const prettyLabel = (key: string): string => {
+    switch (key) {
+      case "readOnly":
+        return "readOnly (blocked)";
+      case "droppedBudget":
+        return "droppedBudget (budget cap)";
+      case "extraTarget":
+        return "extraTarget (not in snapshot)";
+      default:
+        return key;
+    }
+  };
 
   return (
     <div style={{ marginTop: 10, border: "1px solid #333", borderRadius: 8, padding: 10, background: "#0b0b0b" }}>
@@ -3466,7 +3496,7 @@ function OpsPreviewPanel(props: { title: string; preview: AnyOpsPreview; downloa
           .map(([label, b]) => (
             <div key={label} style={{ border: "1px solid #222", borderRadius: 8, padding: 8, background: "#0f0f0f" }}>
               <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 700, marginBottom: 6 }}>
-                <span>{label}</span>
+                <span>{prettyLabel(label)}</span>
                 <span style={{ opacity: 0.9 }}>
                   {b.count}
                   {b.truncated ? "+" : ""}

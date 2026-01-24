@@ -179,10 +179,20 @@ type SpawnSliceSnapshot = {
 type SpawnSliceOpsPreview = {
   limit: number;
   truncated: boolean;
+
+  // list-style (truncated IDs) + full counts for accurate UI summaries
   insertSpawnIds: string[];
+  insertCount: number;
   updateSpawnIds: string[];
+  updateCount: number;
   skipSpawnIds: string[];
+  skipCount: number;
   readOnlySpawnIds: string[];
+  readOnlyCount: number;
+
+  // P5: mismatch signal (rows currently in target slice but not present in snapshot)
+  extraTargetSpawnIds?: string[];
+  extraTargetCount?: number;
 };
 
 type StoredSpawnSnapshotDoc = {
@@ -390,26 +400,54 @@ function buildSpawnSliceOpsPreview(args: {
   updateIds: string[];
   skipIds: string[];
   readOnlyIds: string[];
+  extraTargetIds?: string[];
+  extraTargetCount?: number;
   limit?: number;
 }): SpawnSliceOpsPreview {
   const limit = Math.max(1, Math.floor(args.limit ?? 75));
+
   const sort = (arr: string[]) => arr.sort((a, b) => a.localeCompare(b));
-  const ins = [...args.insertIds];
-  const upd = [...args.updateIds];
-  const skp = [...args.skipIds];
-  const ro = [...args.readOnlyIds];
-  sort(ins);
-  sort(upd);
-  sort(skp);
-  sort(ro);
-  const truncated = ins.length > limit || upd.length > limit || skp.length > limit || ro.length > limit;
+
+  const insAll = [...args.insertIds];
+  const updAll = [...args.updateIds];
+  const skpAll = [...args.skipIds];
+  const roAll = [...args.readOnlyIds];
+  const extraAll = Array.isArray(args.extraTargetIds) ? [...args.extraTargetIds] : [];
+
+  sort(insAll);
+  sort(updAll);
+  sort(skpAll);
+  sort(roAll);
+  sort(extraAll);
+
+  const insertCount = insAll.length;
+  const updateCount = updAll.length;
+  const skipCount = skpAll.length;
+  const readOnlyCount = roAll.length;
+
+  const extraTargetCount =
+    Number.isFinite(Number(args.extraTargetCount)) ? Number(args.extraTargetCount) : extraAll.length;
+
+  const truncated =
+    insertCount > limit ||
+    updateCount > limit ||
+    skipCount > limit ||
+    readOnlyCount > limit ||
+    extraTargetCount > limit;
+
   return {
     limit,
     truncated,
-    insertSpawnIds: ins.slice(0, limit),
-    updateSpawnIds: upd.slice(0, limit),
-    skipSpawnIds: skp.slice(0, limit),
-    readOnlySpawnIds: ro.slice(0, limit),
+    insertSpawnIds: insAll.slice(0, limit),
+    insertCount,
+    updateSpawnIds: updAll.slice(0, limit),
+    updateCount,
+    skipSpawnIds: skpAll.slice(0, limit),
+    skipCount,
+    readOnlySpawnIds: roAll.slice(0, limit),
+    readOnlyCount,
+    extraTargetSpawnIds: extraAll.length ? extraAll.slice(0, limit) : undefined,
+    extraTargetCount: extraTargetCount ? extraTargetCount : undefined,
   };
 }
 
@@ -2330,7 +2368,7 @@ router.post("/restore", async (req, res) => {
     const snapshotObj =
       typeof snapshotRaw === "string" ? JSON.parse(snapshotRaw) : snapshotRaw;
 
-    const { snapshotShard, spawns } = coerceSnapshotSpawns(snapshotObj);
+    const { snapshotShard, bounds: snapshotBounds, cellSize: snapshotCellSize, pad: snapshotPad, types: snapshotTypes, spawns } = coerceSnapshotSpawns(snapshotObj);
 
     const targetShard = String(req.body?.targetShard ?? snapshotShard ?? "prime_shard").trim() || "prime_shard";
     const updateExisting = Boolean(req.body?.updateExisting);
@@ -2356,7 +2394,62 @@ router.post("/restore", async (req, res) => {
       client.release();
     }
 
+    // P5: mismatch diff — if the snapshot includes bounds/cellSize/pad/types, compare it to the current target slice.
+    // This does NOT imply deletion; it simply highlights rows currently in the target slice that are not present in the snapshot.
+    let extraTargetIds: string[] = [];
+    let extraTargetCount: number | undefined;
+
+    const haveSliceMeta =
+      !!snapshotBounds &&
+      Number.isFinite(Number(snapshotCellSize)) &&
+      Number.isFinite(Number(snapshotPad)) &&
+      Array.isArray(snapshotTypes) &&
+      snapshotTypes.length > 0;
+
+    if (haveSliceMeta) {
+      const cellSize = Math.max(1, Math.floor(Number(snapshotCellSize)));
+      const pad = Math.max(0, Math.floor(Number(snapshotPad)));
+
+      const minX = snapshotBounds.minCx * cellSize - pad;
+      const maxX = (snapshotBounds.maxCx + 1) * cellSize + pad;
+      const minZ = snapshotBounds.minCz * cellSize - pad;
+      const maxZ = (snapshotBounds.maxCz + 1) * cellSize + pad;
+
+      const snapshotIdSet = new Set<string>(spawnIds);
+
+      const sliceClient = await db.connect();
+      try {
+        const q = await sliceClient.query(
+          `
+            SELECT spawn_id
+            FROM spawn_points
+            WHERE shard_id = $1
+              AND type = ANY($2::text[])
+              AND x >= $3 AND x <= $4
+              AND z >= $5 AND z <= $6
+            ORDER BY spawn_id
+          `,
+          [targetShard, snapshotTypes, minX, maxX, minZ, maxZ],
+        );
+
+        let count = 0;
+        const list: string[] = [];
+        for (const r of q.rows as any[]) {
+          const sid = String(r.spawn_id ?? "");
+          if (!sid) continue;
+          if (snapshotIdSet.has(sid)) continue;
+          count++;
+          if (list.length < 75) list.push(sid);
+        }
+        extraTargetCount = count;
+        extraTargetIds = list;
+      } finally {
+        sliceClient.release();
+      }
+    }
+
     const insertIds: string[] = [];
+
     const updateIds: string[] = [];
     const skipIds: string[] = [];
     const readOnlyIds: string[] = [];
@@ -2381,6 +2474,8 @@ router.post("/restore", async (req, res) => {
       updateIds,
       skipIds,
       readOnlyIds,
+      extraTargetIds,
+      extraTargetCount,
       limit: 75,
     });
 
@@ -2407,6 +2502,10 @@ router.post("/restore", async (req, res) => {
         snapshotShard,
         targetShard,
         rows: spawns.length,
+        snapshotBounds: snapshotBounds ?? undefined,
+        snapshotCellSize: snapshotCellSize ?? undefined,
+        snapshotPad: snapshotPad ?? undefined,
+        snapshotTypes: snapshotTypes ?? undefined,
         crossShard: targetShard !== snapshotShard,
         allowBrainOwned,
         wouldInsert: insertIds.length,
@@ -2428,6 +2527,10 @@ router.post("/restore", async (req, res) => {
         snapshotShard,
         targetShard,
         rows: spawns.length,
+        snapshotBounds: snapshotBounds ?? undefined,
+        snapshotCellSize: snapshotCellSize ?? undefined,
+        snapshotPad: snapshotPad ?? undefined,
+        snapshotTypes: snapshotTypes ?? undefined,
         crossShard: targetShard !== snapshotShard,
         allowBrainOwned,
         wouldInsert: insertIds.length,
@@ -2520,6 +2623,10 @@ router.post("/restore", async (req, res) => {
       crossShard: targetShard !== snapshotShard,
       allowBrainOwned,
       rows: spawns.length,
+        snapshotBounds: snapshotBounds ?? undefined,
+        snapshotCellSize: snapshotCellSize ?? undefined,
+        snapshotPad: snapshotPad ?? undefined,
+        snapshotTypes: snapshotTypes ?? undefined,
       inserted,
       updated,
       skipped,
