@@ -1545,6 +1545,19 @@ type MotherBrainListRow = {
   regionId: string | null;
 };
 
+// Diff/preview payload for UI (kept small; lists are truncated server-side).
+type MotherBrainOpsPreview = {
+  limit: number;
+  truncated: boolean;
+  deleteSpawnIds?: string[];
+  insertSpawnIds?: string[];
+  updateSpawnIds?: string[];
+  skipSpawnIds?: string[];
+  duplicatePlannedSpawnIds?: string[];
+  droppedPlannedSpawnIds?: string[];
+};
+
+
 type MotherBrainStatusResponse = {
   kind?: AdminApiKind;
   summary?: AdminSummary;
@@ -1633,6 +1646,9 @@ type MotherBrainWaveResponse = {
   budgetFilter?: any;
   applyPlan?: any;
 
+  // diff/preview lists (truncated)
+  opsPreview?: MotherBrainOpsPreview;
+
   // confirm-token safety (when commit would delete rows)
   expectedConfirmToken?: string;
   error?: string;
@@ -1667,6 +1683,9 @@ type MotherBrainWipeResponse = {
   wouldDelete?: number;
   deleted?: number;
   list?: MotherBrainListRow[];
+
+  // diff/preview lists (truncated)
+  opsPreview?: MotherBrainOpsPreview;
 
   // confirm-token safety (when commit would delete rows)
   expectedConfirmToken?: string;
@@ -1935,8 +1954,13 @@ if (commit && expectedConfirmToken && confirm !== expectedConfirmToken) {
     theme,
     epoch,
     append,
-    wouldDelete: existingBrainIds.length,
-  } satisfies MotherBrainWaveResponse);
+  wouldDelete: existingBrainIds.length,
+  opsPreview: {
+    limit: 75,
+    truncated: existingBrainSpawnIds.length > 75,
+    deleteSpawnIds: [...existingBrainSpawnIds].map((s: any) => String(s ?? "")).filter(Boolean).sort((a, b) => a.localeCompare(b)).slice(0, 75),
+  },
+} satisfies MotherBrainWaveResponse);
   return;
 }
 
@@ -2082,6 +2106,82 @@ if (commit && expectedConfirmToken && confirm !== expectedConfirmToken) {
       await client.query("ROLLBACK");
     }
 
+
+
+// Build a small diff/preview list for UI. (Truncated to avoid huge payloads.)
+const PREVIEW_LIMIT = 75;
+const trunc = (arr: string[]) => arr.slice(0, PREVIEW_LIMIT);
+
+const plannedAllSpawnIds: string[] = (plannedActions ?? [])
+  .map((a: any) => String(a?.spawn?.spawnId ?? ""))
+  .filter(Boolean);
+
+const filteredSpawnIds: string[] = (budgetFilter.filteredActions ?? [])
+  .filter((a: any) => a && a.kind === "place_spawn")
+  .map((a: any) => String(a?.spawn?.spawnId ?? ""))
+  .filter(Boolean);
+
+const uniq = (arr: string[]) => {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const x of arr) {
+    const k = String(x ?? "");
+    if (!k) continue;
+    if (seen.has(k)) continue;
+    seen.add(k);
+    out.push(k);
+  }
+  return out;
+};
+
+const filteredUnique = uniq(filteredSpawnIds);
+const plannedUnique = uniq(plannedAllSpawnIds);
+const filteredSet = new Set<string>(filteredUnique);
+
+const dupCounts = new Map<string, number>();
+for (const sid of filteredSpawnIds) dupCounts.set(sid, (dupCounts.get(sid) ?? 0) + 1);
+const duplicatePlannedSpawnIds = Array.from(dupCounts.entries())
+  .filter(([_, n]) => n > 1)
+  .map(([sid]) => sid)
+  .sort((a, b) => a.localeCompare(b));
+
+const insertSpawnIds: string[] = [];
+const updateSpawnIds: string[] = [];
+const skipSpawnIds: string[] = [];
+
+for (const sid of filteredUnique) {
+  const exists = effectiveExistingSpawnIds.has(sid);
+  if (exists) {
+    if (updateExisting) updateSpawnIds.push(sid);
+    else skipSpawnIds.push(sid);
+  } else {
+    insertSpawnIds.push(sid);
+  }
+}
+
+// "Dropped" means planned but not present after budget filtering (approx; duplicates collapse to uniq).
+const droppedPlannedSpawnIds = plannedUnique.filter((sid) => !filteredSet.has(sid));
+
+const deleteSpawnIds = !append
+  ? [...existingBrainSpawnIds].map((s: any) => String(s ?? "")).filter(Boolean).sort((a, b) => a.localeCompare(b))
+  : [];
+
+const opsPreview: MotherBrainOpsPreview = {
+  limit: PREVIEW_LIMIT,
+  truncated:
+    deleteSpawnIds.length > PREVIEW_LIMIT ||
+    insertSpawnIds.length > PREVIEW_LIMIT ||
+    updateSpawnIds.length > PREVIEW_LIMIT ||
+    skipSpawnIds.length > PREVIEW_LIMIT ||
+    duplicatePlannedSpawnIds.length > PREVIEW_LIMIT ||
+    droppedPlannedSpawnIds.length > PREVIEW_LIMIT,
+  deleteSpawnIds: deleteSpawnIds.length ? trunc(deleteSpawnIds) : undefined,
+  insertSpawnIds: insertSpawnIds.length ? trunc(insertSpawnIds) : undefined,
+  updateSpawnIds: updateSpawnIds.length ? trunc(updateSpawnIds) : undefined,
+  skipSpawnIds: skipSpawnIds.length ? trunc(skipSpawnIds) : undefined,
+  duplicatePlannedSpawnIds: duplicatePlannedSpawnIds.length ? trunc(duplicatePlannedSpawnIds) : undefined,
+  droppedPlannedSpawnIds: droppedPlannedSpawnIds.length ? trunc(droppedPlannedSpawnIds) : undefined,
+};
     const wouldDelete = append ? 0 : existingBrainIds.length;
     const out: MotherBrainWaveResponse = commit
       ? {
@@ -2100,6 +2200,7 @@ if (commit && expectedConfirmToken && confirm !== expectedConfirmToken) {
           budgetReport,
           budgetFilter,
           applyPlan,
+          opsPreview,
         }
       : {
           kind: "mother_brain.wave",
@@ -2119,6 +2220,7 @@ if (commit && expectedConfirmToken && confirm !== expectedConfirmToken) {
           budgetReport,
           budgetFilter,
           applyPlan,
+          opsPreview,
         };
 
     res.json(out);
@@ -2224,6 +2326,15 @@ router.post("/mother_brain/wipe", async (req, res) => {
       const wouldDelete = ids.length;
       let deleted = 0;
 
+
+const PREVIEW_LIMIT = 75;
+const deleteSpawnIds = selectedSpawnIds.slice();
+const opsPreview: MotherBrainOpsPreview = {
+  limit: PREVIEW_LIMIT,
+  truncated: deleteSpawnIds.length > PREVIEW_LIMIT,
+  deleteSpawnIds: deleteSpawnIds.length ? deleteSpawnIds.slice(0, PREVIEW_LIMIT) : undefined,
+};
+
 const expectedConfirmToken =
   commit && wouldDelete > 0
     ? makeConfirmToken("WIPE", shardId, {
@@ -2254,6 +2365,7 @@ if (commit && expectedConfirmToken && confirm !== expectedConfirmToken) {
     epoch,
     commit,
     wouldDelete,
+    opsPreview,
     ...(wantList ? { list: listRows } : null),
   };
   res.status(409).json(payload);
@@ -2286,6 +2398,7 @@ if (commit && expectedConfirmToken && confirm !== expectedConfirmToken) {
             epoch,
             commit,
             deleted,
+            opsPreview,
             expectedConfirmToken: expectedConfirmToken ?? undefined,
             ...(wantList ? { list: listRows } : null),
           }
@@ -2301,6 +2414,7 @@ if (commit && expectedConfirmToken && confirm !== expectedConfirmToken) {
             epoch,
             commit,
             wouldDelete,
+            opsPreview,
             expectedConfirmToken: expectedConfirmToken ?? undefined,
             ...(wantList ? { list: listRows } : null),
           };

@@ -1608,7 +1608,11 @@ export function AdminSpawnPointsPage() {
                     ]}
                   />
 
-                  <details>
+                                    {(waveResult as any).opsPreview ? (
+                    <OpsPreviewPanel title="Wave diff preview" preview={(waveResult as any).opsPreview} downloadName="mother_brain_wave_preview.json" />
+                  ) : null}
+
+<details>
                     <summary style={{ cursor: "pointer", userSelect: "none", opacity: 0.9 }}>Raw response JSON</summary>
                     <pre style={{ marginTop: 10, background: "#111", color: "#eee", border: "1px solid #333", padding: 8, borderRadius: 6, overflow: "auto" }}>
                       {JSON.stringify(waveResult, null, 2)}
@@ -1776,7 +1780,11 @@ export function AdminSpawnPointsPage() {
                     ]}
                   />
 
-                  <details>
+                                    {(wipeResult as any).opsPreview ? (
+                    <OpsPreviewPanel title="Wipe diff preview" preview={(wipeResult as any).opsPreview} downloadName="mother_brain_wipe_preview.json" />
+                  ) : null}
+
+<details>
                     <summary style={{ cursor: "pointer", userSelect: "none", opacity: 0.9 }}>Raw response JSON</summary>
                     <pre style={{ marginTop: 10, background: "#111", color: "#eee", border: "1px solid #333", padding: 8, borderRadius: 6, overflow: "auto" }}>
                       {JSON.stringify(wipeResult, null, 2)}
@@ -2452,4 +2460,84 @@ export function AdminSpawnPointsPage() {
       )}
     </div>
   );
+
+type OpsPreviewBucket = { count: number; spawnIds: string[]; truncated: boolean };
+
+type MotherBrainOpsPreview = {
+  deletes?: OpsPreviewBucket;
+  inserts?: OpsPreviewBucket;
+  updates?: OpsPreviewBucket;
+  skips?: OpsPreviewBucket;
+  duplicates?: OpsPreviewBucket;
+  droppedBudget?: OpsPreviewBucket;
+};
+
+function downloadJson(filename: string, data: unknown) {
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 250);
+}
+
+function OpsPreviewPanel(props: { title: string; preview: MotherBrainOpsPreview; downloadName: string }) {
+  const { title, preview, downloadName } = props;
+  const buckets: Array<[string, OpsPreviewBucket | undefined]> = [
+    ["delete", preview.deletes],
+    ["insert", preview.inserts],
+    ["update", preview.updates],
+    ["skip", preview.skips],
+    ["duplicates", preview.duplicates],
+    ["droppedBudget", preview.droppedBudget],
+  ];
+
+  return (
+    <div style={{ marginTop: 10, border: "1px solid #333", borderRadius: 8, padding: 10, background: "#0b0b0b" }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+        <div style={{ fontWeight: 800 }}>{title}</div>
+        <button
+          type="button"
+          onClick={() => downloadJson(downloadName, preview)}
+          style={{ padding: "6px 10px", borderRadius: 8, border: "1px solid #555", background: "#141414", color: "#eee" }}
+        >
+          Export JSON
+        </button>
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 10, marginTop: 10 }}>
+        {buckets
+          .filter(([, b]) => !!b && (b!.count > 0 || b!.spawnIds.length > 0))
+          .map(([label, b]) => (
+            <div key={label} style={{ border: "1px solid #222", borderRadius: 8, padding: 8, background: "#0f0f0f" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 700, marginBottom: 6 }}>
+                <span>{label}</span>
+                <span style={{ opacity: 0.9 }}>
+                  {b!.count}
+                  {b!.truncated ? "+" : ""}
+                </span>
+              </div>
+              {b!.spawnIds.length ? (
+                <div style={{ maxHeight: 160, overflow: "auto", border: "1px solid #222", borderRadius: 6, padding: 6, background: "#0b0b0b" }}>
+                  {b!.spawnIds.map((id) => (
+                    <div key={id} style={{ fontFamily: "monospace", fontSize: 12, opacity: 0.95 }}>
+                      {id}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div style={{ fontSize: 12, opacity: 0.7 }}>No sample</div>
+              )}
+              {b!.truncated ? <div style={{ fontSize: 12, opacity: 0.7, marginTop: 6 }}>List truncated</div> : null}
+            </div>
+          ))}
+      </div>
+    </div>
+  );
+}
+
+
 }

@@ -613,7 +613,8 @@
         "Admin spawn point CRUD + batch operations.",
         "Mother Brain endpoints call into worldcore planner/ops and clear SpawnPointCache after mutations.",
         "Important invariant: brain-owned spawnIds are not editable through the admin UI (spawnAuthority enforcement).",
-        "Town baseline endpoints call into worldcore TownBaselinePlanner and clear SpawnPointCache after commit."
+        "Town baseline endpoints call into worldcore TownBaselinePlanner and clear SpawnPointCache after commit.",
+        "Mother Brain wave/wipe responses now include opsPreview (truncated spawnId lists) for UI diff preview/export."
       ]
     },
     "web-backend.routes.armies": {

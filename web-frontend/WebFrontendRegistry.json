@@ -197,7 +197,8 @@
         "Shows compact summary panels for wave/wipe/baseline results; raw JSON is tucked into <details> for sanity.",
         "Displays confirm token both when required (HTTP 409 confirm_required) and when merely available for later commit.",
         "Mother Brain ops UX: supports confirm_required flow with copy/fill token controls and per-parameter token scoping (token resets when inputs change).",
-        "Wipe confirm adds an extra human-speed lock: type 'WIPE' before token entry/commit enables."
+        "Wipe confirm adds an extra human-speed lock: type 'WIPE' before token entry/commit enables.",
+        "Adds diff preview panel for Mother Brain wave/wipe (delete/insert/update/skip + export JSON)."
       ]
     },
     "web-frontend.pages.me": {
