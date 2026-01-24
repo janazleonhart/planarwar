@@ -1354,71 +1354,6 @@
       ],
       "owns": []
     },
-    "infra.seed.031_trade_recipes_v1": {
-      "kind": "service",
-      "path": "worldcore/infra/schema/031_seed_trade_recipes_v1.sql",
-      "class": "SeedMigration",
-      "lifecycle": "migration",
-      "ctorArgs": [],
-      "dependsOn": [
-        "infra.schema.030_trade_recipes",
-        "infra.schema.007_items",
-        "worldcore/db/Database.ts"
-      ],
-      "provides": [
-        "smelt_iron_ingot recipe (DB)",
-        "brew_minor_heal recipe (DB)"
-      ],
-      "owns": [
-        "Baseline recipe seeds using UPSERT",
-        "Inputs/outputs rows for each seeded recipe"
-      ],
-      "notes": [
-        "Tradeskills v1 baseline DB recipes.",
-        "Safe to re-run; uses ON CONFLICT UPSERT patterns."
-      ]
-    },
-    "infra.seed.032_trade_recipes_cooking_v1": {
-      "kind": "service",
-      "path": "worldcore/infra/schema/032_seed_trade_recipes_cooking_v1.sql",
-      "class": "SeedMigration",
-      "lifecycle": "migration",
-      "ctorArgs": [],
-      "dependsOn": [
-        "infra.schema.030_trade_recipes",
-        "infra.schema.007_items",
-        "worldcore/db/Database.ts"
-      ],
-      "provides": [
-        "cook_river_trout (DB recipe seed)",
-        "mill_wheat_flour (DB recipe seed)",
-        "bake_simple_bread (DB recipe seed)"
-      ],
-      "owns": [
-        "Starter cooking recipe seeds (UPSERT)",
-        "Deterministic inputs/outputs replacement per recipe"
-      ],
-      "notes": [
-        "Migrates RecipeCatalog cooking recipes into DB so crafting is DB-authoritative.",
-        "Safe to re-run."
-      ]
-    },
-    "infra.seed.034_trade_recipes_station_kinds_v1": {
-      "kind": "service",
-      "path": "worldcore/infra/schema/034_seed_trade_recipes_station_kinds_v1.sql",
-      "class": "SeedMigration",
-      "lifecycle": "migration",
-      "ctorArgs": [],
-      "dependsOn": [
-        "infra.schema.033_trade_recipes_station_kind"
-      ],
-      "provides": [
-        "Starter recipe station_kind assignments"
-      ],
-      "owns": [
-        "Station policy for starter recipes: campfire portable; forge/alchemy_table/millstone/oven town-only"
-      ]
-    },
     "infra.schema.045_create_vendor_log": {
       "kind": "service",
       "path": "worldcore/infra/schema/045_create_vendor_log.sql",
@@ -1486,6 +1421,71 @@
       "owns": [],
       "notes": [
         "Conservative: no triggers; region_id nullable; meta jsonb for early iteration."
+      ]
+    },
+    "infra.seed.031_trade_recipes_v1": {
+      "kind": "service",
+      "path": "worldcore/infra/schema/031_seed_trade_recipes_v1.sql",
+      "class": "SeedMigration",
+      "lifecycle": "migration",
+      "ctorArgs": [],
+      "dependsOn": [
+        "infra.schema.030_trade_recipes",
+        "infra.schema.007_items",
+        "worldcore/db/Database.ts"
+      ],
+      "provides": [
+        "smelt_iron_ingot recipe (DB)",
+        "brew_minor_heal recipe (DB)"
+      ],
+      "owns": [
+        "Baseline recipe seeds using UPSERT",
+        "Inputs/outputs rows for each seeded recipe"
+      ],
+      "notes": [
+        "Tradeskills v1 baseline DB recipes.",
+        "Safe to re-run; uses ON CONFLICT UPSERT patterns."
+      ]
+    },
+    "infra.seed.032_trade_recipes_cooking_v1": {
+      "kind": "service",
+      "path": "worldcore/infra/schema/032_seed_trade_recipes_cooking_v1.sql",
+      "class": "SeedMigration",
+      "lifecycle": "migration",
+      "ctorArgs": [],
+      "dependsOn": [
+        "infra.schema.030_trade_recipes",
+        "infra.schema.007_items",
+        "worldcore/db/Database.ts"
+      ],
+      "provides": [
+        "cook_river_trout (DB recipe seed)",
+        "mill_wheat_flour (DB recipe seed)",
+        "bake_simple_bread (DB recipe seed)"
+      ],
+      "owns": [
+        "Starter cooking recipe seeds (UPSERT)",
+        "Deterministic inputs/outputs replacement per recipe"
+      ],
+      "notes": [
+        "Migrates RecipeCatalog cooking recipes into DB so crafting is DB-authoritative.",
+        "Safe to re-run."
+      ]
+    },
+    "infra.seed.034_trade_recipes_station_kinds_v1": {
+      "kind": "service",
+      "path": "worldcore/infra/schema/034_seed_trade_recipes_station_kinds_v1.sql",
+      "class": "SeedMigration",
+      "lifecycle": "migration",
+      "ctorArgs": [],
+      "dependsOn": [
+        "infra.schema.033_trade_recipes_station_kind"
+      ],
+      "provides": [
+        "Starter recipe station_kind assignments"
+      ],
+      "owns": [
+        "Station policy for starter recipes: campfire portable; forge/alchemy_table/millstone/oven town-only"
       ]
     },
     "interaction.ops": {
@@ -2099,6 +2099,24 @@
         "Station proximity currently checks entities in the room."
       ]
     },
+    "mud.commands.debug.debugEffectsCommand": {
+      "kind": "mud_command_group",
+      "path": "worldcore/mud/commands/debug/debugEffectsCommand.ts",
+      "functions": [
+        "handleDebugEffects"
+      ],
+      "invokedBy": [
+        "mud.commands.debug.debug_effects (via mud/commands/registry.ts)"
+      ],
+      "dependsOn": [
+        "mud.context",
+        "combat.statusEffects",
+        "mud.handles.nearbyHandles"
+      ],
+      "notes": [
+        "Debug QoL: inspect active effects + (if available) computed combat snapshot for a target (entity id or nearby handle)."
+      ]
+    },
     "mud.commands.debug.handlers": {
       "kind": "mud_command_group",
       "path": "worldcore/mud/commands/debug/handlers.ts",
@@ -2147,24 +2165,6 @@
         "Item grant commands (debug_give/event_give_any/debug_give_mat...) route through OverflowDelivery (bags-first, overflow-to-mail).",
         "Item grants resolve DB items first, then fall back to ItemCatalog when an item is not present in the DB (dev convenience).",
         "event_mail_reward sends explicit system mail (mail as feature)."
-      ]
-    },
-    "mud.commands.debug.debugEffectsCommand": {
-      "kind": "mud_command_group",
-      "path": "worldcore/mud/commands/debug/debugEffectsCommand.ts",
-      "functions": [
-        "handleDebugEffects"
-      ],
-      "invokedBy": [
-        "mud.commands.debug.debug_effects (via mud/commands/registry.ts)"
-      ],
-      "dependsOn": [
-        "mud.context",
-        "combat.statusEffects",
-        "mud.handles.nearbyHandles"
-      ],
-      "notes": [
-        "Debug QoL: inspect active effects + (if available) computed combat snapshot for a target (entity id or nearby handle)."
       ]
     },
     "mud.commands.debug.hydrateHere": {
@@ -4635,6 +4635,42 @@
         "Contract: CombatEngine invariants"
       ]
     },
+    "test.contractAdminSpawnPointsConfirmRequiredUi": {
+      "kind": "test",
+      "service": "test.contract",
+      "path": "worldcore/test/contract_adminSpawnPointsConfirmRequiredUi.test.ts",
+      "class": null,
+      "lifecycle": "test",
+      "ctorArgs": [],
+      "dependsOn": [
+        "web-frontend.pages.adminSpawnPoints"
+      ],
+      "provides": [],
+      "owns": [],
+      "notes": [
+        "Contract: AdminSpawnPointsPage must handle Mother Brain destructive confirm_required (HTTP 409) flow.",
+        "Static scan: expects UI to reference confirm_required + expectedConfirmToken and show a Confirm token input."
+      ]
+    },
+    "test.contractAttackNoSuchTargetMessage": {
+      "kind": "test",
+      "service": "test.contract",
+      "path": "worldcore/test/contract_attack_noSuchTargetMessage.test.ts",
+      "class": null,
+      "lifecycle": "test",
+      "ctorArgs": [],
+      "dependsOn": [
+        "test.utils",
+        "mud.handler",
+        "mud.commands.combat.attack",
+        "mud.actions.combat",
+        "targeting.resolver"
+      ],
+      "provides": [],
+      "notes": [
+        "Contract: attack invalid target token emits standardized message: [world] No such target: '<token>'."
+      ]
+    },
     "test.contractCastSpellPreGatesNoLeak": {
       "kind": "test",
       "service": "test.contract",
@@ -4727,6 +4763,18 @@
         "Prevents regressions where station checks silently stop seeing room entities."
       ]
     },
+    "test.contractDebugEffectsCommand": {
+      "kind": "test",
+      "service": "test.contract",
+      "path": "worldcore/test/contract_debugEffectsCommand.test.ts",
+      "dependsOn": [
+        "mud.commands.debug.debugEffectsCommand",
+        "test.utils"
+      ],
+      "notes": [
+        "Ensures debug_effects resolves nearby handles and can emit valid JSON."
+      ]
+    },
     "test.contractGatheringCommandsResourceTags": {
       "kind": "test",
       "service": "test.contract",
@@ -4777,6 +4825,70 @@
       "notes": [
         "Contract: melody normalization supports legacy songIds and mirrors spellIds.",
         "Contract: index clamps safely and advanceAndSchedule always advances + schedules next cast."
+      ]
+    },
+    "test.contractMotherBrainDryRunNoMutation": {
+      "kind": "test",
+      "service": "test.contract",
+      "path": "worldcore/test/contract_motherBrainDryRunNoMutation.test.ts",
+      "class": null,
+      "lifecycle": "test",
+      "ctorArgs": [],
+      "dependsOn": [
+        "web-backend.routes.adminSpawnPoints"
+      ],
+      "provides": [],
+      "owns": [],
+      "notes": [
+        "Contract: Mother Brain admin endpoints must use transaction ROLLBACK for dry-run (no DB mutation).",
+        "Static scan of web-backend/routes/adminSpawnPoints.ts for BEGIN/ROLLBACK in mother_brain/wave + mother_brain/wipe."
+      ]
+    },
+    "test.contractMotherBrainToolHasStatusCommand": {
+      "kind": "test",
+      "service": "test.contract",
+      "path": "worldcore/test/contract_motherBrainToolHasStatusCommand.test.ts",
+      "class": null,
+      "lifecycle": "test",
+      "ctorArgs": [],
+      "dependsOn": [],
+      "provides": [],
+      "owns": [],
+      "notes": [
+        "Contract: compiled motherBrain CLI tool must support a 'status' command (dispatch present).",
+        "Test reads dist/worldcore/tools/motherBrain.js built from the corresponding worldcore/tools source."
+      ]
+    },
+    "test.contractMotherBrainWaveIdempotence": {
+      "kind": "test",
+      "service": "test.contract",
+      "path": "worldcore/test/contract_motherBrainWaveIdempotence.test.ts",
+      "class": null,
+      "lifecycle": "test",
+      "ctorArgs": [],
+      "dependsOn": [
+        "web-backend.routes.adminSpawnPoints"
+      ],
+      "provides": [],
+      "owns": [],
+      "notes": [
+        "Contract: mother_brain/wave must guard against duplicate spawn_id inserts (ON CONFLICT DO NOTHING or pre-filter existing)."
+      ]
+    },
+    "test.contractMotherBrainWaveReplaceTreatsDeletedAsNew": {
+      "kind": "test",
+      "service": "test.contract",
+      "path": "worldcore/test/contract_motherBrainWaveReplaceTreatsDeletedAsNew.test.ts",
+      "class": null,
+      "lifecycle": "test",
+      "ctorArgs": [],
+      "dependsOn": [
+        "web-backend.routes.adminSpawnPoints"
+      ],
+      "provides": [],
+      "owns": [],
+      "notes": [
+        "Contract: replace-mode (append=false) must not skip re-inserting spawn_ids that will be deleted inside the wave box."
       ]
     },
     "test.contractQuestsCommandHelpMentionsTurninListIndex": {
@@ -4884,6 +4996,42 @@
         "Contract: single ally buff status effect applies correctly"
       ]
     },
+    "test.contractSpellCleanseSelfRemovesDebuff": {
+      "kind": "test",
+      "path": "worldcore/test/contract_spellCleanseSelfRemovesDebuff.test.ts",
+      "class": "(test)",
+      "lifecycle": "test",
+      "dependsOn": [],
+      "provides": [],
+      "owns": [],
+      "notes": [
+        "Contract: cleanse_self removes tagged debuffs from caster"
+      ]
+    },
+    "test.contractSpellHotSelfTicks": {
+      "kind": "test",
+      "path": "worldcore/test/contract_spellHotSelfTicks.test.ts",
+      "class": "(test)",
+      "lifecycle": "test",
+      "dependsOn": [],
+      "provides": [],
+      "owns": [],
+      "notes": [
+        "Contract: heal_hot_self applies HOT and ticks deterministically"
+      ]
+    },
+    "test.contractSpellShieldAbsorbsDamage": {
+      "kind": "test",
+      "path": "worldcore/test/contract_spellShieldAbsorbsDamage.test.ts",
+      "class": "(test)",
+      "lifecycle": "test",
+      "dependsOn": [],
+      "provides": [],
+      "owns": [],
+      "notes": [
+        "Contract: shield_self absorbs incoming player damage (can reduce to 0)"
+      ]
+    },
     "test.contractStatusEffects": {
       "kind": "test",
       "path": "worldcore/test/contract_statusEffects.test.ts",
@@ -4936,6 +5084,19 @@
         "Contract: filter predicate is authoritative and selfId is excluded."
       ]
     },
+    "test.contractTargetResolverNearbyHandles": {
+      "kind": "test",
+      "path": "worldcore/test/contract_targetResolver_nearbyHandles.test.ts",
+      "dependsOn": [
+        "test.utils",
+        "targeting.resolver",
+        "mud.handles.nearbyHandles"
+      ],
+      "notes": [
+        "Contract: TargetResolver resolves NPC targets consistently with NearbyHandles ordering (index '2' == snapshot index, handle 'rat.1' == same entity).",
+        "Contract: exact entity id wins over index/handle/name matching."
+      ]
+    },
     "test.contractTurnInQuestWarfrontFriendly": {
       "kind": "test",
       "service": "test.contract",
@@ -4951,6 +5112,134 @@
       "notes": [
         "Contract: turnInQuest is warfront-friendly (list/ready + numeric index) and keeps legacy blank prompt.",
         "Prevents regressions where turn-in UX loses discoverability or stable ordering."
+      ]
+    },
+    "test.contractVendorAuditBuySell": {
+      "kind": "test",
+      "service": "test.contract",
+      "path": "worldcore/test/contract_vendorAudit_buySell.test.ts",
+      "class": null,
+      "lifecycle": "test",
+      "ctorArgs": [],
+      "dependsOn": [
+        "mud.commands.economy.vendor",
+        "vendors.auditLog",
+        "vendors.transactions",
+        "items.inventoryHelpers",
+        "economy.helpers",
+        "characters.types"
+      ],
+      "provides": [],
+      "owns": [],
+      "notes": [
+        "Contract: successful vendor buy/sell emits audit events (capture mode) and deny paths do not emit audit."
+      ]
+    },
+    "test.contractVendorBuyBagsFullNoSpend": {
+      "kind": "test",
+      "service": "test.contract",
+      "path": "worldcore/test/contract_vendorBuy_bagsFull_noSpend.test.ts",
+      "class": null,
+      "lifecycle": "test",
+      "ctorArgs": [],
+      "dependsOn": [
+        "mud.commands.economy.vendor",
+        "vendors.auditLog",
+        "vendors.transactions",
+        "items.inventoryHelpers",
+        "characters.types"
+      ],
+      "provides": [],
+      "owns": [],
+      "notes": [
+        "Contract: bag-full vendor buy must not spend gold and must not emit audit."
+      ]
+    },
+    "test.contractVendorEconomyPriceCurve": {
+      "kind": "test",
+      "service": "test.contract",
+      "path": "worldcore/test/contract_vendorEconomyPriceCurve.test.ts",
+      "class": null,
+      "lifecycle": "test",
+      "ctorArgs": [],
+      "dependsOn": [
+        "vendors.types"
+      ],
+      "provides": [],
+      "owns": [],
+      "notes": [
+        "Contract: vendor economy price curve is monotonic with scarcity; invalid stockMax disables dynamic pricing."
+      ]
+    },
+    "test.contractVendorEconomyTierPolicy": {
+      "kind": "test",
+      "service": "test.contract",
+      "path": "worldcore/test/contract_vendorEconomyTierPolicy.test.ts",
+      "class": null,
+      "lifecycle": "test",
+      "ctorArgs": [],
+      "dependsOn": [
+        "world.townTierRules"
+      ],
+      "provides": [],
+      "owns": [],
+      "notes": [
+        "Contract: vendor economy tier policy clamps tiers and provides monotonic supply/restock knobs; tier token inference works for vendor ids."
+      ]
+    },
+    "test.contractVendorRestockCadenceTicks": {
+      "kind": "test",
+      "service": "test.contract",
+      "path": "worldcore/test/contract_vendorRestockCadenceTicks.test.ts",
+      "class": null,
+      "lifecycle": "test",
+      "ctorArgs": [],
+      "dependsOn": [
+        "vendors.types"
+      ],
+      "provides": [],
+      "owns": [],
+      "notes": [
+        "Contract: vendor restock cadence tick math stays stable (ticks are floored, stock caps, and lastRestock advances by whole ticks).",
+        "Includes the 'full stock still advances lastRestock' rule to prevent perpetual DUE states and time drift."
+      ]
+    },
+    "test.contractVendorSellNotEnoughNoMutation": {
+      "kind": "test",
+      "service": "test.contract",
+      "path": "worldcore/test/contract_vendorSell_notEnough_noMutation.test.ts",
+      "class": null,
+      "lifecycle": "test",
+      "ctorArgs": [],
+      "dependsOn": [
+        "mud.commands.economy.vendor",
+        "vendors.auditLog",
+        "vendors.transactions",
+        "items.inventoryHelpers",
+        "economy.helpers",
+        "characters.types"
+      ],
+      "provides": [],
+      "owns": [],
+      "notes": [
+        "Contract: selling without enough quantity must not mutate inventory/gold and must not emit audit."
+      ]
+    },
+    "test.contract_nearbyHandles_resolution": {
+      "kind": "test",
+      "service": "test.contract",
+      "path": "worldcore/test/contract_nearbyHandles_resolution.test.ts",
+      "class": null,
+      "lifecycle": "test",
+      "ctorArgs": [],
+      "dependsOn": [
+        "mud.handles.nearbyHandles"
+      ],
+      "provides": [],
+      "owns": [],
+      "notes": [
+        "Contract: nearby-handle snapshot prefers alive entities over corpses when distance ties (corpse should sort last).",
+        "Contract: nearby-handle snapshot hides personal nodes owned by other sessions (no cross-player leakage)."
       ]
     },
     "test.contract_npcDebuffsAndDots": {
@@ -4990,6 +5279,23 @@
       ],
       "notes": [
         "Guards against stale POI hydration when spawn_points change at runtime."
+      ]
+    },
+    "test.contract_statusEffects_clearOnDeath": {
+      "kind": "test",
+      "service": "test.contract",
+      "path": "worldcore/test/contract_statusEffects_clearOnDeath.test.ts",
+      "class": null,
+      "lifecycle": "test",
+      "ctorArgs": [],
+      "dependsOn": [
+        "combat.statusEffects"
+      ],
+      "provides": [],
+      "owns": [],
+      "notes": [
+        "Contract: death clears combat status effects (DOTs, debuffs, etc.).",
+        "Guards that corpses do not keep ticking DOTs, and ticking stops immediately when lethal DOT damage is applied."
       ]
     },
     "test.contract_statusStackingPolicy_versionedByApplier": {
@@ -5083,6 +5389,47 @@
         "Regression tests for SQL table-name extraction (CREATE/ALTER; ONLY; quoted identifiers)."
       ]
     },
+    "test.motherBrainSpawnIdParsing": {
+      "kind": "test",
+      "path": "worldcore/test/motherBrain_spawnIdParsing.test.ts",
+      "dependsOn": [
+        "sim.motherBrainWaveOps"
+      ],
+      "notes": [
+        "Unit: loose parsing of brain:* spawnId tokens for theme/epoch selection + wipe tooling."
+      ]
+    },
+    "test.motherBrainWaveBudgetOps": {
+      "kind": "test",
+      "path": "worldcore/test/motherBrainWaveBudgetOps.test.ts",
+      "dependsOn": [
+        "sim.motherBrainWaveOps"
+      ],
+      "notes": [
+        "Unit: budgeting + caps for Mother Brain wave planning (allowedNewInserts + limiting caps)."
+      ]
+    },
+    "test.motherBrainWaveOps": {
+      "kind": "test",
+      "path": "worldcore/test/motherBrainWaveOps.test.ts",
+      "dependsOn": [
+        "sim.motherBrainWavePlanner",
+        "sim.motherBrainWaveOps"
+      ],
+      "notes": [
+        "Unit: computeBrainWaveApplyPlan + computeBrainWipePlan invariants and filtering semantics."
+      ]
+    },
+    "test.motherBrainWavePlanner": {
+      "kind": "test",
+      "path": "worldcore/test/motherBrainWavePlanner.test.ts",
+      "dependsOn": [
+        "sim.motherBrainWavePlanner"
+      ],
+      "notes": [
+        "Unit: deterministic planning for Mother Brain waves (stable spawnIds, bounds parsing)."
+      ]
+    },
     "test.pvpFriendlyFireGuild": {
       "kind": "test",
       "path": "worldcore/test/pvpFriendlyFireGuild.test.ts",
@@ -5157,6 +5504,16 @@
         "Protects against alias IDs and duplicates causing playlist inflation."
       ]
     },
+    "test.spawnAuthority": {
+      "kind": "test",
+      "path": "worldcore/test/spawnAuthority.test.ts",
+      "dependsOn": [
+        "world.spawnAuthority"
+      ],
+      "notes": [
+        "Unit: spawnAuthority and editability rules (anchor/seed/manual/brain)."
+      ]
+    },
     "test.statusDamageDealt": {
       "kind": "test",
       "path": "worldcore/test/statusDamageDealt.test.ts",
@@ -5222,231 +5579,6 @@
         "Contract: status effect snapshot math + modifiers"
       ]
     },
-    "test.contract_nearbyHandles_resolution": {
-      "kind": "test",
-      "service": "test.contract",
-      "path": "worldcore/test/contract_nearbyHandles_resolution.test.ts",
-      "class": null,
-      "lifecycle": "test",
-      "ctorArgs": [],
-      "dependsOn": [
-        "mud.handles.nearbyHandles"
-      ],
-      "provides": [],
-      "owns": [],
-      "notes": [
-        "Contract: nearby-handle snapshot prefers alive entities over corpses when distance ties (corpse should sort last).",
-        "Contract: nearby-handle snapshot hides personal nodes owned by other sessions (no cross-player leakage)."
-      ]
-    },
-    "test.contractDebugEffectsCommand": {
-      "kind": "test",
-      "service": "test.contract",
-      "path": "worldcore/test/contract_debugEffectsCommand.test.ts",
-      "dependsOn": [
-        "mud.commands.debug.debugEffectsCommand",
-        "test.utils"
-      ],
-      "notes": [
-        "Ensures debug_effects resolves nearby handles and can emit valid JSON."
-      ]
-    },
-    "test.contract_statusEffects_clearOnDeath": {
-      "kind": "test",
-      "service": "test.contract",
-      "path": "worldcore/test/contract_statusEffects_clearOnDeath.test.ts",
-      "class": null,
-      "lifecycle": "test",
-      "ctorArgs": [],
-      "dependsOn": [
-        "combat.statusEffects"
-      ],
-      "provides": [],
-      "owns": [],
-      "notes": [
-        "Contract: death clears combat status effects (DOTs, debuffs, etc.).",
-        "Guards that corpses do not keep ticking DOTs, and ticking stops immediately when lethal DOT damage is applied."
-      ]
-    },
-    "test.contractTargetResolverNearbyHandles": {
-      "kind": "test",
-      "path": "worldcore/test/contract_targetResolver_nearbyHandles.test.ts",
-      "dependsOn": [
-        "test.utils",
-        "targeting.resolver",
-        "mud.handles.nearbyHandles"
-      ],
-      "notes": [
-        "Contract: TargetResolver resolves NPC targets consistently with NearbyHandles ordering (index '2' == snapshot index, handle 'rat.1' == same entity).",
-        "Contract: exact entity id wins over index/handle/name matching."
-      ]
-    },
-    "test.contractAttackNoSuchTargetMessage": {
-      "kind": "test",
-      "service": "test.contract",
-      "path": "worldcore/test/contract_attack_noSuchTargetMessage.test.ts",
-      "class": null,
-      "lifecycle": "test",
-      "ctorArgs": [],
-      "dependsOn": [
-        "test.utils",
-        "mud.handler",
-        "mud.commands.combat.attack",
-        "mud.actions.combat",
-        "targeting.resolver"
-      ],
-      "provides": [],
-      "notes": [
-        "Contract: attack invalid target token emits standardized message: [world] No such target: '<token>'."
-      ]
-    },
-    "test.contractSpellHotSelfTicks": {
-      "kind": "test",
-      "path": "worldcore/test/contract_spellHotSelfTicks.test.ts",
-      "class": "(test)",
-      "lifecycle": "test",
-      "dependsOn": [],
-      "provides": [],
-      "owns": [],
-      "notes": [
-        "Contract: heal_hot_self applies HOT and ticks deterministically"
-      ]
-    },
-    "test.contractSpellShieldAbsorbsDamage": {
-      "kind": "test",
-      "path": "worldcore/test/contract_spellShieldAbsorbsDamage.test.ts",
-      "class": "(test)",
-      "lifecycle": "test",
-      "dependsOn": [],
-      "provides": [],
-      "owns": [],
-      "notes": [
-        "Contract: shield_self absorbs incoming player damage (can reduce to 0)"
-      ]
-    },
-    "test.contractSpellCleanseSelfRemovesDebuff": {
-      "kind": "test",
-      "path": "worldcore/test/contract_spellCleanseSelfRemovesDebuff.test.ts",
-      "class": "(test)",
-      "lifecycle": "test",
-      "dependsOn": [],
-      "provides": [],
-      "owns": [],
-      "notes": [
-        "Contract: cleanse_self removes tagged debuffs from caster"
-      ]
-    },
-    "test.contractVendorAuditBuySell": {
-      "kind": "test",
-      "service": "test.contract",
-      "path": "worldcore/test/contract_vendorAudit_buySell.test.ts",
-      "class": null,
-      "lifecycle": "test",
-      "ctorArgs": [],
-      "dependsOn": [
-        "mud.commands.economy.vendor",
-        "vendors.auditLog",
-        "vendors.transactions",
-        "items.inventoryHelpers",
-        "economy.helpers",
-        "characters.types"
-      ],
-      "provides": [],
-      "owns": [],
-      "notes": [
-        "Contract: successful vendor buy/sell emits audit events (capture mode) and deny paths do not emit audit."
-      ]
-    },
-    "test.contractVendorBuyBagsFullNoSpend": {
-      "kind": "test",
-      "service": "test.contract",
-      "path": "worldcore/test/contract_vendorBuy_bagsFull_noSpend.test.ts",
-      "class": null,
-      "lifecycle": "test",
-      "ctorArgs": [],
-      "dependsOn": [
-        "mud.commands.economy.vendor",
-        "vendors.auditLog",
-        "vendors.transactions",
-        "items.inventoryHelpers",
-        "characters.types"
-      ],
-      "provides": [],
-      "owns": [],
-      "notes": [
-        "Contract: bag-full vendor buy must not spend gold and must not emit audit."
-      ]
-    },
-    "test.contractVendorSellNotEnoughNoMutation": {
-      "kind": "test",
-      "service": "test.contract",
-      "path": "worldcore/test/contract_vendorSell_notEnough_noMutation.test.ts",
-      "class": null,
-      "lifecycle": "test",
-      "ctorArgs": [],
-      "dependsOn": [
-        "mud.commands.economy.vendor",
-        "vendors.auditLog",
-        "vendors.transactions",
-        "items.inventoryHelpers",
-        "economy.helpers",
-        "characters.types"
-      ],
-      "provides": [],
-      "owns": [],
-      "notes": [
-        "Contract: selling without enough quantity must not mutate inventory/gold and must not emit audit."
-      ]
-    },
-    "test.contractVendorEconomyPriceCurve": {
-      "kind": "test",
-      "service": "test.contract",
-      "path": "worldcore/test/contract_vendorEconomyPriceCurve.test.ts",
-      "class": null,
-      "lifecycle": "test",
-      "ctorArgs": [],
-      "dependsOn": [
-        "vendors.types"
-      ],
-      "provides": [],
-      "owns": [],
-      "notes": [
-        "Contract: vendor economy price curve is monotonic with scarcity; invalid stockMax disables dynamic pricing."
-      ]
-    },
-    "test.contractVendorEconomyTierPolicy": {
-      "kind": "test",
-      "service": "test.contract",
-      "path": "worldcore/test/contract_vendorEconomyTierPolicy.test.ts",
-      "class": null,
-      "lifecycle": "test",
-      "ctorArgs": [],
-      "dependsOn": [
-        "world.townTierRules"
-      ],
-      "provides": [],
-      "owns": [],
-      "notes": [
-        "Contract: vendor economy tier policy clamps tiers and provides monotonic supply/restock knobs; tier token inference works for vendor ids."
-      ]
-    },
-    "test.contractVendorRestockCadenceTicks": {
-      "kind": "test",
-      "service": "test.contract",
-      "path": "worldcore/test/contract_vendorRestockCadenceTicks.test.ts",
-      "class": null,
-      "lifecycle": "test",
-      "ctorArgs": [],
-      "dependsOn": [
-        "vendors.types"
-      ],
-      "provides": [],
-      "owns": [],
-      "notes": [
-        "Contract: vendor restock cadence tick math stays stable (ticks are floored, stock caps, and lastRestock advances by whole ticks).",
-        "Includes the 'full stock still advances lastRestock' rule to prevent perpetual DUE states and time drift."
-      ]
-    },
     "test.utils": {
       "kind": "test_utility",
       "path": "worldcore/test/testUtils.ts",
@@ -5458,137 +5590,6 @@
       "notes": [
         "Shared helpers for deterministic Math.random sequences in tests.",
         "Used by smokeChecklist and damage-by-school regression tests."
-      ]
-    },
-    "tools.auditVendorTags": {
-      "kind": "service",
-      "path": "worldcore/tools/auditVendorTags.ts",
-      "class": "ToolScript",
-      "lifecycle": "tool",
-      "ctorArgs": [],
-      "dependsOn": [
-        "worldcore/db/Database.ts"
-      ],
-      "provides": [
-        "Audits + migrates public.npcs.tags vendor tagging (canonical 'vendor', legacy 'service_vendor')",
-        "Supports --apply, --removeLegacy, --limit=N"
-      ],
-      "owns": [],
-      "notes": []
-    },
-    "test.contractMotherBrainDryRunNoMutation": {
-      "kind": "test",
-      "service": "test.contract",
-      "path": "worldcore/test/contract_motherBrainDryRunNoMutation.test.ts",
-      "class": null,
-      "lifecycle": "test",
-      "ctorArgs": [],
-      "dependsOn": [
-        "web-backend.routes.adminSpawnPoints"
-      ],
-      "provides": [],
-      "owns": [],
-      "notes": [
-        "Contract: Mother Brain admin endpoints must use transaction ROLLBACK for dry-run (no DB mutation).",
-        "Static scan of web-backend/routes/adminSpawnPoints.ts for BEGIN/ROLLBACK in mother_brain/wave + mother_brain/wipe."
-      ]
-    },
-    "test.contractMotherBrainToolHasStatusCommand": {
-      "kind": "test",
-      "service": "test.contract",
-      "path": "worldcore/test/contract_motherBrainToolHasStatusCommand.test.ts",
-      "class": null,
-      "lifecycle": "test",
-      "ctorArgs": [],
-      "dependsOn": [],
-      "provides": [],
-      "owns": [],
-      "notes": [
-        "Contract: compiled motherBrain CLI tool must support a 'status' command (dispatch present).",
-        "Test reads dist/worldcore/tools/motherBrain.js built from the corresponding worldcore/tools source."
-      ]
-    },
-    "test.contractMotherBrainWaveIdempotence": {
-      "kind": "test",
-      "service": "test.contract",
-      "path": "worldcore/test/contract_motherBrainWaveIdempotence.test.ts",
-      "class": null,
-      "lifecycle": "test",
-      "ctorArgs": [],
-      "dependsOn": [
-        "web-backend.routes.adminSpawnPoints"
-      ],
-      "provides": [],
-      "owns": [],
-      "notes": [
-        "Contract: mother_brain/wave must guard against duplicate spawn_id inserts (ON CONFLICT DO NOTHING or pre-filter existing)."
-      ]
-    },
-    "test.contractMotherBrainWaveReplaceTreatsDeletedAsNew": {
-      "kind": "test",
-      "service": "test.contract",
-      "path": "worldcore/test/contract_motherBrainWaveReplaceTreatsDeletedAsNew.test.ts",
-      "class": null,
-      "lifecycle": "test",
-      "ctorArgs": [],
-      "dependsOn": [
-        "web-backend.routes.adminSpawnPoints"
-      ],
-      "provides": [],
-      "owns": [],
-      "notes": [
-        "Contract: replace-mode (append=false) must not skip re-inserting spawn_ids that will be deleted inside the wave box."
-      ]
-    },
-    "test.motherBrainWaveBudgetOps": {
-      "kind": "test",
-      "path": "worldcore/test/motherBrainWaveBudgetOps.test.ts",
-      "dependsOn": [
-        "sim.motherBrainWaveOps"
-      ],
-      "notes": [
-        "Unit: budgeting + caps for Mother Brain wave planning (allowedNewInserts + limiting caps)."
-      ]
-    },
-    "test.motherBrainWaveOps": {
-      "kind": "test",
-      "path": "worldcore/test/motherBrainWaveOps.test.ts",
-      "dependsOn": [
-        "sim.motherBrainWavePlanner",
-        "sim.motherBrainWaveOps"
-      ],
-      "notes": [
-        "Unit: computeBrainWaveApplyPlan + computeBrainWipePlan invariants and filtering semantics."
-      ]
-    },
-    "test.motherBrainWavePlanner": {
-      "kind": "test",
-      "path": "worldcore/test/motherBrainWavePlanner.test.ts",
-      "dependsOn": [
-        "sim.motherBrainWavePlanner"
-      ],
-      "notes": [
-        "Unit: deterministic planning for Mother Brain waves (stable spawnIds, bounds parsing)."
-      ]
-    },
-    "test.motherBrainSpawnIdParsing": {
-      "kind": "test",
-      "path": "worldcore/test/motherBrain_spawnIdParsing.test.ts",
-      "dependsOn": [
-        "sim.motherBrainWaveOps"
-      ],
-      "notes": [
-        "Unit: loose parsing of brain:* spawnId tokens for theme/epoch selection + wipe tooling."
-      ]
-    },
-    "test.spawnAuthority": {
-      "kind": "test",
-      "path": "worldcore/test/spawnAuthority.test.ts",
-      "dependsOn": [
-        "world.spawnAuthority"
-      ],
-      "notes": [
-        "Unit: spawnAuthority and editability rules (anchor/seed/manual/brain)."
       ]
     },
     "tools.applySchema": {
@@ -5633,6 +5634,22 @@
       "owns": [],
       "notes": []
     },
+    "tools.auditVendorTags": {
+      "kind": "service",
+      "path": "worldcore/tools/auditVendorTags.ts",
+      "class": "ToolScript",
+      "lifecycle": "tool",
+      "ctorArgs": [],
+      "dependsOn": [
+        "worldcore/db/Database.ts"
+      ],
+      "provides": [
+        "Audits + migrates public.npcs.tags vendor tagging (canonical 'vendor', legacy 'service_vendor')",
+        "Supports --apply, --removeLegacy, --limit=N"
+      ],
+      "owns": [],
+      "notes": []
+    },
     "tools.gapTableAudit": {
       "kind": "tool",
       "path": "worldcore/tools/gapTableAudit.ts",
@@ -5657,6 +5674,26 @@
       "notes": [
         "Milestone B: heuristic SQL table-name extraction for CREATE/ALTER statements.",
         "Used by gapTableAudit tool and its unit tests."
+      ]
+    },
+    "tools.motherBrain": {
+      "kind": "dev_script",
+      "path": "worldcore/tools/motherBrain.ts",
+      "dependsOn": [
+        "sim.motherBrainWavePlanner",
+        "db.Database",
+        "infra.schema"
+      ],
+      "provides": [
+        "wave: plan/apply deterministic Mother Brain wave directly to spawn_points (dry-run by default; --commit to write; --append to preserve existing brain:* in-bounds)",
+        "status: summarize existing brain:* spawn_points within bounds (counts by theme/epoch/type/proto; optional --list; optional --json)",
+        "Safety: refuses --commit unless --bounds is explicitly provided",
+        "DB access is lazy-imported so unit tests can import without holding open pools"
+      ],
+      "notes": [
+        "Mother Brain (v0) DB writer + status CLI for brain-owned spawn_points.",
+        "Designed to be safe to import in tests (no DB/pool at module load; no auto-run main()).",
+        "Tooling entrypoint (like simBrain), not the long-running Mother Brain service process."
       ]
     },
     "tools.resourceBaseline": {
@@ -6739,26 +6776,6 @@
       "notes": [
         "Stage 2.3.6 \u2013 resource node placement (ore/herb/wood/fish/rare) plus per-kind masks.",
         "Respects biome, elevation, climate, hydrology, and avoids city centers while tagging 'near settlement' nodes."
-      ]
-    },
-    "tools.motherBrain": {
-      "kind": "dev_script",
-      "path": "worldcore/tools/motherBrain.ts",
-      "dependsOn": [
-        "sim.motherBrainWavePlanner",
-        "db.Database",
-        "infra.schema"
-      ],
-      "provides": [
-        "wave: plan/apply deterministic Mother Brain wave directly to spawn_points (dry-run by default; --commit to write; --append to preserve existing brain:* in-bounds)",
-        "status: summarize existing brain:* spawn_points within bounds (counts by theme/epoch/type/proto; optional --list; optional --json)",
-        "Safety: refuses --commit unless --bounds is explicitly provided",
-        "DB access is lazy-imported so unit tests can import without holding open pools"
-      ],
-      "notes": [
-        "Mother Brain (v0) DB writer + status CLI for brain-owned spawn_points.",
-        "Designed to be safe to import in tests (no DB/pool at module load; no auto-run main()).",
-        "Tooling entrypoint (like simBrain), not the long-running Mother Brain service process."
       ]
     }
   }

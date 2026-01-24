@@ -149,6 +149,14 @@ type MotherBrainWaveResponse = {
   ok: boolean;
   commit: boolean;
   append: boolean;
+
+  // audit/echo (present on confirm_required; may be present on plan/commit)
+  shardId?: string;
+  bounds?: string;
+  cellSize?: number;
+
+  expectedConfirmToken?: string;
+
   wouldInsert?: number;
   wouldDelete?: number;
   inserted?: number;
@@ -160,6 +168,15 @@ type MotherBrainWaveResponse = {
 type MotherBrainWipeResponse = {
   ok: boolean;
   commit: boolean;
+
+  // audit/echo (present on confirm_required; may be present on plan/commit)
+  shardId?: string;
+  bounds?: string;
+  cellSize?: number;
+  borderMargin?: number;
+
+  expectedConfirmToken?: string;
+
   wouldDelete?: number;
   deleted?: number;
   // optional preview list (shape matches status list)
@@ -386,6 +403,8 @@ export function AdminSpawnPointsPage() {
   const [waveAppend, setWaveAppend] = useState(false);
   const [waveLoading, setWaveLoading] = useState(false);
   const [waveResult, setWaveResult] = useState<MotherBrainWaveResponse | null>(null);
+  const [waveConfirmExpected, setWaveConfirmExpected] = useState<string | null>(null);
+  const [waveConfirmInput, setWaveConfirmInput] = useState("");
 
 
   // Mother Brain (wipe)
@@ -396,6 +415,8 @@ export function AdminSpawnPointsPage() {
   const [wipeLimit, setWipeLimit] = useState(25);
   const [wipeLoading, setWipeLoading] = useState(false);
   const [wipeResult, setWipeResult] = useState<MotherBrainWipeResponse | null>(null);
+  const [wipeConfirmExpected, setWipeConfirmExpected] = useState<string | null>(null);
+  const [wipeConfirmInput, setWipeConfirmInput] = useState("");
 
   const selectedSet = useMemo(() => new Set(selectedIds), [selectedIds]);
 
@@ -489,7 +510,7 @@ export function AdminSpawnPointsPage() {
     }
   };
 
-  const runMotherBrainWave = async (commit: boolean) => {
+  const runMotherBrainWave = async (commit: boolean, confirmToken?: string) => {
     setWaveLoading(true);
     setError(null);
     try {
@@ -507,12 +528,32 @@ export function AdminSpawnPointsPage() {
           seed: waveSeed.trim() || "seed:mother",
           append: !!waveAppend,
           commit: !!commit,
+          confirm: confirmToken?.trim() ? confirmToken.trim() : null,
         }),
       });
 
+      let data: MotherBrainWaveResponse | null = null;
+      try {
+        data = (await res.json()) as MotherBrainWaveResponse;
+      } catch {
+        data = null;
+      }
+
+      // Special case: confirm-required flow (409) is not an error to the UI.
+      if (res.status === 409 && data && (data as any).error === "confirm_required" && (data as any).expectedConfirmToken) {
+        setWaveConfirmExpected((data as any).expectedConfirmToken);
+        setWaveConfirmInput("");
+        setWaveResult(data);
+        return;
+      }
+
       if (!res.ok) throw new Error(`MotherBrain wave failed (HTTP ${res.status})`);
-      const data: MotherBrainWaveResponse = await res.json();
+      if (!data) throw new Error("MotherBrain wave failed (no JSON)");
       if (!data.ok) throw new Error(data.error || "MotherBrain wave failed");
+
+      // Success: clear confirm state.
+      setWaveConfirmExpected(null);
+      setWaveConfirmInput("");
       setWaveResult(data);
 
       // Refresh status + reload list so it feels immediate.
@@ -526,7 +567,7 @@ export function AdminSpawnPointsPage() {
   };
 
 
-  const runMotherBrainWipe = async (commit: boolean) => {
+  const runMotherBrainWipe = async (commit: boolean, confirmToken?: string) => {
     setWipeLoading(true);
     setError(null);
     try {
@@ -549,12 +590,32 @@ export function AdminSpawnPointsPage() {
           list: !!wipeWithList,
           limit: Math.max(1, Math.min(200, Number(wipeLimit) || 25)),
           commit: !!commit,
+          confirm: confirmToken?.trim() ? confirmToken.trim() : null,
         }),
       });
 
+      let data: MotherBrainWipeResponse | null = null;
+      try {
+        data = (await res.json()) as MotherBrainWipeResponse;
+      } catch {
+        data = null;
+      }
+
+      // confirm-required flow (409)
+      if (res.status === 409 && data && (data as any).error === "confirm_required" && (data as any).expectedConfirmToken) {
+        setWipeConfirmExpected((data as any).expectedConfirmToken);
+        setWipeConfirmInput("");
+        setWipeResult(data);
+        return;
+      }
+
       if (!res.ok) throw new Error(`MotherBrain wipe failed (HTTP ${res.status})`);
-      const data: MotherBrainWipeResponse = await res.json();
+      if (!data) throw new Error("MotherBrain wipe failed (no JSON)");
       if (!data.ok) throw new Error(data.error || "MotherBrain wipe failed");
+
+      // Success: clear confirm state.
+      setWipeConfirmExpected(null);
+      setWipeConfirmInput("");
       setWipeResult(data);
 
       // Refresh status + reload list so it feels immediate.
@@ -566,6 +627,19 @@ export function AdminSpawnPointsPage() {
       setWipeLoading(false);
     }
   };
+
+  // If wave/wipe parameters change, discard any stale confirm token.
+  useEffect(() => {
+    setWaveConfirmExpected(null);
+    setWaveConfirmInput("");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mbBounds, mbCellSize, waveTheme, waveEpoch, waveCount, waveSeed, waveAppend]);
+
+  useEffect(() => {
+    setWipeConfirmExpected(null);
+    setWipeConfirmInput("");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mbBounds, mbCellSize, wipeTheme, wipeEpoch, wipeBorderMargin]);
 
   // initial load
   useEffect(() => {
@@ -1322,6 +1396,45 @@ export function AdminSpawnPointsPage() {
                 </button>
               </div>
 
+              {waveConfirmExpected && (
+                <div style={{ marginTop: 10, border: "1px solid #b71c1c", borderRadius: 8, padding: 10, background: "#140a0a" }}>
+                  <div style={{ fontWeight: 700, marginBottom: 6 }}>Confirm required</div>
+                  <div style={{ fontSize: 12, opacity: 0.9, marginBottom: 8 }}>
+                    This commit would delete existing <code>brain:*</code> spawns in-bounds. Re-run with the confirm token below.
+                  </div>
+
+                  <div style={{ display: "grid", gap: 6 }}>
+                    <div style={{ fontFamily: "monospace", fontSize: 12, wordBreak: "break-all", opacity: 0.95 }}>
+                      {waveConfirmExpected}
+                    </div>
+                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                      <label style={{ display: "grid", gap: 4, flex: 1, minWidth: 260 }}>
+                        <span style={{ opacity: 0.85, fontSize: 12 }}>Confirm token</span>
+                        <input value={waveConfirmInput} onChange={(e) => setWaveConfirmInput(e.target.value)} placeholder={waveConfirmExpected} />
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          try {
+                            void navigator.clipboard?.writeText(waveConfirmExpected);
+                          } catch {}
+                        }}
+                      >
+                        Copy
+                      </button>
+                      <button
+                        type="button"
+                        disabled={waveLoading || waveConfirmInput.trim() !== waveConfirmExpected}
+                        onClick={() => void runMotherBrainWave(true, waveConfirmInput)}
+                        style={{ border: "1px solid #b71c1c" }}
+                      >
+                        Confirm + Commit
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {waveResult && (
                 <pre style={{ marginTop: 10, background: "#111", color: "#eee", border: "1px solid #333", padding: 8, borderRadius: 6, overflow: "auto" }}>
                   {JSON.stringify(waveResult, null, 2)}
@@ -1375,6 +1488,45 @@ export function AdminSpawnPointsPage() {
                   {wipeLoading ? "Working..." : "Commit wipe"}
                 </button>
               </div>
+
+              {wipeConfirmExpected && (
+                <div style={{ marginTop: 10, border: "1px solid #b71c1c", borderRadius: 8, padding: 10, background: "#140a0a" }}>
+                  <div style={{ fontWeight: 700, marginBottom: 6 }}>Confirm required</div>
+                  <div style={{ fontSize: 12, opacity: 0.9, marginBottom: 8 }}>
+                    This wipe would delete existing <code>brain:*</code> spawns in-bounds. Re-run with the confirm token below.
+                  </div>
+
+                  <div style={{ display: "grid", gap: 6 }}>
+                    <div style={{ fontFamily: "monospace", fontSize: 12, wordBreak: "break-all", opacity: 0.95 }}>
+                      {wipeConfirmExpected}
+                    </div>
+                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                      <label style={{ display: "grid", gap: 4, flex: 1, minWidth: 260 }}>
+                        <span style={{ opacity: 0.85, fontSize: 12 }}>Confirm token</span>
+                        <input value={wipeConfirmInput} onChange={(e) => setWipeConfirmInput(e.target.value)} placeholder={wipeConfirmExpected} />
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          try {
+                            void navigator.clipboard?.writeText(wipeConfirmExpected);
+                          } catch {}
+                        }}
+                      >
+                        Copy
+                      </button>
+                      <button
+                        type="button"
+                        disabled={wipeLoading || wipeConfirmInput.trim() !== wipeConfirmExpected}
+                        onClick={() => void runMotherBrainWipe(true, wipeConfirmInput)}
+                        style={{ border: "1px solid #b71c1c" }}
+                      >
+                        Confirm + Commit
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {wipeResult && (
                 <pre style={{ marginTop: 10, background: "#111", color: "#eee", border: "1px solid #333", padding: 8, borderRadius: 6, overflow: "auto" }}>

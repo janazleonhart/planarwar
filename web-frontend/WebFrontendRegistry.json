@@ -177,7 +177,8 @@
         "Spawn Points Editor (v1): browse/edit",
         "Batch tools: bulk delete/move, clone, scatter",
         "Mother Brain: status, list, wave (plan/commit), wipe (plan/commit)",
-        "Town Baseline tool: plan/apply deterministic town/outpost services around a selected town spawn (mailbox/rest/guards/dummies/stations)"
+        "Town Baseline tool: plan/apply deterministic town/outpost services around a selected town spawn (mailbox/rest/guards/dummies/stations)",
+        "Confirm-token safety UX for Mother Brain wave/wipe commits (409 confirm_required -> expectedConfirmToken -> Confirm + Commit)."
       ],
       "owns": [
         "UI persistence in localStorage (adminSpawnPointsPage.ui.v1)",
@@ -188,7 +189,8 @@
         "Uses same-origin /api requests (dev via Vite proxy; prod via reverse proxy / same host).",
         "Endpoints: GET /api/admin/spawn_points?..., POST /api/admin/spawn_points (create), PUT /api/admin/spawn_points/:id, bulk_delete, bulk_move, clone, scatter.",
         "Mother Brain endpoints: GET /api/admin/spawn_points/mother_brain/status, POST /api/admin/spawn_points/mother_brain/wave, POST /api/admin/spawn_points/mother_brain/wipe.",
-        "Town Baseline endpoints: POST /api/admin/spawn_points/town_baseline/plan and /api/admin/spawn_points/town_baseline/apply."
+        "Town Baseline endpoints: POST /api/admin/spawn_points/town_baseline/plan and /api/admin/spawn_points/town_baseline/apply.",
+        "Handles Mother Brain destructive confirm_required (HTTP 409) flow: displays expectedConfirmToken and requires re-run with confirm token for commit when deletions would occur."
       ]
     },
     "web-frontend.pages.me": {
