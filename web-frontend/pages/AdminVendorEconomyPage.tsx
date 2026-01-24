@@ -5,6 +5,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { api } from "../lib/api";
+import { getAuthToken } from "../lib/api";
 
 type VendorSummary = {
   id: string;
@@ -163,6 +164,14 @@ function formatStockLabel(stock: number | null, stockMax: number | null): string
   if (infinite) return "∞";
   return `${stock}/${stockMax}`;
 }
+
+
+const authedFetch: typeof fetch = (input: any, init?: any) => {
+  const token = getAuthToken();
+  const headers = new Headers(init?.headers ?? {});
+  if (token) headers.set("Authorization", `Bearer ${token}`);
+  return fetch(input, { ...(init ?? {}), headers });
+};
 
 export function AdminVendorEconomyPage() {
   const [vendors, setVendors] = useState<VendorSummary[]>([]);

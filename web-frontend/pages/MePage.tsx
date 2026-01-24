@@ -1,14 +1,14 @@
 // web-frontend/pages/MePage.tsx
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   api,
   fetchMe,
-  MeProfile,
-  CityBuilding,
   startTech,
-  HeroRole,
-  ArmyType,
+  type MeProfile,
+  type CityBuilding,
+  type HeroRole,
+  type ArmyType,
 } from "../lib/api";
 
 const REGION_META: Record<string, { name: string }> = {
@@ -21,7 +21,6 @@ const REGION_META: Record<string, { name: string }> = {
 function getRegionDisplayName(regionId: string): string {
   const meta = REGION_META[regionId];
   if (meta?.name) return meta.name;
-
   return regionId
     .split("_")
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
@@ -83,6 +82,16 @@ export function MePage() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
+  const [busyAction, setBusyAction] = useState<string | null>(null);
+  const [notice, setNotice] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
+
+  const noticeTimer = useRef<number | null>(null);
+  const setFlash = (kind: "ok" | "err", text: string) => {
+    setNotice({ kind, text });
+    if (noticeTimer.current) window.clearTimeout(noticeTimer.current);
+    noticeTimer.current = window.setTimeout(() => setNotice(null), 3500);
+  };
+
   const refreshMe = async () => {
     setLoading(true);
     setError(null);
@@ -99,170 +108,174 @@ export function MePage() {
 
   useEffect(() => {
     void refreshMe();
+    return () => {
+      if (noticeTimer.current) window.clearTimeout(noticeTimer.current);
+    };
   }, []);
+
+  const runAction = async (label: string, fn: () => Promise<void>) => {
+    if (busyAction) return;
+    setBusyAction(label);
+    setError(null);
+    try {
+      await fn();
+      await refreshMe();
+      setFlash("ok", `${label} ✓`);
+    } catch (err: any) {
+      console.error(err);
+      setFlash("err", err?.message ?? `${label} failed`);
+    } finally {
+      setBusyAction(null);
+    }
+  };
 
   // -----------------------
   // API handlers (same-origin)
   // -----------------------
 
-  const handleBuildBuilding = async (kind: CityBuilding["kind"]) => {
-    try {
+  const handleBuildBuilding = (kind: CityBuilding["kind"]) =>
+    runAction(`Build ${kind}`, async () => {
       await api("/api/buildings/construct", {
         method: "POST",
         body: JSON.stringify({ kind }),
       });
-      await refreshMe();
-    } catch (err: any) {
-      console.error(err);
-      alert(err?.message ?? "Failed to construct building.");
-    }
-  };
+    });
 
-  const handleUpgradeBuilding = async (buildingId: string) => {
-    try {
+  const handleUpgradeBuilding = (buildingId: string) =>
+    runAction("Upgrade building", async () => {
       await api("/api/buildings/upgrade", {
         method: "POST",
         body: JSON.stringify({ buildingId }),
       });
-      await refreshMe();
-    } catch (err: any) {
-      console.error(err);
-      alert(err?.message ?? "Failed to upgrade building.");
-    }
-  };
+    });
 
-  const handleTierUpCity = async () => {
-    try {
+  const handleTierUpCity = () =>
+    runAction("Tier up city", async () => {
       await api("/api/city/tier-up", {
         method: "POST",
         body: JSON.stringify({}),
       });
-      await refreshMe();
-    } catch (err: any) {
-      console.error(err);
-      alert(err?.message ?? "Failed to tier up city.");
-    }
-  };
+    });
 
-  const handleRaiseArmy = async (type: ArmyType) => {
-    try {
+  const handleRaiseArmy = (type: ArmyType) =>
+    runAction(`Raise ${type}`, async () => {
       await api("/api/armies/raise", {
         method: "POST",
         body: JSON.stringify({ type }),
       });
-      await refreshMe();
-    } catch (err: any) {
-      console.error(err);
-      alert(err?.message ?? "Failed to raise army.");
-    }
-  };
+    });
 
-  const handleReinforceArmy = async (armyId: string) => {
-    try {
+  const handleReinforceArmy = (armyId: string) =>
+    runAction("Reinforce army", async () => {
       await api("/api/armies/reinforce", {
         method: "POST",
         body: JSON.stringify({ armyId }),
       });
-      await refreshMe();
-    } catch (err: any) {
-      console.error(err);
-      alert(err?.message ?? "Failed to reinforce army.");
-    }
-  };
+    });
 
-  const handleRecruitHero = async (role: HeroRole) => {
-    try {
+  const handleRecruitHero = (role: HeroRole) =>
+    runAction(`Recruit ${role}`, async () => {
       await api("/api/heroes/recruit", {
         method: "POST",
         body: JSON.stringify({ role }),
       });
-      await refreshMe();
-    } catch (err: any) {
-      console.error(err);
-      alert(err?.message ?? "Failed to recruit hero.");
-    }
-  };
+    });
 
-  const handleEquipHeroAttachment = async (
+  const handleEquipHeroAttachment = (
     heroId: string,
     kind: "valor_charm" | "scouting_cloak" | "arcane_focus"
-  ) => {
-    try {
+  ) =>
+    runAction("Equip attachment", async () => {
       await api("/api/heroes/equip_attachment", {
         method: "POST",
         body: JSON.stringify({ heroId, kind }),
       });
-      await refreshMe();
-    } catch (err: any) {
-      console.error(err);
-      alert(err?.message ?? "Failed to equip hero attachment.");
-    }
-  };
+    });
 
-  const handleWorkshopCraft = async (
-    kind: "valor_charm" | "scouting_cloak" | "arcane_focus"
-  ) => {
-    try {
+  const handleWorkshopCraft = (kind: "valor_charm" | "scouting_cloak" | "arcane_focus") =>
+    runAction(`Craft ${kind}`, async () => {
       await api("/api/workshop/craft", {
         method: "POST",
         body: JSON.stringify({ kind }),
       });
-      await refreshMe();
-    } catch (err: any) {
-      console.error(err);
-      alert(err?.message ?? "Failed to start workshop craft.");
-    }
-  };
+    });
 
-  const handleWorkshopCollect = async (jobId: string) => {
-    try {
+  const handleWorkshopCollect = (jobId: string) =>
+    runAction("Collect craft", async () => {
       await api("/api/workshop/collect", {
         method: "POST",
         body: JSON.stringify({ jobId }),
       });
-      await refreshMe();
-    } catch (err: any) {
-      console.error(err);
-      alert(err?.message ?? "Failed to collect workshop job.");
-    }
-  };
+    });
 
-  const handleTogglePolicy = async (key: keyof MeProfile["policies"]) => {
+  const handleTogglePolicy = (key: keyof MeProfile["policies"]) => {
     if (!me) return;
-    try {
+    return runAction(`Toggle ${String(key)}`, async () => {
       await api("/api/policies/toggle", {
         method: "POST",
         body: JSON.stringify({ key, value: !me.policies[key] }),
       });
-      await refreshMe();
-    } catch (err: any) {
-      console.error(err);
-      alert(err?.message ?? "Failed to toggle policy.");
-    }
+    });
   };
 
-  const handleStartTech = async (techId: string) => {
-    try {
+  const handleStartTech = (techId: string) =>
+    runAction(`Start tech ${techId}`, async () => {
       await startTech(techId);
-      await refreshMe();
-    } catch (err: any) {
-      console.error(err);
-      alert(err?.message ?? "Failed to start tech.");
-    }
-  };
+    });
+
+  // -----------------------
+  // Derived display bits
+  // -----------------------
+
+  const city = me?.city ?? null;
+  const cityHeader = city ? `${city.name} (Tier ${city.tier})` : "No city yet";
+
+  const disabled = !!busyAction;
+
+  const banner = useMemo(() => {
+    if (!notice) return null;
+    const color = notice.kind === "ok" ? "#b8ffb8" : "salmon";
+    const border = notice.kind === "ok" ? "#2a6" : "#a33";
+    return (
+      <div
+        style={{
+          border: `1px solid ${border}`,
+          background: "#111",
+          color,
+          padding: "10px 12px",
+          borderRadius: 8,
+          marginBottom: 10,
+          fontSize: 13,
+        }}
+      >
+        {notice.text}
+      </div>
+    );
+  }, [notice]);
 
   // -----------------------
   // Render
   // -----------------------
 
-  if (loading && !me) return <p>Loading /api/me...</p>;
+  if (loading && !me) return <p>Loading /api/me…</p>;
 
   if (error) {
     return (
       <section style={{ padding: 16 }}>
-        <h2>CityBuilder /me</h2>
+        <h2 style={{ marginTop: 0 }}>CityBuilder /me</h2>
         <p style={{ color: "salmon" }}>{error}</p>
-        <button onClick={() => void refreshMe()}>Retry</button>
+        <button
+          style={{
+            padding: "6px 10px",
+            borderRadius: 6,
+            border: "1px solid #777",
+            background: "#111",
+            cursor: "pointer",
+          }}
+          onClick={() => void refreshMe()}
+        >
+          Retry
+        </button>
       </section>
     );
   }
@@ -270,22 +283,21 @@ export function MePage() {
   if (!me) {
     return (
       <section style={{ padding: 16 }}>
-        <h2>CityBuilder /me</h2>
+        <h2 style={{ marginTop: 0 }}>CityBuilder /me</h2>
         <p>No data.</p>
       </section>
     );
   }
 
-  const city = me.city;
-
-  const cityHeader = useMemo(() => {
-    if (!city) return "No city yet";
-    return `${city.name} (Tier ${city.tier})`;
-  }, [city]);
-
   return (
     <section style={{ padding: 16, display: "grid", gap: 16 }}>
-      <h2>CityBuilder /me</h2>
+      <h2 style={{ margin: 0 }}>CityBuilder /me</h2>
+
+      {banner}
+
+      {busyAction ? (
+        <div style={{ fontSize: 13, opacity: 0.8 }}>Working: {busyAction}…</div>
+      ) : null}
 
       <div
         style={{
@@ -297,7 +309,8 @@ export function MePage() {
         }}
       >
         <div>
-          <strong>User:</strong> {me.username} <span style={{ opacity: 0.7 }}>({me.userId})</span>
+          <strong>User:</strong> {(me as any).username ?? "(unknown)"}{" "}
+          <span style={{ opacity: 0.7 }}>({(me as any).userId ?? "?"})</span>
         </div>
         <div>
           <strong>City:</strong> {cityHeader}
@@ -315,12 +328,12 @@ export function MePage() {
         }}
       >
         <h3 style={{ marginTop: 0 }}>Resources</h3>
-        <div>Food: {me.resources.food}</div>
-        <div>Materials: {me.resources.materials}</div>
-        <div>Wealth: {me.resources.wealth}</div>
-        <div>Mana: {me.resources.mana}</div>
-        <div>Knowledge: {me.resources.knowledge}</div>
-        <div>Unity: {me.resources.unity}</div>
+        <div>Food: {(me as any).resources?.food ?? 0}</div>
+        <div>Materials: {(me as any).resources?.materials ?? 0}</div>
+        <div>Wealth: {(me as any).resources?.wealth ?? 0}</div>
+        <div>Mana: {(me as any).resources?.mana ?? 0}</div>
+        <div>Knowledge: {(me as any).resources?.knowledge ?? 0}</div>
+        <div>Unity: {(me as any).resources?.unity ?? 0}</div>
       </div>
 
       {/* City */}
@@ -337,8 +350,8 @@ export function MePage() {
 
         {!city ? (
           <p style={{ opacity: 0.85 }}>
-            No city attached to this profile yet. (That’s fine — CityBuilder isn’t in active use,
-            but this page now typechecks cleanly.)
+            No city attached to this profile yet. (Now that you have DB-enforced 1-city-per-account,
+            this page can safely become the “create city” funnel later.)
           </p>
         ) : (
           <>
@@ -372,10 +385,12 @@ export function MePage() {
                   borderRadius: 6,
                   border: "1px solid #777",
                   background: "#111",
-                  cursor: "pointer",
+                  cursor: disabled ? "not-allowed" : "pointer",
                   width: "fit-content",
+                  opacity: disabled ? 0.6 : 1,
                 }}
-                onClick={handleTierUpCity}
+                onClick={() => void handleTierUpCity()}
+                disabled={disabled}
               >
                 Tier Up City
               </button>
@@ -428,10 +443,12 @@ export function MePage() {
                         borderRadius: 6,
                         border: "1px solid #777",
                         background: "#111",
-                        cursor: "pointer",
+                        cursor: disabled ? "not-allowed" : "pointer",
+                        opacity: disabled ? 0.6 : 1,
                       }}
-                      onClick={() => handleBuildBuilding(kind)}
+                      onClick={() => void handleBuildBuilding(kind)}
                       title={`Cost: ${cost.materials} materials, ${cost.wealth} wealth`}
+                      disabled={disabled}
                     >
                       Build {kind.replace("_", " ")} (m{cost.materials}/w{cost.wealth})
                     </button>
@@ -473,10 +490,12 @@ export function MePage() {
                             borderRadius: 6,
                             border: "1px solid #777",
                             background: "#111",
-                            cursor: "pointer",
+                            cursor: disabled ? "not-allowed" : "pointer",
+                            opacity: disabled ? 0.6 : 1,
                           }}
-                          onClick={() => handleUpgradeBuilding(b.id)}
-                          title={`Est. cost: ${cost.materials} materials, ${cost.wealth} wealth`}
+                          onClick={() => void handleUpgradeBuilding(b.id)}
+                          title={`Cost: ${cost.materials} materials, ${cost.wealth} wealth`}
+                          disabled={disabled}
                         >
                           Upgrade (m{cost.materials}/w{cost.wealth})
                         </button>
@@ -486,396 +505,54 @@ export function MePage() {
                 </div>
               )}
             </div>
-          </>
-        )}
-      </div>
 
-      {/* City stress (new model) */}
-      <div
-        style={{
-          border: "1px solid #444",
-          borderRadius: 8,
-          padding: 16,
-          display: "grid",
-          gap: 6,
-        }}
-      >
-        <h3 style={{ marginTop: 0 }}>City Stress</h3>
-        <div>Hunger: {me.cityStress.hunger}</div>
-        <div>Unrest: {me.cityStress.unrest}</div>
-        <div>Corruption: {me.cityStress.corruption}</div>
-        <div>Arcane Hazard: {me.cityStress.arcaneHazard}</div>
-      </div>
-
-      {/* Region war */}
-      <div
-        style={{
-          border: "1px solid #444",
-          borderRadius: 8,
-          padding: 16,
-          display: "grid",
-          gap: 10,
-        }}
-      >
-        <h3 style={{ marginTop: 0 }}>Region War</h3>
-        {me.regionWar.length === 0 ? (
-          <p style={{ opacity: 0.85 }}>No region war data.</p>
-        ) : (
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 10 }}>
-            {me.regionWar.map((rw) => (
-              <div
-                key={rw.regionId}
-                style={{
-                  border: "1px solid #555",
-                  borderRadius: 8,
-                  padding: 10,
-                  display: "grid",
-                  gap: 6,
-                }}
-              >
-                <strong>{getRegionDisplayName(rw.regionId)}</strong>
-                <div style={{ fontSize: 13, opacity: 0.85 }}>
-                  Control {Math.round(rw.control)} · Threat {Math.round(rw.threat)}
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-
-      {/* Forces */}
-      <div
-        style={{
-          border: "1px solid #444",
-          borderRadius: 8,
-          padding: 16,
-          display: "grid",
-          gap: 10,
-        }}
-      >
-        <h3 style={{ marginTop: 0 }}>Forces</h3>
-
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-          <button
-            style={{ padding: "6px 10px", borderRadius: 6, border: "1px solid #777", background: "#111", cursor: "pointer" }}
-            onClick={() => handleRaiseArmy("militia")}
-          >
-            Raise Militia
-          </button>
-          <button
-            style={{ padding: "6px 10px", borderRadius: 6, border: "1px solid #777", background: "#111", cursor: "pointer" }}
-            onClick={() => handleRaiseArmy("line")}
-          >
-            Raise Line
-          </button>
-          <button
-            style={{ padding: "6px 10px", borderRadius: 6, border: "1px solid #777", background: "#111", cursor: "pointer" }}
-            onClick={() => handleRaiseArmy("vanguard")}
-          >
-            Raise Vanguard
-          </button>
-        </div>
-
-        <div style={{ display: "grid", gap: 6 }}>
-          <strong>Heroes</strong>
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-            {(["champion", "scout", "tactician", "mage"] as const).map((role) => (
-              <button
-                key={role}
-                style={{ padding: "6px 10px", borderRadius: 6, border: "1px solid #777", background: "#111", cursor: "pointer" }}
-                onClick={() => handleRecruitHero(role)}
-              >
-                Recruit {role}
-              </button>
-            ))}
-          </div>
-
-          {me.heroes.length === 0 ? (
-            <p style={{ opacity: 0.85 }}>No heroes.</p>
-          ) : (
+            {/* Tech */}
             <div style={{ display: "grid", gap: 8 }}>
-              {me.heroes.map((h) => (
-                <div
-                  key={h.id}
-                  style={{
-                    border: "1px solid #555",
-                    borderRadius: 8,
-                    padding: 10,
-                    display: "grid",
-                    gap: 6,
-                  }}
-                >
-                  <div>
-                    <strong>{h.name}</strong> ({h.role}) · Power {h.power} · Status {h.status}
-                  </div>
-
-                  <div style={{ fontSize: 13, opacity: 0.85 }}>
-                    Level {h.level ?? "?"} · XP {h.xp ?? "?"} / {h.xpToNext ?? "?"}
-                  </div>
-
-                  <div style={{ fontSize: 13 }}>
-                    Gear:{" "}
-                    {h.attachments && h.attachments.length > 0
-                      ? h.attachments.map((a) => a.name).join(", ")
-                      : "None"}
-                  </div>
-
-                  <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-                    <button
-                      style={{ padding: "6px 10px", borderRadius: 6, border: "1px solid #777", background: "#111", cursor: "pointer" }}
-                      onClick={() => handleEquipHeroAttachment(h.id, "valor_charm")}
-                    >
-                      Equip Valor Charm
-                    </button>
-                    <button
-                      style={{ padding: "6px 10px", borderRadius: 6, border: "1px solid #777", background: "#111", cursor: "pointer" }}
-                      onClick={() => handleEquipHeroAttachment(h.id, "scouting_cloak")}
-                    >
-                      Equip Scouting Cloak
-                    </button>
-                    <button
-                      style={{ padding: "6px 10px", borderRadius: 6, border: "1px solid #777", background: "#111", cursor: "pointer" }}
-                      onClick={() => handleEquipHeroAttachment(h.id, "arcane_focus")}
-                    >
-                      Equip Arcane Focus
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-
-        <div style={{ display: "grid", gap: 6 }}>
-          <strong>Armies</strong>
-          {me.armies.length === 0 ? (
-            <p style={{ opacity: 0.85 }}>No armies.</p>
-          ) : (
-            <div style={{ display: "grid", gap: 8 }}>
-              {me.armies.map((a) => (
-                <div
-                  key={a.id}
-                  style={{
-                    border: "1px solid #555",
-                    borderRadius: 8,
-                    padding: 10,
-                    display: "flex",
-                    justifyContent: "space-between",
-                    alignItems: "center",
-                    gap: 10,
-                  }}
-                >
-                  <div>
-                    <div>
-                      <strong>{a.name}</strong> ({a.type})
-                    </div>
-                    <div style={{ fontSize: 13, opacity: 0.85 }}>
-                      Power {a.power} · Size {a.size} · Status {a.status}
-                    </div>
-                  </div>
+              <strong>Tech</strong>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                {(me as any).techOptions?.map?.((t: any) => (
                   <button
+                    key={t.techId}
                     style={{
                       padding: "6px 10px",
                       borderRadius: 6,
                       border: "1px solid #777",
-                      background: a.status === "idle" ? "#111" : "#222",
-                      cursor: a.status === "idle" ? "pointer" : "default",
-                      opacity: a.status === "idle" ? 1 : 0.6,
+                      background: "#111",
+                      cursor: disabled ? "not-allowed" : "pointer",
+                      opacity: disabled ? 0.6 : 1,
                     }}
-                    onClick={() => a.status === "idle" && handleReinforceArmy(a.id)}
-                    disabled={a.status !== "idle"}
+                    disabled={disabled}
+                    onClick={() => void handleStartTech(t.techId)}
+                    title={t.description ?? t.techId}
                   >
-                    Reinforce
+                    Start: {t.name ?? t.techId}
                   </button>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Workshop */}
-      <div
-        style={{
-          border: "1px solid #444",
-          borderRadius: 8,
-          padding: 16,
-          display: "grid",
-          gap: 10,
-        }}
-      >
-        <h3 style={{ marginTop: 0 }}>Workshop</h3>
-
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-          <button
-            style={{ padding: "6px 10px", borderRadius: 6, border: "1px solid #777", background: "#111", cursor: "pointer" }}
-            onClick={() => handleWorkshopCraft("valor_charm")}
-          >
-            Craft Valor Charm
-          </button>
-          <button
-            style={{ padding: "6px 10px", borderRadius: 6, border: "1px solid #777", background: "#111", cursor: "pointer" }}
-            onClick={() => handleWorkshopCraft("scouting_cloak")}
-          >
-            Craft Scouting Cloak
-          </button>
-          <button
-            style={{ padding: "6px 10px", borderRadius: 6, border: "1px solid #777", background: "#111", cursor: "pointer" }}
-            onClick={() => handleWorkshopCraft("arcane_focus")}
-          >
-            Craft Arcane Focus
-          </button>
-        </div>
-
-        {me.workshopJobs.length === 0 ? (
-          <p style={{ opacity: 0.85 }}>No workshop jobs.</p>
-        ) : (
-          <div style={{ display: "grid", gap: 8 }}>
-            {me.workshopJobs.map((job) => (
-              <div
-                key={job.id}
-                style={{
-                  border: "1px solid #555",
-                  borderRadius: 8,
-                  padding: 10,
-                  display: "flex",
-                  justifyContent: "space-between",
-                  alignItems: "center",
-                  gap: 10,
-                }}
-              >
-                <div>
-                  <div>
-                    <strong>{job.attachmentKind}</strong>
-                  </div>
-                  <div style={{ fontSize: 13, opacity: 0.85 }}>
-                    {job.completed ? "Completed" : `Finishes ${new Date(job.finishesAt).toLocaleString()}`}
-                  </div>
-                </div>
-                <button
-                  style={{
-                    padding: "6px 10px",
-                    borderRadius: 6,
-                    border: "1px solid #777",
-                    background: "#111",
-                    cursor: "pointer",
-                    opacity: job.completed ? 0.6 : 1,
-                  }}
-                  onClick={() => !job.completed && handleWorkshopCollect(job.id)}
-                  disabled={job.completed}
-                >
-                  Collect
-                </button>
+                ))}
+                {!(me as any).techOptions?.length ? (
+                  <span style={{ opacity: 0.7, fontSize: 13 }}>No tech options (yet).</span>
+                ) : null}
               </div>
-            ))}
-          </div>
-        )}
-      </div>
-
-      {/* Research */}
-      <div
-        style={{
-          border: "1px solid #444",
-          borderRadius: 8,
-          padding: 16,
-          display: "grid",
-          gap: 10,
-        }}
-      >
-        <h3 style={{ marginTop: 0 }}>Research</h3>
-
-        {me.activeResearch ? (
-          <div style={{ border: "1px solid #555", borderRadius: 8, padding: 10, display: "grid", gap: 6 }}>
-            <div>
-              <strong>{me.activeResearch.name}</strong> ({me.activeResearch.category})
             </div>
-            <div style={{ opacity: 0.85 }}>{me.activeResearch.description}</div>
-            <div>
-              Progress: {me.activeResearch.progress} / {me.activeResearch.cost}
-            </div>
-          </div>
-        ) : (
-          <p style={{ opacity: 0.85 }}>No active research.</p>
-        )}
-
-        <strong>Available Tech</strong>
-        {me.availableTechs.length === 0 ? (
-          <p style={{ opacity: 0.85 }}>No tech available.</p>
-        ) : (
-          <div style={{ display: "grid", gap: 8 }}>
-            {me.availableTechs.map((t) => (
-              <div key={t.id} style={{ border: "1px solid #555", borderRadius: 8, padding: 10 }}>
-                <div>
-                  <strong>{t.name}</strong> ({t.category}) — Cost {t.cost}
-                </div>
-                <div style={{ opacity: 0.85 }}>{t.description}</div>
-                <button
-                  style={{
-                    marginTop: 6,
-                    padding: "6px 10px",
-                    borderRadius: 6,
-                    border: "1px solid #777",
-                    background: "#111",
-                    cursor: me.activeResearch ? "default" : "pointer",
-                    opacity: me.activeResearch ? 0.6 : 1,
-                  }}
-                  onClick={() => !me.activeResearch && handleStartTech(t.id)}
-                  disabled={!!me.activeResearch}
-                >
-                  Start Research
-                </button>
-              </div>
-            ))}
-          </div>
+          </>
         )}
       </div>
 
-      {/* Policies */}
-      <div
-        style={{
-          border: "1px solid #444",
-          borderRadius: 8,
-          padding: 16,
-          display: "grid",
-          gap: 10,
-        }}
-      >
-        <h3 style={{ marginTop: 0 }}>Policies</h3>
-        <div style={{ display: "grid", gap: 8 }}>
-          {(Object.keys(me.policies) as (keyof MeProfile["policies"])[]).map((key) => (
-            <label key={key} style={{ display: "flex", alignItems: "center", gap: 10 }}>
-              <input type="checkbox" checked={me.policies[key]} onChange={() => handleTogglePolicy(key)} />
-              <span>{key}</span>
-            </label>
-          ))}
-        </div>
-      </div>
-
-      {/* Events */}
-      <div
-        style={{
-          border: "1px solid #444",
-          borderRadius: 8,
-          padding: 16,
-          display: "grid",
-          gap: 10,
-        }}
-      >
-        <h3 style={{ marginTop: 0 }}>Events</h3>
-        {me.events.length === 0 ? (
-          <p style={{ opacity: 0.85 }}>No events.</p>
-        ) : (
-          <div style={{ display: "grid", gap: 8, maxHeight: 320, overflowY: "auto" }}>
-            {me.events.map((evt) => (
-              <div key={evt.id} style={{ borderBottom: "1px solid #333", paddingBottom: 6 }}>
-                <div style={{ fontSize: 12, opacity: 0.75 }}>
-                  {new Date(evt.timestamp).toLocaleString()} · {evt.kind}
-                </div>
-                <div>{evt.message}</div>
-              </div>
-            ))}
-          </div>
-        )}
+      <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+        <button
+          style={{
+            padding: "6px 10px",
+            borderRadius: 6,
+            border: "1px solid #777",
+            background: "#111",
+            cursor: "pointer",
+          }}
+          onClick={() => void refreshMe()}
+        >
+          Refresh
+        </button>
+        <span style={{ opacity: 0.65, fontSize: 12 }}>
+          Tip: if CityBuilder ever misbehaves, it should now fail *inside the panel*, not blank the whole app.
+        </span>
       </div>
     </section>
   );

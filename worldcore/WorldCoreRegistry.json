@@ -1473,6 +1473,22 @@
         "Economy Realism v1.1: adds cadence fields to vendor_item_economy and backfills them from legacy restock_per_hour."
       ]
     },
+    "infra.schema.048_create_cities": {
+      "kind": "service",
+      "path": "worldcore/infra/schema/048_create_cities.sql",
+      "class": "(sql) infra schema migration",
+      "lifecycle": "singleton",
+      "ctorArgs": [],
+      "dependsOn": [],
+      "provides": [
+        "cities table (account-owned, shard-scoped) with UNIQUE(account_id, shard_id)",
+        "CityBuilder v0 persistence foundation (prevents 1 city per character exploits)"
+      ],
+      "owns": [],
+      "notes": [
+        "Conservative: no triggers; region_id nullable; meta jsonb for early iteration."
+      ]
+    },
     "interaction.ops": {
       "kind": "service",
       "path": "worldcore/interaction/interactOps.ts",

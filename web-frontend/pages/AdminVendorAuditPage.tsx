@@ -9,6 +9,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { api } from "../lib/api";
+import { getAuthToken } from "../lib/api";
 
 type VendorAuditRow = {
   ts: string;
@@ -135,6 +136,14 @@ function buildVendorAuditCsvUrl(filters: VendorAuditFilters, opts?: { maxRows?: 
   const qs = q.toString();
   return qs ? `/api/admin/vendor_audit/csv?${qs}` : `/api/admin/vendor_audit/csv`;
 }
+
+
+const authedFetch: typeof fetch = (input: any, init?: any) => {
+  const token = getAuthToken();
+  const headers = new Headers(init?.headers ?? {});
+  if (token) headers.set("Authorization", `Bearer ${token}`);
+  return fetch(input, { ...(init ?? {}), headers });
+};
 
 export function AdminVendorAuditPage() {
   const [rows, setRows] = useState<VendorAuditRow[]>([]);

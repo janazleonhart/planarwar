@@ -6,6 +6,7 @@
 // - Convenience toggles are provided for common tags (notably: vendor)
 
 import { useEffect, useMemo, useState } from "react";
+import { getAuthToken } from "../lib/api";
 
 type AdminNpcLootRow = {
   itemId: string;
@@ -74,6 +75,14 @@ function toggleTag(tags: string[], tag: string, enabled: boolean): string[] {
   return next.filter((t) => t !== n);
 }
 
+
+const authedFetch: typeof fetch = (input: any, init?: any) => {
+  const token = getAuthToken();
+  const headers = new Headers(init?.headers ?? {});
+  if (token) headers.set("Authorization", `Bearer ${token}`);
+  return fetch(input, { ...(init ?? {}), headers });
+};
+
 export function AdminNpcsPage() {
   const [npcs, setNpcs] = useState<AdminNpc[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -85,7 +94,7 @@ export function AdminNpcsPage() {
   useEffect(() => {
     (async () => {
       try {
-        const res = await fetch(`/api/admin/npcs`);
+        const res = await authedFetch(`/api/admin/npcs`);
         if (!res.ok) {
           throw new Error(`Load failed (HTTP ${res.status})`);
         }
@@ -227,7 +236,7 @@ export function AdminNpcsPage() {
         tagsText: toTagsText(parseTagsText(form.tagsText)),
       };
 
-      const res = await fetch(`/api/admin/npcs`, {
+      const res = await authedFetch(`/api/admin/npcs`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
@@ -247,7 +256,7 @@ export function AdminNpcsPage() {
       }
 
       // Reload list (prefer the existing GET route so we stay consistent)
-      const res2 = await fetch(`/api/admin/npcs`);
+      const res2 = await authedFetch(`/api/admin/npcs`);
       const data2: {
         ok: boolean;
         npcs: AdminNpc[];

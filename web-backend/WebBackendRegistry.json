@@ -475,6 +475,7 @@
       "provides": [
         "getGameState()",
         "getPlayerState(playerId)",
+        "getOrCreatePlayerState(playerId, displayName?)",
         "getDemoPlayer()",
         "getDemoPlayerWithOffers()",
         "startMissionForPlayer(...)",
@@ -486,11 +487,12 @@
       ],
       "owns": [
         "in-memory GameState (demo)",
-        "DEMO_PLAYER_ID singleton player"
+        "in-memory GameState (demo, per-account states)"
       ],
       "notes": [
         "In-memory, demo-style state manager for the web-city-builder prototype.",
-        "Routes call tickPlayerState(...) before reads/writes to keep time-based progression consistent."
+        "Routes call tickPlayerState(...) before reads/writes to keep time-based progression consistent.",
+        "Now supports per-account CityBuilder state via getOrCreatePlayerState(playerId, displayName)."
       ]
     },
     "web-backend.package": {
@@ -722,7 +724,8 @@
       ],
       "owns": [],
       "notes": [
-        "City operations for demo city builder (build/upgrade/tier/morph)."
+        "City operations for demo city builder (build/upgrade/tier/morph).",
+        "Supports Authorization: Bearer token; city builder endpoints resolve playerId from account id when authed, otherwise fall back to DEMO."
       ]
     },
     "web-backend.routes.garrisons": {
@@ -776,11 +779,14 @@
         "web-backend.gameState"
       ],
       "provides": [
-        "GET /api/me -> demo playerP state snapshot"
+        "GET /api/me -> demo playerP state snapshot",
+        "GET /api/me (auth-aware)"
       ],
       "owns": [],
       "notes": [
-        "Demo endpoint(s) for player state."
+        "Demo endpoint(s) for player state.",
+        "Supports Authorization: Bearer token; if present+valid, /api/me returns the authenticated account id/displayName and uses per-account CityBuilder state.",
+        "When authed, ensures a cities row exists for the account (DB-enforced: 1 city per account). Falls back to DEMO player when unauthenticated."
       ]
     },
     "web-backend.routes.missions": {

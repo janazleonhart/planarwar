@@ -1,478 +1,547 @@
 // web-frontend/App.tsx
+//
+// NOTE: This app intentionally avoids heavy routing libs for now.
+// We do a tiny pathname switch so we can host multiple UIs (MUD / City Builder / Admin)
+// behind a single login + character list.
 
-import { useState, useEffect, useRef } from "react";
-import * as React from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { AdminSpawnPointsPage } from "./pages/AdminSpawnPointsPage";
 import { AdminQuestsPage } from "./pages/AdminQuestsPage";
 import { AdminNpcsPage } from "./pages/AdminNpcsPage";
 import { AdminItemsPage } from "./pages/AdminItemsPage";
-import { AdminSpawnPointsPage } from "./pages/AdminSpawnPointsPage"
-import { AdminVendorAuditPage } from "./pages/AdminVendorAuditPage"
-import { AdminVendorEconomyPage } from "./pages/AdminVendorEconomyPage"
-
-const API_BASE =
-  window.location.hostname === "localhost"
-    ? "http://localhost:4000"
-    : `http://${window.location.hostname}:4000`;
-const SHARD_WS =
-  window.location.hostname === "localhost"
-    ? "ws://localhost:7777/ws"
-    : `ws://${window.location.hostname}:7777/ws`;
-
-    async function api<T = any>(
-      path: string,
-      options: RequestInit = {}
-    ): Promise<T> {
-      const url = `${API_BASE}${path}`;
-    
-      // Merge headers, but always keep JSON content-type
-      const baseHeaders: Record<string, string> = {
-        "Content-Type": "application/json",
-      };
-    
-      const mergedHeaders: HeadersInit = {
-        ...baseHeaders,
-        ...(options.headers as Record<string, string> | undefined),
-      };
-    
-      const res = await fetch(url, {
-        ...options,
-        headers: mergedHeaders,
-      });
-    
-      if (!res.ok) {
-        const text = await res.text();
-        throw new Error(`HTTP ${res.status}: ${text}`);
-      }
-    
-      // 204 / empty body guard
-      const text = await res.text();
-      if (!text) return {} as T;
-      return JSON.parse(text) as T;
-    }
-
-interface Account {
-  id: string;
-  displayName: string;
-  email?: string;
-}
-
-interface Character {
-  id: string;
-  name: string;
-  shardId: string;
-  classId: string;
-  level: number;
-  xp?: number;
-}
-
-interface CharacterState extends Character {
-  userId?: string;
-  posX?: number; posY?: number; posZ?: number;
-  attributes?: any;
-  inventory?: any;
-  equipment?: any;
-  spellbook?: any;
-  abilities?: any;
-  progression?: any;
-}
+import { AdminVendorEconomyPage } from "./pages/AdminVendorEconomyPage";
+import { AdminVendorAuditPage } from "./pages/AdminVendorAuditPage";
+import { AdminHubPage } from "./pages/AdminHubPage";
+import { CityShellPage } from "./pages/CityShellPage";
+import { ModeHubPage, type AppModeId, type ModeCard } from "./pages/ModeHubPage";
 
 type AuthMode = "login" | "register";
 
-function App() {
-  // Dev-only admin shortcut: direct URL for quest editor
-  const path = window.location.pathname;
+type Account = {
+  id: string;
+  email: string;
+  displayName?: string | null;
+  createdAt: string;
+};
 
-  if (path === "/admin/quests" || path === "/admin-quests") {
-    return <AdminQuestsPage />;
+type Character = {
+  id: string;
+  accountId: string;
+  name: string;
+  classId: string;
+  shardId: string;
+  level: number;
+  createdAt: string;
+};
+
+type CharacterState = {
+  id: string;
+  name: string;
+  classId: string;
+  level: number;
+  shardId: string;
+  gold: number;
+  hp: number;
+  maxHp: number;
+  mp: number;
+  maxMp: number;
+  roomId: string;
+  inventory: any[];
+  flags: Record<string, any>;
+  createdAt: string;
+  updatedAt: string;
+};
+
+type WsStatus = "disconnected" | "connecting" | "connected" | "error";
+
+const AUTH_KEY = "pw_auth_v1";
+const MODE_KEY = "pw_last_mode_v1";
+
+function getApiBase(): string {
+  // Legacy App.tsx behavior: compute from hostname with localhost fallbacks.
+  // Admin + city pages should use same-origin /api via Vite proxy; this stays for the MUD console glue.
+  const host = window.location.hostname || "localhost";
+  const isLocal = host === "localhost" || host === "127.0.0.1";
+  return isLocal ? "http://localhost:4000" : `http://${host}:4000`;
+}
+
+function getShardWs(): string {
+  const host = window.location.hostname || "localhost";
+  const isLocal = host === "localhost" || host === "127.0.0.1";
+  return isLocal ? "ws://localhost:4010" : `ws://${host}:4010`;
+}
+
+const API_BASE = getApiBase();
+const SHARD_WS = getShardWs();
+
+function readStoredAuth(): { token: string; account: Account } | null {
+  try {
+    const raw = localStorage.getItem(AUTH_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed?.token || !parsed?.account) return null;
+    return parsed;
+  } catch {
+    return null;
   }
+}
 
-  if (path === "/admin/npcs") {
-    return <AdminNpcsPage />;
+function writeStoredAuth(token: string, account: Account) {
+  localStorage.setItem(AUTH_KEY, JSON.stringify({ token, account }));
+}
+
+function clearStoredAuth() {
+  localStorage.removeItem(AUTH_KEY);
+}
+
+function readLastMode(): AppModeId | null {
+  const raw = localStorage.getItem(MODE_KEY);
+  if (raw === "mud" || raw === "city" || raw === "admin") return raw;
+  return null;
+}
+
+function writeLastMode(mode: AppModeId) {
+  localStorage.setItem(MODE_KEY, mode);
+}
+
+function modeFromPath(pathname: string): AppModeId | null {
+  if (pathname.startsWith("/admin")) return "admin";
+  if (pathname.startsWith("/city")) return "city";
+  if (pathname === "/mud") return "mud";
+  return null;
+}
+
+function pathForMode(mode: AppModeId): string {
+  switch (mode) {
+    case "mud":
+      return "/mud";
+    case "city":
+      return "/city/me";
+    case "admin":
+      return "/admin";
+    default:
+      return "/";
   }
+}
 
-  if (path === "/admin/items") {
-    return <AdminItemsPage />;
-  }
+function hasHubOverride(): boolean {
+  const params = new URLSearchParams(window.location.search);
+  return params.get("hub") === "1";
+}
 
-  if (path === "/admin/spawn_points") {
-    return <AdminSpawnPointsPage />;
-  }
-
-  if (path === "/admin/vendor_audit" || path === "/admin/vendor-audit") {
-    return <AdminVendorAuditPage />;
-  }
-
-  if (path === "/admin/vendor_economy" || path === "/admin/vendor-economy") {
-    return <AdminVendorEconomyPage />;
-  }
-
+export function App() {
   const [authMode, setAuthMode] = useState<AuthMode>("login");
+  const [token, setToken] = useState<string>(() => readStoredAuth()?.token ?? "");
+  const [account, setAccount] = useState<Account | null>(() => readStoredAuth()?.account ?? null);
+
   const [email, setEmail] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [password, setPassword] = useState("");
 
-  const [token, setToken] = useState<string | null>(null);
-  const [account, setAccount] = useState<Account | null>(null);
-
-  const [characters, setCharacters] = useState<Character[]>([]);
-  const [newCharName, setNewCharName] = useState("");
-  const [newCharClass, setNewCharClass] = useState("warrior");
-  const [selectedCharState, setSelectedCharState] = useState<CharacterState | null>(null);
-
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Shard connection state
-  const [selectedCharId, setSelectedCharId] = useState<string | null>(null);
+  // Character selection + debug state view
+  const [characters, setCharacters] = useState<Character[]>([]);
+  const [selectedCharId, setSelectedCharId] = useState<string>("");
+  const [selectedCharState, setSelectedCharState] = useState<CharacterState | null>(null);
+  const [newCharName, setNewCharName] = useState("");
+  const [newCharClass, setNewCharClass] = useState("warrior");
+
+  // WebSocket / shard console
   const [ws, setWs] = useState<WebSocket | null>(null);
-  const [wsStatus, setWsStatus] =
-    useState<"disconnected" | "connecting" | "connected">("disconnected");
+  const [wsStatus, setWsStatus] = useState<WsStatus>("disconnected");
   const [wsLog, setWsLog] = useState<string[]>([]);
-  
-  // instead of the union-style authedHeaders
-  const authedHeaders: Record<string, string> = {};
-  if (token) {
-    authedHeaders["Authorization"] = `Bearer ${token}`;
-  }
+  const logRef = useRef<HTMLDivElement | null>(null);
 
-  function appendLog(line: string) {
-    setWsLog((prev) => [...prev, line]);
-  }
+  const pathname = window.location.pathname;
+  const currentMode = useMemo(() => modeFromPath(pathname), [pathname]);
 
-  // ---------------------------------------------------------------------------
-  // Auth
-  // ---------------------------------------------------------------------------
+  const appendLog = (line: string) => {
+    setWsLog((prev) => {
+      const next = [...prev, line];
+      return next.length > 200 ? next.slice(next.length - 200) : next;
+    });
+  };
 
-  async function handleAuthSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    setBusy(true);
-    setError(null);
-
-    try {
-      if (authMode === "register") {
-        const res = await api<{
-          ok: boolean;
-          account: Account;
-          token: string;
-        }>("/api/auth/register", {
-          method: "POST",
-          body: JSON.stringify({ email, displayName, password }),
-        });
-
-        persistAuth(res.token, res.account);
-      } else {
-        const body = { emailOrName: email, password }; // as we already fixed
-        const res = await api<{
-          ok: boolean;
-          account: Account;
-          token: string;
-        }>("/api/auth/login", {
-          method: "POST",
-          body: JSON.stringify(body),
-        });
-
-        persistAuth(res.token, res.account);
-      }
-    } catch (err: any) {
-      setError(err.message || String(err));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  function logout() {
-    setToken(null);
-    setAccount(null);
-    setCharacters([]);
-    setSelectedCharId(null);
-    setWs(null);
-    setWsStatus("disconnected");
-    setWsLog([]);
-
-    try {
-      window.localStorage.removeItem("pw_auth_v1");
-    } catch {
-      // meh
-    }
-  }
-
-  function persistAuth(newToken: string, newAccount: Account) {
-    setToken(newToken);
-    setAccount(newAccount);
-  
-    try {
-      window.localStorage.setItem(
-        "pw_auth_v1",
-        JSON.stringify({
-          token: newToken,
-          account: newAccount,
-        })
-      );
-    } catch {
-      // non-fatal: if storage explodes, we just lose persistence
-    }
-  }
-
+  // Persist last mode on load (so refresh keeps your place).
   useEffect(() => {
-    try {
-      const raw = window.localStorage.getItem("pw_auth_v1");
-      if (!raw) return;
-  
-      const parsed = JSON.parse(raw);
-      if (parsed && typeof parsed.token === "string" && parsed.account) {
-        setToken(parsed.token);
-        setAccount(parsed.account as Account);
-      }
-    } catch {
-      // ignore bad data
-    }
+    const m = modeFromPath(window.location.pathname);
+    if (m) writeLastMode(m);
   }, []);
 
-  // ---------------------------------------------------------------------------
-  // Characters
-  // ---------------------------------------------------------------------------
+  // Auto-resume after login: if you land on / (launcher) and you have a last mode, jump there.
+  useEffect(() => {
+    if (!account) return;
+    if (hasHubOverride()) return;
+    if (window.location.pathname !== "/") return;
 
-  async function refreshCharacters() {
+    const last = readLastMode();
+    if (!last) return;
+
+    window.location.assign(pathForMode(last));
+  }, [account]);
+
+  const go = (path: string, modeHint?: AppModeId) => {
+    if (modeHint) writeLastMode(modeHint);
+    window.location.assign(path);
+  };
+
+  const logout = () => {
+    clearStoredAuth();
+    setToken("");
+    setAccount(null);
+    setCharacters([]);
+    setSelectedCharId("");
+    setSelectedCharState(null);
+    setWsLog([]);
+    disconnectFromShard();
+    window.location.assign("/?hub=1");
+  };
+
+  const refreshCharacters = async () => {
     if (!token) return;
-    setBusy(true);
     setError(null);
     try {
-      const res = await api<{ ok: boolean; characters: Character[] }>(
-        "/api/characters",
-        {
-          headers: authedHeaders,
-        }
-      );
-      setCharacters(res.characters);
-
-      // If we don't have a selected character yet, pick the first one
-      if (!selectedCharId && res.characters.length > 0) {
-        setSelectedCharId(res.characters[0].id);
-      }
-    } catch (err: any) {
-      setError(err.message || String(err));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function createCharacter(e: React.FormEvent) {
-    e.preventDefault();
-    if (!token) {
-      setError("You must be logged in.");
-      return;
-    }
-  
-    setBusy(true);
-    setError(null);
-  
-    try {
-      const payload = {
-        shardId: "prime_shard",
-        name: newCharName.trim() || "Unnamed",
-        classId: newCharClass,
-      };
-  
-      console.log("[createCharacter] sending body", payload);
-  
-      const res = await api<{
-        ok: boolean;
-        character: Character;
-      }>("/api/characters", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify(payload),
+      const res = await fetch(`${API_BASE}/api/characters`, {
+        headers: { Authorization: `Bearer ${token}` },
       });
-  
-      setCharacters((prev) => [...prev, res.character]);
-      setNewCharName("");
-  
-      if (!selectedCharId) {
-        setSelectedCharId(res.character.id);
+      if (!res.ok) throw new Error(await res.text());
+      const data = (await res.json()) as { characters: Character[] };
+      setCharacters(data.characters ?? []);
+      // Keep selection stable if possible.
+      if (data.characters?.length && !selectedCharId) {
+        setSelectedCharId(data.characters[0].id);
       }
     } catch (err: any) {
-      console.error("[createCharacter] error", err);
-      setError(err.message || String(err));
-    } finally {
-      setBusy(false);
+      console.error(err);
+      setError(err?.message ?? "Failed to fetch characters.");
     }
-  }
+  };
+
+  const refreshCharacterState = async (charId: string) => {
+    if (!token || !charId) return;
+    try {
+      const res = await fetch(`${API_BASE}/api/characters/${charId}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) throw new Error(await res.text());
+      const data = (await res.json()) as { character: CharacterState };
+      setSelectedCharState(data.character ?? null);
+    } catch (err: any) {
+      console.error(err);
+      // State view is debug-only; don't hard-fail the whole UI for this.
+      setSelectedCharState(null);
+    }
+  };
 
   useEffect(() => {
-    if (!token || !selectedCharId) {
+    if (token) void refreshCharacters();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token]);
+
+  useEffect(() => {
+    if (!selectedCharId) {
       setSelectedCharState(null);
       return;
     }
-  
-    (async () => {
-      try {
-        const res = await api<{ ok: boolean; character: CharacterState }>(
-          `/api/characters/${selectedCharId}`,
-          { headers: authedHeaders }
-        );
-        setSelectedCharState(res.character);
-      } catch (e: any) {
-        setSelectedCharState(null);
-        appendLog(`[web] failed to fetch character state: ${e.message ?? String(e)}`);
-      }
-    })();
+    void refreshCharacterState(selectedCharId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [token, selectedCharId]);
+  }, [selectedCharId]);
 
-  // ---------------------------------------------------------------------------
-  // Shard WebSocket
-  // ---------------------------------------------------------------------------
+  // Scroll ws log to bottom
+  useEffect(() => {
+    if (!logRef.current) return;
+    logRef.current.scrollTop = logRef.current.scrollHeight;
+  }, [wsLog]);
 
-  function connectToShard() {
-    if (!token) {
-      setError("You must be logged in to connect to the shard.");
-      return;
-    }
-    if (!selectedCharId) {
-      setError("Select a character first.");
-      return;
-    }
+  const submitAuth = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setBusy(true);
+    setError(null);
 
-    if (ws) {
-      ws.close();
-      setWs(null);
-      setWsStatus("disconnected");
-      setWsLog([]);
-    }
+    try {
+      const endpoint =
+        authMode === "register" ? "/api/auth/register" : "/api/auth/login";
 
-    const url = new URL(SHARD_WS);
-    url.searchParams.set("token", token);
-    url.searchParams.set("characterId", selectedCharId);
+      const body =
+        authMode === "register"
+          ? { email, password, displayName }
+          : { email, password };
 
-    const socket = new WebSocket(url.toString());
+      const res = await fetch(`${API_BASE}${endpoint}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
 
-    setWsStatus("connecting");
-    setWsLog((prev) => [
-      ...prev,
-      `Connecting to shard as character ${selectedCharId}...`,
-    ]);
-
-    socket.onopen = () => {
-      setWsStatus("connected");
-      setWsLog((prev) => [...prev, "WebSocket connected."]);
-    };
-
-    socket.onmessage = (event) => {
-      console.log("WS IN:", event.data);
-      try {
-        const msg = JSON.parse(event.data);
-    
-        switch (msg.op) {
-          case "whereami_result": {
-            const p = msg.payload;
-            appendLog(
-              `← whereami_result: shard=${p.shardId}, room=${p.roomId}, ` +
-              `pos=(${p.x.toFixed(2)}, ${p.y.toFixed(2)}, ${p.z.toFixed(2)}), ` +
-              `region=${p.regionId ?? "none"}`
-            );
-            break;
-          }
-    
-          case "mud_result": {
-            appendLog(`[world]\n${msg.payload.text}`);
-            break;
-          }
-    
-          case "chat": {
-            appendLog(
-              `[chat] ${msg.payload.from}: ${msg.payload.text}`
-            );
-            break;
-          }
-    
-          default:
-            appendLog("← " + event.data);
-        }
-      } catch {
-        appendLog("← " + event.data);
+      if (!res.ok) {
+        const txt = await res.text();
+        throw new Error(txt || `HTTP ${res.status}`);
       }
-    };
 
-    socket.onclose = (event) => {
-      setWsStatus("disconnected");
-      setWsLog((prev) => [
-        ...prev,
-        `WebSocket closed (code=${event.code}, reason=${
-          event.reason || "n/a"
-        })`,
-      ]);
-      setWs(null);
-    };
+      const data = (await res.json()) as { token: string; account: Account };
+      setToken(data.token);
+      setAccount(data.account);
+      writeStoredAuth(data.token, data.account);
 
-    socket.onerror = (event) => {
-      setWsLog((prev) => [...prev, `WebSocket error: ${String(event)}`]);
-    };
-
-    setWs(socket);
-  }
-
-  function disconnectFromShard() {
-    if (ws) {
-      setWsLog((prev) => [...prev, "Disconnect requested."]);
-      ws.close(); // onclose handler will clean up status + ws
+      // Post-auth housekeeping
+      await refreshCharacters();
+    } catch (err: any) {
+      console.error(err);
+      setError(err?.message ?? "Auth failed.");
+    } finally {
+      setBusy(false);
     }
-  }
+  };
 
-  function sendShardMessage(msg: any) {
-    if (!ws || ws.readyState !== WebSocket.OPEN) {
-      appendLog("WS not connected.");
-      return;
+  const createCharacter = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!token) return;
+
+    setBusy(true);
+    setError(null);
+
+    try {
+      const res = await fetch(`${API_BASE}/api/characters`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ name: newCharName, classId: newCharClass }),
+      });
+
+      if (!res.ok) throw new Error(await res.text());
+
+      setNewCharName("");
+      await refreshCharacters();
+    } catch (err: any) {
+      console.error(err);
+      setError(err?.message ?? "Failed to create character.");
+    } finally {
+      setBusy(false);
     }
-    ws.send(JSON.stringify(msg));
-  }
+  };
 
-  function requestWhereAmI() {
-    sendShardMessage({
-      op: "whereami",
-      payload: {},
-    });
-    appendLog("→ whereami");
-  }
+  const connectToShard = async () => {
+    if (!token || !selectedCharId) return;
 
-  // ---------------------------------------------------------------------------
+    try {
+      setWsStatus("connecting");
+
+      const socket = new WebSocket(
+        `${SHARD_WS}?token=${encodeURIComponent(token)}&charId=${encodeURIComponent(
+          selectedCharId
+        )}`
+      );
+
+      socket.onopen = () => {
+        setWsStatus("connected");
+        appendLog("[ws] connected");
+      };
+
+      socket.onmessage = (evt) => {
+        try {
+          const msg = JSON.parse(evt.data);
+          if (msg.op === "mud_result") {
+            appendLog(String(msg.payload?.text ?? ""));
+            return;
+          }
+          if (msg.op === "whereami_result") {
+            appendLog(`[whereami] ${JSON.stringify(msg.payload)}`);
+            return;
+          }
+          if (msg.op === "chat") {
+            appendLog(`[chat] ${msg.payload?.text ?? ""}`);
+            return;
+          }
+          appendLog(`[ws] ${evt.data}`);
+        } catch {
+          appendLog(String(evt.data));
+        }
+      };
+
+      socket.onerror = () => setWsStatus("error");
+
+      socket.onclose = () => {
+        setWsStatus("disconnected");
+        appendLog("[ws] disconnected");
+      };
+
+      setWs(socket);
+    } catch (err: any) {
+      console.error(err);
+      setWsStatus("error");
+      appendLog(`[ws] error: ${err?.message ?? String(err)}`);
+    }
+  };
+
+  const disconnectFromShard = () => {
+    try {
+      ws?.close();
+    } catch {
+      // ignore
+    }
+    setWs(null);
+    setWsStatus("disconnected");
+  };
+
+  const requestWhereAmI = () => {
+    if (!ws || wsStatus !== "connected") return;
+    ws.send(JSON.stringify({ op: "whereami", payload: {} }));
+  };
+
+  // -----------------------------------------
+  // Tiny “router” (pathname switch)
+  // -----------------------------------------
+
+  const adminPage = useMemo(() => {
+    if (!pathname.startsWith("/admin")) return null;
+
+    if (pathname === "/admin" || pathname === "/admin/") {
+      return <AdminHubPage onGo={(p) => go(p, "admin")} />;
+    }
+
+    if (pathname.startsWith("/admin/spawn_points")) return <AdminSpawnPointsPage />;
+    if (pathname.startsWith("/admin/quests")) return <AdminQuestsPage />;
+    if (pathname.startsWith("/admin/npcs")) return <AdminNpcsPage />;
+    if (pathname.startsWith("/admin/items")) return <AdminItemsPage />;
+    if (pathname.startsWith("/admin/vendor_economy")) return <AdminVendorEconomyPage />;
+    if (pathname.startsWith("/admin/vendor_audit")) return <AdminVendorAuditPage />;
+
+    return (
+      <div style={{ padding: 16 }}>
+        <h2>Unknown admin route</h2>
+        <p>
+          <code>{pathname}</code>
+        </p>
+        <button onClick={() => go("/admin", "admin")}>Back to Admin Hub</button>
+      </div>
+    );
+  }, [pathname]);
+
+  const cityPage = useMemo(() => {
+    if (!pathname.startsWith("/city")) return null;
+
+    // Normalize /city -> /city/me
+    if (pathname === "/city" || pathname === "/city/") {
+      // Keep it simple: hard redirect.
+      window.location.assign("/city/me");
+      return null;
+    }
+
+    return <CityShellPage path={pathname} onGo={(p) => go(p, "city")} />;
+  }, [pathname]);
+
+  const isLauncher = pathname === "/";
+  const isMud = pathname === "/mud";
+
+  // Cards shown on the launcher.
+  const modeCards: ModeCard[] = [
+    {
+      id: "mud",
+      title: "MUD",
+      description: "Text-first gameplay loop: move, fight, gather, quests, economy, and all the weirdness.",
+      path: "/mud",
+      enabled: true,
+    },
+    {
+      id: "city",
+      title: "City Builder",
+      description: "Account-owned city management demo UI. Buildings/tech/armies/heroes/policies.",
+      path: "/city/me",
+      enabled: true,
+    },
+    {
+      id: "admin",
+      title: "Admin Tools",
+      description: "Spawn points, quests, items, NPCs, vendor economy + audit. (Soon: auth/ACL.)",
+      path: "/admin",
+      enabled: true,
+    },
+  ];
+
+  // Top nav appears when logged in (and not on raw admin leaf pages where the pages already have their own header).
+  const showTopNav = Boolean(account);
+
+  // -----------------------------------------
+  // Render
+  // -----------------------------------------
 
   return (
-    <div
-      style={{
-        fontFamily: "system-ui, sans-serif",
-        padding: "1.5rem",
-        maxWidth: 1000,
-        margin: "0 auto",
-      }}
-    >
-      <h1>Planar War – Web Console</h1>
+    <div style={{ maxWidth: 980, margin: "0 auto", padding: 16 }}>
+      <header style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+        <div style={{ display: "grid", gap: 4 }}>
+          <h1 style={{ margin: 0 }}>Planar War Console</h1>
+          <div style={{ fontSize: 12, opacity: 0.75 }}>
+            Modes: MUD / City Builder / Admin • API: <code>{API_BASE}</code> • WS: <code>{SHARD_WS}</code>
+          </div>
+        </div>
 
-      {/* AUTH SECTION */}
-      <section
-        style={{
-          border: "1px solid #444",
-          borderRadius: 8,
-          padding: 16,
-          marginTop: 12,
-        }}
-      >
-        <header
+        {account ? (
+          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+            <div style={{ fontSize: 12, opacity: 0.85 }}>
+              <strong>{account.displayName || account.email}</strong>
+            </div>
+            <button type="button" onClick={logout}>
+              Logout
+            </button>
+          </div>
+        ) : (
+          <div style={{ fontSize: 12, opacity: 0.8, alignSelf: "center" }}>
+            Not logged in.
+          </div>
+        )}
+      </header>
+
+      {showTopNav && (
+        <nav
           style={{
+            marginTop: 12,
+            padding: 10,
+            border: "1px solid #333",
+            borderRadius: 12,
             display: "flex",
-            justifyContent: "space-between",
+            gap: 8,
+            flexWrap: "wrap",
             alignItems: "center",
-            marginBottom: 8,
           }}
         >
-          <strong>Auth</strong>
-          <div>
+          <button type="button" onClick={() => go("/?hub=1")} style={{ fontWeight: 800 }}>
+            Modes
+          </button>
+          <span style={{ opacity: 0.5 }}>•</span>
+          <button type="button" onClick={() => go("/mud", "mud")} disabled={currentMode === "mud"}>
+            MUD
+          </button>
+          <button type="button" onClick={() => go("/city/me", "city")} disabled={currentMode === "city"}>
+            City
+          </button>
+          <button type="button" onClick={() => go("/admin", "admin")} disabled={currentMode === "admin"}>
+            Admin
+          </button>
+          <span style={{ marginLeft: "auto", fontSize: 12, opacity: 0.7 }}>
+            Last mode: <code>{readLastMode() ?? "none"}</code>
+          </span>
+        </nav>
+      )}
+
+      {/* AUTH SECTION */}
+      {!account && (
+        <section
+          style={{
+            border: "1px solid #444",
+            borderRadius: 8,
+            padding: 16,
+            marginTop: 16,
+          }}
+        >
+          <header style={{ display: "flex", gap: 8, marginBottom: 8 }}>
             <button
               type="button"
               onClick={() => setAuthMode("login")}
               disabled={authMode === "login"}
-              style={{ marginRight: 4 }}
             >
               Login
             </button>
@@ -483,20 +552,9 @@ function App() {
             >
               Register
             </button>
-          </div>
-        </header>
+          </header>
 
-        {account && (
-          <div style={{ marginBottom: 8 }}>
-            Logged in as <strong>{account.displayName}</strong>{" "}
-            <button type="button" onClick={logout} style={{ marginLeft: 8 }}>
-              Logout
-            </button>
-          </div>
-        )}
-
-        {!account && (
-          <form onSubmit={handleAuthSubmit}>
+          <form onSubmit={submitAuth}>
             <div style={{ marginBottom: 8 }}>
               <label>
                 Email{" "}
@@ -512,7 +570,7 @@ function App() {
             {authMode === "register" && (
               <div style={{ marginBottom: 8 }}>
                 <label>
-                  Display name{" "}
+                  Display Name{" "}
                   <input
                     type="text"
                     value={displayName}
@@ -538,190 +596,267 @@ function App() {
               {authMode === "register" ? "Register" : "Login"}
             </button>
           </form>
-        )}
 
-        {error && (
-          <p style={{ color: "red", marginTop: 8 }}>Error: {error}</p>
-        )}
-
-        {busy && <p style={{ marginTop: 8 }}>Working...</p>}
-      </section>
-
-      {/* CHARACTERS SECTION */}
-      {account && (
-        <section
-          style={{
-            border: "1px solid #444",
-            borderRadius: 8,
-            padding: 16,
-            marginTop: 16,
-          }}
-        >
-          <header
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-              marginBottom: 8,
-            }}
-          >
-            <strong>Characters</strong>
-            <button type="button" onClick={refreshCharacters} disabled={busy}>
-              Refresh
-            </button>
-          </header>
-
-          <form onSubmit={createCharacter} style={{ marginBottom: 12 }}>
-            <input
-              type="text"
-              placeholder="New character name"
-              value={newCharName}
-              onChange={(e) => setNewCharName(e.target.value)}
-              style={{ marginRight: 8 }}
-            />
-            <select
-              value={newCharClass}
-              onChange={(e) => setNewCharClass(e.target.value)}
-              style={{ marginRight: 8 }}
-            >
-              <option value="warrior">Warrior</option>
-              <option value="mage">Mage</option>
-              <option value="rogue">Rogue</option>
-              <option value="virtuoso">Virtuoso</option>
-              {/* later: bard, enchanter, etc. */}
-            </select>
-            <button type="submit" disabled={busy || !newCharName}>
-              Create
-            </button>
-          </form>
-          <div style={{ marginTop: 12, padding: 12, border: "1px solid #333", borderRadius: 8 }}>
-          <div style={{ fontWeight: 700, marginBottom: 8 }}>CharacterState v1.5</div>
-          {selectedCharState ? (
-            <pre style={{ whiteSpace: "pre-wrap", margin: 0, fontSize: 12 }}>
-              {JSON.stringify(selectedCharState, null, 2)}
-            </pre>
-          ) : (
-            <div style={{ opacity: 0.8 }}>No character selected / state not loaded.</div>
-          )}
-        </div>
-
-          {characters.length === 0 ? (
-            <p>No characters yet.</p>
-          ) : (
-            <ul>
-              {characters.map((c) => (
-                <li key={c.id}>
-                  <label style={{ cursor: "pointer" }}>
-                    <input
-                      type="radio"
-                      name="selectedChar"
-                      value={c.id}
-                      checked={selectedCharId === c.id}
-                      onChange={() => setSelectedCharId(c.id)}
-                      style={{ marginRight: 6 }}
-                    />
-                    <strong>{c.name}</strong> — {c.classId} (lvl {c.level}) on{" "}
-                    {c.shardId}
-                  </label>
-                </li>
-              ))}
-            </ul>
-          )}
+          {error && <p style={{ color: "red", marginTop: 8 }}>Error: {error}</p>}
+          {busy && <p style={{ marginTop: 8 }}>Working...</p>}
         </section>
       )}
 
-      {/* SHARD CONNECTION SECTION */}
-      {account && (
+      {/* LAUNCHER */}
+      {account && isLauncher && (
         <section
           style={{
             border: "1px solid #444",
-            borderRadius: 8,
+            borderRadius: 12,
             padding: 16,
             marginTop: 16,
           }}
         >
-          <header
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-              marginBottom: 8,
-            }}
-          >
-            <strong>Shard Connection</strong>
-            <span>Status: {wsStatus}</span>
-          </header>
-
-          <div style={{ marginBottom: 8 }}>
-            <button
-              type="button"
-              onClick={connectToShard}
-              disabled={!selectedCharId || !token}
-              style={{ marginRight: 8 }}
-            >
-              Connect with selected character
-            </button>
-            <button
-              type="button"
-              onClick={disconnectFromShard}
-              disabled={!ws}
-              style={{ marginRight: 8 }}
-            >
-              Disconnect
-            </button>
-            <button
-              disabled={wsStatus !== "connected"}
-              onClick={requestWhereAmI}
-            >
-              Where am I?
-            </button>
-          </div>
-          <input
-            type="text"
-            placeholder="mud command (look, inspect_region)"
-            style={{
-              width: "100%",
-              marginBottom: 8,
-              padding: "6px 8px",
-              fontFamily: "monospace",
-            }}
-            onKeyDown={e => {
-              if (e.key !== "Enter") return;
-
-              const value = (e.target as HTMLInputElement).value.trim();
-              if (!value) return;
-
-              (e.target as HTMLInputElement).value = "";
-
-              ws?.send(JSON.stringify({
-                op: "mud",
-                payload: { text: value }
-              }));
-
-              appendLog(`> ${value}`);
-            }}
+          <ModeHubPage
+            cards={modeCards}
+            onPick={(m) => go(pathForMode(m), m)}
           />
-          <div
+        </section>
+      )}
+
+      {/* ADMIN */}
+      {account && adminPage && (
+        <section
+          style={{
+            border: "1px solid #444",
+            borderRadius: 12,
+            padding: 16,
+            marginTop: 16,
+          }}
+        >
+          {adminPage}
+        </section>
+      )}
+
+      {/* CITY */}
+      {account && cityPage && (
+        <section
+          style={{
+            border: "1px solid #444",
+            borderRadius: 12,
+            padding: 16,
+            marginTop: 16,
+          }}
+        >
+          {cityPage}
+        </section>
+      )}
+
+      {/* MUD */}
+      {account && isMud && (
+        <>
+          {/* CHARACTERS SECTION */}
+          <section
             style={{
-              border: "1px solid #333",
-              borderRadius: 4,
-              padding: 8,
-              maxHeight: 200,
-              overflowY: "auto",
-              fontFamily: "monospace",
-              fontSize: "0.85rem",
-              background: "#111",
-              color: "#ddd",
+              border: "1px solid #444",
+              borderRadius: 8,
+              padding: 16,
+              marginTop: 16,
             }}
           >
-            {wsLog.length === 0 ? (
-              <div style={{ opacity: 0.7 }}>
-                WebSocket log will appear here…
+            <header
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                marginBottom: 8,
+              }}
+            >
+              <strong>Characters</strong>
+              <button type="button" onClick={refreshCharacters} disabled={busy}>
+                Refresh
+              </button>
+            </header>
+
+            <form onSubmit={createCharacter} style={{ marginBottom: 12 }}>
+              <input
+                type="text"
+                placeholder="New character name"
+                value={newCharName}
+                onChange={(e) => setNewCharName(e.target.value)}
+                style={{ marginRight: 8 }}
+              />
+              <select
+                value={newCharClass}
+                onChange={(e) => setNewCharClass(e.target.value)}
+                style={{ marginRight: 8 }}
+              >
+                <option value="warrior">Warrior</option>
+                <option value="mage">Mage</option>
+                <option value="rogue">Rogue</option>
+                <option value="virtuoso">Virtuoso</option>
+                {/* later: bard, enchanter, etc. */}
+              </select>
+              <button type="submit" disabled={busy || !newCharName}>
+                Create
+              </button>
+            </form>
+
+            <div
+              style={{
+                marginTop: 12,
+                padding: 12,
+                border: "1px solid #333",
+                borderRadius: 8,
+              }}
+            >
+              <div style={{ fontWeight: 700, marginBottom: 8 }}>
+                CharacterState v1.5
               </div>
+              {selectedCharState ? (
+                <pre style={{ whiteSpace: "pre-wrap", margin: 0, fontSize: 12 }}>
+                  {JSON.stringify(selectedCharState, null, 2)}
+                </pre>
+              ) : (
+                <div style={{ opacity: 0.8 }}>
+                  No character selected / state not loaded.
+                </div>
+              )}
+            </div>
+
+            {characters.length === 0 ? (
+              <p>No characters yet.</p>
             ) : (
-              wsLog.map((line, idx) => <div key={idx}>{line}</div>)
+              <ul>
+                {characters.map((c) => (
+                  <li key={c.id}>
+                    <label style={{ cursor: "pointer" }}>
+                      <input
+                        type="radio"
+                        name="selectedChar"
+                        value={c.id}
+                        checked={selectedCharId === c.id}
+                        onChange={() => setSelectedCharId(c.id)}
+                        style={{ marginRight: 6 }}
+                      />
+                      <strong>{c.name}</strong> — {c.classId} (lvl {c.level}) on{" "}
+                      {c.shardId}
+                    </label>
+                  </li>
+                ))}
+              </ul>
             )}
-          </div>
+          </section>
+
+          {/* SHARD CONNECTION SECTION */}
+          <section
+            style={{
+              border: "1px solid #444",
+              borderRadius: 8,
+              padding: 16,
+              marginTop: 16,
+            }}
+          >
+            <header
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                marginBottom: 8,
+              }}
+            >
+              <strong>Shard Connection</strong>
+              <span>Status: {wsStatus}</span>
+            </header>
+
+            <div style={{ marginBottom: 8 }}>
+              <button
+                type="button"
+                onClick={connectToShard}
+                disabled={!selectedCharId || !token}
+                style={{ marginRight: 8 }}
+              >
+                Connect with selected character
+              </button>
+              <button
+                type="button"
+                onClick={disconnectFromShard}
+                disabled={!ws}
+                style={{ marginRight: 8 }}
+              >
+                Disconnect
+              </button>
+              <button disabled={wsStatus !== "connected"} onClick={requestWhereAmI}>
+                Where am I?
+              </button>
+            </div>
+
+            <input
+              type="text"
+              placeholder="mud command (look, inspect_region)"
+              style={{
+                width: "100%",
+                marginBottom: 8,
+                padding: "6px 8px",
+                fontFamily: "monospace",
+              }}
+              onKeyDown={(e) => {
+                if (e.key !== "Enter") return;
+
+                const value = (e.target as HTMLInputElement).value.trim();
+                if (!value) return;
+
+                (e.target as HTMLInputElement).value = "";
+
+                ws?.send(
+                  JSON.stringify({
+                    op: "mud",
+                    payload: { text: value },
+                  })
+                );
+
+                appendLog(`> ${value}`);
+              }}
+            />
+
+            <div
+              ref={logRef}
+              style={{
+                border: "1px solid #333",
+                borderRadius: 4,
+                padding: 8,
+                maxHeight: 200,
+                overflowY: "auto",
+                fontFamily: "monospace",
+                fontSize: "0.85rem",
+                background: "#111",
+                color: "#ddd",
+              }}
+            >
+              {wsLog.length === 0 ? (
+                <div style={{ opacity: 0.7 }}>WebSocket log will appear here…</div>
+              ) : (
+                wsLog.map((line, idx) => <div key={idx}>{line}</div>)
+              )}
+            </div>
+
+            {error && <p style={{ color: "red", marginTop: 8 }}>Error: {error}</p>}
+          </section>
+        </>
+      )}
+
+      {/* Unknown route fallback (logged in) */}
+      {account && !isLauncher && !adminPage && !cityPage && !isMud && (
+        <section
+          style={{
+            border: "1px solid #444",
+            borderRadius: 12,
+            padding: 16,
+            marginTop: 16,
+          }}
+        >
+          <h2>Unknown route</h2>
+          <p style={{ opacity: 0.85 }}>
+            <code>{pathname}</code>
+          </p>
+          <button type="button" onClick={() => go("/?hub=1")}>
+            Back to Modes
+          </button>
         </section>
       )}
     </div>

@@ -1,6 +1,7 @@
 // web-frontend/pages/AdminQuestsPage.tsx
 
 import { useEffect, useState } from "react";
+import { getAuthToken } from "../lib/api";
 
 type ObjectiveKind = "kill" | "harvest" | "collect_item" | "craft" | "talk_to" | "city";
 
@@ -38,6 +39,14 @@ function labelForTarget(kind: ObjectiveKind): string {
   }
 }
 
+
+const authedFetch: typeof fetch = (input: any, init?: any) => {
+  const token = getAuthToken();
+  const headers = new Headers(init?.headers ?? {});
+  if (token) headers.set("Authorization", `Bearer ${token}`);
+  return fetch(input, { ...(init ?? {}), headers });
+};
+
 export function AdminQuestsPage() {
   const [quests, setQuests] = useState<AdminQuest[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -46,7 +55,7 @@ export function AdminQuestsPage() {
   const [error, setError] = useState<string | null>(null);
 
   async function reloadList() {
-    const res = await fetch(`/api/admin/quests`);
+    const res = await authedFetch(`/api/admin/quests`);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data: { ok: boolean; quests: AdminQuest[]; error?: string } = await res.json();
     if (!data.ok) throw new Error(data.error || "failed");
@@ -98,7 +107,7 @@ export function AdminQuestsPage() {
     setError(null);
 
     try {
-      const res = await fetch(`/api/admin/quests`, {
+      const res = await authedFetch(`/api/admin/quests`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(form),

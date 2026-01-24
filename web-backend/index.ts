@@ -1,6 +1,7 @@
 //web-backend//index.ts
 
 import express from "express";
+import requireAdmin, { maybeRequireAdmin } from "./middleware/adminAuth";
 import cors from "cors";
 import dotenv from "dotenv";
 
@@ -57,12 +58,12 @@ app.use("/api/characters", charactersRouter);
 app.use("/api/auth", authRouter);
 app.use("/api/characters", charactersRouter);
 
-app.use("/api/admin/quests", adminQuestsRouter);
-app.use("/api/admin/npcs", adminNpcsRouter);
-app.use("/api/admin/items", adminItemsRouter);
-app.use("/api/admin/spawn_points", adminSpawnPointsRouter);
-app.use("/api/admin/vendor_audit", adminVendorAuditRouter);
-app.use("/api/admin/vendor_economy", adminVendorEconomyRouter);
+app.use("/api/admin/quests", maybeRequireAdmin("/api/admin/quests"), adminQuestsRouter);
+app.use("/api/admin/npcs", maybeRequireAdmin("/api/admin/npcs"), adminNpcsRouter);
+app.use("/api/admin/items", maybeRequireAdmin("/api/admin/items"), adminItemsRouter);
+app.use("/api/admin/spawn_points", maybeRequireAdmin("/api/admin/spawn_points"), adminSpawnPointsRouter);
+app.use("/api/admin/vendor_audit", maybeRequireAdmin("/api/admin/vendor_audit"), adminVendorAuditRouter);
+app.use("/api/admin/vendor_economy", maybeRequireAdmin("/api/admin/vendor_economy"), adminVendorEconomyRouter);
 
 app.listen(PORT, () => {
   console.log(`Backend listening on http://localhost:${PORT}`);

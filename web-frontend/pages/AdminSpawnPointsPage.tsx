@@ -1,6 +1,7 @@
 // web-frontend/pages/AdminSpawnPointsPage.tsx
 
 import { useEffect, useMemo, useState } from "react";
+import { getAuthToken } from "../lib/api";
 
 // ----- UI state persistence (safe on SSR) -----
 const SPAWN_UI_LS_KEY = 'adminSpawnPointsPage.ui.v1';
@@ -270,6 +271,14 @@ function SmallKeyValue(props: { title: string; map?: Record<string, number> }) {
   );
 }
 
+
+const authedFetch: typeof fetch = (input: any, init?: any) => {
+  const token = getAuthToken();
+  const headers = new Headers(init?.headers ?? {});
+  if (token) headers.set("Authorization", `Bearer ${token}`);
+  return fetch(input, { ...(init ?? {}), headers });
+};
+
 export function AdminSpawnPointsPage() {
   const savedUi = useMemo(() => safeLoadSpawnUiState(), []);
   const [spawnPoints, setSpawnPoints] = useState<AdminSpawnPoint[]>([]);
@@ -417,7 +426,7 @@ export function AdminSpawnPointsPage() {
 
       const url = `/api/admin/spawn_points?${qs.toString()}`;
 
-      const res = await fetch(url);
+      const res = await authedFetch(url);
       if (!res.ok) throw new Error(`Load failed (HTTP ${res.status})`);
 
       const data: { ok: boolean; spawnPoints: AdminSpawnPoint[]; error?: string; total?: number } =
@@ -462,7 +471,7 @@ export function AdminSpawnPointsPage() {
       }
 
       const url = `/api/admin/spawn_points/mother_brain/status?${qs.toString()}`;
-      const res = await fetch(url);
+      const res = await authedFetch(url);
       if (!res.ok) throw new Error(`MotherBrain status failed (HTTP ${res.status})`);
       const data: MotherBrainStatusResponse = await res.json();
       if (!data.ok) throw new Error(data.error || "MotherBrain status failed");
@@ -479,7 +488,7 @@ export function AdminSpawnPointsPage() {
     setError(null);
     try {
       const url = `/api/admin/spawn_points/mother_brain/wave`;
-      const res = await fetch(url, {
+      const res = await authedFetch(url, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
@@ -521,7 +530,7 @@ export function AdminSpawnPointsPage() {
       const epochRaw = wipeEpoch.trim();
       const epoch = epochRaw ? Number(epochRaw) : null;
 
-      const res = await fetch(url, {
+      const res = await authedFetch(url, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
@@ -704,7 +713,7 @@ export function AdminSpawnPointsPage() {
     setError(null);
 
     try {
-      const res = await fetch(`/api/admin/spawn_points`, {
+      const res = await authedFetch(`/api/admin/spawn_points`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -753,7 +762,7 @@ export function AdminSpawnPointsPage() {
         shardId.trim() || "prime_shard"
       )}`;
 
-      const res = await fetch(url, { method: "DELETE" });
+      const res = await authedFetch(url, { method: "DELETE" });
       const payload = await res.json().catch(() => ({}));
 
       if (!res.ok || payload.ok === false) {
@@ -778,7 +787,7 @@ export function AdminSpawnPointsPage() {
     setBulkWorking(true);
     setError(null);
     try {
-      const res = await fetch(`/api/admin/spawn_points/bulk_delete`, {
+      const res = await authedFetch(`/api/admin/spawn_points/bulk_delete`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
@@ -807,7 +816,7 @@ export function AdminSpawnPointsPage() {
     setBulkWorking(true);
     setError(null);
     try {
-      const res = await fetch(`/api/admin/spawn_points/bulk_move`, {
+      const res = await authedFetch(`/api/admin/spawn_points/bulk_move`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
@@ -870,7 +879,7 @@ export function AdminSpawnPointsPage() {
     setCloneResult(null);
 
     try {
-      const res = await fetch(`/api/admin/spawn_points/clone`, {
+      const res = await authedFetch(`/api/admin/spawn_points/clone`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
@@ -904,7 +913,7 @@ export function AdminSpawnPointsPage() {
     setScatterResult(null);
 
     try {
-      const res = await fetch(`/api/admin/spawn_points/scatter`, {
+      const res = await authedFetch(`/api/admin/spawn_points/scatter`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
@@ -956,7 +965,7 @@ export function AdminSpawnPointsPage() {
       const tierOverrideRaw = baselineTownTierOverride.trim();
       const tierOverride = tierOverrideRaw ? Number(tierOverrideRaw) : null;
 
-      const res = await fetch(url, {
+      const res = await authedFetch(url, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({

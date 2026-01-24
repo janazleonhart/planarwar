@@ -282,12 +282,32 @@ export async function startTech(techId: string): Promise<void> {
   });
 }
 
+// Auth token helper used across MUD / City Builder / Admin tools.
+// Stored by the login UI under localStorage key 'pw_auth_v1'.
+export function getAuthToken(): string | null {
+  try {
+    if (typeof window === "undefined") return null;
+    const raw = window.localStorage.getItem("pw_auth_v1");
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (typeof parsed === "string") return parsed;
+    if (parsed && typeof parsed.token === "string") return parsed.token;
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 export async function api<T = any>(path: string, init: RequestInit = {}): Promise<T> {
   const normalizedPath = path.startsWith("/") ? path : `/${path}`;
+  const method = init.method ?? "GET";
 
+  const token = getAuthToken();
   const res = await fetch(`${API_BASE_URL}${normalizedPath}`, {
+    method,
     credentials: "include",
     headers: {
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
       "Content-Type": "application/json",
       ...(init.headers || {}),
     },

@@ -1,6 +1,7 @@
 // web-frontend/pages/AdminItemsPage.tsx
 
 import { useEffect, useState } from "react";
+import { getAuthToken } from "../lib/api";
 
 type AdminItem = {
   id: string;
@@ -16,6 +17,14 @@ type AdminItem = {
   statsText: string;
 };
 
+
+const authedFetch: typeof fetch = (input: any, init?: any) => {
+  const token = getAuthToken();
+  const headers = new Headers(init?.headers ?? {});
+  if (token) headers.set("Authorization", `Bearer ${token}`);
+  return fetch(input, { ...(init ?? {}), headers });
+};
+
 export function AdminItemsPage() {
   const [items, setItems] = useState<AdminItem[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -27,7 +36,7 @@ export function AdminItemsPage() {
   useEffect(() => {
     (async () => {
       try {
-        const res = await fetch(`/api/admin/items`);
+        const res = await authedFetch(`/api/admin/items`);
         if (!res.ok) {
           throw new Error(`Load failed (HTTP ${res.status})`);
         }
@@ -88,7 +97,7 @@ export function AdminItemsPage() {
     setError(null);
 
     try {
-      const res = await fetch(`/api/admin/items`, {
+      const res = await authedFetch(`/api/admin/items`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(form),
@@ -108,7 +117,7 @@ export function AdminItemsPage() {
       }
 
       // Reload list
-      const res2 = await fetch(`/api/admin/items`);
+      const res2 = await authedFetch(`/api/admin/items`);
       const data2: {
         ok: boolean;
         items: AdminItem[];

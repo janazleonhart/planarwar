@@ -1,141 +1,58 @@
-//backend/src/routes/me.ts
+//web-backend/routes/me.ts
 
+import type { Request } from "express";
 import { Router } from "express";
-import { getDemoPlayerWithOffers, tickConfig, xpToNextLevel, } from "../gameState";
-import {
-  getAvailableTechsForPlayer,
-  getTechById,
-} from "../domain/tech";
-import { getCityProductionPerTick } from "../domain/city";
+
+import { PostgresAuthService } from "../../worldcore/auth/PostgresAuthService";
+import { DEMO_PLAYER_ID, getOrCreatePlayerState } from "../gameState";
 
 const router = Router();
 
-router.get("/", (_req, res) => {
-  const ps = getDemoPlayerWithOffers();
+const auth = new PostgresAuthService();
 
-  const availableTechs = getAvailableTechsForPlayer(ps, {
-    currentAge: ps.techAge,
-    currentEpoch: ps.techEpoch,
-    categoryAges: ps.techCategoryAges,
-    enabledFlags: ps.techFlags,
-  });
+function getBearerToken(req: Request): string | null {
+  const raw = req.headers.authorization;
+  if (!raw || typeof raw !== "string") return null;
+  const m = /^Bearer\s+(.+)$/i.exec(raw.trim());
+  return m?.[1] ?? null;
+}
 
-  const prod = getCityProductionPerTick(ps.city);
+async function resolveViewer(req: Request): Promise<{ userId: string; username: string; playerId: string }> {
+  const token = getBearerToken(req);
+  if (!token) return { userId: "demo", username: "Demo", playerId: DEMO_PLAYER_ID };
 
-  const city = ps.city;
-  const citySummary = {
-    id: city.id,
-    name: city.name,
-    shardId: city.shardId,
-    regionId: city.regionId,
-    tier: city.tier,
-    maxBuildingSlots: city.maxBuildingSlots,
-    stats: city.stats,
-    // derived slots
-    buildingSlotsUsed: city.buildings.length,
-    buildingSlotsMax: city.maxBuildingSlots,
-    buildings: city.buildings,
-    // per-tick production, with 0 defaults
-    production: {
-      foodPerTick: prod.food ?? 0,
-      materialsPerTick: prod.materials ?? 0,
-      wealthPerTick: prod.wealth ?? 0,
-      manaPerTick: prod.mana ?? 0,
-      knowledgePerTick: prod.knowledge ?? 0,
-      unityPerTick: prod.unity ?? 0,
-    },
-    // 🔹 NEW: specialization info
-    specializationId: city.specializationId ?? null,
-    specializationStars: city.specializationStars ?? 0,
-    specializationStarsHistory: city.specializationStarsHistory ?? {},
-  };
+  const payload = await auth.verifyToken(token);
+  if (!payload) return { userId: "demo", username: "Demo", playerId: DEMO_PLAYER_ID };
 
-  // research view for the client
-  let activeResearchView: any = null;
-  if (ps.activeResearch) {
-    const tech = getTechById(ps.activeResearch.techId);
-    if (tech) {
-      activeResearchView = {
-        techId: tech.id,
-        name: tech.name,
-        description: tech.description,
-        category: tech.category,
-        cost: tech.cost,
-        progress: ps.activeResearch.progress,
-      };
-    }
-  }
+  const anyPayload = payload as any;
 
-  // hero xp/level view for the client
-  const heroesView = ps.heroes.map((h) => {
-    const anyHero = h as any;
-    const level = anyHero.level ?? 1;
-    const xp = anyHero.xp ?? 0;
-    const attachments = (anyHero.attachments ?? []) as any[];
+  const userId =
+    String(anyPayload.sub ?? anyPayload.account?.id ?? anyPayload.userId ?? anyPayload.accountId ?? "").trim() ||
+    "demo";
 
-    return {
-      ...h,
-      level,
-      xp,
-      xpToNext: xpToNextLevel(level),
-      attachments,
-    };
-  });
+  const username =
+    String(
+      anyPayload.account?.displayName ??
+        anyPayload.account?.display_name ??
+        anyPayload.displayName ??
+        anyPayload.username ??
+        anyPayload.email ??
+        ""
+    ).trim() || "User";
 
-  // Event View Log
-  const eventsView = ps.eventLog.slice(-30).reverse();
+  return { userId, username, playerId: userId !== "demo" ? userId : DEMO_PLAYER_ID };
+}
 
-  // Workshop Jobs
-  const workshopJobsView = ps.workshopJobs;
+router.get("/me", async (req, res) => {
+  const viewer = await resolveViewer(req);
+  const ps = getOrCreatePlayerState(viewer.playerId);
 
-  // City Stress
-  const cityStress = ps.cityStress;
-
-  res.json({
-    id: ps.playerId,
-    displayName: "Demo Commander",
-    faction: "Tempest",
-    rank: "Warden",
-
-    lastLoginAt: ps.lastTickAt,
-    lastTickAt: ps.lastTickAt,
-    tickMs: tickConfig.tickMs,
-
-    playerId: ps.playerId,
-    city: citySummary,
-
-    missions: ps.currentOffers,
-    activeMissions: ps.activeMissions,
-
+  return res.json({
+    ok: true,
+    userId: viewer.userId,
+    username: viewer.username,
     resources: ps.resources,
-    policies: ps.policies,
-    heroes: heroesView,
-    armies: ps.armies,
-
-    researchedTechIds: ps.researchedTechIds,
-    availableTechs: availableTechs.map((t) => ({
-      id: t.id,
-      name: t.name,
-      description: t.description,
-      category: t.category,
-      cost: t.cost,
-    })),
-    activeResearch: activeResearchView,
-
-    // warfront info from gameState
-    regionWar: ps.regionWar,
-
-    // operations log
-    events: eventsView,
-
-    // workshop view
-    workshopJobs: workshopJobsView,
-
-    // city stress
-    cityStress: ps.cityStress,
-
-    // tier production
-    resourceTiers: ps.resourceTiers
+    city: ps.city,
   });
 });
 

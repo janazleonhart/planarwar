@@ -1,4 +1,4 @@
-//backend/src/gameState.ts
+//web-backend/gameState.ts
 
 import { seedWorld } from "./domain/world";
 import { seedStarterCity, getCityProductionPerTick } from "./domain/city";
@@ -675,6 +675,82 @@ const gameState: GameState = (() => {
 })();
 
 const MAX_EVENT_LOG = 100;
+
+export function getOrCreatePlayerState(playerId: string): PlayerState {
+  const existing = gameState.players.get(playerId);
+  if (existing) return existing;
+
+  const nowIso = new Date().toISOString();
+  const world = gameState.world;
+
+  const city = seedStarterCity(playerId);
+  const heroes = seedStarterHeroes(playerId);
+  const armies = seedStarterArmies(city.id);
+
+  const resources: Resources = {
+    food: startingResourcesConfig.food,
+    materials: startingResourcesConfig.materials,
+    wealth: startingResourcesConfig.wealth,
+    mana: startingResourcesConfig.mana,
+    knowledge: startingResourcesConfig.knowledge,
+    unity: startingResourcesConfig.unity,
+  };
+
+  // Internal multi-resource breakdown – mirror the basics for now.
+  const stockpile: ResourceVector = {
+    food: startingResourcesConfig.food,
+    materials_generic: startingResourcesConfig.materials,
+    wealth: startingResourcesConfig.wealth,
+    mana_arcane: startingResourcesConfig.mana,
+    knowledge: startingResourcesConfig.knowledge,
+    unity: startingResourcesConfig.unity,
+  };
+
+  // City storage starts with everything protected.
+  const storage: CityStorage = {
+    protectedCapacity: { ...stockpile },
+    protectedStock: { ...stockpile },
+    vulnerableStock: {},
+  };
+
+  const regionWar = seedRegionWar(world, city);
+
+  const ps: PlayerState = {
+    playerId,
+    city,
+    heroes,
+    armies,
+    resources,
+    stockpile,
+    storage,
+    resourceTiers: {},
+    currentOffers: [],
+    activeMissions: [],
+    policies: { ...defaultPolicies },
+    lastTickAt: nowIso,
+
+    researchedTechIds: [],
+    techAge: "wood",
+    techEpoch: "genesis",
+    techCategoryAges: {},
+    techFlags: [],
+    regionWar,
+    eventLog: [],
+    workshopJobs: [],
+    cityStress: {
+      stage: "stable",
+      total: 0,
+      foodPressure: 0,
+      threatPressure: 0,
+      unityPressure: 0,
+      lastUpdatedAt: nowIso,
+    },
+  };
+
+  gameState.players.set(playerId, ps);
+  return ps;
+}
+
 
 interface GameEventInput {
   kind: GameEventKind;
