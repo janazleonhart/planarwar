@@ -24,16 +24,28 @@ export type DbSpellRow = {
   song_school: string | null;
 
   resource_type: string | null;
-  resource_cost: number;
-  cooldown_ms: number;
+  resource_cost: number | null;
+  cooldown_ms: number | null;
 
   damage_multiplier: number | null;
   flat_bonus: number | null;
   heal_amount: number | null;
 
+  // Optional JSON payloads
+  status_effect?: any | null;
+  cleanse?: any | null;
+
+  // Optional metadata
+  flags?: any | null;
+  tags?: string[] | null;
   is_debug: boolean;
   is_dev_only: boolean;
   is_enabled: boolean;
+
+  grant_min_role?: string | null;
+
+  created_at?: string | null;
+  updated_at?: string | null;
 };
 
 export type DbAliasRow = {
@@ -144,13 +156,25 @@ export async function loadSpellCatalogFromDb<SpellDefinition extends Record<stri
       resource_cost: asNum(r?.resource_cost, 0),
       cooldown_ms: asNum(r?.cooldown_ms, 0),
 
-      damage_multiplier: r?.damage_multiplier ?? null,
-      flat_bonus: r?.flat_bonus ?? null,
-      heal_amount: r?.heal_amount ?? null,
+      damage_multiplier: (r?.damage_multiplier ?? null) as any,
+      flat_bonus: (r?.flat_bonus ?? null) as any,
+      heal_amount: (r?.heal_amount ?? null) as any,
 
       is_debug: asBool(r?.is_debug),
       is_dev_only: asBool(r?.is_dev_only),
       is_enabled: asBool(r?.is_enabled),
+
+      // raw JSONB + arrays (kept flexible)
+      flags: (r?.flags ?? {}) as any,
+      tags: (Array.isArray(r?.tags) ? r?.tags : []) as any,
+
+      created_at: (r?.created_at ?? null) as any,
+      updated_at: (r?.updated_at ?? null) as any,
+
+      grant_min_role: asStr(r?.grant_min_role, "player"),
+      // denormalized helpers for consumers
+      status_effect: (r?.status_effect ?? null) as any,
+      cleanse: (r?.cleanse ?? null) as any,
     };
 
     if (!row.id) continue;

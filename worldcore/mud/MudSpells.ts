@@ -130,9 +130,10 @@ function canUseSpell(char: CharacterState, spell: SpellDefinition): string | nul
 
   const sb = ensureSpellbook(char);
   const now = Date.now();
-  const readyAt = sb.cooldowns?.[spell.id];
+  const cdEntry = sb.cooldowns?.[spell.id];
+  const readyAt = cdEntry?.readyAt ?? 0;
 
-  if (readyAt && readyAt > now) {
+  if (readyAt > now) {
     const ms = readyAt - now;
     const sec = Math.ceil(ms / 1000);
     return `${spell.name} is on cooldown for another ${sec}s.`;
@@ -147,7 +148,7 @@ function startSpellCooldown(char: CharacterState, spell: SpellDefinition): void 
   const sb = ensureSpellbook(char);
   const now = Date.now();
   if (!sb.cooldowns) sb.cooldowns = {};
-  sb.cooldowns[spell.id] = now + spell.cooldownMs;
+  sb.cooldowns[spell.id] = { readyAt: now + spell.cooldownMs };
 }
 
 export function listKnownSpellsForChar(char: CharacterState): SpellDefinition[] {

@@ -4365,6 +4365,24 @@
       "path": "worldcore/spells/SpellCatalog.ts",
       "summary": "Loads spell/song definitions + aliases from Postgres (spells + spell_aliases tables)."
     },
+    "spells.learning": {
+      "dependsOn": [
+        "spells.types",
+        "spells.unlocks",
+        "characters.types"
+      ],
+      "functions": [
+        "listLearnableSpellsForChar",
+        "canLearnSpellForChar",
+        "learnSpellInState"
+      ],
+      "kind": "helper",
+      "notes": [
+        "Spell learning helpers for listing learnable spells and applying a learn to in-memory character state.",
+        "Keeps 'learned vs learnable' gates consistent with spell_unlocks rules and spellbook state."
+      ],
+      "path": "worldcore/spells/SpellLearning.ts"
+    },
     "spells.types": {
       "dependsOn": [
         "combat.engine",
@@ -5675,6 +5693,18 @@
       "owns": [],
       "path": "worldcore/test/statusEffects.contract.test.ts",
       "provides": []
+    },
+    "test.contractDbSpellStatusPayloadMapping": {
+      "dependsOn": [
+        "spells.types",
+        "spells.catalog"
+      ],
+      "kind": "test",
+      "notes": [
+        "Contract: DB spell row mapping must preserve status_effect payloads (including HOT) and cleanse payloads when present.",
+        "Prevents regressions in SpellTypes.__mapDbRowToSpellDefForTest / mapDbRowToSpellDef."
+      ],
+      "path": "worldcore/test/contract_dbSpellStatusPayloadMapping.test.ts"
     },
     "test.utils": {
       "dependsOn": [],

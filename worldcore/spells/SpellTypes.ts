@@ -90,6 +90,12 @@ export interface SpellStatusEffect {
   };
 }
 
+
+export interface SpellCleanse {
+  tags: string[];
+  maxToRemove?: number;
+}
+
 export interface SpellDefinition {
   id: string;
   name: string;
@@ -119,12 +125,7 @@ export interface SpellDefinition {
   songSchool?: SongSchoolId;
 
   // Cleanse/dispel spells
-  cleanse?: {
-    /** Tags to remove (e.g. ["debuff", "dot"]). */
-    tags: string[];
-    /** Max number of effects to remove. Defaults to unlimited. */
-    maxToRemove?: number;
-  };
+  cleanse?: SpellCleanse;
 
   // Misc
   isDebug?: boolean;
@@ -520,28 +521,154 @@ export function findSpellByNameOrId(raw: string): SpellDefinition | null {
 
 let dbInitPromise: Promise<void> | null = null;
 
+
+// --- DB normalization helpers (keep permissive; DB JSON can evolve) ---
+
+function asSchoolId(v: any): SpellSchoolId | undefined {
+  const s = String(v ?? "").trim().toLowerCase();
+  return s ? (s as SpellSchoolId) : undefined;
+}
+
+function asPowerResourceKind(v: any): PowerResourceKind | undefined {
+  const s = String(v ?? "").trim().toLowerCase();
+  return s ? (s as PowerResourceKind) : undefined;
+}
+
+function asStringArray(v: any): string[] | undefined {
+  if (!v) return undefined;
+  if (Array.isArray(v)) return v.map((x) => String(x)).filter(Boolean);
+  return undefined;
+}
+
+function asNumber(v: any): number | undefined {
+  if (v === null || v === undefined) return undefined;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : undefined;
+}
+
+function normalizeStatusEffect(raw: any): SpellStatusEffect | undefined {
+  if (!raw || typeof raw !== "object") return undefined;
+
+  const asStr = (v: any, d = ""): string => (typeof v === "string" ? v : d);
+  const asNum = (v: any, d = 0): number => {
+    const n = typeof v === "number" ? v : Number(v);
+    return Number.isFinite(n) ? n : d;
+  };
+  const asBool = (v: any, d = false): boolean => (typeof v === "boolean" ? v : d);
+
+  // Normalize optional nested blocks (dot/hot/absorb) with camelCase + snake_case support.
+  const normDot = (v: any) => {
+    if (!v || typeof v !== "object") return undefined;
+    const tickIntervalMs = asNum(v.tickIntervalMs ?? v.tick_interval_ms ?? v.tickMs ?? v.tick_ms, 0);
+    const spreadDamageAcrossTicks = asBool(
+      v.spreadDamageAcrossTicks ?? v.spread_damage_across_ticks,
+      false
+    );
+    const out: any = {};
+    if (tickIntervalMs > 0) out.tickIntervalMs = tickIntervalMs;
+    out.spreadDamageAcrossTicks = spreadDamageAcrossTicks;
+    return Object.keys(out).length ? out : undefined;
+  };
+
+  const normHot = (v: any) => {
+    if (!v || typeof v !== "object") return undefined;
+    const tickIntervalMs = asNum(v.tickIntervalMs ?? v.tick_interval_ms ?? v.tickMs ?? v.tick_ms, 0);
+    const healPerTick = asNum(
+      v.healPerTick ?? v.heal_per_tick ?? v.tickHealAmount ?? v.tick_heal_amount,
+      0
+    );
+    const out: any = {};
+    if (tickIntervalMs > 0) out.tickIntervalMs = tickIntervalMs;
+    if (healPerTick != 0) out.healPerTick = healPerTick;
+    return Object.keys(out).length ? out : undefined;
+  };
+
+  const normAbsorb = (v: any) => {
+    if (!v || typeof v !== "object") return undefined;
+    const amount = asNum(v.amount ?? v.absorbAmount ?? v.absorb_amount, 0);
+    const out: any = {};
+    if (amount != 0) out.amount = amount;
+    return Object.keys(out).length ? out : undefined;
+  };
+
+  const out: any = {};
+
+  out.id = asStr(raw.id).trim();
+  const _name = asStr(raw.name).trim();
+  if (_name) out.name = _name;
+  out.durationMs = asNum(raw.durationMs ?? raw.duration_ms, 0);
+  out.tags = Array.isArray(raw.tags) ? raw.tags.map((t: any) => String(t)) : [];
+
+  const dot = normDot(raw.dot);
+  if (dot) out.dot = dot;
+
+  const hot = normHot(raw.hot);
+  if (hot) out.hot = hot;
+
+  const absorb = normAbsorb(raw.absorb);
+  if (absorb) out.absorb = absorb;
+
+  // Modifiers (nested object + a few legacy flat fields)
+  const modsRaw = raw.modifiers && typeof raw.modifiers === "object" ? raw.modifiers : {};
+  const dmgTakenPct = modsRaw.damageTakenPct ?? modsRaw.damage_taken_pct ?? raw.damageTakenPct ?? raw.damage_taken_pct;
+  const dmgDealtPct = modsRaw.damageDealtPct ?? modsRaw.damage_dealt_pct ?? raw.damageDealtPct ?? raw.damage_dealt_pct;
+  const mods: any = {};
+  if (dmgTakenPct !== undefined) mods.damageTakenPct = asNum(dmgTakenPct, 0);
+  if (dmgDealtPct !== undefined) mods.damageDealtPct = asNum(dmgDealtPct, 0);
+  out.modifiers = Object.keys(mods).length ? mods : {};
+
+  // Stacking controls
+  const maxStacks = raw.maxStacks ?? raw.max_stacks;
+  if (maxStacks !== undefined) out.maxStacks = asNum(maxStacks, 0);
+
+  const stackingPolicy = asStr(raw.stackingPolicy ?? raw.stacking_policy, "");
+  if (stackingPolicy) out.stackingPolicy = stackingPolicy;
+
+  const stackingGroupId = asStr(raw.stackingGroupId ?? raw.stacking_group_id, "");
+  if (stackingGroupId) out.stackingGroupId = stackingGroupId;
+
+
+  if (!out.id || out.durationMs <= 0) return undefined;
+  return out as SpellStatusEffect;
+}
+
+function normalizeCleanse(raw: any): SpellCleanse | undefined {
+  if (!raw || typeof raw !== "object") return undefined;
+  const tags = asStringArray(raw.tags) ?? asStringArray(raw.removeTags) ?? asStringArray(raw.remove_tags);
+  if (!tags || tags.length === 0) return undefined;
+
+  const out: SpellCleanse = { tags };
+  const maxToRemove = raw.maxToRemove ?? raw.max_to_remove ?? raw.max;
+  const n = asNumber(maxToRemove);
+  if (n !== undefined) (out as any).maxToRemove = n;
+  return out;
+}
+
 function mapDbRowToSpellDef(row: DbSpellRow): SpellDefinition {
+  const k = String(row.kind ?? "").trim();
   const def: SpellDefinition = {
-    id: row.id,
-    name: row.name,
-    description: row.description ?? "",
-    kind: (row.kind === "heal_self" || row.kind === "damage_single_npc"
-      ? row.kind
-      : "damage_single_npc") as SpellKind,
-    classId: row.class_id || "any",
+    id: String(row.id),
+    name: String(row.name),
+    description: String(row.description ?? ""),
+    kind: (k ? (k as SpellKind) : "damage_single_npc"),
+    classId: row.class_id ? String(row.class_id) : "any",
     minLevel: Math.max(1, Number(row.min_level ?? 1)),
   };
 
-  if (row.school) def.school = row.school as any;
+  const school = asSchoolId(row.school);
+  if (school) def.school = school;
+
   if (row.damage_multiplier != null) def.damageMultiplier = Number(row.damage_multiplier);
   if (row.flat_bonus != null) def.flatBonus = Number(row.flat_bonus);
   if (row.heal_amount != null) def.healAmount = Number(row.heal_amount);
 
-  if (row.resource_type) def.resourceType = row.resource_type as any;
+  const resourceType = asPowerResourceKind(row.resource_type);
+  if (resourceType) def.resourceType = resourceType;
   def.resourceCost = Number(row.resource_cost ?? 0);
   def.cooldownMs = Number(row.cooldown_ms ?? 0);
 
   if (row.is_song) def.isSong = true;
+
   if (row.song_school) {
     const ss = asSongSchoolId(row.song_school);
     if (ss) def.songSchool = ss;
@@ -551,7 +678,14 @@ function mapDbRowToSpellDef(row: DbSpellRow): SpellDefinition {
     });
   }
 
-  if (row.is_debug || row.is_dev_only) def.isDebug = true;
+  // Optional DB-driven extras
+  const se = normalizeStatusEffect((row as any).status_effect ?? (row as any).statusEffect);
+  if (se) def.statusEffect = se;
+
+  const cleanse = normalizeCleanse((row as any).cleanse);
+  if (cleanse) def.cleanse = cleanse;
+
+  if (row.is_debug || (row as any).is_dev_only) def.isDebug = true;
 
   return def;
 }
@@ -604,4 +738,9 @@ export async function initSpellsFromDbOnce(pool: Pool): Promise<void> {
   }
 
   return dbInitPromise;
+}
+
+// test seam
+export function __mapDbRowToSpellDefForTest(row: DbSpellRow): SpellDefinition {
+  return mapDbRowToSpellDef(row);
 }

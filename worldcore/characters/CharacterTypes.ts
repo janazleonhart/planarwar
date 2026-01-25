@@ -54,8 +54,8 @@ export interface SpellKnown {
  */
 export interface SpellbookState {
   known: Record<string, SpellKnown>;
-  cooldowns?: Record<string, number>;
-  [k: string]: any;
+  cooldowns?: Record<string, { readyAt: number }>;
+[k: string]: any;
 }
 
 // -----------------------------
@@ -312,26 +312,30 @@ function normalizeSpellbook(raw: any): SpellbookState {
   }
 
   if (raw && typeof raw === "object") {
-    // v2 shape
-    if (raw.known && typeof raw.known === "object") {
-      return {
-        known: raw.known as Record<string, SpellKnown>,
-        cooldowns:
-          (raw.cooldowns && typeof raw.cooldowns === "object"
-            ? raw.cooldowns
-            : {}) as Record<string, number>,
-        ...raw,
-      };
+    const known =
+      raw.known && typeof raw.known === "object" ? (raw.known as Record<string, SpellKnown>) : {};
+
+    // Cooldowns have had two historical shapes:
+    //  - Record<string, number> (readyAt millis)
+    //  - Record<string, { readyAt: number }>
+    const cooldownsOut: Record<string, { readyAt: number }> = {};
+    const cdRaw = raw.cooldowns && typeof raw.cooldowns === "object" ? (raw.cooldowns as any) : null;
+    if (cdRaw) {
+      for (const [k, v] of Object.entries(cdRaw)) {
+        if (!k) continue;
+        if (typeof v === "number" && Number.isFinite(v)) {
+          cooldownsOut[k] = { readyAt: v };
+        } else if (v && typeof v === "object" && typeof (v as any).readyAt === "number") {
+          cooldownsOut[k] = { readyAt: (v as any).readyAt };
+        }
+      }
     }
 
-    // Sometimes persisted as map spellId -> SpellKnown
-    const keys = Object.keys(raw);
-    if (keys.length && keys.every((k) => typeof raw[k] === "object")) {
-      return { known: raw as Record<string, SpellKnown>, cooldowns: {} };
-    }
+    return { known, cooldowns: cooldownsOut };
   }
 
-  return defaultSpellbook();
+  // default
+  return { known: {}, cooldowns: {} };
 }
 
 // -----------------------------
