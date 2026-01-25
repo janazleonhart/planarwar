@@ -23,6 +23,7 @@ import {
 
 import { db } from "../db/Database";
 import { initSpellsFromDbOnce } from "../spells/SpellTypes";
+import { initAbilityUnlocksFromDbOnce } from "../abilities/AbilityUnlocks";
 
 export class ServerWorldManager implements WorldBlueprintProvider {
   private readonly log = Logger.scope("WORLD");
@@ -86,6 +87,7 @@ export class ServerWorldManager implements WorldBlueprintProvider {
     // Safe during transition: if tables are missing, SpellTypes keeps code defaults.
     if (process.env.WORLDCORE_TEST !== "1") {
       void initSpellsFromDbOnce(db);
+      void initAbilityUnlocksFromDbOnce(db as any);
     }
   }
 

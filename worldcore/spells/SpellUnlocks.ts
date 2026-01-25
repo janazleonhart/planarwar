@@ -46,6 +46,9 @@ let unlockSource: "code" | "db" | "test" = "code";
 let dbInitPromise: Promise<void> | null = null;
 let testOverride: SpellUnlockRule[] | null = null;
 
+// For deterministic tests: remember what source we should restore.
+let restoreSourceAfterTest: "code" | "db" | null = null;
+
 function safeRows(res: any): any[] {
   const rows = res?.rows;
   return Array.isArray(rows) ? rows : [];
@@ -87,13 +90,22 @@ export function getAutoGrantUnlocksFor(classId: string, level: number): SpellUnl
   const cid = (classId || "").toLowerCase().trim();
   const lvl = Math.max(1, Number.isFinite(Number(level)) ? Number(level) : 1);
 
-  const rules = getAllSpellUnlockRules()
+  return getAllSpellUnlockRules()
     .filter((r) => r && r.isEnabled && r.autoGrant)
     .filter((r) => (r.classId || "").toLowerCase().trim() === "any" || (r.classId || "").toLowerCase().trim() === cid)
     .filter((r) => (Number(r.minLevel) || 1) <= lvl)
     .sort((a, b) => (a.minLevel - b.minLevel) || a.spellId.localeCompare(b.spellId));
+}
 
-  return rules;
+export function getLearnableUnlocksFor(classId: string, level: number): SpellUnlockRule[] {
+  const cid = (classId || "").toLowerCase().trim();
+  const lvl = Math.max(1, Number.isFinite(Number(level)) ? Number(level) : 1);
+
+  return getAllSpellUnlockRules()
+    .filter((r) => r && r.isEnabled && !r.autoGrant)
+    .filter((r) => (r.classId || "").toLowerCase().trim() === "any" || (r.classId || "").toLowerCase().trim() === cid)
+    .filter((r) => (Number(r.minLevel) || 1) <= lvl)
+    .sort((a, b) => (a.minLevel - b.minLevel) || a.spellId.localeCompare(b.spellId));
 }
 
 /**
@@ -196,15 +208,18 @@ export async function initSpellUnlocksFromDbOnce(pool: PgPoolLoose): Promise<voi
  * (Do not use in production code.)
  */
 export function __setSpellUnlocksForTest(rules: SpellUnlockRule[]): void {
+  if (unlockSource !== "test") restoreSourceAfterTest = unlockSource as any;
   testOverride = Array.isArray(rules) ? [...rules] : [];
   unlockSource = "test";
 }
 
 /**
- * Test helper: clear overrides and restore current unlock set.
+ * Test helper: clear overrides and restore source.
  */
 export function __resetSpellUnlocksForTest(): void {
   testOverride = null;
-  // Do not auto-flip source to db here; keep what init set or fallback.
-  if (unlockSource === "test") unlockSource = (unlocks.length ? unlockSource : "code");
+  if (unlockSource === "test") {
+    unlockSource = restoreSourceAfterTest ?? "code";
+    restoreSourceAfterTest = null;
+  }
 }

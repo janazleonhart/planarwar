@@ -2,6 +2,8 @@
 
 import { db } from "../db/Database";
 import { Logger } from "../utils/logger";
+import { learnSpellInState } from "../spells/SpellLearning";
+import { learnAbilityInState } from "../abilities/AbilityLearning";
 
 import {
   CharacterRow,
@@ -327,6 +329,60 @@ export class PostgresCharacterService {
 
     await this.saveCharacter(next);
     return await this.loadCharacter(charId);
+  }
+
+
+  /**
+   * Learn a spell with unlock-policy enforcement.
+   *
+   * - In DB/test mode: requires an enabled spell_unlocks rule for the spell (classId/any + minLevel).
+   * - In code-fallback mode: allows any catalog-known spell (dev-friendly / backwards compatible).
+   *
+   * Returns a small result envelope for API friendliness.
+   */
+  async learnSpellWithRules(
+    userId: string,
+    characterId: string,
+    spellId: string,
+    rank = 1,
+  ): Promise<
+    | { ok: true; character: CharacterState }
+    | { ok: false; error: string; requiredRule?: any }
+  > {
+    const existing = await this.loadCharacterForUser(userId, characterId);
+    if (!existing) return { ok: false, error: "not_found" };
+
+    const res = learnSpellInState(existing as any, spellId, rank);
+    if (!res.ok) return { ok: false, error: res.error, requiredRule: (res as any).requiredRule };
+
+    await this.saveCharacter(res.next as any);
+    const reloaded = await this.loadCharacterForUser(userId, characterId);
+    return { ok: true, character: reloaded as any };
+  }
+
+  /**
+   * Learn an ability with unlock-policy enforcement.
+   *
+   * Abilities are persisted under CharacterState.abilities.learned[abilityId].
+   */
+  async learnAbilityWithRules(
+    userId: string,
+    characterId: string,
+    abilityId: string,
+    rank = 1,
+  ): Promise<
+    | { ok: true; character: CharacterState }
+    | { ok: false; error: string; requiredRule?: any }
+  > {
+    const existing = await this.loadCharacterForUser(userId, characterId);
+    if (!existing) return { ok: false, error: "not_found" };
+
+    const res = learnAbilityInState(existing as any, abilityId, rank);
+    if (!res.ok) return { ok: false, error: res.error, requiredRule: (res as any).requiredRule };
+
+    await this.saveCharacter(res.next as any);
+    const reloaded = await this.loadCharacterForUser(userId, characterId);
+    return { ok: true, character: reloaded as any };
   }
 
   async equipItem(
