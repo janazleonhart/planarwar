@@ -24,7 +24,7 @@ export type ClassId =
   | "adventurer"
   | "warlock"
   | "hunter"
-  | "death_knight"
+  | "runic_knight"
   // temporary/debug aliases
   | "warrior"
   | "mage"
@@ -150,7 +150,7 @@ const CLASS_PER_LEVEL: Record<ClassId, Attributes> = {
   hunter: { str: 1, agi: 3, int: 1, sta: 2, wis: 1, cha: 1 },
 
   // Death Knight – decay plate; Str/Sta heavy with a bit of Int
-  death_knight: { str: 3, agi: 0, int: 1, sta: 3, wis: 0, cha: 1 },
+  runic_knight: { str: 3, agi: 0, int: 1, sta: 3, wis: 0, cha: 1 },
 
   // Generic fallback / unknown classes
   default: { str: 1, agi: 1, int: 1, sta: 1, wis: 1, cha: 1 },
@@ -463,16 +463,16 @@ const CLASS_DEFINITIONS: Record<ClassId, ClassDefinition> = {
     powerResources: [{ id: "fury", max: 100 }],
   },
 
-  death_knight: {
-    id: "death_knight",
-    displayName: "Death Knight",
-    description: "Decay knight; plate + dark magic.",
+  runic_knight: {
+    id: "runic_knight",
+    displayName: "Runic Knight",
+    description: "Runic knight; plate + dark magic.",
     archetype: "tank",
     combatRole: "tank",
     primaryResource: "fury", // using fury-ish resource for now
     secondaryResource: "mana", // for spellcasting hooks later
     baseAttributes: BASE_10,
-    perLevel: CLASS_PER_LEVEL.death_knight,
+    perLevel: CLASS_PER_LEVEL.runic_knight,
     armorTypes: ["plate"],
     weaponFamilies: [
       "sword_2h",
