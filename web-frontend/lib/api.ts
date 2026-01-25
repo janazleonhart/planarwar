@@ -282,6 +282,25 @@ export async function startTech(techId: string): Promise<void> {
   });
 }
 
+
+export type CityTierUpResult = { ok: boolean; result?: any; error?: string };
+export type CityMorphResult = { ok: boolean; result?: any; error?: string };
+export type CityDebugResult = { ok: boolean; playerId?: string; city?: CitySummary; resources?: Resources; error?: string };
+
+export async function cityTierUp(): Promise<CityTierUpResult> {
+  return api<CityTierUpResult>("/api/city/tier-up", { method: "POST" });
+}
+
+export async function cityMorph(specializationId: string): Promise<CityMorphResult> {
+  return api<CityMorphResult>("/api/city/morph", {
+    method: "POST",
+    body: JSON.stringify({ specializationId }),
+  });
+}
+
+export async function fetchCityDebug(): Promise<CityDebugResult> {
+  return api<CityDebugResult>("/api/city");
+}
 // Auth token helper used across MUD / City Builder / Admin tools.
 // Stored by the login UI under localStorage key 'pw_auth_v1'.
 export function getAuthToken(): string | null {

@@ -109,7 +109,8 @@
         "Set VITE_API_BASE_URL only when you intentionally want cross-origin calls (and have CORS configured).",
         "Used by vendor admin pages (AdminVendorEconomyPage/AdminVendorAuditPage) and city-builder pages (MePage/OperationsPage).",
         "Caution: keep secrets out of repo .env; Vite only exposes VITE_* at runtime, but secrets in-repo are still a security risk.",
-        "Now attaches Authorization: Bearer <token> automatically if localStorage pw_auth_v1 is present (shared auth across MUD/CityBuilder)."
+        "Now attaches Authorization: Bearer <token> automatically if localStorage pw_auth_v1 is present (shared auth across MUD/CityBuilder).",
+        "Adds helpers for CityBuilder city ops endpoints (/api/city/*)."
       ],
       "owns": [],
       "path": "web-frontend/lib/api.ts",
@@ -117,7 +118,10 @@
         "Typed DTOs for city-builder UI (MeProfile, missions, armies, heroes, tech, etc.)",
         "API_BASE_URL from VITE_API_BASE_URL (default same-origin)",
         "fetchMe(), startTech(), api(path, init) with JSON/HTML guardrails",
-        "auth header injection (pw_auth_v1)"
+        "auth header injection (pw_auth_v1)",
+        "cityTierUp()",
+        "cityMorph(specializationId)",
+        "fetchCityDebug()"
       ],
       "service": "api.client"
     },
@@ -325,8 +329,9 @@
       "kind": "ui",
       "lifecycle": "singleton",
       "notes": [
-        "Not currently routed from App.tsx.",
-        "Uses fetchMe() (GET /api/me).",
+        "Routed via CityShellPage (CityBuilder tab).",
+        "Shows active missions from fetchMe() (GET /api/me).",
+        "Adds basic City ops: tier-up and morph (POST /api/city/tier-up, POST /api/city/morph), with optional GET /api/city debug read.",
         "CityBuilder legacy payload: mission fields may be absent; treat activeMissions/missionId as optional to avoid TS drift."
       ],
       "owns": [
@@ -334,7 +339,8 @@
       ],
       "path": "web-frontend/pages/OperationsPage.tsx",
       "provides": [
-        "Read-only operations view (active missions)"
+        "Read-only operations view (active missions)",
+        "City ops buttons (tier-up, morph) + last-result inspector"
       ],
       "service": "cityBuilder.operations"
     },

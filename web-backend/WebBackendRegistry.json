@@ -964,5 +964,28 @@
       ],
       "service": "http.routes"
     }
+  },
+  "web-backend.routes.city": {
+    "class": null,
+    "ctorArgs": [],
+    "dependsOn": [
+      "npm:express",
+      "web-backend.gameState",
+      "worldcore:auth/PostgresAuthService"
+    ],
+    "kind": "module",
+    "lifecycle": "singleton",
+    "notes": [
+      "City operations for demo city builder (tier/morph + debug read).",
+      "Supports Authorization: Bearer token; resolves playerId from account id when authed, otherwise falls back to DEMO."
+    ],
+    "owns": [],
+    "path": "web-backend/routes/city.ts",
+    "provides": [
+      "POST /api/city/tier-up",
+      "POST /api/city/morph",
+      "GET /api/city (debug)"
+    ],
+    "service": "http.routes"
   }
 }

@@ -1,4 +1,7 @@
 // web-backend/routes/city.ts
+//
+// CityBuilder prototype routes.
+// These are intentionally lightweight wrappers around the demo-style gameState module.
 
 import { Router, type Request } from "express";
 
