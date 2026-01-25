@@ -78,6 +78,19 @@ function safeSaveSpawnUiState(state: SpawnUiSaved) {
   }
 }
 
+type JsonParseResult<T> = { value: T | null; error: string | null };
+
+function tryParseJson<T>(raw: string): JsonParseResult<T> {
+  const txt = String(raw ?? "").trim();
+  if (!txt) return { value: null, error: null };
+  try {
+    return { value: JSON.parse(txt) as T, error: null };
+  } catch (e: any) {
+    const msg = String(e?.message || e || "invalid_json");
+    return { value: null, error: msg };
+  }
+}
+
 const STICKY_TOP_PX = 96;
 
 
@@ -551,18 +564,63 @@ const [selectedSavedSnapshotId, setSelectedSavedSnapshotId] = useState<string>("
   const [restoreConfirmPhraseExpected, setRestoreConfirmPhraseExpected] = useState<string | null>(null);
   const [restoreConfirmPhraseRequired, setRestoreConfirmPhraseRequired] = useState(false);
 
-  const restoreSnapshotShard = useMemo(() => {
-    try {
-      const obj = JSON.parse(restoreJsonText || "{}");
-      const shard =
-        (obj && typeof obj === "object" && (obj as any).shardId) ||
-        (obj && typeof obj === "object" && (obj as any).snapshot?.shardId) ||
-        "";
-      return String(shard || "").trim();
-    } catch {
-      return "";
-    }
-  }, [restoreJsonText]);
+  type RestoreSnapshotMeta = {
+  shardId: string;
+  bounds?: any;
+  cellSize?: number;
+  pad?: number;
+  types?: string[];
+  rows?: number;
+  spawnsCount?: number;
+  kind?: string;
+  version?: number;
+  createdAt?: string;
+};
+
+const restoreParsed = useMemo(() => {
+  const raw = restoreJsonText.trim();
+  if (!raw) return { snapshot: null as any, meta: null as RestoreSnapshotMeta | null, error: null as string | null };
+
+  const parsed = tryParseJson<any>(raw);
+  if (parsed.error) return { snapshot: null as any, meta: null as RestoreSnapshotMeta | null, error: parsed.error };
+
+  const root = parsed.value;
+  const snap = (root && typeof root === "object" && (root as any).snapshot && typeof (root as any).snapshot === "object")
+    ? (root as any).snapshot
+    : root;
+
+  if (!snap || typeof snap !== "object") {
+    return { snapshot: null as any, meta: null as RestoreSnapshotMeta | null, error: "Invalid snapshot: not an object." };
+  }
+
+  const shardId = String((snap as any).shardId ?? "").trim();
+  const bounds = (snap as any).bounds;
+  const cellSize = Number.isFinite(Number((snap as any).cellSize)) ? Number((snap as any).cellSize) : undefined;
+  const pad = Number.isFinite(Number((snap as any).pad)) ? Number((snap as any).pad) : undefined;
+  const types = Array.isArray((snap as any).types) ? (snap as any).types.map((t: any) => String(t)).filter(Boolean) : undefined;
+  const spawnsCount = Array.isArray((snap as any).spawns) ? (snap as any).spawns.length : undefined;
+  const rows = Number.isFinite(Number((snap as any).rows)) ? Number((snap as any).rows) : spawnsCount;
+
+  const meta: RestoreSnapshotMeta = {
+    shardId,
+    bounds,
+    cellSize,
+    pad,
+    types,
+    rows,
+    spawnsCount,
+    kind: typeof (snap as any).kind === "string" ? String((snap as any).kind) : undefined,
+    version: Number.isFinite(Number((snap as any).version)) ? Number((snap as any).version) : undefined,
+    createdAt: typeof (snap as any).createdAt === "string" ? String((snap as any).createdAt) : undefined,
+  };
+
+  return { snapshot: snap, meta, error: null as string | null };
+}, [restoreJsonText]);
+
+const restoreSnapshotShard = restoreParsed.meta?.shardId || "";
+const restoreSnapshotMeta = restoreParsed.meta;
+const restoreSnapshotParseError = restoreParsed.error;
+
 
   const selectedSavedSnapshotMeta = useMemo(() => {
     return savedSnapshots.find((s) => s.id === selectedSavedSnapshotId) || null;
@@ -1534,9 +1592,12 @@ const runDeleteSavedSnapshot = async (id: string) => {
       const targetShard = effectiveRestoreTargetShard;
 
       const raw = restoreJsonText.trim();
-      if (!raw) throw new Error("Paste a snapshot JSON (or pick a file) first.");
+if (!raw) throw new Error("Paste a snapshot JSON (or pick a file) first.");
+if (restoreSnapshotParseError) throw new Error(`Snapshot JSON parse error: ${restoreSnapshotParseError}`);
 
-      const snapshot = JSON.parse(raw);
+const snapshot = restoreParsed.snapshot;
+if (!snapshot) throw new Error("Snapshot JSON parsed but snapshot payload is missing.");
+if (!Array.isArray((snapshot as any).spawns)) throw new Error("Invalid snapshot: missing 'spawns' array.");
 
       const res = await authedFetch(`/api/admin/spawn_points/restore`, {
         method: "POST",
@@ -2977,6 +3038,37 @@ const runDeleteSavedSnapshot = async (id: string) => {
                         placeholder={restoreConfirmExpected || ""}
                         style={{ width: 220, padding: "6px 8px", borderRadius: 6, border: "1px solid #ccc" }}
                       />
+                    {restoreConfirmExpected ? (
+  <div style={{ display: "flex", gap: 8, marginTop: 6, flexWrap: "wrap" }}>
+    <button
+      type="button"
+      onClick={() => setRestoreConfirm(restoreConfirmExpected)}
+      style={{ padding: "4px 8px", borderRadius: 8, border: "1px solid #ccc", background: "white", cursor: "pointer", fontWeight: 700 }}
+      title="Fill the confirm token input"
+    >
+      Use token
+    </button>
+    <button
+      type="button"
+      onClick={async () => {
+        try {
+          await navigator.clipboard.writeText(String(restoreConfirmExpected));
+        } catch (e) {
+          console.warn("clipboard write failed", e);
+        }
+      }}
+      style={{ padding: "4px 8px", borderRadius: 8, border: "1px solid #ccc", background: "white", cursor: "pointer", fontWeight: 700 }}
+      title="Copy token to clipboard"
+    >
+      Copy
+    </button>
+  </div>
+) : (
+  <div style={{ marginTop: 6, fontSize: 12, opacity: 0.75 }}>
+    Run Preview diff (or Commit) to get the token if the server requires one.
+  </div>
+)}
+
                     </label>
 
                     <label style={{ display: "grid", gap: 4 }}>
@@ -2993,6 +3085,37 @@ const runDeleteSavedSnapshot = async (id: string) => {
                           background: restoreNeedsPhrase ? "#fff5f5" : "white",
                         }}
                       />
+                    {restoreExpectedPhrase ? (
+  <div style={{ display: "flex", gap: 8, marginTop: 6, flexWrap: "wrap" }}>
+    <button
+      type="button"
+      onClick={() => setRestoreConfirmPhrase(restoreExpectedPhrase)}
+      style={{ padding: "4px 8px", borderRadius: 8, border: "1px solid #ccc", background: "white", cursor: "pointer", fontWeight: 700 }}
+      title="Fill the confirm phrase input"
+    >
+      Use phrase
+    </button>
+    <button
+      type="button"
+      onClick={async () => {
+        try {
+          await navigator.clipboard.writeText(String(restoreExpectedPhrase));
+        } catch (e) {
+          console.warn("clipboard write failed", e);
+        }
+      }}
+      style={{ padding: "4px 8px", borderRadius: 8, border: "1px solid #ccc", background: "white", cursor: "pointer", fontWeight: 700 }}
+      title="Copy phrase to clipboard"
+    >
+      Copy
+    </button>
+  </div>
+) : (
+  <div style={{ marginTop: 6, fontSize: 12, opacity: 0.75 }}>
+    Phrase is only required for high-risk modes (cross-shard or allow brain:*).
+  </div>
+)}
+
                     </label>
 
                     <input
@@ -3004,7 +3127,7 @@ const runDeleteSavedSnapshot = async (id: string) => {
 
                     <button
                       onClick={() => runRestore(false)}
-                      disabled={restoreWorking}
+                      disabled={restoreWorking || !restoreJsonText.trim() || !!restoreSnapshotParseError}
                       style={{
                         padding: "8px 12px",
                         borderRadius: 8,
@@ -3013,15 +3136,43 @@ const runDeleteSavedSnapshot = async (id: string) => {
                         cursor: restoreWorking ? "not-allowed" : "pointer",
                         fontWeight: 700,
                       }}
-                      title="Dry run restore (no DB writes)"
+                      title="Preview diff (no DB writes). Compares snapshot vs live DB slice."
                     >
-                      {restoreWorking ? "Working..." : "Dry-run restore"}
+                      {restoreWorking ? "Working..." : "Preview diff"}
                     </button>
+
+<button
+  type="button"
+  onClick={() => {
+    setRestoreResult(null);
+    setRestoreConfirm("");
+    setRestoreConfirmExpected(null);
+    setRestoreConfirmRequired(false);
+    setRestoreConfirmPhrase("");
+    setRestoreConfirmPhraseExpected(null);
+    setRestoreConfirmPhraseRequired(false);
+    setError(null);
+  }}
+  disabled={restoreWorking}
+  style={{
+    padding: "8px 12px",
+    borderRadius: 8,
+    border: "1px solid #ccc",
+    background: "white",
+    cursor: restoreWorking ? "not-allowed" : "pointer",
+    fontWeight: 700,
+  }}
+  title="Clears restore preview + confirm gates"
+>
+  Clear
+</button>
 
                     <button
                       onClick={() => runRestore(true)}
                       disabled={
                         restoreWorking ||
+                        !restoreJsonText.trim() ||
+                        !!restoreSnapshotParseError ||
                         !canWrite ||
                         (restoreNeedsPhrase && restoreConfirmPhrase.trim() !== (restoreExpectedPhrase || "")) ||
                         (restoreConfirmRequired && restoreConfirm.trim() !== (restoreConfirmExpected || ""))
@@ -3039,6 +3190,77 @@ const runDeleteSavedSnapshot = async (id: string) => {
                       Commit restore
                     </button>
                   </div>
+{restoreSnapshotParseError ? (
+  <div style={{ padding: 10, borderRadius: 8, border: "1px solid #c62828", background: "#fff5f5", fontSize: 13 }}>
+    <div style={{ fontWeight: 800, marginBottom: 4 }}>Invalid snapshot JSON</div>
+    <div style={{ opacity: 0.9 }}>
+      {restoreSnapshotParseError}
+    </div>
+  </div>
+) : restoreSnapshotMeta ? (
+  <div style={{ padding: 10, borderRadius: 8, border: "1px solid #bbb", background: "#fafafa", fontSize: 13, lineHeight: 1.35 }}>
+    <div style={{ fontWeight: 800, marginBottom: 6 }}>Snapshot summary</div>
+    <div>
+      <strong>Shard:</strong> <code>{restoreSnapshotMeta.shardId || "(missing)"}</code>
+      {restoreCrossShard ? (
+        <span style={{ marginLeft: 8, color: "#c62828", fontWeight: 800 }}>
+          ⚠ target differs (<code>{effectiveRestoreTargetShard}</code>)
+        </span>
+      ) : null}
+    </div>
+    <div>
+      <strong>Rows:</strong> {Number.isFinite(Number(restoreSnapshotMeta.rows)) ? restoreSnapshotMeta.rows : "(unknown)"}
+      {Number.isFinite(Number(restoreSnapshotMeta.spawnsCount)) ? (
+        <span style={{ opacity: 0.8 }}> (spawns array: {restoreSnapshotMeta.spawnsCount})</span>
+      ) : (
+        <span style={{ opacity: 0.8 }}> (missing spawns array)</span>
+      )}
+    </div>
+    <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+      <div>
+        <strong>Bounds:</strong>{" "}
+        <code>
+          {restoreSnapshotMeta.bounds
+            ? `${restoreSnapshotMeta.bounds.minCx}..${restoreSnapshotMeta.bounds.maxCx},${restoreSnapshotMeta.bounds.minCz}..${restoreSnapshotMeta.bounds.maxCz}`
+            : "(none)"}
+        </code>
+      </div>
+      <div>
+        <strong>Cell:</strong> <code>{restoreSnapshotMeta.cellSize ?? "(?)"}</code>
+      </div>
+      <div>
+        <strong>Pad:</strong> <code>{restoreSnapshotMeta.pad ?? 0}</code>
+      </div>
+      <div>
+        <strong>Types:</strong>{" "}
+        <code>{restoreSnapshotMeta.types && restoreSnapshotMeta.types.length ? restoreSnapshotMeta.types.join(",") : "(none)"}</code>
+      </div>
+    </div>
+
+    {!Array.isArray((restoreParsed.snapshot as any)?.spawns) ? (
+      <div style={{ marginTop: 8, color: "#c62828", fontWeight: 700 }}>
+        This snapshot is missing a <code>spawns</code> array, so restore cannot run.
+      </div>
+    ) : null}
+
+    {restoreAllowBrainOwned ? (
+      <div style={{ marginTop: 8, color: "#c62828", fontWeight: 700 }}>
+        brain:* is allowed — restore may modify protected rows.
+      </div>
+    ) : null}
+
+    {restoreUpdateExisting ? (
+      <div style={{ marginTop: 8, opacity: 0.9 }}>
+        UpdateExisting is enabled — existing spawn_ids may be overwritten (token gate may trigger).
+      </div>
+    ) : (
+      <div style={{ marginTop: 8, opacity: 0.9 }}>
+        UpdateExisting is disabled — existing spawn_ids will be skipped.
+      </div>
+    )}
+  </div>
+) : null}
+
 
                   {restoreNeedsPhrase ? (
                     <div style={{ padding: 10, borderRadius: 8, border: "1px solid #c62828", background: "#fff5f5" }}>
@@ -3380,30 +3602,18 @@ type AnyOpsPreview =
       duplicates?: OpsPreviewBucket;
       droppedBudget?: OpsPreviewBucket;
       readOnly?: OpsPreviewBucket;
-      extraTarget?: OpsPreviewBucket;
     }
   | {
       // list-style (server payload)
       limit: number;
       truncated: boolean;
       deleteSpawnIds?: string[];
-      deleteCount?: number;
       insertSpawnIds?: string[];
-      insertCount?: number;
       updateSpawnIds?: string[];
-      updateCount?: number;
       skipSpawnIds?: string[];
-      skipCount?: number;
       duplicatePlannedSpawnIds?: string[];
-      duplicatePlannedCount?: number;
       droppedPlannedSpawnIds?: string[];
-      droppedPlannedCount?: number;
       readOnlySpawnIds?: string[];
-      readOnlyCount?: number;
-
-      // P5: mismatch signal (rows currently in target slice but not present in snapshot)
-      extraTargetSpawnIds?: string[];
-      extraTargetCount?: number;
     };
 
 
@@ -3429,22 +3639,19 @@ function normalizeOpsPreview(preview: AnyOpsPreview): Exclude<AnyOpsPreview, { l
 
   const truncated = Boolean(anyPreview?.truncated);
 
-  const toBucket = (ids: string[] | undefined, countOverride?: unknown): OpsPreviewBucket => {
+  const toBucket = (ids: string[] | undefined): OpsPreviewBucket => {
     const list = Array.isArray(ids) ? ids.filter(Boolean) : [];
-    const n = Number(countOverride);
-    const count = Number.isFinite(n) ? n : list.length;
-    return { count, spawnIds: list, truncated };
+    return { count: list.length, spawnIds: list, truncated };
   };
 
   return {
-    deletes: toBucket(anyPreview?.deleteSpawnIds, anyPreview?.deleteCount),
-    inserts: toBucket(anyPreview?.insertSpawnIds, anyPreview?.insertCount),
-    updates: toBucket(anyPreview?.updateSpawnIds, anyPreview?.updateCount),
-    skips: toBucket(anyPreview?.skipSpawnIds, anyPreview?.skipCount),
-    duplicates: toBucket(anyPreview?.duplicatePlannedSpawnIds, anyPreview?.duplicatePlannedCount),
-    droppedBudget: toBucket(anyPreview?.droppedPlannedSpawnIds, anyPreview?.droppedPlannedCount),
-    readOnly: toBucket(anyPreview?.readOnlySpawnIds, anyPreview?.readOnlyCount),
-    extraTarget: toBucket(anyPreview?.extraTargetSpawnIds, anyPreview?.extraTargetCount),
+    deletes: toBucket(anyPreview?.deleteSpawnIds),
+    inserts: toBucket(anyPreview?.insertSpawnIds),
+    updates: toBucket(anyPreview?.updateSpawnIds),
+    skips: toBucket(anyPreview?.skipSpawnIds),
+    duplicates: toBucket(anyPreview?.duplicatePlannedSpawnIds),
+    droppedBudget: toBucket(anyPreview?.droppedPlannedSpawnIds),
+    readOnly: toBucket(anyPreview?.readOnlySpawnIds),
   };
 }
 
@@ -3458,24 +3665,9 @@ function OpsPreviewPanel(props: { title: string; preview: AnyOpsPreview; downloa
     ["update", norm.updates],
     ["skip", norm.skips],
     ["readOnly", norm.readOnly],
-    ["extraTarget", (norm as any).extraTarget],
     ["duplicates", norm.duplicates],
     ["droppedBudget", norm.droppedBudget],
   ];
-
-
-  const prettyLabel = (key: string): string => {
-    switch (key) {
-      case "readOnly":
-        return "readOnly (blocked)";
-      case "droppedBudget":
-        return "droppedBudget (budget cap)";
-      case "extraTarget":
-        return "extraTarget (not in snapshot)";
-      default:
-        return key;
-    }
-  };
 
   return (
     <div style={{ marginTop: 10, border: "1px solid #333", borderRadius: 8, padding: 10, background: "#0b0b0b" }}>
@@ -3496,7 +3688,7 @@ function OpsPreviewPanel(props: { title: string; preview: AnyOpsPreview; downloa
           .map(([label, b]) => (
             <div key={label} style={{ border: "1px solid #222", borderRadius: 8, padding: 8, background: "#0f0f0f" }}>
               <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 700, marginBottom: 6 }}>
-                <span>{prettyLabel(label)}</span>
+                <span>{label}</span>
                 <span style={{ opacity: 0.9 }}>
                   {b.count}
                   {b.truncated ? "+" : ""}
