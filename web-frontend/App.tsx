@@ -247,6 +247,60 @@ type PlayerTab = "spellbook" | "inventory" | "equipment" | "effects";
 const [playerTab, setPlayerTab] = useState<PlayerTab>("spellbook");
 const [spellSearch, setSpellSearch] = useState<string>("");
 
+
+type SpellMeta = {
+  id: string;
+  name: string;
+  minLevel: number;
+  cooldownMs: number;
+  resourceCost: number;
+  classId: string;
+  isSong?: boolean;
+};
+
+const [spellMetaById, setSpellMetaById] = useState<Record<string, SpellMeta>>({});
+const [spellMetaBusy, setSpellMetaBusy] = useState<boolean>(false);
+
+const knownSpellIds = useMemo(() => {
+  const known = (selectedCharState as any)?.spellbook?.known ?? {};
+  return Object.keys(known);
+}, [selectedCharState]);
+
+useEffect(() => {
+  if (!token || knownSpellIds.length === 0) {
+    setSpellMetaById({});
+    return;
+  }
+
+  const qs = encodeURIComponent(knownSpellIds.join(","));
+  let cancelled = false;
+
+  (async () => {
+    try {
+      setSpellMetaBusy(true);
+      const res = await fetch(`${API_BASE}/api/spells?ids=${qs}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) return;
+      const data = await res.json();
+      const rows: SpellMeta[] = Array.isArray(data?.spells) ? data.spells : [];
+      const next: Record<string, SpellMeta> = {};
+      for (const r of rows) {
+        if (r && typeof r.id === "string") next[r.id] = r;
+      }
+      if (!cancelled) setSpellMetaById(next);
+    } catch {
+      // ignore: fall back to raw ids
+    } finally {
+      if (!cancelled) setSpellMetaBusy(false);
+    }
+  })();
+
+  return () => {
+    cancelled = true;
+  };
+}, [token, knownSpellIds.join(",")]);
+
   const logRef = useRef<HTMLDivElement | null>(null);
 
   const safeCompact = (v: any, maxLen = 320) => {
@@ -1028,7 +1082,7 @@ const copyToClipboard = async (text: string) => {
           }}
         />
         <div style={{ opacity: 0.75, fontFamily: "monospace" }}>
-          known: {Object.keys(selectedCharState?.spellbook?.known ?? {}).length}
+          known: {Object.keys(selectedCharState?.spellbook?.known ?? {}).length} {spellMetaBusy ? "(meta…)" : ""}
         </div>
       </div>
 
@@ -1044,17 +1098,25 @@ const copyToClipboard = async (text: string) => {
               const cd = cooldowns[id];
               const readyAt = cd?.readyAt ?? 0;
               const remainingMs = Math.max(0, readyAt - now);
+              const meta = spellMetaById[id];
+
               return {
                 id,
-                rank: info?.rank ?? 1,
+                name: meta?.name ?? null,
+                minLevel: typeof meta?.minLevel === "number" ? meta.minLevel : null,
+                rank: (info as any)?.rank ?? 1,
                 readyAt,
                 remainingMs,
               };
             })
-            .filter((r) => (q ? r.id.toLowerCase().includes(q) : true))
+            .filter((r) => {
+              if (!q) return true;
+              const idOk = r.id.toLowerCase().includes(q);
+              const nameOk = (r.name ?? "").toLowerCase().includes(q);
+              return idOk || nameOk;
+            })
             .sort((a, b) => a.id.localeCompare(b.id));
-
-          if (!selectedCharState) {
+if (!selectedCharState) {
             return <div style={{ opacity: 0.8 }}>No character selected.</div>;
           }
 
@@ -1082,8 +1144,8 @@ const copyToClipboard = async (text: string) => {
                   >
                     <div style={{ minWidth: 260 }}>
                       <span style={{ opacity: 0.8 }}>[r{r.rank}]</span>{" "}
-                      <span style={{ fontWeight: 600 }}>{r.id}</span>{" "}
-                      <span style={{ opacity: 0.8 }}>({cooldownText})</span>
+                      <span style={{ fontWeight: 600 }}>{r.name ?? r.id}</span> {r.name && r.name !== r.id ? <span style={{ opacity: 0.6 }}>({r.id})</span> : null}{" "}
+                      <span style={{ opacity: 0.8 }}>({cooldownText})</span> {typeof r.minLevel === "number" ? <span style={{ opacity: 0.6 }}> • L{r.minLevel}</span> : null}
                     </div>
 
                     <button type="button" onClick={() => sendMud(castCmd)}>

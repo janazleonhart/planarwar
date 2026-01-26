@@ -19,6 +19,7 @@ import workshopRoutes from "./routes/workshop";
 import { resourceTierRouter } from "./routes/resourceTierRoutes";
 import charactersRouter from "./routes/characters";
 import authRouter from "./routes/auth";
+import spellsRouter from "./routes/spells";
 import adminQuestsRouter from "./routes/adminQuests";
 import adminNpcsRouter from "./routes/adminNpcs";
 import adminItemsRouter from "./routes/adminItems";
@@ -56,7 +57,7 @@ app.use("/api/workshop", workshopRoutes);
 app.use("/api/resources", resourceTierRouter);
 app.use("/api/characters", charactersRouter);
 app.use("/api/auth", authRouter);
-app.use("/api/characters", charactersRouter);
+app.use("/api/spells", spellsRouter);
 
 app.use("/api/admin/quests", maybeRequireAdmin("/api/admin/quests"), adminQuestsRouter);
 app.use("/api/admin/npcs", maybeRequireAdmin("/api/admin/npcs"), adminNpcsRouter);

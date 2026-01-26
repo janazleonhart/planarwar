@@ -353,7 +353,9 @@ export class PostgresCharacterService {
     if (!existing) return { ok: false, error: "not_found" };
 
     const res = learnSpellInState(existing as any, spellId, rank);
-    if (!res.ok) return { ok: false, error: res.error, requiredRule: (res as any).requiredRule };
+    if (res.ok === false) {
+      return { ok: false, error: res.error, requiredRule: (res as any).requiredRule };
+    }
 
     await this.saveCharacter(res.next as any);
     const reloaded = await this.loadCharacterForUser(userId, characterId);
@@ -378,7 +380,9 @@ export class PostgresCharacterService {
     if (!existing) return { ok: false, error: "not_found" };
 
     const res = learnAbilityInState(existing as any, abilityId, rank);
-    if (!res.ok) return { ok: false, error: res.error, requiredRule: (res as any).requiredRule };
+    if (res.ok === false) {
+      return { ok: false, error: res.error, requiredRule: (res as any).requiredRule };
+    }
 
     await this.saveCharacter(res.next as any);
     const reloaded = await this.loadCharacterForUser(userId, characterId);
