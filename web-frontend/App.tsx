@@ -496,23 +496,90 @@ const [spellSearch, setSpellSearch] = useState<string>("");
       };
 
       socket.onmessage = (evt) => {
+        // Most shard messages are JSON { op, payload }. Some browsers deliver Blob/ArrayBuffer.
+        const handleText = (text: string) => {
+          // Most messages should be JSON. If not, we still print it.
+          try {
+            const msg = JSON.parse(text);
+            const op = String(msg?.op ?? "unknown");
+            const payload = msg?.payload;
+
+            // Common op aliases across eras.
+            if (op === "mud" || op === "mud_result") {
+              pushText("mud", String(payload?.text ?? ""), op, payload);
+              return;
+            }
+
+            if (op === "whereami" || op === "whereami_result") {
+              pushText("whereami", safeCompact(payload, 800), op, payload);
+              return;
+            }
+
+            if (op === "chat") {
+              pushText("chat", String(payload?.text ?? ""), op, payload);
+              return;
+            }
+
+            // Common world spam: compress it into readable one-liners.
+            if (op === "entity_spawn") {
+              const id = payload?.id ?? payload?.entityId ?? "?";
+              const typ = payload?.type ?? "?";
+              const roomId = payload?.roomId ?? "?";
+              pushText("world", `spawn ${typ} ${id} @ ${roomId}`, op, payload);
+              return;
+            }
+
+            if (op === "entity_despawn") {
+              const id = payload?.id ?? payload?.entityId ?? "?";
+              pushText("world", `despawn ${id}`, op, payload);
+              return;
+            }
+
+            if (op === "entity_update") {
+              const id = payload?.id ?? payload?.entityId ?? "?";
+              pushText(
+                "world",
+                `update ${id} ${safeCompact(payload?.patch ?? payload, 240)}`,
+                op,
+                payload
+              );
+              return;
+            }
+
+            // Unknown op: show compact payload, keep raw attached for optional viewing.
+            pushText("raw", `${op} ${safeCompact(payload, 600)}`, op, payload);
+          } catch {
+            // Non-JSON: show as-is
+            pushText("raw", text);
+          }
+        };
+
         try {
-          const msg = JSON.parse(evt.data);
-          if (msg.op === "mud_result") {
-            appendLog(String(msg.payload?.text ?? ""));
+          if (typeof evt.data === "string") {
+            handleText(evt.data);
             return;
           }
-          if (msg.op === "whereami_result") {
-            appendLog(`[whereami] ${JSON.stringify(msg.payload)}`);
+
+          // Blob (Chrome/Edge sometimes)
+          if (typeof Blob !== "undefined" && evt.data instanceof Blob) {
+            evt.data
+              .text()
+              .then(handleText)
+              .catch(() => pushText("raw", "[ws] <blob message: failed to read>"));
             return;
           }
-          if (msg.op === "chat") {
-            appendLog(`[chat] ${msg.payload?.text ?? ""}`);
+
+          // ArrayBuffer
+          if (evt.data instanceof ArrayBuffer) {
+            const text = new TextDecoder().decode(evt.data);
+            handleText(text);
             return;
           }
-          appendLog(`[ws] ${evt.data}`);
-        } catch {
-          appendLog(String(evt.data));
+
+          // Fallback
+          pushText("raw", String(evt.data));
+        } catch (err) {
+          pushText("raw", `[ws] message handler error: ${String(err)}`);
         }
       };
 
