@@ -60,7 +60,22 @@ type CharacterState = {
   flags: Record<string, any>;
   createdAt: string;
   updatedAt: string;
+  // Runtime payload can include many more fields than this minimal shape.
+  // Keep them optional so the UI can safely read newer CharacterState versions.
+  spellbook?: {
+    known?: Record<string, { rank: number; learnedAt: number }>;
+    cooldowns?: Record<string, { readyAt: number }>;
+    abilities?: Record<string, any>;
+    progression?: any;
+  };
+  equipment?: any;
+  songs?: any;
+  gathering?: any;
+  exploration?: any;
+  powerResources?: any;
+  currency?: any;
 };
+
 
 type WsStatus = "disconnected" | "connecting" | "connected" | "error";
 
@@ -225,6 +240,12 @@ export function App() {
     world: true,
     raw: false,
   });
+
+
+// Player panel v1: read-only panels for spellbook/inventory/equipment/effects.
+type PlayerTab = "spellbook" | "inventory" | "equipment" | "effects";
+const [playerTab, setPlayerTab] = useState<PlayerTab>("spellbook");
+const [spellSearch, setSpellSearch] = useState<string>("");
 
   const logRef = useRef<HTMLDivElement | null>(null);
 
@@ -524,6 +545,34 @@ export function App() {
     if (!ws || wsStatus !== "connected") return;
     ws.send(JSON.stringify({ op: "whereami", payload: {} }));
   };
+
+const sendMud = (text: string) => {
+  const value = text.trim();
+  if (!value) return;
+  if (wsStatus !== "connected" || !ws) {
+    pushText("system", "[ui] not connected");
+    return;
+  }
+
+  ws.send(
+    JSON.stringify({
+      op: "mud",
+      payload: { text: value },
+    })
+  );
+
+  pushText("command", `> ${value}`);
+};
+
+const copyToClipboard = async (text: string) => {
+  try {
+    await navigator.clipboard.writeText(text);
+    pushText("system", "[ui] copied to clipboard");
+  } catch {
+    pushText("system", "[ui] failed to copy (clipboard blocked)");
+  }
+};
+
 
   // -----------------------------------------
   // Tiny “router” (pathname switch)
@@ -859,6 +908,170 @@ export function App() {
               </button>
             </form>
 
+
+<div
+  style={{
+    marginTop: 12,
+    padding: 12,
+    border: "1px solid #333",
+    borderRadius: 8,
+  }}
+>
+  <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+    <div style={{ fontWeight: 700, marginRight: 8 }}>Player Panels</div>
+
+    {(
+      [
+        ["spellbook", "Spellbook"],
+        ["inventory", "Inventory"],
+        ["equipment", "Equipment"],
+        ["effects", "Effects"],
+      ] as const
+    ).map(([k, label]) => (
+      <button
+        key={k}
+        type="button"
+        onClick={() => setPlayerTab(k)}
+        style={{
+          padding: "4px 10px",
+          border: "1px solid #333",
+          borderRadius: 6,
+          background: playerTab === k ? "#222" : "transparent",
+          color: "inherit",
+          cursor: "pointer",
+        }}
+      >
+        {label}
+      </button>
+    ))}
+  </div>
+
+  {playerTab === "spellbook" && (
+    <div style={{ marginTop: 10 }}>
+      <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+        <input
+          type="text"
+          value={spellSearch}
+          onChange={(e) => setSpellSearch(e.target.value)}
+          placeholder="search spells…"
+          style={{
+            padding: "6px 8px",
+            fontFamily: "monospace",
+            minWidth: 240,
+          }}
+        />
+        <div style={{ opacity: 0.75, fontFamily: "monospace" }}>
+          known: {Object.keys(selectedCharState?.spellbook?.known ?? {}).length}
+        </div>
+      </div>
+
+      <div style={{ marginTop: 10, fontFamily: "monospace", fontSize: 12 }}>
+        {(() => {
+          const now = Date.now();
+          const known = selectedCharState?.spellbook?.known ?? {};
+          const cooldowns = selectedCharState?.spellbook?.cooldowns ?? {};
+          const q = spellSearch.trim().toLowerCase();
+
+          const rows = Object.entries(known)
+            .map(([id, info]) => {
+              const cd = cooldowns[id];
+              const readyAt = cd?.readyAt ?? 0;
+              const remainingMs = Math.max(0, readyAt - now);
+              return {
+                id,
+                rank: info?.rank ?? 1,
+                readyAt,
+                remainingMs,
+              };
+            })
+            .filter((r) => (q ? r.id.toLowerCase().includes(q) : true))
+            .sort((a, b) => a.id.localeCompare(b.id));
+
+          if (!selectedCharState) {
+            return <div style={{ opacity: 0.8 }}>No character selected.</div>;
+          }
+
+          if (rows.length === 0) {
+            return <div style={{ opacity: 0.8 }}>No spells match.</div>;
+          }
+
+          return (
+            <div style={{ display: "grid", gap: 6 }}>
+              {rows.map((r) => {
+                const castCmd = `cast ${r.id}`;
+                const cooldownText =
+                  r.remainingMs > 0 ? `CD ${(r.remainingMs / 1000).toFixed(1)}s` : "ready";
+                return (
+                  <div
+                    key={r.id}
+                    style={{
+                      display: "flex",
+                      gap: 10,
+                      alignItems: "center",
+                      flexWrap: "wrap",
+                      borderTop: "1px solid #222",
+                      paddingTop: 6,
+                    }}
+                  >
+                    <div style={{ minWidth: 260 }}>
+                      <span style={{ opacity: 0.8 }}>[r{r.rank}]</span>{" "}
+                      <span style={{ fontWeight: 600 }}>{r.id}</span>{" "}
+                      <span style={{ opacity: 0.8 }}>({cooldownText})</span>
+                    </div>
+
+                    <button type="button" onClick={() => sendMud(castCmd)}>
+                      cast
+                    </button>
+                    <button type="button" onClick={() => copyToClipboard(castCmd)}>
+                      copy cmd
+                    </button>
+                    <button type="button" onClick={() => copyToClipboard(r.id)}>
+                      copy id
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          );
+        })()}
+      </div>
+    </div>
+  )}
+
+  {playerTab === "inventory" && (
+    <div style={{ marginTop: 10 }}>
+      <div style={{ opacity: 0.75, marginBottom: 6 }}>
+        (read-only) Inventory snapshot from CharacterState.
+      </div>
+      <pre style={{ whiteSpace: "pre-wrap", margin: 0, fontSize: 12 }}>
+        {JSON.stringify(selectedCharState?.inventory ?? null, null, 2)}
+      </pre>
+    </div>
+  )}
+
+  {playerTab === "equipment" && (
+    <div style={{ marginTop: 10 }}>
+      <div style={{ opacity: 0.75, marginBottom: 6 }}>
+        (read-only) Equipment snapshot from CharacterState.
+      </div>
+      <pre style={{ whiteSpace: "pre-wrap", margin: 0, fontSize: 12 }}>
+        {JSON.stringify((selectedCharState as any)?.equipment ?? null, null, 2)}
+      </pre>
+    </div>
+  )}
+
+  {playerTab === "effects" && (
+    <div style={{ marginTop: 10 }}>
+      <div style={{ opacity: 0.75, marginBottom: 6 }}>
+        (read-only) Effects snapshot from CharacterState.
+      </div>
+      <pre style={{ whiteSpace: "pre-wrap", margin: 0, fontSize: 12 }}>
+        {JSON.stringify((selectedCharState as any)?.exploration?.statusEffects ?? null, null, 2)}
+      </pre>
+    </div>
+  )}
+</div>
+
             <div
               style={{
                 marginTop: 12,
@@ -960,14 +1173,7 @@ export function App() {
 
                 (e.target as HTMLInputElement).value = "";
 
-                ws?.send(
-                  JSON.stringify({
-                    op: "mud",
-                    payload: { text: value },
-                  })
-                );
-
-                pushText("command", `> ${value}`);
+                sendMud(value);
               }}
             />
 
