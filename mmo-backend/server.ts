@@ -333,7 +333,7 @@ async function main() {
 
       const url = new URL(base);
       const token = url.searchParams.get("token");
-      requestedCharacterId = url.searchParams.get("characterId");
+      requestedCharacterId = url.searchParams.get("characterId") ?? url.searchParams.get("charId");
 
       if (token) {
         const payload = await auth.verifyToken(token);
@@ -347,6 +347,11 @@ async function main() {
           };
           session.identity = attachedIdentity;
           session.displayName = payload.displayName;
+
+          // If URL did not specify a character id, allow token payload to drive attach.
+          if (!requestedCharacterId && attachedIdentity.characterId) {
+            requestedCharacterId = attachedIdentity.characterId;
+          }
 
           log.info("Session authenticated", {
             sessionId: session.id,

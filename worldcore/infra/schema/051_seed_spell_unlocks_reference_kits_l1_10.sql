@@ -1,32 +1,30 @@
 -- worldcore/infra/schema/051_seed_spell_unlocks_reference_kits_l1_10.sql
+-- System 5.4: Explicit notes for L1–10 reference kit spell unlock rules.
+-- Safe to re-run.
 
 BEGIN;
 
--- Reference class spell unlock kits (L1-L10).
--- Optional because 049A_seed_spell_unlocks_from_spells.sql will also seed these
--- from public.spells, but this file provides explicit notes for the kits.
-
 INSERT INTO public.spell_unlocks (class_id, spell_id, min_level, auto_grant, is_enabled, notes)
 VALUES
-  -- Archmage (caster axis)
-  ('archmage', 'archmage_arcane_missiles', 1, true, true, 'Ref kit L1–10: starter arcane DPS'),
-  ('archmage', 'archmage_frost_shard',     3, true, true, 'Ref kit L1–10: early frost option'),
-  ('archmage', 'archmage_fireball',        5, true, true, 'Ref kit L1–10: classic fire nuke'),
-  ('archmage', 'archmage_mana_surge',      7, true, true, 'Ref kit L1–10: arcane spike'),
-  ('archmage', 'archmage_void_lance',      9, true, true, 'Ref kit L1–10: shadow finisher'),
+  -- Archmage
+  ('archmage','archmage_arcane_bolt',    1, true, true, 'Ref kit L1–10: starter nuke'),
+  ('archmage','archmage_expose_arcana',  3, true, true, 'Ref kit L1–10: damageTakenPct debuff'),
+  ('archmage','archmage_mana_shield',    5, true, true, 'Ref kit L1–10: self shield'),
+  ('archmage','archmage_ignite',         7, true, true, 'Ref kit L1–10: DOT'),
+  ('archmage','archmage_purge_hex',      9, true, true, 'Ref kit L1–10: cleanse'),
 
-  -- Warlock (summoner axis; actual summons come later)
-  ('warlock',  'warlock_shadow_bolt',      1, true, true, 'Ref kit L1–10: starter shadow DPS'),
-  ('warlock',  'warlock_hex_bolt',         3, true, true, 'Ref kit L1–10: curse-flavored nuke'),
-  ('warlock',  'warlock_siphon_vitality',  5, true, true, 'Ref kit L1–10: self-sustain'),
-  ('warlock',  'warlock_demonfire',        7, true, true, 'Ref kit L1–10: fire axis nuke'),
-  ('warlock',  'warlock_abyssal_lance',    9, true, true, 'Ref kit L1–10: shadow spike')
+  -- Warlock
+  ('warlock', 'warlock_shadow_bolt',     1, true, true, 'Ref kit L1–10: starter nuke'),
+  ('warlock', 'warlock_siphon_life',     3, true, true, 'Ref kit L1–10: DOT sustain'),
+  ('warlock', 'warlock_drain_soul',      5, true, true, 'Ref kit L1–10: focused drain'),
+  ('warlock', 'warlock_unholy_brand',    7, true, true, 'Ref kit L1–10: damageDealtPct debuff'),
+  ('warlock', 'warlock_demon_skin',      9, true, true, 'Ref kit L1–10: self shield')
 ON CONFLICT (class_id, spell_id)
 DO UPDATE SET
-  min_level = EXCLUDED.min_level,
+  min_level  = EXCLUDED.min_level,
   auto_grant = EXCLUDED.auto_grant,
   is_enabled = EXCLUDED.is_enabled,
-  notes = EXCLUDED.notes,
+  notes      = EXCLUDED.notes,
   updated_at = now();
 
 COMMIT;

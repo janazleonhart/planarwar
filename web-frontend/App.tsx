@@ -76,9 +76,30 @@ function getApiBase(): string {
 }
 
 function getShardWs(): string {
-  const host = window.location.hostname || "localhost";
-  const isLocal = host === "localhost" || host === "127.0.0.1";
-  return isLocal ? "ws://localhost:4010" : `ws://${host}:4010`;
+  // Prefer explicit Vite env overrides (useful for prod + tunnels).
+  // - VITE_PW_SHARD_WS: full ws(s)://host:port/path
+  // - VITE_PW_WS_HOST: host only
+  // - VITE_PW_WS_PORT: port only (defaults to 7777, matching worldcore/config)
+  // - VITE_PW_WS_PATH: path only (defaults to /ws, matching shard WebSocketServer path)
+  const env = (import.meta as any)?.env as Record<string, string | undefined> | undefined;
+
+  const full = env?.VITE_PW_SHARD_WS;
+  if (full && typeof full === "string") return full;
+
+  const hostFromEnv = env?.VITE_PW_WS_HOST;
+  const host = (hostFromEnv && hostFromEnv.trim()) || window.location.hostname || "localhost";
+
+  const portRaw = env?.VITE_PW_WS_PORT;
+  const port = Number(portRaw ?? "7777");
+  const path = env?.VITE_PW_WS_PATH ?? "/ws";
+
+  // If the page is served over https, the WS should be wss.
+  const proto = window.location.protocol === "https:" ? "wss" : "ws";
+
+  // Ensure path begins with "/"
+  const normalizedPath = path.startsWith("/") ? path : `/${path}`;
+
+  return `${proto}://${host}:${port}${normalizedPath}`;
 }
 
 const API_BASE = getApiBase();
@@ -367,7 +388,7 @@ export function App() {
       setWsStatus("connecting");
 
       const socket = new WebSocket(
-        `${SHARD_WS}?token=${encodeURIComponent(token)}&charId=${encodeURIComponent(selectedCharId)}`
+        `${SHARD_WS}?token=${encodeURIComponent(token)}&characterId=${encodeURIComponent(selectedCharId)}`
       );
 
       socket.onopen = () => {
