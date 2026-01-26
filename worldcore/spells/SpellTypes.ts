@@ -25,6 +25,8 @@ export type SpellKind =
   | "buff_self"
   | "buff_single_ally"
   | "debuff_single_npc"
+  // Back-compat alias: some earlier WIP code used this shorter kind.
+  | "dot_single_npc"
   | "damage_dot_single_npc";
 
 const SONG_SCHOOL_IDS = ["voice", "strings", "winds", "percussion", "brass"] as const;
@@ -120,6 +122,13 @@ export interface SpellDefinition {
   resourceCost?: number;
   cooldownMs?: number;
 
+  // Legacy top-level fields (older spell defs/tests).
+  // Prefer using `statusEffect` payloads long-term.
+  absorbAmount?: number;
+  dotTickMs?: number;
+  dotFlatDamage?: number;
+  dotMaxTicks?: number;
+
   // Songs
   isSong?: boolean;
   songSchool?: SongSchoolId;
@@ -207,6 +216,114 @@ export const SPELLS: Record<string, SpellDefinition> = {
     resourceCost: 18,
     cooldownMs: 8000,
     healAmount: 40,
+  },
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // System 5.4 reference-kit spells (L1–10)
+  // These live in the in-code fallback so WORLDCORE_TEST can validate autogrants
+  // without requiring DB access.
+  // ─────────────────────────────────────────────────────────────────────────────
+
+  // Archmage kit
+  archmage_arcane_bolt: {
+    id: "archmage_arcane_bolt",
+    name: "Arcane Bolt",
+    kind: "damage_single_npc",
+    classId: "archmage",
+    minLevel: 1,
+    description: "A focused bolt of arcane force—clean, efficient, and slightly smug.",
+    school: "arcane",
+    resourceType: "mana",
+    resourceCost: 10,
+    cooldownMs: 2500,
+    damageMultiplier: 1.05,
+    flatBonus: 10,
+  },
+
+  archmage_expose_arcana: {
+    id: "archmage_expose_arcana",
+    name: "Expose Arcana",
+    kind: "debuff_single_npc",
+    classId: "archmage",
+    minLevel: 3,
+    description: "Reveals unstable ley-lines on the target, priming them for increased punishment.",
+    school: "arcane",
+    resourceType: "mana",
+    resourceCost: 14,
+    cooldownMs: 12000,
+  },
+
+  archmage_mana_shield: {
+    id: "archmage_mana_shield",
+    name: "Mana Shield",
+    kind: "shield_self",
+    classId: "archmage",
+    minLevel: 5,
+    description: "Wrap yourself in a thin lattice of mana that absorbs incoming damage.",
+    school: "arcane",
+    resourceType: "mana",
+    resourceCost: 22,
+    cooldownMs: 20000,
+    absorbAmount: 60,
+  },
+
+  archmage_ignite: {
+    id: "archmage_ignite",
+    name: "Ignite",
+    kind: "damage_dot_single_npc",
+    classId: "archmage",
+    minLevel: 7,
+    description: "Sets the target alight, dealing damage over time.",
+    school: "fire",
+    resourceType: "mana",
+    resourceCost: 18,
+    cooldownMs: 8000,
+    dotTickMs: 2000,
+    dotFlatDamage: 6,
+    dotMaxTicks: 5,
+  },
+
+  archmage_purge_hex: {
+    id: "archmage_purge_hex",
+    name: "Purge Hex",
+    kind: "cleanse_self",
+    classId: "archmage",
+    minLevel: 9,
+    description: "Scrubs hostile enchantments from your aura.",
+    school: "arcane",
+    resourceType: "mana",
+    resourceCost: 20,
+    cooldownMs: 15000,
+    cleanse: { tags: ["hex", "curse", "poison"], maxToRemove: 1 },
+  },
+
+  // Warlock kit
+  warlock_void_bolt: {
+    id: "warlock_void_bolt",
+    name: "Void Bolt",
+    kind: "damage_single_npc",
+    classId: "warlock",
+    minLevel: 1,
+    description: "A bolt of void energy that bites deeper than it looks.",
+    school: "shadow",
+    resourceType: "mana",
+    resourceCost: 12,
+    cooldownMs: 2500,
+    damageMultiplier: 1.08,
+    flatBonus: 10,
+  },
+
+  warlock_fear: {
+    id: "warlock_fear",
+    name: "Fear",
+    kind: "debuff_single_npc",
+    classId: "warlock",
+    minLevel: 5,
+    description: "Cripples the target with dread, lowering their will to fight.",
+    school: "shadow",
+    resourceType: "mana",
+    resourceCost: 18,
+    cooldownMs: 18000,
   },
 
   // ─────────────────────────────────────────────────────────────────────────────

@@ -35,6 +35,9 @@ export interface AbilityDefinition {
   // Cooldown in milliseconds
   cooldownMs?: number;
 
+  // Optional freeform tags (used by tooling / kits / UI filters)
+  tags?: string[];
+
   // Optional: apply vulnerability to the *caster* when this ability is used
   // (e.g. Reckless Assault: "hit harder but take more damage for a bit")
   selfVulnerabilityStacks?: number;
@@ -94,6 +97,60 @@ export const ABILITIES: Record<string, AbilityDefinition> = {
     // once when this is non-zero.
     selfVulnerabilityStacks: 1,
   },
+
+// --- Reference kit (System 5.4): WARLORD L1–10 abilities ---
+warlord_brutal_slam: {
+    id: "warlord_brutal_slam",
+    name: "Brutal Slam",
+    description: "A heavy slam that hits a single target hard.",
+    classId: "warlord",
+    minLevel: 1,
+    kind: "melee_single",
+    channel: "ability",
+    weaponSkill: "one_handed",
+    resourceType: "fury",
+    resourceCost: 12,
+    damageMultiplier: 1.15,
+    flatBonus: 10,
+    cooldownMs: 6000,
+    tags: ["reference_kit", "warlord", "bruiser"],
+  },
+
+warlord_sunder_blow: {
+    id: "warlord_sunder_blow",
+    name: "Sunder Blow",
+    description: "A vicious strike meant to crack armor and keep pressure on.",
+    classId: "warlord",
+    minLevel: 4,
+    kind: "melee_single",
+    channel: "ability",
+    weaponSkill: "one_handed",
+    resourceType: "fury",
+    resourceCost: 10,
+    damageMultiplier: 1.05,
+    flatBonus: 8,
+    cooldownMs: 4500,
+    tags: ["reference_kit", "warlord", "bruiser"],
+  },
+
+warlord_bulwark_bash: {
+    id: "warlord_bulwark_bash",
+    name: "Bulwark Bash",
+    description: "A shield-heavy bash that trades burst for control and durability.",
+    classId: "warlord",
+    minLevel: 7,
+    kind: "melee_single",
+    channel: "ability",
+    weaponSkill: "one_handed",
+    resourceType: "fury",
+    resourceCost: 8,
+    damageMultiplier: 0.95,
+    flatBonus: 4,
+    cooldownMs: 8000,
+    tags: ["reference_kit", "warlord", "bruiser"],
+  },
+
+
 };
 
 export function findAbilityByNameOrId(

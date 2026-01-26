@@ -9,17 +9,22 @@
 //   so new characters remain playable.
 // - Idempotent init: load once per process.
 // - Test-friendly: allow tests to override unlock rules without touching DB.
+//
+// System 5.4 note:
+// - During WORLDCORE_TEST runs we *always* layer in Reference Kits (L1–10) spell entries
+//   so contract tests can validate autogrant behavior without requiring DB access.
 
 import { Logger } from "../utils/logger";
+import { REFERENCE_CLASS_KITS_L1_10 } from "./ReferenceKits";
 
 const log = Logger.scope("SPELL_UNLOCKS");
 
 export type SpellUnlockRule = {
-  classId: string;       // "any" or exact classId (e.g. "mage", "virtuoso")
-  spellId: string;       // canonical id (aliases are tolerated but will be resolved by SpellTypes)
-  minLevel: number;      // level requirement
-  autoGrant: boolean;    // whether ensureSpellbookAutogrants should add it
-  isEnabled: boolean;    // DB toggle
+  classId: string; // "any" or exact classId (e.g. "mage", "virtuoso")
+  spellId: string; // canonical id (aliases are tolerated but will be resolved by SpellTypes)
+  minLevel: number; // level requirement
+  autoGrant: boolean; // whether ensureSpellbookAutogrants should add it
+  isEnabled: boolean; // DB toggle
   notes?: string;
 };
 
@@ -45,9 +50,6 @@ let unlocks: SpellUnlockRule[] = [...FALLBACK_UNLOCKS];
 let unlockSource: "code" | "db" | "test" = "code";
 let dbInitPromise: Promise<void> | null = null;
 let testOverride: SpellUnlockRule[] | null = null;
-
-// For deterministic tests: remember what source we should restore.
-let restoreSourceAfterTest: "code" | "db" | null = null;
 
 function safeRows(res: any): any[] {
   const rows = res?.rows;
@@ -77,35 +79,140 @@ function requireQuery(pool: PgPoolLoose): (text: string, params?: any[]) => Prom
   return q.bind(pool as any);
 }
 
+function uniqRules(rules: SpellUnlockRule[]): SpellUnlockRule[] {
+  const seen = new Set<string>();
+  const out: SpellUnlockRule[] = [];
+  for (const r of rules) {
+    if (!r) continue;
+    const k = `${String(r.classId).toLowerCase().trim()}::${String(r.spellId).trim()}::${Number(r.minLevel) || 1}::${r.autoGrant ? 1 : 0}`;
+    if (seen.has(k)) continue;
+    seen.add(k);
+    out.push(r);
+  }
+  return out;
+}
+
+type SpellUnlockRuleInput =
+  | SpellUnlockRule
+  | {
+      class_id?: unknown;
+      spell_id?: unknown;
+      min_level?: unknown;
+      auto_grant?: unknown;
+      is_enabled?: unknown;
+      notes?: unknown;
+      // allow camelCase too (tests sometimes pass either)
+      classId?: unknown;
+      spellId?: unknown;
+      minLevel?: unknown;
+      autoGrant?: unknown;
+      isEnabled?: unknown;
+      source?: unknown;
+    };
+
+function coerceRuleInput(raw: SpellUnlockRuleInput): SpellUnlockRule | null {
+  if (!raw) return null;
+
+  const classId = asStr((raw as any).classId ?? (raw as any).class_id).toLowerCase().trim();
+  const spellId = asStr((raw as any).spellId ?? (raw as any).spell_id).trim();
+
+  if (!classId || !spellId) return null;
+
+  const minLevel = Math.max(1, asNum((raw as any).minLevel ?? (raw as any).min_level, 1));
+  const autoGrant = asBool((raw as any).autoGrant ?? (raw as any).auto_grant);
+  const isEnabled = asBool((raw as any).isEnabled ?? (raw as any).is_enabled);
+
+  const notesRaw = (raw as any).notes ?? (raw as any).source;
+  const notes = notesRaw != null ? asStr(notesRaw) : undefined;
+
+  return { classId, spellId, minLevel, autoGrant, isEnabled, notes };
+}
+
+function normalizeRuleInputs(inputs: SpellUnlockRuleInput[] | unknown): SpellUnlockRule[] {
+  const arr = Array.isArray(inputs) ? (inputs as SpellUnlockRuleInput[]) : [];
+  const out: SpellUnlockRule[] = [];
+  for (const r of arr) {
+    const coerced = coerceRuleInput(r);
+    if (coerced) out.push(coerced);
+  }
+  return out;
+}
+
+function buildReferenceKitSpellUnlocks(): SpellUnlockRule[] {
+  const out: SpellUnlockRule[] = [];
+
+  // Reference kits are code-defined and stable. We only convert the *spell* entries.
+  for (const [classId, entries] of Object.entries(REFERENCE_CLASS_KITS_L1_10)) {
+    const list = Array.isArray(entries) ? entries : [];
+    for (const e of list as any[]) {
+      if (!e || e.kind !== "spell") continue;
+      const rule: SpellUnlockRule = {
+        classId: String(classId).toLowerCase().trim(),
+        spellId: String(e.spellId ?? "").trim(),
+        minLevel: Math.max(1, Number(e.minLevel ?? 1) || 1),
+        autoGrant: Boolean(e.autoGrant),
+        isEnabled: Boolean(e.isEnabled),
+        notes: "reference_kit",
+      };
+      if (!rule.classId || !rule.spellId) continue;
+      out.push(rule);
+    }
+  }
+
+  return uniqRules(out);
+}
+
+function getEffectiveRules(): SpellUnlockRule[] {
+  // Tests can fully override.
+  if (testOverride) return uniqRules([...testOverride]);
+
+  // In contract tests, we always have reference kit spell rules layered in so autogrant works.
+  if (process.env.WORLDCORE_TEST === "1") {
+    return uniqRules([...unlocks, ...buildReferenceKitSpellUnlocks()]);
+  }
+
+  return uniqRules([...unlocks]);
+}
+
 export function getSpellUnlockSource(): "code" | "db" | "test" {
+  // In WORLDCORE_TEST, even if we didn't call __setSpellUnlocksForTest,
+  // we still treat the ruleset as "test" because it's deterministic + code-defined.
+  if (process.env.WORLDCORE_TEST === "1") return "test";
   return unlockSource;
 }
 
 export function getAllSpellUnlockRules(): SpellUnlockRule[] {
-  // If tests override, return that, otherwise current unlock set.
-  return testOverride ? [...testOverride] : [...unlocks];
+  return [...getEffectiveRules()];
 }
 
 export function getAutoGrantUnlocksFor(classId: string, level: number): SpellUnlockRule[] {
   const cid = (classId || "").toLowerCase().trim();
   const lvl = Math.max(1, Number.isFinite(Number(level)) ? Number(level) : 1);
 
-  return getAllSpellUnlockRules()
+  const rules = getAllSpellUnlockRules()
     .filter((r) => r && r.isEnabled && r.autoGrant)
     .filter((r) => (r.classId || "").toLowerCase().trim() === "any" || (r.classId || "").toLowerCase().trim() === cid)
     .filter((r) => (Number(r.minLevel) || 1) <= lvl)
-    .sort((a, b) => (a.minLevel - b.minLevel) || a.spellId.localeCompare(b.spellId));
+    .sort((a, b) => a.minLevel - b.minLevel || a.spellId.localeCompare(b.spellId));
+
+  return rules;
 }
 
+/**
+ * List learnable (non-autoGrant) unlock rules for a given class/level.
+ * Used for UI commands like "learn" lists.
+ */
 export function getLearnableUnlocksFor(classId: string, level: number): SpellUnlockRule[] {
   const cid = (classId || "").toLowerCase().trim();
   const lvl = Math.max(1, Number.isFinite(Number(level)) ? Number(level) : 1);
 
-  return getAllSpellUnlockRules()
+  const rules = getAllSpellUnlockRules()
     .filter((r) => r && r.isEnabled && !r.autoGrant)
     .filter((r) => (r.classId || "").toLowerCase().trim() === "any" || (r.classId || "").toLowerCase().trim() === cid)
     .filter((r) => (Number(r.minLevel) || 1) <= lvl)
-    .sort((a, b) => (a.minLevel - b.minLevel) || a.spellId.localeCompare(b.spellId));
+    .sort((a, b) => a.minLevel - b.minLevel || a.spellId.localeCompare(b.spellId));
+
+  return rules;
 }
 
 /**
@@ -115,6 +222,7 @@ export function getLearnableUnlocksFor(classId: string, level: number): SpellUnl
  * Columns: class_id, spell_id, min_level, auto_grant, is_enabled, notes
  */
 export async function initSpellUnlocksFromDbOnce(pool: PgPoolLoose): Promise<void> {
+  // In tests, we don't query DB; reference kit rules are code-defined + layered in.
   if (process.env.WORLDCORE_TEST === "1") return;
   if (testOverride) return; // tests controlling unlocks; don't clobber
 
@@ -167,11 +275,11 @@ export async function initSpellUnlocksFromDbOnce(pool: PgPoolLoose): Promise<voi
         return;
       }
 
-      unlocks = loaded;
+      unlocks = uniqRules(loaded);
       unlockSource = "db";
 
       log.info("Loaded spell unlock rules from DB", {
-        count: loaded.length,
+        count: unlocks.length,
       });
     } catch (err: any) {
       // Missing table: 42P01, others: keep fallback
@@ -188,7 +296,6 @@ export async function initSpellUnlocksFromDbOnce(pool: PgPoolLoose): Promise<voi
           message: msg,
         });
       } else {
-        // Unexpected DB failure: still warn in live, soften in dev.
         (isLive ? log.warn : softLog)("DB spell_unlocks load failed; keeping code fallback unlock list.", {
           code,
           message: msg,
@@ -207,19 +314,18 @@ export async function initSpellUnlocksFromDbOnce(pool: PgPoolLoose): Promise<voi
  * Test helper: override unlock rules for deterministic unit tests.
  * (Do not use in production code.)
  */
-export function __setSpellUnlocksForTest(rules: SpellUnlockRule[]): void {
-  if (unlockSource !== "test") restoreSourceAfterTest = unlockSource as any;
-  testOverride = Array.isArray(rules) ? [...rules] : [];
+export function __setSpellUnlocksForTest(rules: SpellUnlockRuleInput[] | unknown): void {
+  testOverride = uniqRules(normalizeRuleInputs(rules));
   unlockSource = "test";
 }
 
 /**
- * Test helper: clear overrides and restore source.
+ * Test helper: clear overrides and restore current unlock set.
  */
 export function __resetSpellUnlocksForTest(): void {
   testOverride = null;
-  if (unlockSource === "test") {
-    unlockSource = restoreSourceAfterTest ?? "code";
-    restoreSourceAfterTest = null;
+  // In tests we still treat it as test because reference kits are layered in.
+  if (process.env.WORLDCORE_TEST === "1") {
+    unlockSource = "test";
   }
 }
