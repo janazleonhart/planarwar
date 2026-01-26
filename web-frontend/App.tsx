@@ -64,6 +64,17 @@ type CharacterState = {
 
 type WsStatus = "disconnected" | "connecting" | "connected" | "error";
 
+type WsLogKind = "system" | "command" | "mud" | "whereami" | "chat" | "world" | "raw";
+
+type WsLogEntry = {
+  ts: number;
+  kind: WsLogKind;
+  text: string;
+  op?: string;
+  raw?: any;
+};
+
+
 const AUTH_KEY = "pw_auth_v1";
 const MODE_KEY = "pw_last_mode_v1";
 
@@ -200,9 +211,77 @@ export function App() {
   // WebSocket / shard console
   const [ws, setWs] = useState<WebSocket | null>(null);
   const [wsStatus, setWsStatus] = useState<WsStatus>("disconnected");
-  const [wsLog, setWsLog] = useState<string[]>([]);
+
+  // WS log v2: structured entries so we can filter + format (instead of raw JSON spam).
+  const [wsLog, setWsLog] = useState<WsLogEntry[]>([]);
+  const [logSearch, setLogSearch] = useState<string>("");
+  const [logAutoScroll, setLogAutoScroll] = useState<boolean>(true);
+  const [logShowKinds, setLogShowKinds] = useState<Record<WsLogKind, boolean>>({
+    system: true,
+    command: true,
+    mud: true,
+    whereami: true,
+    chat: true,
+    world: true,
+    raw: false,
+  });
+
   const logRef = useRef<HTMLDivElement | null>(null);
 
+  const safeCompact = (v: any, maxLen = 320) => {
+    try {
+      const s = typeof v === "string" ? v : JSON.stringify(v);
+      if (s.length <= maxLen) return s;
+      return s.slice(0, maxLen) + "…";
+    } catch {
+      return String(v);
+    }
+  };
+
+  const pushLog = (entry: WsLogEntry) => {
+    setWsLog((prev) => {
+      const next = prev.length > 2000 ? prev.slice(prev.length - 2000) : prev.slice();
+      next.push(entry);
+      return next;
+    });
+  };
+
+  const pushText = (kind: WsLogKind, text: string, op?: string, raw?: any) => {
+    pushLog({ ts: Date.now(), kind, text, op, raw });
+  };
+
+  const clearLog = () => setWsLog([]);
+
+  const toggleKind = (k: WsLogKind) => setLogShowKinds((prev) => ({ ...prev, [k]: !prev[k] }));
+
+  const formatLogLine = (e: WsLogEntry) => {
+    const t = new Date(e.ts).toLocaleTimeString();
+    const tag = e.op ? `${e.kind}:${e.op}` : e.kind;
+    return `[${t}] [${tag}] ${e.text}`;
+  };
+
+  const filteredLogEntries = useMemo(() => {
+    const q = logSearch.trim().toLowerCase();
+    return wsLog.filter((e) => {
+      if (!logShowKinds[e.kind]) return false;
+      if (!q) return true;
+      return (
+        e.text.toLowerCase().includes(q) ||
+        (e.op ? e.op.toLowerCase().includes(q) : false) ||
+        safeCompact(e.raw, 1000).toLowerCase().includes(q)
+      );
+    });
+  }, [wsLog, logShowKinds, logSearch]);
+
+  const copyVisibleLog = async () => {
+    const lines = filteredLogEntries.map((e) => formatLogLine(e)).join("\n");
+    try {
+      await navigator.clipboard.writeText(lines);
+      pushText("system", "[ui] copied visible log to clipboard");
+    } catch {
+      pushText("system", "[ui] failed to copy (clipboard blocked)");
+    }
+  };
   const pathname = window.location.pathname;
   const currentMode = useMemo(() => modeFromPath(pathname), [pathname]);
 
@@ -210,10 +289,8 @@ export function App() {
   const isAdmin = adminRole !== null;
 
   const appendLog = (line: string) => {
-    setWsLog((prev) => {
-      const next = [...prev, line];
-      return next.length > 200 ? next.slice(next.length - 200) : next;
-    });
+    // Back-compat helper used by legacy calls inside this file.
+    pushText("raw", line);
   };
 
   // Persist last mode on load (so refresh keeps your place).
@@ -307,8 +384,9 @@ export function App() {
   // Scroll ws log to bottom
   useEffect(() => {
     if (!logRef.current) return;
+    if (!logAutoScroll) return;
     logRef.current.scrollTop = logRef.current.scrollHeight;
-  }, [wsLog]);
+  }, [filteredLogEntries, logAutoScroll]);
 
   const submitAuth = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -889,17 +967,69 @@ export function App() {
                   })
                 );
 
-                appendLog(`> ${value}`);
+                pushText("command", `> ${value}`);
               }}
             />
 
+            
+
             <div
+              style={{
+                display: "flex",
+                gap: 8,
+                alignItems: "center",
+                flexWrap: "wrap",
+                marginBottom: 8,
+              }}
+            >
+              <input
+                type="text"
+                value={logSearch}
+                onChange={(e) => setLogSearch(e.target.value)}
+                placeholder="filter log (op/text)…"
+                style={{
+                  padding: "6px 8px",
+                  fontFamily: "monospace",
+                  minWidth: 240,
+                }}
+              />
+
+              <button type="button" onClick={clearLog}>
+                Clear
+              </button>
+              <button type="button" onClick={copyVisibleLog}>
+                Copy visible
+              </button>
+
+              <label style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                <input
+                  type="checkbox"
+                  checked={logAutoScroll}
+                  onChange={() => setLogAutoScroll((v) => !v)}
+                />
+                Auto-scroll
+              </label>
+
+              <span style={{ opacity: 0.7 }}>Show:</span>
+
+              {(["system","command","mud","whereami","chat","world","raw"] as WsLogKind[]).map((k) => (
+                <label key={k} style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                  <input
+                    type="checkbox"
+                    checked={logShowKinds[k]}
+                    onChange={() => toggleKind(k)}
+                  />
+                  {k}
+                </label>
+              ))}
+            </div>
+<div
               ref={logRef}
               style={{
                 border: "1px solid #333",
                 borderRadius: 4,
                 padding: 8,
-                maxHeight: 200,
+                maxHeight: 360,
                 overflowY: "auto",
                 fontFamily: "monospace",
                 fontSize: "0.85rem",
@@ -907,10 +1037,26 @@ export function App() {
                 color: "#ddd",
               }}
             >
-              {wsLog.length === 0 ? (
-                <div style={{ opacity: 0.7 }}>WebSocket log will appear here…</div>
+              {filteredLogEntries.length === 0 ? (
+                <div style={{ opacity: 0.7 }}>
+                  No messages yet. (Tip: toggle <code>world</code> / <code>raw</code> when spam gets loud.)
+                </div>
               ) : (
-                wsLog.map((line, idx) => <div key={idx}>{line}</div>)
+                filteredLogEntries.map((e, idx) => (
+                  <div key={idx} style={{ whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
+                    <span style={{ opacity: 0.6 }}>[{new Date(e.ts).toLocaleTimeString()}]</span>{" "}
+                    <span style={{ opacity: 0.85 }}>[{e.op ? `${e.kind}:${e.op}` : e.kind}]</span>{" "}
+                    <span>{e.text}</span>
+                    {logShowKinds.raw && e.raw !== undefined && (
+                      <details style={{ marginTop: 2, marginLeft: 16, opacity: 0.95 }}>
+                        <summary style={{ cursor: "pointer" }}>raw payload</summary>
+                        <pre style={{ margin: "6px 0 0 0", overflowX: "auto" }}>
+                          {JSON.stringify(e.raw, null, 2)}
+                        </pre>
+                      </details>
+                    )}
+                  </div>
+                ))
               )}
             </div>
 
