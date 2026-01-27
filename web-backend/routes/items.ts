@@ -1,40 +1,39 @@
-// web-backend/routes/spells.ts
+// web-backend/routes/items.ts
 import express from "express";
 import type { Pool } from "pg";
 import { db } from "../../worldcore/db/Database";
 
 const router = express.Router();
 
-// We intentionally reuse the SAME DB pool as the rest of web-backend (via worldcore/db/Database)
-// so we don't accidentally look at a different connection string / env var set.
+// Reuse the shared DB pool (same rationale as spells.ts).
 const pool: Pool = db as unknown as Pool;
 
-let _spellsColsCache: Set<string> | null = null;
+let _itemsColsCache: Set<string> | null = null;
 
-async function getSpellsColumns(p: Pool): Promise<Set<string>> {
-  if (_spellsColsCache) return _spellsColsCache;
+async function getItemsColumns(p: Pool): Promise<Set<string>> {
+  if (_itemsColsCache) return _itemsColsCache;
 
   const res = await p.query(
     `SELECT column_name
        FROM information_schema.columns
       WHERE table_schema = 'public'
-        AND table_name = 'spells'`
+        AND table_name = 'items'`
   );
 
-  _spellsColsCache = new Set((res.rows ?? []).map((r: any) => String(r.column_name)));
-  return _spellsColsCache;
+  _itemsColsCache = new Set((res.rows ?? []).map((r: any) => String(r.column_name)));
+  return _itemsColsCache;
 }
 
 function pickCols(existing: Set<string>, desired: string[]): string[] {
   return desired.filter((c) => existing.has(c));
 }
 
-// GET /api/spells?ids=a,b,c
-// - Returns minimal spell metadata for UI (Spellbook panel, etc.)
-// - Safe against schema drift: only selects columns that exist.
+// GET /api/items?ids=a,b,c
+// - Returns a minimal metadata array for UI panels.
+// - Schema-flexible: selects only columns that exist.
 router.get("/", async (req, res) => {
   try {
-    const cols = await getSpellsColumns(pool);
+    const cols = await getItemsColumns(pool);
 
     const idsParam = String(req.query.ids ?? "").trim();
     const ids = idsParam
@@ -52,24 +51,21 @@ router.get("/", async (req, res) => {
       "name",
       "description",
       "kind",
-      "class_id",
-      "min_level",
-      "school",
-      "song_school",
-      "is_song",
-      "is_enabled",
-      "grant_min_role",
-      "resource_kind",
-      "resource_cost",
-      "cooldown_ms",
-      "cast_time_ms",
-      "range_m",
-      "target_mode",
-      // payload columns (optional, additive)
-      "status_effect",
-      "cleanse",
-      "effect_payload",
+      "category",
+      "rarity",
+      "stack_max",
+      "stackMax", // tolerate older/newer naming
+      "slot",
+      "equip_slot",
+      "equipSlot",
+      "base_value",
+      "requirements",
+      "stats",
+      "flags",
       "tags",
+      "is_enabled",
+      "is_dev_only",
+      "grant_min_role",
       "created_at",
       "updated_at",
     ];
@@ -80,14 +76,14 @@ router.get("/", async (req, res) => {
     let rows: any[] = [];
 
     if (ids.length > 0) {
-      const sql = `SELECT ${selectSql} FROM public.spells WHERE id = ANY($1::text[])`;
+      const sql = `SELECT ${selectSql} FROM public.items WHERE id = ANY($1::text[])`;
       const r = await pool.query(sql, [ids]);
       rows = r.rows ?? [];
     } else if (q) {
       const wantsName = cols.has("name");
       const where = wantsName ? "(id ILIKE $1 OR name ILIKE $1)" : "(id ILIKE $1)";
       const sql = `SELECT ${selectSql}
-                     FROM public.spells
+                     FROM public.items
                     WHERE ${where}
                     ORDER BY id
                     LIMIT $2`;
@@ -96,12 +92,12 @@ router.get("/", async (req, res) => {
     } else {
       const wantsName = cols.has("name");
       const order = wantsName ? "ORDER BY name" : "ORDER BY id";
-      const sql = `SELECT ${selectSql} FROM public.spells ${order} LIMIT $1`;
+      const sql = `SELECT ${selectSql} FROM public.items ${order} LIMIT $1`;
       const r = await pool.query(sql, [limit]);
       rows = r.rows ?? [];
     }
 
-    res.json({ spells: rows });
+    res.json({ items: rows });
   } catch (err: any) {
     res.status(500).json({ error: String(err?.message ?? err) });
   }
