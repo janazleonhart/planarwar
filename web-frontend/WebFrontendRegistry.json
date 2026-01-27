@@ -358,14 +358,17 @@
       "notes": [
         "Legacy App.tsx contains its own API_BASE/SHARD_WS computed from window.location.hostname (with localhost fallback).",
         "Admin pages now use same-origin /api (recommended) via Vite proxy in dev.",
-        "Endpoints used by the legacy App layer include: /api/auth/login, /api/auth/register, /api/characters (GET/POST), /api/characters/:id (GET).",
+        "Endpoints used by the legacy App layer include: /api/auth/login, /api/auth/register, /api/characters (GET/POST), /api/characters/:id (GET), /api/spells?ids=\u2026, /api/items?ids=\u2026, /api/abilities\u2026",
         "WebSocket sends ops: whereami, mud; expects mud_result, whereami_result, chat payloads.",
         "City-builder pages (MePage/OperationsPage) exist but are not currently routed from App.tsx."
       ],
       "owns": [
         "auth token persistence in localStorage (pw_auth_v1)",
         "selected character id",
-        "WebSocket connection + log buffer"
+        "WebSocket connection + log buffer",
+        "spell meta cache (by id)",
+        "item meta cache (by id)",
+        "ability meta cache (by id)"
       ],
       "path": "web-frontend/App.tsx",
       "provides": [
@@ -373,7 +376,11 @@
         "Character list + create character",
         "CharacterState debug viewer",
         "Shard WebSocket console (MUD command input)",
-        "Admin UI routes via pathname (/admin/*) gated by account flags/adminRole"
+        "Admin UI routes via pathname (/admin/*) gated by account flags/adminRole",
+        "Player Panels: Spellbook (meta via /api/spells)",
+        "Player Panels: Abilities (meta via /api/abilities, command: /ability <id> [target])",
+        "Player Panels: Inventory/Equipment (meta via /api/items)",
+        "Player Panels: Effects (StatusEffects v1.5 MVP view)"
       ],
       "service": "webConsole.app"
     }

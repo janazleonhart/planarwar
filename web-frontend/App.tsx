@@ -259,11 +259,13 @@ export function App() {
 
 
 // Player panel v1: read-only panels for spellbook/inventory/equipment/effects.
-type PlayerTab = "spellbook" | "inventory" | "equipment" | "effects";
+type PlayerTab = "spellbook" | "abilities" | "inventory" | "equipment" | "effects";
 const [playerTab, setPlayerTab] = useState<PlayerTab>("spellbook");
 const [spellSearch, setSpellSearch] = useState<string>("");
 const [spellKind, setSpellKind] = useState<"spells" | "songs" | "all">("spells");
 const [spellTarget, setSpellTarget] = useState<string>("");
+const [abilitySearch, setAbilitySearch] = useState<string>("");
+const [abilityTarget, setAbilityTarget] = useState<string>("");
 const [invSearch, setInvSearch] = useState<string>("");
 const [equipSearch, setEquipSearch] = useState<string>("");
 const [effectsSearch, setEffectsSearch] = useState<string>("");
@@ -439,6 +441,25 @@ const knownSpellIds = useMemo(() => {
   const known = (selectedCharState as any)?.spellbook?.known ?? {};
   return Object.keys(known).sort();
 }, [selectedCharState]);
+
+  const knownAbilityIds = useMemo(() => {
+    const set = new Set<string>();
+    const abilitiesAny = (selectedCharState as any)?.abilities ?? {};
+    const knownAny = (abilitiesAny as any)?.known ?? abilitiesAny ?? {};
+    if (knownAny && typeof knownAny === "object") {
+      for (const k of Object.keys(knownAny)) set.add(String(k));
+    }
+    const cdsAny = (selectedCharState as any)?.progression?.cooldowns?.abilities ?? {};
+    if (cdsAny && typeof cdsAny === "object") {
+      for (const k of Object.keys(cdsAny)) set.add(String(k));
+    }
+    return Array.from(set).sort();
+  }, [selectedCharState]);
+
+  const humanizeId = (id: string) =>
+    id
+      .replace(/[_-]+/g, " ")
+      .replace(/\b\w/g, (c) => c.toUpperCase());
 
 useEffect(() => {
   if (!token || knownSpellIds.length === 0) {
@@ -1278,7 +1299,7 @@ const copyToClipboard = async (text: string) => {
                     <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                       <div style={{ marginRight: 8, fontWeight: 700 }}>Player Panels</div>
 
-                      {(["spellbook", "inventory", "equipment", "effects"] as PlayerTab[]).map((t) => (
+                      {(["spellbook", "abilities", "inventory", "equipment", "effects"] as PlayerTab[]).map((t) => (
                         <button
                           key={t}
                           onClick={() => setPlayerTab(t)}
@@ -1292,7 +1313,7 @@ const copyToClipboard = async (text: string) => {
                           }}
                           title={t}
                         >
-                          {t === "spellbook" ? "Spellbook" : t === "inventory" ? "Inventory" : t === "equipment" ? "Equipment" : "Effects"}
+                          {t === "spellbook" ? "Spellbook" : t === "abilities" ? "Abilities" : t === "inventory" ? "Inventory" : t === "equipment" ? "Equipment" : "Effects"}
                         </button>
                       ))}
                     </div>
@@ -1448,7 +1469,142 @@ const copyToClipboard = async (text: string) => {
                       })()}
 
                     {/* INVENTORY */}
-                    {playerTab === "inventory" &&
+                    
+              {playerTab === "abilities" && (
+                <div style={{ marginTop: 6 }}>
+                  {(() => {
+                    const state = selectedCharState as any;
+                    const nowMs = Date.now();
+                    const cds: Record<string, { readyAt: number }> =
+                      state?.progression?.cooldowns?.abilities ?? {};
+                    const knownIds = knownAbilityIds;
+
+                    const needle = abilitySearch.trim().toLowerCase();
+                    const filteredIds = needle
+                      ? knownIds.filter((id) => {
+                          const pretty = humanizeId(String(id));
+                          return (
+                            String(id).toLowerCase().includes(needle) ||
+                            pretty.toLowerCase().includes(needle)
+                          );
+                        })
+                      : knownIds;
+
+                    return (
+                      <>
+                        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                          <input
+                            style={{ width: 220 }}
+                            placeholder="search abilities..."
+                            value={abilitySearch}
+                            onChange={(e) => setAbilitySearch(e.target.value)}
+                          />
+                          <div style={{ fontSize: 12, opacity: 0.7 }}>
+                            known: {knownIds.length}
+                          </div>
+                          <input
+                            style={{ width: 260 }}
+                            placeholder="optional target (self, rat.1, etc)"
+                            value={abilityTarget}
+                            onChange={(e) => setAbilityTarget(e.target.value)}
+                          />
+                          <div style={{ marginLeft: "auto", fontSize: 12, opacity: 0.6 }}>
+                            meta: raw
+                          </div>
+                        </div>
+
+                        <div style={{ borderTop: "1px solid #ddd", marginTop: 6 }}>
+                          {filteredIds.length === 0 ? (
+                            <div style={{ opacity: 0.7, padding: 8 }}>No abilities match.</div>
+                          ) : (
+                            filteredIds.map((abilityId) => {
+                              const cd = cds?.[String(abilityId)];
+                              const readyAt = cd?.readyAt ?? 0;
+                              const remainingSec =
+                                readyAt > nowMs ? Math.ceil((readyAt - nowMs) / 1000) : 0;
+
+                              const cmd = abilityTarget.trim()
+                                ? `ability ${abilityId} ${abilityTarget.trim()}`
+                                : `ability ${abilityId}`;
+
+                              return (
+                                <div
+                                  key={String(abilityId)}
+                                  style={{
+                                    display: "flex",
+                                    alignItems: "center",
+                                    gap: 10,
+                                    padding: "6px 0",
+                                    borderBottom: "1px solid #eee",
+                                  }}
+                                >
+                                  <div style={{ width: 540 }}>
+                                    <span style={{ fontFamily: "monospace", opacity: 0.75 }}>
+                                      [a?]
+                                    </span>{" "}
+                                    <span style={{ fontWeight: 600 }}>
+                                      {humanizeId(String(abilityId))}
+                                    </span>{" "}
+                                    <span style={{ opacity: 0.75 }}>
+                                      ({remainingSec === 0 ? "ready" : `${remainingSec}s`})
+                                    </span>{" "}
+                                    <span style={{ fontFamily: "monospace", opacity: 0.6 }}>
+                                      {String(abilityId)}
+                                    </span>
+                                  </div>
+
+                                  <button
+                                    onClick={() => sendMud(cmd)}
+                                    style={{
+                                      padding: "2px 8px",
+                                      border: "1px solid #999",
+                                      background: "#fff",
+                                      borderRadius: 4,
+                                      cursor: "pointer",
+                                    }}
+                                    title={cmd}
+                                  >
+                                    use
+                                  </button>
+
+                                  <button
+                                    onClick={() => copyToClipboard(cmd)}
+                                    style={{
+                                      padding: "2px 8px",
+                                      border: "1px solid #999",
+                                      background: "#fff",
+                                      borderRadius: 4,
+                                      cursor: "pointer",
+                                    }}
+                                    title={cmd}
+                                  >
+                                    copy cmd
+                                  </button>
+
+                                  <button
+                                    onClick={() => copyToClipboard(String(abilityId))}
+                                    style={{
+                                      padding: "2px 8px",
+                                      border: "1px solid #999",
+                                      background: "#fff",
+                                      borderRadius: 4,
+                                      cursor: "pointer",
+                                    }}
+                                  >
+                                    copy id
+                                  </button>
+                                </div>
+                              );
+                            })
+                          )}
+                        </div>
+                      </>
+                    );
+                  })()}
+                </div>
+              )}
+
+{playerTab === "inventory" &&
                       (() => {
                         const state = selectedCharState as any;
                         const inv = state?.inventory ?? {};

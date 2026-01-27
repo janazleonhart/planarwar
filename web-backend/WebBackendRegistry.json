@@ -398,27 +398,30 @@
       "class": null,
       "ctorArgs": [],
       "dependsOn": [
-        "npm:express",
         "npm:cors",
         "npm:dotenv",
+        "npm:express",
+        "web-backend.routes.abilities",
+        "web-backend.routes.adminItems",
+        "web-backend.routes.adminNpcs",
+        "web-backend.routes.adminQuests",
+        "web-backend.routes.adminSpawnPoints",
+        "web-backend.routes.armies",
+        "web-backend.routes.auth",
+        "web-backend.routes.buildings",
+        "web-backend.routes.characters",
+        "web-backend.routes.city",
+        "web-backend.routes.garrisons",
+        "web-backend.routes.heroes",
+        "web-backend.routes.items",
         "web-backend.routes.me",
         "web-backend.routes.missions",
-        "web-backend.routes.city",
         "web-backend.routes.policies",
+        "web-backend.routes.resources",
+        "web-backend.routes.spells",
         "web-backend.routes.tech",
         "web-backend.routes.warfront",
-        "web-backend.routes.armies",
-        "web-backend.routes.garrisons",
-        "web-backend.routes.buildings",
-        "web-backend.routes.heroes",
-        "web-backend.routes.workshop",
-        "web-backend.routes.resources",
-        "web-backend.routes.characters",
-        "web-backend.routes.auth",
-        "web-backend.routes.adminQuests",
-        "web-backend.routes.adminNpcs",
-        "web-backend.routes.adminItems",
-        "web-backend.routes.adminSpawnPoints"
+        "web-backend.routes.workshop"
       ],
       "kind": "entrypoint",
       "lifecycle": "process",
@@ -450,7 +453,10 @@
         "Mount /api/admin/quests",
         "Mount /api/admin/npcs",
         "Mount /api/admin/items",
-        "Mount /api/admin/spawn_points"
+        "Mount /api/admin/spawn_points",
+        "REST: /api/spells (bulk metadata)",
+        "REST: /api/items (bulk metadata)",
+        "REST: /api/abilities (metadata)"
       ],
       "service": "http.server"
     },
@@ -963,6 +969,78 @@
         "POST /api/workshop/collect"
       ],
       "service": "http.routes"
+    },
+    "web-backend.routes.spells": {
+      "class": "(router)",
+      "ctorArgs": [],
+      "dependsOn": [
+        "web-backend.infra.db"
+      ],
+      "kind": "router",
+      "lifecycle": "singleton",
+      "notes": [
+        "Bulk spell metadata fetch for Spellbook panel (name/minLevel/school/isSong/etc)."
+      ],
+      "owns": [],
+      "path": "web-backend/routes/spells.ts",
+      "provides": [
+        "GET /api/spells?ids=\u2026 (bulk)"
+      ],
+      "service": "api.spells"
+    },
+    "web-backend.routes.items": {
+      "class": "(router)",
+      "ctorArgs": [],
+      "dependsOn": [
+        "web-backend.infra.db"
+      ],
+      "kind": "router",
+      "lifecycle": "singleton",
+      "notes": [
+        "Bulk item metadata fetch for Inventory/Equipment panels (name/description/category/rarity/stats/etc)."
+      ],
+      "owns": [],
+      "path": "web-backend/routes/items.ts",
+      "provides": [
+        "GET /api/items?ids=\u2026 (bulk)"
+      ],
+      "service": "api.items"
+    },
+    "web-backend.routes.abilities": {
+      "class": "(router)",
+      "ctorArgs": [],
+      "dependsOn": [
+        "web-backend.infra.db"
+      ],
+      "kind": "router",
+      "lifecycle": "singleton",
+      "notes": [
+        "Ability metadata fetch for Abilities panel (built from ability unlocks; MVP schema)."
+      ],
+      "owns": [],
+      "path": "web-backend/routes/abilities.ts",
+      "provides": [
+        "GET /api/abilities?classId=\u2026 (or ids=\u2026)"
+      ],
+      "service": "api.abilities"
+    },
+    "web-backend.infra.db": {
+      "class": "(module)",
+      "ctorArgs": [],
+      "dependsOn": [
+        "worldcore.db.Database"
+      ],
+      "kind": "infra",
+      "lifecycle": "singleton",
+      "notes": [
+        "Shared DB access layer for web-backend routes (wraps worldcore/db/Database.ts)."
+      ],
+      "owns": [],
+      "path": "web-backend/infra/db.ts",
+      "provides": [
+        "db query helper (pool)"
+      ],
+      "service": "infra.db"
     }
   },
   "web-backend.routes.city": {

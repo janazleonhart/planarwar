@@ -1,109 +1,132 @@
 // web-backend/routes/spells.ts
 import express from "express";
-import type { Pool } from "pg";
-import { db } from "../../worldcore/db/Database";
+import { Pool } from "pg";
 
 const router = express.Router();
 
-// We intentionally reuse the SAME DB pool as the rest of web-backend (via worldcore/db/Database)
-// so we don't accidentally look at a different connection string / env var set.
-const pool: Pool = db as unknown as Pool;
+// Minimal local pool (web-backend already uses Postgres in other routes via worldcore services).
+let _pool: Pool | null = null;
 
-let _spellsColsCache: Set<string> | null = null;
+function getPool(): Pool {
+  if (_pool) return _pool;
 
-async function getSpellsColumns(p: Pool): Promise<Set<string>> {
-  if (_spellsColsCache) return _spellsColsCache;
+  // Prefer a single connection string if present.
+  const connectionString =
+    process.env.PW_DATABASE_URL ??
+    process.env.DATABASE_URL ??
+    process.env.POSTGRES_URL ??
+    process.env.PG_URL ??
+    process.env.PW_PG_URL;
 
-  const res = await p.query(
-    `SELECT column_name
-       FROM information_schema.columns
-      WHERE table_schema = 'public'
-        AND table_name = 'spells'`
+  if (connectionString) {
+    _pool = new Pool({ connectionString });
+    return _pool;
+  }
+
+  // Fall back to discrete PG* vars (pg reads from process.env).
+  const hasDiscrete =
+    !!process.env.PGHOST ||
+    !!process.env.PGUSER ||
+    !!process.env.PGDATABASE ||
+    !!process.env.PGPASSWORD ||
+    !!process.env.PGPORT;
+
+  if (hasDiscrete) {
+    _pool = new Pool();
+    return _pool;
+  }
+
+  throw new Error(
+    "routes/spells: Postgres is not configured. Set PW_DATABASE_URL (or DATABASE_URL / POSTGRES_URL / PG_URL).",
   );
-
-  _spellsColsCache = new Set((res.rows ?? []).map((r: any) => String(r.column_name)));
-  return _spellsColsCache;
 }
 
-function pickCols(existing: Set<string>, desired: string[]): string[] {
-  return desired.filter((c) => existing.has(c));
+type SpellRow = {
+  id: string;
+  name: string;
+  class_id: string;
+  min_level: number;
+  is_song: boolean;
+  is_enabled: boolean;
+  grant_min_role: string;
+  resource_cost: number;
+  cooldown_ms: number;
+  notes: string | null;
+};
+
+function splitCsv(s: string | null | undefined): string[] {
+  if (!s) return [];
+  return s
+    .split(",")
+    .map((x) => x.trim())
+    .filter(Boolean);
 }
 
 // GET /api/spells?ids=a,b,c
-// - Returns minimal spell metadata for UI (Spellbook panel, etc.)
-// - Safe against schema drift: only selects columns that exist.
+// GET /api/spells?q=bolt
 router.get("/", async (req, res) => {
   try {
-    const cols = await getSpellsColumns(pool);
+    const pool = getPool();
 
-    const idsParam = String(req.query.ids ?? "").trim();
-    const ids = idsParam
-      ? idsParam
-          .split(",")
-          .map((s) => s.trim())
-          .filter(Boolean)
-      : [];
+    const ids = splitCsv(typeof req.query.ids === "string" ? req.query.ids : "");
+    const q = typeof req.query.q === "string" ? req.query.q.trim() : "";
 
-    const q = String(req.query.q ?? "").trim();
-    const limit = Math.min(Math.max(Number(req.query.limit ?? 200) || 200, 1), 500);
+    // Safety caps
+    const MAX_IDS = 200;
+    const LIMIT = 200;
 
-    const desired = [
-      "id",
-      "name",
-      "description",
-      "kind",
-      "class_id",
-      "min_level",
-      "school",
-      "song_school",
-      "is_song",
-      "is_enabled",
-      "grant_min_role",
-      "resource_kind",
-      "resource_cost",
-      "cooldown_ms",
-      "cast_time_ms",
-      "range_m",
-      "target_mode",
-      // payload columns (optional, additive)
-      "status_effect",
-      "cleanse",
-      "effect_payload",
-      "tags",
-      "created_at",
-      "updated_at",
-    ];
+    const safeIds = ids.slice(0, MAX_IDS);
 
-    const selectCols = pickCols(cols, desired);
-    const selectSql = selectCols.length ? selectCols.map((c) => `"${c}"`).join(", ") : "*";
+    let sql = `
+      SELECT
+        id,
+        name,
+        class_id,
+        min_level,
+        is_song,
+        is_enabled,
+        grant_min_role,
+        resource_cost,
+        cooldown_ms,
+        notes
+      FROM public.spells
+      WHERE is_enabled = true
+    `;
 
-    let rows: any[] = [];
+    const params: any[] = [];
+    let p = 1;
 
-    if (ids.length > 0) {
-      const sql = `SELECT ${selectSql} FROM public.spells WHERE id = ANY($1::text[])`;
-      const r = await pool.query(sql, [ids]);
-      rows = r.rows ?? [];
-    } else if (q) {
-      const wantsName = cols.has("name");
-      const where = wantsName ? "(id ILIKE $1 OR name ILIKE $1)" : "(id ILIKE $1)";
-      const sql = `SELECT ${selectSql}
-                     FROM public.spells
-                    WHERE ${where}
-                    ORDER BY id
-                    LIMIT $2`;
-      const r = await pool.query(sql, [`%${q}%`, limit]);
-      rows = r.rows ?? [];
-    } else {
-      const wantsName = cols.has("name");
-      const order = wantsName ? "ORDER BY name" : "ORDER BY id";
-      const sql = `SELECT ${selectSql} FROM public.spells ${order} LIMIT $1`;
-      const r = await pool.query(sql, [limit]);
-      rows = r.rows ?? [];
+    if (safeIds.length > 0) {
+      sql += ` AND id = ANY($${p}::text[])`;
+      params.push(safeIds);
+      p++;
     }
 
-    res.json({ spells: rows });
+    if (q) {
+      sql += ` AND (id ILIKE $${p} OR name ILIKE $${p})`;
+      params.push(`%${q}%`);
+      p++;
+    }
+
+    sql += ` ORDER BY class_id ASC, min_level ASC, id ASC LIMIT ${LIMIT}`;
+
+    const r = await pool.query<SpellRow>(sql, params);
+
+    const spells = r.rows.map((s) => ({
+      id: s.id,
+      name: s.name,
+      classId: s.class_id,
+      minLevel: s.min_level,
+      isSong: s.is_song,
+      grantMinRole: s.grant_min_role,
+      resourceCost: s.resource_cost,
+      cooldownMs: s.cooldown_ms,
+      notes: s.notes ?? undefined,
+    }));
+
+    res.json({ ok: true, spells });
   } catch (err: any) {
-    res.status(500).json({ error: String(err?.message ?? err) });
+    res.status(500).json({ ok: false, error: String(err?.message ?? err) });
   }
 });
 
