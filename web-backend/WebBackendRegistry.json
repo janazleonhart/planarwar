@@ -1023,47 +1023,6 @@
         "GET /api/abilities?classId=\u2026 (or ids=\u2026)"
       ],
       "service": "api.abilities"
-    },
-    "web-backend.infra.db": {
-      "class": "(module)",
-      "ctorArgs": [],
-      "dependsOn": [
-        "worldcore.db.Database"
-      ],
-      "kind": "infra",
-      "lifecycle": "singleton",
-      "notes": [
-        "Shared DB access layer for web-backend routes (wraps worldcore/db/Database.ts)."
-      ],
-      "owns": [],
-      "path": "web-backend/infra/db.ts",
-      "provides": [
-        "db query helper (pool)"
-      ],
-      "service": "infra.db"
-    }
-  },
-  "web-backend.routes.city": {
-    "class": null,
-    "ctorArgs": [],
-    "dependsOn": [
-      "npm:express",
-      "web-backend.gameState",
-      "worldcore:auth/PostgresAuthService"
-    ],
-    "kind": "module",
-    "lifecycle": "singleton",
-    "notes": [
-      "City operations for demo city builder (tier/morph + debug read).",
-      "Supports Authorization: Bearer token; resolves playerId from account id when authed, otherwise falls back to DEMO."
-    ],
-    "owns": [],
-    "path": "web-backend/routes/city.ts",
-    "provides": [
-      "POST /api/city/tier-up",
-      "POST /api/city/morph",
-      "GET /api/city (debug)"
-    ],
-    "service": "http.routes"
+    }    
   }
 }

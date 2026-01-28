@@ -313,21 +313,89 @@ const [spellMetaById, setSpellMetaById] = useState<Record<string, SpellMeta>>({}
   const [spellMetaError, setSpellMetaError] = useState<string | null>(null);
 const [spellMetaBusy, setSpellMetaBusy] = useState<boolean>(false);
 
+
+type AbilityMeta = {
+  id: string;
+  name?: string | null;
+  description?: string | null;
+  classId?: string | null;
+  minLevel?: number | null;
+  autoGrant?: boolean | null;
+  isEnabled?: boolean | null;
+  cooldownMs?: number | null;
+  notes?: string | null;
+  rawId?: string | null;
+};
+
+const [abilityMetaById, setAbilityMetaById] = useState<Record<string, AbilityMeta>>({});
+const [abilityMetaBusy, setAbilityMetaBusy] = useState<boolean>(false);
+const [abilityMetaError, setAbilityMetaError] = useState<string | null>(null);
+
 type ItemMeta = {
   id: string;
-  kind?: string;
+  itemKey?: string | null;
   name?: string | null;
-  category?: string | null;
+  description?: string | null;
   rarity?: string | null;
+  category?: string | null;
+  kind?: string | null;
+  specializationId?: string | null;
+  iconId?: string | null;
   slot?: string | null;
+  equipSlot?: string | null;
   baseValue?: number | null;
   stackMax?: number | null;
   isEnabled?: boolean | null;
   isDevOnly?: boolean | null;
   grantMinRole?: string | null;
+  flags?: any;
+  requirements?: any;
   stats?: any;
+  tags?: any;
   notes?: string | null;
+  raw?: any;
 };
+
+function normalizeItemMeta(row: any): ItemMeta {
+  const r = row ?? {};
+  const pick = (...keys: string[]) => {
+    for (const k of keys) {
+      const v = (r as any)?.[k];
+      if (v !== undefined) return v;
+    }
+    return undefined;
+  };
+  const numOrNull = (v: any) => {
+    const n = Number(v);
+    return Number.isFinite(n) ? n : null;
+  };
+
+  const id = String(pick("id", "itemId", "item_id") ?? "");
+  return {
+    id,
+    itemKey: pick("itemKey", "item_key") ?? null,
+    name: pick("name") ?? null,
+    description: pick("description") ?? null,
+    rarity: pick("rarity") ?? null,
+    category: pick("category") ?? null,
+    kind: pick("kind") ?? null,
+    specializationId: pick("specializationId", "specialization_id") ?? null,
+    iconId: pick("iconId", "icon_id") ?? null,
+    slot: pick("slot") ?? null,
+    equipSlot: pick("equipSlot", "equip_slot") ?? null,
+    baseValue: numOrNull(pick("baseValue", "base_value")),
+    stackMax: numOrNull(pick("stackMax", "stack_max", "max_stack", "stackMax")),
+    isEnabled: pick("isEnabled", "is_enabled") ?? null,
+    isDevOnly: pick("isDevOnly", "is_dev_only") ?? null,
+    grantMinRole: pick("grantMinRole", "grant_min_role") ?? null,
+    flags: pick("flags"),
+    requirements: pick("requirements"),
+    stats: pick("stats"),
+    tags: pick("tags"),
+    notes: pick("notes") ?? null,
+    raw: r,
+  };
+}
 
 const [itemMetaById, setItemMetaById] = useState<Record<string, ItemMeta>>({});
 const [itemMetaBusy, setItemMetaBusy] = useState<boolean>(false);
@@ -352,7 +420,7 @@ function collectItemIdsFromState(st: any): string[] {
       const slots = (b as any)?.slots;
       if (Array.isArray(slots)) {
         for (const s of slots) {
-          const id = (s as any)?.itemId;
+          const id = (s as any)?.itemId ?? (s as any)?.id ?? (s as any)?.item_id;
           if (id) ids.add(String(id));
         }
       }
@@ -419,7 +487,8 @@ async function fetchItemMeta(ids: string[]): Promise<void> {
 
     const next: Record<string, ItemMeta> = {};
     for (const r of rows) {
-      if (r?.id) next[String(r.id)] = r;
+      const m = normalizeItemMeta(r);
+      if (m?.id) next[m.id] = m;
     }
 
     setItemMetaById((prev) => ({ ...prev, ...next }));
@@ -460,6 +529,47 @@ const knownSpellIds = useMemo(() => {
     id
       .replace(/[_-]+/g, " ")
       .replace(/\b\w/g, (c) => c.toUpperCase());
+
+
+useEffect(() => {
+  if (!token || knownAbilityIds.length === 0) {
+    setAbilityMetaById({});
+    return;
+  }
+
+  const qs = encodeURIComponent(knownAbilityIds.join(","));
+  let cancelled = false;
+
+  (async () => {
+    try {
+      setAbilityMetaBusy(true);
+      setAbilityMetaError(null);
+      const res = await fetch(`${API_BASE}/api/abilities?ids=${qs}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) {
+        const msg = `abilities meta: HTTP ${res.status}`;
+        setAbilityMetaError(msg);
+        throw new Error(msg);
+      }
+      const data = await res.json();
+      const rows: AbilityMeta[] = Array.isArray(data?.abilities) ? data.abilities : [];
+      const next: Record<string, AbilityMeta> = {};
+      for (const r of rows) {
+        if (r && typeof r.id === "string") next[r.id] = r;
+      }
+      if (!cancelled) setAbilityMetaById(next);
+    } catch (e: any) {
+      // ignore: fall back to raw ids
+    } finally {
+      if (!cancelled) setAbilityMetaBusy(false);
+    }
+  })();
+
+  return () => {
+    cancelled = true;
+  };
+}, [token, knownAbilityIds.join(",")]);
 
 useEffect(() => {
   if (!token || knownSpellIds.length === 0) {
@@ -511,6 +621,39 @@ useEffect(() => {
     } catch {
       return String(v);
     }
+  };
+
+
+  const summarizeItemStats = (stats: any): string => {
+    if (!stats) return "";
+    if (typeof stats === "string") return stats;
+    if (Array.isArray(stats)) return stats.map((x) => safeCompact(x, 48)).join(", ");
+    if (typeof stats === "object") {
+      const parts: string[] = [];
+      for (const k of Object.keys(stats).sort()) {
+        const v = (stats as any)[k];
+        if (v === null || v === undefined) continue;
+        // Prefer small readable pairs like "str:+2"
+        const vv = typeof v === "number" ? v : safeCompact(v, 24);
+        parts.push(`${k}:${vv}`);
+        if (parts.length >= 6) break;
+      }
+      return parts.join(" ");
+    }
+    return safeCompact(stats, 64);
+  };
+
+  const summarizeItemMeta = (m: ItemMeta | undefined): string => {
+    if (!m) return "";
+    const bits: string[] = [];
+    if (m.rarity) bits.push(String(m.rarity));
+    if (m.category || m.kind) bits.push(String(m.category ?? m.kind));
+    if (m.equipSlot || m.slot) bits.push(`slot:${String(m.equipSlot ?? m.slot)}`);
+    if (m.specializationId) bits.push(`spec:${String(m.specializationId)}`);
+    const st = summarizeItemStats(m.stats);
+    if (st) bits.push(st);
+    if (m.stackMax !== null && m.stackMax !== undefined && m.stackMax > 1) bits.push(`stack:${m.stackMax}`);
+    return bits.join(" • ");
   };
 
   const pushLog = (entry: WsLogEntry) => {
@@ -1406,58 +1549,97 @@ const copyToClipboard = async (text: string) => {
                                           paddingTop: 6,
                                         }}
                                       >
-                                        <div style={{ width: 360, fontFamily: "monospace" }}>
-                                          <span style={{ opacity: 0.8 }}>[r{minLevel ?? "?"}]</span>{" "}
-                                          <span style={{ fontWeight: 700 }}>{lineName}</span>{" "}
-                                          <span style={{ opacity: 0.75 }}>({status})</span>
-                                          {cooldownMs != null ? (
-                                            <span style={{ opacity: 0.6 }}> • cd {Math.round(cooldownMs / 100) / 10}s</span>
+                                        <div
+                                          style={{
+                                            flex: 1,
+                                            minWidth: 0,
+                                            display: "flex",
+                                            flexDirection: "column",
+                                            gap: 2,
+                                          }}
+                                        >
+                                          <div
+                                            style={{
+                                              fontFamily: "monospace",
+                                              whiteSpace: "nowrap",
+                                              overflow: "hidden",
+                                              textOverflow: "ellipsis",
+                                            }}
+                                            title={`${lineName} (${id})`}
+                                          >
+                                            <span style={{ opacity: 0.8 }}>[r{minLevel ?? "?"}]</span>{" "}
+                                            <span style={{ fontWeight: 700 }}>{lineName}</span>{" "}
+                                            <span style={{ opacity: 0.75 }}>({status})</span>
+                                            {cooldownMs != null ? (
+                                              <span style={{ opacity: 0.6 }}>
+                                                {" "}
+                                                • cd {Math.round(cooldownMs / 100) / 10}s
+                                              </span>
+                                            ) : null}
+                                            {cost != null ? <span style={{ opacity: 0.6 }}> • cost {cost}</span> : null}
+                                          </div>
+
+                                          {meta?.description ? (
+                                            <div
+                                              style={{
+                                                opacity: 0.75,
+                                                fontSize: 12,
+                                                whiteSpace: "nowrap",
+                                                overflow: "hidden",
+                                                textOverflow: "ellipsis",
+                                                maxWidth: 760,
+                                              }}
+                                              title={meta.description ?? ""}
+                                            >
+                                              {meta.description}
+                                            </div>
                                           ) : null}
-                                          {cost != null ? <span style={{ opacity: 0.6 }}> • cost {cost}</span> : null}
                                         </div>
 
-                                        <button
-                                          disabled={cdMs > 0}
-                                          onClick={() => void sendMud(makeCastCmd(id))}
-                                          style={{
-                                            padding: "2px 8px",
-                                            border: "1px solid #999",
-                                            background: cdMs > 0 ? "#eee" : "#fff",
-                                            borderRadius: 4,
-                                            cursor: cdMs > 0 ? "default" : "pointer",
-                                          }}
-                                          title={makeCastCmd(id)}
-                                        >
-                                          cast
-                                        </button>
+                                        <div style={{ display: "flex", gap: 8, marginLeft: "auto", flexShrink: 0 }}>
+                                          <button
+                                            disabled={cdMs > 0}
+                                            onClick={() => void sendMud(makeCastCmd(id))}
+                                            style={{
+                                              padding: "2px 8px",
+                                              border: "1px solid #999",
+                                              background: cdMs > 0 ? "#eee" : "#fff",
+                                              borderRadius: 4,
+                                              cursor: cdMs > 0 ? "default" : "pointer",
+                                            }}
+                                            title={makeCastCmd(id)}
+                                          >
+                                            cast
+                                          </button>
 
-                                        <button
-                                          onClick={() => void copyToClipboard(makeCastCmd(id))}
-                                          style={{
-                                            padding: "2px 8px",
-                                            border: "1px solid #999",
-                                            background: "#fff",
-                                            borderRadius: 4,
-                                            cursor: "pointer",
-                                          }}
-                                          title="Copy cast command"
-                                        >
-                                          copy cmd
-                                        </button>
+                                          <button
+                                            onClick={() => void copyToClipboard(makeCastCmd(id))}
+                                            style={{
+                                              padding: "2px 8px",
+                                              border: "1px solid #999",
+                                              background: "#fff",
+                                              borderRadius: 4,
+                                              cursor: "pointer",
+                                            }}
+                                            title="Copy cast command"
+                                          >
+                                            copy cmd
+                                          </button>
 
-                                        <button
-                                          onClick={() => void copyToClipboard(String(id))}
-                                          style={{
-                                            padding: "2px 8px",
-                                            border: "1px solid #999",
-                                            background: "#fff",
-                                            borderRadius: 4,
-                                            cursor: "pointer",
-                                          }}
-                                          title="Copy spell id"
-                                        >
-                                          copy id
-                                        </button>
+                                          <button
+                                            onClick={() => void copyToClipboard(String(id))}
+                                            style={{
+                                              padding: "2px 8px",
+                                              border: "1px solid #999",
+                                              background: "#fff",
+                                              borderRadius: 4,
+                                              cursor: "pointer",
+                                            }}
+                                            title="Copy spell id"
+                                          >
+                                            copy id
+                                          </button>
+                                        </div>
                                       </div>
                                     );
                                   })}
@@ -1509,7 +1691,7 @@ const copyToClipboard = async (text: string) => {
                             onChange={(e) => setAbilityTarget(e.target.value)}
                           />
                           <div style={{ marginLeft: "auto", fontSize: 12, opacity: 0.6 }}>
-                            meta: raw
+                            meta: {abilityMetaBusy ? "..." : Object.keys(abilityMetaById).length ? "api" : "raw"}
                           </div>
                         </div>
 
@@ -1538,21 +1720,36 @@ const copyToClipboard = async (text: string) => {
                                     borderBottom: "1px solid #eee",
                                   }}
                                 >
-                                  <div style={{ width: 540 }}>
-                                    <span style={{ fontFamily: "monospace", opacity: 0.75 }}>
-                                      [a?]
-                                    </span>{" "}
-                                    <span style={{ fontWeight: 600 }}>
-                                      {humanizeId(String(abilityId))}
-                                    </span>{" "}
-                                    <span style={{ opacity: 0.75 }}>
-                                      ({remainingSec === 0 ? "ready" : `${remainingSec}s`})
-                                    </span>{" "}
-                                    <span style={{ fontFamily: "monospace", opacity: 0.6 }}>
-                                      {String(abilityId)}
-                                    </span>
+                                  <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 2 }}>
+                                    <div>
+                                      <span style={{ fontFamily: "monospace", opacity: 0.75 }}>
+                                        [r{abilityMetaById[String(abilityId)]?.minLevel ?? "?"}]
+                                      </span>{" "}
+                                      <span style={{ fontWeight: 600 }}>
+                                        {abilityMetaById[String(abilityId)]?.name ?? humanizeId(String(abilityId))}
+                                      </span>{" "}
+                                      <span style={{ opacity: 0.75 }}>
+                                        ({remainingSec === 0 ? "ready" : `${remainingSec}s`})
+                                      </span>
+                                    </div>
+                                    {abilityMetaById[String(abilityId)]?.description ? (
+                                      <div
+                                        style={{
+                                          opacity: 0.75,
+                                          fontSize: 12,
+                                          whiteSpace: "nowrap",
+                                          overflow: "hidden",
+                                          textOverflow: "ellipsis",
+                                          maxWidth: 760,
+                                        }}
+                                        title={abilityMetaById[String(abilityId)]?.description ?? ""}
+                                      >
+                                        {abilityMetaById[String(abilityId)]?.description}
+                                      </div>
+                                    ) : null}
                                   </div>
 
+                                  <div style={{ display: "flex", gap: 8, marginLeft: "auto" }}>
                                   <button
                                     onClick={() => sendMud(cmd)}
                                     style={{
@@ -1593,6 +1790,7 @@ const copyToClipboard = async (text: string) => {
                                   >
                                     copy id
                                   </button>
+                                  </div>
                                 </div>
                               );
                             })
@@ -1664,10 +1862,27 @@ const copyToClipboard = async (text: string) => {
                                           {it.bagId || "bag"}:{it.slot}
                                         </div>
 
-                                        <div style={{ flex: 1, fontFamily: "monospace" }}>
-                                          <span style={{ fontWeight: 700 }}>{meta?.name ?? String(it.itemId)}</span>{" "}
-                                          <span style={{ opacity: 0.75 }}>×{it.qty}</span>{" "}
-                                          {meta ? <span style={{ opacity: 0.75 }}>• {safeCompact(meta)}</span> : null}
+                                        <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 2 }}>
+                                          <div style={{ fontFamily: "monospace" }}>
+                                            <span style={{ fontWeight: 700 }}>{meta?.name ?? String(it.itemId)}</span>{" "}
+                                            <span style={{ opacity: 0.75 }}>×{it.qty}</span>{" "}
+                                            {meta ? <span style={{ opacity: 0.75 }}>• {summarizeItemMeta(meta)}</span> : null}
+                                          </div>
+                                          {meta?.description ? (
+                                            <div
+                                              style={{
+                                                opacity: 0.75,
+                                                fontSize: 12,
+                                                whiteSpace: "nowrap",
+                                                overflow: "hidden",
+                                                textOverflow: "ellipsis",
+                                                maxWidth: 760,
+                                              }}
+                                              title={meta.description ?? ""}
+                                            >
+                                              {meta.description}
+                                            </div>
+                                          ) : null}
                                         </div>
 
                                         <button
@@ -1739,16 +1954,33 @@ const copyToClipboard = async (text: string) => {
                                         <div style={{ width: 140, fontFamily: "monospace", opacity: 0.75 }}>
                                           {slotName}
                                         </div>
-                                        <div style={{ flex: 1, fontFamily: "monospace" }}>
+                                        <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 2 }}>
+                                        <div style={{ fontFamily: "monospace" }}>
                                           {itemId ? (
                                             <>
                                               <span style={{ fontWeight: 700 }}>{meta?.name ?? String(itemId)}</span>{" "}
-                                              {meta ? <span style={{ opacity: 0.75 }}>• {safeCompact(meta)}</span> : null}
+                                              {meta ? <span style={{ opacity: 0.75 }}>• {summarizeItemMeta(meta)}</span> : null}
                                             </>
                                           ) : (
                                             <span style={{ opacity: 0.7 }}>(empty)</span>
                                           )}
                                         </div>
+                                        {itemId && meta?.description ? (
+                                          <div
+                                            style={{
+                                              opacity: 0.75,
+                                              fontSize: 12,
+                                              whiteSpace: "nowrap",
+                                              overflow: "hidden",
+                                              textOverflow: "ellipsis",
+                                              maxWidth: 760,
+                                            }}
+                                            title={meta.description ?? ""}
+                                          >
+                                            {meta.description}
+                                          </div>
+                                        ) : null}
+                                      </div>
                                         {itemId ? (
                                           <button
                                             onClick={() => void copyToClipboard(String(itemId))}
