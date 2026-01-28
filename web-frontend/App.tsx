@@ -315,17 +315,32 @@ const [spellMetaBusy, setSpellMetaBusy] = useState<boolean>(false);
 
 
 type AbilityMeta = {
+  // Catalog id (stable)
   id: string;
+
+  // Requested id can be a class-prefixed alias in UI (e.g., warrior_power_strike)
+  rawId?: string | null;
+
   name?: string | null;
   description?: string | null;
+
+  // Unlock info (when queried by classId/level)
   classId?: string | null;
   minLevel?: number | null;
   autoGrant?: boolean | null;
   isEnabled?: boolean | null;
-  cooldownMs?: number | null;
   notes?: string | null;
-  rawId?: string | null;
+
+  // Catalog info
+  cooldownMs?: number | null;
+  resourceCost?: number | null;
+  resourceType?: string | null;
+  isDevOnly?: boolean | null;
+  grantMinRole?: string | null;
+  flags?: any;
+  tags?: string | null;
 };
+
 
 const [abilityMetaById, setAbilityMetaById] = useState<Record<string, AbilityMeta>>({});
 const [abilityMetaBusy, setAbilityMetaBusy] = useState<boolean>(false);
@@ -556,7 +571,9 @@ useEffect(() => {
       const rows: AbilityMeta[] = Array.isArray(data?.abilities) ? data.abilities : [];
       const next: Record<string, AbilityMeta> = {};
       for (const r of rows) {
-        if (r && typeof r.id === "string") next[r.id] = r;
+        // Key by the requested/raw id when present (so warrior_power_strike doesn't overwrite power_strike)
+        const key = (r && typeof r.rawId === "string" && r.rawId) ? r.rawId : (r && typeof r.id === "string" ? r.id : "");
+        if (key) next[key] = r;
       }
       if (!cancelled) setAbilityMetaById(next);
     } catch (e: any) {
@@ -1549,36 +1566,14 @@ const copyToClipboard = async (text: string) => {
                                           paddingTop: 6,
                                         }}
                                       >
-                                        <div
-                                          style={{
-                                            flex: 1,
-                                            minWidth: 0,
-                                            display: "flex",
-                                            flexDirection: "column",
-                                            gap: 2,
-                                          }}
-                                        >
-                                          <div
-                                            style={{
-                                              fontFamily: "monospace",
-                                              whiteSpace: "nowrap",
-                                              overflow: "hidden",
-                                              textOverflow: "ellipsis",
-                                            }}
-                                            title={`${lineName} (${id})`}
-                                          >
-                                            <span style={{ opacity: 0.8 }}>[r{minLevel ?? "?"}]</span>{" "}
+                                        <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 2 }}>
+                                          <div style={{ fontFamily: "monospace" }}>
+                                            <span style={{ opacity: 0.8 }}>[L{minLevel ?? "?"}]</span>{" "}
                                             <span style={{ fontWeight: 700 }}>{lineName}</span>{" "}
                                             <span style={{ opacity: 0.75 }}>({status})</span>
-                                            {cooldownMs != null ? (
-                                              <span style={{ opacity: 0.6 }}>
-                                                {" "}
-                                                • cd {Math.round(cooldownMs / 100) / 10}s
-                                              </span>
-                                            ) : null}
-                                            {cost != null ? <span style={{ opacity: 0.6 }}> • cost {cost}</span> : null}
+                                            {cooldownMs != null ? <span style={{ opacity: 0.6 }}> • cd {Math.round(cooldownMs / 100) / 10}s</span> : null}
+                                            {cost != null ? <span style={{ opacity: 0.6 }}> • cost {cost}{meta?.resourceKind ? ` ${meta.resourceKind}` : ""}</span> : null}
                                           </div>
-
                                           {meta?.description ? (
                                             <div
                                               style={{
@@ -1596,7 +1591,7 @@ const copyToClipboard = async (text: string) => {
                                           ) : null}
                                         </div>
 
-                                        <div style={{ display: "flex", gap: 8, marginLeft: "auto", flexShrink: 0 }}>
+                                        <div style={{ display: "flex", gap: 8, marginLeft: "auto" }}>
                                           <button
                                             disabled={cdMs > 0}
                                             onClick={() => void sendMud(makeCastCmd(id))}
@@ -1708,6 +1703,13 @@ const copyToClipboard = async (text: string) => {
                               const cmd = abilityTarget.trim()
                                 ? `ability ${abilityId} ${abilityTarget.trim()}`
                                 : `ability ${abilityId}`;
+                                const meta = abilityMetaById[String(abilityId)];
+                                const displayName = meta?.name ?? humanizeId(String(abilityId));
+                                const minLevel = meta?.minLevel != null ? Number(meta.minLevel) : undefined;
+
+                              const cooldownMs = meta?.cooldownMs != null ? Number(meta.cooldownMs) : undefined;
+                              const cost = meta?.resourceCost != null ? Number(meta.resourceCost) : undefined;
+                              const resourceType = meta?.resourceType != null ? String(meta.resourceType) : undefined;
 
                               return (
                                 <div
@@ -1723,16 +1725,27 @@ const copyToClipboard = async (text: string) => {
                                   <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 2 }}>
                                     <div>
                                       <span style={{ fontFamily: "monospace", opacity: 0.75 }}>
-                                        [r{abilityMetaById[String(abilityId)]?.minLevel ?? "?"}]
+                                        [L{minLevel ?? "?"}]
                                       </span>{" "}
                                       <span style={{ fontWeight: 600 }}>
-                                        {abilityMetaById[String(abilityId)]?.name ?? humanizeId(String(abilityId))}
+                                        {displayName}
                                       </span>{" "}
                                       <span style={{ opacity: 0.75 }}>
                                         ({remainingSec === 0 ? "ready" : `${remainingSec}s`})
                                       </span>
+                                      {cooldownMs != null ? (
+                                        <span style={{ opacity: 0.6 }}>
+                                          {" "}• cd {Math.round(cooldownMs / 100) / 10}s
+                                        </span>
+                                      ) : null}
+                                      {cost != null ? (
+                                        <span style={{ opacity: 0.6 }}>
+                                          {" "}• cost {cost}
+                                          {resourceType ? ` ${resourceType}` : ""}
+                                        </span>
+                                      ) : null}
                                     </div>
-                                    {abilityMetaById[String(abilityId)]?.description ? (
+                                    {meta?.description ? (
                                       <div
                                         style={{
                                           opacity: 0.75,
@@ -1742,9 +1755,9 @@ const copyToClipboard = async (text: string) => {
                                           textOverflow: "ellipsis",
                                           maxWidth: 760,
                                         }}
-                                        title={abilityMetaById[String(abilityId)]?.description ?? ""}
+                                        title={meta?.description ?? ""}
                                       >
-                                        {abilityMetaById[String(abilityId)]?.description}
+                                        {meta?.description}
                                       </div>
                                     ) : null}
                                   </div>
