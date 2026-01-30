@@ -193,11 +193,24 @@ export class TickEngine {
             }
 
             const beforeHp = typeof (ent as any).hp === "number" ? (ent as any).hp : undefined;
-            const r = nm.applyDamage(
-              (ent as any).id,
-              amount,
-              attackerEntityId ? { entityId: attackerEntityId } : undefined
-            );
+
+            // Prefer applyDotDamage so fatal ticks route through canonical XP/loot/corpse pipeline.
+            // Fallback to applyDamage for older builds (or if DOT pipeline isn't attached).
+            let r: any = null;
+            if (typeof nm.applyDotDamage === "function") {
+              r = nm.applyDotDamage(
+                (ent as any).id,
+                amount,
+                meta,
+                attackerEntityId,
+              );
+            } else {
+              r = nm.applyDamage(
+                (ent as any).id,
+                amount,
+                attackerEntityId ? { entityId: attackerEntityId } : undefined
+              );
+            }
 
             if (typeof r === "number") {
               this.emitDotTickLine(meta as any, ent as any, amount, r);

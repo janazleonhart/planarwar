@@ -331,6 +331,12 @@ function resolveAbsorb(
 }
 
 function resolvePolicy(input: NewStatusEffectInput): StatusStackingPolicy {
+  // DOTs should be safe for multi-caster stacking by default.
+  // If a caller explicitly chooses a policy, honor it.
+  if (input.dot && input.stackingPolicy == null) {
+    return "versioned_by_applier";
+  }
+
   // Default is the historical behavior.
   return resolveStatusStackingPolicy(input.stackingPolicy, "legacy_add");
 }
@@ -439,17 +445,37 @@ function applyStatusEffectInternal(
   // but only if applied by different appliers.
   // ────────────────────────────────────────────────────────────────────────────
   if (policy === "versioned_by_applier") {
-    const versionKey =
-      typeof input.versionKey === "string" && input.versionKey.trim()
-        ? input.versionKey.trim()
-        : sourceId;
-
     const appliedById =
       typeof input.appliedById === "string" && input.appliedById.trim()
         ? input.appliedById.trim()
         : "unknown";
 
     const appliedByKind: StatusEffectApplierKind = input.appliedByKind ?? "unknown";
+
+    // Version semantics:
+    // - If caller provides versionKey, it is GLOBAL (same key replaces across appliers).
+    // - If versionKey is omitted AND this is a DOT, derive a per-caster versionKey so
+    //   multiple casters can contribute without overwriting each other.
+    let versionKey =
+      typeof input.versionKey === "string" && input.versionKey.trim()
+        ? input.versionKey.trim()
+        : sourceId;
+
+    if (!(typeof input.versionKey === "string" && input.versionKey.trim())) {
+      if (input.dot && appliedById !== "unknown") {
+        versionKey = `${sourceId}:${appliedByKind}:${appliedById}`;
+      }
+    }
+
+    // Under versioned_by_applier, maxStacks is a CONTRIBUTOR/VERSION CAP.
+    // For DOTs, default to a small multi-caster cap when not explicitly specified.
+    const contributorCap =
+      typeof input.maxStacks === "number" && input.maxStacks > 0
+        ? input.maxStacks
+        : (existingList[0]?.maxStacks && existingList[0]!.maxStacks > 0
+            ? existingList[0]!.maxStacks
+            : (input.dot ? 8 : resolvedMaxStacks));
+
 
     const idxByApplier = existingList.findIndex((e) => (e.appliedById ?? "unknown") === appliedById);
     const idxByVersion = existingList.findIndex((e) => (e.versionKey ?? e.sourceId ?? "unknown") === versionKey);
@@ -477,7 +503,7 @@ function applyStatusEffectInternal(
       // Under versioned_by_applier, stacks are intentionally NOT the main axis;
       // the bucket size is the cap. Keep per-instance stacks minimal and deterministic.
       stackCount: 1,
-      maxStacks: resolvedMaxStacks,
+      maxStacks: contributorCap,
       modifiers: input.modifiers ?? existing?.modifiers ?? {},
       tags: input.tags ?? existing?.tags,
       dot,
@@ -486,8 +512,8 @@ function applyStatusEffectInternal(
 
       stackingPolicy: policy,
       stackingGroupId: bucketKey,
-      appliedByKind: input.appliedByKind,
-      appliedById: input.appliedById,
+      appliedByKind,
+      appliedById,
       versionKey,
     };
 
@@ -499,7 +525,7 @@ function applyStatusEffectInternal(
     }
 
     // Add a new contributor slot if below cap.
-    if (existingList.length < resolvedMaxStacks) {
+    if (existingList.length < contributorCap) {
       existingList.push(inst);
       writeBucket(state, bucketKey, existingList);
       return inst;

@@ -878,7 +878,8 @@
         "Entity tick helpers can optionally apply DOT damage and must stop immediately if entity dies.",
         "Stacking behavior is governed by StatusStackingPolicy (including versioned_by_applier).",
         "Entity/NPC effects are stored under entity.statusEffects.active (mirrors character progression storage).",
-        "Imports DamageSchool as a type from CombatEngine (type-only); no runtime circular dependency."
+        "Imports DamageSchool as a type from CombatEngine (type-only); no runtime circular dependency.",
+        "tickEntityStatusEffectsAndApplyDots emits DotTickEvent meta including appliedByKind/appliedById for kill/XP attribution and combat log routing."
       ],
       "path": "worldcore/combat/StatusEffects.ts",
       "provides": [
@@ -4885,23 +4886,6 @@
       "provides": [],
       "service": "test.contract"
     },
-    "test.contractAliveMutationsRestricted": {
-      "class": null,
-      "ctorArgs": [],
-      "dependsOn": [
-        "test.utils"
-      ],
-      "kind": "test",
-      "lifecycle": "test",
-      "notes": [
-        "Contract: alive mutations are restricted to canonical lifecycle modules (keep the allowlist tiny).",
-        "Prevents forbidden `(entity as any).alive = ...` writes outside the lifecycle owners."
-      ],
-      "owns": [],
-      "path": "worldcore/test/contract_aliveMutationsRestricted.test.ts",
-      "provides": [],
-      "service": "test.contract"
-    },
     "test.contractAttackNoSuchTargetMessage": {
       "class": null,
       "ctorArgs": [],
@@ -5884,6 +5868,68 @@
       "owns": [],
       "path": "worldcore/test/statusEffects.contract.test.ts",
       "provides": []
+    },
+    "test.contractDotKillRewardsAttributionPipeline": {
+      "kind": "test",
+      "path": "worldcore/test/contract_dotKillRewards_attributionPipeline.test.ts",
+      "class": "(test) contract_dotKillRewards_attributionPipeline",
+      "lifecycle": "test",
+      "ctorArgs": [],
+      "dependsOn": [
+        "worldcore/npc/NpcManager.ts",
+        "worldcore/combat/NpcDeathPipeline.ts",
+        "worldcore/combat/StatusEffects.ts"
+      ],
+      "provides": [
+        "contract:dotKillRewardsAttributionPipeline"
+      ],
+      "owns": [
+        "test:dotKillRewardsAttributionPipeline"
+      ],
+      "notes": [
+        "Ensures DOT killing blows award XP+loot via canonical NPC death pipeline (NpcManager.applyDotDamage -> handleNpcDeath)."
+      ]
+    },
+    "test.contractDotTickEngineRoutesDeathPipeline": {
+      "kind": "test",
+      "path": "worldcore/test/contract_dotTickEngineRoutesThroughNpcManagerDeathPipeline.test.ts",
+      "class": "(test) contract_dotTickEngineRoutesThroughNpcManagerDeathPipeline",
+      "lifecycle": "test",
+      "ctorArgs": [],
+      "dependsOn": [
+        "worldcore/core/TickEngine.ts",
+        "worldcore/npc/NpcManager.ts",
+        "worldcore/combat/StatusEffects.ts",
+        "worldcore/combat/NpcDeathPipeline.ts"
+      ],
+      "provides": [
+        "contract:dotTickEngineDeathPipeline"
+      ],
+      "owns": [
+        "test:dotTickEngineDeathPipeline"
+      ],
+      "notes": [
+        "Ensures TickEngine DOT ticks route through NpcManager.applyDotDamage so fatal ticks grant XP/loot and produce corpses/respawns."
+      ]
+    },
+    "test.contractDotStackingPerCaster": {
+      "kind": "test",
+      "path": "worldcore/test/contract_dotStacking_versionedByApplier_perCaster.test.ts",
+      "class": "(test) contract_dotStacking_versionedByApplier_perCaster",
+      "lifecycle": "test",
+      "ctorArgs": [],
+      "dependsOn": [
+        "worldcore/combat/StatusEffects.ts"
+      ],
+      "provides": [
+        "contract:dotStackingPerCaster"
+      ],
+      "owns": [
+        "test:dotStackingPerCaster"
+      ],
+      "notes": [
+        "Locks DOT default stacking policy to versioned_by_applier and prevents multi-caster overwrite."
+      ]
     },
     "test.utils": {
       "dependsOn": [],
