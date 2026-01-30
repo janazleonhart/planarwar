@@ -6036,6 +6036,28 @@
         "Contract: HOT recast refreshes/extends duration without creating a second active instance and without double-ticking; cadence restarts from recast time."
       ]
     },
+    "test.contractShieldRefreshSameCasterReplaces": {
+      "kind": "test",
+      "path": "worldcore/test/contract_shieldRefresh_sameCaster_replaces.test.ts",
+      "dependsOn": [
+        "combat.statusEffects"
+      ],
+      "notes": [
+        "Contract: Shield recast by same caster replaces remaining absorb (no stacking).",
+        "Model A: global last-write-wins per shield id."
+      ]
+    },
+    "test.contractShieldOverwriteOtherCasterReplaces": {
+      "kind": "test",
+      "path": "worldcore/test/contract_shieldOverwrite_otherCaster_replaces.test.ts",
+      "dependsOn": [
+        "combat.statusEffects"
+      ],
+      "notes": [
+        "Contract: Same shield id from another caster overwrites (global last-write-wins).",
+        "Prevents multi-caster absorb stacking exploits for identical shield effects."
+      ]
+    },
     "test.utils": {
       "dependsOn": [],
       "functions": [
