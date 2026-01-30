@@ -6020,6 +6020,22 @@
       "owns": [],
       "notes": ["Contract: HOT must not tick beyond expiry boundary (duration clamp)."]
     },
+    "test.contractSpellHotRefreshDoesNotDoubleTick": {
+      "kind": "test",
+      "path": "worldcore/test/contract_spellHotRefreshDoesNotDoubleTick.test.ts",
+      "class": "(test)",
+      "lifecycle": "test",
+      "ctorArgs": [],
+      "dependsOn": [
+        "mud.mudSpells",
+        "combat.statusEffects"
+      ],
+      "provides": [],
+      "owns": [],
+      "notes": [
+        "Contract: HOT recast refreshes/extends duration without creating a second active instance and without double-ticking; cadence restarts from recast time."
+      ]
+    },
     "test.utils": {
       "dependsOn": [],
       "functions": [
