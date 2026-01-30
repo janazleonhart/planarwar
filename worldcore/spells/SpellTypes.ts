@@ -332,6 +332,45 @@ export const SPELLS: Record<string, SpellDefinition> = {
     cleanse: { tags: ["hex", "curse", "poison"], maxToRemove: 1 },
   },
 
+  // Templar kit (support)
+  templar_restorative_prayer: {
+    id: "templar_restorative_prayer",
+    name: "Restorative Prayer",
+    kind: "heal_hot_self",
+    classId: "templar",
+    minLevel: 1,
+    description: "A quiet prayer that mends wounds over time.",
+    school: "holy",
+    statusEffect: {
+      id: "hot_templar_restorative_prayer",
+      name: "Restorative Prayer",
+      durationMs: 10_000,
+      maxStacks: 1,
+      stacks: 1,
+      modifiers: {},
+      tags: ["hot", "holy"],
+      hot: { tickIntervalMs: 2000, perTickHeal: 8 },
+    },
+    resourceType: "mana",
+    resourceCost: 14,
+    cooldownMs: 10000,
+  },
+
+  templar_minor_cleanse: {
+    id: "templar_minor_cleanse",
+    name: "Minor Cleanse",
+    kind: "cleanse_self",
+    classId: "templar",
+    minLevel: 3,
+    description: "Cleanses a single minor affliction from yourself.",
+    school: "holy",
+    resourceType: "mana",
+    resourceCost: 18,
+    cooldownMs: 15000,
+    cleanse: { tags: ["hex", "curse", "poison"], maxToRemove: 1 },
+  },
+
+
   // Warlock kit
   warlock_void_bolt: {
     id: "warlock_void_bolt",
@@ -349,12 +388,63 @@ export const SPELLS: Record<string, SpellDefinition> = {
   },
 
 
+  warlock_curse_of_frailty: {
+    id: "warlock_curse_of_frailty",
+    name: "Curse of Frailty",
+    kind: "debuff_single_npc",
+    classId: "warlock",
+    minLevel: 3,
+    description: "A withering curse that saps the target’s strength, reducing their damage output.",
+    school: "shadow",
+    statusEffect: {
+      id: "debuff_warlock_curse_of_frailty",
+      name: "Curse of Frailty",
+      durationMs: 12_000,
+      maxStacks: 1,
+      stacks: 1,
+      modifiers: {
+        damageDealtPct: -0.10,
+      },
+      tags: ["debuff", "curse", "shadow"],
+    },
+    resourceType: "mana",
+    resourceCost: 14,
+    cooldownMs: 12000,
+  },
+
+  warlock_shadow_rot: {
+    id: "warlock_shadow_rot",
+    name: "Shadow Rot",
+    kind: "damage_dot_single_npc",
+    classId: "warlock",
+    minLevel: 5,
+    description: "Infects the target with a lingering shadow rot, dealing damage over time.",
+    school: "shadow",
+    statusEffect: {
+      id: "dot_warlock_shadow_rot",
+      name: "Shadow Rot",
+      durationMs: 10_000,
+      maxStacks: 1,
+      stacks: 1,
+      modifiers: {},
+      tags: ["dot", "shadow"],
+      dot: { tickIntervalMs: 2000, spreadDamageAcrossTicks: true },
+    },
+    resourceType: "mana",
+    resourceCost: 16,
+    cooldownMs: 8000,
+    dotTickMs: 2000,
+    dotFlatDamage: 6,
+    dotMaxTicks: 5,
+  },
+
+
   warlock_fear: {
     id: "warlock_fear",
     name: "Fear",
     kind: "debuff_single_npc",
     classId: "warlock",
-    minLevel: 5,
+    minLevel: 7,
     description: "Cripples the target with dread, lowering their will to fight.",
     school: "shadow",
     statusEffect: {

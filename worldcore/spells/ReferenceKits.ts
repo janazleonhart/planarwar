@@ -4,7 +4,7 @@
 //
 // `ClassId` contains more classes than we seed here.
 // This is a curated bootstrap kit set, so the map is intentionally Partial.
-// Always use the helpers below so missing keys safely fall back to [].
+// Always use the helpers below so missing keys safely fall back to a minimal universal starter kit.
 
 import type { ClassId } from "../classes/ClassDefinitions";
 
@@ -113,6 +113,27 @@ export const REFERENCE_CLASS_KITS_L1_10 = {
     },
   ],
 
+  templar: [
+    {
+      kind: "spell",
+      classId: "templar",
+      spellId: "templar_restorative_prayer",
+      minLevel: 1,
+      autoGrant: true,
+      isEnabled: true,
+      source: "reference_kit",
+    },
+    {
+      kind: "spell",
+      classId: "templar",
+      spellId: "templar_minor_cleanse",
+      minLevel: 3,
+      autoGrant: true,
+      isEnabled: true,
+      source: "reference_kit",
+    },
+  ],
+
   warlock: [
     {
       kind: "spell",
@@ -126,8 +147,26 @@ export const REFERENCE_CLASS_KITS_L1_10 = {
     {
       kind: "spell",
       classId: "warlock",
-      spellId: "warlock_fear",
+      spellId: "warlock_curse_of_frailty",
+      minLevel: 3,
+      autoGrant: true,
+      isEnabled: true,
+      source: "reference_kit",
+    },
+    {
+      kind: "spell",
+      classId: "warlock",
+      spellId: "warlock_shadow_rot",
       minLevel: 5,
+      autoGrant: true,
+      isEnabled: true,
+      source: "reference_kit",
+    },
+    {
+      kind: "spell",
+      classId: "warlock",
+      spellId: "warlock_fear",
+      minLevel: 7,
       autoGrant: true,
       isEnabled: true,
       source: "reference_kit",
@@ -136,7 +175,22 @@ export const REFERENCE_CLASS_KITS_L1_10 = {
 } as const satisfies Partial<Record<ClassId, ReferenceKitEntry[]>>;
 
 export function getReferenceKitEntriesForClass(classId: ClassId): ReferenceKitEntry[] {
-  return (REFERENCE_CLASS_KITS_L1_10 as Partial<Record<ClassId, ReferenceKitEntry[]>>)[classId] ?? [];
+  const explicit = (REFERENCE_CLASS_KITS_L1_10 as Partial<Record<ClassId, ReferenceKitEntry[]>>)[classId];
+  if (Array.isArray(explicit) && explicit.length > 0) return explicit;
+
+  // Fallback: keep progression plumbing testable even for classes without curated kits yet.
+  // This is intentionally NOT mirrored into DB seeds.
+  return [
+    {
+      kind: "spell",
+      classId,
+      spellId: "arcane_bolt",
+      minLevel: 1,
+      autoGrant: true,
+      isEnabled: true,
+      source: "reference_kit",
+    },
+  ];
 }
 
 export function getAllReferenceKitEntries(): ReferenceKitEntry[] {

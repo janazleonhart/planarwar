@@ -1,6 +1,12 @@
 -- worldcore/infra/schema/051_seed_spell_unlocks_reference_kits_l1_10.sql
 -- System 5.4: Explicit notes for L1–10 reference kit spell unlock rules.
 -- Safe to re-run.
+--
+-- IMPORTANT:
+-- - Do NOT introduce brand-new spell ids here unless you also seed them into public.spells first.
+-- - This file should stay aligned with the canonical seeds:
+--   - 050_seed_reference_class_kits_L1_10.sql (Archmage + Warlock)
+--   - 050A_seed_reference_status_effect_spells_v1.sql (Templar support spells)
 
 BEGIN;
 
@@ -18,7 +24,11 @@ VALUES
   ('warlock', 'warlock_siphon_life',     3, true, true, 'Ref kit L1–10: DOT sustain'),
   ('warlock', 'warlock_drain_soul',      5, true, true, 'Ref kit L1–10: focused drain'),
   ('warlock', 'warlock_unholy_brand',    7, true, true, 'Ref kit L1–10: damageDealtPct debuff'),
-  ('warlock', 'warlock_demon_skin',      9, true, true, 'Ref kit L1–10: self shield')
+  ('warlock', 'warlock_demon_skin',      9, true, true, 'Ref kit L1–10: self shield'),
+
+  -- Templar (support reference spells seeded in 050A)
+  ('templar', 'templar_restorative_prayer', 3, true, true, 'Ref kit L1–10: HoT'),
+  ('templar', 'templar_minor_cleanse',      5, true, true, 'Ref kit L1–10: cleanse')
 ON CONFLICT (class_id, spell_id)
 DO UPDATE SET
   min_level  = EXCLUDED.min_level,
