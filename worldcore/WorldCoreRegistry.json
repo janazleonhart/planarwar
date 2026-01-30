@@ -1,25 +1,21 @@
 {
   "services": {
     "abilities.learning": {
-      "dependsOn": [
-        "characters.types",
-        "abilities.types",
-        "abilities.unlocks"
-      ],
-      "functions": [
-        "isAbilityKnownForChar(char, abilityIdOrName)",
-        "listKnownAbilitiesForChar(char)",
-        "listLearnableAbilitiesForChar(char)",
-        "canLearnAbilityForChar(char, abilityIdOrName)",
-        "learnAbilityInState(char, abilityIdOrName, nowMs?)"
-      ],
-      "kind": "helper",
+      "class": "(module) AbilityLearning",
+      "ctorArgs": [],
+      "dependsOn": [],
+      "kind": "module",
+      "lifecycle": "static",
       "notes": [
-        "Ability-book rules: known vs learnable gating, and learning mutation on CharacterState.",
-        "Auto-grants abilities based on unlock rules (and keeps persisted learned map stable).",
-        "Used by MudAbilities and any future UI/API learning endpoints."
+        "Ability learning/autogrant engine; computes which abilities a character should know at a given level.",
+        "Designed to mirror SpellLearning rules (no leaks: only unlocks up to level; deterministic)."
       ],
-      "path": "worldcore/abilities/AbilityLearning.ts"
+      "owns": [],
+      "path": "worldcore/abilities/AbilityLearning.ts",
+      "provides": [
+        "getAbilitiesToAutograntAtLevel",
+        "applyAbilityAutogrants"
+      ]
     },
     "abilities.types": {
       "dependsOn": [
@@ -38,26 +34,22 @@
       "path": "worldcore/abilities/AbilityTypes.ts"
     },
     "abilities.unlocks": {
-      "dependsOn": [
-        "abilities.types"
-      ],
-      "functions": [
-        "resolveAbilityKey(rawIdOrName)",
-        "getAbilityUnlockSource",
-        "getAllAbilityUnlockRules",
-        "getAutoGrantAbilityUnlocksFor(classId, level)",
-        "getLearnableAbilityUnlocksFor(classId, level)",
-        "initAbilityUnlocksFromDbOnce(pool)",
-        "__setAbilityUnlocksForTest",
-        "__resetAbilityUnlocksForTest"
-      ],
-      "kind": "helper",
+      "class": "(module) AbilityUnlocks",
+      "ctorArgs": [],
+      "dependsOn": [],
+      "kind": "module",
+      "lifecycle": "static",
       "notes": [
-        "Ability unlock rules (code/test now; DB-hydration hook included for future parity with spells.unlocks).",
-        "resolveAbilityKey normalizes an ability id/alias/name into a canonical ABILITIES key.",
-        "Supports test overrides via __setAbilityUnlocksForTest/__resetAbilityUnlocksForTest."
+        "Authoritative unlock rules + lookup for abilities (classId/minLevel/autogrant).",
+        "Backed by DB table ability_unlocks; used by AbilityLearning to decide grants."
       ],
-      "path": "worldcore/abilities/AbilityUnlocks.ts"
+      "owns": [],
+      "path": "worldcore/abilities/AbilityUnlocks.ts",
+      "provides": [
+        "getAbilityUnlocksForClass",
+        "getAbilityUnlocksUpToLevel",
+        "resolveAbilityIdAlias"
+      ]
     },
     "actions.types": {
       "kind": "model",
@@ -199,7 +191,7 @@
       ],
       "kind": "service",
       "notes": [
-        "Builds a one-line MUD description for a listing like '#12 Hematite Iron Ore [common] x20 \u2013 3g each (total 60g) by Testing [active]'.",
+        "Builds a one-line MUD description for a listing like '#12 Hematite Iron Ore [common] x20 – 3g each (total 60g) by Testing [active]'.",
         "Looks up item definitions via ctx.items?.get to resolve item name and rarity."
       ],
       "path": "worldcore/auction/AuctionFormat.ts"
@@ -459,7 +451,7 @@
       ],
       "kind": "service",
       "notes": [
-        "Postgres-backed character service using the characters table and CharacterRow \u2192 CharacterState mapping.",
+        "Postgres-backed character service using the characters table and CharacterRow → CharacterState mapping.",
         "Supports partial JSONB patching, XP/level gains with per-class attribute growth, and spell/equipment updates."
       ],
       "path": "worldcore/characters/PostgresCharacterService.ts"
@@ -617,7 +609,7 @@
       "notes": [
         "Centralized gates for action resource costs + cooldowns (spells/songs/abilities).",
         "Guarantees: cooldowns do not start and resources are not consumed if the action fails.",
-        "Order: check cooldown remaining \u2192 spend resource \u2192 start cooldown."
+        "Order: check cooldown remaining → spend resource → start cooldown."
       ],
       "path": "worldcore/combat/CastingGates.ts"
     },
@@ -886,7 +878,8 @@
         "Entity tick helpers can optionally apply DOT damage and must stop immediately if entity dies.",
         "Stacking behavior is governed by StatusStackingPolicy (including versioned_by_applier).",
         "Entity/NPC effects are stored under entity.statusEffects.active (mirrors character progression storage).",
-        "Imports DamageSchool as a type from CombatEngine (type-only); no runtime circular dependency."
+        "Imports DamageSchool as a type from CombatEngine (type-only); no runtime circular dependency.",
+        "tickEntityStatusEffectsAndApplyDots emits DotTickEvent meta including appliedByKind/appliedById for kill/XP attribution and combat log routing."
       ],
       "path": "worldcore/combat/StatusEffects.ts",
       "provides": [
@@ -1397,6 +1390,34 @@
       ],
       "service": "infra"
     },
+    "infra.schema.042_create_ability_unlocks": {
+      "class": "(sql) infra schema migration",
+      "ctorArgs": [],
+      "dependsOn": [],
+      "kind": "service",
+      "lifecycle": "singleton",
+      "notes": [
+        "Creates ability_unlocks table for DB-driven ability progression (class_id + ability_id + min_level + auto_grant).",
+        "Mirrors spell_unlocks model; supports abilities catalog join."
+      ],
+      "owns": [],
+      "path": "worldcore/infra/schema/042_create_ability_unlocks_table.sql",
+      "provides": []
+    },
+    "infra.schema.042_create_abilities_catalog": {
+      "class": "(sql) infra schema migration",
+      "ctorArgs": [],
+      "dependsOn": [],
+      "kind": "service",
+      "lifecycle": "singleton",
+      "notes": [
+        "Creates abilities catalog table (id/name/description/kind/resource/cooldown/flags/role gates).",
+        "Enables Abilities panel to behave like Spellbook: catalog + unlocks split."
+      ],
+      "owns": [],
+      "path": "worldcore/infra/schema/042_create_abilities_table.sql",
+      "provides": []
+    },
     "infra.schema.045_create_vendor_log": {
       "class": "SchemaMigration",
       "ctorArgs": [],
@@ -1466,6 +1487,32 @@
         "CityBuilder v0 persistence foundation (prevents 1 city per character exploits)"
       ]
     },
+    "infra.schema.049_create_spell_unlocks": {
+      "class": "(sql) infra schema migration",
+      "ctorArgs": [],
+      "dependsOn": [],
+      "kind": "service",
+      "lifecycle": "singleton",
+      "notes": [
+        "Creates spell_unlocks table for DB-driven spell/song progression."
+      ],
+      "owns": [],
+      "path": "worldcore/infra/schema/049_create_spell_unlocks_table.sql",
+      "provides": []
+    },
+    "infra.schema.050_add_spell_effect_payloads_v1": {
+      "class": "(sql) infra schema migration",
+      "ctorArgs": [],
+      "dependsOn": [],
+      "kind": "service",
+      "lifecycle": "singleton",
+      "notes": [
+        "Adds status-effect payload columns/JSON to spells (status_effect, cleanse, etc) for System I MVP."
+      ],
+      "owns": [],
+      "path": "worldcore/infra/schema/050_add_spell_effect_payloads_v1.sql",
+      "provides": []
+    },
     "infra.seed.031_trade_recipes_v1": {
       "class": "SeedMigration",
       "ctorArgs": [],
@@ -1530,6 +1577,98 @@
       "provides": [
         "Starter recipe station_kind assignments"
       ]
+    },
+    "infra.seed.042_seed_ability_unlocks_mvp": {
+      "class": "(sql) infra seed migration",
+      "ctorArgs": [],
+      "dependsOn": [],
+      "kind": "service",
+      "lifecycle": "singleton",
+      "notes": [
+        "Seeds MVP warrior ability unlocks for early UI/progression testing."
+      ],
+      "owns": [],
+      "path": "worldcore/infra/schema/042_seed_ability_unlocks_mvp.sql",
+      "provides": []
+    },
+    "infra.seed.042seed_abilities_from_unlocks": {
+      "class": "(sql) infra seed migration",
+      "ctorArgs": [],
+      "dependsOn": [],
+      "kind": "service",
+      "lifecycle": "singleton",
+      "notes": [
+        "Ensures abilities catalog rows exist for any ability referenced by ability_unlocks (safe upsert).",
+        "Title-cases id into name when missing; does not overwrite existing descriptions."
+      ],
+      "owns": [],
+      "path": "worldcore/infra/schema/042_seed_abilities_from_unlocks.sql",
+      "provides": []
+    },
+    "infra.seed.049_seed_spell_unlocks_from_spells": {
+      "class": "(sql) infra seed migration",
+      "ctorArgs": [],
+      "dependsOn": [],
+      "kind": "service",
+      "lifecycle": "singleton",
+      "notes": [
+        "Bootstrap seed: derives initial spell_unlocks rows from spells catalog."
+      ],
+      "owns": [],
+      "path": "worldcore/infra/schema/049_seed_spell_unlocks_from_spells.sql",
+      "provides": []
+    },
+    "infra.seed.050_seed_reference_class_kits_L1_10": {
+      "class": "(sql) infra seed migration",
+      "ctorArgs": [],
+      "dependsOn": [],
+      "kind": "service",
+      "lifecycle": "singleton",
+      "notes": [
+        "Seeds Reference Class Kits L1–10 (MVP) used by deterministic progression tests."
+      ],
+      "owns": [],
+      "path": "worldcore/infra/schema/050_seed_reference_class_kits_L1_10.sql",
+      "provides": []
+    },
+    "infra.seed.050_seed_reference_status_effect_spells_v1": {
+      "class": "(sql) infra seed migration",
+      "ctorArgs": [],
+      "dependsOn": [],
+      "kind": "service",
+      "lifecycle": "singleton",
+      "notes": [
+        "Seeds reference status effect spells (cleanse/HoT/shield/DOT) for System I MVP."
+      ],
+      "owns": [],
+      "path": "worldcore/infra/schema/050_seed_reference_status_effect_spells_v1.sql",
+      "provides": []
+    },
+    "infra.seed.050_seed_spells_reference_kits_l1_10": {
+      "class": "(sql) infra seed migration",
+      "ctorArgs": [],
+      "dependsOn": [],
+      "kind": "service",
+      "lifecycle": "singleton",
+      "notes": [
+        "Seeds spells catalog entries referenced by the L1–10 class kits."
+      ],
+      "owns": [],
+      "path": "worldcore/infra/schema/050_seed_spells_reference_kits_l1_10.sql",
+      "provides": []
+    },
+    "infra.seed.051_seed_spell_unlocks_reference_kits_l1_10": {
+      "class": "(sql) infra seed migration",
+      "ctorArgs": [],
+      "dependsOn": [],
+      "kind": "service",
+      "lifecycle": "singleton",
+      "notes": [
+        "Seeds spell_unlocks for L1–10 reference kits; enables deterministic autogrant tests."
+      ],
+      "owns": [],
+      "path": "worldcore/infra/schema/051_seed_spell_unlocks_reference_kits_l1_10.sql",
+      "provides": []
     },
     "interaction.ops": {
       "dependsOn": [
@@ -1877,22 +2016,16 @@
     "mud.abilities": {
       "dependsOn": [
         "mud.context",
-        "abilities.types",
+        "abilities.table",
         "resources.power",
         "combat.cooldowns",
-        "mud.actions.combat",
-        "abilities.unlocks",
-        "abilities.learning",
-        "combat.serviceProtection",
-        "targeting.resolver"
+        "mud.actions.combat"
       ],
       "kind": "service",
       "lifecycle": "stateless",
       "notes": [
         "Implements 'abilities' and 'ability <name> [target]'.",
-        "Resolves ability key + known/learnable gating via abilities.learning / abilities.unlocks.",
-        "Uses CastingGates for cost/cooldown, then delegates damage to performNpcAttack.",
-        "Service-protected targets are denied before cost/cooldown is consumed."
+        "Gates by class/level/cooldown/resource, then delegates actual damage to performNpcAttack."
       ],
       "path": "worldcore/mud/MudAbilities.ts",
       "provides": [
@@ -3126,7 +3259,7 @@
         "Refreshes personal nodes, then lists nearby entities within radius with short handles like rat.1.",
         "filter/group/sort flags",
         "--limit / --max",
-        "safe caps + \u201cUI-friendly output shaping"
+        "safe caps + “UI-friendly output shaping"
       ],
       "path": "worldcore/mud/commands/world/nearbyCommand.ts"
     },
@@ -3476,7 +3609,7 @@
         "Determines which NPCs are 'protected' (civilian, vendor, questgiver, protected_town, etc.) and records crimes against them on the attacker.",
         "Sets recentCrimeUntil and recentCrimeSeverity (minor|severe) on characters to drive guard response.",
         "law_exempt > law_protected > legacy tags precedence",
-        "guards/resources are never \u201cprotected\u201d for crime purposes"
+        "guards/resources are never “protected” for crime purposes"
       ],
       "path": "worldcore/npc/NpcCrime.ts"
     },
@@ -3496,7 +3629,7 @@
       ],
       "kind": "service",
       "notes": [
-        "Owns runtime NPC state, per-room maps, threat tables, and bridges EntityManager \u2194 AI brain \u2194 sessions/chat.",
+        "Owns runtime NPC state, per-room maps, threat tables, and bridges EntityManager ↔ AI brain ↔ sessions/chat.",
         "Spawns/Despawns NPCs, applies damage, records threat, coordinates guard/pack help, coward fleeing, gating, and drives AI decisions each tick.",
         "On lethal damage and before despawn, clears combat status effects so corpses don't keep ticking DOTs or carry modifiers."
       ],
@@ -4107,7 +4240,7 @@
     "sim.brainActions": {
       "kind": "types",
       "notes": [
-        "Types for Mother-Brain style planning outputs (audit \u2192 plan actions \u2192 apply).",
+        "Types for Mother-Brain style planning outputs (audit → plan actions → apply).",
         "Includes PlaceSpawnAction used by SettlementPlanner + simBrain apply."
       ],
       "path": "worldcore/sim/BrainActions.ts"
@@ -4366,22 +4499,38 @@
       "summary": "Loads spell/song definitions + aliases from Postgres (spells + spell_aliases tables)."
     },
     "spells.learning": {
-      "dependsOn": [
-        "spells.types",
-        "spells.unlocks",
-        "characters.types"
-      ],
-      "functions": [
-        "listLearnableSpellsForChar",
-        "canLearnSpellForChar",
-        "learnSpellInState"
-      ],
-      "kind": "helper",
+      "class": "(module) SpellLearning",
+      "ctorArgs": [],
+      "dependsOn": [],
+      "kind": "module",
+      "lifecycle": "static",
       "notes": [
-        "Spell learning helpers for listing learnable spells and applying a learn to in-memory character state.",
-        "Keeps 'learned vs learnable' gates consistent with spell_unlocks rules and spellbook state."
+        "Spell learning/autogrant engine; computes which spells/songs a character should know at a given level.",
+        "Backed by DB table spell_unlocks; keeps characters.spellbook consistent with unlock policy."
       ],
-      "path": "worldcore/spells/SpellLearning.ts"
+      "owns": [],
+      "path": "worldcore/spells/SpellLearning.ts",
+      "provides": [
+        "getSpellsToAutograntAtLevel",
+        "applySpellAutogrants"
+      ]
+    },
+    "spells.referenceKits": {
+      "class": "(module) ReferenceKits",
+      "ctorArgs": [],
+      "dependsOn": [],
+      "kind": "module",
+      "lifecycle": "static",
+      "notes": [
+        "Reference class kits L1–10 (MVP) used for deterministic starter spell/ability unlock expectations and tests.",
+        "Seeded into DB via 050/051 migrations and used by SpellLearning/AbilityLearning contract tests."
+      ],
+      "owns": [],
+      "path": "worldcore/spells/ReferenceKits.ts",
+      "provides": [
+        "REFERENCE_CLASS_KITS_L1_10",
+        "getReferenceKitForClass"
+      ]
     },
     "spells.types": {
       "dependsOn": [
@@ -4569,7 +4718,7 @@
       "kind": "utility",
       "notes": [
         "Computes difficulty tier by radial distance from world center.",
-        "Uses max world radius \u2248 2048 units for current prime shard."
+        "Uses max world radius ≈ 2048 units for current prime shard."
       ],
       "path": "worldcore/terrain/regions/RegionDifficulty.ts",
       "provides": [
@@ -4702,19 +4851,6 @@
       "path": "worldcore/test/combatEngine.contract.test.ts",
       "provides": []
     },
-    "test.contractAbilityLearningRules": {
-      "dependsOn": [
-        "abilities.learning",
-        "abilities.unlocks",
-        "abilities.types"
-      ],
-      "kind": "test",
-      "notes": [
-        "Contract: ability unlock rules must gate known vs learnable correctly under WORLDCORE_TEST mode.",
-        "Prevents regressions in the learning seam as unlock rules expand (DB-backed later)."
-      ],
-      "path": "worldcore/test/contract_abilityLearningRules.test.ts"
-    },
     "test.contractAdminSpawnPointsConfirmRequiredUi": {
       "class": null,
       "ctorArgs": [],
@@ -4733,22 +4869,22 @@
       "service": "test.contract"
     },
     "test.contractAdminSpawnPointsSnapshotRestoreRoutes": {
-      "service": "test.contract",
-      "kind": "test",
-      "path": "worldcore/test/contract_adminSpawnPointsSnapshotRestoreRoutes.test.ts",
       "class": null,
-      "lifecycle": "test",
       "ctorArgs": [],
       "dependsOn": [
         "web-backend.routes.adminSpawnPoints",
         "web-frontend.pages.adminSpawnPoints"
       ],
-      "provides": [],
-      "owns": [],
+      "kind": "test",
+      "lifecycle": "test",
       "notes": [
         "Contract: admin spawn points must expose snapshot/restore endpoints and UI must call them.",
         "Static scan only (no DB)."
-      ]
+      ],
+      "owns": [],
+      "path": "worldcore/test/contract_adminSpawnPointsSnapshotRestoreRoutes.test.ts",
+      "provides": [],
+      "service": "test.contract"
     },
     "test.contractAttackNoSuchTargetMessage": {
       "class": null,
@@ -5340,6 +5476,19 @@
       "provides": [],
       "service": "test.contract"
     },
+    "test.contract_abilityLearningRules": {
+      "class": "(test)",
+      "ctorArgs": [],
+      "dependsOn": [],
+      "kind": "test",
+      "lifecycle": "static",
+      "notes": [
+        "Contract: ability learning rules (autogrant <= level, deterministic)."
+      ],
+      "owns": [],
+      "path": "worldcore/test/contract_abilityLearningRules.test.ts",
+      "provides": []
+    },
     "test.contract_nearbyHandles_resolution": {
       "class": null,
       "ctorArgs": [],
@@ -5371,13 +5520,26 @@
       "kind": "test",
       "lifecycle": "test",
       "notes": [
-        "Contract: NPC debuffs + DOT vertical slice works end-to-end (cast \u2192 status apply \u2192 tick \u2192 damage).",
+        "Contract: NPC debuffs + DOT vertical slice works end-to-end (cast → status apply → tick → damage).",
         "Guards the DOT tick + defender snapshot seam so damageTakenPct modifiers influence both direct hits and DOT ticks."
       ],
       "owns": [],
       "path": "worldcore/test/contract_npcDebuffsAndDots.test.ts",
       "provides": [],
       "service": "test.contract"
+    },
+    "test.contract_referenceKits_L1_10": {
+      "class": "(test)",
+      "ctorArgs": [],
+      "dependsOn": [],
+      "kind": "test",
+      "lifecycle": "static",
+      "notes": [
+        "Contract: reference kits L1–10 are consistent and autogrant works in test mode."
+      ],
+      "owns": [],
+      "path": "worldcore/test/contract_referenceKits_L1_10.test.ts",
+      "provides": []
     },
     "test.contract_reloadSpawnsInvalidatesHydratorCache": {
       "dependsOn": [
@@ -5395,6 +5557,19 @@
         "Asserts hot reload report includes SpawnHydrator=cleared"
       ],
       "service": "test"
+    },
+    "test.contract_spellLearningRules": {
+      "class": "(test)",
+      "ctorArgs": [],
+      "dependsOn": [],
+      "kind": "test",
+      "lifecycle": "static",
+      "notes": [
+        "Contract: spell learning rules (autogrant <= level, deterministic)."
+      ],
+      "owns": [],
+      "path": "worldcore/test/contract_spellLearningRules.test.ts",
+      "provides": []
     },
     "test.contract_statusEffects_clearOnDeath": {
       "class": null,
@@ -5694,18 +5869,6 @@
       "path": "worldcore/test/statusEffects.contract.test.ts",
       "provides": []
     },
-    "test.contractDbSpellStatusPayloadMapping": {
-      "dependsOn": [
-        "spells.types",
-        "spells.catalog"
-      ],
-      "kind": "test",
-      "notes": [
-        "Contract: DB spell row mapping must preserve status_effect payloads (including HOT) and cleanse payloads when present.",
-        "Prevents regressions in SpellTypes.__mapDbRowToSpellDefForTest / mapDbRowToSpellDef."
-      ],
-      "path": "worldcore/test/contract_dbSpellStatusPayloadMapping.test.ts"
-    },
     "test.utils": {
       "dependsOn": [],
       "functions": [
@@ -5859,7 +6022,7 @@
       "notes": [
         "Dev Simulation Harness CLI entrypoint.",
         "Includes Mother Brain wave planning commands (mother-wave/mother-status) for brain-owned spawn_points pipelines.",
-        "Follows audit \u2192 plan \u2192 apply pattern with safe default rollback unless --commit.",
+        "Follows audit → plan → apply pattern with safe default rollback unless --commit.",
         "Safety rails: refuses literal '...' arg; refuses --commit without explicit --bounds (unless --allowDefaultBounds).",
         "Artifacts are dev-only outputs; keep them gitignored.",
         "Town vendor wiring: by default, `simBrain era` AND `simBrain mother-wave` seed vendor anchors for town-like spawns (disable with --noTownVendors)."
@@ -6284,7 +6447,7 @@
       ],
       "kind": "utility",
       "notes": [
-        "Tracks per-region dynamic danger score and effective tier (1\u20135) based on base distance ring + recent activity.",
+        "Tracks per-region dynamic danger score and effective tier (1–5) based on base distance ring + recent activity.",
         "Applies exponential-style decay over time so regions cool down naturally.",
         "Used by cowardice, Region Peril aura, debug_region_danger, and debug_bump_region_danger."
       ],
@@ -6811,7 +6974,7 @@
       "kind": "worldgen_stage",
       "lifecycle": "stateless",
       "notes": [
-        "Stage 2.3.4 \u2013 biome assignment per cell + connected biome clusters.",
+        "Stage 2.3.4 – biome assignment per cell + connected biome clusters.",
         "Outputs biomeMap + cluster IDs + counts per biome."
       ],
       "path": "worldcore/terrain/worldgen/WGEv2Biomes.ts",
@@ -6830,7 +6993,7 @@
       "kind": "worldgen_stage",
       "lifecycle": "stateless",
       "notes": [
-        "Stage 2.3.5 \u2013 settlements, roads, and POIs.",
+        "Stage 2.3.5 – settlements, roads, and POIs.",
         "Scores candidate cells, picks settlements with spacing, builds a road graph, scatters points of interest."
       ],
       "path": "worldcore/terrain/worldgen/WGEv2Civilization.ts",
@@ -6847,7 +7010,7 @@
       "kind": "worldgen_stage",
       "lifecycle": "stateless",
       "notes": [
-        "Stage 2.3.3 \u2013 temperature, moisture, and compact climate zones.",
+        "Stage 2.3.3 – temperature, moisture, and compact climate zones.",
         "Can optionally use erosion outputs to bias humidity near rivers/lakes."
       ],
       "path": "worldcore/terrain/worldgen/WGEv2Climate.ts",
@@ -6863,7 +7026,7 @@
       "kind": "worldgen_stage",
       "lifecycle": "stateless",
       "notes": [
-        "Stage 2.3.2 \u2013 hydrology, erosion, rivers, lakes.",
+        "Stage 2.3.2 – hydrology, erosion, rivers, lakes.",
         "Outputs updated elevation, water, sediment, flow dirs, river/lake masks."
       ],
       "path": "worldcore/terrain/worldgen/WGEv2Erosion.ts",
@@ -6877,7 +7040,7 @@
       "kind": "worldgen_stage",
       "lifecycle": "stateless",
       "notes": [
-        "Stage 2.3.1 \u2013 base landforms: tectonics, continents, uplift, macro elevation.",
+        "Stage 2.3.1 – base landforms: tectonics, continents, uplift, macro elevation.",
         "First stage in the WGEv2 pipeline; everything else builds on its LandformResult."
       ],
       "path": "worldcore/terrain/worldgen/WGEv2Landforms.ts",
@@ -6897,7 +7060,7 @@
       "kind": "worldgen_stage",
       "lifecycle": "stateless",
       "notes": [
-        "Stage 2.3.6 \u2013 resource node placement (ore/herb/wood/fish/rare) plus per-kind masks.",
+        "Stage 2.3.6 – resource node placement (ore/herb/wood/fish/rare) plus per-kind masks.",
         "Respects biome, elevation, climate, hydrology, and avoids city centers while tagging 'near settlement' nodes."
       ],
       "path": "worldcore/terrain/worldgen/WGEv2Resources.ts",

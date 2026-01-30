@@ -427,7 +427,8 @@
       "lifecycle": "process",
       "notes": [
         "This server is a thin Express host that exposes both: (1) web-city-builder demo endpoints (gameState/domain/*), and (2) worldcore-backed admin APIs (quests/npcs/items/spawn_points/auth).",
-        "Technical debt: index.ts mounts /api/characters twice (harmless but redundant)."
+        "Technical debt: index.ts mounts /api/characters twice (harmless but redundant).",
+        "2026-01-28: Env bridge: loads .env and maps PW_DB_* to DATABASE_URL/PW_DATABASE_URL so /api/items,/api/spells,/api/abilities can connect without requiring a full URL."
       ],
       "owns": [
         "Express app instance",
@@ -501,6 +502,29 @@
       ],
       "service": "demo.gameState"
     },
+    "web-backend.infra.postgres": {
+      "class": "(helper) Postgres config + pool",
+      "ctorArgs": [],
+      "dependsOn": [
+        "npm:dotenv",
+        "npm:pg"
+      ],
+      "kind": "infra",
+      "lifecycle": "singleton",
+      "notes": [
+        "Resolves DB connection from environment variables. Supports PW_DATABASE_URL (preferred) and also PW_DB_HOST/PW_DB_PORT/PW_DB_USER/PW_DB_PASS/PW_DB_NAME (legacy Planar War .env).",
+        "web-backend/index.ts bridges PW_DB_* into a standard DATABASE_URL/PW_DATABASE_URL shape for routes."
+      ],
+      "owns": [
+        "pg Pool (lazy/route-scoped)"
+      ],
+      "path": null,
+      "provides": [
+        "resolveDatabaseUrl()",
+        "createPgPool()"
+      ],
+      "service": "infra.db"
+    },
     "web-backend.package": {
       "class": null,
       "ctorArgs": [],
@@ -516,6 +540,30 @@
         "npm package metadata + scripts"
       ],
       "service": "package.meta"
+    },
+    "web-backend.routes.abilities": {
+      "class": "(router)",
+      "ctorArgs": [],
+      "dependsOn": [
+        "web-backend.infra.postgres",
+        "npm:dotenv",
+        "npm:pg"
+      ],
+      "kind": "router",
+      "lifecycle": "singleton",
+      "notes": [
+        "Ability metadata endpoint for Abilities panel.",
+        "DB-backed: joins ability_unlocks (classId/minLevel/autoGrant/notes) with abilities catalog table (name/description/cooldownMs/resourceCost/resourceType/flags/tags).",
+        "Accepts either ids=... (bulk meta; supports alias forms like warrior_power_strike -> power_strike) or classId/level (unlocks view).",
+        "Compatibility: if abilities table is absent, may fall back to hardcoded catalog (temporary)."
+      ],
+      "owns": [],
+      "path": "web-backend/routes/abilities.ts",
+      "provides": [
+        "GET /api/abilities?classId=\u2026&level=\u2026 -> { ok, abilities: AbilityUnlockView[] }",
+        "GET /api/abilities?ids=\u2026 -> { ok, abilities: AbilityMeta[] }"
+      ],
+      "service": "api.abilities"
     },
     "web-backend.routes.adminItems": {
       "class": null,
@@ -827,6 +875,28 @@
       ],
       "service": "http.routes"
     },
+    "web-backend.routes.items": {
+      "class": "(router)",
+      "ctorArgs": [],
+      "dependsOn": [
+        "web-backend.infra.postgres",
+        "npm:dotenv",
+        "npm:pg"
+      ],
+      "kind": "router",
+      "lifecycle": "singleton",
+      "notes": [
+        "Bulk item metadata fetch for Inventory/Equipment panels.",
+        "Schema-flex: selects only columns that exist (tolerates older/newer item schemas).",
+        "Requires Postgres env (PW_DATABASE_URL or PW_DB_* bridge). Returns { ok, items } with stable subset fields."
+      ],
+      "owns": [],
+      "path": "web-backend/routes/items.ts",
+      "provides": [
+        "GET /api/items?ids=\u2026 (bulk) -> { ok, items: ItemMeta[] }"
+      ],
+      "service": "api.items"
+    },
     "web-backend.routes.me": {
       "class": null,
       "ctorArgs": [],
@@ -911,6 +981,29 @@
       ],
       "service": "http.routes"
     },
+    "web-backend.routes.spells": {
+      "class": "(router)",
+      "ctorArgs": [],
+      "dependsOn": [
+        "web-backend.infra.postgres",
+        "npm:dotenv",
+        "npm:pg"
+      ],
+      "kind": "router",
+      "lifecycle": "singleton",
+      "notes": [
+        "Spell metadata search/bulk fetch for Spellbook panel.",
+        "Schema-flex: introspects columns and avoids selecting missing fields (e.g. notes).",
+        "Supports query search (?q=...) and/or explicit ids (?ids=...). Returns { ok, spells } including minLevel/isSong/school/cooldownMs/resourceCost (when present)."
+      ],
+      "owns": [],
+      "path": "web-backend/routes/spells.ts",
+      "provides": [
+        "GET /api/spells?q=\u2026 (search) -> { ok, spells: SpellMeta[] }",
+        "GET /api/spells?ids=\u2026 (bulk) -> { ok, spells: SpellMeta[] }"
+      ],
+      "service": "api.spells"
+    },
     "web-backend.routes.tech": {
       "class": null,
       "ctorArgs": [],
@@ -969,60 +1062,6 @@
         "POST /api/workshop/collect"
       ],
       "service": "http.routes"
-    },
-    "web-backend.routes.spells": {
-      "class": "(router)",
-      "ctorArgs": [],
-      "dependsOn": [
-        "web-backend.infra.db"
-      ],
-      "kind": "router",
-      "lifecycle": "singleton",
-      "notes": [
-        "Bulk spell metadata fetch for Spellbook panel (name/minLevel/school/isSong/etc)."
-      ],
-      "owns": [],
-      "path": "web-backend/routes/spells.ts",
-      "provides": [
-        "GET /api/spells?ids=\u2026 (bulk)"
-      ],
-      "service": "api.spells"
-    },
-    "web-backend.routes.items": {
-      "class": "(router)",
-      "ctorArgs": [],
-      "dependsOn": [
-        "web-backend.infra.db"
-      ],
-      "kind": "router",
-      "lifecycle": "singleton",
-      "notes": [
-        "Bulk item metadata fetch for Inventory/Equipment panels (name/description/category/rarity/stats/etc)."
-      ],
-      "owns": [],
-      "path": "web-backend/routes/items.ts",
-      "provides": [
-        "GET /api/items?ids=\u2026 (bulk)"
-      ],
-      "service": "api.items"
-    },
-    "web-backend.routes.abilities": {
-      "class": "(router)",
-      "ctorArgs": [],
-      "dependsOn": [
-        "web-backend.infra.db"
-      ],
-      "kind": "router",
-      "lifecycle": "singleton",
-      "notes": [
-        "Ability metadata fetch for Abilities panel (built from ability unlocks; MVP schema)."
-      ],
-      "owns": [],
-      "path": "web-backend/routes/abilities.ts",
-      "provides": [
-        "GET /api/abilities?classId=\u2026 (or ids=\u2026)"
-      ],
-      "service": "api.abilities"
-    }    
+    }
   }
 }

@@ -240,6 +240,7 @@ export const SPELLS: Record<string, SpellDefinition> = {
     flatBonus: 10,
   },
 
+
   archmage_expose_arcana: {
     id: "archmage_expose_arcana",
     name: "Expose Arcana",
@@ -248,10 +249,23 @@ export const SPELLS: Record<string, SpellDefinition> = {
     minLevel: 3,
     description: "Reveals unstable ley-lines on the target, priming them for increased punishment.",
     school: "arcane",
+    statusEffect: {
+      id: "debuff_archmage_expose_arcana",
+      name: "Expose Arcana",
+      durationMs: 12_000,
+      maxStacks: 1,
+      stacks: 1,
+      modifiers: {
+        // Target takes more damage while exposed.
+        damageTakenPct: 0.15,
+      },
+      tags: ["debuff", "arcane", "vulnerability"],
+    },
     resourceType: "mana",
     resourceCost: 14,
     cooldownMs: 12000,
   },
+
 
   archmage_mana_shield: {
     id: "archmage_mana_shield",
@@ -261,11 +275,22 @@ export const SPELLS: Record<string, SpellDefinition> = {
     minLevel: 5,
     description: "Wrap yourself in a thin lattice of mana that absorbs incoming damage.",
     school: "arcane",
+    statusEffect: {
+      id: "shield_archmage_mana_shield",
+      name: "Mana Shield",
+      durationMs: 15_000,
+      maxStacks: 1,
+      stacks: 1,
+      modifiers: {},
+      tags: ["shield", "arcane"],
+      absorb: { amount: 60 },
+    },
     resourceType: "mana",
     resourceCost: 22,
     cooldownMs: 20000,
     absorbAmount: 60,
   },
+
 
   archmage_ignite: {
     id: "archmage_ignite",
@@ -275,6 +300,16 @@ export const SPELLS: Record<string, SpellDefinition> = {
     minLevel: 7,
     description: "Sets the target alight, dealing damage over time.",
     school: "fire",
+    statusEffect: {
+      id: "dot_archmage_ignite",
+      name: "Ignite",
+      durationMs: 10_000,
+      maxStacks: 1,
+      stacks: 1,
+      modifiers: {},
+      tags: ["dot", "fire"],
+      dot: { tickIntervalMs: 2000, spreadDamageAcrossTicks: true },
+    },
     resourceType: "mana",
     resourceCost: 18,
     cooldownMs: 8000,
@@ -313,6 +348,7 @@ export const SPELLS: Record<string, SpellDefinition> = {
     flatBonus: 10,
   },
 
+
   warlock_fear: {
     id: "warlock_fear",
     name: "Fear",
@@ -321,6 +357,18 @@ export const SPELLS: Record<string, SpellDefinition> = {
     minLevel: 5,
     description: "Cripples the target with dread, lowering their will to fight.",
     school: "shadow",
+    statusEffect: {
+      id: "debuff_warlock_fear",
+      name: "Fear",
+      durationMs: 8_000,
+      maxStacks: 1,
+      stacks: 1,
+      modifiers: {
+        // Reduce outgoing damage while feared.
+        damageDealtPct: -0.25,
+      },
+      tags: ["debuff", "fear", "shadow"],
+    },
     resourceType: "mana",
     resourceCost: 18,
     cooldownMs: 18000,
@@ -820,7 +868,15 @@ export async function initSpellsFromDbOnce(pool: Pool): Promise<void> {
         log.warn("DB spell catalog returned 0 rows; keeping code-defined SPELLS map.");
       } else {
         for (const [id, def] of Object.entries(defsById)) {
-          SPELLS[id] = def;
+          const prev = SPELLS[id] as any;
+          // Merge instead of clobbering so code-defined fallbacks (e.g. statusEffect payloads)
+          // survive if the DB row omits them.
+          SPELLS[id] = {
+            ...(prev ?? {}),
+            ...def,
+            statusEffect: (def as any).statusEffect ?? prev?.statusEffect,
+            cleanse: (def as any).cleanse ?? prev?.cleanse,
+          };
         }
         log.info("DB spell catalog loaded", { spellsLoaded: loadedIds.length });
       }

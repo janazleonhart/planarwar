@@ -223,6 +223,18 @@ export async function createWorldServices(
   const bank: BankService = new PostgresBankService();
   const auctions: AuctionService = new PostgresAuctionService();
 
+  // Wire canonical NPC death pipeline services (DOT ticks must award XP/loot too).
+  try {
+    (npcs as any).attachDeathPipelineServices?.({
+      rooms,
+      characters,
+      items,
+      mail,
+    });
+  } catch {
+    // ignore
+  }
+
   // Simulation engines
   const movement = new MovementEngine(world);
   const combat = new CombatSystem(entities, rooms, sessions);

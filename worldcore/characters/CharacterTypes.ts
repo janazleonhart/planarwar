@@ -278,7 +278,13 @@ export function defaultSpellbook(): SpellbookState {
 }
 
 export function defaultAbilities(): AbilitiesState {
-  return {};
+  // Keep a stable shape so UI can reliably discover known ability ids.
+  // (Some older code treated `abilities` as a flat map of id->true, so we still
+  // tolerate that elsewhere.)
+  return {
+    known: {},
+    learned: {},
+  } as any;
 }
 
 export function defaultProgression(): ProgressionState {

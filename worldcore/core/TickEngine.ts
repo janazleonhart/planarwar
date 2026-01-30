@@ -163,15 +163,51 @@ export class TickEngine {
         if (!Number.isFinite(amount) || amount <= 0) return;
 
         // Prefer routing through NpcManager so downstream hooks (aggro/crime/logging) can run.
+        // NOTE: NpcManager.applyDamage signature is (npcEntityId, amount, attacker?),
+        // so we must NOT pass the DOT meta as the attacker object.
         const nm: any = this.npcs as any;
         if (nm && typeof nm.applyDamage === "function") {
           try {
-            nm.applyDamage((ent as any).id, amount, {
-              system: "dot",
-              effectId: meta.effectId,
-              school: meta.school,
-            });
-            return;
+            // Resolve the DOT applier's *player entityId*.
+            // StatusEffects stores appliedById as a CharacterState.id (NOT sessionId).
+            let attackerEntityId: string | undefined = undefined;
+
+            const appliedByKind = (meta as any)?.appliedByKind;
+            const appliedById = (meta as any)?.appliedById;
+
+            if (appliedByKind === "character" && typeof appliedById === "string") {
+              let ownerSessionId: string | undefined = undefined;
+              try {
+                for (const s of (this.sessions as any)?.getAllSessions?.() ?? (this.sessions as any)?.values?.() ?? []) {
+                  if ((s as any)?.character?.id === appliedById) { ownerSessionId = (s as any)?.id; break; }
+                }
+              } catch { /* ignore */ }
+              if (ownerSessionId) {
+                const byOwner = (this.entities as any)?.getEntityByOwner?.(ownerSessionId);
+                if (byOwner && typeof byOwner.id === "string") attackerEntityId = byOwner.id;
+              }
+            }
+
+            if (attackerEntityId && typeof nm.recordDamage === "function") {
+              try { nm.recordDamage((ent as any).id, attackerEntityId); } catch { /* ignore */ }
+            }
+
+            const beforeHp = typeof (ent as any).hp === "number" ? (ent as any).hp : undefined;
+            const r = nm.applyDamage(
+              (ent as any).id,
+              amount,
+              attackerEntityId ? { entityId: attackerEntityId } : undefined
+            );
+
+            if (typeof r === "number") {
+              this.emitDotTickLine(meta as any, ent as any, amount, r);
+              return;
+            }
+
+            if (beforeHp !== undefined && typeof (ent as any).hp === "number" && (ent as any).hp !== beforeHp) {
+              this.emitDotTickLine(meta as any, ent as any, amount, (ent as any).hp);
+              return;
+            }
           } catch {
             // fall through
           }
@@ -186,7 +222,45 @@ export class TickEngine {
               : 0;
 
         (ent as any).hp = Math.max(0, Math.floor(hp0) - Math.floor(amount));
+
+        this.emitDotTickLine(meta as any, ent as any, amount, (ent as any).hp);
       });
+    }
+  }
+
+
+  /**
+   * Emit a DOT tick combat line to the applier (caster).
+   * Defaults ON; disable via PW_DOT_TICK_MESSAGES=0.
+   */
+  private emitDotTickLine(meta: any, targetEnt: any, amount: number, hpAfter?: number): void {
+    try {
+      if (process.env.PW_DOT_TICK_MESSAGES === "0") return;
+
+      const appliedByKind = meta?.appliedByKind;
+      const appliedById = meta?.appliedById;
+      if (appliedByKind !== "character" || typeof appliedById !== "string") return;
+
+      let casterSession: any | undefined = undefined;
+      for (const s of (this.sessions as any)?.getAllSessions?.() ?? (this.sessions as any)?.values?.() ?? []) {
+        if ((s as any)?.character?.id === appliedById) { casterSession = s; break; }
+      }
+      if (!casterSession) return;
+
+      if (casterSession.roomId && targetEnt?.roomId && casterSession.roomId !== targetEnt.roomId) return;
+
+      const name = String(meta?.name ?? meta?.sourceId ?? "DOT");
+      const tgtName = String(targetEnt?.name ?? "target");
+      const hp = typeof hpAfter === "number" ? hpAfter : (typeof targetEnt?.hp === "number" ? targetEnt.hp : undefined);
+      const maxHp = typeof targetEnt?.maxHp === "number" ? targetEnt.maxHp : undefined;
+      const hpPart = (typeof hp === "number" && typeof maxHp === "number") ? ` (${hp}/${maxHp} HP)` : "";
+
+      const dmg = Math.max(1, Math.floor(Number(amount) || 0));
+      const line = `[world] [spell:${name}] ${name} deals ${dmg} damage to ${tgtName}.${hpPart}`;
+
+      this.sessions.send(casterSession, "mud_result", { text: line });
+    } catch {
+      // best-effort
     }
   }
 

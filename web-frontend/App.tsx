@@ -232,11 +232,35 @@ export function App() {
   const createCharacterBusy = busy;
 
   const classOptions: Array<{ id: string; label: string }> = [
-    { id: "warrior", label: "Warrior" },
-    { id: "mage", label: "Mage" },
-    { id: "rogue", label: "Rogue" },
+    // Core reference-kit classes (L1–10 seeded)
     { id: "virtuoso", label: "Virtuoso" },
-    // future: bard, enchanter, etc.
+    { id: "illusionist", label: "Illusionist" },
+    { id: "ascetic", label: "Ascetic" },
+    { id: "prophet", label: "Prophet" },
+    { id: "crusader", label: "Crusader" },
+    { id: "revenant", label: "Revenant" },
+    { id: "hierophant", label: "Hierophant" },
+    { id: "warlord", label: "Warlord" },
+    { id: "templar", label: "Templar" },
+    { id: "defiler", label: "Defiler" },
+    { id: "conjuror", label: "Conjuror" },
+    { id: "archmage", label: "Archmage" },
+    { id: "cutthroat", label: "Cutthroat" },
+    { id: "ravager", label: "Ravager" },
+    { id: "primalist", label: "Primalist" },
+    { id: "outrider", label: "Outrider" },
+    { id: "warlock", label: "Warlock" },
+    { id: "hunter", label: "Hunter" },
+    { id: "runic_knight", label: "Runic Knight" },
+
+    // Hidden chaos class – kept out of the UI for now on purpose.
+    // { id: "adventurer", label: "Adventurer" },
+
+    // Temporary/debug aliases (safe to keep during transition)
+    { id: "warrior", label: "Warrior (debug)" },
+    { id: "mage", label: "Mage (debug)" },
+    { id: "rogue", label: "Rogue (debug)" },
+    { id: "priest", label: "Priest (debug)" },
   ];
 
   // WebSocket / shard console
@@ -879,7 +903,7 @@ useEffect(() => {
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({ name: newCharName, classId: newCharClass }),
+        body: JSON.stringify({ shardId: "prime_shard", name: newCharName, classId: newCharClass }),
       });
 
       if (!res.ok) throw new Error(await res.text());

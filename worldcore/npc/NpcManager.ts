@@ -36,6 +36,7 @@ import {
 import { recordNpcCrimeAgainst, isProtectedNpc } from "./NpcCrime";
 import { isServiceProtectedNpcProto } from "../combat/ServiceProtection";
 import { clearAllStatusEffectsFromEntity } from "../combat/StatusEffects";
+import { handleNpcDeath } from "../combat/NpcDeathPipeline";
 
 import {
   markInCombat,
@@ -63,10 +64,35 @@ export class NpcManager {
 
   private readonly brain = new LocalSimpleAggroBrain();
 
+  // Optional services used for the canonical death pipeline (XP/loot/respawn).
+  // Attached by WorldServices after construction.
+  private deathServices?: {
+    rooms?: any;
+    characters?: any;
+    items?: any;
+    mail?: any;
+  };
+
   constructor(
     private readonly entities: EntityManager,
     private readonly sessions?: SessionManager,
   ) {}
+
+  /**
+   * Attach optional services required for XP/loot/corpse/respawn handling.
+   * This keeps NpcManager usable in lightweight tests while enabling the
+   * canonical death pipeline in the full server.
+   */
+  attachDeathPipelineServices(svc: {
+    rooms?: any;
+    characters?: any;
+    items?: any;
+    mail?: any;
+  }): void {
+    this.deathServices = svc;
+  }
+
+
 
   private isGuardProtectedRoom(proto?: NpcPrototype | null): boolean {
     const tags = proto?.tags ?? [];
@@ -286,15 +312,30 @@ export class NpcManager {
       }
     }
 
-    if (attacker?.character && proto) {
+    // Best-effort attacker resolution: DOT ticks often only know attackerEntityId.
+    let atkChar: CharacterState | undefined = attacker?.character;
+    if (!atkChar && attacker?.entityId && this.sessions) {
+      try {
+        const aEnt: any = this.entities.get(attacker.entityId);
+        const ownerSessionId = aEnt?.ownerSessionId;
+        if (ownerSessionId) {
+          const s: any = this.sessions.get(ownerSessionId);
+          if (s?.character) atkChar = s.character as CharacterState;
+        }
+      } catch {
+        // ignore
+      }
+    }
+
+    if (atkChar && proto) {
       if (isProtectedNpc(proto)) {
-        recordNpcCrimeAgainst(st, attacker.character, {
+        recordNpcCrimeAgainst(st, atkChar, {
           lethal: newHp <= 0,
           proto,
         });
       }
 
-      if (proto.canCallHelp && proto.groupId && attacker.entityId) {
+      if (proto.canCallHelp && proto.groupId && attacker?.entityId) {
         this.notifyPackAllies(attacker.entityId, st, proto, {
           snapAllies: false,
         });
@@ -307,6 +348,144 @@ export class NpcManager {
     }
 
     return newHp;
+  }
+
+  /**
+   * Apply DOT damage to an NPC and route fatal ticks through the canonical
+   * death pipeline (XP/loot/corpse/respawn). This method is intentionally
+   * safe to call from synchronous tick loops; any async reward work is
+   * started best-effort and not awaited.
+   */
+  applyDotDamage(
+    npcEntityId: string,
+    amount: number,
+    meta?: any,
+    attackerEntityId?: string,
+  ): number | null {
+    const st = this.npcsByEntityId.get(npcEntityId);
+    if (!st) return null;
+
+    const wasAlive = st.alive;
+
+    // Best-effort threat attribution.
+    if (attackerEntityId) {
+      try {
+        this.recordDamage(npcEntityId, attackerEntityId);
+      } catch {
+        // ignore
+      }
+    }
+
+    // Apply raw damage.
+    const newHp = this.applyDamage(
+      npcEntityId,
+      amount,
+      attackerEntityId ? { entityId: attackerEntityId } : undefined,
+    );
+
+    // Non-fatal tick: nothing else to do.
+    if (!wasAlive || newHp == null || newHp > 0) {
+      this.maybeEmitDotCombatLog(npcEntityId, amount, meta, attackerEntityId, newHp);
+      return newHp;
+    }
+
+    // Fatal tick: route through canonical death pipeline if services are attached.
+    try {
+      const npcEnt: any = this.entities.get(npcEntityId);
+      const aEnt: any = attackerEntityId ? this.entities.get(attackerEntityId) : null;
+      const ownerSessionId = aEnt?.ownerSessionId;
+      const session: any = ownerSessionId && this.sessions ? this.sessions.get(ownerSessionId) : null;
+      const char: any = session?.character ?? null;
+
+      if (npcEnt && this.deathServices) {
+        // Mark dead here (NpcManager is allowlisted for alive mutation).
+        try {
+          npcEnt.hp = 0;
+          npcEnt.alive = false;
+        } catch {
+          // ignore
+        }
+
+        void handleNpcDeath(
+          {
+            npcs: this,
+            entities: this.entities,
+            rooms: this.deathServices.rooms,
+            characters: this.deathServices.characters,
+            items: this.deathServices.items,
+            mail: this.deathServices.mail,
+          },
+          npcEnt,
+          { session, char, selfEntity: aEnt },
+          { silentText: process.env.PW_DOT_COMBAT_LOG !== "1" },
+        ).then((res) => {
+          // Optional: emit a DOT kill line to the attacker.
+          if (process.env.PW_DOT_COMBAT_LOG === "1") {
+            this.emitDotKillLine(npcEntityId, amount, meta, attackerEntityId, res?.text ?? "");
+          }
+        });
+      }
+    } catch {
+      // ignore
+    }
+
+    // Also emit per-tick log if enabled.
+    this.maybeEmitDotCombatLog(npcEntityId, amount, meta, attackerEntityId, newHp);
+    return newHp;
+  }
+
+  private maybeEmitDotCombatLog(
+    npcEntityId: string,
+    amount: number,
+    meta: any,
+    attackerEntityId: string | undefined,
+    newHp: number | null,
+  ): void {
+    if (process.env.PW_DOT_COMBAT_LOG !== "1") return;
+    if (!attackerEntityId || !this.sessions) return;
+
+    try {
+      const npc: any = this.entities.get(npcEntityId);
+      const aEnt: any = this.entities.get(attackerEntityId);
+      const ownerSessionId = aEnt?.ownerSessionId;
+      if (!ownerSessionId) return;
+      const session: any = this.sessions.get(ownerSessionId);
+      if (!session) return;
+
+      const dotName = String(meta?.name ?? meta?.id ?? meta?.effectId ?? "dot");
+      const hpStr = typeof newHp === "number" ? `${newHp}/${npc?.maxHp ?? "?"}` : "?";
+      const line = `[dot:${dotName}] ${npc?.name ?? "Target"} takes ${Math.floor(amount)} damage. (${hpStr} HP)`;
+
+      this.sessions.send(session, "mud_result", { text: line });
+    } catch {
+      // ignore
+    }
+  }
+
+  private emitDotKillLine(
+    npcEntityId: string,
+    amount: number,
+    meta: any,
+    attackerEntityId: string | undefined,
+    rewardTextSuffix: string,
+  ): void {
+    if (!attackerEntityId || !this.sessions) return;
+    try {
+      const npc: any = this.entities.get(npcEntityId);
+      const aEnt: any = this.entities.get(attackerEntityId);
+      const ownerSessionId = aEnt?.ownerSessionId;
+      if (!ownerSessionId) return;
+      const session: any = this.sessions.get(ownerSessionId);
+      if (!session) return;
+
+      const dotName = String(meta?.name ?? meta?.id ?? meta?.effectId ?? "dot");
+      let line = `[dot:${dotName}] You slay ${npc?.name ?? "your target"}!`;
+      if (rewardTextSuffix) line += rewardTextSuffix;
+
+      this.sessions.send(session, "mud_result", { text: line });
+    } catch {
+      // ignore
+    }
   }
 
   recordDamage(targetEntityId: string, attackerEntityId: string): void {

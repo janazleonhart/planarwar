@@ -15,7 +15,7 @@ const auth = new PostgresAuthService();
 const characters = new PostgresCharacterService();
 
 const createCharacterSchema = z.object({
-  shardId: z.string().min(1),
+  shardId: z.string().min(1).optional(),
   name: z.string().min(1),
   classId: z.string().min(1),
 });
@@ -94,14 +94,16 @@ router.post("/", async (req, res) => {
     const parsed = createCharacterSchema.safeParse(req.body);
     if (!parsed.success) {
       log.warn("Invalid createCharacter body", { body: req.body, issues: parsed.error.issues });
-      return res.status(400).json({ error: "shardId, name, classId required" });
+      return res.status(400).json({ error: "name, classId required" });
     }
 
     const { shardId, name, classId } = parsed.data;
 
+    const resolvedShardId = shardId ?? "prime_shard";
+
     const created: CharacterState = await characters.createCharacter({
       userId: u.userId,
-      shardId,
+      shardId: resolvedShardId,
       name,
       classId,
     });

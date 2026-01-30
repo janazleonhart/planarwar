@@ -486,8 +486,8 @@ function applyStatusEffectInternal(
 
       stackingPolicy: policy,
       stackingGroupId: bucketKey,
-      appliedByKind,
-      appliedById,
+      appliedByKind: input.appliedByKind,
+      appliedById: input.appliedById,
       versionKey,
     };
 
@@ -550,6 +550,8 @@ function applyStatusEffectInternal(
 
       stackingPolicy: policy,
       stackingGroupId: bucketKey,
+      appliedByKind: input.appliedByKind ?? existing.appliedByKind,
+      appliedById: input.appliedById ?? existing.appliedById,
     };
 
     writeBucket(state, bucketKey, [updated]);
@@ -573,6 +575,8 @@ function applyStatusEffectInternal(
 
     stackingPolicy: policy,
     stackingGroupId: bucketKey,
+    appliedByKind: input.appliedByKind,
+    appliedById: input.appliedById,
   };
 
   writeBucket(state, bucketKey, [inst]);
@@ -791,6 +795,14 @@ export type DotTickEvent = {
   effectId: StatusEffectId;
   damage: number;
   school: DamageSchool;
+  /** Optional attribution forwarded from the status instance (set by spell/ability cast). */
+  appliedByKind?: StatusEffectApplierKind;
+  appliedById?: string;
+  /** Optional source forwarding (spell/ability/item provenance). */
+  sourceKind?: StatusEffectSourceKind;
+  sourceId?: string;
+  /** Optional display name of the effect/spell for messaging. */
+  name?: string;
 };
 
 export type HotTickEvent = {
@@ -1166,7 +1178,16 @@ export function tickEntityStatusEffectsAndApplyDots(
         if (!Number.isFinite(dmg) || dmg < 1) dmg = 1;
 
         try {
-          applyDamage(dmg, { effectId: inst.id, damage: dmg, school });
+          applyDamage(dmg, {
+            effectId: inst.id,
+            damage: dmg,
+            school,
+            appliedByKind: inst.appliedByKind,
+            appliedById: inst.appliedById,
+            sourceKind: inst.sourceKind,
+            sourceId: inst.sourceId,
+            name: inst.name,
+          });
         } catch {
           // DOT application must never crash the tick loop.
         }

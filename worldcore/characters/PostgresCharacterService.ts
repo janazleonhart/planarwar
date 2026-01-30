@@ -4,6 +4,7 @@ import { db } from "../db/Database";
 import { Logger } from "../utils/logger";
 import { learnSpellInState } from "../spells/SpellLearning";
 import { learnAbilityInState } from "../abilities/AbilityLearning";
+import { getReferenceKitEntriesForClass } from "../spells/ReferenceKits";
 
 import {
   CharacterRow,
@@ -35,10 +36,96 @@ function normalizeClassKey(classId: string): string {
   return raw;
 }
 
+function safeNowMs(nowMs?: number): number {
+  const n = Number(nowMs);
+  return Number.isFinite(n) ? n : Date.now();
+}
+
+function ensureObj(v: any): Record<string, any> {
+  return v && typeof v === "object" ? v : {};
+}
+
+function ensureKnownMap(obj: any, key: string): Record<string, any> {
+  const base = ensureObj(obj);
+  const cur = (base as any)[key];
+  if (!cur || typeof cur !== "object") (base as any)[key] = {};
+  return (base as any)[key];
+}
+
 export type CharacterPatch = Partial<CharacterState>;
 
 export class PostgresCharacterService {
   private log = Logger.scope("CHAR_DB");
+
+  /**
+   * Apply System 5.4 reference-kit auto-grants (L1–10) directly into the persisted
+   * character state so the UI can see them immediately.
+   *
+   * Why this exists:
+   * - Spell auto-grants can be computed on the fly (ensureSpellbookAutogrants), but the
+   *   UI reads `spellbook.known` directly.
+   * - Ability auto-grants can be computed on the fly too, but the UI reads `abilities`
+   *   directly (either as a flat map or `abilities.known`).
+   *
+   * This function is idempotent.
+   */
+  private applyReferenceKitAutograntsInPlace(state: CharacterState, nowMs?: number): boolean {
+    const now = safeNowMs(nowMs);
+    const cls = normalizeClassKey(state.classId);
+    const lvl = Number.isFinite(Number(state.level)) && Number(state.level) > 0 ? Number(state.level) : 1;
+
+    const entries = getReferenceKitEntriesForClass(cls as any);
+    if (!entries.length) return false;
+
+    let changed = false;
+
+    // Ensure base containers exist
+    state.spellbook = ensureObj(state.spellbook) as any;
+    const spellKnown = ensureKnownMap(state.spellbook as any, "known");
+
+    state.abilities = ensureObj(state.abilities) as any;
+    const abilKnown = ensureKnownMap(state.abilities as any, "known");
+    const abilLearned = ensureKnownMap(state.abilities as any, "learned");
+
+    for (const e of entries as any[]) {
+      if (!e || e.isEnabled === false || e.autoGrant !== true) continue;
+      const minLevel = Math.max(1, Number(e.minLevel ?? 1) || 1);
+      if (lvl < minLevel) continue;
+
+      if (e.kind === "spell") {
+        const spellId = String(e.spellId ?? "").trim();
+        if (!spellId) continue;
+        if (!spellKnown[spellId]) {
+          spellKnown[spellId] = { rank: 1, learnedAt: now };
+          changed = true;
+        }
+        continue;
+      }
+
+      if (e.kind === "ability") {
+        const abilityId = String(e.abilityId ?? "").trim();
+        if (!abilityId) continue;
+
+        // UI reads abilities (flat map or abilities.known). Runtime code prefers abilities.learned.
+        if (!abilKnown[abilityId]) {
+          abilKnown[abilityId] = { rank: 1, learnedAt: now };
+          changed = true;
+        }
+        if (!abilLearned[abilityId]) {
+          abilLearned[abilityId] = { rank: 1, learnedAt: now };
+          changed = true;
+        }
+        // Preserve older UI behavior that treated `abilities` as a flat id->true map.
+        if (!(state.abilities as any)[abilityId]) {
+          (state.abilities as any)[abilityId] = true;
+          changed = true;
+        }
+        continue;
+      }
+    }
+
+    return changed;
+  }
 
   async listCharactersForUser(userId: string): Promise<CharacterSummary[]> {
     const result = await db.query(
@@ -62,7 +149,14 @@ export class PostgresCharacterService {
     );
 
     if (result.rowCount === 0) return null;
-    return rowToCharacterState(result.rows[0]);
+    const state = rowToCharacterState(result.rows[0]);
+
+    // Backfill reference-kit grants for older characters (idempotent).
+    if (this.applyReferenceKitAutograntsInPlace(state)) {
+      await this.saveCharacter(state);
+    }
+
+    return state;
   }
 
   async loadCharacterForUser(
@@ -75,7 +169,14 @@ export class PostgresCharacterService {
     );
 
     if (r.rowCount === 0) return null;
-    return rowToCharacterState(r.rows[0]);
+    const state = rowToCharacterState(r.rows[0]);
+
+    // Backfill reference-kit grants for older characters (idempotent).
+    if (this.applyReferenceKitAutograntsInPlace(state)) {
+      await this.saveCharacter(state);
+    }
+
+    return state;
   }
 
   async createCharacter(input: CreateCharacterInput): Promise<CharacterState> {
@@ -135,6 +236,11 @@ export class PostgresCharacterService {
     );
 
     const state = rowToCharacterState(result.rows[0]);
+
+    // Ensure new characters actually *have* their L1 reference-kit actions in state.
+    if (this.applyReferenceKitAutograntsInPlace(state)) {
+      await this.saveCharacter(state);
+    }
 
     this.log.info("Created character", {
       id: state.id,
@@ -266,6 +372,9 @@ export class PostgresCharacterService {
       xp: r.newXp,
       attributes: newAttributes,
     };
+
+    // Reference-kit L1–10 grants should appear as you level.
+    this.applyReferenceKitAutograntsInPlace(updated);
 
     await this.saveCharacter(updated);
     return await this.loadCharacter(charId);
