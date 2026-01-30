@@ -890,6 +890,39 @@
         "StatusEffect storage under char.progression.statusEffects.active"
       ]
     },
+    "combat.combatLog": {
+      "dependsOn": [],
+      "functions": [
+        "formatWorldSpellDotTickLine",
+        "formatWorldSpellHotTickLine"
+      ],
+      "kind": "utility",
+      "notes": [
+        "Centralized combat log line formatters for periodic effects (DOT/HOT) and future unification work.",
+        "Ensures DOT and HOT ticks use consistent [world] [spell:*] line shapes."
+      ],
+      "path": "worldcore/combat/CombatLog.ts",
+      "provides": []
+    },
+    "combat.playerHotTicker": {
+      "dependsOn": [
+        "combat.combatLog",
+        "combat.statusEffects",
+        "core.entityManager",
+        "core.sessionManager"
+      ],
+      "functions": [
+        "tickAllPlayerHots(entities,sessions,nowMs)"
+      ],
+      "kind": "utility",
+      "notes": [
+        "Ticks HOTs stored on CharacterState for all sessions and applies healing to the corresponding player entity.",
+        "Used by TickEngine to keep periodic healing in the canonical heartbeat.",
+        "Controlled by PW_HOT_TICK_MESSAGES (default on)."
+      ],
+      "path": "worldcore/combat/PlayerHotTicker.ts",
+      "provides": []
+    },
     "combat.statusStackingPolicy": {
       "class": null,
       "ctorArgs": [],

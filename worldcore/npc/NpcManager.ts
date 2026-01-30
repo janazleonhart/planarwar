@@ -365,6 +365,37 @@ export class NpcManager {
     const st = this.npcsByEntityId.get(npcEntityId);
     if (!st) return null;
 
+    // HEAL: Tick loops may only carry DOT attribution meta (appliedByKind/appliedById)
+    // and omit attackerEntityId. When that happens, resolve the attacker entity
+    // best-effort so XP/loot/corpse credit routes correctly.
+    if (!attackerEntityId && meta && this.sessions) {
+      try {
+        const kind = String(meta.appliedByKind ?? "");
+        const id = String(meta.appliedById ?? "");
+
+        let ownerSessionId: string | null = null;
+
+        if (kind === "session" && id) {
+          ownerSessionId = id;
+        } else if (kind === "character" && id) {
+          for (const s of this.sessions.values()) {
+            const ch: any = (s as any).character;
+            if (ch && String(ch.id) === id) {
+              ownerSessionId = s.id;
+              break;
+            }
+          }
+        }
+
+        if (ownerSessionId) {
+          const selfEnt = this.entities.getEntityByOwner(ownerSessionId);
+          if (selfEnt) attackerEntityId = selfEnt.id;
+        }
+      } catch {
+        // ignore
+      }
+    }
+
     const wasAlive = st.alive;
 
     // Best-effort threat attribution.

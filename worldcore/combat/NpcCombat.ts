@@ -248,7 +248,12 @@ export async function performNpcAttack(
   let tag = "[combat]";
   if (opts.abilityName) {
     const prefix = opts.tagPrefix ?? "ability";
-    tag = `[${prefix}:${opts.abilityName}]`;
+    // Spells/songs use the same [world] prefix as other spell output for consistency.
+    if (prefix === "spell" || prefix === "song") {
+      tag = `[world] [${prefix}:${opts.abilityName}]`;
+    } else {
+      tag = `[${prefix}:${opts.abilityName}]`;
+    }
   }
 
   const overkill = rawDamage > dmg ? rawDamage - dmg : 0;

@@ -7,6 +7,7 @@ import { ServerWorldManager } from "../world/ServerWorldManager";
 import { Logger } from "../utils/logger";
 import { NpcManager } from "../npc/NpcManager";
 import { tickEntityStatusEffectsAndApplyDots } from "../combat/StatusEffects";
+import { formatWorldSpellDotTickLine } from "../combat/CombatLog";
 
 export interface TickEngineConfig {
   intervalMs: number; // tick interval (e.g. 50ms for 20 TPS)
@@ -104,7 +105,6 @@ export class TickEngine {
       }
     }
 
-    
     // NPC status effects + DOTs (periodic damage). This is intentionally best-effort.
     try {
       this.tickNpcStatusDots(now);
@@ -112,7 +112,7 @@ export class TickEngine {
       this.log.warn("Error during NPC status DOT tick", { error: String(err) });
     }
 
-// Global hook for systems that want a heartbeat (SongEngine, etc.)
+    // Global hook for systems that want a heartbeat (SongEngine, etc.)
     try {
       this.cfg.onTick?.(now, this.tickCount, deltaMs);
     } catch (err: any) {
@@ -141,6 +141,7 @@ export class TickEngine {
       });
     }
   }
+
   private tickNpcStatusDots(now: number): void {
     const all = (() => {
       try {
@@ -162,71 +163,81 @@ export class TickEngine {
       tickEntityStatusEffectsAndApplyDots(ent as any, now, (amount, meta) => {
         if (!Number.isFinite(amount) || amount <= 0) return;
 
-        // Prefer routing through NpcManager so downstream hooks (aggro/crime/logging) can run.
-        // NOTE: NpcManager.applyDamage signature is (npcEntityId, amount, attacker?),
-        // so we must NOT pass the DOT meta as the attacker object.
         const nm: any = this.npcs as any;
-        if (nm && typeof nm.applyDamage === "function") {
-          try {
-            // Resolve the DOT applier's *player entityId*.
-            // StatusEffects stores appliedById as a CharacterState.id (NOT sessionId).
-            let attackerEntityId: string | undefined = undefined;
 
-            const appliedByKind = (meta as any)?.appliedByKind;
-            const appliedById = (meta as any)?.appliedById;
+        // Resolve the DOT applier's *player entityId*.
+        // StatusEffects stores appliedById as a CharacterState.id (NOT sessionId).
+        let attackerEntityId: string | undefined = undefined;
 
-            if (appliedByKind === "character" && typeof appliedById === "string") {
-              let ownerSessionId: string | undefined = undefined;
-              try {
-                for (const s of (this.sessions as any)?.getAllSessions?.() ?? (this.sessions as any)?.values?.() ?? []) {
-                  if ((s as any)?.character?.id === appliedById) { ownerSessionId = (s as any)?.id; break; }
+        try {
+          const appliedByKind = (meta as any)?.appliedByKind;
+          const appliedById = (meta as any)?.appliedById;
+
+          if (appliedByKind === "character" && typeof appliedById === "string") {
+            let ownerSessionId: string | undefined = undefined;
+
+            try {
+              for (const s of (this.sessions as any)?.getAllSessions?.() ?? (this.sessions as any)?.values?.() ?? []) {
+                if ((s as any)?.character?.id === appliedById) {
+                  ownerSessionId = (s as any)?.id;
+                  break;
                 }
-              } catch { /* ignore */ }
-              if (ownerSessionId) {
-                const byOwner = (this.entities as any)?.getEntityByOwner?.(ownerSessionId);
-                if (byOwner && typeof byOwner.id === "string") attackerEntityId = byOwner.id;
               }
+            } catch {
+              // ignore
             }
 
-            if (attackerEntityId && typeof nm.recordDamage === "function") {
+            if (ownerSessionId) {
+              const byOwner = (this.entities as any)?.getEntityByOwner?.(ownerSessionId);
+              if (byOwner && typeof byOwner.id === "string") attackerEntityId = byOwner.id;
+            }
+          }
+        } catch {
+          // ignore
+        }
+
+        // Prefer routing through NpcManager.applyDotDamage so fatal ticks go through the
+        // canonical death pipeline (XP/loot/corpse/respawn). Fall back to applyDamage.
+        if (nm) {
+          try {
+            if (typeof nm.recordDamage === "function" && attackerEntityId) {
               try { nm.recordDamage((ent as any).id, attackerEntityId); } catch { /* ignore */ }
             }
 
-            const beforeHp = typeof (ent as any).hp === "number" ? (ent as any).hp : undefined;
-
-            // Prefer applyDotDamage so fatal ticks route through canonical XP/loot/corpse pipeline.
-            // Fallback to applyDamage for older builds (or if DOT pipeline isn't attached).
-            let r: any = null;
+            // ✅ Canonical DOT route
             if (typeof nm.applyDotDamage === "function") {
-              r = nm.applyDotDamage(
-                (ent as any).id,
-                amount,
-                meta,
-                attackerEntityId,
-              );
-            } else {
-              r = nm.applyDamage(
+              const r = nm.applyDotDamage((ent as any).id, amount, meta, attackerEntityId);
+              if (typeof r === "number") {
+                this.emitDotTickLine(meta as any, ent as any, amount, r);
+                return;
+              }
+            }
+
+            // Fallback: legacy damage path
+            if (typeof nm.applyDamage === "function") {
+              const beforeHp = typeof (ent as any).hp === "number" ? (ent as any).hp : undefined;
+              const r = nm.applyDamage(
                 (ent as any).id,
                 amount,
                 attackerEntityId ? { entityId: attackerEntityId } : undefined
               );
-            }
 
-            if (typeof r === "number") {
-              this.emitDotTickLine(meta as any, ent as any, amount, r);
-              return;
-            }
+              if (typeof r === "number") {
+                this.emitDotTickLine(meta as any, ent as any, amount, r);
+                return;
+              }
 
-            if (beforeHp !== undefined && typeof (ent as any).hp === "number" && (ent as any).hp !== beforeHp) {
-              this.emitDotTickLine(meta as any, ent as any, amount, (ent as any).hp);
-              return;
+              if (beforeHp !== undefined && typeof (ent as any).hp === "number" && (ent as any).hp !== beforeHp) {
+                this.emitDotTickLine(meta as any, ent as any, amount, (ent as any).hp);
+                return;
+              }
             }
           } catch {
-            // fall through
+            // fall through to raw HP fallback
           }
         }
 
-        // Fallback: mutate the in-memory entity HP directly (tests/dev).
+        // Absolute fallback: mutate the in-memory entity HP directly (tests/dev).
         const hp0 =
           typeof (ent as any).hp === "number"
             ? (ent as any).hp
@@ -235,12 +246,10 @@ export class TickEngine {
               : 0;
 
         (ent as any).hp = Math.max(0, Math.floor(hp0) - Math.floor(amount));
-
         this.emitDotTickLine(meta as any, ent as any, amount, (ent as any).hp);
       });
     }
   }
-
 
   /**
    * Emit a DOT tick combat line to the applier (caster).
@@ -254,27 +263,27 @@ export class TickEngine {
       const appliedById = meta?.appliedById;
       if (appliedByKind !== "character" || typeof appliedById !== "string") return;
 
-      let casterSession: any | undefined = undefined;
+      // Find the session for this character id.
+      let ownerSession: any = null;
       for (const s of (this.sessions as any)?.getAllSessions?.() ?? (this.sessions as any)?.values?.() ?? []) {
-        if ((s as any)?.character?.id === appliedById) { casterSession = s; break; }
+        if ((s as any)?.character?.id === appliedById) { ownerSession = s; break; }
       }
-      if (!casterSession) return;
+      if (!ownerSession) return;
 
-      if (casterSession.roomId && targetEnt?.roomId && casterSession.roomId !== targetEnt.roomId) return;
+      const spellName = String(meta?.name ?? meta?.sourceId ?? "DOT");
+      const tgtName = String(targetEnt?.name ?? "Target");
+      const dmg = Math.floor(amount);
 
-      const name = String(meta?.name ?? meta?.sourceId ?? "DOT");
-      const tgtName = String(targetEnt?.name ?? "target");
-      const hp = typeof hpAfter === "number" ? hpAfter : (typeof targetEnt?.hp === "number" ? targetEnt.hp : undefined);
-      const maxHp = typeof targetEnt?.maxHp === "number" ? targetEnt.maxHp : undefined;
-      const hpPart = (typeof hp === "number" && typeof maxHp === "number") ? ` (${hp}/${maxHp} HP)` : "";
-
-      const dmg = Math.max(1, Math.floor(Number(amount) || 0));
-      const line = `[world] [spell:${name}] ${name} deals ${dmg} damage to ${tgtName}.${hpPart}`;
-
-      this.sessions.send(casterSession, "mud_result", { text: line });
+      const line = formatWorldSpellDotTickLine({
+        spellName,
+        targetName: tgtName,
+        damage: dmg,
+        hpAfter: typeof hpAfter === "number" ? hpAfter : undefined,
+        maxHp: typeof (targetEnt as any)?.maxHp === "number" ? (targetEnt as any).maxHp : undefined,
+      });
+      this.sessions.send(ownerSession, "mud_result", { text: line });
     } catch {
-      // best-effort
+      // ignore
     }
   }
-
 }
