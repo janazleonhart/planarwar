@@ -6058,6 +6058,19 @@
         "Prevents multi-caster absorb stacking exploits for identical shield effects."
       ]
     },
+    "test.contractSpellCleanseSingleAllyDenyPathNoCostNoCooldown": {
+      "kind": "test",
+      "lifecycle": "test",
+      "path": "worldcore/test/contract_spellCleanseSingleAlly_denyPath_noCostNoCooldown.test.ts",
+      "class": null,
+      "ctorArgs": [],
+      "dependsOn": ["mud.spells", "combat.cooldowns", "resources.powerResources"],
+      "provides": [],
+      "owns": [],
+      "notes": [
+        "Contract: cleanse_single_ally must resolve/deny invalid targets BEFORE spending mana or starting cooldown."
+      ]
+    },
     "test.utils": {
       "dependsOn": [],
       "functions": [
