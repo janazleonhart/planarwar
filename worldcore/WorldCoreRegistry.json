@@ -6094,6 +6094,19 @@
         "Contract: cleanse_single_ally must resolve/deny invalid targets BEFORE spending mana or starting cooldown."
       ]
     },
+    "test.contractSeedSpellUnlocksReferToSeededSpells": {
+      "kind": "test",
+      "path": "worldcore/test/contract_seedSpellUnlocksReferToSeededSpells.test.ts",
+      "class": "(test)",
+      "ctorArgs": [],
+      "lifecycle": "static",
+      "dependsOn": [],
+      "provides": [],
+      "owns": [],
+      "notes": [
+        "Contract: seed integrity \u2014 any spell_id referenced in seed spell_unlocks must exist in seeded spells."
+      ]
+    },
     "test.utils": {
       "dependsOn": [],
       "functions": [
@@ -6228,6 +6241,17 @@
         "plan/commit: deterministic baseline resource spawn_points (ore/herb/wood/fish/rare) within --bounds",
         "dry-run preview: prints planned inserts/updates with seed + density controls (use --commit to write)",
         "audit mode: summarize resource node coverage by bounds / proto kinds"
+      ]
+    },
+    "tools.seedSpellIdAudit": {
+      "kind": "tool",
+      "path": "worldcore/tools/seedSpellIdAudit.ts",
+      "bin": "dist/worldcore/tools/seedSpellIdAudit.js",
+      "dependsOn": [],
+      "notes": [
+        "Audits worldcore/infra/schema seed SQL: spell_unlocks.spell_id must exist in spells.id (seeded).",
+        "Prevents FK failures during applySchema / seed runs.",
+        "Supports --schemaDir, --json, and --allowMissing for temporary exceptions."
       ]
     },
     "tools.simBrain": {
