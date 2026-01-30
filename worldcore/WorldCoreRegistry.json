@@ -6004,6 +6004,11 @@
       "path": "worldcore/test/contract_spellShieldSingleAllyAbsorbsDamage.test.ts",
       "provides": []
     },
+    "test.contractSpellHotSingleAllyTicks": {
+      "kind": "test",
+      "notes": "[contract] heal_hot_single_ally applies HOT to ally and ticks healing deterministically",
+      "path": "worldcore/test/contract_spellHotSingleAllyTicks.test.ts"
+    },
     "test.utils": {
       "dependsOn": [],
       "functions": [
