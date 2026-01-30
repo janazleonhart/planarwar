@@ -878,8 +878,7 @@
         "Entity tick helpers can optionally apply DOT damage and must stop immediately if entity dies.",
         "Stacking behavior is governed by StatusStackingPolicy (including versioned_by_applier).",
         "Entity/NPC effects are stored under entity.statusEffects.active (mirrors character progression storage).",
-        "Imports DamageSchool as a type from CombatEngine (type-only); no runtime circular dependency.",
-        "tickEntityStatusEffectsAndApplyDots emits DotTickEvent meta including appliedByKind/appliedById for kill/XP attribution and combat log routing."
+        "Imports DamageSchool as a type from CombatEngine (type-only); no runtime circular dependency."
       ],
       "path": "worldcore/combat/StatusEffects.ts",
       "provides": [
@@ -4883,6 +4882,23 @@
       ],
       "owns": [],
       "path": "worldcore/test/contract_adminSpawnPointsSnapshotRestoreRoutes.test.ts",
+      "provides": [],
+      "service": "test.contract"
+    },
+    "test.contractAliveMutationsRestricted": {
+      "class": null,
+      "ctorArgs": [],
+      "dependsOn": [
+        "test.utils"
+      ],
+      "kind": "test",
+      "lifecycle": "test",
+      "notes": [
+        "Contract: alive mutations are restricted to canonical lifecycle modules (keep the allowlist tiny).",
+        "Prevents forbidden `(entity as any).alive = ...` writes outside the lifecycle owners."
+      ],
+      "owns": [],
+      "path": "worldcore/test/contract_aliveMutationsRestricted.test.ts",
       "provides": [],
       "service": "test.contract"
     },
