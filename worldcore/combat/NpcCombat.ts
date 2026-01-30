@@ -26,6 +26,7 @@ import {
   type SpellSchoolId,
 } from "./CombatEngine";
 import { computeEntityCombatStatusSnapshot, clearAllStatusEffectsFromEntity } from "./StatusEffects";
+import { formatWorldSpellDirectDamageLine } from "./CombatLog";
 import type { AttackChannel } from "../actions/ActionTypes";
 import {
   gainPowerResource,
@@ -243,12 +244,14 @@ export async function performNpcAttack(
   } catch {
     // Ditto
   }
-
   // --- Build combat line ---
+  // Keep spell/song direct damage lines consistent with DOT/HOT tick formatting.
+  const prefix = opts.tagPrefix ?? "ability";
+  const isWorldSpellLine =
+    !!opts.abilityName && (prefix === "spell" || prefix === "song");
+
   let tag = "[combat]";
   if (opts.abilityName) {
-    const prefix = opts.tagPrefix ?? "ability";
-    // Spells/songs use the same [world] prefix as other spell output for consistency.
     if (prefix === "spell" || prefix === "song") {
       tag = `[world] [${prefix}:${opts.abilityName}]`;
     } else {
@@ -258,11 +261,26 @@ export async function performNpcAttack(
 
   const overkill = rawDamage > dmg ? rawDamage - dmg : 0;
 
-  let line = `${tag} You hit ${npc.name} for ${rawDamage} damage`;
-  if (overkill > 0) {
-    line += ` (${overkill} overkill)`;
+  const targetMaxHp = typeof (npc as any).maxHp === "number" ? (npc as any).maxHp : undefined;
+
+  let line: string;
+  if (isWorldSpellLine) {
+    line = formatWorldSpellDirectDamageLine({
+      abilityKind: prefix as "spell" | "song",
+      spellName: opts.abilityName as string,
+      targetName: npc.name,
+      damage: rawDamage,
+      overkill,
+      hpAfter: newHp,
+      maxHp,
+    });
+  } else {
+    line = `${tag} You hit ${npc.name} for ${rawDamage} damage`;
+    if (overkill > 0) {
+      line += ` (${overkill} overkill)`;
+    }
+    line += `. (${newHp}/${targetMaxHp ?? "?"} HP)`;
   }
-  line += `. (${newHp}/${maxHp} HP)`;
 
   if (result.wasCrit) {
     line += " (Critical hit!)";

@@ -44,3 +44,27 @@ export function formatWorldSpellHotTickLine(opts: {
   const hpPart = formatHpPart(opts.hpAfter, opts.maxHp);
   return `[world] [spell:${spellName}] ${spellName} restores ${heal} health to ${targetName}.${hpPart}`;
 }
+
+export function formatWorldSpellDirectDamageLine(opts: {
+  spellName: string;
+  targetName: string;
+  damage: number;
+  hpAfter?: number;
+  maxHp?: number;
+  overkill?: number;
+  abilityKind?: "spell" | "song";
+}): string {
+  const spellName = String(opts.spellName || "Spell");
+  const targetName = String(opts.targetName || "target");
+  const dmg = clampInt(opts.damage, 0, 9_999_999);
+  const overkill = clampInt(opts.overkill ?? 0, 0, 9_999_999);
+  const hpPart = formatHpPart(opts.hpAfter, opts.maxHp);
+
+  const kind = opts.abilityKind === "song" ? "song" : "spell";
+  const tag = `[world] [${kind}:${spellName}]`;
+
+  let line = `${tag} You hit ${targetName} for ${dmg} damage`;
+  if (overkill > 0) line += ` (${overkill} overkill)`;
+  line += `.${hpPart}`;
+  return line;
+}

@@ -891,18 +891,24 @@
       ]
     },
     "combat.combatLog": {
+      "kind": "service",
+      "path": "worldcore/combat/CombatLog.ts",
       "dependsOn": [],
       "functions": [
-        "formatWorldSpellDotTickLine",
-        "formatWorldSpellHotTickLine"
+        "clampInt(n,min,max)",
+        "formatHpPart(hpAfter?, maxHp?)",
+        "formatWorldSpellDotTickLine(opts)",
+        "formatWorldSpellHotTickLine(opts)",
+        "formatWorldSpellDirectDamageLine(opts)"
       ],
-      "kind": "utility",
+      "provides": [
+        "Deterministic combat log line formatting for DOT/HOT ticks and direct spell hits.",
+        "Canonical [world] [spell:*] prefix used by mud_result lines for parsing and UI."
+      ],
       "notes": [
-        "Centralized combat log line formatters for periodic effects (DOT/HOT) and future unification work.",
-        "Ensures DOT and HOT ticks use consistent [world] [spell:*] line shapes."
-      ],
-      "path": "worldcore/combat/CombatLog.ts",
-      "provides": []
+        "Keep these formatters boring and stable; contract tests pin exact output shapes.",
+        "All formatters include hp/maxHp when provided, and clamp numeric values defensively."
+      ]
     },
     "combat.playerHotTicker": {
       "dependsOn": [
@@ -5962,6 +5968,16 @@
       ],
       "notes": [
         "Locks DOT default stacking policy to versioned_by_applier and prevents multi-caster overwrite."
+      ]
+    },
+    "test.contractCombatLogDirectSpellDamageConsistent": {
+      "kind": "test",
+      "path": "worldcore/test/contract_combatLog_directSpellDamage_consistent.test.ts",
+      "dependsOn": [
+        "combat.combatLog"
+      ],
+      "notes": [
+        "Locks CombatLog direct spell damage formatting to match DOT/HOT tick style and canonical prefix."
       ]
     },
     "test.utils": {
