@@ -5980,6 +5980,30 @@
         "Locks CombatLog direct spell damage formatting to match DOT/HOT tick style and canonical prefix."
       ]
     },
+    "test.contractSpellCleanseSingleAllyRemovesDebuffNotBuff": {
+      "class": "(test)",
+      "dependsOn": [],
+      "kind": "test",
+      "lifecycle": "test",
+      "notes": [
+        "Contract: cleanse_single_ally removes tagged debuffs from ally but does not remove unrelated buffs"
+      ],
+      "owns": [],
+      "path": "worldcore/test/contract_spellCleanseSingleAllyRemovesDebuffNotBuff.test.ts",
+      "provides": []
+    },
+    "test.contractSpellShieldSingleAllyAbsorbsDamage": {
+      "class": "(test)",
+      "dependsOn": [],
+      "kind": "test",
+      "lifecycle": "test",
+      "notes": [
+        "Contract: shield_single_ally applies absorb shield to ally and depletes/removes on damage"
+      ],
+      "owns": [],
+      "path": "worldcore/test/contract_spellShieldSingleAllyAbsorbsDamage.test.ts",
+      "provides": []
+    },
     "test.utils": {
       "dependsOn": [],
       "functions": [
