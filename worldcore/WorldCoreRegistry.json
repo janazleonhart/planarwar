@@ -6009,6 +6009,17 @@
       "notes": "[contract] heal_hot_single_ally applies HOT to ally and ticks healing deterministically",
       "path": "worldcore/test/contract_spellHotSingleAllyTicks.test.ts"
     },
+    "test.contractSpellHotDoesNotTickPastExpiry": {
+      "kind": "test",
+      "path": "worldcore/test/contract_spellHotDoesNotTickPastExpiry.test.ts",
+      "class": "(test)",
+      "lifecycle": "test",
+      "ctorArgs": [],
+      "dependsOn": [],
+      "provides": [],
+      "owns": [],
+      "notes": ["Contract: HOT must not tick beyond expiry boundary (duration clamp)."]
+    },
     "test.utils": {
       "dependsOn": [],
       "functions": [
