@@ -11,7 +11,9 @@
     "audit:npcs": "npm run build && node ../dist/worldcore/tools/auditNpcLawTags.js",
     "registry:check": "node tools/registryCheck.js --mode=worktree",
     "registry:ci": "node tools/registryCheck.js --mode=ci",
-    "registry:audit": "node tools/registryCheck.js --mode=all"
+    "registry:audit": "node tools/registryCheck.js --mode=all",
+    "audit:seed:npc-lawtags": "npm run build && node ../dist/worldcore/tools/seedNpcLawTagsAudit.js",
+    "verify": "npm run test && npm run audit:seed:npc-lawtags"
   },
   "dependencies": {
     "dotenv": "^16.4.5",
