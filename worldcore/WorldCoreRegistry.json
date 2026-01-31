@@ -6124,6 +6124,19 @@
         "Models the bootstrap seed that populates abilities from ability_unlocks; fails if unlocks occur after the last bootstrap without explicit abilities inserts."
       ]
     },
+    "test.contract_templar_L1_10_kit_spellFlavor": {
+      "class": "(test)",
+      "ctorArgs": [],
+      "dependsOn": [],
+      "kind": "test",
+      "lifecycle": "static",
+      "notes": [
+        "Contract: templar L1–10 reference kit is playable in WORLDCORE_TEST mode; spells exist in SPELLS and have non-placeholder flavor; autogrant by level 10."
+      ],
+      "owns": [],
+      "path": "worldcore/test/contract_templar_L1_10_kit_spellFlavor.test.ts",
+      "provides": []
+    },
     "test.utils": {
       "dependsOn": [],
       "functions": [

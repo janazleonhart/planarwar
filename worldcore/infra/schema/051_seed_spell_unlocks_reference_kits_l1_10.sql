@@ -6,7 +6,7 @@
 -- - Do NOT introduce brand-new spell ids here unless you also seed them into public.spells first.
 -- - This file should stay aligned with the canonical seeds:
 --   - 050_seed_reference_class_kits_L1_10.sql (Archmage + Warlock)
---   - 050A_seed_reference_status_effect_spells_v1.sql (Templar support spells)
+--   - 050_seed_reference_status_effect_spells_v1.sql (Templar support spells)
 
 BEGIN;
 
@@ -26,9 +26,13 @@ VALUES
   ('warlock', 'warlock_unholy_brand',    7, true, true, 'Ref kit L1–10: damageDealtPct debuff'),
   ('warlock', 'warlock_demon_skin',      9, true, true, 'Ref kit L1–10: self shield'),
 
-  -- Templar (support reference spells seeded in 050A)
-  ('templar', 'templar_restorative_prayer', 3, true, true, 'Ref kit L1–10: HoT'),
-  ('templar', 'templar_minor_cleanse',      5, true, true, 'Ref kit L1–10: cleanse')
+
+  -- Templar
+  ('templar','templar_restorative_prayer', 1, true, true, 'Ref kit L1–10: HoT sustain'),
+  ('templar','templar_smite',              3, true, true, 'Ref kit L1–10: starter nuke'),
+  ('templar','templar_minor_cleanse',      5, true, true, 'Ref kit L1–10: self cleanse'),
+  ('templar','templar_aegis_of_light',     7, true, true, 'Ref kit L1–10: self shield'),
+  ('templar','templar_judgment',           9, true, true, 'Ref kit L1–10: damageTakenPct debuff')
 ON CONFLICT (class_id, spell_id)
 DO UPDATE SET
   min_level  = EXCLUDED.min_level,

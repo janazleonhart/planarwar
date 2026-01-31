@@ -4,7 +4,7 @@
 //
 // `ClassId` contains more classes than we seed here.
 // This is a curated bootstrap kit set, so the map is intentionally Partial.
-// Always use the helpers below so missing keys safely fall back to a minimal universal starter kit.
+// Always use the helpers below so missing keys safely fall back to [].
 
 import type { ClassId } from "../classes/ClassDefinitions";
 
@@ -113,6 +113,54 @@ export const REFERENCE_CLASS_KITS_L1_10 = {
     },
   ],
 
+  warlock: [
+    {
+      kind: "spell",
+      classId: "warlock",
+      spellId: "warlock_shadow_bolt",
+      minLevel: 1,
+      autoGrant: true,
+      isEnabled: true,
+      source: "reference_kit",
+    },
+    {
+      kind: "spell",
+      classId: "warlock",
+      spellId: "warlock_siphon_life",
+      minLevel: 3,
+      autoGrant: true,
+      isEnabled: true,
+      source: "reference_kit",
+    },
+    {
+      kind: "spell",
+      classId: "warlock",
+      spellId: "warlock_drain_soul",
+      minLevel: 5,
+      autoGrant: true,
+      isEnabled: true,
+      source: "reference_kit",
+    },
+    {
+      kind: "spell",
+      classId: "warlock",
+      spellId: "warlock_unholy_brand",
+      minLevel: 7,
+      autoGrant: true,
+      isEnabled: true,
+      source: "reference_kit",
+    },
+    {
+      kind: "spell",
+      classId: "warlock",
+      spellId: "warlock_demon_skin",
+      minLevel: 9,
+      autoGrant: true,
+      isEnabled: true,
+      source: "reference_kit",
+    },
+  ],
+
   templar: [
     {
       kind: "spell",
@@ -126,37 +174,16 @@ export const REFERENCE_CLASS_KITS_L1_10 = {
     {
       kind: "spell",
       classId: "templar",
+      spellId: "templar_smite",
+      minLevel: 3,
+      autoGrant: true,
+      isEnabled: true,
+      source: "reference_kit",
+    },
+    {
+      kind: "spell",
+      classId: "templar",
       spellId: "templar_minor_cleanse",
-      minLevel: 3,
-      autoGrant: true,
-      isEnabled: true,
-      source: "reference_kit",
-    },
-  ],
-
-  warlock: [
-    {
-      kind: "spell",
-      classId: "warlock",
-      spellId: "warlock_void_bolt",
-      minLevel: 1,
-      autoGrant: true,
-      isEnabled: true,
-      source: "reference_kit",
-    },
-    {
-      kind: "spell",
-      classId: "warlock",
-      spellId: "warlock_curse_of_frailty",
-      minLevel: 3,
-      autoGrant: true,
-      isEnabled: true,
-      source: "reference_kit",
-    },
-    {
-      kind: "spell",
-      classId: "warlock",
-      spellId: "warlock_shadow_rot",
       minLevel: 5,
       autoGrant: true,
       isEnabled: true,
@@ -164,9 +191,18 @@ export const REFERENCE_CLASS_KITS_L1_10 = {
     },
     {
       kind: "spell",
-      classId: "warlock",
-      spellId: "warlock_fear",
+      classId: "templar",
+      spellId: "templar_aegis_of_light",
       minLevel: 7,
+      autoGrant: true,
+      isEnabled: true,
+      source: "reference_kit",
+    },
+    {
+      kind: "spell",
+      classId: "templar",
+      spellId: "templar_judgment",
+      minLevel: 9,
       autoGrant: true,
       isEnabled: true,
       source: "reference_kit",
@@ -175,22 +211,7 @@ export const REFERENCE_CLASS_KITS_L1_10 = {
 } as const satisfies Partial<Record<ClassId, ReferenceKitEntry[]>>;
 
 export function getReferenceKitEntriesForClass(classId: ClassId): ReferenceKitEntry[] {
-  const explicit = (REFERENCE_CLASS_KITS_L1_10 as Partial<Record<ClassId, ReferenceKitEntry[]>>)[classId];
-  if (Array.isArray(explicit) && explicit.length > 0) return explicit;
-
-  // Fallback: keep progression plumbing testable even for classes without curated kits yet.
-  // This is intentionally NOT mirrored into DB seeds.
-  return [
-    {
-      kind: "spell",
-      classId,
-      spellId: "arcane_bolt",
-      minLevel: 1,
-      autoGrant: true,
-      isEnabled: true,
-      source: "reference_kit",
-    },
-  ];
+  return (REFERENCE_CLASS_KITS_L1_10 as Partial<Record<ClassId, ReferenceKitEntry[]>>)[classId] ?? [];
 }
 
 export function getAllReferenceKitEntries(): ReferenceKitEntry[] {

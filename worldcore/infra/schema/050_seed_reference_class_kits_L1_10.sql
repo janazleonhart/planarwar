@@ -1,5 +1,5 @@
 -- worldcore/infra/schema/050_seed_reference_class_kits_L1_10.sql
--- System 5.4: Seed L1–10 reference spell kits (Archmage + Warlock) and explicit unlock rules.
+-- System 5.4: Seed L1–10 reference spell kits (Archmage + Warlock + Templar) and explicit unlock rules.
 --
 -- IMPORTANT:
 -- - Requires 049_create_spell_unlocks_table.sql to have created public.spell_unlocks
@@ -242,6 +242,116 @@ INSERT INTO public.spells (
     '{"kit":"ref_l1_10"}'::jsonb,
     ARRAY['reference_kit','ref_l1_10','warlock','defense','shield']::text[],
     false, 'player'
+  ),
+  -- -----------------------------
+  -- Templar (support axis)
+  -- -----------------------------
+  (
+    'templar_restorative_prayer',
+    'Restorative Prayer',
+    'A whisper of faith that stitches you back together, one heartbeat at a time.',
+    'heal_hot_self',
+    'templar',
+    1,
+    'holy',
+    false, NULL,
+    'mana', 6, 12000,
+    0.00, 0, 20,
+    '{
+      "id":"templar_restorative_prayer_hot",
+      "durationMs":10000,
+      "modifiers":{},
+      "hot":{"tickIntervalMs":2000,"spreadHealingAcrossTicks":true},
+      "tags":["hot","holy","ref_l1_10"]
+    }'::jsonb,
+    NULL::jsonb,
+    false, true,
+    '{"kit":"ref_l1_10"}'::jsonb,
+    ARRAY['reference_kit','ref_l1_10','templar','support','hot']::text[],
+    false, 'player'
+  ),
+  (
+    'templar_smite',
+    'Smite',
+    'Condense holy wrath into a single, decisive strike.',
+    'damage_single_npc',
+    'templar',
+    3,
+    'holy',
+    false, NULL,
+    'mana', 8, 1500,
+    1.00, 3, NULL,
+    NULL::jsonb,
+    NULL::jsonb,
+    false, true,
+    '{"kit":"ref_l1_10"}'::jsonb,
+    ARRAY['reference_kit','ref_l1_10','templar','damage','holy']::text[],
+    false, 'player'
+  ),
+  (
+    'templar_minor_cleanse',
+    'Minor Cleanse',
+    'Break a single minor affliction and steady your breathing.',
+    'cleanse_self',
+    'templar',
+    5,
+    'holy',
+    false, NULL,
+    'mana', 8, 15000,
+    0.00, 0, NULL,
+    NULL::jsonb,
+    '{"tags":["hex","curse","poison","dot"],"maxToRemove":1}'::jsonb,
+    false, true,
+    '{"kit":"ref_l1_10"}'::jsonb,
+    ARRAY['reference_kit','ref_l1_10','templar','cleanse']::text[],
+    false, 'player'
+  ),
+  (
+    'templar_aegis_of_light',
+    'Aegis of Light',
+    'A ward of pale radiance that drinks the next blows meant for you.',
+    'shield_self',
+    'templar',
+    7,
+    'holy',
+    false, NULL,
+    'mana', 10, 20000,
+    0.00, 0, NULL,
+    '{
+      "id":"shield_templar_aegis_of_light",
+      "durationMs":12000,
+      "modifiers":{},
+      "absorb":{"amount":45},
+      "tags":["shield","holy","ref_l1_10"]
+    }'::jsonb,
+    NULL::jsonb,
+    false, true,
+    '{"kit":"ref_l1_10"}'::jsonb,
+    ARRAY['reference_kit','ref_l1_10','templar','defense','shield']::text[],
+    false, 'player'
+  ),
+  (
+    'templar_judgment',
+    'Judgment',
+    'Mark the foe for retribution—your next efforts land harder.',
+    'debuff_single_npc',
+    'templar',
+    9,
+    'holy',
+    false, NULL,
+    'mana', 9, 12000,
+    0.00, 0, NULL,
+    '{
+      "id":"debuff_templar_judgment",
+      "durationMs":12000,
+      "modifiers":{"damageTakenPct":0.12},
+      "tags":["debuff","holy","ref_l1_10"]
+    }'::jsonb,
+    NULL::jsonb,
+    false, true,
+    '{"kit":"ref_l1_10"}'::jsonb,
+    ARRAY['reference_kit','ref_l1_10','templar','debuff']::text[],
+    false, 'player'
   )
 ON CONFLICT (id)
 DO UPDATE SET
@@ -283,7 +393,15 @@ VALUES
   ('warlock', 'warlock_siphon_life',     3, true, true, 'Ref kit L1–10: DOT sustain'),
   ('warlock', 'warlock_drain_soul',      5, true, true, 'Ref kit L1–10: focused drain'),
   ('warlock', 'warlock_unholy_brand',    7, true, true, 'Ref kit L1–10: damageDealtPct debuff'),
-  ('warlock', 'warlock_demon_skin',      9, true, true, 'Ref kit L1–10: self shield')
+  ('warlock', 'warlock_demon_skin',      9, true, true, 'Ref kit L1–10: self shield'),
+
+
+  -- Templar
+  ('templar','templar_restorative_prayer', 1, true, true, 'Ref kit L1–10: HoT sustain'),
+  ('templar','templar_smite',              3, true, true, 'Ref kit L1–10: starter nuke'),
+  ('templar','templar_minor_cleanse',      5, true, true, 'Ref kit L1–10: self cleanse'),
+  ('templar','templar_aegis_of_light',     7, true, true, 'Ref kit L1–10: self shield'),
+  ('templar','templar_judgment',           9, true, true, 'Ref kit L1–10: damageTakenPct debuff')
 ON CONFLICT (class_id, spell_id)
 DO UPDATE SET
   min_level  = EXCLUDED.min_level,
