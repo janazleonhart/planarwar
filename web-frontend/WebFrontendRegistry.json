@@ -229,7 +229,9 @@
       "lifecycle": "singleton",
       "notes": [
         "Uses same-origin /api requests (dev via Vite proxy; prod via reverse proxy / same host).",
-        "Endpoints: GET /api/admin/quests; POST /api/admin/quests; then refreshes list."
+        "Endpoints: GET /api/admin/quests; POST /api/admin/quests; then refreshes list.",
+        "Reward editor: xp/gold + item rewards (ItemPicker + qty)",
+        "Displays item labels for collect_item objective + reward items"
       ],
       "owns": [
         "client-side form state"
@@ -237,7 +239,7 @@
       "path": "web-frontend/pages/AdminQuestsPage.tsx",
       "provides": [
         "Quest list + edit/create UI",
-        "Objective kinds: kill/harvest/collect_item/talk_to",
+        "Objective kinds: kill/harvest/collect_item/craft/talk_to/city",
         "Writes to /api/admin/quests"
       ],
       "service": "admin.quests"
@@ -267,7 +269,7 @@
         "P2\u2013P3: Server snapshots UI: save/load/delete spawn snapshot docs stored on web-backend.",
         "Snapshot save supports tags (comma list) + notes; list supports sort + tag filter + search via query params.",
         "Scatter tool uses server-provided protoId datalist (/api/admin/spawn_points/proto_options) with name+id labels and manual fallback.",
-        "P2–P3: Server snapshots UI: save/load/delete spawn snapshot docs stored on web-backend.",
+        "P2\u2013P3: Server snapshots UI: save/load/delete spawn snapshot docs stored on web-backend.",
         "Snapshot save supports tags (comma list) + notes; list supports sort + tag filter + search via query params.",
         "Scatter tool uses server-provided protoId datalist (/api/admin/spawn_points/proto_options) with name+id labels and manual fallback.",
         "Scatter tool adds quick-pick chips (common protoIds) to reduce typos and speed placement; manual entry still allowed.",
@@ -297,13 +299,18 @@
       "kind": "page",
       "lifecycle": "page",
       "notes": [
+        "Uses same-origin /api requests (dev via Vite proxy; prod via reverse proxy / same host).",
         "Simple table UI with filters + pagination. Backed by /api/admin/vendor_audit.",
         "Server streaming CSV export.",
         "Uses ItemPicker for itemId filter; displays item name + rarity from API join."
       ],
-      "owns": ["Admin UI for vendor_log"],
+      "owns": [
+        "Admin UI for vendor_log"
+      ],
       "path": "web-frontend/pages/AdminVendorAuditPage.tsx",
-      "provides": ["/admin/vendor_audit"],
+      "provides": [
+        "/admin/vendor_audit"
+      ],
       "service": "web.adminPages"
     },
     "web-frontend.pages.adminVendorEconomy": {
@@ -313,12 +320,17 @@
       "kind": "page",
       "lifecycle": "page",
       "notes": [
+        "Uses same-origin /api requests (dev via Vite proxy; prod via reverse proxy / same host).",
         "Editable vendor economy knobs (stockMax/restock cadence/price mults) with per-row save + optional stock reset.",
         "Uses ItemPicker for item filtering; displays item name + rarity from API join."
       ],
-      "owns": ["Admin UI for vendor_item_economy"],
+      "owns": [
+        "Admin UI for vendor_item_economy"
+      ],
       "path": "web-frontend/pages/AdminVendorEconomyPage.tsx",
-      "provides": ["/admin/vendor_economy"],
+      "provides": [
+        "/admin/vendor_economy"
+      ],
       "service": "web.adminPages"
     },
     "web-frontend.pages.me": {
@@ -330,6 +342,7 @@
       "kind": "ui",
       "lifecycle": "singleton",
       "notes": [
+        "Uses same-origin /api requests (dev via Vite proxy; prod via reverse proxy / same host).",
         "Not currently routed from App.tsx.",
         "Endpoints used include: /api/me, /api/tech/start, /api/missions/start, /api/missions/complete, /api/missions/refresh_region, /api/buildings/construct, /api/buildings/upgrade, /api/city/tier-up, /api/warfront/assault, /api/armies/raise, /api/armies/reinforce, /api/garrisons/strike, /api/heroes/equip_attachment, /api/heroes/recruit, /api/workshop/craft, /api/workshop/collect, /api/policies/toggle."
       ],
@@ -353,6 +366,7 @@
       "kind": "ui",
       "lifecycle": "singleton",
       "notes": [
+        "Uses same-origin /api requests (dev via Vite proxy; prod via reverse proxy / same host).",
         "Routed via CityShellPage (CityBuilder tab).",
         "Shows active missions from fetchMe() (GET /api/me).",
         "Adds basic City ops: tier-up and morph (POST /api/city/tier-up, POST /api/city/morph), with optional GET /api/city debug read.",
@@ -409,6 +423,44 @@
         "Player Panels: Effects (StatusEffects v1.5 MVP view)"
       ],
       "service": "webConsole.app"
+    },
+    "web-frontend.pages.modeHub": {
+      "class": null,
+      "ctorArgs": [],
+      "dependsOn": [],
+      "kind": "ui",
+      "lifecycle": "singleton",
+      "notes": [
+        "Launcher / mode hub UI: lets user choose between primary modes (e.g., MUD, Admin, City Builder).",
+        "Pure UI/navigation surface; exact routing is owned by App.tsx."
+      ],
+      "owns": [
+        "client-side navigation state"
+      ],
+      "path": "web-frontend/pages/ModeHubPage.tsx",
+      "provides": [
+        "Mode selector hub (launcher UI)"
+      ],
+      "service": "ui.modeHub"
+    },
+    "web-frontend.pages.adminHub": {
+      "class": null,
+      "ctorArgs": [],
+      "dependsOn": [],
+      "kind": "ui",
+      "lifecycle": "singleton",
+      "notes": [
+        "Admin hub UI: entry page linking to individual admin tools (quests/items/npcs/spawn points/economy).",
+        "Uses same-origin /api requests when it checks admin capabilities (dev via Vite proxy; prod via reverse proxy / same host)."
+      ],
+      "owns": [
+        "client-side navigation state"
+      ],
+      "path": "web-frontend/pages/AdminHubPage.tsx",
+      "provides": [
+        "Admin landing page (hub navigation)"
+      ],
+      "service": "admin.hub"
     }
   }
 }

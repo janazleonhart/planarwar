@@ -568,7 +568,10 @@
     "web-backend.routes.adminItems": {
       "class": null,
       "ctorArgs": [],
-      "dependsOn": ["npm:express", "worldcore:db/Database"],
+      "dependsOn": [
+        "npm:express",
+        "worldcore:db/Database"
+      ],
       "kind": "module",
       "lifecycle": "singleton",
       "notes": [
@@ -578,7 +581,11 @@
       ],
       "owns": [],
       "path": "web-backend/routes/adminItems.ts",
-      "provides": ["GET /api/admin/items", "GET /api/admin/items/options", "POST /api/admin/items"],
+      "provides": [
+        "GET /api/admin/items",
+        "GET /api/admin/items/options",
+        "POST /api/admin/items"
+      ],
       "service": "http.adminRoutes"
     },
     "web-backend.routes.adminNpcs": {
@@ -617,7 +624,10 @@
       "kind": "module",
       "lifecycle": "singleton",
       "notes": [
-        "Admin quest list + upsert; reloads QuestRegistry in-process after changes."
+        "Admin quest list + upsert; reloads QuestRegistry in-process after changes.",
+        "Supports quest_rewards: xp/gold/item",
+        "Hydrates item name/rarity for collect_item objective + reward items on GET",
+        "Normalizes objective kind item_turnin <-> collect_item for editor compatibility"
       ],
       "owns": [
         "PostgresQuestService instance"
@@ -685,7 +695,10 @@
     "web-backend.routes.adminVendorAudit": {
       "class": null,
       "ctorArgs": [],
-      "dependsOn": ["npm:express", "worldcore:db/Database"],
+      "dependsOn": [
+        "npm:express",
+        "worldcore:db/Database"
+      ],
       "kind": "module",
       "lifecycle": "singleton",
       "notes": [
@@ -694,13 +707,19 @@
       ],
       "owns": [],
       "path": "web-backend/routes/adminVendorAudit.ts",
-      "provides": ["GET /api/admin/vendor_audit", "GET /api/admin/vendor_audit/csv"],
+      "provides": [
+        "GET /api/admin/vendor_audit",
+        "GET /api/admin/vendor_audit/csv"
+      ],
       "service": "http.adminRoutes"
     },
     "web-backend.routes.adminVendorEconomy": {
       "class": null,
       "ctorArgs": [],
-      "dependsOn": ["npm:express", "worldcore:db/Database"],
+      "dependsOn": [
+        "npm:express",
+        "worldcore:db/Database"
+      ],
       "kind": "module",
       "lifecycle": "singleton",
       "notes": [
@@ -1054,6 +1073,34 @@
         "POST /api/workshop/collect"
       ],
       "service": "http.routes"
+    },
+    "web-backend.middleware.adminAuth": {
+      "class": null,
+      "ctorArgs": [
+        "PostgresAuthService()"
+      ],
+      "dependsOn": [
+        "npm:express",
+        "worldcore:auth/PostgresAuthService"
+      ],
+      "kind": "module",
+      "lifecycle": "singleton",
+      "notes": [
+        "Admin auth + RBAC middleware for /api/admin routes.",
+        "Verifies Bearer token via PostgresAuthService; resolves admin role from accounts.flags with back-compat fallbacks.",
+        "Enforces readonly vs editor vs root (readonly blocks write methods; root gates high-risk endpoints).",
+        "Dev bypass (explicit): PW_ADMIN_BYPASS=1|true disables all checks (OFF by default).",
+        "Attaches req.auth and req.admin { role, flags } for downstream handlers."
+      ],
+      "owns": [
+        "PostgresAuthService instance"
+      ],
+      "path": "web-backend/middleware/adminAuth.ts",
+      "provides": [
+        "requireAdmin(req,res,next)",
+        "maybeRequireAdmin(req,res,next)"
+      ],
+      "service": "http.middleware"
     }
   }
 }
