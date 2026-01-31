@@ -663,7 +663,8 @@
         "Restore safety: commit restore requires confirm phrase 'RESTORE' when cross-shard and/or allowBrainOwned is enabled (in addition to confirm token when updating existing rows).",
         "P2\u2013P3: Server-side spawn snapshot storage under web-backend (admin-owned JSON docs).",
         "GET /api/admin/spawn_points/snapshots supports query params: sort=(newest|oldest|name), tag=<tag>, q=<search>, limit=<n>.",
-        "POST /api/admin/spawn_points/snapshots/save accepts optional metadata: tags (comma list or array) + notes (string)."
+        "POST /api/admin/spawn_points/snapshots/save accepts optional metadata: tags (comma list or array) + notes (string).",
+        "Adds /proto_options endpoint to supply resource + station protoId autocomplete options (decorated with item names when available)."
       ],
       "owns": [],
       "path": "web-backend/routes/adminSpawnPoints.ts",

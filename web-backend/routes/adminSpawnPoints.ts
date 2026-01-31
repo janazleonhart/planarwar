@@ -580,6 +580,135 @@ function mapRowToAdmin(r: any): AdminSpawnPoint {
 //   protoId=<substring, ilike>
 //   spawnId=<substring, ilike>
 //   limit=<1..1000>
+
+// --- Proto options (UI helpers) ---
+type ProtoOptionKind = "resource" | "station";
+type ProtoOption = { id: string; label: string; kind: ProtoOptionKind };
+
+function uniqSorted(ids: string[]): string[] {
+  return Array.from(new Set(ids.filter(Boolean))).sort((a, b) => a.localeCompare(b));
+}
+
+async function resolveResourcesDir(): Promise<{ dir: string | null; tried: string[] }> {
+  const tried: string[] = [];
+  const candidates = [
+    // repo root (common in dev)
+    path.resolve(process.cwd(), "web-backend", "data", "resources"),
+    // when cwd is web-backend/
+    path.resolve(process.cwd(), "data", "resources"),
+    // compiled dist locations
+    path.resolve(__dirname, "..", "data", "resources"),
+    path.resolve(__dirname, "..", "..", "data", "resources"),
+    path.resolve(__dirname, "..", "..", "..", "web-backend", "data", "resources"),
+  ];
+
+  for (const c of candidates) {
+    tried.push(c);
+    try {
+      const st = await fs.stat(c);
+      if (st.isDirectory()) return { dir: c, tried };
+    } catch {
+      // ignore
+    }
+  }
+  return { dir: null, tried };
+}
+
+async function loadResourceProtoIdsFromDataDir(): Promise<{ ids: string[]; dir: string | null; tried: string[] }> {
+  const { dir, tried } = await resolveResourcesDir();
+  if (!dir) return { ids: [], dir: null, tried };
+
+  const ids: string[] = [];
+  const files = (await fs.readdir(dir)).filter((f) => f.toLowerCase().endsWith(".json"));
+
+  for (const f of files) {
+    const full = path.join(dir, f);
+    try {
+      const raw = await fs.readFile(full, "utf-8");
+      const data = JSON.parse(raw);
+
+      // Expected format: [{ id: "ore_iron_hematite", ... }, ...]
+      if (Array.isArray(data)) {
+        for (const row of data) {
+          const id = row && typeof row.id === "string" ? row.id : null;
+          if (id) ids.push(id);
+        }
+      }
+    } catch {
+      // Ignore parse errors; this is an admin convenience endpoint.
+    }
+  }
+
+  return { ids: uniqSorted(ids), dir, tried };
+}
+
+function toTitle(id: string): string {
+  return id
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+router.get("/proto_options", async (_req, res) => {
+  try {
+    // Resources (from web-backend/data/resources/*.json)
+    const resources = await loadResourceProtoIdsFromDataDir();
+
+    // Station proto ids (union across tiers)
+    const stationIds: string[] = [];
+    for (let tier = 1; tier <= 10; tier++) {
+      try {
+        stationIds.push(...getStationProtoIdsForTier(tier));
+      } catch {
+        // ignore
+      }
+    }
+
+    const resourceIds = resources.ids;
+    const stations = uniqSorted(stationIds);
+
+    // Try to decorate resource ids with item names (when resource proto ids align with items.id)
+    const itemLabels = new Map<string, string>();
+    if (resourceIds.length) {
+      try {
+        const r = await db.query(
+          "SELECT id, name FROM items WHERE id = ANY($1::text[])",
+          [resourceIds],
+        );
+        for (const row of r.rows ?? []) {
+          if (row?.id && row?.name) itemLabels.set(String(row.id), String(row.name));
+        }
+      } catch {
+        // ignore
+      }
+    }
+
+    const options: ProtoOption[] = [
+      ...resourceIds.map((id) => ({
+        id,
+        kind: "resource" as const,
+        label: itemLabels.get(id) ? `${itemLabels.get(id)} (${id})` : `${toTitle(id)} (${id})`,
+      })),
+      ...stations.map((id) => ({
+        id,
+        kind: "station" as const,
+        label: `Station: ${toTitle(id)} (${id})`,
+      })),
+    ];
+
+    return res.json({
+      ok: true,
+      protoOptions: options,
+      resourceProtoIds: resourceIds,
+      stationProtoIds: stations,
+      resourcesDir: resources.dir,
+    });
+  } catch (e: any) {
+    return res.status(500).json({ ok: false, error: String(e?.message ?? e) });
+  }
+});
+
 router.get("/", async (req, res) => {
   try {
     const shardId = String(req.query.shardId ?? "prime_shard").trim();

@@ -123,6 +123,20 @@ type AdminSpawnPoint = {
 
 
 
+type ProtoOptionKind = "resource" | "station";
+type ProtoOption = {
+  id: string;
+  label: string;
+  kind: ProtoOptionKind;
+};
+
+type ProtoOptionsResponse =
+  | { ok: true; protoOptions: ProtoOption[]; resourceProtoIds: string[]; stationProtoIds: string[]; resourcesDir: string | null }
+  | { ok: false; error: string };
+
+
+
+
 // Town Baseline seeding (Placement Editor MVP)
 
 type TownBaselinePlanItem = {
@@ -502,6 +516,48 @@ export function AdminSpawnPointsPage() {
   const [scatterSeedBase, setScatterSeedBase] = useState("seed:editor");
   const [scatterResult, setScatterResult] = useState<any>(null);
   const [scatterWorking, setScatterWorking] = useState(false);
+
+// Proto options (for nicer scatter UI)
+const [protoOptions, setProtoOptions] = useState<ProtoOption[]>([]);
+const [protoOptionsStatus, setProtoOptionsStatus] = useState<"idle" | "loading" | "ok" | "error">("idle");
+const [protoOptionsError, setProtoOptionsError] = useState<string | null>(null);
+
+useEffect(() => {
+  let cancelled = false;
+
+  async function run() {
+    try {
+      setProtoOptionsStatus("loading");
+      setProtoOptionsError(null);
+
+      const res = await authedFetch("/api/admin/spawn_points/proto_options");
+      const data: ProtoOptionsResponse = await res.json();
+
+      if (cancelled) return;
+
+      if (!res.ok || !data.ok) {
+        setProtoOptionsStatus("error");
+        setProtoOptionsError(!data.ok ? data.error : `HTTP ${res.status}`);
+        setProtoOptions([]);
+        return;
+      }
+
+      setProtoOptionsStatus("ok");
+      setProtoOptions(data.protoOptions ?? []);
+    } catch (e: any) {
+      if (cancelled) return;
+      setProtoOptionsStatus("error");
+      setProtoOptionsError(String(e?.message ?? e));
+      setProtoOptions([]);
+    }
+  }
+
+  run();
+  return () => {
+    cancelled = true;
+  };
+}, []);
+
   
   // Town Baseline (System 4 MVP)
   const [baselineSeedBase, setBaselineSeedBase] = useState(savedUi.baselineSeedBase || "seed:town_baseline");
@@ -2518,7 +2574,25 @@ if (!Array.isArray((snapshot as any).spawns)) throw new Error("Invalid snapshot:
                   </label>
                   <label style={{ display: "grid", gap: 4 }}>
                     <span style={{ opacity: 0.8 }}>ProtoId</span>
-                    <input style={{ width: 180 }} value={scatterProtoId} onChange={(e) => setScatterProtoId(e.target.value)} placeholder="ore_iron_hematite" />
+                    <input
+                      style={{ width: 260 }}
+                      list="scatter-proto-options"
+                      value={scatterProtoId}
+                      onChange={(e) => setScatterProtoId(e.target.value)}
+                      placeholder="ore_iron_hematite"
+                    />
+                    <datalist id="scatter-proto-options">
+                      {protoOptions.map((o) => (
+                        <option key={`${o.kind}:${o.id}`} value={o.id} label={o.label} />
+                      ))}
+                    </datalist>
+                    {protoOptionsStatus === "loading" ? (
+                      <span style={{ fontSize: 12, opacity: 0.7 }}>Loading options…</span>
+                    ) : protoOptionsStatus === "error" ? (
+                      <span style={{ fontSize: 12, opacity: 0.8 }}>
+                        Proto options unavailable{protoOptionsError ? `: ${protoOptionsError}` : ""}. You can still type a protoId.
+                      </span>
+                    ) : null}
                   </label>
                   <label style={{ display: "grid", gap: 4 }}>
                     <span style={{ opacity: 0.8 }}>VariantId</span>
