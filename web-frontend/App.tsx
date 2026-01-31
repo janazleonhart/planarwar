@@ -10,6 +10,7 @@ import { AdminSpawnPointsPage } from "./pages/AdminSpawnPointsPage";
 import { AdminQuestsPage } from "./pages/AdminQuestsPage";
 import { AdminNpcsPage } from "./pages/AdminNpcsPage";
 import { AdminItemsPage } from "./pages/AdminItemsPage";
+import { AdminSpellsPage } from "./pages/AdminSpellsPage";
 import { AdminVendorEconomyPage } from "./pages/AdminVendorEconomyPage";
 import { AdminVendorAuditPage } from "./pages/AdminVendorAuditPage";
 import { AdminHubPage } from "./pages/AdminHubPage";
@@ -1124,6 +1125,7 @@ const copyToClipboard = async (text: string) => {
     if (pathname.startsWith("/admin/spawn_points")) return <AdminSpawnPointsPage />;
     if (pathname.startsWith("/admin/quests")) return <AdminQuestsPage />;
     if (pathname.startsWith("/admin/npcs")) return <AdminNpcsPage />;
+    if (pathname.startsWith("/admin/spells")) return <AdminSpellsPage />;
     if (pathname.startsWith("/admin/items")) return <AdminItemsPage />;
     if (pathname.startsWith("/admin/vendor_economy")) return <AdminVendorEconomyPage />;
     if (pathname.startsWith("/admin/vendor_audit")) return <AdminVendorAuditPage />;
