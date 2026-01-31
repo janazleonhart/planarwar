@@ -35,6 +35,8 @@ type VendorEconomyItemRow = {
   vendor_id: string;
   vendor_name: string | null;
   item_id: string;
+  item_name: string | null;
+  item_rarity: string | null;
   base_price_gold: number;
   stock: number | null;
   stock_max: number | null;
@@ -82,6 +84,8 @@ adminVendorEconomyRouter.get("/items", async (req, res) => {
         vi.vendor_id                 AS vendor_id,
         v.name                       AS vendor_name,
         vi.item_id                   AS item_id,
+        it.name                      AS item_name,
+        it.rarity                    AS item_rarity,
         vi.price_gold::int           AS base_price_gold,
 
         s.stock::int                 AS stock,
@@ -95,6 +99,7 @@ adminVendorEconomyRouter.get("/items", async (req, res) => {
         e.price_max_mult::float      AS price_max_mult
       FROM vendor_items vi
       LEFT JOIN vendors v ON v.id = vi.vendor_id
+      LEFT JOIN items it ON it.id = vi.item_id
       LEFT JOIN vendor_item_economy e ON e.vendor_item_id = vi.id
       LEFT JOIN vendor_item_state s ON s.vendor_item_id = vi.id
       WHERE vi.vendor_id = $1

@@ -98,6 +98,8 @@ adminVendorAuditRouter.get("/", async (req, res) => {
         vendor_name,
         action,
         item_id,
+        it.name AS item_name,
+        it.rarity AS item_rarity,
         quantity,
         unit_price_gold,
         total_gold,
@@ -107,6 +109,7 @@ adminVendorAuditRouter.get("/", async (req, res) => {
         reason,
         meta
       FROM vendor_log
+      LEFT JOIN items it ON it.id = vendor_log.item_id
       ${whereSql}
       ORDER BY ts DESC
       LIMIT $${dataParams.length - 1} OFFSET $${dataParams.length}
@@ -155,6 +158,8 @@ adminVendorAuditRouter.get("/csv", async (req, res) => {
       "vendor_name",
       "action",
       "item_id",
+      "item_name",
+      "item_rarity",
       "quantity",
       "unit_price_gold",
       "total_gold",
@@ -189,6 +194,8 @@ adminVendorAuditRouter.get("/csv", async (req, res) => {
           vendor_name,
           action,
           item_id,
+          it.name AS item_name,
+          it.rarity AS item_rarity,
           quantity,
           unit_price_gold,
           total_gold,
@@ -198,6 +205,8 @@ adminVendorAuditRouter.get("/csv", async (req, res) => {
           reason,
           meta
         FROM vendor_log
+        LEFT JOIN items it ON it.id = vendor_log.item_id
+      LEFT JOIN items it ON it.id = vendor_log.item_id
         ${whereSql}
         ORDER BY ts DESC
         LIMIT $${dataParams.length - 1} OFFSET $${dataParams.length}
@@ -221,6 +230,8 @@ adminVendorAuditRouter.get("/csv", async (req, res) => {
           r.vendor_name ?? "",
           r.action ?? "",
           r.item_id ?? "",
+          r.item_name ?? "",
+          r.item_rarity ?? "",
           r.quantity ?? "",
           r.unit_price_gold ?? "",
           r.total_gold ?? "",

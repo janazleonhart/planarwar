@@ -16,6 +16,8 @@ type VendorEconomyItem = {
   vendor_id: string;
   vendor_name: string | null;
   item_id: string;
+  item_name: string | null;
+  item_rarity: string | null;
   base_price_gold: number;
 
   stock: number | null;
@@ -306,7 +308,9 @@ export function AdminVendorEconomyPage() {
 
     return items.filter((r) => {
       if (needle) {
-        if (!r.item_id?.toLowerCase().includes(needle)) return false;
+        const hayId = (r.item_id ?? "").toLowerCase();
+        const hayName = (r.item_name ?? "").toLowerCase();
+        if (!hayId.includes(needle) && !hayName.includes(needle)) return false;
       }
 
       if (onlyFinite) {
@@ -623,7 +627,12 @@ export function AdminVendorEconomyPage() {
                   </td>
 
                   <td style={{ whiteSpace: "nowrap" }}>{r.vendor_item_id}</td>
-                  <td style={{ whiteSpace: "nowrap" }}>{r.item_id}</td>
+                  <td style={{ whiteSpace: "nowrap" }}>
+                    <div style={{ fontWeight: 700 }}>{r.item_name ?? r.item_id}</div>
+                    {r.item_name ? (
+                      <div style={{ fontSize: 12, opacity: 0.7 }}>{r.item_id}</div>
+                    ) : null}
+                  </td>
                   <td style={{ whiteSpace: "nowrap" }}>{r.base_price_gold}</td>
 
                   <td style={{ whiteSpace: "nowrap" }}>

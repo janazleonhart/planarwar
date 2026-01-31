@@ -693,7 +693,8 @@
       "kind": "module",
       "lifecycle": "singleton",
       "notes": [
-        "Admin read-only viewer endpoint for vendor_log with filters + pagination."
+        "Admin read-only viewer endpoint for vendor_log with filters + pagination.",
+        "Joins items table to return item_name/item_rarity; CSV export includes these columns."
       ],
       "owns": [],
       "path": "web-backend/routes/adminVendorAudit.ts",
@@ -713,7 +714,8 @@
       "kind": "module",
       "lifecycle": "singleton",
       "notes": [
-        "Admin editor endpoints for vendor_item_economy (stock/restock/price multipliers) with optional stock reset."
+        "Admin editor endpoints for vendor_item_economy (stock/restock/price multipliers) with optional stock reset.",
+        "Joins items table to return item_name/item_rarity alongside item_id for human-friendly admin UI rendering."
       ],
       "owns": [],
       "path": "web-backend/routes/adminVendorEconomy.ts",

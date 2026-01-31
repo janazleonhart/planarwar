@@ -20,6 +20,8 @@ type VendorAuditRow = {
   vendor_name: string | null;
   action: string;
   item_id: string | null;
+  item_name: string | null;
+  item_rarity: string | null;
   quantity: number | null;
   unit_price_gold: number | null;
   total_gold: number | null;
@@ -456,7 +458,12 @@ export function AdminVendorAuditPage() {
                   <td style={{ whiteSpace: "nowrap" }}>{r.actor_char_name || r.actor_char_id || ""}</td>
                   <td style={{ whiteSpace: "nowrap" }}>{r.vendor_name || r.vendor_id}</td>
                   <td style={{ whiteSpace: "nowrap" }}>{r.action}</td>
-                  <td style={{ whiteSpace: "nowrap" }}>{r.item_id || ""}</td>
+                  <td style={{ whiteSpace: "nowrap" }}>
+                    <div style={{ fontWeight: 700 }}>{r.item_name || r.item_id || ""}</div>
+                    {r.item_name && r.item_id ? (
+                      <div style={{ fontSize: 12, opacity: 0.7 }}>{r.item_id}</div>
+                    ) : null}
+                  </td>
                   <td>{fmtNum(r.quantity)}</td>
                   <td>{fmtNum(r.unit_price_gold)}</td>
                   <td>{fmtNum(r.total_gold)}</td>
