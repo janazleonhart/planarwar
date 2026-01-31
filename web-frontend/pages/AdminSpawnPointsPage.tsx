@@ -123,20 +123,6 @@ type AdminSpawnPoint = {
 
 
 
-type ProtoOptionKind = "resource" | "station";
-type ProtoOption = {
-  id: string;
-  label: string;
-  kind: ProtoOptionKind;
-};
-
-type ProtoOptionsResponse =
-  | { ok: true; protoOptions: ProtoOption[]; resourceProtoIds: string[]; stationProtoIds: string[]; resourcesDir: string | null }
-  | { ok: false; error: string };
-
-
-
-
 // Town Baseline seeding (Placement Editor MVP)
 
 type TownBaselinePlanItem = {
@@ -480,6 +466,7 @@ export function AdminSpawnPointsPage() {
   const [quickSearch, setQuickSearch] = useState(savedUi.quickSearch || "");
   const [limit, setLimit] = useState(savedUi.limit ?? 200);
   const [recommendedOrder, setRecommendedOrder] = useState(savedUi.recommendedOrder ?? true);
+  const [showAllRegionPicks, setShowAllRegionPicks] = useState(false);
 
   // Bulk selection + ops
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
@@ -516,48 +503,6 @@ export function AdminSpawnPointsPage() {
   const [scatterSeedBase, setScatterSeedBase] = useState("seed:editor");
   const [scatterResult, setScatterResult] = useState<any>(null);
   const [scatterWorking, setScatterWorking] = useState(false);
-
-// Proto options (for nicer scatter UI)
-const [protoOptions, setProtoOptions] = useState<ProtoOption[]>([]);
-const [protoOptionsStatus, setProtoOptionsStatus] = useState<"idle" | "loading" | "ok" | "error">("idle");
-const [protoOptionsError, setProtoOptionsError] = useState<string | null>(null);
-
-useEffect(() => {
-  let cancelled = false;
-
-  async function run() {
-    try {
-      setProtoOptionsStatus("loading");
-      setProtoOptionsError(null);
-
-      const res = await authedFetch("/api/admin/spawn_points/proto_options");
-      const data: ProtoOptionsResponse = await res.json();
-
-      if (cancelled) return;
-
-      if (!res.ok || !data.ok) {
-        setProtoOptionsStatus("error");
-        setProtoOptionsError(!data.ok ? data.error : `HTTP ${res.status}`);
-        setProtoOptions([]);
-        return;
-      }
-
-      setProtoOptionsStatus("ok");
-      setProtoOptions(data.protoOptions ?? []);
-    } catch (e: any) {
-      if (cancelled) return;
-      setProtoOptionsStatus("error");
-      setProtoOptionsError(String(e?.message ?? e));
-      setProtoOptions([]);
-    }
-  }
-
-  run();
-  return () => {
-    cancelled = true;
-  };
-}, []);
-
   
   // Town Baseline (System 4 MVP)
   const [baselineSeedBase, setBaselineSeedBase] = useState(savedUi.baselineSeedBase || "seed:town_baseline");
@@ -759,6 +704,24 @@ const restoreSnapshotParseError = restoreParsed.error;
       return normStr(hay).includes(q);
     });
   }, [spawnPoints, recommendedOrder, quickSearch]);
+
+
+  const regionPicks = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const p of spawnPoints) {
+      const rid = (p.regionId ?? "").trim();
+      if (!rid) continue;
+      counts.set(rid, (counts.get(rid) ?? 0) + 1);
+    }
+    const arr = [...counts.entries()].map(([id, count]) => ({ id, count }));
+    arr.sort((a, b) => (b.count - a.count) || a.id.localeCompare(b.id));
+    return arr;
+  }, [spawnPoints]);
+
+  const visibleRegionPicks = useMemo(() => {
+    if (showAllRegionPicks) return regionPicks;
+    return regionPicks.slice(0, 12);
+  }, [regionPicks, showAllRegionPicks]);
 
 
   const load = async () => {
@@ -1716,46 +1679,7 @@ if (!Array.isArray((snapshot as any).spawns)) throw new Error("Invalid snapshot:
     if (filterSpawnId.trim()) parts.push(`spawn~${filterSpawnId.trim()}`);
     if (quickSearch.trim()) parts.push(`q~${quickSearch.trim()}`);
     return parts.length ? parts.join(", ") : "none";
-  }, [filterAuthority, filterType, filterArchetype, filterProtoId, filterSpawnId])
-  // ----- Known values (quality-of-life helpers for stringly-typed filters/tools) -----
-  const knownArchetypes = useMemo(() => {
-    const s = new Set<string>();
-    for (const sp of spawnPoints) {
-      const v = (sp.archetype ?? "").trim();
-      if (v) s.add(v);
-    }
-    return Array.from(s).sort((a, b) => a.localeCompare(b));
-  }, [spawnPoints]);
-
-  const knownTypes = useMemo(() => {
-    const s = new Set<string>();
-    for (const sp of spawnPoints) {
-      const v = (sp.type ?? "").trim();
-      if (v) s.add(v);
-    }
-    return Array.from(s).sort((a, b) => a.localeCompare(b));
-  }, [spawnPoints]);
-
-  const topResourceProtoOptions = useMemo(() => protoOptions.filter((o) => o.kind === "resource").slice(0, 14), [protoOptions]);
-  const topStationProtoOptions = useMemo(() => protoOptions.filter((o) => o.kind === "station").slice(0, 14), [protoOptions]);
-
-  const chipBase = {
-    padding: "4px 8px",
-    borderRadius: 999,
-    border: "1px solid #ccc",
-    background: "white",
-    cursor: "pointer",
-    fontSize: 12,
-    lineHeight: "16px",
-    whiteSpace: "nowrap" as const,
-  };
-
-  const chipActive = {
-    ...chipBase,
-    border: "2px solid #4caf50",
-    fontWeight: 700 as const,
-  };
-;
+  }, [filterAuthority, filterType, filterArchetype, filterProtoId, filterSpawnId, quickSearch]);
 
   return (
     <div style={{ padding: 16 }}>
@@ -1899,6 +1823,76 @@ if (!Array.isArray((snapshot as any).spawns)) throw new Error("Invalid snapshot:
             </div>
           </div>
 
+          {regionPicks.length ? (
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", fontSize: 12, opacity: 0.92 }}>
+              <span style={{ opacity: 0.9 }}>Regions</span>
+              {visibleRegionPicks.map((r) => (
+                <button
+                  key={r.id}
+                  type="button"
+                  title={`${r.id} • ${r.count} spawn(s)
+Click: set Load Mode=Region
+Ctrl/⌘-click: filter only`}
+                  onClick={(ev) => {
+                    const isFilterOnly = (ev as any).ctrlKey || (ev as any).metaKey;
+                    if (isFilterOnly) {
+                      setQuickSearch(r.id);
+                      return;
+                    }
+                    setLoadMode("region");
+                    setRegionId(r.id);
+                    setScatterRegionId(r.id);
+                  }}
+                  style={{
+                    padding: "4px 10px",
+                    borderRadius: 999,
+                    border: "1px solid #bbb",
+                    background: "white",
+                    cursor: "pointer",
+                    fontFamily: "monospace",
+                  }}
+                >
+                  {r.id}
+                </button>
+              ))}
+              {regionPicks.length > 12 && !showAllRegionPicks ? (
+                <button
+                  type="button"
+                  onClick={() => setShowAllRegionPicks(true)}
+                  style={{
+                    padding: "4px 10px",
+                    borderRadius: 999,
+                    border: "1px dashed #999",
+                    background: "white",
+                    cursor: "pointer",
+                    opacity: 0.9,
+                  }}
+                  title="Show all region ids found in the loaded list"
+                >
+                  +{Math.max(0, regionPicks.length - 12)} more
+                </button>
+              ) : null}
+              {showAllRegionPicks && regionPicks.length > 12 ? (
+                <button
+                  type="button"
+                  onClick={() => setShowAllRegionPicks(false)}
+                  style={{
+                    padding: "4px 10px",
+                    borderRadius: 999,
+                    border: "1px dashed #999",
+                    background: "white",
+                    cursor: "pointer",
+                    opacity: 0.9,
+                  }}
+                  title="Collapse region list"
+                >
+                  Collapse
+                </button>
+              ) : null}
+              <span style={{ opacity: 0.7 }}>Click=use region • Ctrl/⌘-click=filter only</span>
+            </div>
+          ) : null}
+
           <details>
             <summary style={{ cursor: "pointer", userSelect: "none", opacity: 0.9 }}>
               Filters ({filterSummary})
@@ -1949,58 +1943,6 @@ if (!Array.isArray((snapshot as any).spawns)) throw new Error("Invalid snapshot:
                 >
                   Clear filters
                 </button>
-              </div>
-            </div>
-
-            <div style={{ marginTop: 12, padding: 10, border: "1px solid #eee", borderRadius: 8 }}>
-              <div style={{ fontWeight: 700, marginBottom: 6 }}>Quick picks</div>
-              <div style={{ display: "grid", gap: 10 }}>
-                <div>
-                  <div style={{ fontSize: 12, opacity: 0.8, marginBottom: 6 }}>Archetypes</div>
-                  <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-                    <button type="button" style={!filterArchetype ? chipActive : chipBase} onClick={() => setFilterArchetype("")}>
-                      (any)
-                    </button>
-                    {knownArchetypes.map((a) => (
-                      <button key={a} type="button" style={filterArchetype === a ? chipActive : chipBase} onClick={() => setFilterArchetype(a)}>
-                        {a}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                <div>
-                  <div style={{ fontSize: 12, opacity: 0.8, marginBottom: 6 }}>Types</div>
-                  <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-                    <button type="button" style={!filterType ? chipActive : chipBase} onClick={() => setFilterType("")}>
-                      (any)
-                    </button>
-                    {knownTypes.map((t) => (
-                      <button key={t} type="button" style={filterType === t ? chipActive : chipBase} onClick={() => setFilterType(t)}>
-                        {t}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                <div>
-                  <div style={{ fontSize: 12, opacity: 0.8, marginBottom: 6 }}>protoId quick set</div>
-                  <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-                    <button type="button" style={!filterProtoId ? chipActive : chipBase} onClick={() => setFilterProtoId("")}>
-                      (any)
-                    </button>
-                    {topResourceProtoOptions.map((o) => (
-                      <button key={`fp:${o.kind}:${o.id}`} type="button" style={filterProtoId === o.id ? chipActive : chipBase} onClick={() => setFilterProtoId(o.id)}>
-                        {o.label}
-                      </button>
-                    ))}
-                  </div>
-                  {protoOptionsStatus !== "ok" ? (
-                    <div style={{ marginTop: 6, fontSize: 12, opacity: 0.75 }}>
-                      (Tip: protoId options come from /api/admin/spawn_points/proto_options; if unavailable you can still type a protoId.)
-                    </div>
-                  ) : null}
-                </div>
               </div>
             </div>
           </details>
@@ -2665,64 +2607,7 @@ if (!Array.isArray((snapshot as any).spawns)) throw new Error("Invalid snapshot:
                   </label>
                   <label style={{ display: "grid", gap: 4 }}>
                     <span style={{ opacity: 0.8 }}>ProtoId</span>
-                    <input
-                      style={{ width: 260 }}
-                      list="scatter-proto-options"
-                      value={scatterProtoId}
-                      onChange={(e) => setScatterProtoId(e.target.value)}
-                      placeholder="ore_iron_hematite"
-                    />
-                    <datalist id="scatter-proto-options">
-                      {protoOptions.map((o) => (
-                        <option key={`${o.kind}:${o.id}`} value={o.id} label={o.label} />
-                      ))}
-                    </datalist>
-                    {protoOptionsStatus === "loading" ? (
-                      <span style={{ fontSize: 12, opacity: 0.7 }}>Loading options…</span>
-                    ) : protoOptionsStatus === "error" ? (
-                      <span style={{ fontSize: 12, opacity: 0.8 }}>
-                        Proto options unavailable{protoOptionsError ? `: ${protoOptionsError}` : ""}. You can still type a protoId.
-                      </span>
-                    ) : null}
-
-                    {protoOptions.length ? (
-                      <div style={{ marginTop: 6, display: "grid", gap: 8 }}>
-                        <div>
-                          <div style={{ fontSize: 12, opacity: 0.8, marginBottom: 6 }}>Quick protoId picks</div>
-                          <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-                            {topResourceProtoOptions.map((o) => (
-                              <button
-                                key={`sp:${o.kind}:${o.id}`}
-                                type="button"
-                                style={scatterProtoId === o.id ? chipActive : chipBase}
-                                onClick={() => setScatterProtoId(o.id)}
-                                title={o.id}
-                              >
-                                {o.label}
-                              </button>
-                            ))}
-                          </div>
-                          {topStationProtoOptions.length ? (
-                            <>
-                              <div style={{ fontSize: 12, opacity: 0.8, margin: "8px 0 6px 0" }}>Stations</div>
-                              <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-                                {topStationProtoOptions.map((o) => (
-                                  <button
-                                    key={`sp:${o.kind}:${o.id}`}
-                                    type="button"
-                                    style={scatterProtoId === o.id ? chipActive : chipBase}
-                                    onClick={() => setScatterProtoId(o.id)}
-                                    title={o.id}
-                                  >
-                                    {o.label}
-                                  </button>
-                                ))}
-                              </div>
-                            </>
-                          ) : null}
-                        </div>
-                      </div>
-                    ) : null}
+                    <input style={{ width: 180 }} value={scatterProtoId} onChange={(e) => setScatterProtoId(e.target.value)} placeholder="ore_iron_hematite" />
                   </label>
                   <label style={{ display: "grid", gap: 4 }}>
                     <span style={{ opacity: 0.8 }}>VariantId</span>
