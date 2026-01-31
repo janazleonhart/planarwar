@@ -21,6 +21,10 @@ type AdminQuestPayload = {
   objectiveTargetId: string;
   objectiveRequired: number;
 
+  // Best-effort display helpers (computed on GET)
+  objectiveTargetName?: string;
+  objectiveTargetRarity?: string;
+
   rewardXp?: number;
   rewardGold?: number;
 };
@@ -30,8 +34,12 @@ router.get("/", async (_req, res) => {
   try {
     const defs = await questService.listQuests();
 
+    // Normalize objective kind (DB stores item turn-ins as 'item_turnin' but the editor uses 'collect_item').
     const payload: AdminQuestPayload[] = defs.map((q) => {
       const firstObj = q.objectives[0];
+      const rawKind = (firstObj?.kind as any) ?? "kill";
+      const objectiveKind: ObjectiveKind =
+        rawKind === "item_turnin" ? "collect_item" : (rawKind as ObjectiveKind);
 
       const targetId =
         (firstObj as any)?.targetProtoId ??
@@ -51,13 +59,51 @@ router.get("/", async (_req, res) => {
         description: q.description,
         repeatable: !!q.repeatable,
         maxCompletions: q.maxCompletions ?? null,
-        objectiveKind: (firstObj?.kind as any) ?? "kill",
+        objectiveKind,
         objectiveTargetId: targetId,
         objectiveRequired: required,
         rewardXp: reward.xp ?? 0,
         rewardGold: reward.gold ?? 0,
       };
     });
+
+    // Best-effort item label lookup for collect_item objectives.
+    const itemIds = Array.from(
+      new Set(
+        payload
+          .filter((q) => q.objectiveKind === "collect_item" && !!q.objectiveTargetId)
+          .map((q) => q.objectiveTargetId)
+      )
+    );
+
+    if (itemIds.length) {
+      try {
+        const r = await db.query(
+          `SELECT id, name, rarity FROM items WHERE id = ANY($1::text[])`,
+          [itemIds]
+        );
+
+        const map = new Map<string, { name: string; rarity: string }>();
+        for (const row of r.rows as any[]) {
+          map.set(String(row.id), {
+            name: String(row.name ?? ""),
+            rarity: String(row.rarity ?? ""),
+          });
+        }
+
+        for (const q of payload) {
+          if (q.objectiveKind !== "collect_item") continue;
+          const hit = map.get(q.objectiveTargetId);
+          if (hit) {
+            q.objectiveTargetName = hit.name;
+            q.objectiveTargetRarity = hit.rarity;
+          }
+        }
+      } catch (err) {
+        // eslint-disable-next-line no-console
+        console.warn("[ADMIN/QUESTS] item label lookup skipped due to DB error", err);
+      }
+    }
 
     res.json({ ok: true, quests: payload });
   } catch (err) {

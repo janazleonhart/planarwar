@@ -10,6 +10,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { api } from "../lib/api";
 import { getAuthToken } from "../lib/api";
+import { ItemPicker } from "../components/ItemPicker";
 
 type VendorAuditRow = {
   ts: string;
@@ -20,8 +21,8 @@ type VendorAuditRow = {
   vendor_name: string | null;
   action: string;
   item_id: string | null;
-  item_name: string | null;
-  item_rarity: string | null;
+  item_name?: string | null;
+  item_rarity?: string | null;
   quantity: number | null;
   unit_price_gold: number | null;
   total_gold: number | null;
@@ -346,15 +347,19 @@ export function AdminVendorAuditPage() {
           style={{ width: 180 }}
           disabled={anyBusy}
         />
-        <input
-          placeholder="itemId"
-          value={itemId}
-          onChange={(e) => {
-            setOffset(0);
-            setItemId(e.target.value);
-          }}
-          disabled={anyBusy}
-        />
+        <div style={{ display: "flex", alignItems: "center" }}>
+          <ItemPicker
+            value={itemId}
+            onChange={(v: string) => {
+              setOffset(0);
+              setItemId(v);
+            }}
+            placeholder="itemId"
+            disabled={anyBusy}
+            listId="vendor-audit-itempicker"
+            style={{ width: 220 }}
+          />
+        </div>
         <input
           placeholder="since (ISO or timestamptz)"
           value={since}
@@ -459,9 +464,19 @@ export function AdminVendorAuditPage() {
                   <td style={{ whiteSpace: "nowrap" }}>{r.vendor_name || r.vendor_id}</td>
                   <td style={{ whiteSpace: "nowrap" }}>{r.action}</td>
                   <td style={{ whiteSpace: "nowrap" }}>
-                    <div style={{ fontWeight: 700 }}>{r.item_name || r.item_id || ""}</div>
-                    {r.item_name && r.item_id ? (
-                      <div style={{ fontSize: 12, opacity: 0.7 }}>{r.item_id}</div>
+                    {r.item_id ? (
+                      r.item_name ? (
+                        <>
+                          {r.item_name} <code>({r.item_id})</code>
+                        </>
+                      ) : (
+                        <code>{r.item_id}</code>
+                      )
+                    ) : (
+                      ""
+                    )}
+                    {r.item_rarity ? (
+                      <span style={{ marginLeft: 8, opacity: 0.75, fontSize: 12 }}>[{r.item_rarity}]</span>
                     ) : null}
                   </td>
                   <td>{fmtNum(r.quantity)}</td>

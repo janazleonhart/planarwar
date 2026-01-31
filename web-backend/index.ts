@@ -23,7 +23,7 @@ import charactersRouter from "./routes/characters";
 import authRouter from "./routes/auth";
 import adminQuestsRouter from "./routes/adminQuests";
 import adminNpcsRouter from "./routes/adminNpcs";
-import adminItemsRouter from "./routes/adminItems";
+import { adminItemsRouter } from "./routes/adminItems";
 import adminSpawnPointsRouter from "./routes/adminSpawnPoints";
 import { adminVendorAuditRouter } from "./routes/adminVendorAudit";
 import { adminVendorEconomyRouter } from "./routes/adminVendorEconomy";

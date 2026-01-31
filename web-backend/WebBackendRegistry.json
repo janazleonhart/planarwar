@@ -568,24 +568,17 @@
     "web-backend.routes.adminItems": {
       "class": null,
       "ctorArgs": [],
-      "dependsOn": [
-        "npm:express",
-        "worldcore:db/Database"
-      ],
+      "dependsOn": ["npm:express", "worldcore:db/Database"],
       "kind": "module",
       "lifecycle": "singleton",
       "notes": [
         "Admin item list + upsert backed by worldcore DB tables.",
-        "GET supports q/limit/offset for search + paging.",
-        "Provides /options endpoint for UI autocomplete + validation."
+        "Adds lightweight typeahead endpoint for ItemPicker (id/name lookup).",
+        "List endpoint supports q/limit/offset (backwards compatible for callers that ignore pagination fields)."
       ],
       "owns": [],
       "path": "web-backend/routes/adminItems.ts",
-      "provides": [
-        "GET /api/admin/items?q=...&limit=...&offset=...",
-        "GET /api/admin/items/options?q=...&limit=...",
-        "POST /api/admin/items"
-      ],
+      "provides": ["GET /api/admin/items", "GET /api/admin/items/options", "POST /api/admin/items"],
       "service": "http.adminRoutes"
     },
     "web-backend.routes.adminNpcs": {
@@ -692,36 +685,27 @@
     "web-backend.routes.adminVendorAudit": {
       "class": null,
       "ctorArgs": [],
-      "dependsOn": [
-        "npm:express",
-        "worldcore:db/Database"
-      ],
+      "dependsOn": ["npm:express", "worldcore:db/Database"],
       "kind": "module",
       "lifecycle": "singleton",
       "notes": [
         "Admin read-only viewer endpoint for vendor_log with filters + pagination.",
-        "Joins items table to return item_name/item_rarity; CSV export includes these columns."
+        "Joins items table to return item_name + item_rarity in JSON and CSV export."
       ],
       "owns": [],
       "path": "web-backend/routes/adminVendorAudit.ts",
-      "provides": [
-        "GET /api/admin/vendor_audit",
-        "GET /api/admin/vendor_audit/csv"
-      ],
+      "provides": ["GET /api/admin/vendor_audit", "GET /api/admin/vendor_audit/csv"],
       "service": "http.adminRoutes"
     },
     "web-backend.routes.adminVendorEconomy": {
       "class": null,
       "ctorArgs": [],
-      "dependsOn": [
-        "npm:express",
-        "worldcore:db/Database"
-      ],
+      "dependsOn": ["npm:express", "worldcore:db/Database"],
       "kind": "module",
       "lifecycle": "singleton",
       "notes": [
         "Admin editor endpoints for vendor_item_economy (stock/restock/price multipliers) with optional stock reset.",
-        "Joins items table to return item_name/item_rarity alongside item_id for human-friendly admin UI rendering."
+        "GET /items joins items table to return item_name + item_rarity for nicer admin display."
       ],
       "owns": [],
       "path": "web-backend/routes/adminVendorEconomy.ts",

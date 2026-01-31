@@ -299,15 +299,11 @@
       "notes": [
         "Simple table UI with filters + pagination. Backed by /api/admin/vendor_audit.",
         "Server streaming CSV export.",
-        "Renders item_name when available (falls back to item_id)."
+        "Uses ItemPicker for itemId filter; displays item name + rarity from API join."
       ],
-      "owns": [
-        "Admin UI for vendor_log"
-      ],
+      "owns": ["Admin UI for vendor_log"],
       "path": "web-frontend/pages/AdminVendorAuditPage.tsx",
-      "provides": [
-        "/admin/vendor_audit"
-      ],
+      "provides": ["/admin/vendor_audit"],
       "service": "web.adminPages"
     },
     "web-frontend.pages.adminVendorEconomy": {
@@ -318,15 +314,11 @@
       "lifecycle": "page",
       "notes": [
         "Editable vendor economy knobs (stockMax/restock cadence/price mults) with per-row save + optional stock reset.",
-        "Renders item_name when available (falls back to item_id) and filters match item_name or item_id."
+        "Uses ItemPicker for item filtering; displays item name + rarity from API join."
       ],
-      "owns": [
-        "Admin UI for vendor_item_economy"
-      ],
+      "owns": ["Admin UI for vendor_item_economy"],
       "path": "web-frontend/pages/AdminVendorEconomyPage.tsx",
-      "provides": [
-        "/admin/vendor_economy"
-      ],
+      "provides": ["/admin/vendor_economy"],
       "service": "web.adminPages"
     },
     "web-frontend.pages.me": {

@@ -1,96 +1,100 @@
 // web-backend/routes/adminItems.ts
+//
+// Admin Items API
+// - Canonical item id is items.id (text)
+// - items.flags and items.stats are JSON/JSONB columns (NOT flags_json/stats_json)
+// - Supports:
+//    * GET /api/admin/items?q&limit&offset   (paged + search)
+//    * GET /api/admin/items/options?q&limit  (typeahead for ItemPicker)
+//    * POST /api/admin/items                (upsert)
 
 import { Router } from "express";
 import { db } from "../../worldcore/db/Database";
 
-const router = Router();
+export const adminItemsRouter = Router();
 
 type AdminItemPayload = {
   id: string;
-  item_key: string;
-  name: string;
-  description: string;
-  rarity: string;
-  category: string;
+  item_key?: string | null;
+  name?: string | null;
+  description?: string | null;
+  rarity?: string | null;
+  category?: string | null;
   specialization_id?: string | null;
   icon_id?: string | null;
-  max_stack: number;
-  flagsText?: string; // JSON as text from UI
-  statsText?: string; // JSON as text from UI
+  max_stack?: number | null;
+
+  // JSON as text from UI (preferred inputs from AdminItemsPage)
+  flagsText?: string | null;
+  statsText?: string | null;
+
+  // Optional alternate payload spellings (defensive)
+  itemKey?: string | null;
+  specializationId?: string | null;
+  iconId?: string | null;
+  maxStack?: number | null;
 };
 
 type ItemRow = {
   id: string;
-  item_key: string;
-  name: string;
-  description: string;
-  rarity: string;
-  category: string;
+  item_key: string | null;
+  name: string | null;
+  description: string | null;
+  rarity: string | null;
+  category: string | null;
   specialization_id: string | null;
   icon_id: string | null;
-  max_stack: number;
-  flags: any;
-  stats: any;
+  max_stack: number | null;
+  flags: any | null;
+  stats: any | null;
 };
 
-type ItemOptionRow = {
-  id: string;
-  name: string;
-  rarity: string | null;
-  icon_id: string | null;
-};
-
-function clampInt(v: unknown, def: number, min: number, max: number): number {
-  const n = Number(v);
-  if (!Number.isFinite(n)) return def;
-  const i = Math.trunc(n);
-  return Math.max(min, Math.min(max, i));
+function s(v: any): string {
+  if (v === null || v === undefined) return "";
+  return String(v);
 }
 
-// GET /api/admin/items/options?q=...&limit=...
-// Lightweight autocomplete feed for item pickers.
-router.get("/options", async (req, res) => {
+function clampInt(n: number, lo: number, hi: number): number {
+  if (!Number.isFinite(n)) return lo;
+  return Math.max(lo, Math.min(hi, Math.trunc(n)));
+}
+
+function parseJsonTextMaybe(text: any): any | null {
+  const t = s(text).trim();
+  if (!t) return null;
   try {
-    const qRaw = String(req.query.q ?? "").trim();
-    const q = qRaw.length ? `%${qRaw}%` : "";
-    const limit = clampInt(req.query.limit, 250, 1, 500);
-
-    const result = (await db.query(
-      `
-      SELECT id, name, rarity, icon_id
-      FROM items
-      WHERE ($1 = '' OR id ILIKE $1 OR name ILIKE $1 OR item_key ILIKE $1)
-      ORDER BY id
-      LIMIT $2
-      `,
-      [q, limit]
-    )) as { rows: ItemOptionRow[] };
-
-    const items = result.rows.map((r) => {
-      const name = String(r.name ?? "");
-      const id = String(r.id);
-      const rarity = r.rarity ?? "";
-      const iconId = r.icon_id ?? "";
-      const label = name ? `${name} (${id})` : id;
-      return { id, name, rarity, iconId, label };
-    });
-
-    res.json({ ok: true, items });
-  } catch (err) {
-    console.error("[ADMIN/ITEMS] options error", err);
-    res.status(500).json({ ok: false, error: "internal_error" });
+    return JSON.parse(t);
+  } catch {
+    // Let caller surface a 400 with a friendly message.
+    throw new Error("invalid_json");
   }
-});
+}
 
-// GET /api/admin/items?q=...&limit=...&offset=...
-router.get("/", async (req, res) => {
+// GET /api/admin/items  -> list (paged + search)
+// Response shape is intentionally richer than the old v0:
+// { ok, total, limit, offset, items: [{..., flagsText, statsText}] }
+adminItemsRouter.get("/", async (req, res) => {
   try {
-    const qRaw = String(req.query.q ?? "").trim();
-    const q = qRaw.length ? `%${qRaw}%` : "";
-    const limit = clampInt(req.query.limit, 500, 1, 500);
-    const offset = clampInt(req.query.offset, 0, 0, 500_000);
+    const qRaw = s(req.query.q).trim();
+    const q = qRaw ? `%${qRaw}%` : "";
+    const limit = clampInt(Number(req.query.limit ?? 200), 1, 2000);
+    const offset = clampInt(Number(req.query.offset ?? 0), 0, 5_000_000);
 
-    const result = (await db.query(
+    const whereSql = q
+      ? "WHERE id ILIKE $1 OR name ILIKE $1 OR item_key ILIKE $1 OR category ILIKE $1"
+      : "";
+    const whereParams = q ? [q] : [];
+
+    const countRes = await db.query(
+      `SELECT COUNT(*)::int AS count
+       FROM items
+       ${whereSql}`,
+      whereParams
+    );
+    const total = Number(countRes.rows?.[0]?.count ?? 0);
+
+    const dataParams = [...whereParams, limit, offset];
+    const dataRes = await db.query(
       `
       SELECT
         id,
@@ -102,103 +106,119 @@ router.get("/", async (req, res) => {
         specialization_id,
         icon_id,
         max_stack,
-        flags,
-        stats
+        COALESCE(flags, '{}'::jsonb) AS flags,
+        COALESCE(stats, '{}'::jsonb) AS stats
       FROM items
-      WHERE ($1 = '' OR id ILIKE $1 OR name ILIKE $1 OR item_key ILIKE $1 OR category ILIKE $1)
-      ORDER BY id
-      LIMIT $2
-      OFFSET $3
+      ${whereSql}
+      ORDER BY id ASC
+      LIMIT $${dataParams.length - 1} OFFSET $${dataParams.length}
       `,
-      [q, limit, offset]
-    )) as { rows: ItemRow[] };
+      dataParams
+    );
 
-    const items = result.rows.map((row: ItemRow) => ({
-      id: row.id,
-      item_key: row.item_key,
-      name: row.name,
-      description: row.description,
-      rarity: row.rarity,
-      category: row.category,
-      specialization_id: row.specialization_id ?? "",
-      icon_id: row.icon_id ?? "",
-      max_stack: row.max_stack,
+    const items = (dataRes.rows ?? []).map((row: ItemRow) => ({
+      id: s((row as any).id),
+      item_key: (row as any).item_key === null || (row as any).item_key === undefined ? null : s((row as any).item_key),
+      name: (row as any).name === null || (row as any).name === undefined ? null : s((row as any).name),
+      description:
+        (row as any).description === null || (row as any).description === undefined ? null : s((row as any).description),
+      rarity: (row as any).rarity === null || (row as any).rarity === undefined ? null : s((row as any).rarity),
+      category: (row as any).category === null || (row as any).category === undefined ? null : s((row as any).category),
+      specialization_id:
+        (row as any).specialization_id === null || (row as any).specialization_id === undefined
+          ? ""
+          : s((row as any).specialization_id),
+      icon_id:
+        (row as any).icon_id === null || (row as any).icon_id === undefined ? "" : s((row as any).icon_id),
+      max_stack: (row as any).max_stack === null || (row as any).max_stack === undefined ? null : Number((row as any).max_stack),
       flagsText:
-        row.flags && Object.keys(row.flags).length > 0
-          ? JSON.stringify(row.flags, null, 2)
-          : "",
+        (row as any).flags && Object.keys((row as any).flags).length > 0 ? JSON.stringify((row as any).flags, null, 2) : "",
       statsText:
-        row.stats && Object.keys(row.stats).length > 0
-          ? JSON.stringify(row.stats, null, 2)
-          : "",
+        (row as any).stats && Object.keys((row as any).stats).length > 0 ? JSON.stringify((row as any).stats, null, 2) : "",
+    }));
+
+    res.json({ ok: true, total, limit, offset, items });
+  } catch (err: any) {
+    const msg = err?.message === "invalid_json" ? "invalid_json" : (err?.message ?? String(err));
+    res.status(500).json({ ok: false, error: msg });
+  }
+});
+
+// GET /api/admin/items/options  -> lightweight options for ItemPicker (typeahead)
+adminItemsRouter.get("/options", async (req, res) => {
+  try {
+    const qRaw = s(req.query.q).trim();
+    const q = qRaw ? `%${qRaw}%` : "%";
+    const limit = clampInt(Number(req.query.limit ?? 25), 1, 100);
+
+    const r = await db.query(
+      `
+      SELECT id, name, rarity, icon_id
+      FROM items
+      WHERE id ILIKE $1 OR name ILIKE $1
+      ORDER BY
+        CASE WHEN id ILIKE $2 THEN 0 ELSE 1 END,
+        id ASC
+      LIMIT $3
+      `,
+      [q, `${qRaw}%`, limit]
+    );
+
+    const items = (r.rows ?? []).map((row: any) => ({
+      id: s(row.id),
+      name: row.name === null || row.name === undefined ? null : s(row.name),
+      rarity: row.rarity === null || row.rarity === undefined ? null : s(row.rarity),
+      iconId: row.icon_id === null || row.icon_id === undefined ? null : s(row.icon_id),
+      label: row.name ? `${row.name} (${row.id})` : s(row.id),
     }));
 
     res.json({ ok: true, items });
-  } catch (err) {
-    console.error("[ADMIN/ITEMS] list error", err);
-    res.status(500).json({ ok: false, error: "internal_error" });
+  } catch (err: any) {
+    res.status(500).json({ ok: false, error: err?.message ?? String(err) });
   }
 });
 
 // POST /api/admin/items  -> upsert item
-router.post("/", async (req, res) => {
-  const body = req.body as AdminItemPayload;
-
-  if (!body.id || !body.name) {
-    return res.status(400).json({
-      ok: false,
-      error: "id and name are required",
-    });
-  }
-
-  const id = body.id.trim();
-  const itemKey = (body.item_key || id).trim();
-  const name = body.name.trim();
-  const description = body.description || "";
-  const rarity = body.rarity || "common";
-  const category = body.category || "misc";
-  const specId = body.specialization_id?.trim() || null;
-  const iconId = body.icon_id?.trim() || null;
-  const maxStack = Number(body.max_stack || 1) || 1;
-
-  // Parse JSON fields
-  let flags: any = {};
-  let stats: any = {};
-
+adminItemsRouter.post("/", async (req, res) => {
   try {
-    if (body.flagsText && body.flagsText.trim().length > 0) {
-      flags = JSON.parse(body.flagsText);
+    const body = (req.body ?? {}) as AdminItemPayload;
+
+    const id = s(body.id).trim();
+    if (!id) return res.status(400).json({ ok: false, error: "id is required" });
+
+    const itemKey = s(body.item_key ?? body.itemKey ?? id).trim() || id;
+    const name = s(body.name).trim() || null;
+    const description = s(body.description).trim() || "";
+    const rarity = s(body.rarity).trim() || null;
+    const category = s(body.category).trim() || null;
+
+    const maxStackRaw = body.max_stack ?? body.maxStack ?? null;
+    const maxStack = maxStackRaw === null || maxStackRaw === undefined ? null : Number(maxStackRaw);
+
+    const specializationId = s(body.specialization_id ?? body.specializationId).trim() || null;
+    const iconId = s(body.icon_id ?? body.iconId).trim() || null;
+
+    let flags: any = {};
+    let stats: any = {};
+
+    // Admin UI prefers sending flagsText/statsText (JSON-as-textareas)
+    if (body.flagsText !== undefined && body.flagsText !== null) {
+      const parsed = parseJsonTextMaybe(body.flagsText);
+      flags = parsed ?? {};
     }
-  } catch {
-    return res.status(400).json({ ok: false, error: "flags must be valid JSON" });
-  }
-
-  try {
-    if (body.statsText && body.statsText.trim().length > 0) {
-      stats = JSON.parse(body.statsText);
+    if (body.statsText !== undefined && body.statsText !== null) {
+      const parsed = parseJsonTextMaybe(body.statsText);
+      stats = parsed ?? {};
     }
-  } catch {
-    return res.status(400).json({ ok: false, error: "stats must be valid JSON" });
-  }
 
-  try {
     await db.query(
       `
       INSERT INTO items (
-        id,
-        item_key,
-        name,
-        description,
-        rarity,
-        category,
-        specialization_id,
-        icon_id,
-        max_stack,
-        flags,
-        stats
-      ) VALUES (
-        $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11
+        id, item_key, name, description, rarity, category,
+        specialization_id, icon_id, max_stack,
+        flags, stats
       )
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
       ON CONFLICT (id) DO UPDATE SET
         item_key = EXCLUDED.item_key,
         name = EXCLUDED.name,
@@ -211,17 +231,16 @@ router.post("/", async (req, res) => {
         flags = EXCLUDED.flags,
         stats = EXCLUDED.stats
       `,
-      [id, itemKey, name, description, rarity, category, specId, iconId, maxStack, flags, stats]
+      [id, itemKey, name, description, rarity, category, specializationId, iconId, maxStack, flags, stats]
     );
 
-    // For v0 we won't hot-reload MMO items here.
-    // You can restart the MMO to pick up changes.
-
-    res.json({ ok: true });
-  } catch (err) {
-    console.error("[ADMIN/ITEMS] upsert error", err);
-    res.status(500).json({ ok: false, error: "internal_error" });
+    res.json({ ok: true, id });
+  } catch (err: any) {
+    if (err?.message === "invalid_json") {
+      return res.status(400).json({ ok: false, error: "flagsText/statsText must be valid JSON" });
+    }
+    res.status(500).json({ ok: false, error: err?.message ?? String(err) });
   }
 });
 
-export default router;
+export default adminItemsRouter;

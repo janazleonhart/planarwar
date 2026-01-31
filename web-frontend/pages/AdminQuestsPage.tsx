@@ -1,7 +1,7 @@
 // web-frontend/pages/AdminQuestsPage.tsx
 
 import { useEffect, useState } from "react";
-import { explainAdminError, getAdminCaps, getAuthToken } from "../lib/api";
+import { getAdminCaps, getAuthToken } from "../lib/api";
 
 type ObjectiveKind = "kill" | "harvest" | "collect_item" | "craft" | "talk_to" | "city";
 
@@ -15,6 +15,9 @@ type AdminQuest = {
   objectiveKind: ObjectiveKind;
   objectiveTargetId: string;
   objectiveRequired: number;
+
+  objectiveTargetName?: string;
+  objectiveTargetRarity?: string;
 
   rewardXp: number;
   rewardGold: number;
@@ -40,6 +43,105 @@ function labelForTarget(kind: ObjectiveKind): string {
 }
 
 
+type ItemOption = {
+  id: string;
+  name?: string | null;
+  rarity?: string | null;
+  label?: string | null; // optional prebuilt label from API
+};
+
+function formatItemLabel(opt: ItemOption): string {
+  const name = (opt.label && opt.label.trim()) || (opt.name ? String(opt.name) : "");
+  const rarity = opt.rarity ? String(opt.rarity) : "";
+  const bits = [];
+  if (name) bits.push(name);
+  bits.push(opt.id);
+  let out = bits.length === 2 ? `${bits[0]} (${bits[1]})` : opt.id;
+  if (rarity) out = `${out} [${rarity}]`;
+  return out;
+}
+
+function formatObjectiveTarget(q: AdminQuest): string {
+  if (q.objectiveKind !== "collect_item") return q.objectiveTargetId;
+  const name = q.objectiveTargetName ? String(q.objectiveTargetName) : "";
+  const rarity = q.objectiveTargetRarity ? String(q.objectiveTargetRarity) : "";
+  let out = name ? `${name} (${formatObjectiveTarget(q)})` : q.objectiveTargetId;
+  if (rarity) out = `${out} [${rarity}]`;
+  return out;
+}
+
+function ItemIdPicker(props: {
+  value: string;
+  disabled?: boolean;
+  onChange: (next: string) => void;
+  onResolved?: (opt: ItemOption | null) => void;
+}) {
+  const { value, disabled, onChange, onResolved } = props;
+  const [options, setOptions] = useState<ItemOption[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+
+    (async () => {
+      const q = (value || "").trim();
+      if (!q) {
+        setOptions([]);
+        if (onResolved) onResolved(null);
+        return;
+      }
+      setLoading(true);
+      try {
+        const res = await authedFetch(`/api/admin/items/options?q=${encodeURIComponent(q)}&limit=20`);
+        const data = (await res.json()) as { ok?: boolean; items?: ItemOption[]; error?: string };
+        const arr = (data.items ?? []).map((x) => ({
+          id: String((x as any).id ?? ""),
+          name: (x as any).name ?? null,
+          rarity: (x as any).rarity ?? null,
+          label: (x as any).label ?? null,
+        }));
+        if (!alive) return;
+        setOptions(arr);
+
+        const exact = arr.find((x) => x.id === q);
+        if (onResolved) onResolved(exact ?? null);
+      } catch {
+        if (!alive) return;
+        setOptions([]);
+        if (onResolved) onResolved(null);
+      } finally {
+        if (alive) setLoading(false);
+      }
+    })();
+
+    return () => {
+      alive = false;
+    };
+  }, [value]);
+
+  const listId = "adminQuestItemIdOptions";
+
+  return (
+    <div style={{ display: "inline-flex", flexDirection: "column", gap: 2 }}>
+      <div style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+        <input
+          value={value}
+          disabled={disabled}
+          list={listId}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder="item id (e.g. rat_tail)"
+        />
+        {loading && <span style={{ fontSize: 12, opacity: 0.7 }}>…</span>}
+      </div>
+      <datalist id={listId}>
+        {options.map((o) => (
+          <option key={o.id} value={o.id} label={formatItemLabel(o)} />
+        ))}
+      </datalist>
+    </div>
+  );
+}
+
 const authedFetch: typeof fetch = (input: any, init?: any) => {
   const token = getAuthToken();
   const headers = new Headers(init?.headers ?? {});
@@ -54,6 +156,7 @@ export function AdminQuestsPage() {
   const [form, setForm] = useState<AdminQuest | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [itemResolved, setItemResolved] = useState<ItemOption | null>(null);
 
   async function reloadList() {
     const res = await authedFetch(`/api/admin/quests`);
@@ -79,10 +182,14 @@ export function AdminQuestsPage() {
       return;
     }
     const q = quests.find((x) => x.id === selectedId);
-    if (q) setForm(q);
+    if (q) {
+      setForm(q);
+      setItemResolved(null);
+    }
   }, [selectedId, quests]);
 
   const startNew = () => {
+    setItemResolved(null);
     setSelectedId(null);
     setForm({
       id: "",
@@ -104,6 +211,19 @@ export function AdminQuestsPage() {
 
   const handleSave = async () => {
     if (!form) return;
+
+    // Client-side safety rail: prevent saving collect_item objectives with unknown item ids.
+    if (form.objectiveKind === "collect_item") {
+      const id = (form.objectiveTargetId || "").trim();
+      const serverKnows = !!(form.objectiveTargetName && form.objectiveTargetId === id);
+      if (id && !itemResolved && !serverKnows) {
+        setError(
+          `Unknown item id '${id}'. Use the picker to select a real item (or create it in the Item Editor first).`
+        );
+        return;
+      }
+    }
+
     setSaving(true);
     setError(null);
 
@@ -175,7 +295,7 @@ export function AdminQuestsPage() {
                 </div>
                 <div style={{ fontSize: 12 }}>
                   {q.repeatable ? "Repeatable" : "One-time"} • {q.objectiveKind} {q.objectiveRequired}x{" "}
-                  {q.objectiveTargetId}
+                  {formatObjectiveTarget(q)}
                 </div>
               </li>
             ))}
@@ -251,7 +371,11 @@ export function AdminQuestsPage() {
                     Kind:{" "}
                     <select
                       value={form.objectiveKind}
-                      onChange={(e) => updateField("objectiveKind", e.target.value as ObjectiveKind)}
+                      onChange={(e) => {
+                        const next = e.target.value as ObjectiveKind;
+                        updateField("objectiveKind", next);
+                        setItemResolved(null);
+                      }}
                     >
                       <option value="kill">Kill</option>
                       <option value="harvest">Gathering</option>
@@ -266,10 +390,19 @@ export function AdminQuestsPage() {
                 <div style={{ marginBottom: 4 }}>
                   <label>
                     {labelForTarget(form.objectiveKind)}:{" "}
-                    <input
-                      value={form.objectiveTargetId}
-                      onChange={(e) => updateField("objectiveTargetId", e.target.value)}
-                    />
+                    {form.objectiveKind === "collect_item" ? (
+                      <ItemIdPicker
+                        value={form.objectiveTargetId}
+                        disabled={saving || !canWrite}
+                        onChange={(next) => updateField("objectiveTargetId", next)}
+                        onResolved={(opt) => setItemResolved(opt)}
+                      />
+                    ) : (
+                      <input
+                        value={form.objectiveTargetId}
+                        onChange={(e) => updateField("objectiveTargetId", e.target.value)}
+                      />
+                    )}
                   </label>
                 </div>
 

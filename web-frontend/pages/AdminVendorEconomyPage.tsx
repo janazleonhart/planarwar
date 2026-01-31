@@ -4,7 +4,8 @@
 // Polished UX: dirty tracking, bulk save, filters, and same-origin API via lib/api.ts.
 
 import { useEffect, useMemo, useState } from "react";
-import { api, explainAdminError, getAdminCaps, getAuthToken } from "../lib/api";
+import { api, getAdminCaps, getAuthToken } from "../lib/api";
+import { ItemPicker } from "../components/ItemPicker";
 
 type VendorSummary = {
   id: string;
@@ -308,9 +309,9 @@ export function AdminVendorEconomyPage() {
 
     return items.filter((r) => {
       if (needle) {
-        const hayId = (r.item_id ?? "").toLowerCase();
-        const hayName = (r.item_name ?? "").toLowerCase();
-        if (!hayId.includes(needle) && !hayName.includes(needle)) return false;
+        const idHit = r.item_id?.toLowerCase().includes(needle);
+        const nameHit = (r.item_name ?? "").toLowerCase().includes(needle);
+        if (!idHit && !nameHit) return false;
       }
 
       if (onlyFinite) {
@@ -503,12 +504,13 @@ export function AdminVendorEconomyPage() {
       <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center", marginBottom: 12 }}>
         <label style={{ display: "flex", gap: 6, alignItems: "center" }}>
           Search item
-          <input
+          <ItemPicker
             value={qItem}
-            onChange={(e) => setQItem(e.target.value)}
-            placeholder="e.g. potion_"
+            onChange={(v) => setQItem(v)}
+            placeholder="item_id or name…"
             disabled={busy}
             style={{ width: 240 }}
+            listId="vendor-econ-itempicker"
           />
         </label>
 
@@ -628,9 +630,15 @@ export function AdminVendorEconomyPage() {
 
                   <td style={{ whiteSpace: "nowrap" }}>{r.vendor_item_id}</td>
                   <td style={{ whiteSpace: "nowrap" }}>
-                    <div style={{ fontWeight: 700 }}>{r.item_name ?? r.item_id}</div>
                     {r.item_name ? (
-                      <div style={{ fontSize: 12, opacity: 0.7 }}>{r.item_id}</div>
+                      <>
+                        {r.item_name} <code>({r.item_id})</code>
+                      </>
+                    ) : (
+                      <code>{r.item_id}</code>
+                    )}
+                    {r.item_rarity ? (
+                      <span style={{ marginLeft: 8, opacity: 0.75, fontSize: 12 }}>[{r.item_rarity}]</span>
                     ) : null}
                   </td>
                   <td style={{ whiteSpace: "nowrap" }}>{r.base_price_gold}</td>

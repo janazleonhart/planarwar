@@ -52,14 +52,14 @@ function buildWhere(filters: AuditFilters): { whereSql: string; params: any[] } 
     where.push(`${sqlPrefix} $${params.length}`);
   };
 
-  if (filters.vendorId) add("vendor_id =", filters.vendorId);
-  if (filters.actorCharId) add("actor_char_id =", filters.actorCharId);
-  if (filters.actorCharName) add("actor_char_name ILIKE", `%${filters.actorCharName}%`);
-  if (filters.action) add("action =", filters.action);
-  if (filters.result) add("result =", filters.result);
-  if (filters.itemId) add("item_id =", filters.itemId);
-  if (filters.since) add("ts >=", filters.since);
-  if (filters.until) add("ts <=", filters.until);
+  if (filters.vendorId) add("l.vendor_id =", filters.vendorId);
+  if (filters.actorCharId) add("l.actor_char_id =", filters.actorCharId);
+  if (filters.actorCharName) add("l.actor_char_name ILIKE", `%${filters.actorCharName}%`);
+  if (filters.action) add("l.action =", filters.action);
+  if (filters.result) add("l.result =", filters.result);
+  if (filters.itemId) add("l.item_id =", filters.itemId);
+  if (filters.since) add("l.ts >=", filters.since);
+  if (filters.until) add("l.ts <=", filters.until);
 
   const whereSql = where.length ? `WHERE ${where.join(" AND ")}` : "";
   return { whereSql, params };
@@ -83,35 +83,35 @@ adminVendorAuditRouter.get("/", async (req, res) => {
     const filters = readFilters(req);
     const { whereSql, params } = buildWhere(filters);
 
-    const countRes = await db.query(`SELECT COUNT(*)::int AS count FROM vendor_log ${whereSql}`, params);
+    const countRes = await db.query(`SELECT COUNT(*)::int AS count FROM vendor_log l ${whereSql}`, params);
     const total = Number(countRes.rows?.[0]?.count ?? 0);
 
     const dataParams = [...params, limit, offset];
     const dataRes = await db.query(
       `
       SELECT
-        ts,
-        shard_id,
-        actor_char_id,
-        actor_char_name,
-        vendor_id,
-        vendor_name,
-        action,
-        item_id,
-        it.name AS item_name,
+        l.ts,
+        l.shard_id,
+        l.actor_char_id,
+        l.actor_char_name,
+        l.vendor_id,
+        l.vendor_name,
+        l.action,
+        l.item_id,
+        it.name   AS item_name,
         it.rarity AS item_rarity,
-        quantity,
-        unit_price_gold,
-        total_gold,
-        gold_before,
-        gold_after,
-        result,
-        reason,
-        meta
-      FROM vendor_log
-      LEFT JOIN items it ON it.id = vendor_log.item_id
+        l.quantity,
+        l.unit_price_gold,
+        l.total_gold,
+        l.gold_before,
+        l.gold_after,
+        l.result,
+        l.reason,
+        l.meta
+      FROM vendor_log l
+      LEFT JOIN items it ON it.id = l.item_id
       ${whereSql}
-      ORDER BY ts DESC
+      ORDER BY l.ts DESC
       LIMIT $${dataParams.length - 1} OFFSET $${dataParams.length}
       `,
       dataParams
@@ -158,8 +158,6 @@ adminVendorAuditRouter.get("/csv", async (req, res) => {
       "vendor_name",
       "action",
       "item_id",
-      "item_name",
-      "item_rarity",
       "quantity",
       "unit_price_gold",
       "total_gold",
@@ -186,29 +184,28 @@ adminVendorAuditRouter.get("/csv", async (req, res) => {
       const dataRes = await db.query(
         `
         SELECT
-          ts,
-          shard_id,
-          actor_char_id,
-          actor_char_name,
-          vendor_id,
-          vendor_name,
-          action,
-          item_id,
-          it.name AS item_name,
+          l.ts,
+          l.shard_id,
+          l.actor_char_id,
+          l.actor_char_name,
+          l.vendor_id,
+          l.vendor_name,
+          l.action,
+          l.item_id,
+          it.name   AS item_name,
           it.rarity AS item_rarity,
-          quantity,
-          unit_price_gold,
-          total_gold,
-          gold_before,
-          gold_after,
-          result,
-          reason,
-          meta
-        FROM vendor_log
-        LEFT JOIN items it ON it.id = vendor_log.item_id
-      LEFT JOIN items it ON it.id = vendor_log.item_id
+          l.quantity,
+          l.unit_price_gold,
+          l.total_gold,
+          l.gold_before,
+          l.gold_after,
+          l.result,
+          l.reason,
+          l.meta
+        FROM vendor_log l
+        LEFT JOIN items it ON it.id = l.item_id
         ${whereSql}
-        ORDER BY ts DESC
+        ORDER BY l.ts DESC
         LIMIT $${dataParams.length - 1} OFFSET $${dataParams.length}
         `,
         dataParams
@@ -230,8 +227,6 @@ adminVendorAuditRouter.get("/csv", async (req, res) => {
           r.vendor_name ?? "",
           r.action ?? "",
           r.item_id ?? "",
-          r.item_name ?? "",
-          r.item_rarity ?? "",
           r.quantity ?? "",
           r.unit_price_gold ?? "",
           r.total_gold ?? "",
