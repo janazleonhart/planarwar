@@ -472,6 +472,32 @@ export function applySimpleNpcCounterAttack(
     return null;
   }
 
+
+  // --- Special-case: training dummies never counter-attack ---
+  // They exist for DPS testing, not murder.
+  try {
+    if (ctx.npcs) {
+      const st = ctx.npcs.getNpcStateByEntityId(npc.id);
+      if (st) {
+        const proto = getNpcPrototype(st.templateId) ?? getNpcPrototype(st.protoId);
+        const tags = proto?.tags ?? [];
+        if (
+          tags.includes("training") ||
+          tags.includes("law_exempt") ||
+          st.protoId === "training_dummy" ||
+          st.protoId === "training_dummy_big" ||
+          st.templateId === "training_dummy" ||
+          st.templateId === "training_dummy_big"
+        ) {
+          return null;
+        }
+      }
+    }
+  } catch {
+    // ignore
+  }
+
+
   // --- Coward special-case: no reactive counter-attacks ---
   try {
     if (ctx.npcs) {

@@ -60,7 +60,7 @@ test("crime is recorded when attacking protected NPCs and guards warn", async ()
   const player = entities.createPlayerForSession("session-crime", "crime-room");
   player.ownerSessionId = "session-crime";
 
-  const npcState = npcManager.spawnNpcById("training_dummy", "crime-room", 0, 0, 0);
+  const npcState = npcManager.spawnNpcById("town_civilian", "crime-room", 0, 0, 0);
   assert.ok(npcState, "protected NPC should spawn");
   const npcEntity = entities.get(npcState!.entityId)!;
 

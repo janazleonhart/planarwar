@@ -1,4 +1,14 @@
 // worldcore/npc/NpcCrime.ts
+//
+// Justice / "crime" bookkeeping used by guard AI. This is intentionally simple:
+//
+// - A "protected NPC" (civilian/vendor/questgiver etc.) being attacked sets a short "wanted" timer.
+// - Guards can react based on severity (minor vs severe) and the timer.
+//
+// Key rules:
+// - Training dummies are ALWAYS exempt (tag: "training").
+// - Any NPC tagged "law_exempt" is ALWAYS exempt.
+// - Prototype lookup tolerates instance suffixes like "civilian.1" by stripping a trailing ".<digits>".
 
 import type { CharacterState } from "../characters/CharacterTypes";
 import type { GuardProfile, NpcPrototype, NpcRuntimeState } from "./NpcTypes";
@@ -34,11 +44,11 @@ const LEGACY_PROTECTED_TAGS = new Set<string>([
 // Tags that count as "citizens / protected things" guards will defend.
 // (law_* tags handled separately for precedence.)
 const DEFAULT_PROTECTED_TAGS = new Set<string>([
-  "civilian", // generic townfolk / dummies
+  "civilian", // generic townfolk
   "protected", // generic future hook
   "vendor",
   "questgiver",
-  "non_hostile", // safe fluff NPCs
+  "non_hostile", // safe fluff NPCs (NOT training dummies)
   ...Array.from(LEGACY_PROTECTED_TAGS),
 ]);
 
@@ -52,8 +62,9 @@ function tagsOf(proto: NpcPrototype | null | undefined): Set<string> {
  *
  * Precedence (Option B):
  *  1) law_exempt      => NOT protected
- *  2) law_protected   => protected
- *  3) legacy/default protected tags => protected
+ *  2) training        => NOT protected
+ *  3) law_protected   => protected
+ *  4) legacy/default protected tags => protected
  *
  * Notes:
  * - Resource nodes are never protected.
@@ -69,6 +80,9 @@ export function isProtectedNpc(proto: NpcPrototype | null | undefined): boolean 
 
   // Enforcers, not protected civilians.
   if (tags.has("guard")) return false;
+
+  // Training dummies exist to be hit. They are not crimes.
+  if (tags.has("training")) return false;
 
   // Option B precedence.
   if (tags.has(LAW_TAG_EXEMPT)) return false;
@@ -96,6 +110,30 @@ export type CrimeResult = {
   guardCallRadius: number;
 };
 
+function normalizeProtoId(id: string): string {
+  // Only strip a trailing ".<digits>" instance suffix, e.g. "civilian.1" -> "civilian".
+  return id.replace(/\.\d+$/, "");
+}
+
+function resolveNpcProtoFromRuntime(npc: NpcRuntimeState): NpcPrototype | null {
+  const ids: string[] = [];
+  if (typeof npc.templateId === "string" && npc.templateId) ids.push(npc.templateId);
+  if (typeof npc.protoId === "string" && npc.protoId) ids.push(npc.protoId);
+
+  for (const raw of ids) {
+    const direct = getNpcPrototype(raw);
+    if (direct) return direct;
+
+    const norm = normalizeProtoId(raw);
+    if (norm !== raw) {
+      const normalized = getNpcPrototype(norm);
+      if (normalized) return normalized;
+    }
+  }
+
+  return null;
+}
+
 /**
  * Record a crime on the attacker character state.
  *
@@ -107,17 +145,14 @@ export function recordNpcCrimeAgainst(
   attacker: CharacterState,
   record: CrimeRecord,
 ): CrimeResult | null {
-  const proto =
-    record.proto ??
-    getNpcPrototype(npc.templateId) ??
-    getNpcPrototype(npc.protoId);
+  const proto = record.proto ?? resolveNpcProtoFromRuntime(npc);
 
   // If we truly can't find a proto, bail safely.
   if (!proto) {
     crimeLog.warn("recordNpcCrimeAgainst: missing NPC prototype", {
       npcEntityId: (npc as any).entityId,
-      npcTemplateId: npc.templateId,
-      npcProtoId: npc.protoId,
+      npcTemplateId: (npc as any).templateId,
+      npcProtoId: (npc as any).protoId,
     });
     return null;
   }

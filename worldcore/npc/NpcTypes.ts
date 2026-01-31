@@ -138,6 +138,21 @@ export const DEFAULT_NPC_PROTOTYPES: Record<NpcId, NpcPrototype> = {
     loot: [],
   },
 
+  town_civilian: {
+    id: "town_civilian",
+    name: "Town Civilian",
+    level: 1,
+    maxHp: 60,
+    baseDamageMin: 0,
+    baseDamageMax: 0,
+    model: "human_commoner",
+    // Protected by the justice system: guards will warn/attack if you harm civilians.
+    tags: ["civilian", "non_hostile", "protected_town"],
+    behavior: "neutral",
+    xpReward: 0,
+    loot: [],
+  },
+
   town_rat: {
     id: "town_rat",
     name: "Town Rat",

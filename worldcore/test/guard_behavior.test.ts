@@ -72,7 +72,7 @@ test("guard warns after minor crime in a safe hub", () => {
   const { entities, sessions, npcManager, character, player } = setupWorld();
 
   const guard = npcManager.spawnNpcById("town_guard", ROOM_ID, 0, 0, 0);
-  const civilian = npcManager.spawnNpcById("training_dummy", ROOM_ID, 1, 0, 0);
+  const civilian = npcManager.spawnNpcById("town_civilian", ROOM_ID, 1, 0, 0);
   assert.ok(guard && civilian, "should spawn guard and civilian");
 
   npcManager.applyDamage(civilian!.entityId, 5, { character });
@@ -94,7 +94,7 @@ test("guard attacks after lethal crime", () => {
   const { entities, sessions, npcManager, character, player } = setupWorld("templar");
 
   const guard = npcManager.spawnNpcById("town_guard", ROOM_ID, 0, 0, 0);
-  const civilian = npcManager.spawnNpcById("training_dummy", ROOM_ID, 1, 0, 0);
+  const civilian = npcManager.spawnNpcById("town_civilian", ROOM_ID, 1, 0, 0);
   assert.ok(guard && civilian, "should spawn guard and civilian");
 
   npcManager.applyDamage(civilian!.entityId, 500, { character });
