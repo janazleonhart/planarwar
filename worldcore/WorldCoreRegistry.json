@@ -6107,6 +6107,23 @@
         "Contract: seed integrity \u2014 any spell_id referenced in seed spell_unlocks must exist in seeded spells."
       ]
     },
+    "test.contractSeedAbilityUnlocksReferToSeededAbilities": {
+      "service": "test.contract",
+      "kind": "test",
+      "lifecycle": "test",
+      "path": "worldcore/test/contract_seedAbilityUnlocksReferToSeededAbilities.test.ts",
+      "class": null,
+      "ctorArgs": [],
+      "dependsOn": [
+        "tools.seedAbilityIdAudit"
+      ],
+      "provides": [],
+      "owns": [],
+      "notes": [
+        "Contract: schema seeds must ensure ability_unlocks.ability_id values are represented in the abilities catalog seeding flow.",
+        "Models the bootstrap seed that populates abilities from ability_unlocks; fails if unlocks occur after the last bootstrap without explicit abilities inserts."
+      ]
+    },
     "test.utils": {
       "dependsOn": [],
       "functions": [
@@ -6252,6 +6269,17 @@
         "Audits worldcore/infra/schema seed SQL: spell_unlocks.spell_id must exist in spells.id (seeded).",
         "Prevents FK failures during applySchema / seed runs.",
         "Supports --schemaDir, --json, and --allowMissing for temporary exceptions."
+      ]
+    },
+    "tools.seedAbilityIdAudit": {
+      "kind": "tool",
+      "path": "worldcore/tools/seedAbilityIdAudit.ts",
+      "bin": "dist/worldcore/tools/seedAbilityIdAudit.js",
+      "dependsOn": [],
+      "notes": [
+        "Audits schema seed SQL: ensures ability_unlocks.ability_id is covered by the abilities catalog seeding flow.",
+        "Models seed order: explicit INSERTs into abilities and/or 'seed abilities from unlocks' bootstrap scripts.",
+        "Prevents UI/catalog drift when new ability_unlocks are added without catalog seeding."
       ]
     },
     "tools.simBrain": {
