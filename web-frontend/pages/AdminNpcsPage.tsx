@@ -10,6 +10,8 @@ import { explainAdminError, getAdminCaps, getAuthToken } from "../lib/api";
 
 type AdminNpcLootRow = {
   itemId: string;
+  itemName?: string;
+  itemRarity?: string;
   chance: number;
   minQty: number;
   maxQty: number;
@@ -83,9 +85,25 @@ const authedFetch: typeof fetch = (input: any, init?: any) => {
   return fetch(input, { ...(init ?? {}), headers });
 };
 
+
+type AdminItemOption = {
+  id: string;
+  name: string;
+  rarity: string;
+  iconId: string | null;
+  label: string;
+};
+
 export function AdminNpcsPage() {
   const { canWrite } = getAdminCaps();
   const [npcs, setNpcs] = useState<AdminNpc[]>([]);
+  const [itemOptions, setItemOptions] = useState<AdminItemOption[]>([]);
+  const itemById = useMemo(() => {
+    const m = new Map<string, AdminItemOption>();
+    for (const it of itemOptions) m.set(String(it.id), it);
+    return m;
+  }, [itemOptions]);
+
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [form, setForm] = useState<AdminNpc | null>(null);
   const [saving, setSaving] = useState(false);
@@ -278,7 +296,24 @@ export function AdminNpcsPage() {
     }
   };
 
-  return (
+  
+
+  async function loadItemOptions() {
+    try {
+      const res = await authedFetch(`/api/admin/items/options?limit=500`);
+      if (!res.ok) return;
+      const data: { ok: boolean; items?: AdminItemOption[] } = await res.json();
+      if (data.ok && Array.isArray(data.items)) setItemOptions(data.items);
+    } catch {
+      // ignore: UI falls back to manual ids
+    }
+  }
+
+  useEffect(() => {
+    void loadItemOptions();
+  }, []);
+
+return (
     <div style={{ padding: 16 }}>
       <h1>NPC Editor (v0)</h1>
 
@@ -501,10 +536,19 @@ export function AdminNpcsPage() {
                     >
                       <input
                         placeholder="itemId"
-                        style={{ minWidth: 140 }}
+                        list="npc-loot-item-options"
+                        style={{ minWidth: 180 }}
                         value={row.itemId}
                         onChange={(e) => updateLootRow(idx, "itemId", e.target.value)}
                       />
+                      <span style={{ fontSize: 12, opacity: 0.8, minWidth: 180 }}>
+                        {(() => {
+                          const meta = itemById.get(String(row.itemId));
+                          const name = meta?.name || row.itemName;
+                          if (!name) return null;
+                          return `${name} (${row.itemId})`;
+                        })()}
+                      </span>
                       <input
                         type="number"
                         step="0.01"

@@ -34,6 +34,46 @@ type ItemRow = {
 };
 
 // GET /api/admin/items  -> list items
+
+// /admin/items/options -> lightweight item options for admin UIs (autocomplete, labels)
+router.get("/options", async (req, res) => {
+  try {
+    const q = String((req.query.q ?? "") as any).trim();
+    const limitRaw = Number(req.query.limit ?? 200);
+    const limit = Number.isFinite(limitRaw) ? Math.max(1, Math.min(500, limitRaw)) : 200;
+
+    const args: any[] = [];
+    let where = "";
+    if (q) {
+      args.push(`%${q}%`);
+      where = "WHERE id ILIKE $1 OR name ILIKE $1";
+    }
+
+    const sql = `
+      SELECT id, name, rarity, icon_id
+      FROM items
+      ${where}
+      ORDER BY id
+      LIMIT ${limit}
+    `;
+
+    const r = await db.query(sql, args);
+    res.json({
+      ok: true,
+      items: r.rows.map((row: any) => ({
+        id: String(row.id),
+        name: String(row.name ?? ""),
+        rarity: String(row.rarity ?? ""),
+        iconId: row.icon_id ? String(row.icon_id) : null,
+        label: row.name ? `${row.name} (${row.id})` : String(row.id),
+      })),
+    });
+  } catch (err) {
+    console.error("[ADMIN/ITEMS] options error", err);
+    res.status(500).json({ ok: false, error: "internal_error" });
+  }
+});
+
 router.get("/", async (_req, res) => {
   try {
     const result = (await db.query(

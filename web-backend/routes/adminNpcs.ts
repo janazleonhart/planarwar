@@ -21,6 +21,8 @@ type AdminNpcPayload = {
   xpReward: number;
   loot: {
     itemId: string;
+    itemName?: string;
+    itemRarity?: string;
     chance: number;
     minQty: number;
     maxQty: number;
@@ -70,6 +72,23 @@ function normalizeTags(tags: unknown, tagsText?: string): string[] {
 router.get("/", async (_req, res) => {
   try {
     const protos = await npcService.listNpcs();
+    const lootItemIds = Array.from(
+      new Set(
+        protos.flatMap((p) => (p.loot ?? []).map((l) => String(l.itemId)).filter(Boolean))
+      )
+    );
+
+    const itemsById = new Map<string, { name: string; rarity: string }>();
+    if (lootItemIds.length > 0) {
+      const r = await db.query(
+        `SELECT id, name, rarity FROM items WHERE id = ANY($1::text[])`,
+        [lootItemIds]
+      );
+      for (const row of r.rows) {
+        itemsById.set(String(row.id), { name: String(row.name ?? ""), rarity: String(row.rarity ?? "") });
+      }
+    }
+
     const payload: AdminNpcPayload[] = protos.map((p) => ({
       id: p.id,
       name: p.name,
@@ -81,12 +100,17 @@ router.get("/", async (_req, res) => {
       tagsText: (p.tags ?? []).join(", "),
       xpReward: p.xpReward ?? 0,
       loot:
-        p.loot?.map((l) => ({
-          itemId: l.itemId,
-          chance: l.chance,
+        p.loot?.map((l) => {
+          const meta = itemsById.get(String(l.itemId));
+          return {
+            itemId: l.itemId,
+            itemName: meta?.name || undefined,
+            itemRarity: meta?.rarity || undefined,
+            chance: l.chance,
           minQty: l.minQty,
           maxQty: l.maxQty,
-        })) ?? [],
+          };
+        }) ?? [],
     }));
     res.json({ ok: true, npcs: payload });
   } catch (err) {

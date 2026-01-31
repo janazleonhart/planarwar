@@ -242,7 +242,12 @@
         "Restore safety UI: shows high-risk restore warning and requires confirm phrase 'RESTORE' for cross-shard and/or brain-owned restores, plus confirm token for destructive updates.",
         "P2\u2013P3: Server snapshots UI: save/load/delete spawn snapshot docs stored on web-backend.",
         "Snapshot save supports tags (comma list) + notes; list supports sort + tag filter + search via query params.",
-        "Scatter tool uses server-provided protoId datalist (/api/admin/spawn_points/proto_options) with name+id labels and manual fallback."
+        "Scatter tool uses server-provided protoId datalist (/api/admin/spawn_points/proto_options) with name+id labels and manual fallback.",
+        "P2–P3: Server snapshots UI: save/load/delete spawn snapshot docs stored on web-backend.",
+        "Snapshot save supports tags (comma list) + notes; list supports sort + tag filter + search via query params.",
+        "Scatter tool uses server-provided protoId datalist (/api/admin/spawn_points/proto_options) with name+id labels and manual fallback.",
+        "Scatter tool adds quick-pick chips (common protoIds) to reduce typos and speed placement; manual entry still allowed.",
+        "Region filter adds quick-pick chips (common regionIds) to speed filtering without scrolling/typing."
       ],
       "owns": [
         "UI persistence in localStorage (adminSpawnPointsPage.ui.v1)",
