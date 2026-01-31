@@ -1,9 +1,16 @@
 // web-frontend/pages/AdminQuestsPage.tsx
 
-import { useEffect, useState } from "react";
+import { useEffect, useId, useMemo, useState } from "react";
 import { getAdminCaps, getAuthToken } from "../lib/api";
 
 type ObjectiveKind = "kill" | "harvest" | "collect_item" | "craft" | "talk_to" | "city";
+
+type RewardItem = {
+  itemId: string;
+  count: number;
+  itemName?: string;
+  itemRarity?: string;
+};
 
 type AdminQuest = {
   id: string;
@@ -21,6 +28,7 @@ type AdminQuest = {
 
   rewardXp: number;
   rewardGold: number;
+  rewardItems?: RewardItem[];
 };
 
 function labelForTarget(kind: ObjectiveKind): string {
@@ -42,7 +50,6 @@ function labelForTarget(kind: ObjectiveKind): string {
   }
 }
 
-
 type ItemOption = {
   id: string;
   name?: string | null;
@@ -53,7 +60,7 @@ type ItemOption = {
 function formatItemLabel(opt: ItemOption): string {
   const name = (opt.label && opt.label.trim()) || (opt.name ? String(opt.name) : "");
   const rarity = opt.rarity ? String(opt.rarity) : "";
-  const bits = [];
+  const bits: string[] = [];
   if (name) bits.push(name);
   bits.push(opt.id);
   let out = bits.length === 2 ? `${bits[0]} (${bits[1]})` : opt.id;
@@ -61,24 +68,39 @@ function formatItemLabel(opt: ItemOption): string {
   return out;
 }
 
-function formatObjectiveTarget(q: AdminQuest): string {
-  if (q.objectiveKind !== "collect_item") return q.objectiveTargetId;
-  const name = q.objectiveTargetName ? String(q.objectiveTargetName) : "";
-  const rarity = q.objectiveTargetRarity ? String(q.objectiveTargetRarity) : "";
-  let out = name ? `${name} (${formatObjectiveTarget(q)})` : q.objectiveTargetId;
-  if (rarity) out = `${out} [${rarity}]`;
+function formatItemIdWithMeta(itemId: string, name?: string, rarity?: string): string {
+  const id = (itemId || "").trim();
+  const n = (name || "").trim();
+  const r = (rarity || "").trim();
+  let out = n ? `${n} (${id})` : id;
+  if (r) out = `${out} [${r}]`;
   return out;
 }
+
+function formatObjectiveTarget(q: AdminQuest): string {
+  if (q.objectiveKind !== "collect_item") return q.objectiveTargetId;
+  return formatItemIdWithMeta(q.objectiveTargetId, q.objectiveTargetName, q.objectiveTargetRarity);
+}
+
+const authedFetch: typeof fetch = (input: any, init?: any) => {
+  const token = getAuthToken();
+  const headers = new Headers(init?.headers ?? {});
+  if (token) headers.set("Authorization", `Bearer ${token}`);
+  return fetch(input, { ...(init ?? {}), headers });
+};
 
 function ItemIdPicker(props: {
   value: string;
   disabled?: boolean;
+  placeholder?: string;
   onChange: (next: string) => void;
   onResolved?: (opt: ItemOption | null) => void;
 }) {
-  const { value, disabled, onChange, onResolved } = props;
+  const { value, disabled, placeholder, onChange, onResolved } = props;
   const [options, setOptions] = useState<ItemOption[]>([]);
   const [loading, setLoading] = useState(false);
+  const rid = useId();
+  const listId = useMemo(() => `adminQuestItemIdOptions-${rid}`, [rid]);
 
   useEffect(() => {
     let alive = true;
@@ -117,9 +139,8 @@ function ItemIdPicker(props: {
     return () => {
       alive = false;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [value]);
-
-  const listId = "adminQuestItemIdOptions";
 
   return (
     <div style={{ display: "inline-flex", flexDirection: "column", gap: 2 }}>
@@ -129,7 +150,7 @@ function ItemIdPicker(props: {
           disabled={disabled}
           list={listId}
           onChange={(e) => onChange(e.target.value)}
-          placeholder="item id (e.g. rat_tail)"
+          placeholder={placeholder || "item id (e.g. rat_tail)"}
         />
         {loading && <span style={{ fontSize: 12, opacity: 0.7 }}>…</span>}
       </div>
@@ -142,13 +163,6 @@ function ItemIdPicker(props: {
   );
 }
 
-const authedFetch: typeof fetch = (input: any, init?: any) => {
-  const token = getAuthToken();
-  const headers = new Headers(init?.headers ?? {});
-  if (token) headers.set("Authorization", `Bearer ${token}`);
-  return fetch(input, { ...(init ?? {}), headers });
-};
-
 export function AdminQuestsPage() {
   const { canWrite } = getAdminCaps();
   const [quests, setQuests] = useState<AdminQuest[]>([]);
@@ -156,7 +170,10 @@ export function AdminQuestsPage() {
   const [form, setForm] = useState<AdminQuest | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [itemResolved, setItemResolved] = useState<ItemOption | null>(null);
+
+  // pickers resolve best-effort; used for client-side safety rails
+  const [objectiveItemResolved, setObjectiveItemResolved] = useState<ItemOption | null>(null);
+  const [rewardResolved, setRewardResolved] = useState<Record<number, ItemOption | null>>({});
 
   async function reloadList() {
     const res = await authedFetch(`/api/admin/quests`);
@@ -184,12 +201,14 @@ export function AdminQuestsPage() {
     const q = quests.find((x) => x.id === selectedId);
     if (q) {
       setForm(q);
-      setItemResolved(null);
+      setObjectiveItemResolved(null);
+      setRewardResolved({});
     }
   }, [selectedId, quests]);
 
   const startNew = () => {
-    setItemResolved(null);
+    setObjectiveItemResolved(null);
+    setRewardResolved({});
     setSelectedId(null);
     setForm({
       id: "",
@@ -202,6 +221,7 @@ export function AdminQuestsPage() {
       objectiveRequired: 1,
       rewardXp: 0,
       rewardGold: 0,
+      rewardItems: [],
     });
   };
 
@@ -209,19 +229,88 @@ export function AdminQuestsPage() {
     setForm((prev) => (prev ? { ...prev, [key]: value } : prev));
   };
 
+  const updateRewardItem = (idx: number, patch: Partial<RewardItem>) => {
+    setForm((prev) => {
+      if (!prev) return prev;
+      const list = [...(prev.rewardItems ?? [])];
+      const cur = list[idx] ?? { itemId: "", count: 1 };
+      list[idx] = { ...cur, ...patch };
+      return { ...prev, rewardItems: list };
+    });
+  };
+
+  const addRewardItem = () => {
+    setForm((prev) => {
+      if (!prev) return prev;
+      const list = [...(prev.rewardItems ?? [])];
+      list.push({ itemId: "", count: 1 });
+      return { ...prev, rewardItems: list };
+    });
+  };
+
+  const removeRewardItem = (idx: number) => {
+    setForm((prev) => {
+      if (!prev) return prev;
+      const list = [...(prev.rewardItems ?? [])];
+      list.splice(idx, 1);
+      return { ...prev, rewardItems: list };
+    });
+
+    setRewardResolved((prev) => {
+      const next: Record<number, ItemOption | null> = {};
+      const entries = Object.entries(prev);
+      for (const [k, v] of entries) {
+        const i = Number(k);
+        if (Number.isNaN(i)) continue;
+        if (i < idx) next[i] = v;
+        else if (i > idx) next[i - 1] = v;
+      }
+      return next;
+    });
+  };
+
+  const validateCollectItemObjective = (q: AdminQuest) => {
+    if (q.objectiveKind !== "collect_item") return;
+    const id = (q.objectiveTargetId || "").trim();
+    const serverKnows = !!(q.objectiveTargetName && q.objectiveTargetId.trim() === id);
+    if (id && !objectiveItemResolved && !serverKnows) {
+      throw new Error(
+        `Unknown item id '${id}'. Use the picker to select a real item (or create it in the Item Editor first).`
+      );
+    }
+  };
+
+  const validateRewardItems = (q: AdminQuest) => {
+    const items = q.rewardItems ?? [];
+    for (let i = 0; i < items.length; i++) {
+      const it = items[i];
+      const id = (it.itemId || "").trim();
+      if (!id) continue;
+
+      const serverKnows = !!(it.itemName && it.itemId.trim() === id);
+      const resolved = rewardResolved[i];
+
+      if (!resolved && !serverKnows) {
+        throw new Error(
+          `Unknown reward item id '${id}' (row ${i + 1}). Use the picker to select a real item (or create it first).`
+        );
+      }
+      const count = Number(it.count || 1);
+      if (!Number.isFinite(count) || count < 1) {
+        throw new Error(`Reward item count must be >= 1 (row ${i + 1}).`);
+      }
+    }
+  };
+
   const handleSave = async () => {
     if (!form) return;
 
-    // Client-side safety rail: prevent saving collect_item objectives with unknown item ids.
-    if (form.objectiveKind === "collect_item") {
-      const id = (form.objectiveTargetId || "").trim();
-      const serverKnows = !!(form.objectiveTargetName && form.objectiveTargetId === id);
-      if (id && !itemResolved && !serverKnows) {
-        setError(
-          `Unknown item id '${id}'. Use the picker to select a real item (or create it in the Item Editor first).`
-        );
-        return;
-      }
+    try {
+      validateCollectItemObjective(form);
+      validateRewardItems(form);
+    } catch (err: any) {
+      setError(err.message || String(err));
+      return;
     }
 
     setSaving(true);
@@ -260,15 +349,11 @@ export function AdminQuestsPage() {
     <div style={{ padding: 16 }}>
       <h1>Quest Editor (v0)</h1>
 
-            <div style={{ fontSize: 12, opacity: 0.7, marginBottom: 8 }}>
+      <div style={{ fontSize: 12, opacity: 0.7, marginBottom: 8 }}>
         API: <code>/api</code> (same-origin via Vite proxy)
       </div>
 
-      {error && (
-        <div style={{ color: "red", marginBottom: 8 }}>
-          Error: {error}
-        </div>
-      )}
+      {error && <div style={{ color: "red", marginBottom: 8 }}>Error: {error}</div>}
 
       <div style={{ display: "flex", gap: 24, alignItems: "flex-start" }}>
         <div style={{ minWidth: 320 }}>
@@ -309,11 +394,7 @@ export function AdminQuestsPage() {
               <div style={{ marginBottom: 8 }}>
                 <label>
                   ID:
-                  <input
-                    style={{ width: "100%" }}
-                    value={form.id}
-                    onChange={(e) => updateField("id", e.target.value)}
-                  />
+                  <input style={{ width: "100%" }} value={form.id} onChange={(e) => updateField("id", e.target.value)} />
                 </label>
               </div>
 
@@ -374,7 +455,7 @@ export function AdminQuestsPage() {
                       onChange={(e) => {
                         const next = e.target.value as ObjectiveKind;
                         updateField("objectiveKind", next);
-                        setItemResolved(null);
+                        setObjectiveItemResolved(null);
                       }}
                     >
                       <option value="kill">Kill</option>
@@ -395,13 +476,10 @@ export function AdminQuestsPage() {
                         value={form.objectiveTargetId}
                         disabled={saving || !canWrite}
                         onChange={(next) => updateField("objectiveTargetId", next)}
-                        onResolved={(opt) => setItemResolved(opt)}
+                        onResolved={(opt) => setObjectiveItemResolved(opt)}
                       />
                     ) : (
-                      <input
-                        value={form.objectiveTargetId}
-                        onChange={(e) => updateField("objectiveTargetId", e.target.value)}
-                      />
+                      <input value={form.objectiveTargetId} onChange={(e) => updateField("objectiveTargetId", e.target.value)} />
                     )}
                   </label>
                 </div>
@@ -432,7 +510,7 @@ export function AdminQuestsPage() {
                   </label>
                 </div>
 
-                <div>
+                <div style={{ marginBottom: 8 }}>
                   <label>
                     Gold:{" "}
                     <input
@@ -441,6 +519,69 @@ export function AdminQuestsPage() {
                       onChange={(e) => updateField("rewardGold", Number(e.target.value || 0))}
                     />
                   </label>
+                </div>
+
+                <div style={{ marginBottom: 4 }}>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                    <strong>Item rewards</strong>
+                    <button type="button" onClick={addRewardItem} disabled={saving || !canWrite}>
+                      + Add item
+                    </button>
+                  </div>
+
+                  {(form.rewardItems ?? []).length ? (
+                    <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 6 }}>
+                      {(form.rewardItems ?? []).map((it, idx) => (
+                        <div
+                          key={idx}
+                          style={{
+                            display: "flex",
+                            gap: 8,
+                            alignItems: "center",
+                            padding: 6,
+                            border: "1px solid #ddd",
+                            borderRadius: 4,
+                          }}
+                        >
+                          <div style={{ flex: 1 }}>
+                            <ItemIdPicker
+                              value={it.itemId}
+                              disabled={saving || !canWrite}
+                              placeholder="reward item id (e.g. rat_tail)"
+                              onChange={(next) => {
+                                updateRewardItem(idx, { itemId: next });
+                                setRewardResolved((prev) => ({ ...prev, [idx]: null }));
+                              }}
+                              onResolved={(opt) => setRewardResolved((prev) => ({ ...prev, [idx]: opt }))}
+                            />
+                            {(it.itemName || it.itemRarity) && (
+                              <div style={{ fontSize: 12, opacity: 0.75, marginTop: 2 }}>
+                                {formatItemIdWithMeta(it.itemId, it.itemName, it.itemRarity)}
+                              </div>
+                            )}
+                          </div>
+
+                          <label style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                            Qty
+                            <input
+                              type="number"
+                              style={{ width: 80 }}
+                              value={it.count ?? 1}
+                              onChange={(e) => updateRewardItem(idx, { count: Number(e.target.value || 1) })}
+                              disabled={saving || !canWrite}
+                              min={1}
+                            />
+                          </label>
+
+                          <button type="button" onClick={() => removeRewardItem(idx)} disabled={saving || !canWrite}>
+                            Remove
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div style={{ fontSize: 12, opacity: 0.7, marginTop: 6 }}>No item rewards yet.</div>
+                  )}
                 </div>
               </fieldset>
 

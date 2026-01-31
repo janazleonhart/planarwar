@@ -1,4 +1,4 @@
-//web-backend/routes/adminQuests.ts
+// web-backend/routes/adminQuests.ts
 
 import { Router } from "express";
 import { db } from "../../worldcore/db/Database";
@@ -7,8 +7,17 @@ import { PostgresQuestService } from "../../worldcore/quests/PostgresQuestServic
 const router = Router();
 const questService = new PostgresQuestService();
 
-// Shape used by the web editor (v0: one objective + xp/gold)
+// Shape used by the web editor (v0: one objective + xp/gold + item rewards)
 type ObjectiveKind = "kill" | "harvest" | "collect_item" | "craft" | "talk_to" | "city";
+
+type AdminRewardItem = {
+  itemId: string;
+  count: number;
+
+  // Best-effort display helpers (computed on GET)
+  itemName?: string;
+  itemRarity?: string;
+};
 
 type AdminQuestPayload = {
   id: string;
@@ -27,6 +36,7 @@ type AdminQuestPayload = {
 
   rewardXp?: number;
   rewardGold?: number;
+  rewardItems?: AdminRewardItem[];
 };
 
 // GET /api/admin/quests  -> list quests in DB (simple view)
@@ -34,12 +44,10 @@ router.get("/", async (_req, res) => {
   try {
     const defs = await questService.listQuests();
 
-    // Normalize objective kind (DB stores item turn-ins as 'item_turnin' but the editor uses 'collect_item').
     const payload: AdminQuestPayload[] = defs.map((q) => {
       const firstObj = q.objectives[0];
       const rawKind = (firstObj?.kind as any) ?? "kill";
-      const objectiveKind: ObjectiveKind =
-        rawKind === "item_turnin" ? "collect_item" : (rawKind as ObjectiveKind);
+      const objectiveKind: ObjectiveKind = rawKind === "item_turnin" ? "collect_item" : (rawKind as ObjectiveKind);
 
       const targetId =
         (firstObj as any)?.targetProtoId ??
@@ -53,6 +61,13 @@ router.get("/", async (_req, res) => {
       const required = (firstObj as any)?.required ?? 1;
       const reward = q.reward || {};
 
+      const rewardItems: AdminRewardItem[] = Array.isArray((reward as any).items)
+        ? ((reward as any).items as any[]).map((it) => ({
+            itemId: String(it?.itemId ?? ""),
+            count: Number(it?.count ?? 1),
+          }))
+        : [];
+
       return {
         id: q.id,
         name: q.name,
@@ -62,26 +77,27 @@ router.get("/", async (_req, res) => {
         objectiveKind,
         objectiveTargetId: targetId,
         objectiveRequired: required,
-        rewardXp: reward.xp ?? 0,
-        rewardGold: reward.gold ?? 0,
+        rewardXp: (reward as any).xp ?? 0,
+        rewardGold: (reward as any).gold ?? 0,
+        rewardItems,
       };
     });
 
-    // Best-effort item label lookup for collect_item objectives.
-    const itemIds = Array.from(
-      new Set(
-        payload
-          .filter((q) => q.objectiveKind === "collect_item" && !!q.objectiveTargetId)
-          .map((q) => q.objectiveTargetId)
-      )
-    );
+    // Best-effort item label lookup for collect_item objectives + reward items.
+    const objectiveItemIds = payload
+      .filter((q) => q.objectiveKind === "collect_item" && !!q.objectiveTargetId)
+      .map((q) => q.objectiveTargetId);
+
+    const rewardItemIds = payload
+      .flatMap((q) => q.rewardItems ?? [])
+      .map((it) => it.itemId)
+      .filter(Boolean);
+
+    const itemIds = Array.from(new Set([...objectiveItemIds, ...rewardItemIds].map((x) => String(x)).filter(Boolean)));
 
     if (itemIds.length) {
       try {
-        const r = await db.query(
-          `SELECT id, name, rarity FROM items WHERE id = ANY($1::text[])`,
-          [itemIds]
-        );
+        const r = await db.query(`SELECT id, name, rarity FROM items WHERE id = ANY($1::text[])`, [itemIds]);
 
         const map = new Map<string, { name: string; rarity: string }>();
         for (const row of r.rows as any[]) {
@@ -92,11 +108,20 @@ router.get("/", async (_req, res) => {
         }
 
         for (const q of payload) {
-          if (q.objectiveKind !== "collect_item") continue;
-          const hit = map.get(q.objectiveTargetId);
-          if (hit) {
-            q.objectiveTargetName = hit.name;
-            q.objectiveTargetRarity = hit.rarity;
+          if (q.objectiveKind === "collect_item") {
+            const hit = map.get(q.objectiveTargetId);
+            if (hit) {
+              q.objectiveTargetName = hit.name;
+              q.objectiveTargetRarity = hit.rarity;
+            }
+          }
+
+          for (const it of q.rewardItems ?? []) {
+            const hit = map.get(it.itemId);
+            if (hit) {
+              it.itemName = hit.name;
+              it.itemRarity = hit.rarity;
+            }
           }
         }
       } catch (err) {
@@ -117,41 +142,37 @@ router.get("/", async (_req, res) => {
 router.post("/", async (req, res) => {
   const body = req.body as Partial<AdminQuestPayload>;
 
-  if (
-    !body.id ||
-    !body.name ||
-    !body.description ||
-    !body.objectiveKind ||
-    !body.objectiveTargetId
-  ) {
+  if (!body.id || !body.name || !body.description || !body.objectiveKind || !body.objectiveTargetId) {
     return res.status(400).json({
       ok: false,
-      error:
-        "id, name, description, objectiveKind, objectiveTargetId are required",
+      error: "id, name, description, objectiveKind, objectiveTargetId are required",
     });
   }
 
   const repeatable = !!body.repeatable;
-  const maxCompletions =
-    body.maxCompletions === null || body.maxCompletions === undefined
-      ? null
-      : Number(body.maxCompletions);
+  const maxCompletions = body.maxCompletions === null || body.maxCompletions === undefined ? null : Number(body.maxCompletions);
 
   const required = Number(body.objectiveRequired || 1);
   const rewardXp = Number(body.rewardXp || 0);
   const rewardGold = Number(body.rewardGold || 0);
 
+  const rewardItemsRaw = Array.isArray(body.rewardItems) ? body.rewardItems : [];
+  const rewardItems: { itemId: string; count: number }[] = rewardItemsRaw
+    .map((it) => ({
+      itemId: String((it as any)?.itemId ?? "").trim(),
+      count: Number((it as any)?.count ?? 1),
+    }))
+    .filter((it) => !!it.itemId);
+
   const kind = body.objectiveKind as ObjectiveKind;
 
-  // Map editor kind -> DB enum value
+  // Map editor kind -> DB enum value (historical reasons)
   const dbKind = kind === "collect_item" ? "item_turnin" : kind;
 
   // Validation (best-effort, don’t brick the editor on unknown content tables)
   try {
     if (kind === "kill" || kind === "talk_to") {
-      const npcCheck = await db.query("SELECT 1 FROM npcs WHERE id = $1", [
-        body.objectiveTargetId,
-      ]);
+      const npcCheck = await db.query("SELECT 1 FROM npcs WHERE id = $1", [body.objectiveTargetId]);
       if (npcCheck.rowCount === 0) {
         return res.status(400).json({
           ok: false,
@@ -161,13 +182,25 @@ router.post("/", async (req, res) => {
     }
 
     if (kind === "collect_item") {
-      const itemCheck = await db.query("SELECT 1 FROM items WHERE id = $1", [
-        body.objectiveTargetId,
-      ]);
+      const itemCheck = await db.query("SELECT 1 FROM items WHERE id = $1", [body.objectiveTargetId]);
       if (itemCheck.rowCount === 0) {
         return res.status(400).json({
           ok: false,
           error: `Item '${body.objectiveTargetId}' does not exist. Create it first in the item editor.`,
+        });
+      }
+    }
+
+    if (rewardItems.length) {
+      const ids = Array.from(new Set(rewardItems.map((x) => x.itemId)));
+      const r = await db.query(`SELECT id FROM items WHERE id = ANY($1::text[])`, [ids]);
+      const have = new Set((r.rows as any[]).map((row) => String(row.id)));
+
+      const missing = ids.filter((id) => !have.has(id));
+      if (missing.length) {
+        return res.status(400).json({
+          ok: false,
+          error: `Reward item(s) do not exist: ${missing.join(", ")}. Create them in the item editor first.`,
         });
       }
     }
@@ -208,7 +241,7 @@ router.post("/", async (req, res) => {
       [body.id, dbKind, body.objectiveTargetId, required]
     );
 
-    // 4) Insert rewards (xp + gold only for v0)
+    // 4) Insert rewards
     if (rewardXp > 0) {
       await db.query(
         `
@@ -226,6 +259,17 @@ router.post("/", async (req, res) => {
         VALUES ($1, 'gold', $2, '{}'::jsonb)
         `,
         [body.id, rewardGold]
+      );
+    }
+
+    for (const it of rewardItems) {
+      const qty = Math.max(1, Number(it.count || 1));
+      await db.query(
+        `
+        INSERT INTO quest_rewards (quest_id, kind, item_id, item_qty, extra_json)
+        VALUES ($1, 'item', $2, $3, '{}'::jsonb)
+        `,
+        [body.id, it.itemId, qty]
       );
     }
 
