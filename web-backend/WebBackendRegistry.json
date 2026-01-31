@@ -575,12 +575,15 @@
       "kind": "module",
       "lifecycle": "singleton",
       "notes": [
-        "Admin item list + upsert backed by worldcore DB tables."
+        "Admin item list + upsert backed by worldcore DB tables.",
+        "GET supports q/limit/offset for search + paging.",
+        "Provides /options endpoint for UI autocomplete + validation."
       ],
       "owns": [],
       "path": "web-backend/routes/adminItems.ts",
       "provides": [
-        "GET /api/admin/items",
+        "GET /api/admin/items?q=...&limit=...&offset=...",
+        "GET /api/admin/items/options?q=...&limit=...",
         "POST /api/admin/items"
       ],
       "service": "http.adminRoutes"
@@ -595,7 +598,9 @@
       "kind": "module",
       "lifecycle": "singleton",
       "notes": [
-        "Admin NPC list + upsert backed by worldcore DB tables."
+        "Admin NPC list + upsert backed by worldcore DB tables.",
+        "GET enriches npc loot rows with itemName/itemRarity when possible (items table lookup).",
+        "POST rejects unknown loot item ids to prevent seed/DB drift."
       ],
       "owns": [],
       "path": "web-backend/routes/adminNpcs.ts",

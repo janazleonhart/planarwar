@@ -33,49 +33,63 @@ type ItemRow = {
   stats: any;
 };
 
-// GET /api/admin/items  -> list items
+type ItemOptionRow = {
+  id: string;
+  name: string;
+  rarity: string | null;
+  icon_id: string | null;
+};
 
-// /admin/items/options -> lightweight item options for admin UIs (autocomplete, labels)
+function clampInt(v: unknown, def: number, min: number, max: number): number {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return def;
+  const i = Math.trunc(n);
+  return Math.max(min, Math.min(max, i));
+}
+
+// GET /api/admin/items/options?q=...&limit=...
+// Lightweight autocomplete feed for item pickers.
 router.get("/options", async (req, res) => {
   try {
-    const q = String((req.query.q ?? "") as any).trim();
-    const limitRaw = Number(req.query.limit ?? 200);
-    const limit = Number.isFinite(limitRaw) ? Math.max(1, Math.min(500, limitRaw)) : 200;
+    const qRaw = String(req.query.q ?? "").trim();
+    const q = qRaw.length ? `%${qRaw}%` : "";
+    const limit = clampInt(req.query.limit, 250, 1, 500);
 
-    const args: any[] = [];
-    let where = "";
-    if (q) {
-      args.push(`%${q}%`);
-      where = "WHERE id ILIKE $1 OR name ILIKE $1";
-    }
-
-    const sql = `
+    const result = (await db.query(
+      `
       SELECT id, name, rarity, icon_id
       FROM items
-      ${where}
+      WHERE ($1 = '' OR id ILIKE $1 OR name ILIKE $1 OR item_key ILIKE $1)
       ORDER BY id
-      LIMIT ${limit}
-    `;
+      LIMIT $2
+      `,
+      [q, limit]
+    )) as { rows: ItemOptionRow[] };
 
-    const r = await db.query(sql, args);
-    res.json({
-      ok: true,
-      items: r.rows.map((row: any) => ({
-        id: String(row.id),
-        name: String(row.name ?? ""),
-        rarity: String(row.rarity ?? ""),
-        iconId: row.icon_id ? String(row.icon_id) : null,
-        label: row.name ? `${row.name} (${row.id})` : String(row.id),
-      })),
+    const items = result.rows.map((r) => {
+      const name = String(r.name ?? "");
+      const id = String(r.id);
+      const rarity = r.rarity ?? "";
+      const iconId = r.icon_id ?? "";
+      const label = name ? `${name} (${id})` : id;
+      return { id, name, rarity, iconId, label };
     });
+
+    res.json({ ok: true, items });
   } catch (err) {
     console.error("[ADMIN/ITEMS] options error", err);
     res.status(500).json({ ok: false, error: "internal_error" });
   }
 });
 
-router.get("/", async (_req, res) => {
+// GET /api/admin/items?q=...&limit=...&offset=...
+router.get("/", async (req, res) => {
   try {
+    const qRaw = String(req.query.q ?? "").trim();
+    const q = qRaw.length ? `%${qRaw}%` : "";
+    const limit = clampInt(req.query.limit, 500, 1, 500);
+    const offset = clampInt(req.query.offset, 0, 0, 500_000);
+
     const result = (await db.query(
       `
       SELECT
@@ -91,9 +105,12 @@ router.get("/", async (_req, res) => {
         flags,
         stats
       FROM items
+      WHERE ($1 = '' OR id ILIKE $1 OR name ILIKE $1 OR item_key ILIKE $1 OR category ILIKE $1)
       ORDER BY id
-      LIMIT 500
-      `
+      LIMIT $2
+      OFFSET $3
+      `,
+      [q, limit, offset]
     )) as { rows: ItemRow[] };
 
     const items = result.rows.map((row: ItemRow) => ({
@@ -152,22 +169,16 @@ router.post("/", async (req, res) => {
     if (body.flagsText && body.flagsText.trim().length > 0) {
       flags = JSON.parse(body.flagsText);
     }
-  } catch (err) {
-    return res.status(400).json({
-      ok: false,
-      error: "flags must be valid JSON",
-    });
+  } catch {
+    return res.status(400).json({ ok: false, error: "flags must be valid JSON" });
   }
 
   try {
     if (body.statsText && body.statsText.trim().length > 0) {
       stats = JSON.parse(body.statsText);
     }
-  } catch (err) {
-    return res.status(400).json({
-      ok: false,
-      error: "stats must be valid JSON",
-    });
+  } catch {
+    return res.status(400).json({ ok: false, error: "stats must be valid JSON" });
   }
 
   try {
@@ -200,19 +211,7 @@ router.post("/", async (req, res) => {
         flags = EXCLUDED.flags,
         stats = EXCLUDED.stats
       `,
-      [
-        id,
-        itemKey,
-        name,
-        description,
-        rarity,
-        category,
-        specId,
-        iconId,
-        maxStack,
-        flags,
-        stats,
-      ]
+      [id, itemKey, name, description, rarity, category, specId, iconId, maxStack, flags, stats]
     );
 
     // For v0 we won't hot-reload MMO items here.

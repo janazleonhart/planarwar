@@ -8,6 +8,16 @@ import { setNpcPrototypes } from "../../worldcore/npc/NpcTypes";
 const router = Router();
 const npcService = new PostgresNpcService();
 
+type AdminNpcLootRow = {
+  itemId: string;
+  chance: number;
+  minQty: number;
+  maxQty: number;
+  // Enriched display (optional)
+  itemName?: string;
+  itemRarity?: string;
+};
+
 type AdminNpcPayload = {
   id: string;
   name: string;
@@ -19,14 +29,7 @@ type AdminNpcPayload = {
   tagsText?: string; // comma-separated from UI
   tags?: string[]; // optional future-friendly form
   xpReward: number;
-  loot: {
-    itemId: string;
-    itemName?: string;
-    itemRarity?: string;
-    chance: number;
-    minQty: number;
-    maxQty: number;
-  }[];
+  loot: AdminNpcLootRow[];
 };
 
 function normTag(t: string): string {
@@ -72,46 +75,59 @@ function normalizeTags(tags: unknown, tagsText?: string): string[] {
 router.get("/", async (_req, res) => {
   try {
     const protos = await npcService.listNpcs();
-    const lootItemIds = Array.from(
-      new Set(
-        protos.flatMap((p) => (p.loot ?? []).map((l) => String(l.itemId)).filter(Boolean))
-      )
-    );
 
-    const itemsById = new Map<string, { name: string; rarity: string }>();
-    if (lootItemIds.length > 0) {
+    // Enrich loot rows with item names, so editors can show human labels.
+    const lootItemIds: string[] = [];
+    for (const p of protos) {
+      for (const l of p.loot ?? []) {
+        if (l?.itemId) lootItemIds.push(String(l.itemId));
+      }
+    }
+    const uniqueItemIds = Array.from(new Set(lootItemIds)).filter(Boolean);
+
+    const itemMeta = new Map<string, { name: string; rarity: string }>();
+    if (uniqueItemIds.length) {
       const r = await db.query(
         `SELECT id, name, rarity FROM items WHERE id = ANY($1::text[])`,
-        [lootItemIds]
+        [uniqueItemIds]
       );
-      for (const row of r.rows) {
-        itemsById.set(String(row.id), { name: String(row.name ?? ""), rarity: String(row.rarity ?? "") });
+      for (const row of r.rows ?? []) {
+        itemMeta.set(String(row.id), {
+          name: String(row.name ?? ""),
+          rarity: String(row.rarity ?? ""),
+        });
       }
     }
 
-    const payload: AdminNpcPayload[] = protos.map((p) => ({
-      id: p.id,
-      name: p.name,
-      level: p.level,
-      maxHp: p.maxHp,
-      dmgMin: p.baseDamageMin,
-      dmgMax: p.baseDamageMax,
-      model: p.model,
-      tagsText: (p.tags ?? []).join(", "),
-      xpReward: p.xpReward ?? 0,
-      loot:
+    const payload: AdminNpcPayload[] = protos.map((p) => {
+      const tagsText = (p.tags ?? []).join(", ");
+      const loot: AdminNpcLootRow[] =
         p.loot?.map((l) => {
-          const meta = itemsById.get(String(l.itemId));
+          const m = itemMeta.get(l.itemId);
           return {
             itemId: l.itemId,
-            itemName: meta?.name || undefined,
-            itemRarity: meta?.rarity || undefined,
             chance: l.chance,
-          minQty: l.minQty,
-          maxQty: l.maxQty,
+            minQty: l.minQty,
+            maxQty: l.maxQty,
+            itemName: m?.name,
+            itemRarity: m?.rarity,
           };
-        }) ?? [],
-    }));
+        }) ?? [];
+
+      return {
+        id: p.id,
+        name: p.name,
+        level: p.level,
+        maxHp: p.maxHp,
+        dmgMin: p.baseDamageMin,
+        dmgMax: p.baseDamageMax,
+        model: p.model,
+        tagsText,
+        xpReward: p.xpReward ?? 0,
+        loot,
+      };
+    });
+
     res.json({ ok: true, npcs: payload });
   } catch (err) {
     console.error("[ADMIN/NPCS] list error", err);
@@ -132,6 +148,19 @@ router.post("/", async (req, res) => {
   const tags = normalizeTags(body.tags, body.tagsText);
 
   try {
+    // Validate that all loot itemIds exist in the items table (typo protection).
+    for (const row of body.loot ?? []) {
+      if (!row.itemId) continue;
+
+      const itemCheck = await db.query("SELECT 1 FROM items WHERE id = $1", [row.itemId]);
+      if (itemCheck.rowCount === 0) {
+        return res.status(400).json({
+          ok: false,
+          error: `Item '${row.itemId}' does not exist. Create it first in the item editor / items table.`,
+        });
+      }
+    }
+
     // upsert npc
     await db.query(
       `
@@ -160,20 +189,6 @@ router.post("/", async (req, res) => {
         body.xpReward ?? 0,
       ]
     );
-
-    // Validate that all loot itemIds exist in the items table
-    for (const row of body.loot ?? []) {
-      if (!row.itemId) continue;
-
-      const itemCheck = await db.query("SELECT 1 FROM items WHERE id = $1", [row.itemId]);
-
-      if (itemCheck.rowCount === 0) {
-        return res.status(400).json({
-          ok: false,
-          error: `Item '${row.itemId}' does not exist. Create it first in the item editor / items table.`,
-        });
-      }
-    }
 
     // wipe & rewrite loot
     await db.query("DELETE FROM npc_loot WHERE npc_id = $1", [body.id]);

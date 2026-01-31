@@ -157,6 +157,25 @@
       ],
       "service": "npm.package"
     },
+    "web-frontend.components.itemPicker": {
+      "class": null,
+      "ctorArgs": [],
+      "dependsOn": [],
+      "kind": "ui",
+      "lifecycle": "singleton",
+      "notes": [
+        "Reusable item id picker with server-backed autocomplete via /api/admin/items/options.",
+        "Resolves (id -> name/rarity) and exposes validity for forms that must prevent dangling item references."
+      ],
+      "owns": [
+        "client-side option cache for item lookups"
+      ],
+      "path": "web-frontend/components/ItemPicker.tsx",
+      "provides": [
+        "ItemPicker component (autocomplete + validation + resolved label)"
+      ],
+      "service": "ui.component"
+    },
     "web-frontend.pages.adminItems": {
       "class": null,
       "ctorArgs": [],
@@ -165,14 +184,17 @@
       "lifecycle": "singleton",
       "notes": [
         "Uses same-origin /api requests (dev via Vite proxy; prod via reverse proxy / same host).",
-        "Endpoints: GET /api/admin/items; POST /api/admin/items; then refreshes list."
+        "Endpoints: GET /api/admin/items?q&limit&offset; POST /api/admin/items; then refreshes list.",
+        "Supports search + paging so item table growth doesn't break UX."
       ],
       "owns": [
-        "client-side form state"
+        "client-side form state",
+        "search + paging state (q/limit/offset)"
       ],
       "path": "web-frontend/pages/AdminItemsPage.tsx",
       "provides": [
         "Item list + edit/create UI",
+        "Search + paging for item list",
         "Edits flagsText/statsText serialized fields"
       ],
       "service": "admin.items"
@@ -185,15 +207,17 @@
       "lifecycle": "singleton",
       "notes": [
         "Uses same-origin /api requests (dev via Vite proxy; prod via reverse proxy / same host).",
-        "Endpoints: GET /api/admin/npcs; POST /api/admin/npcs; then refreshes list."
+        "Endpoints: GET /api/admin/npcs; POST /api/admin/npcs; then refreshes list.",
+        "Loot editor uses ItemPicker backed by GET /api/admin/items/options for autocomplete + strict validation (blocks save if unknown item id)."
       ],
       "owns": [
-        "client-side form state"
+        "client-side form state",
+        "loot row validation state"
       ],
       "path": "web-frontend/pages/AdminNpcsPage.tsx",
       "provides": [
         "NPC list + edit/create UI",
-        "Loot editor (chance/min/max)"
+        "Loot editor with item autocomplete + validation (chance/min/max)"
       ],
       "service": "admin.npcs"
     },
