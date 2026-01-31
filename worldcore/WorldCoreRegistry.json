@@ -1354,6 +1354,561 @@
       ],
       "path": "worldcore/dev/HotReloadService.ts"
     },
+    "infra.audit.npc_lawtags": {
+      "class": "(sql) infra audit",
+      "ctorArgs": [],
+      "dependsOn": [
+        "worldcore/db/Database.ts"
+      ],
+      "kind": "schema_audit",
+      "lifecycle": "static",
+      "notes": [
+        "Audit query to detect conflicting or suspicious law-related tags on NPC prototypes.",
+        "Used during development/CI when verifying seed content and safety rules."
+      ],
+      "owns": [
+        "Consistency checks for law_protected vs law_exempt tag combos"
+      ],
+      "path": "worldcore/infra/schema/audit_npc_lawtags.sql",
+      "provides": [
+        "SQL audit for npc law tags"
+      ]
+    },
+    "infra.schema.001_init_shards": {
+      "class": "SchemaMigration",
+      "ctorArgs": [],
+      "dependsOn": [
+        "worldcore/db/Database.ts"
+      ],
+      "kind": "service",
+      "lifecycle": "migration",
+      "notes": [
+        "Database migration: 001 init shards."
+      ],
+      "owns": [],
+      "path": "worldcore/infra/schema/001_init_shards.sql",
+      "provides": [
+        "shards table"
+      ]
+    },
+    "infra.schema.002_regions": {
+      "class": "SchemaMigration",
+      "ctorArgs": [],
+      "dependsOn": [
+        "worldcore/db/Database.ts"
+      ],
+      "kind": "service",
+      "lifecycle": "migration",
+      "notes": [
+        "Database migration: 002 regions."
+      ],
+      "owns": [],
+      "path": "worldcore/infra/schema/002_regions.sql",
+      "provides": [
+        "region_polygons table",
+        "regions table"
+      ]
+    },
+    "infra.schema.003_world_objects": {
+      "class": "SchemaMigration",
+      "ctorArgs": [],
+      "dependsOn": [
+        "worldcore/db/Database.ts"
+      ],
+      "kind": "service",
+      "lifecycle": "migration",
+      "notes": [
+        "Database migration: 003 world objects."
+      ],
+      "owns": [],
+      "path": "worldcore/infra/schema/003_world_objects.sql",
+      "provides": [
+        "world_objects table"
+      ]
+    },
+    "infra.schema.004_spawn_points": {
+      "class": "SchemaMigration",
+      "ctorArgs": [],
+      "dependsOn": [
+        "worldcore/db/Database.ts"
+      ],
+      "kind": "service",
+      "lifecycle": "migration",
+      "notes": [
+        "Database migration: 004 spawn points."
+      ],
+      "owns": [],
+      "path": "worldcore/infra/schema/004_spawn_points.sql",
+      "provides": [
+        "spawn_points table"
+      ]
+    },
+    "infra.schema.005_nav_graph": {
+      "class": "SchemaMigration",
+      "ctorArgs": [],
+      "dependsOn": [
+        "worldcore/db/Database.ts"
+      ],
+      "kind": "service",
+      "lifecycle": "migration",
+      "notes": [
+        "Database migration: 005 nav graph."
+      ],
+      "owns": [],
+      "path": "worldcore/infra/schema/005_nav_graph.sql",
+      "provides": [
+        "nav_edges table",
+        "nav_nodes table"
+      ]
+    },
+    "infra.schema.006_world_properties": {
+      "class": "SchemaMigration",
+      "ctorArgs": [],
+      "dependsOn": [
+        "worldcore/db/Database.ts"
+      ],
+      "kind": "service",
+      "lifecycle": "migration",
+      "notes": [
+        "Database migration: 006 world properties."
+      ],
+      "owns": [],
+      "path": "worldcore/infra/schema/006_world_properties.sql",
+      "provides": [
+        "world_properties table"
+      ]
+    },
+    "infra.schema.007_character_state_v15": {
+      "class": "SchemaMigration",
+      "ctorArgs": [],
+      "dependsOn": [
+        "worldcore/db/Database.ts"
+      ],
+      "kind": "service",
+      "lifecycle": "migration",
+      "notes": [
+        "Database migration: 007 character state v15."
+      ],
+      "owns": [],
+      "path": "worldcore/infra/schema/007_character_state_v15.sql",
+      "provides": [
+        "characters.attributes column"
+      ]
+    },
+    "infra.schema.007_items": {
+      "class": "SchemaMigration",
+      "ctorArgs": [],
+      "dependsOn": [
+        "worldcore/db/Database.ts"
+      ],
+      "kind": "service",
+      "lifecycle": "migration",
+      "notes": [
+        "Database migration: 007 items."
+      ],
+      "owns": [],
+      "path": "worldcore/infra/schema/007_items.sql",
+      "provides": [
+        "items table"
+      ]
+    },
+    "infra.schema.008_guilds": {
+      "class": "SchemaMigration",
+      "ctorArgs": [],
+      "dependsOn": [
+        "worldcore/db/Database.ts"
+      ],
+      "kind": "service",
+      "lifecycle": "migration",
+      "notes": [
+        "Database migration: 008 guilds."
+      ],
+      "owns": [],
+      "path": "worldcore/infra/schema/008_guilds.sql",
+      "provides": [
+        "guild_members table",
+        "guilds table"
+      ]
+    },
+    "infra.schema.009_auth": {
+      "class": "SchemaMigration",
+      "ctorArgs": [],
+      "dependsOn": [
+        "worldcore/db/Database.ts"
+      ],
+      "kind": "service",
+      "lifecycle": "migration",
+      "notes": [
+        "Database migration: 009 auth."
+      ],
+      "owns": [],
+      "path": "worldcore/infra/schema/009_auth.sql",
+      "provides": [
+        "accounts table"
+      ]
+    },
+    "infra.schema.010_characters": {
+      "class": "SchemaMigration",
+      "ctorArgs": [],
+      "dependsOn": [
+        "worldcore/db/Database.ts"
+      ],
+      "kind": "service",
+      "lifecycle": "migration",
+      "notes": [
+        "Database migration: 010 characters."
+      ],
+      "owns": [],
+      "path": "worldcore/infra/schema/010_characters.sql",
+      "provides": [
+        "characters table",
+        "characters.guild_id column"
+      ]
+    },
+    "infra.schema.011_add_account_flags": {
+      "class": "SchemaMigration",
+      "ctorArgs": [],
+      "dependsOn": [
+        "worldcore/db/Database.ts"
+      ],
+      "kind": "service",
+      "lifecycle": "migration",
+      "notes": [
+        "Incremental schema/content update: 011 add account flags."
+      ],
+      "owns": [],
+      "path": "worldcore/infra/schema/011_add_account_flags.sql",
+      "provides": [
+        "accounts.flags column"
+      ]
+    },
+    "infra.schema.012_add_item_grant_flags": {
+      "class": "SchemaMigration",
+      "ctorArgs": [],
+      "dependsOn": [
+        "worldcore/db/Database.ts"
+      ],
+      "kind": "service",
+      "lifecycle": "migration",
+      "notes": [
+        "Incremental schema/content update: 012 add item grant flags."
+      ],
+      "owns": [],
+      "path": "worldcore/infra/schema/012_add_item_grant_flags.sql",
+      "provides": [
+        "items.is_dev_only column"
+      ]
+    },
+    "infra.schema.013_create_staff_action_log": {
+      "class": "SchemaMigration",
+      "ctorArgs": [],
+      "dependsOn": [
+        "worldcore/db/Database.ts"
+      ],
+      "kind": "service",
+      "lifecycle": "migration",
+      "notes": [
+        "Creates database structures for 013 create staff action log."
+      ],
+      "owns": [],
+      "path": "worldcore/infra/schema/013_create_staff_action_log.sql",
+      "provides": [
+        "staff_action_log table"
+      ]
+    },
+    "infra.schema.014_create_mail_tables": {
+      "class": "SchemaMigration",
+      "ctorArgs": [],
+      "dependsOn": [
+        "worldcore/db/Database.ts"
+      ],
+      "kind": "service",
+      "lifecycle": "migration",
+      "notes": [
+        "Creates database structures for 014 create mail tables."
+      ],
+      "owns": [],
+      "path": "worldcore/infra/schema/014_create_mail_tables.sql",
+      "provides": [
+        "mail_items table",
+        "mailboxes table",
+        "mails table"
+      ]
+    },
+    "infra.schema.015_create_trade_log": {
+      "class": "SchemaMigration",
+      "ctorArgs": [],
+      "dependsOn": [
+        "worldcore/db/Database.ts"
+      ],
+      "kind": "service",
+      "lifecycle": "migration",
+      "notes": [
+        "Creates database structures for 015 create trade log."
+      ],
+      "owns": [],
+      "path": "worldcore/infra/schema/015_create_trade_log.sql",
+      "provides": [
+        "trade_log table"
+      ]
+    },
+    "infra.schema.016_create_vendors": {
+      "class": "SchemaMigration",
+      "ctorArgs": [],
+      "dependsOn": [
+        "worldcore/db/Database.ts"
+      ],
+      "kind": "service",
+      "lifecycle": "migration",
+      "notes": [
+        "Creates database structures for 016 create vendors."
+      ],
+      "owns": [],
+      "path": "worldcore/infra/schema/016_create_vendors.sql",
+      "provides": [
+        "vendor_items table",
+        "vendors table"
+      ]
+    },
+    "infra.schema.017_create_bank_slots": {
+      "class": "SchemaMigration",
+      "ctorArgs": [],
+      "dependsOn": [
+        "worldcore/db/Database.ts"
+      ],
+      "kind": "service",
+      "lifecycle": "migration",
+      "notes": [
+        "Creates database structures for 017 create bank slots."
+      ],
+      "owns": [],
+      "path": "worldcore/infra/schema/017_create_bank_slots.sql",
+      "provides": [
+        "bank_slots table"
+      ]
+    },
+    "infra.schema.018_create_auctions": {
+      "class": "SchemaMigration",
+      "ctorArgs": [],
+      "dependsOn": [
+        "worldcore/db/Database.ts"
+      ],
+      "kind": "service",
+      "lifecycle": "migration",
+      "notes": [
+        "Creates database structures for 018 create auctions."
+      ],
+      "owns": [],
+      "path": "worldcore/infra/schema/018_create_auctions.sql",
+      "provides": [
+        "auctions table"
+      ]
+    },
+    "infra.schema.019_create_auction_log": {
+      "class": "SchemaMigration",
+      "ctorArgs": [],
+      "dependsOn": [
+        "worldcore/db/Database.ts"
+      ],
+      "kind": "service",
+      "lifecycle": "migration",
+      "notes": [
+        "Creates database structures for 019 create auction log."
+      ],
+      "owns": [],
+      "path": "worldcore/infra/schema/019_create_auction_log.sql",
+      "provides": [
+        "auction_log table"
+      ]
+    },
+    "infra.schema.020_add_auction_expires_at": {
+      "class": "SchemaMigration",
+      "ctorArgs": [],
+      "dependsOn": [
+        "worldcore/db/Database.ts"
+      ],
+      "kind": "service",
+      "lifecycle": "migration",
+      "notes": [
+        "Incremental schema/content update: 020 add auction expires at."
+      ],
+      "owns": [],
+      "path": "worldcore/infra/schema/020_add_auction_expires_at.sql",
+      "provides": [
+        "auctions.expires_at column"
+      ]
+    },
+    "infra.schema.021_add_auction_items_reclaimed": {
+      "class": "SchemaMigration",
+      "ctorArgs": [],
+      "dependsOn": [
+        "worldcore/db/Database.ts"
+      ],
+      "kind": "service",
+      "lifecycle": "migration",
+      "notes": [
+        "Incremental schema/content update: 021 add auction items reclaimed."
+      ],
+      "owns": [],
+      "path": "worldcore/infra/schema/021_add_auction_items_reclaimed.sql",
+      "provides": [
+        "auctions.items_reclaimed column"
+      ]
+    },
+    "infra.schema.021_quests": {
+      "class": "SchemaMigration",
+      "ctorArgs": [],
+      "dependsOn": [
+        "worldcore/db/Database.ts"
+      ],
+      "kind": "service",
+      "lifecycle": "migration",
+      "notes": [
+        "Database migration: 021 quests."
+      ],
+      "owns": [],
+      "path": "worldcore/infra/schema/021_quests.sql",
+      "provides": [
+        "quests table"
+      ]
+    },
+    "infra.schema.022_quest_objectives": {
+      "class": "SchemaMigration",
+      "ctorArgs": [],
+      "dependsOn": [
+        "worldcore/db/Database.ts"
+      ],
+      "kind": "service",
+      "lifecycle": "migration",
+      "notes": [
+        "Database migration: 022 quest objectives."
+      ],
+      "owns": [],
+      "path": "worldcore/infra/schema/022_quest_objectives.sql",
+      "provides": [
+        "quest_objectives table"
+      ]
+    },
+    "infra.schema.023_quest_rewards": {
+      "class": "SchemaMigration",
+      "ctorArgs": [],
+      "dependsOn": [
+        "worldcore/db/Database.ts"
+      ],
+      "kind": "service",
+      "lifecycle": "migration",
+      "notes": [
+        "Database migration: 023 quest rewards."
+      ],
+      "owns": [],
+      "path": "worldcore/infra/schema/023_quest_rewards.sql",
+      "provides": [
+        "quest_rewards table"
+      ]
+    },
+    "infra.schema.024_npcs": {
+      "class": "SchemaMigration",
+      "ctorArgs": [],
+      "dependsOn": [
+        "worldcore/db/Database.ts"
+      ],
+      "kind": "service",
+      "lifecycle": "migration",
+      "notes": [
+        "Database migration: 024 npcs."
+      ],
+      "owns": [],
+      "path": "worldcore/infra/schema/024_npcs.sql",
+      "provides": [
+        "npcs table"
+      ]
+    },
+    "infra.schema.025_bank_accounts": {
+      "class": "SchemaMigration",
+      "ctorArgs": [],
+      "dependsOn": [
+        "worldcore/db/Database.ts"
+      ],
+      "kind": "service",
+      "lifecycle": "migration",
+      "notes": [
+        "Database migration: 025 bank accounts."
+      ],
+      "owns": [],
+      "path": "worldcore/infra/schema/025_bank_accounts.sql",
+      "provides": [
+        "bank_accounts table"
+      ]
+    },
+    "infra.schema.026_add_owner_kind_to_bank": {
+      "class": "SchemaMigration",
+      "ctorArgs": [],
+      "dependsOn": [
+        "worldcore/db/Database.ts"
+      ],
+      "kind": "service",
+      "lifecycle": "migration",
+      "notes": [
+        "Incremental schema/content update: 026 add owner kind to bank."
+      ],
+      "owns": [],
+      "path": "worldcore/infra/schema/026_add_owner_kind_to_bank.sql",
+      "provides": [
+        "bank_slots.owner_kind column"
+      ]
+    },
+    "infra.schema.027_add_talk_to_objective": {
+      "class": "SchemaMigration",
+      "ctorArgs": [],
+      "dependsOn": [
+        "worldcore/db/Database.ts"
+      ],
+      "kind": "service",
+      "lifecycle": "migration",
+      "notes": [
+        "Incremental schema/content update: 027 add talk to objective."
+      ],
+      "owns": [],
+      "path": "worldcore/infra/schema/027_add_talk_to_objective.sql",
+      "provides": [
+        "quest_objective_kind enum: talk_to"
+      ]
+    },
+    "infra.schema.028_spawn_points_proto_variant": {
+      "class": "SchemaMigration",
+      "ctorArgs": [],
+      "dependsOn": [
+        "worldcore/db/Database.ts"
+      ],
+      "kind": "service",
+      "lifecycle": "migration",
+      "notes": [
+        "Database migration: 028 spawn points proto variant."
+      ],
+      "owns": [],
+      "path": "worldcore/infra/schema/028_spawn_points_proto_variant.sql",
+      "provides": [
+        "spawn_points.proto_id column"
+      ]
+    },
+    "infra.seed.029_seed_crafting_items_v1": {
+      "class": "SeedMigration",
+      "ctorArgs": [],
+      "dependsOn": [
+        "infra.schema.007_items",
+        "worldcore/db/Database.ts"
+      ],
+      "kind": "service",
+      "lifecycle": "migration",
+      "notes": [
+        "Seeds baseline content for 029 seed crafting items v1."
+      ],
+      "owns": [],
+      "path": "worldcore/infra/schema/029_seed_crafting_items_v1.sql",
+      "provides": [
+        "seed rows for items"
+      ]
+    },
     "infra.schema.030_trade_recipes": {
       "class": "SchemaMigration",
       "ctorArgs": [],
@@ -1378,6 +1933,55 @@
         "trade_recipe_outputs table"
       ]
     },
+    "infra.seed.031_trade_recipes_v1": {
+      "class": "SeedMigration",
+      "ctorArgs": [],
+      "dependsOn": [
+        "infra.schema.030_trade_recipes",
+        "infra.schema.007_items",
+        "worldcore/db/Database.ts"
+      ],
+      "kind": "service",
+      "lifecycle": "migration",
+      "notes": [
+        "Tradeskills v1 baseline DB recipes.",
+        "Safe to re-run; uses ON CONFLICT UPSERT patterns."
+      ],
+      "owns": [
+        "Baseline recipe seeds using UPSERT",
+        "Inputs/outputs rows for each seeded recipe"
+      ],
+      "path": "worldcore/infra/schema/031_seed_trade_recipes_v1.sql",
+      "provides": [
+        "smelt_iron_ingot recipe (DB)",
+        "brew_minor_heal recipe (DB)"
+      ]
+    },
+    "infra.seed.032_trade_recipes_cooking_v1": {
+      "class": "SeedMigration",
+      "ctorArgs": [],
+      "dependsOn": [
+        "infra.schema.030_trade_recipes",
+        "infra.schema.007_items",
+        "worldcore/db/Database.ts"
+      ],
+      "kind": "service",
+      "lifecycle": "migration",
+      "notes": [
+        "Migrates RecipeCatalog cooking recipes into DB so crafting is DB-authoritative.",
+        "Safe to re-run."
+      ],
+      "owns": [
+        "Starter cooking recipe seeds (UPSERT)",
+        "Deterministic inputs/outputs replacement per recipe"
+      ],
+      "path": "worldcore/infra/schema/032_seed_trade_recipes_cooking_v1.sql",
+      "provides": [
+        "cook_river_trout (DB recipe seed)",
+        "mill_wheat_flour (DB recipe seed)",
+        "bake_simple_bread (DB recipe seed)"
+      ]
+    },
     "infra.schema.033_trade_recipes_station_kind": {
       "class": "SchemaMigration",
       "ctorArgs": [],
@@ -1397,6 +2001,22 @@
       "provides": [
         "trade_recipes.station_kind",
         "idx_trade_recipes_station_kind"
+      ]
+    },
+    "infra.seed.034_trade_recipes_station_kinds_v1": {
+      "class": "SeedMigration",
+      "ctorArgs": [],
+      "dependsOn": [
+        "infra.schema.033_trade_recipes_station_kind"
+      ],
+      "kind": "service",
+      "lifecycle": "migration",
+      "owns": [
+        "Station policy for starter recipes: campfire portable; forge/alchemy_table/millstone/oven town-only"
+      ],
+      "path": "worldcore/infra/schema/034_seed_trade_recipes_station_kinds_v1.sql",
+      "provides": [
+        "Starter recipe station_kind assignments"
       ]
     },
     "infra.schema.035_skin_loot_v1": {
@@ -1429,6 +2049,93 @@
       ],
       "service": "infra"
     },
+    "infra.schema.037_add_town_tier_v1": {
+      "class": "SchemaMigration",
+      "ctorArgs": [],
+      "dependsOn": [
+        "worldcore/db/Database.ts"
+      ],
+      "kind": "service",
+      "lifecycle": "migration",
+      "notes": [
+        "Incremental schema/content update: 037 add town tier v1."
+      ],
+      "owns": [],
+      "path": "worldcore/infra/schema/037_add_town_tier_v1.sql",
+      "provides": [
+        "spawn_points.town_tier column"
+      ]
+    },
+    "infra.seed.038_seed_skin_loot_town_rat_v1": {
+      "class": "SeedMigration",
+      "ctorArgs": [],
+      "dependsOn": [
+        "infra.schema.035_skin_loot_v1",
+        "worldcore/db/Database.ts"
+      ],
+      "kind": "service",
+      "lifecycle": "migration",
+      "notes": [
+        "Seeds baseline content for 038 seed skin loot town rat v1."
+      ],
+      "owns": [],
+      "path": "worldcore/infra/schema/038_seed_skin_loot_town_rat_v1.sql",
+      "provides": [
+        "seed rows for skin_loot"
+      ]
+    },
+    "infra.schema.039_fix_town_rat_tags_v1": {
+      "class": "SchemaMigration",
+      "ctorArgs": [],
+      "dependsOn": [
+        "worldcore/db/Database.ts"
+      ],
+      "kind": "service",
+      "lifecycle": "migration",
+      "notes": [
+        "Incremental schema/content update: 039 fix town rat tags v1."
+      ],
+      "owns": [],
+      "path": "worldcore/infra/schema/039_fix_town_rat_tags_v1.sql",
+      "provides": [
+        "town_rat npc tag fix in npcs"
+      ]
+    },
+    "infra.schema.040_create_spells_table": {
+      "class": "SchemaMigration",
+      "ctorArgs": [],
+      "dependsOn": [
+        "worldcore/db/Database.ts"
+      ],
+      "kind": "service",
+      "lifecycle": "migration",
+      "notes": [
+        "Creates database structures for 040 create spells table."
+      ],
+      "owns": [],
+      "path": "worldcore/infra/schema/040_create_spells_table.sql",
+      "provides": [
+        "public table"
+      ]
+    },
+    "infra.seed.041_seed_spells_mvp": {
+      "class": "SeedMigration",
+      "ctorArgs": [],
+      "dependsOn": [
+        "infra.schema.040_create_spells_table",
+        "worldcore/db/Database.ts"
+      ],
+      "kind": "service",
+      "lifecycle": "migration",
+      "notes": [
+        "Seeds baseline content for 041 seed spells mvp."
+      ],
+      "owns": [],
+      "path": "worldcore/infra/schema/041_seed_spells_mvp.sql",
+      "provides": [
+        "seed rows for public"
+      ]
+    },
     "infra.schema.042_create_ability_unlocks": {
       "class": "(sql) infra schema migration",
       "ctorArgs": [],
@@ -1456,6 +2163,70 @@
       "owns": [],
       "path": "worldcore/infra/schema/042_create_abilities_table.sql",
       "provides": []
+    },
+    "infra.seed.042_seed_ability_unlocks_mvp": {
+      "class": "(sql) infra seed migration",
+      "ctorArgs": [],
+      "dependsOn": [],
+      "kind": "service",
+      "lifecycle": "singleton",
+      "notes": [
+        "Seeds MVP warrior ability unlocks for early UI/progression testing."
+      ],
+      "owns": [],
+      "path": "worldcore/infra/schema/042_seed_ability_unlocks_mvp.sql",
+      "provides": []
+    },
+    "infra.seed.042_seed_abilities_from_unlocks": {
+      "class": "(sql) infra seed migration",
+      "ctorArgs": [],
+      "dependsOn": [],
+      "kind": "service",
+      "lifecycle": "singleton",
+      "notes": [
+        "Ensures abilities catalog rows exist for any ability referenced by ability_unlocks (safe upsert).",
+        "Title-cases id into name when missing; does not overwrite existing descriptions."
+      ],
+      "owns": [],
+      "path": "worldcore/infra/schema/042_seed_abilities_from_unlocks.sql",
+      "provides": []
+    },
+    "infra.schema.043_create_npc_loot_table": {
+      "class": "SchemaMigration",
+      "ctorArgs": [],
+      "dependsOn": [
+        "worldcore/db/Database.ts"
+      ],
+      "kind": "service",
+      "lifecycle": "migration",
+      "notes": [
+        "Creates database structures for 043 create npc loot table."
+      ],
+      "owns": [],
+      "path": "worldcore/infra/schema/043_create_npc_loot_table.sql",
+      "provides": [
+        "public table"
+      ]
+    },
+    "infra.seed.044_npc_loot_seed_v0": {
+      "class": "SeedMigration",
+      "ctorArgs": [],
+      "dependsOn": [
+        "infra.schema.043_create_npc_loot_table",
+        "infra.schema.007_items",
+        "infra.schema.024_npcs",
+        "worldcore/db/Database.ts"
+      ],
+      "kind": "service",
+      "lifecycle": "migration",
+      "notes": [
+        "Seeds baseline content for 044 npc loot seed v0."
+      ],
+      "owns": [],
+      "path": "worldcore/infra/schema/044_npc_loot_seed_v0.sql",
+      "provides": [
+        "seed rows for public"
+      ]
     },
     "infra.schema.045_create_vendor_log": {
       "class": "SchemaMigration",
@@ -1539,111 +2310,6 @@
       "path": "worldcore/infra/schema/049_create_spell_unlocks_table.sql",
       "provides": []
     },
-    "infra.schema.050_add_spell_effect_payloads_v1": {
-      "class": "(sql) infra schema migration",
-      "ctorArgs": [],
-      "dependsOn": [],
-      "kind": "service",
-      "lifecycle": "singleton",
-      "notes": [
-        "Adds status-effect payload columns/JSON to spells (status_effect, cleanse, etc) for System I MVP."
-      ],
-      "owns": [],
-      "path": "worldcore/infra/schema/050_add_spell_effect_payloads_v1.sql",
-      "provides": []
-    },
-    "infra.seed.031_trade_recipes_v1": {
-      "class": "SeedMigration",
-      "ctorArgs": [],
-      "dependsOn": [
-        "infra.schema.030_trade_recipes",
-        "infra.schema.007_items",
-        "worldcore/db/Database.ts"
-      ],
-      "kind": "service",
-      "lifecycle": "migration",
-      "notes": [
-        "Tradeskills v1 baseline DB recipes.",
-        "Safe to re-run; uses ON CONFLICT UPSERT patterns."
-      ],
-      "owns": [
-        "Baseline recipe seeds using UPSERT",
-        "Inputs/outputs rows for each seeded recipe"
-      ],
-      "path": "worldcore/infra/schema/031_seed_trade_recipes_v1.sql",
-      "provides": [
-        "smelt_iron_ingot recipe (DB)",
-        "brew_minor_heal recipe (DB)"
-      ]
-    },
-    "infra.seed.032_trade_recipes_cooking_v1": {
-      "class": "SeedMigration",
-      "ctorArgs": [],
-      "dependsOn": [
-        "infra.schema.030_trade_recipes",
-        "infra.schema.007_items",
-        "worldcore/db/Database.ts"
-      ],
-      "kind": "service",
-      "lifecycle": "migration",
-      "notes": [
-        "Migrates RecipeCatalog cooking recipes into DB so crafting is DB-authoritative.",
-        "Safe to re-run."
-      ],
-      "owns": [
-        "Starter cooking recipe seeds (UPSERT)",
-        "Deterministic inputs/outputs replacement per recipe"
-      ],
-      "path": "worldcore/infra/schema/032_seed_trade_recipes_cooking_v1.sql",
-      "provides": [
-        "cook_river_trout (DB recipe seed)",
-        "mill_wheat_flour (DB recipe seed)",
-        "bake_simple_bread (DB recipe seed)"
-      ]
-    },
-    "infra.seed.034_trade_recipes_station_kinds_v1": {
-      "class": "SeedMigration",
-      "ctorArgs": [],
-      "dependsOn": [
-        "infra.schema.033_trade_recipes_station_kind"
-      ],
-      "kind": "service",
-      "lifecycle": "migration",
-      "owns": [
-        "Station policy for starter recipes: campfire portable; forge/alchemy_table/millstone/oven town-only"
-      ],
-      "path": "worldcore/infra/schema/034_seed_trade_recipes_station_kinds_v1.sql",
-      "provides": [
-        "Starter recipe station_kind assignments"
-      ]
-    },
-    "infra.seed.042_seed_ability_unlocks_mvp": {
-      "class": "(sql) infra seed migration",
-      "ctorArgs": [],
-      "dependsOn": [],
-      "kind": "service",
-      "lifecycle": "singleton",
-      "notes": [
-        "Seeds MVP warrior ability unlocks for early UI/progression testing."
-      ],
-      "owns": [],
-      "path": "worldcore/infra/schema/042_seed_ability_unlocks_mvp.sql",
-      "provides": []
-    },
-    "infra.seed.042seed_abilities_from_unlocks": {
-      "class": "(sql) infra seed migration",
-      "ctorArgs": [],
-      "dependsOn": [],
-      "kind": "service",
-      "lifecycle": "singleton",
-      "notes": [
-        "Ensures abilities catalog rows exist for any ability referenced by ability_unlocks (safe upsert).",
-        "Title-cases id into name when missing; does not overwrite existing descriptions."
-      ],
-      "owns": [],
-      "path": "worldcore/infra/schema/042_seed_abilities_from_unlocks.sql",
-      "provides": []
-    },
     "infra.seed.049_seed_spell_unlocks_from_spells": {
       "class": "(sql) infra seed migration",
       "ctorArgs": [],
@@ -1655,6 +2321,19 @@
       ],
       "owns": [],
       "path": "worldcore/infra/schema/049_seed_spell_unlocks_from_spells.sql",
+      "provides": []
+    },
+    "infra.schema.050_add_spell_effect_payloads_v1": {
+      "class": "(sql) infra schema migration",
+      "ctorArgs": [],
+      "dependsOn": [],
+      "kind": "service",
+      "lifecycle": "singleton",
+      "notes": [
+        "Adds status-effect payload columns/JSON to spells (status_effect, cleanse, etc) for System I MVP."
+      ],
+      "owns": [],
+      "path": "worldcore/infra/schema/050_add_spell_effect_payloads_v1.sql",
       "provides": []
     },
     "infra.seed.050_seed_reference_class_kits_L1_10": {
@@ -1709,6 +2388,32 @@
       "path": "worldcore/infra/schema/051_seed_spell_unlocks_reference_kits_l1_10.sql",
       "provides": []
     },
+    "infra.seed.052_seed_npcs_training_dummies_and_civilian_v1": {
+      "class": "SeedMigration",
+      "ctorArgs": [],
+      "dependsOn": [
+        "infra.schema.024_npcs",
+        "worldcore/db/Database.ts"
+      ],
+      "kind": "service",
+      "lifecycle": "migration",
+      "notes": [
+        "Seeds training dummies and a protected town civilian prototype.",
+        "Training dummies are explicitly law-exempt so guard/crime logic never reacts to DPS testing.",
+        "Idempotent UPSERT into npcs(id)."
+      ],
+      "owns": [
+        "Law tag correctness for training_dummy*",
+        "Baseline town civilian prototype used by guard/crime tests"
+      ],
+      "path": "worldcore/infra/schema/052_seed_npcs_training_dummies_and_civilian_v1.sql",
+      "provides": [
+        "training_dummy NPC prototype",
+        "training_dummy_big NPC prototype",
+        "town_civilian NPC prototype",
+        "seed rows for npcs"
+      ]
+    },    
     "interaction.ops": {
       "dependsOn": [
         "targeting.finders"
@@ -6137,6 +6842,37 @@
       "path": "worldcore/test/contract_templar_L1_10_kit_spellFlavor.test.ts",
       "provides": []
     },
+    "test.contract_trainingDummySafety":{
+      "path": "worldcore/test/contract_trainingDummySafety.test.ts",
+      "kind": "test",
+      "class": "(test) contract_trainingDummySafety",
+      "lifecycle": "active",
+      "ctorArgs": [],
+      "dependsOn": [
+        "worldcore/npc/NpcTypes.ts",
+        "worldcore/npc/NpcCrime.ts",
+        "worldcore/combat/NpcCombat.ts"
+      ],
+      "provides": [
+        "contract:trainingDummySafety"
+      ],
+      "owns": [
+        "test:contract_trainingDummySafety"
+      ]
+    },
+    "test.contractSeedNpcLawTagsAreCorrect": {
+      "kind": "test",
+      "path": "worldcore/test/contract_seedNpcLawTagsAreCorrect.test.ts",
+      "class": "(test)",
+      "ctorArgs": [],
+      "lifecycle": "static",
+      "dependsOn": [],
+      "provides": [],
+      "owns": [],
+      "notes": [
+        "Contract: NPC seed law tags preserve training dummy safety (law_exempt) and protected town civilians (law_protected)."
+      ]
+    },
     "test.utils": {
       "dependsOn": [],
       "functions": [
@@ -6271,6 +7007,17 @@
         "plan/commit: deterministic baseline resource spawn_points (ore/herb/wood/fish/rare) within --bounds",
         "dry-run preview: prints planned inserts/updates with seed + density controls (use --commit to write)",
         "audit mode: summarize resource node coverage by bounds / proto kinds"
+      ]
+    },
+    "tools.seedNpcLawTagsAudit": {
+      "kind": "tool",
+      "path": "worldcore/tools/seedNpcLawTagsAudit.ts",
+      "bin": "dist/worldcore/tools/seedNpcLawTagsAudit.js",
+      "dependsOn": [],
+      "notes": [
+        "Audits worldcore/infra/schema seed SQL: training dummies must be law_exempt; protected civilians should be law_protected.",
+        "Prevents guard/crime regressions caused by seed tag drift.",
+        "Supports --schemaDir and --json."
       ]
     },
     "tools.seedSpellIdAudit": {

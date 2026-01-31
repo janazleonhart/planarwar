@@ -1,3 +1,4 @@
+-- worldcore/infra/schema/audit_npc_lawtags.sql
 -- Planar War / worldcore
 -- NPC Law Tag Audit
 --
@@ -68,3 +69,19 @@ ORDER BY id;
 -- --   ELSE array_append(tags, 'law_exempt')
 -- -- END
 -- -- WHERE id = 'town_rat';
+
+\echo ''
+\echo '--- [5] Training dummies missing law_exempt (should always be exempt)'
+SELECT id, name, tags
+FROM npcs
+WHERE id IN ('training_dummy', 'training_dummy_big')
+  AND NOT ('law_exempt' = ANY(tags))
+ORDER BY id;
+
+\echo ''
+\echo '--- [6] Protected civilians missing law_protected (recommended to be explicit)'
+SELECT id, name, tags
+FROM npcs
+WHERE tags && ARRAY['civilian', 'protected_town']
+  AND NOT ('law_protected' = ANY(tags))
+ORDER BY id;
