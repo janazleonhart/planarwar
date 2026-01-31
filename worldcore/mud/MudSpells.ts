@@ -5,7 +5,6 @@ import type { CharacterState, SpellbookState } from "../characters/CharacterType
 
 import { Logger } from "../utils/logger";
 import { canDamage } from "../combat/DamagePolicy";
-import { checkAndStartCooldown } from "../combat/Cooldowns";
 import { SPELLS, SpellDefinition, findSpellByNameOrId } from "../spells/SpellTypes";
 import { performNpcAttack } from "./MudActions";
 import { resolveTargetInRoom } from "../targeting/TargetResolver";
@@ -25,15 +24,15 @@ import { gatePlayerDamageFromPlayerEntity } from "./MudCombatGates";
 import { DUEL_SERVICE } from "../pvp/DuelService";
 import {
   getPrimaryPowerResourceForClass,
-  trySpendPowerResource,
 } from "../resources/PowerResources";
 import {
   gainSpellSchoolSkill,
   gainSongSchoolSkill,
-  getSongSchoolSkill,
 } from "../skills/SkillProgression";
 import type { SongSchoolId } from "../skills/SkillProgression";
 import { applyStatusEffect, applyStatusEffectToEntity, clearStatusEffectsByTags } from "../combat/StatusEffects";
+import { applyActionCostAndCooldownGates } from "../combat/CastingGates";
+import { computeSongScalar } from "../songs/SongScaling";
 
 const log = Logger.scope("MUD_SPELLS");
 
@@ -115,7 +114,14 @@ function ensureSpellbook(char: CharacterState): SpellbookState {
   return sb as SpellbookState;
 }
 
-function canUseSpell(char: CharacterState, spell: SpellDefinition): string | null {
+function getSpellCooldownRemainingMs(char: CharacterState, spellId: string, now: number): number {
+  const sb = ensureSpellbook(char);
+  const readyAt = Number((sb as any).cooldowns?.[spellId]?.readyAt ?? 0);
+  if (!Number.isFinite(readyAt) || readyAt <= 0) return 0;
+  return Math.max(0, readyAt - now);
+}
+
+function canUseSpell(char: CharacterState, spell: SpellDefinition, now: number): string | null {
   const cls = (char.classId ?? "").toLowerCase();
   const spellClass = spell.classId.toLowerCase();
 
@@ -129,7 +135,6 @@ function canUseSpell(char: CharacterState, spell: SpellDefinition): string | nul
   }
 
   const sb = ensureSpellbook(char);
-  const now = Date.now();
   const cdEntry = sb.cooldowns?.[spell.id];
   const readyAt = cdEntry?.readyAt ?? 0;
 
@@ -142,11 +147,10 @@ function canUseSpell(char: CharacterState, spell: SpellDefinition): string | nul
   return null;
 }
 
-function startSpellCooldown(char: CharacterState, spell: SpellDefinition): void {
+function startSpellCooldown(char: CharacterState, spell: SpellDefinition, now: number): void {
   if (!spell.cooldownMs || spell.cooldownMs <= 0) return;
 
   const sb = ensureSpellbook(char);
-  const now = Date.now();
   if (!sb.cooldowns) sb.cooldowns = {};
   sb.cooldowns[spell.id] = { readyAt: now + spell.cooldownMs };
 }
@@ -322,7 +326,9 @@ export async function castSpellForCharacter(
   spell: SpellDefinition,
   targetNameRaw?: string,
 ): Promise<any> {
-  const err = canUseSpell(char, spell);
+  const now = Number((ctx as any).nowMs ?? Date.now());
+
+  const err = canUseSpell(char, spell, now);
   if (err) return err;
 
   if (!ctx.entities) {
@@ -358,15 +364,32 @@ export async function castSpellForCharacter(
     }
   };
 
-  const cooldownGate = (): string | null => {
-    const ms = spell.cooldownMs ?? 0;
-    if (ms <= 0) return null;
-    return checkAndStartCooldown(char, "spells", spell.id, ms, spell.name);
+  const applyGates = (): string | null => {
+    // Legacy spellbook cooldown gate.
+    const spellbookRemainingMs = getSpellCooldownRemainingMs(char, spell.id, now);
+    if (spellbookRemainingMs > 0) {
+      const seconds = Math.ceil(spellbookRemainingMs / 1000);
+      return `${spell.name} is on cooldown for another ${seconds}s.`;
+    }
+
+    // Canonical gates: cost + progression cooldown (side-effect safe).
+    const err = applyActionCostAndCooldownGates({
+      char,
+      bucket: "spells",
+      key: spell.id,
+      cooldownMs: spell.cooldownMs ?? 0,
+      resourceType: spellResourceType,
+      resourceCost: spellResourceCost,
+      displayName: spell.name,
+      now,
+    });
+    if (err) return err;
+
+    // Keep the spellbook mirror in sync.
+    startSpellCooldown(char, spell, now);
+    return null;
   };
 
-  const resourceGate = (): string | null => {
-    return trySpendPowerResource(char, spellResourceType, spellResourceCost);
-  };
 
   switch (spell.kind) {
     case "damage_single_npc": {
@@ -484,15 +507,11 @@ export async function castSpellForCharacter(
 
       }
 
-      const cdErr = cooldownGate();
-      if (cdErr) return cdErr;
+      const gateErr = applyGates();
 
-      const resErr = resourceGate();
-      if (resErr) return resErr;
 
-      startSpellCooldown(char, spell);
-
-      // Execute
+      if (gateErr) return gateErr;
+// Execute
       if (npc) {
         const result = await performNpcAttack(ctx, char, selfEntity, npc, {
           abilityName: spell.name,
@@ -594,23 +613,17 @@ case "heal_self": {
         return "Your body has no measurable health to heal.";
       }
 
-      const cdErr = cooldownGate();
-      if (cdErr) return cdErr;
+      const gateErr = applyGates();
 
-      const resErr = resourceGate();
-      if (resErr) return resErr;
 
-      startSpellCooldown(char, spell);
-
+      if (gateErr) return gateErr;
       const baseHeal = spell.healAmount ?? 10;
       let heal = baseHeal;
 
       // Songs: scale healing from instrument/vocal skill + optional equipped instrument bonus
       if (isSong && songSchool) {
-        const skill = getSongSchoolSkill(char, songSchool);
-        const factor = 1 + skill / 100; // 100 skill ~= 2x base, tune later
-        const instrumentFactor = 1 + instrumentBonusPct;
-        heal = Math.floor(baseHeal * factor * instrumentFactor);
+        const scalar = computeSongScalar(char, songSchool, instrumentBonusPct);
+        heal = Math.floor(baseHeal * scalar);
       }
       let result: string;
 
@@ -660,25 +673,18 @@ case "heal_self": {
       const res = resolvePlayerTargetInRoom(ctx, roomId, targetRaw);
       if ("err" in res) return res.err;
 
-      const cdErr = cooldownGate();
-      if (cdErr) return cdErr;
+      const gateErr = applyGates();
 
-      const resErr = resourceGate();
-      if (resErr) return resErr;
 
-      startSpellCooldown(char, spell);
-
+      if (gateErr) return gateErr;
       const baseHeal = Math.max(0, Math.floor(spell.healAmount ?? 0));
       if (baseHeal <= 0) return "[world] That spell has no healing effect.";
 
       let heal = baseHeal;
       if (isSong && songSchool) {
-        const skill = getSongSchoolSkill(char, songSchool);
-        const factor = 1 + skill / 100;
-        const instrumentFactor = 1 + instrumentBonusPct;
-        heal = Math.floor(baseHeal * factor * instrumentFactor);
+        const scalar = computeSongScalar(char, songSchool, instrumentBonusPct);
+        heal = Math.floor(baseHeal * scalar);
       }
-
       const before = res.entity.hp;
       const after = Math.min(res.entity.maxHp, before + heal);
       res.entity.hp = after;
@@ -693,15 +699,14 @@ case "heal_self": {
 
 
     case "heal_hot_self": {
-      const cdErr = cooldownGate();
-      if (cdErr) return cdErr;
-
-      const resErr = resourceGate();
-      if (resErr) return resErr;
-
       const seRes = spellStatusEffectOrErr(spell);
+
       if (!seRes.ok) return seRes.err;
 
+
+      const gateErr = applyGates();
+
+      if (gateErr) return gateErr;
       const hot = (seRes.se as any).hot;
       if (!hot || typeof hot !== "object") {
         return `[world] [spell:${spell.name}] That spell has no HOT definition.`;
@@ -709,10 +714,7 @@ case "heal_self": {
 
       const tickIntervalMs = Math.max(1, Math.floor(Number(hot.tickIntervalMs ?? 2000)));
       const perTickHeal = Math.max(1, Math.floor(Number(hot.perTickHeal ?? 1)));
-
-      startSpellCooldown(char, spell);
-
-      applyStatusEffect(char, {
+applyStatusEffect(char, {
         id: seRes.se.id,
         sourceKind: spell.isSong ? "song" : "spell",
         sourceId: spell.id,
@@ -740,15 +742,17 @@ case "heal_self": {
       const res = resolvePlayerTargetInRoom(ctx, roomId, targetRaw);
       if ("err" in res) return res.err;
 
-      const cdErr = cooldownGate();
-      if (cdErr) return cdErr;
-
-      const resErr = resourceGate();
-      if (resErr) return resErr;
-
       const seRes = spellStatusEffectOrErr(spell);
+
+
       if (!seRes.ok) return seRes.err;
 
+
+
+      const gateErr = applyGates();
+
+
+      if (gateErr) return gateErr;
       const hot = (seRes.se as any).hot;
       if (!hot || typeof hot !== "object") {
         return `[world] [spell:${spell.name}] That spell has no HOT definition.`;
@@ -756,10 +760,7 @@ case "heal_self": {
 
       const tickIntervalMs = Math.max(1, Math.floor(Number(hot.tickIntervalMs ?? 2000)));
       const perTickHeal = Math.max(1, Math.floor(Number(hot.perTickHeal ?? 1)));
-
-      startSpellCooldown(char, spell);
-
-      applyStatusEffect(res.char, {
+applyStatusEffect(res.char, {
         id: seRes.se.id,
         sourceKind: spell.isSong ? "song" : "spell",
         sourceId: spell.id,
@@ -781,15 +782,14 @@ case "heal_self": {
     }
 
     case "shield_self": {
-      const cdErr = cooldownGate();
-      if (cdErr) return cdErr;
-
-      const resErr = resourceGate();
-      if (resErr) return resErr;
-
       const seRes = spellStatusEffectOrErr(spell);
+
       if (!seRes.ok) return seRes.err;
 
+
+      const gateErr = applyGates();
+
+      if (gateErr) return gateErr;
       const absorb = (seRes.se as any).absorb;
       if (!absorb || typeof absorb !== "object") {
         return `[world] [spell:${spell.name}] That spell has no shield definition.`;
@@ -797,10 +797,7 @@ case "heal_self": {
 
       const amount = Math.max(0, Math.floor(Number(absorb.amount ?? 0)));
       if (amount <= 0) return `[world] [spell:${spell.name}] That shield has no strength.`;
-
-      startSpellCooldown(char, spell);
-
-      applyStatusEffect(char, {
+applyStatusEffect(char, {
         id: seRes.se.id,
         sourceKind: spell.isSong ? "song" : "spell",
         sourceId: spell.id,
@@ -828,15 +825,17 @@ case "heal_self": {
       const res = resolvePlayerTargetInRoom(ctx, roomId, targetRaw);
       if ("err" in res) return res.err;
 
-      const cdErr = cooldownGate();
-      if (cdErr) return cdErr;
-
-      const resErr = resourceGate();
-      if (resErr) return resErr;
-
       const seRes = spellStatusEffectOrErr(spell);
+
+
       if (!seRes.ok) return seRes.err;
 
+
+
+      const gateErr = applyGates();
+
+
+      if (gateErr) return gateErr;
       const absorb = (seRes.se as any).absorb;
       if (!absorb || typeof absorb !== "object") {
         return `[world] [spell:${spell.name}] That spell has no shield definition.`;
@@ -844,10 +843,7 @@ case "heal_self": {
 
       const amount = Math.max(0, Math.floor(Number(absorb.amount ?? 0)));
       if (amount <= 0) return `[world] [spell:${spell.name}] That shield has no strength.`;
-
-      startSpellCooldown(char, spell);
-
-      applyStatusEffect(res.char, {
+applyStatusEffect(res.char, {
         id: seRes.se.id,
         sourceKind: spell.isSong ? "song" : "spell",
         sourceId: spell.id,
@@ -869,20 +865,14 @@ case "heal_self": {
     }
 
     case "cleanse_self": {
-      const cdErr = cooldownGate();
-      if (cdErr) return cdErr;
+      const gateErr = applyGates();
 
-      const resErr = resourceGate();
-      if (resErr) return resErr;
-
+      if (gateErr) return gateErr;
       const cleanse = (spell as any).cleanse;
       if (!cleanse || !Array.isArray(cleanse.tags) || cleanse.tags.length <= 0) {
         return `[world] [spell:${spell.name}] That spell has no cleanse definition.`;
       }
-
-      startSpellCooldown(char, spell);
-
-      const removed = clearStatusEffectsByTags(char, cleanse.tags, cleanse.maxToRemove);
+const removed = clearStatusEffectsByTags(char, cleanse.tags, cleanse.maxToRemove);
       applySchoolGains();
 
       if (removed <= 0) {
@@ -898,20 +888,15 @@ case "heal_self": {
       const res = resolvePlayerTargetInRoom(ctx, roomId, targetRaw);
       if ("err" in res) return res.err;
 
-      const cdErr = cooldownGate();
-      if (cdErr) return cdErr;
+      const gateErr = applyGates();
 
-      const resErr = resourceGate();
-      if (resErr) return resErr;
 
+      if (gateErr) return gateErr;
       const cleanse = (spell as any).cleanse;
       if (!cleanse || !Array.isArray(cleanse.tags) || cleanse.tags.length <= 0) {
         return `[world] [spell:${spell.name}] That spell has no cleanse definition.`;
       }
-
-      startSpellCooldown(char, spell);
-
-      const removed = clearStatusEffectsByTags(res.char, cleanse.tags, cleanse.maxToRemove);
+const removed = clearStatusEffectsByTags(res.char, cleanse.tags, cleanse.maxToRemove);
       applySchoolGains();
 
       if (removed <= 0) {
@@ -922,18 +907,15 @@ case "heal_self": {
 
 
     case "buff_self": {
-      const cdErr = cooldownGate();
-      if (cdErr) return cdErr;
-
-      const resErr = resourceGate();
-      if (resErr) return resErr;
-
       const seRes = spellStatusEffectOrErr(spell);
+
       if (!seRes.ok) return seRes.err;
 
-      startSpellCooldown(char, spell);
 
-      applyStatusEffect(char, {
+      const gateErr = applyGates();
+
+      if (gateErr) return gateErr;
+applyStatusEffect(char, {
         id: seRes.se.id,
         sourceKind: spell.isSong ? "song" : "spell",
         sourceId: spell.id,
@@ -962,18 +944,18 @@ case "heal_self": {
       const res = resolvePlayerTargetInRoom(ctx, roomId, targetRaw);
       if ("err" in res) return res.err;
 
-      const cdErr = cooldownGate();
-      if (cdErr) return cdErr;
-
-      const resErr = resourceGate();
-      if (resErr) return resErr;
-
       const seRes = spellStatusEffectOrErr(spell);
+
+
       if (!seRes.ok) return seRes.err;
 
-      startSpellCooldown(char, spell);
 
-      applyStatusEffect(res.char, {
+
+      const gateErr = applyGates();
+
+
+      if (gateErr) return gateErr;
+applyStatusEffect(res.char, {
         id: seRes.se.id,
         sourceKind: spell.isSong ? "song" : "spell",
         sourceId: spell.id,
@@ -1028,15 +1010,11 @@ case "heal_self": {
         // Best-effort: never let policy lookup crash spell casting.
       }
 
-      const cdErr = cooldownGate();
-      if (cdErr) return cdErr;
+      const gateErr = applyGates();
 
-      const resErr = resourceGate();
-      if (resErr) return resErr;
 
-      startSpellCooldown(char, spell);
-
-      const se = spell.statusEffect;
+      if (gateErr) return gateErr;
+const se = spell.statusEffect;
       if (!se) {
         return `[world] [spell:${spell.name}] That spell has no status effect definition.`;
       }
