@@ -2413,6 +2413,30 @@
         "town_civilian NPC prototype",
         "seed rows for npcs"
       ]
+    },
+    "infra.seed.053_seed_basic_loot_items_v1": {
+      "kind": "service",
+      "path": "worldcore/infra/schema/053_seed_basic_loot_items_v1.sql",
+      "class": "SeedMigration",
+      "ctorArgs": [],
+      "dependsOn": [
+        "infra.schema.007_items",
+        "worldcore/db/Database.ts"
+      ],
+      "lifecycle": "migration",
+      "notes": [
+        "Seeds minimal items required by early loot + tradeskill seeds (so npc_loot/skin_loot/recipes don't dangle).",
+        "Idempotent UPSERT keyed by items(id)."
+      ],
+      "owns": [
+        "Baseline item ids referenced by npc_loot and skin_loot seeds (rat_tail, rat_meat_raw, ore_iron_hematite)"
+      ],
+      "provides": [
+        "seed rows for items",
+        "ore_iron_hematite item",
+        "rat_tail item",
+        "rat_meat_raw item"
+      ]
     },    
     "interaction.ops": {
       "dependsOn": [
@@ -6873,6 +6897,19 @@
         "Contract: NPC seed law tags preserve training dummy safety (law_exempt) and protected town civilians (law_protected)."
       ]
     },
+    "test.contractSeedSkinLootItemIdsExist": {
+      "kind": "test",
+      "path": "worldcore/test/contract_seedSkinLootItemIdsExist.test.ts",
+      "class": "(test)",
+      "ctorArgs": [],
+      "dependsOn": [],
+      "lifecycle": "static",
+      "provides": [],
+      "owns": [],
+      "notes": [
+        "Contract: skin_loot seed item_id references must exist in seeded items (items table seeds)."
+      ]
+    },
     "test.utils": {
       "dependsOn": [],
       "functions": [
@@ -7040,6 +7077,56 @@
         "Audits schema seed SQL: ensures ability_unlocks.ability_id is covered by the abilities catalog seeding flow.",
         "Models seed order: explicit INSERTs into abilities and/or 'seed abilities from unlocks' bootstrap scripts.",
         "Prevents UI/catalog drift when new ability_unlocks are added without catalog seeding."
+      ]
+    },
+    "tools.seedSqlParse": {
+      "kind": "module",
+      "path": "worldcore/tools/seedSqlParse.ts",
+      "class": "(module) seedSqlParse",
+      "ctorArgs": [],
+      "dependsOn": [],
+      "lifecycle": "static",
+      "notes": [
+        "Small, dependency-free helpers for parsing seed SQL files in worldcore/infra/schema.",
+        "Used by seed integrity audits (contract tests) to avoid pulling a full SQL parser dependency.",
+        "Conservative parsing: only supports the INSERT/VALUES patterns used by this repo's seed migrations."
+      ],
+      "owns": [],
+      "provides": [
+        "resolveSchemaDir",
+        "listSqlFiles",
+        "readSqlFile",
+        "extractInsertStatementsForTable",
+        "parseInsertColumnList",
+        "parseInsertValuesRegion",
+        "parseValuesTuples",
+        "splitTopLevelCommaList",
+        "unquoteSqlString",
+        "extractFromValuesBlocks",
+        "SeedSqlSource",
+        "ResolveSchemaDirResult"
+      ]
+    },
+    "tools.seedNpcLootItemIdAudit": {
+      "kind": "tool",
+      "path": "worldcore/tools/seedNpcLootItemIdAudit.ts",
+      "bin": "dist/worldcore/tools/seedNpcLootItemIdAudit.js",
+      "dependsOn": [],
+      "notes": [
+        "Audits worldcore/infra/schema seed SQL: npc_loot.item_id must refer to an item seeded in items.",
+        "Prevents seed drift where loot tables reference non-existent item ids.",
+        "Supports --schemaDir and --json."
+      ]
+    },
+    "tools.seedSkinLootItemIdAudit": {
+      "kind": "tool",
+      "path": "worldcore/tools/seedSkinLootItemIdAudit.ts",
+      "bin": "dist/worldcore/tools/seedSkinLootItemIdAudit.js",
+      "dependsOn": [],
+      "notes": [
+        "Audits worldcore/infra/schema seed SQL: skin_loot.item_id must refer to an item seeded in items.",
+        "Prevents seed drift where skin loot references non-existent item ids.",
+        "Supports --schemaDir and --json."
       ]
     },
     "tools.simBrain": {

@@ -14,9 +14,11 @@
         "dev:mmo": "npm run dev --workspace planarwar-mmo-backend",
         "check:no-mud-helpers": "node .github/scripts/noMudHelperFunctionsCheck.js",
         "audit:seed:npc-lawtags": "npm run build --workspace worldcore && node dist/worldcore/tools/seedNpcLawTagsAudit.js",
+        "audit:seed:npc-loot-items": "npm run build --workspace worldcore && node dist/worldcore/tools/seedNpcLootItemIdAudit.js",
+        "audit:seed:skin-loot-items": "npm run build --workspace worldcore && node dist/worldcore/tools/seedSkinLootItemIdAudit.js",
         "verify": "npm run verify:repo",
         "verify:worldcore": "npm run verify --workspace worldcore",
-        "verify:repo": "npm run verify:worldcore && npm run audit:seed:npc-lawtags && node .github/scripts/registryIndexPathsCheck.js && node .github/scripts/noMudHelperFunctionsCheck.js"
+        "verify:repo": "npm run verify:worldcore && npm run audit:seed:npc-lawtags && node .github/scripts/registryIndexPathsCheck.js && node .github/scripts/noMudHelperFunctionsCheck.js && node dist/worldcore/tools/seedNpcLootItemIdAudit.js && node dist/worldcore/tools/seedSkinLootItemIdAudit.js"
     },
     "dependencies": {
         "cors": "^2.8.5",
