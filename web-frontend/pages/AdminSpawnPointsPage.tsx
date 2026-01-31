@@ -1716,7 +1716,46 @@ if (!Array.isArray((snapshot as any).spawns)) throw new Error("Invalid snapshot:
     if (filterSpawnId.trim()) parts.push(`spawn~${filterSpawnId.trim()}`);
     if (quickSearch.trim()) parts.push(`q~${quickSearch.trim()}`);
     return parts.length ? parts.join(", ") : "none";
-  }, [filterAuthority, filterType, filterArchetype, filterProtoId, filterSpawnId]);
+  }, [filterAuthority, filterType, filterArchetype, filterProtoId, filterSpawnId])
+  // ----- Known values (quality-of-life helpers for stringly-typed filters/tools) -----
+  const knownArchetypes = useMemo(() => {
+    const s = new Set<string>();
+    for (const sp of spawnPoints) {
+      const v = (sp.archetype ?? "").trim();
+      if (v) s.add(v);
+    }
+    return Array.from(s).sort((a, b) => a.localeCompare(b));
+  }, [spawnPoints]);
+
+  const knownTypes = useMemo(() => {
+    const s = new Set<string>();
+    for (const sp of spawnPoints) {
+      const v = (sp.type ?? "").trim();
+      if (v) s.add(v);
+    }
+    return Array.from(s).sort((a, b) => a.localeCompare(b));
+  }, [spawnPoints]);
+
+  const topResourceProtoOptions = useMemo(() => protoOptions.filter((o) => o.kind === "resource").slice(0, 14), [protoOptions]);
+  const topStationProtoOptions = useMemo(() => protoOptions.filter((o) => o.kind === "station").slice(0, 14), [protoOptions]);
+
+  const chipBase = {
+    padding: "4px 8px",
+    borderRadius: 999,
+    border: "1px solid #ccc",
+    background: "white",
+    cursor: "pointer",
+    fontSize: 12,
+    lineHeight: "16px",
+    whiteSpace: "nowrap" as const,
+  };
+
+  const chipActive = {
+    ...chipBase,
+    border: "2px solid #4caf50",
+    fontWeight: 700 as const,
+  };
+;
 
   return (
     <div style={{ padding: 16 }}>
@@ -1910,6 +1949,58 @@ if (!Array.isArray((snapshot as any).spawns)) throw new Error("Invalid snapshot:
                 >
                   Clear filters
                 </button>
+              </div>
+            </div>
+
+            <div style={{ marginTop: 12, padding: 10, border: "1px solid #eee", borderRadius: 8 }}>
+              <div style={{ fontWeight: 700, marginBottom: 6 }}>Quick picks</div>
+              <div style={{ display: "grid", gap: 10 }}>
+                <div>
+                  <div style={{ fontSize: 12, opacity: 0.8, marginBottom: 6 }}>Archetypes</div>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                    <button type="button" style={!filterArchetype ? chipActive : chipBase} onClick={() => setFilterArchetype("")}>
+                      (any)
+                    </button>
+                    {knownArchetypes.map((a) => (
+                      <button key={a} type="button" style={filterArchetype === a ? chipActive : chipBase} onClick={() => setFilterArchetype(a)}>
+                        {a}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div>
+                  <div style={{ fontSize: 12, opacity: 0.8, marginBottom: 6 }}>Types</div>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                    <button type="button" style={!filterType ? chipActive : chipBase} onClick={() => setFilterType("")}>
+                      (any)
+                    </button>
+                    {knownTypes.map((t) => (
+                      <button key={t} type="button" style={filterType === t ? chipActive : chipBase} onClick={() => setFilterType(t)}>
+                        {t}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div>
+                  <div style={{ fontSize: 12, opacity: 0.8, marginBottom: 6 }}>protoId quick set</div>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                    <button type="button" style={!filterProtoId ? chipActive : chipBase} onClick={() => setFilterProtoId("")}>
+                      (any)
+                    </button>
+                    {topResourceProtoOptions.map((o) => (
+                      <button key={`fp:${o.kind}:${o.id}`} type="button" style={filterProtoId === o.id ? chipActive : chipBase} onClick={() => setFilterProtoId(o.id)}>
+                        {o.label}
+                      </button>
+                    ))}
+                  </div>
+                  {protoOptionsStatus !== "ok" ? (
+                    <div style={{ marginTop: 6, fontSize: 12, opacity: 0.75 }}>
+                      (Tip: protoId options come from /api/admin/spawn_points/proto_options; if unavailable you can still type a protoId.)
+                    </div>
+                  ) : null}
+                </div>
               </div>
             </div>
           </details>
@@ -2592,6 +2683,45 @@ if (!Array.isArray((snapshot as any).spawns)) throw new Error("Invalid snapshot:
                       <span style={{ fontSize: 12, opacity: 0.8 }}>
                         Proto options unavailable{protoOptionsError ? `: ${protoOptionsError}` : ""}. You can still type a protoId.
                       </span>
+                    ) : null}
+
+                    {protoOptions.length ? (
+                      <div style={{ marginTop: 6, display: "grid", gap: 8 }}>
+                        <div>
+                          <div style={{ fontSize: 12, opacity: 0.8, marginBottom: 6 }}>Quick protoId picks</div>
+                          <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                            {topResourceProtoOptions.map((o) => (
+                              <button
+                                key={`sp:${o.kind}:${o.id}`}
+                                type="button"
+                                style={scatterProtoId === o.id ? chipActive : chipBase}
+                                onClick={() => setScatterProtoId(o.id)}
+                                title={o.id}
+                              >
+                                {o.label}
+                              </button>
+                            ))}
+                          </div>
+                          {topStationProtoOptions.length ? (
+                            <>
+                              <div style={{ fontSize: 12, opacity: 0.8, margin: "8px 0 6px 0" }}>Stations</div>
+                              <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                                {topStationProtoOptions.map((o) => (
+                                  <button
+                                    key={`sp:${o.kind}:${o.id}`}
+                                    type="button"
+                                    style={scatterProtoId === o.id ? chipActive : chipBase}
+                                    onClick={() => setScatterProtoId(o.id)}
+                                    title={o.id}
+                                  >
+                                    {o.label}
+                                  </button>
+                                ))}
+                              </div>
+                            </>
+                          ) : null}
+                        </div>
+                      </div>
                     ) : null}
                   </label>
                   <label style={{ display: "grid", gap: 4 }}>
