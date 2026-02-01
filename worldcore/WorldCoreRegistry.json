@@ -2437,6 +2437,20 @@
         "rat_tail item",
         "rat_meat_raw item"
       ]
+    },
+    "infra.seed.054_seed_common_class_kits_L1_10": {
+      "kind": "service",
+      "path": "worldcore/infra/schema/054_seed_common_class_kits_L1_10.sql",
+      "class": "(sql) infra seed migration",
+      "lifecycle": "singleton",
+      "ctorArgs": [],
+      "dependsOn": [],
+      "provides": [],
+      "owns": [],
+      "notes": [
+        "Seeds a minimal common L1–10 spell kit (damage + dot + debuff + shield + hot) for classes that do not yet have bespoke kits.",
+        "Designed to keep every class playable while per-class kits are authored later."
+      ]
     },    
     "interaction.ops": {
       "dependsOn": [
@@ -6969,6 +6983,21 @@
       ],
       "provides": [
         "Fails fast if minimum columns are removed or renamed in infra/schema SQL"
+      ]
+    },
+    "test.contractCommonClassKitsL1_10": {
+      "kind": "test.contract",
+      "path": "worldcore/test/contract_commonClassKits_L1_10.test.ts",
+      "dependsOn": [
+        "infra.seed.054_seed_common_class_kits_L1_10"
+      ],
+      "provides": [
+        "Guards existence of common L1–10 kit seed file",
+        "Guards that missing classes remain covered by basic unlocks"
+      ],
+      "notes": [
+        "Contract: ensures the repo always contains an idempotent seed granting a minimal L1–10 kit to classes without bespoke kits yet.",
+        "Regex/text assertions only (intentionally not DB-coupled)."
       ]
     },
     "test.utils": {
