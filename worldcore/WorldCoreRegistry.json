@@ -6941,6 +6941,36 @@
         "Fails fast if required columns are removed or renamed in 040_create_spells_table.sql"
       ]
     },
+    "test.contractAdminItemsRoutes": {
+      "kind": "test.contract",
+      "path": "worldcore/test/contract_adminItemsRoutes.test.ts",
+      "dependsOn": [
+        "web-backend.routes.adminItems",
+        "web-frontend.pages.adminItems"
+      ],
+      "notes": [
+        "Contract: AdminItems editor wiring is present (route + UI endpoints).",
+        "Ensures core API verbs stay stable while the editor iterates.",
+        "Assertions are regex-based to avoid brittleness during refactors."
+      ],
+      "provides": [
+        "Guards /api/admin/items GET+POST endpoints from accidental removal/renaming",
+        "Guards /api/admin/items/options typeahead endpoint for ItemPicker",
+        "Guards AdminItemsPage + ItemPicker fetch wiring"
+      ]
+    },
+    "test.contractAdminItemsSchemaColumns": {
+      "kind": "test.contract",
+      "path": "worldcore/test/contract_adminItemsSchemaColumns.test.ts",
+      "dependsOn": [],
+      "notes": [
+        "Contract: items catalog schema includes minimum columns required by the admin items editor.",
+        "Keeps this conservative while item schema naming settles (no hard-coded kind/tags/enabled assumptions)."
+      ],
+      "provides": [
+        "Fails fast if minimum columns are removed or renamed in infra/schema SQL"
+      ]
+    },
     "test.utils": {
       "dependsOn": [],
       "functions": [
@@ -7169,6 +7199,65 @@
         "Audits worldcore/infra/schema: spells table columns cover the admin editor + seed SQL expectations.",
         "Prevents runtime/editor regressions when schema drifts.",
         "Supports --schemaFile and --json."
+      ]
+    },
+    "test.contractAdminNpcsRoutes": {
+      "kind": "test.contract",
+      "path": "worldcore/test/contract_adminNpcsRoutes.test.ts",
+      "dependsOn": [
+        "web-backend.routes.adminNpcs",
+        "web-frontend.pages.adminNpcs"
+      ],
+      "notes": [
+        "Contract: Admin NPC editor wiring is present (route + UI endpoints).",
+        "Guards /api/admin/npcs GET+POST endpoints from accidental removal/renaming.",
+        "Regex-based assertions to avoid brittleness during refactors."
+      ],
+      "provides": [
+        "Guards /api/admin/npcs mount + basic verbs",
+        "Guards AdminNpcsPage fetch wiring"
+      ]
+    },
+    "test.contractAdminNpcsSchemaColumns": {
+      "kind": "test.contract",
+      "path": "worldcore/test/contract_adminNpcsSchemaColumns.test.ts",
+      "dependsOn": [],
+      "notes": [
+        "Contract: npcs table schema includes required columns for the admin NPC editor.",
+        "Scans all schema migrations (CREATE TABLE + ALTER TABLE ADD COLUMN)."
+      ],
+      "provides": [
+        "Fails fast if npc columns are removed or renamed in infra/schema SQL"
+      ]
+    },
+    "test.contractAdminQuestsRoutes": {
+      "kind": "test.contract",
+      "path": "worldcore/test/contract_adminQuestsRoutes.test.ts",
+      "dependsOn": [
+        "web-backend.routes.adminQuests",
+        "web-frontend.pages.adminQuests"
+      ],
+      "notes": [
+        "Contract: Admin Quests editor wiring is present (route + UI endpoints).",
+        "Guards /api/admin/quests GET+POST endpoints from accidental removal/renaming.",
+        "Also asserts reward UX uses /api/admin/items/options (current editor behavior)."
+      ],
+      "provides": [
+        "Guards /api/admin/quests mount + basic verbs",
+        "Guards AdminQuestsPage fetch wiring",
+        "Guards reward item picker dependency on /api/admin/items/options"
+      ]
+    },
+    "test.contractAdminQuestsSchemaColumns": {
+      "kind": "test.contract",
+      "path": "worldcore/test/contract_adminQuestsSchemaColumns.test.ts",
+      "dependsOn": [],
+      "notes": [
+        "Contract: quests, quest_objectives, quest_rewards schema include required columns for the admin quests editor.",
+        "Scans all schema migrations (CREATE TABLE + ALTER TABLE ADD COLUMN)."
+      ],
+      "provides": [
+        "Fails fast if quest columns are removed or renamed in infra/schema SQL"
       ]
     },
     "tools.simBrain": {

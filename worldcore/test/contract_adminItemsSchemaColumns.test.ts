@@ -1,13 +1,12 @@
-// worldcore/test/contract_adminSpellsSchemaColumns.test.ts
-// Contract guard: schema contains the columns used by the adminSpells editor.
+// worldcore/test/contract_adminItemsSchemaColumns.test.ts
+// Contract guard: schema contains the columns required by the adminItems editor.
 //
 // This test scans ALL schema files under worldcore/infra/schema so it is stable
 // even when we add ALTER TABLE migrations later.
 //
-// NOTE: adminSpells backend is schema-drift tolerant for a few historically renamed columns.
-// This contract enforces:
-//   - core columns MUST exist
-//   - for renamed pairs, at least ONE of each pair MUST exist
+// Unlike spells, we haven't standardized item "kind/tags/enabled" naming yet.
+// Keep this conservative: enforce the minimum set that the editor can't function without,
+// and avoid hard-coding speculative column names.
 
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -34,7 +33,6 @@ function listSqlFiles(dir: string): string[] {
 }
 
 function stripSqlComments(sql: string): string {
-  // Remove -- line comments and /* */ blocks. Simple but good enough for schema parsing.
   const noLine = sql.replace(/--.*$/gm, "");
   return noLine.replace(/\/\*[\s\S]*?\*\//g, "");
 }
@@ -42,8 +40,6 @@ function stripSqlComments(sql: string): string {
 function extractTableColumnsFromCreate(sql: string, tableName: string): string[] {
   const cleaned = stripSqlComments(sql);
 
-  // Match ANY CREATE TABLE ... ( ... ) blocks, then pick the one for the target table.
-  // Handles qualified names like public.spells, quoted identifiers, and IF NOT EXISTS.
   const createRe = /create\s+table\s+(?:if\s+not\s+exists\s+)?([^\(]+)\(([^;]*?)\)\s*;/gi;
   let m: RegExpExecArray | null;
   let inside = "";
@@ -59,8 +55,6 @@ function extractTableColumnsFromCreate(sql: string, tableName: string): string[]
   if (!inside) return [];
 
   const cols: string[] = [];
-
-  // Split by commas, but tolerate commas inside parens (e.g., numeric(10,2)).
   const parts: string[] = [];
   let buf = "";
   let depth = 0;
@@ -79,11 +73,8 @@ function extractTableColumnsFromCreate(sql: string, tableName: string): string[]
   for (const raw of parts) {
     const line = raw.trim();
     if (!line) continue;
-
-    // Ignore constraints / indexes inside create-table blocks.
     if (/^(constraint|primary\s+key|unique|foreign\s+key|check)\b/i.test(line)) continue;
 
-    // Column name is first token (possibly quoted).
     const colMatch =
       line.match(/^"([^"]+)"\s+/) || line.match(/^([a-zA-Z_][a-zA-Z0-9_]*)\s+/);
     if (!colMatch) continue;
@@ -94,7 +85,6 @@ function extractTableColumnsFromCreate(sql: string, tableName: string): string[]
       .trim();
     if (col) cols.push(col);
   }
-
   return cols;
 }
 
@@ -102,7 +92,6 @@ function extractTableColumnsFromAlter(sql: string, tableName: string): string[] 
   const cleaned = stripSqlComments(sql);
 
   const cols: string[] = [];
-  // Capture: ALTER TABLE [schema.]<tableName> ADD COLUMN [IF NOT EXISTS] col_name
   const t = tableName.toLowerCase();
   const re = new RegExp(
     String.raw`alter\s+table\s+(?:if\s+exists\s+)?(?:[a-zA-Z_][a-zA-Z0-9_]*\.)?${t}\s+add\s+column\s+(?:if\s+not\s+exists\s+)?("[^"]+"|[a-zA-Z_][a-zA-Z0-9_]*)`,
@@ -134,57 +123,22 @@ function requireAll(cols: Set<string>, required: string[]): string[] {
   return required.filter((c) => !cols.has(c));
 }
 
-function requireOneOf(cols: Set<string>, oneOf: string[][]): string[] {
-  const missingGroups: string[] = [];
-  for (const group of oneOf) {
-    const ok = group.some((c) => cols.has(c));
-    if (!ok) missingGroups.push(group.join(" OR "));
-  }
-  return missingGroups;
-}
-
-test("[contract] spells table contains columns used by adminSpells editor", () => {
+test("[contract] items table contains minimum columns for adminItems editor", () => {
   const repoRoot = repoRootFromDistTestDir();
   const schemaDir = path.join(repoRoot, "worldcore", "infra", "schema");
 
-  const cols = collectTableColumns(schemaDir, "spells");
+  const cols = collectTableColumns(schemaDir, "items");
 
-  // Core columns required regardless of drift-tolerant mapping.
-  const requiredCore = [
-    "id",
-    "name",
-    "description",
-    "kind",
-    "class_id",
-    "min_level",
-    "school",
-    "is_song",
-    "song_school",
-    "cooldown_ms",
-    "flat_bonus",
-    "heal_amount",
-    "flags",
-    "status_effect",
-    "cleanse",
-    "tags",
-    "created_at",
-    "updated_at",
-  ];
+  // Minimum viability:
+  // - list needs id + name
+  // - editor needs description (nullable is fine)
+  // - audit/maintenance relies on timestamps
+  const requiredCore = ["id", "name", "description", "created_at", "updated_at"];
 
-  // Drift-tolerant pairs: backend supports either name.
-  const requireAtLeastOne = [
-    ["resource_type", "resource"],
-    ["resource_cost", "cost"],
-    ["damage_multiplier", "damage_mult"],
-    ["is_enabled", "enabled"],
-  ];
-
-  const missingCore = requireAll(cols, requiredCore);
-  const missingPairs = requireOneOf(cols, requireAtLeastOne);
-
-  const problems: string[] = [];
-  if (missingCore.length) problems.push(`missing core columns: ${missingCore.join(", ")}`);
-  if (missingPairs.length) problems.push(`missing required column groups: ${missingPairs.join(" | ")}`);
-
-  assert.equal(problems.length, 0, `spells schema contract failed: ${problems.join(" ; ")}`);
+  const missing = requireAll(cols, requiredCore);
+  assert.equal(
+    missing.length,
+    0,
+    `items schema contract failed: missing minimum columns: ${missing.join(", ")}`,
+  );
 });

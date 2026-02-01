@@ -462,11 +462,28 @@
       ],
       "service": "admin.hub"
     },
-    "web-frontend.pages.AdminSpellsPage": {
+    "web-frontend.pages.adminSpells": {
+      "service": "admin.spells",
+      "kind": "ui",
       "path": "web-frontend/pages/AdminSpellsPage.tsx",
-      "class": "(page) AdminSpellsPage",
-      "tags": ["web-frontend", "admin", "spells", "editor"],
-      "notes": "Admin Spell Editor (v1) UI: list/search, edit + upsert."
+      "class": null,
+      "lifecycle": "singleton",
+      "ctorArgs": [],
+      "dependsOn": [],
+      "notes": [
+        "Uses same-origin /api requests (dev via Vite proxy; prod via reverse proxy / same host).",
+        "Endpoints: GET /api/admin/spells?q&limit&offset; POST /api/admin/spells; then refreshes list.",
+        "Supports search + paging so spell table growth doesn't break UX."
+      ],
+      "owns": [
+        "client-side form state",
+        "search + paging state (q/limit/offset)"
+      ],
+      "provides": [
+        "Spell list + edit/create UI",
+        "Search + paging for spell list",
+        "Edits tagsText/effectsText serialized fields"
+      ]
     }
   }
 }
