@@ -1107,6 +1107,36 @@
       "class": "(router) adminSpellsRouter",
       "tags": ["web-backend", "admin", "spells", "editor"],
       "notes": "Admin Spell Editor (v1) routes: list/search, get by id, upsert"
+    },
+    "web-backend.routes.adminAbilities": {
+      "class": null,
+      "ctorArgs": [],
+      "dependsOn": ["npm:express", "npm:pg", "worldcore:db/Database"],
+      "kind": "module",
+      "lifecycle": "singleton",
+      "notes": [
+        "Admin abilities catalog editor routes: list/search + upsert.",
+        "Edits public.abilities metadata. Mechanics remain code-defined in worldcore/abilities/AbilityTypes.ts (for now)."
+      ],
+      "owns": [],
+      "path": "web-backend/routes/adminAbilities.ts",
+      "provides": ["GET /api/admin/abilities", "POST /api/admin/abilities"],
+      "service": "http.adminRoutes"
+    },
+    "web-backend.routes.adminAbilityUnlocks": {
+      "class": null,
+      "ctorArgs": [],
+      "dependsOn": ["npm:express", "npm:pg", "worldcore:db/Database"],
+      "kind": "module",
+      "lifecycle": "singleton",
+      "notes": [
+        "Admin ability unlock rules editor routes: list/search + upsert.",
+        "Edits public.ability_unlocks (class_id + ability_id primary key)."
+      ],
+      "owns": [],
+      "path": "web-backend/routes/adminAbilityUnlocks.ts",
+      "provides": ["GET /api/admin/ability_unlocks", "POST /api/admin/ability_unlocks"],
+      "service": "http.adminRoutes"
     }
   }
 }

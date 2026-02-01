@@ -57,6 +57,10 @@ test("[contract] /api/admin mounts are gated + adminAuth semantics exist", () =>
     { mount: "/api/admin/npcs", routerName: "adminNpcsRouter" },
     { mount: "/api/admin/items", routerName: "adminItemsRouter" },
     { mount: "/api/admin/spells", routerName: "adminSpellsRouter" },
+
+    { mount: "/api/admin/abilities", routerName: "adminAbilitiesRouter" },
+    { mount: "/api/admin/ability_unlocks", routerName: "adminAbilityUnlocksRouter" },
+
     { mount: "/api/admin/spawn_points", routerName: "adminSpawnPointsRouter" },
     { mount: "/api/admin/vendor_audit", routerName: "adminVendorAuditRouter" },
     { mount: "/api/admin/vendor_economy", routerName: "adminVendorEconomyRouter" },
@@ -122,11 +126,7 @@ test("[contract] /api/admin mounts are gated + adminAuth semantics exist", () =>
   mustContain(authSrc, "PW_ADMIN_BYPASS", "adminAuth should contain explicit PW_ADMIN_BYPASS knob");
   mustAnyMatch(
     authSrc,
-    [
-      /bypass\s*===\s*["']1["']/,
-      /bypass\s*===\s*["']true["']/,
-      /PW_ADMIN_BYPASS/i,
-    ],
+    [/bypass\s*===\s*["']1["']/, /bypass\s*===\s*["']true["']/, /PW_ADMIN_BYPASS/i],
     "adminAuth bypass should only activate for explicit values like '1' or 'true'",
   );
 });

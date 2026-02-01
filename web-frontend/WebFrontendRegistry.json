@@ -484,6 +484,12 @@
         "Search + paging for spell list",
         "Edits tagsText/effectsText serialized fields"
       ]
+    },
+    "web-frontend.pages.AdminAbilitiesPage": {
+      "path": "web-frontend/pages/AdminAbilitiesPage.tsx",
+      "class": "(page) AdminAbilitiesPage",
+      "tags": ["web-frontend", "admin", "abilities", "editor"],
+      "notes": "Admin Abilities Editor UI (v1): ability catalog + unlock rules, list/search + edit + upsert."
     }
   }
 }

@@ -64,6 +64,11 @@ export function AdminHubPage(props: { onGo: (path: string) => void; role?: strin
       description: "Spell prototypes + effect payload editing.",
     },
     {
+      title: "Abilities",
+      path: "/admin/abilities",
+      description: "Ability catalog + unlock rules (auto-grant vs trainable).",
+    },
+    {
       title: "Vendor Economy",
       path: "/admin/vendor_economy",
       description: "View and tune vendor pricing/restock knobs (tier policy + overrides).",

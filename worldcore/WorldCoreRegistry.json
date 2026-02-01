@@ -7278,6 +7278,52 @@
         "Guards root-only spawn_points destructive endpoints remain protected"
       ]
     },
+    "test.contractAdminAbilitiesRoutes": {
+      "kind": "test.contract",
+      "path": "worldcore/test/contract_adminAbilitiesRoutes.test.ts",
+      "dependsOn": ["web-backend.routes.adminAbilities", "web-frontend.pages.AdminAbilitiesPage"],
+      "notes": [
+        "Contract: AdminAbilities editor wiring is present (route + UI endpoint references).",
+        "Regex-based assertions to avoid brittleness during UI refactors."
+      ],
+      "provides": [
+        "Guards /api/admin/abilities GET+POST endpoints from accidental removal/renaming",
+        "Guards AdminAbilitiesPage fetch wiring (catalog)"
+      ]
+    },
+    "test.contractAdminAbilityUnlocksRoutes": {
+      "kind": "test.contract",
+      "path": "worldcore/test/contract_adminAbilityUnlocksRoutes.test.ts",
+      "dependsOn": ["web-backend.routes.adminAbilityUnlocks", "web-frontend.pages.AdminAbilitiesPage"],
+      "notes": [
+        "Contract: Admin ability_unlocks editor wiring is present (route + UI endpoint references).",
+        "Regex-based assertions to avoid brittleness during UI refactors."
+      ],
+      "provides": [
+        "Guards /api/admin/ability_unlocks GET+POST endpoints from accidental removal/renaming",
+        "Guards AdminAbilitiesPage fetch wiring (unlock rules)"
+      ]
+    },
+    "test.contractAdminAbilitiesSchemaColumns": {
+      "kind": "test.contract",
+      "path": "worldcore/test/contract_adminAbilitiesSchemaColumns.test.ts",
+      "dependsOn": ["infra.schema"],
+      "notes": [
+        "Contract: abilities table schema includes columns required by the admin abilities editor.",
+        "Structural scan of worldcore/infra/schema/*.sql (no DB needed)."
+      ],
+      "provides": ["Guards abilities schema columns used by AdminAbilities editor"]
+    },
+    "test.contractAdminAbilityUnlocksSchemaColumns": {
+      "kind": "test.contract",
+      "path": "worldcore/test/contract_adminAbilityUnlocksSchemaColumns.test.ts",
+      "dependsOn": ["infra.schema"],
+      "notes": [
+        "Contract: ability_unlocks table schema includes columns required by the admin unlock rules editor.",
+        "Structural scan of worldcore/infra/schema/*.sql (no DB needed)."
+      ],
+      "provides": ["Guards ability_unlocks schema columns used by AdminAbilities editor"]
+    },
     "tools.simBrain": {
       "dependsOn": [
         "db.Database",

@@ -25,6 +25,8 @@ import adminQuestsRouter from "./routes/adminQuests";
 import adminNpcsRouter from "./routes/adminNpcs";
 import { adminItemsRouter } from "./routes/adminItems";
 import { adminSpellsRouter } from "./routes/adminSpells";
+import { adminAbilitiesRouter } from "./routes/adminAbilities";
+import { adminAbilityUnlocksRouter } from "./routes/adminAbilityUnlocks";
 import adminSpawnPointsRouter from "./routes/adminSpawnPoints";
 import { adminVendorAuditRouter } from "./routes/adminVendorAudit";
 import { adminVendorEconomyRouter } from "./routes/adminVendorEconomy";
@@ -152,6 +154,8 @@ app.use("/api/admin/quests", maybeRequireAdmin("/api/admin/quests"), adminQuests
 app.use("/api/admin/npcs", maybeRequireAdmin("/api/admin/npcs"), adminNpcsRouter);
 app.use("/api/admin/items", maybeRequireAdmin("/api/admin/items"), adminItemsRouter);
 app.use("/api/admin/spells", maybeRequireAdmin("/api/admin/spells"), adminSpellsRouter);
+app.use("/api/admin/abilities", maybeRequireAdmin("/api/admin/abilities"), adminAbilitiesRouter);
+app.use("/api/admin/ability_unlocks", maybeRequireAdmin("/api/admin/ability_unlocks"), adminAbilityUnlocksRouter);
 app.use("/api/admin/spawn_points", maybeRequireAdmin("/api/admin/spawn_points"), adminSpawnPointsRouter);
 app.use("/api/admin/vendor_audit", maybeRequireAdmin("/api/admin/vendor_audit"), adminVendorAuditRouter);
 app.use("/api/admin/vendor_economy", maybeRequireAdmin("/api/admin/vendor_economy"), adminVendorEconomyRouter);
