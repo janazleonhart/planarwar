@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { explainAdminError, getAdminCaps, getAuthToken } from "../lib/api";
+import { AdminNotice, AdminPanel, AdminShell, AdminTwoCol } from "../components/admin/AdminUI";
 import { ItemOption, ItemPicker } from "../components/ItemPicker";
 
 type LootRow = {
@@ -228,251 +229,245 @@ export function AdminNpcsPage() {
   };
 
   return (
-    <div style={{ padding: 16 }}>
-      <h1>NPC Editor (v0)</h1>
-
-      {error && <div style={{ color: "red", marginBottom: 8 }}>Error: {error}</div>}
-
-      <div style={{ display: "flex", gap: 24, alignItems: "flex-start" }}>
-        {/* Left: list */}
-        <div style={{ minWidth: 300 }}>
-          <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
-            <strong>NPCs in DB</strong>
-            <button onClick={startNew}>New</button>
-          </div>
-
-          <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
-            {npcs.map((it) => (
-              <li
-                key={it.id}
-                style={{
-                  padding: 6,
-                  marginBottom: 4,
-                  border: it.id === selectedId ? "2px solid #4caf50" : "1px solid #ccc",
-                  borderRadius: 4,
-                  cursor: "pointer",
-                  fontSize: 13,
-                }}
-                onClick={() => setSelectedId(it.id)}
-              >
-                <div>
-                  <strong>{it.name}</strong> <code>({it.id})</code>
-                </div>
-                <div style={{ fontSize: 11 }}>lvl {it.level} • HP {it.maxHp} • dmg {it.dmgMin}-{it.dmgMax}</div>
-                <div style={{ fontSize: 11, opacity: 0.85 }}>tags: {it.tagsText || "(none)"}</div>
-              </li>
-            ))}
-            {npcs.length === 0 && <li>No DB NPCs yet.</li>}
-          </ul>
+    <AdminShell
+      title="NPCs"
+      subtitle="DB-backed NPC editor (v0) • /api/admin/npcs"
+      actions={
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          {!canWrite ? <span style={{ fontSize: 12, color: "rgba(0,0,0,0.65)" }}>Read-only</span> : null}
+          <button type="button" onClick={startNew} disabled={saving}>
+            New
+          </button>
         </div>
+      }
+    >
+      {error ? <AdminNotice kind="error">Error: {error}</AdminNotice> : null}
 
-        {/* Right: form */}
-        <div style={{ flex: 1 }}>
-          {form ? (
-            <div style={{ border: "1px solid #ccc", borderRadius: 4, padding: 12 }}>
-              <div style={{ marginBottom: 8 }}>
-                <label>
-                  ID:
-                  <input style={{ width: "100%" }} value={form.id} onChange={(e) => updateField("id", e.target.value)} />
-                </label>
-              </div>
-
-              <div style={{ marginBottom: 8 }}>
-                <label>
-                  Name:
-                  <input
-                    style={{ width: "100%" }}
-                    value={form.name}
-                    onChange={(e) => updateField("name", e.target.value)}
-                  />
-                </label>
-              </div>
-
-              <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
-                <label style={{ flex: 1 }}>
-                  Level:
-                  <input
-                    type="number"
-                    style={{ width: "100%" }}
-                    value={form.level}
-                    onChange={(e) => updateField("level", Math.max(1, Math.trunc(Number(e.target.value) || 1)))}
-                  />
-                </label>
-
-                <label style={{ flex: 1 }}>
-                  Max HP:
-                  <input
-                    type="number"
-                    style={{ width: "100%" }}
-                    value={form.maxHp}
-                    onChange={(e) => updateField("maxHp", Math.max(1, Math.trunc(Number(e.target.value) || 1)))}
-                  />
-                </label>
-              </div>
-
-              <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
-                <label style={{ flex: 1 }}>
-                  Damage min:
-                  <input
-                    type="number"
-                    style={{ width: "100%" }}
-                    value={form.dmgMin}
-                    onChange={(e) => updateField("dmgMin", Math.max(0, Math.trunc(Number(e.target.value) || 0)))}
-                  />
-                </label>
-
-                <label style={{ flex: 1 }}>
-                  Damage max:
-                  <input
-                    type="number"
-                    style={{ width: "100%" }}
-                    value={form.dmgMax}
-                    onChange={(e) => updateField("dmgMax", Math.max(0, Math.trunc(Number(e.target.value) || 0)))}
-                  />
-                </label>
-              </div>
-
-              <div style={{ marginBottom: 8 }}>
-                <label>
-                  Model (optional):
-                  <input
-                    style={{ width: "100%" }}
-                    value={form.model ?? ""}
-                    onChange={(e) => updateField("model", e.target.value)}
-                  />
-                </label>
-              </div>
-
-              <div style={{ marginBottom: 8 }}>
-                <label>
-                  Tags (comma-separated):
-                  <input
-                    style={{ width: "100%" }}
-                    value={form.tagsText ?? ""}
-                    onChange={(e) => updateField("tagsText", e.target.value)}
-                  />
-                </label>
-              </div>
-
-              <div style={{ marginBottom: 8 }}>
-                <label>
-                  XP Reward:
-                  <input
-                    type="number"
-                    style={{ width: "100%" }}
-                    value={form.xpReward}
-                    onChange={(e) => updateField("xpReward", Math.max(0, Math.trunc(Number(e.target.value) || 0)))}
-                  />
-                </label>
-              </div>
-
-              <fieldset style={{ marginTop: 12 }}>
-                <legend>Loot (optional)</legend>
-
-                {unknownLoot.length > 0 && (
-                  <div
-                    style={{
-                      padding: 8,
-                      marginBottom: 8,
-                      border: "1px solid #b00020",
-                      borderRadius: 4,
-                      background: "#fff5f5",
-                    }}
+      <AdminTwoCol
+        leftWidth={360}
+        left={
+          <AdminPanel title="NPCs in DB" subtitle="Select an NPC to edit">
+            <ul style={{ listStyle: "none", padding: 0, margin: 0, display: "grid", gap: 8 }}>
+              {npcs.map((it) => (
+                <li key={it.id}>
+                  <button
+                    type="button"
+                    className="pw-card"
+                    data-active={it.id === selectedId ? "true" : "false"}
+                    onClick={() => setSelectedId(it.id)}
+                    style={{ width: "100%", textAlign: "left" }}
                   >
-                    <strong style={{ color: "#b00020" }}>Loot validation:</strong>
-                    <div style={{ fontSize: 12, marginTop: 4 }}>
-                      {unknownLoot.map((u) => (
-                        <div key={`${u.idx}:${u.itemId}`}>
-                          Row {u.idx + 1}: unknown <code>{u.itemId}</code>
-                        </div>
-                      ))}
+                    <div style={{ fontWeight: 900, fontSize: 13 }}>
+                      {it.name} <code>({it.id})</code>
                     </div>
-                    <div style={{ fontSize: 12, marginTop: 4, opacity: 0.9 }}>
-                      Fix typos or create the items in the Item Editor first.
+                    <div style={{ fontSize: 12, color: "rgba(0,0,0,0.65)", marginTop: 2 }}>
+                      lvl {it.level} • HP {it.maxHp} • dmg {it.dmgMin}-{it.dmgMax}
                     </div>
-                  </div>
-                )}
-
-                {form.loot?.length ? (
-                  form.loot.map((row, idx) => (
-                    <div key={idx} style={{ display: "flex", gap: 8, marginBottom: 6, alignItems: "center" }}>
-                      <ItemPicker
-                        value={row.itemId}
-                        onChange={(next) => updateLootRow(idx, "itemId", next)}
-                        disabled={!canWrite || saving}
-                        listId={`npc-loot-items-${idx}`}
-                        onResolved={(opt) => {
-                          setLootResolved((prev) => ({ ...prev, [idx]: opt }));
-                          if (opt) {
-                            // Also carry label in the payload for nicer UX when reselecting.
-                            setForm((prev) => {
-                              if (!prev) return prev;
-                              const loot = [...(prev.loot ?? [])];
-                              const r = { ...(loot[idx] ?? row) };
-                              r.itemName = opt.name;
-                              r.itemRarity = opt.rarity;
-                              loot[idx] = r;
-                              return { ...prev, loot };
-                            });
-                          }
-                        }}
-                        style={{ width: 220 }}
-                      />
-
-                      <input
-                        type="number"
-                        placeholder="chance"
-                        style={{ width: 80 }}
-                        value={row.chance}
-                        step="0.01"
-                        min="0"
-                        max="1"
-                        onChange={(e) => updateLootRow(idx, "chance", e.target.value)}
-                      />
-                      <input
-                        type="number"
-                        placeholder="min"
-                        style={{ width: 60 }}
-                        value={row.minQty}
-                        onChange={(e) => updateLootRow(idx, "minQty", e.target.value)}
-                      />
-                      <input
-                        type="number"
-                        placeholder="max"
-                        style={{ width: 60 }}
-                        value={row.maxQty}
-                        onChange={(e) => updateLootRow(idx, "maxQty", e.target.value)}
-                      />
-                      <button type="button" onClick={() => removeLootRow(idx)} disabled={!canWrite || saving}>
-                        X
-                      </button>
+                    <div style={{ fontSize: 12, color: "rgba(0,0,0,0.65)", marginTop: 2 }}>
+                      tags: {it.tagsText || "(none)"}
                     </div>
-                  ))
-                ) : (
-                  <div style={{ fontSize: 12, marginBottom: 4 }}>No loot rows. Add some if this NPC should drop items.</div>
-                )}
+                  </button>
+                </li>
+              ))}
+              {npcs.length === 0 ? <li style={{ fontSize: 12, color: "rgba(0,0,0,0.65)" }}>No DB NPCs yet.</li> : null}
+            </ul>
+          </AdminPanel>
+        }
+        right={
+          <AdminPanel title="Editor" subtitle="Edit fields, validate loot, then save">
+            {form ? (
+              <div style={{ border: "1px solid #ccc", borderRadius: 4, padding: 12 }}>
+                <div style={{ marginBottom: 8 }}>
+                  <label>
+                    ID:
+                    <input style={{ width: "100%" }} value={form.id} onChange={(e) => updateField("id", e.target.value)} />
+                  </label>
+                </div>
 
-                <button type="button" onClick={addLootRow} disabled={!canWrite || saving}>
-                  Add Loot Row
-                </button>
-              </fieldset>
+                <div style={{ marginBottom: 8 }}>
+                  <label>
+                    Name:
+                    <input style={{ width: "100%" }} value={form.name} onChange={(e) => updateField("name", e.target.value)} />
+                  </label>
+                </div>
 
-              <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
-                <button onClick={handleSave} disabled={!canSave}>
-                  {saving ? "Saving..." : "Save NPC"}
-                </button>
-                <button type="button" onClick={startNew} disabled={saving}>
-                  Clear / New
-                </button>
+                <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
+                  <label style={{ flex: 1 }}>
+                    Level:
+                    <input
+                      type="number"
+                      style={{ width: "100%" }}
+                      value={form.level}
+                      onChange={(e) => updateField("level", Math.max(1, Math.trunc(Number(e.target.value) || 1)))}
+                    />
+                  </label>
+
+                  <label style={{ flex: 1 }}>
+                    Max HP:
+                    <input
+                      type="number"
+                      style={{ width: "100%" }}
+                      value={form.maxHp}
+                      onChange={(e) => updateField("maxHp", Math.max(1, Math.trunc(Number(e.target.value) || 1)))}
+                    />
+                  </label>
+                </div>
+
+                <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
+                  <label style={{ flex: 1 }}>
+                    Damage min:
+                    <input
+                      type="number"
+                      style={{ width: "100%" }}
+                      value={form.dmgMin}
+                      onChange={(e) => updateField("dmgMin", Math.max(0, Math.trunc(Number(e.target.value) || 0)))}
+                    />
+                  </label>
+
+                  <label style={{ flex: 1 }}>
+                    Damage max:
+                    <input
+                      type="number"
+                      style={{ width: "100%" }}
+                      value={form.dmgMax}
+                      onChange={(e) => updateField("dmgMax", Math.max(0, Math.trunc(Number(e.target.value) || 0)))}
+                    />
+                  </label>
+                </div>
+
+                <div style={{ marginBottom: 8 }}>
+                  <label>
+                    Model (optional):
+                    <input style={{ width: "100%" }} value={form.model ?? ""} onChange={(e) => updateField("model", e.target.value)} />
+                  </label>
+                </div>
+
+                <div style={{ marginBottom: 8 }}>
+                  <label>
+                    Tags (comma-separated):
+                    <input style={{ width: "100%" }} value={form.tagsText ?? ""} onChange={(e) => updateField("tagsText", e.target.value)} />
+                  </label>
+                </div>
+
+                <div style={{ marginBottom: 8 }}>
+                  <label>
+                    XP Reward:
+                    <input
+                      type="number"
+                      style={{ width: "100%" }}
+                      value={form.xpReward}
+                      onChange={(e) => updateField("xpReward", Math.max(0, Math.trunc(Number(e.target.value) || 0)))}
+                    />
+                  </label>
+                </div>
+
+                <fieldset style={{ marginTop: 12 }}>
+                  <legend>Loot (optional)</legend>
+
+                  {unknownLoot.length > 0 && (
+                    <div
+                      style={{
+                        padding: 8,
+                        marginBottom: 8,
+                        border: "1px solid #b00020",
+                        borderRadius: 4,
+                        background: "#fff5f5",
+                      }}
+                    >
+                      <strong style={{ color: "#b00020" }}>Loot validation:</strong>
+                      <div style={{ fontSize: 12, marginTop: 4 }}>
+                        {unknownLoot.map((u) => (
+                          <div key={`${u.idx}:${u.itemId}`}>
+                            Row {u.idx + 1}: unknown <code>{u.itemId}</code>
+                          </div>
+                        ))}
+                      </div>
+                      <div style={{ fontSize: 12, marginTop: 4, opacity: 0.9 }}>
+                        Fix typos or create the items in the Item Editor first.
+                      </div>
+                    </div>
+                  )}
+
+                  {form.loot?.length ? (
+                    form.loot.map((row, idx) => (
+                      <div key={idx} style={{ display: "flex", gap: 8, marginBottom: 6, alignItems: "center", flexWrap: "wrap" }}>
+                        <ItemPicker
+                          value={row.itemId}
+                          onChange={(next) => updateLootRow(idx, "itemId", next)}
+                          disabled={!canWrite || saving}
+                          listId={`npc-loot-items-${idx}`}
+                          onResolved={(opt) => {
+                            setLootResolved((prev) => ({ ...prev, [idx]: opt }));
+                            if (opt) {
+                              setForm((prev) => {
+                                if (!prev) return prev;
+                                const loot = [...(prev.loot ?? [])];
+                                const r = { ...(loot[idx] ?? row) };
+                                r.itemName = opt.name;
+                                r.itemRarity = opt.rarity;
+                                loot[idx] = r;
+                                return { ...prev, loot };
+                              });
+                            }
+                          }}
+                          style={{ width: 220 }}
+                        />
+
+                        <input
+                          type="number"
+                          placeholder="chance"
+                          style={{ width: 90 }}
+                          value={row.chance}
+                          step="0.01"
+                          min="0"
+                          max="1"
+                          onChange={(e) => updateLootRow(idx, "chance", e.target.value)}
+                        />
+                        <input
+                          type="number"
+                          placeholder="min"
+                          style={{ width: 70 }}
+                          value={row.minQty}
+                          onChange={(e) => updateLootRow(idx, "minQty", e.target.value)}
+                        />
+                        <input
+                          type="number"
+                          placeholder="max"
+                          style={{ width: 70 }}
+                          value={row.maxQty}
+                          onChange={(e) => updateLootRow(idx, "maxQty", e.target.value)}
+                        />
+                        <button type="button" onClick={() => removeLootRow(idx)} disabled={!canWrite || saving}>
+                          X
+                        </button>
+                      </div>
+                    ))
+                  ) : (
+                    <div style={{ fontSize: 12, marginBottom: 4 }}>No loot rows. Add some if this NPC should drop items.</div>
+                  )}
+
+                  <button type="button" onClick={addLootRow} disabled={!canWrite || saving}>
+                    Add Loot Row
+                  </button>
+                </fieldset>
+
+                <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
+                  <button type="button" data-kind="primary" onClick={handleSave} disabled={!canSave}>
+                    {saving ? "Saving..." : "Save NPC"}
+                  </button>
+                  <button type="button" onClick={startNew} disabled={saving}>
+                    Clear / New
+                  </button>
+                </div>
+
+                {!canWrite && <div style={{ marginTop: 8, fontSize: 12, opacity: 0.8 }}>Read-only admin session.</div>}
               </div>
-
-              {!canWrite && <div style={{ marginTop: 8, fontSize: 12, opacity: 0.8 }}>Read-only admin session.</div>}
-            </div>
-          ) : (
-            <div>Select an NPC or click “New”.</div>
-          )}
-        </div>
-      </div>
-    </div>
+            ) : (
+              <div style={{ fontSize: 12, color: "rgba(0,0,0,0.65)" }}>Select an NPC or click “New”.</div>
+            )}
+          </AdminPanel>
+        }
+      />
+    </AdminShell>
   );
 }

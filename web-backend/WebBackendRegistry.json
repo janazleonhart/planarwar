@@ -541,6 +541,34 @@
       ],
       "service": "package.meta"
     },
+    "web-backend.middleware.adminAuth": {
+      "class": null,
+      "ctorArgs": [
+        "PostgresAuthService()"
+      ],
+      "dependsOn": [
+        "npm:express",
+        "worldcore:auth/PostgresAuthService"
+      ],
+      "kind": "module",
+      "lifecycle": "singleton",
+      "notes": [
+        "Admin auth + RBAC middleware for /api/admin routes.",
+        "Verifies Bearer token via PostgresAuthService; resolves admin role from accounts.flags with back-compat fallbacks.",
+        "Enforces readonly vs editor vs root (readonly blocks write methods; root gates high-risk endpoints).",
+        "Dev bypass (explicit): PW_ADMIN_BYPASS=1|true disables all checks (OFF by default).",
+        "Attaches req.auth and req.admin { role, flags } for downstream handlers."
+      ],
+      "owns": [
+        "PostgresAuthService instance"
+      ],
+      "path": "web-backend/middleware/adminAuth.ts",
+      "provides": [
+        "requireAdmin(req,res,next)",
+        "maybeRequireAdmin(req,res,next)"
+      ],
+      "service": "http.middleware"
+    },    
     "web-backend.routes.abilities": {
       "class": "(router)",
       "ctorArgs": [],
@@ -565,6 +593,36 @@
       ],
       "service": "api.abilities"
     },
+    "web-backend.routes.adminAbilities": {
+      "class": null,
+      "ctorArgs": [],
+      "dependsOn": ["npm:express", "npm:pg", "worldcore:db/Database"],
+      "kind": "module",
+      "lifecycle": "singleton",
+      "notes": [
+        "Admin abilities catalog editor routes: list/search + upsert.",
+        "Edits public.abilities metadata. Mechanics remain code-defined in worldcore/abilities/AbilityTypes.ts (for now)."
+      ],
+      "owns": [],
+      "path": "web-backend/routes/adminAbilities.ts",
+      "provides": ["GET /api/admin/abilities", "POST /api/admin/abilities"],
+      "service": "http.adminRoutes"
+    },
+    "web-backend.routes.adminAbilityUnlocks": {
+      "class": null,
+      "ctorArgs": [],
+      "dependsOn": ["npm:express", "npm:pg", "worldcore:db/Database"],
+      "kind": "module",
+      "lifecycle": "singleton",
+      "notes": [
+        "Admin ability unlock rules editor routes: list/search + upsert.",
+        "Edits public.ability_unlocks (class_id + ability_id primary key)."
+      ],
+      "owns": [],
+      "path": "web-backend/routes/adminAbilityUnlocks.ts",
+      "provides": ["GET /api/admin/ability_unlocks", "POST /api/admin/ability_unlocks"],
+      "service": "http.adminRoutes"
+    },
     "web-backend.routes.adminItems": {
       "class": null,
       "ctorArgs": [],
@@ -577,7 +635,8 @@
       "notes": [
         "Admin item list + upsert backed by worldcore DB tables.",
         "Adds lightweight typeahead endpoint for ItemPicker (id/name lookup).",
-        "List endpoint supports q/limit/offset (backwards compatible for callers that ignore pagination fields)."
+        "List endpoint supports q/limit/offset (backwards compatible for callers that ignore pagination fields).",
+        "Uses AdminUI kit (AdminShell/AdminTwoCol/AdminPanel) for modern two-column layout."
       ],
       "owns": [],
       "path": "web-backend/routes/adminItems.ts",
@@ -600,7 +659,8 @@
       "notes": [
         "Admin NPC list + upsert backed by worldcore DB tables.",
         "GET enriches npc loot rows with itemName/itemRarity when possible (items table lookup).",
-        "POST rejects unknown loot item ids to prevent seed/DB drift."
+        "POST rejects unknown loot item ids to prevent seed/DB drift.",
+        "Uses AdminUI kit (AdminShell/AdminTwoCol/AdminPanel) for modern two-column layout."
       ],
       "owns": [],
       "path": "web-backend/routes/adminNpcs.ts",
@@ -627,7 +687,8 @@
         "Admin quest list + upsert; reloads QuestRegistry in-process after changes.",
         "Supports quest_rewards: xp/gold/item",
         "Hydrates item name/rarity for collect_item objective + reward items on GET",
-        "Normalizes objective kind item_turnin <-> collect_item for editor compatibility"
+        "Normalizes objective kind item_turnin <-> collect_item for editor compatibility",
+        "Uses AdminUI kit (AdminShell/AdminTwoCol/AdminPanel) for modern two-column layout."
       ],
       "owns": [
         "PostgresQuestService instance"
@@ -692,6 +753,12 @@
       ],
       "service": "http.adminRoutes"
     },
+    "web-backend.routes.adminSpells": {
+      "path": "web-backend/routes/adminSpells.ts",
+      "class": "(router) adminSpellsRouter",
+      "tags": ["web-backend", "admin", "spells", "editor"],
+      "notes": "Admin Spell Editor (v1) routes: list/search, get by id, upsert"
+    },    
     "web-backend.routes.adminVendorAudit": {
       "class": null,
       "ctorArgs": [],
@@ -1073,70 +1140,6 @@
         "POST /api/workshop/collect"
       ],
       "service": "http.routes"
-    },
-    "web-backend.middleware.adminAuth": {
-      "class": null,
-      "ctorArgs": [
-        "PostgresAuthService()"
-      ],
-      "dependsOn": [
-        "npm:express",
-        "worldcore:auth/PostgresAuthService"
-      ],
-      "kind": "module",
-      "lifecycle": "singleton",
-      "notes": [
-        "Admin auth + RBAC middleware for /api/admin routes.",
-        "Verifies Bearer token via PostgresAuthService; resolves admin role from accounts.flags with back-compat fallbacks.",
-        "Enforces readonly vs editor vs root (readonly blocks write methods; root gates high-risk endpoints).",
-        "Dev bypass (explicit): PW_ADMIN_BYPASS=1|true disables all checks (OFF by default).",
-        "Attaches req.auth and req.admin { role, flags } for downstream handlers."
-      ],
-      "owns": [
-        "PostgresAuthService instance"
-      ],
-      "path": "web-backend/middleware/adminAuth.ts",
-      "provides": [
-        "requireAdmin(req,res,next)",
-        "maybeRequireAdmin(req,res,next)"
-      ],
-      "service": "http.middleware"
-    },
-    "web-backend.routes.adminSpells": {
-      "path": "web-backend/routes/adminSpells.ts",
-      "class": "(router) adminSpellsRouter",
-      "tags": ["web-backend", "admin", "spells", "editor"],
-      "notes": "Admin Spell Editor (v1) routes: list/search, get by id, upsert"
-    },
-    "web-backend.routes.adminAbilities": {
-      "class": null,
-      "ctorArgs": [],
-      "dependsOn": ["npm:express", "npm:pg", "worldcore:db/Database"],
-      "kind": "module",
-      "lifecycle": "singleton",
-      "notes": [
-        "Admin abilities catalog editor routes: list/search + upsert.",
-        "Edits public.abilities metadata. Mechanics remain code-defined in worldcore/abilities/AbilityTypes.ts (for now)."
-      ],
-      "owns": [],
-      "path": "web-backend/routes/adminAbilities.ts",
-      "provides": ["GET /api/admin/abilities", "POST /api/admin/abilities"],
-      "service": "http.adminRoutes"
-    },
-    "web-backend.routes.adminAbilityUnlocks": {
-      "class": null,
-      "ctorArgs": [],
-      "dependsOn": ["npm:express", "npm:pg", "worldcore:db/Database"],
-      "kind": "module",
-      "lifecycle": "singleton",
-      "notes": [
-        "Admin ability unlock rules editor routes: list/search + upsert.",
-        "Edits public.ability_unlocks (class_id + ability_id primary key)."
-      ],
-      "owns": [],
-      "path": "web-backend/routes/adminAbilityUnlocks.ts",
-      "provides": ["GET /api/admin/ability_unlocks", "POST /api/admin/ability_unlocks"],
-      "service": "http.adminRoutes"
-    }
+    }    
   }
 }

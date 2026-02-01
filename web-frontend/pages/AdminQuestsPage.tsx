@@ -2,6 +2,7 @@
 
 import { useEffect, useId, useMemo, useState } from "react";
 import { getAdminCaps, getAuthToken } from "../lib/api";
+import { AdminNotice, AdminPanel, AdminShell, AdminTwoCol } from "../components/admin/AdminUI";
 
 type ObjectiveKind = "kill" | "harvest" | "collect_item" | "craft" | "talk_to" | "city";
 
@@ -346,259 +347,239 @@ export function AdminQuestsPage() {
   };
 
   return (
-    <div style={{ padding: 16 }}>
-      <h1>Quest Editor (v0)</h1>
-
-      <div style={{ fontSize: 12, opacity: 0.7, marginBottom: 8 }}>
-        API: <code>/api</code> (same-origin via Vite proxy)
-      </div>
-
-      {error && <div style={{ color: "red", marginBottom: 8 }}>Error: {error}</div>}
-
-      <div style={{ display: "flex", gap: 24, alignItems: "flex-start" }}>
-        <div style={{ minWidth: 320 }}>
-          <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
-            <strong>Quests in DB</strong>
-            <button onClick={startNew}>New</button>
-          </div>
-
-          <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
-            {quests.map((q) => (
-              <li
-                key={q.id}
-                style={{
-                  padding: 6,
-                  marginBottom: 4,
-                  border: q.id === selectedId ? "2px solid #4caf50" : "1px solid #ccc",
-                  borderRadius: 4,
-                  cursor: "pointer",
-                }}
-                onClick={() => setSelectedId(q.id)}
-              >
-                <div>
-                  <strong>{q.name}</strong> <code>({q.id})</code>
-                </div>
-                <div style={{ fontSize: 12 }}>
-                  {q.repeatable ? "Repeatable" : "One-time"} • {q.objectiveKind} {q.objectiveRequired}x{" "}
-                  {formatObjectiveTarget(q)}
-                </div>
-              </li>
-            ))}
-            {quests.length === 0 && <li>No DB quests yet.</li>}
-          </ul>
+    <AdminShell
+      title="Quests"
+      subtitle="Quest editor (v0) • /api/admin/quests"
+      actions={
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          {!canWrite ? <span style={{ fontSize: 12, color: "rgba(0,0,0,0.65)" }}>Read-only</span> : null}
+          <button type="button" onClick={startNew} disabled={saving}>
+            New
+          </button>
         </div>
+      }
+    >
+      {error ? <AdminNotice kind="error">Error: {error}</AdminNotice> : null}
 
-        <div style={{ flex: 1 }}>
-          {form ? (
-            <div style={{ border: "1px solid #ccc", borderRadius: 4, padding: 12 }}>
-              <div style={{ marginBottom: 8 }}>
-                <label>
-                  ID:
-                  <input style={{ width: "100%" }} value={form.id} onChange={(e) => updateField("id", e.target.value)} />
-                </label>
-              </div>
-
-              <div style={{ marginBottom: 8 }}>
-                <label>
-                  Name:
-                  <input
-                    style={{ width: "100%" }}
-                    value={form.name}
-                    onChange={(e) => updateField("name", e.target.value)}
-                  />
-                </label>
-              </div>
-
-              <div style={{ marginBottom: 8 }}>
-                <label>
-                  Description:
-                  <textarea
-                    style={{ width: "100%", minHeight: 80 }}
-                    value={form.description}
-                    onChange={(e) => updateField("description", e.target.value)}
-                  />
-                </label>
-              </div>
-
-              <div style={{ marginBottom: 8 }}>
-                <label>
-                  <input
-                    type="checkbox"
-                    checked={form.repeatable}
-                    onChange={(e) => updateField("repeatable", e.target.checked)}
-                  />{" "}
-                  Repeatable
-                </label>
-
-                {form.repeatable && (
-                  <div>
-                    Max completions (empty = infinite):{" "}
-                    <input
-                      style={{ width: 80 }}
-                      value={form.maxCompletions === null ? "" : String(form.maxCompletions)}
-                      onChange={(e) =>
-                        updateField("maxCompletions", e.target.value === "" ? null : Number(e.target.value))
-                      }
-                    />
-                  </div>
-                )}
-              </div>
-
-              <fieldset style={{ marginBottom: 8 }}>
-                <legend>Objective (single, v0)</legend>
-
-                <div style={{ marginBottom: 4 }}>
+      <AdminTwoCol
+        leftWidth={380}
+        left={
+          <AdminPanel title="Quests in DB" subtitle="Select a quest to edit">
+            <ul style={{ listStyle: "none", padding: 0, margin: 0, display: "grid", gap: 8 }}>
+              {quests.map((q) => (
+                <li key={q.id}>
+                  <button
+                    type="button"
+                    className="pw-card"
+                    data-active={q.id === selectedId ? "true" : "false"}
+                    onClick={() => setSelectedId(q.id)}
+                    style={{ width: "100%", textAlign: "left" }}
+                  >
+                    <div style={{ fontWeight: 900, fontSize: 13 }}>
+                      {q.name} <code>({q.id})</code>
+                    </div>
+                    <div style={{ fontSize: 12, color: "rgba(0,0,0,0.65)", marginTop: 2 }}>
+                      {q.repeatable ? "Repeatable" : "One-time"} • {q.objectiveKind} {q.objectiveRequired}x {formatObjectiveTarget(q)}
+                    </div>
+                  </button>
+                </li>
+              ))}
+              {quests.length === 0 ? <li style={{ fontSize: 12, color: "rgba(0,0,0,0.65)" }}>No DB quests yet.</li> : null}
+            </ul>
+          </AdminPanel>
+        }
+        right={
+          <AdminPanel title="Editor" subtitle="Edit objective + rewards, then save">
+            {form ? (
+              <div style={{ border: "1px solid #ccc", borderRadius: 4, padding: 12 }}>
+                <div style={{ marginBottom: 8 }}>
                   <label>
-                    Kind:{" "}
-                    <select
-                      value={form.objectiveKind}
-                      onChange={(e) => {
-                        const next = e.target.value as ObjectiveKind;
-                        updateField("objectiveKind", next);
-                        setObjectiveItemResolved(null);
-                      }}
-                    >
-                      <option value="kill">Kill</option>
-                      <option value="harvest">Gathering</option>
-                      <option value="collect_item">Collect Item</option>
-                      <option value="craft">Craft</option>
-                      <option value="talk_to">Talk to NPC</option>
-                      <option value="city">City Action</option>
-                    </select>
-                  </label>
-                </div>
-
-                <div style={{ marginBottom: 4 }}>
-                  <label>
-                    {labelForTarget(form.objectiveKind)}:{" "}
-                    {form.objectiveKind === "collect_item" ? (
-                      <ItemIdPicker
-                        value={form.objectiveTargetId}
-                        disabled={saving || !canWrite}
-                        onChange={(next) => updateField("objectiveTargetId", next)}
-                        onResolved={(opt) => setObjectiveItemResolved(opt)}
-                      />
-                    ) : (
-                      <input value={form.objectiveTargetId} onChange={(e) => updateField("objectiveTargetId", e.target.value)} />
-                    )}
-                  </label>
-                </div>
-
-                <div>
-                  <label>
-                    Required:{" "}
-                    <input
-                      type="number"
-                      value={form.objectiveRequired}
-                      onChange={(e) => updateField("objectiveRequired", Number(e.target.value || 1))}
-                    />
-                  </label>
-                </div>
-              </fieldset>
-
-              <fieldset style={{ marginBottom: 8 }}>
-                <legend>Rewards</legend>
-
-                <div style={{ marginBottom: 4 }}>
-                  <label>
-                    XP:{" "}
-                    <input
-                      type="number"
-                      value={form.rewardXp}
-                      onChange={(e) => updateField("rewardXp", Number(e.target.value || 0))}
-                    />
+                    ID:
+                    <input style={{ width: "100%" }} value={form.id} onChange={(e) => updateField("id", e.target.value)} />
                   </label>
                 </div>
 
                 <div style={{ marginBottom: 8 }}>
                   <label>
-                    Gold:{" "}
-                    <input
-                      type="number"
-                      value={form.rewardGold}
-                      onChange={(e) => updateField("rewardGold", Number(e.target.value || 0))}
-                    />
+                    Name:
+                    <input style={{ width: "100%" }} value={form.name} onChange={(e) => updateField("name", e.target.value)} />
                   </label>
                 </div>
 
-                <div style={{ marginBottom: 4 }}>
-                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                    <strong>Item rewards</strong>
-                    <button type="button" onClick={addRewardItem} disabled={saving || !canWrite}>
-                      + Add item
-                    </button>
-                  </div>
+                <div style={{ marginBottom: 8 }}>
+                  <label>
+                    Description:
+                    <textarea style={{ width: "100%", minHeight: 80 }} value={form.description} onChange={(e) => updateField("description", e.target.value)} />
+                  </label>
+                </div>
 
-                  {(form.rewardItems ?? []).length ? (
-                    <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 6 }}>
-                      {(form.rewardItems ?? []).map((it, idx) => (
-                        <div
-                          key={idx}
-                          style={{
-                            display: "flex",
-                            gap: 8,
-                            alignItems: "center",
-                            padding: 6,
-                            border: "1px solid #ddd",
-                            borderRadius: 4,
-                          }}
-                        >
-                          <div style={{ flex: 1 }}>
-                            <ItemIdPicker
-                              value={it.itemId}
-                              disabled={saving || !canWrite}
-                              placeholder="reward item id (e.g. rat_tail)"
-                              onChange={(next) => {
-                                updateRewardItem(idx, { itemId: next });
-                                setRewardResolved((prev) => ({ ...prev, [idx]: null }));
-                              }}
-                              onResolved={(opt) => setRewardResolved((prev) => ({ ...prev, [idx]: opt }))}
-                            />
-                            {(it.itemName || it.itemRarity) && (
-                              <div style={{ fontSize: 12, opacity: 0.75, marginTop: 2 }}>
-                                {formatItemIdWithMeta(it.itemId, it.itemName, it.itemRarity)}
-                              </div>
-                            )}
-                          </div>
+                <div style={{ marginBottom: 8 }}>
+                  <label>
+                    <input type="checkbox" checked={form.repeatable} onChange={(e) => updateField("repeatable", e.target.checked)} />{" "}
+                    Repeatable
+                  </label>
 
-                          <label style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                            Qty
-                            <input
-                              type="number"
-                              style={{ width: 80 }}
-                              value={it.count ?? 1}
-                              onChange={(e) => updateRewardItem(idx, { count: Number(e.target.value || 1) })}
-                              disabled={saving || !canWrite}
-                              min={1}
-                            />
-                          </label>
-
-                          <button type="button" onClick={() => removeRewardItem(idx)} disabled={saving || !canWrite}>
-                            Remove
-                          </button>
-                        </div>
-                      ))}
+                  {form.repeatable && (
+                    <div>
+                      Max completions (empty = infinite):{" "}
+                      <input
+                        style={{ width: 80 }}
+                        value={form.maxCompletions === null ? "" : String(form.maxCompletions)}
+                        onChange={(e) => updateField("maxCompletions", e.target.value === "" ? null : Number(e.target.value))}
+                      />
                     </div>
-                  ) : (
-                    <div style={{ fontSize: 12, opacity: 0.7, marginTop: 6 }}>No item rewards yet.</div>
                   )}
                 </div>
-              </fieldset>
 
-              <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
-                <button onClick={handleSave} disabled={saving || !canWrite}>
-                  {saving ? "Saving..." : "Save Quest"}
-                </button>
-                <button type="button" onClick={startNew} disabled={saving}>
-                  Clear / New
-                </button>
+                <fieldset style={{ marginBottom: 8 }}>
+                  <legend>Objective (single, v0)</legend>
+
+                  <div style={{ marginBottom: 4 }}>
+                    <label>
+                      Kind:{" "}
+                      <select
+                        value={form.objectiveKind}
+                        onChange={(e) => {
+                          const next = e.target.value as ObjectiveKind;
+                          updateField("objectiveKind", next);
+                          setObjectiveItemResolved(null);
+                        }}
+                      >
+                        <option value="kill">Kill</option>
+                        <option value="harvest">Gathering</option>
+                        <option value="collect_item">Collect Item</option>
+                        <option value="craft">Craft</option>
+                        <option value="talk_to">Talk to NPC</option>
+                        <option value="city">City Action</option>
+                      </select>
+                    </label>
+                  </div>
+
+                  <div style={{ marginBottom: 4 }}>
+                    <label>
+                      {labelForTarget(form.objectiveKind)}:{" "}
+                      {form.objectiveKind === "collect_item" ? (
+                        <ItemIdPicker
+                          value={form.objectiveTargetId}
+                          disabled={saving || !canWrite}
+                          onChange={(next) => updateField("objectiveTargetId", next)}
+                          onResolved={(opt) => setObjectiveItemResolved(opt)}
+                        />
+                      ) : (
+                        <input value={form.objectiveTargetId} onChange={(e) => updateField("objectiveTargetId", e.target.value)} />
+                      )}
+                    </label>
+                  </div>
+
+                  <div>
+                    <label>
+                      Required:{" "}
+                      <input
+                        type="number"
+                        value={form.objectiveRequired}
+                        onChange={(e) => updateField("objectiveRequired", Number(e.target.value || 1))}
+                      />
+                    </label>
+                  </div>
+                </fieldset>
+
+                <fieldset style={{ marginBottom: 8 }}>
+                  <legend>Rewards</legend>
+
+                  <div style={{ marginBottom: 4 }}>
+                    <label>
+                      XP:{" "}
+                      <input type="number" value={form.rewardXp} onChange={(e) => updateField("rewardXp", Number(e.target.value || 0))} />
+                    </label>
+                  </div>
+
+                  <div style={{ marginBottom: 8 }}>
+                    <label>
+                      Gold:{" "}
+                      <input type="number" value={form.rewardGold} onChange={(e) => updateField("rewardGold", Number(e.target.value || 0))} />
+                    </label>
+                  </div>
+
+                  <div style={{ marginBottom: 4 }}>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                      <strong>Item rewards</strong>
+                      <button type="button" onClick={addRewardItem} disabled={saving || !canWrite}>
+                        + Add item
+                      </button>
+                    </div>
+
+                    {(form.rewardItems ?? []).length ? (
+                      <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 6 }}>
+                        {(form.rewardItems ?? []).map((it, idx) => (
+                          <div
+                            key={idx}
+                            style={{
+                              display: "flex",
+                              gap: 8,
+                              alignItems: "center",
+                              padding: 6,
+                              border: "1px solid #ddd",
+                              borderRadius: 4,
+                              flexWrap: "wrap",
+                            }}
+                          >
+                            <div style={{ flex: 1, minWidth: 220 }}>
+                              <ItemIdPicker
+                                value={it.itemId}
+                                disabled={saving || !canWrite}
+                                placeholder="reward item id (e.g. rat_tail)"
+                                onChange={(next) => {
+                                  updateRewardItem(idx, { itemId: next });
+                                  setRewardResolved((prev) => ({ ...prev, [idx]: null }));
+                                }}
+                                onResolved={(opt) => setRewardResolved((prev) => ({ ...prev, [idx]: opt }))}
+                              />
+                              {(it.itemName || it.itemRarity) && (
+                                <div style={{ fontSize: 12, opacity: 0.75, marginTop: 2 }}>
+                                  {formatItemIdWithMeta(it.itemId, it.itemName, it.itemRarity)}
+                                </div>
+                              )}
+                            </div>
+
+                            <label style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                              Qty
+                              <input
+                                type="number"
+                                style={{ width: 80 }}
+                                value={it.count ?? 1}
+                                onChange={(e) => updateRewardItem(idx, { count: Number(e.target.value || 1) })}
+                                disabled={saving || !canWrite}
+                                min={1}
+                              />
+                            </label>
+
+                            <button type="button" onClick={() => removeRewardItem(idx)} disabled={saving || !canWrite}>
+                              Remove
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div style={{ fontSize: 12, opacity: 0.7, marginTop: 6 }}>No item rewards yet.</div>
+                    )}
+                  </div>
+                </fieldset>
+
+                <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
+                  <button type="button" data-kind="primary" onClick={handleSave} disabled={saving || !canWrite}>
+                    {saving ? "Saving..." : "Save Quest"}
+                  </button>
+                  <button type="button" onClick={startNew} disabled={saving}>
+                    Clear / New
+                  </button>
+                </div>
               </div>
-            </div>
-          ) : (
-            <div>Select a quest or click “New”.</div>
-          )}
-        </div>
-      </div>
-    </div>
+            ) : (
+              <div style={{ fontSize: 12, color: "rgba(0,0,0,0.65)" }}>Select a quest or click “New”.</div>
+            )}
+          </AdminPanel>
+        }
+      />
+    </AdminShell>
   );
 }

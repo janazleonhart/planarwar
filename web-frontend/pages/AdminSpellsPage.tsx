@@ -345,8 +345,20 @@ export function AdminSpellsPage() {
   }
 
   return (
-    <div style={{ padding: 16, display: "flex", gap: 16, width: "100%", maxWidth: 1280, margin: "0 auto", boxSizing: "border-box", justifyContent: "center", alignItems: "flex-start", flexWrap: "wrap" }}>
-      <div style={{ flex: "0 0 420px", width: "100%", maxWidth: 420 }}>
+    <div
+      style={{
+        padding: 16,
+        display: "grid",
+        gridTemplateColumns: "minmax(320px, 420px) minmax(520px, 1fr)",
+        gap: 16,
+        width: "100%",
+        maxWidth: 1280,
+        margin: "0 auto",
+        boxSizing: "border-box",
+        alignItems: "start",
+      }}
+    >
+      <div style={{ width: "100%", maxWidth: 420, minWidth: 0 }}>
         <h2 style={{ marginTop: 0 }}>Admin — Spells</h2>
 
         {capsError && (
@@ -464,7 +476,7 @@ export function AdminSpellsPage() {
         </div>
       </div>
 
-      <div style={{ flex: 1, minWidth: 520 }}>
+      <div style={{ width: "100%", minWidth: 0 }}>
         <h3 style={{ marginTop: 0, display: "flex", alignItems: "center", gap: 8 }}>
           Editor
           {isDirty && (

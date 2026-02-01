@@ -11,6 +11,7 @@ import { useEffect, useMemo, useState } from "react";
 import { api } from "../lib/api";
 import { getAuthToken } from "../lib/api";
 import { ItemPicker } from "../components/ItemPicker";
+import { AdminShell } from "../components/admin/AdminUI";
 
 type VendorAuditRow = {
   ts: string;
@@ -251,10 +252,9 @@ export function AdminVendorAuditPage() {
   const anyBusy = busy;
 
   return (
-    <div style={{ padding: 16, fontFamily: "system-ui, sans-serif" }}>
-      <h1 style={{ marginTop: 0 }}>Vendor Audit Viewer</h1>
-
-      <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 10, alignItems: "center" }}>
+    <AdminShell title="Vendor Audit" subtitle="Audit vendor restocks and inventory drift.">
+      <div style={{ padding: 16, fontFamily: "system-ui, sans-serif" }}>
+<div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 10, alignItems: "center" }}>
         <button onClick={() => preset({ action: "buy" })} disabled={anyBusy}>
           Buy
         </button>
@@ -513,5 +513,6 @@ export function AdminVendorAuditPage() {
         Endpoint: <code>/api/admin/vendor_audit</code> · CSV: <code>/api/admin/vendor_audit/csv</code> · Server orders newest-first (ts DESC).
       </div>
     </div>
+    </AdminShell>
   );
 }

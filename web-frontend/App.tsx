@@ -15,6 +15,7 @@ import { AdminAbilitiesPage } from "./pages/AdminAbilitiesPage";
 import { AdminVendorEconomyPage } from "./pages/AdminVendorEconomyPage";
 import { AdminVendorAuditPage } from "./pages/AdminVendorAuditPage";
 import { AdminHubPage } from "./pages/AdminHubPage";
+import { AdminTheme } from "./components/admin/AdminTheme";
 import { CityShellPage } from "./pages/CityShellPage";
 import { ModeHubPage, type AppModeId, type ModeCard } from "./pages/ModeHubPage";
 
@@ -1097,10 +1098,18 @@ const copyToClipboard = async (text: string) => {
   const adminPage = useMemo(() => {
     if (!pathname.startsWith("/admin")) return null;
 
+    const adminWrap = (node: React.ReactNode) => (
+      <div className="pw-admin">
+        <AdminTheme />
+        {node}
+      </div>
+    );
+
+
     // Client-side UX gate (server still enforces the real rule).
     if (!isAdmin) {
-      return (
-        <div style={{ padding: 16 }}>
+      return adminWrap(
+      <div style={{ padding: 16 }}>
           <h2 style={{ marginTop: 0 }}>Admin tools are locked</h2>
           <p style={{ opacity: 0.85, maxWidth: 760 }}>
             Your account doesn’t have admin flags (<code>isDev</code>/<code>isGM</code>/<code>isGuide</code>),
@@ -1119,18 +1128,19 @@ const copyToClipboard = async (text: string) => {
       );
     }
 
+
     if (pathname === "/admin" || pathname === "/admin/") {
-      return <AdminHubPage onGo={(p) => go(p, "admin")} role={adminRole} />;
+      return adminWrap(<AdminHubPage onGo={(p) => go(p, "admin")} role={adminRole} />);
     }
 
-    if (pathname.startsWith("/admin/spawn_points")) return <AdminSpawnPointsPage />;
-    if (pathname.startsWith("/admin/quests")) return <AdminQuestsPage />;
-    if (pathname.startsWith("/admin/npcs")) return <AdminNpcsPage />;
-    if (pathname.startsWith("/admin/spells")) return <AdminSpellsPage />;
-    if (pathname.startsWith("/admin/abilities")) return <AdminAbilitiesPage />;
-    if (pathname.startsWith("/admin/items")) return <AdminItemsPage />;
-    if (pathname.startsWith("/admin/vendor_economy")) return <AdminVendorEconomyPage />;
-    if (pathname.startsWith("/admin/vendor_audit")) return <AdminVendorAuditPage />;
+    if (pathname.startsWith("/admin/spawn_points")) return adminWrap(<AdminSpawnPointsPage />);
+    if (pathname.startsWith("/admin/quests")) return adminWrap(<AdminQuestsPage />);
+    if (pathname.startsWith("/admin/npcs")) return adminWrap(<AdminNpcsPage />);
+    if (pathname.startsWith("/admin/spells")) return adminWrap(<AdminSpellsPage />);
+    if (pathname.startsWith("/admin/abilities")) return adminWrap(<AdminAbilitiesPage />);
+    if (pathname.startsWith("/admin/items")) return adminWrap(<AdminItemsPage />);
+    if (pathname.startsWith("/admin/vendor_economy")) return adminWrap(<AdminVendorEconomyPage />);
+    if (pathname.startsWith("/admin/vendor_audit")) return adminWrap(<AdminVendorAuditPage />);
 
     return (
       <div style={{ padding: 16 }}>

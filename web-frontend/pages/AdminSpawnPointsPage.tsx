@@ -2396,9 +2396,16 @@ Ctrl/⌘-click: filter only`}
 
         </div>
       ) : (
-      <div style={{ display: "flex", gap: 24, alignItems: "flex-start" }}>
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "minmax(320px, 420px) minmax(520px, 1fr)",
+          gap: 16,
+          alignItems: "start",
+        }}
+      >
         {/* Left: list + mother brain panels */}
-        <div style={{ minWidth: 380 }}>
+        <div style={{ width: "100%", maxWidth: 420, minWidth: 0 }}>
           {activeTab === "tools" ? (
             <>
               <div data-testid="tools-subtabs" style={{ display: "flex", gap: 8, marginBottom: 10, flexWrap: "wrap" }}>
@@ -3493,7 +3500,7 @@ Ctrl/⌘-click: filter only`}
         </div>
 
         {activeTab === "tools" ? (
-          <div style={{ flex: 1, position: "sticky", top: 12, alignSelf: "flex-start", maxHeight: "calc(100vh - 140px)", overflow: "auto" }}>
+          <div style={{ minWidth: 0, position: "sticky", top: 12, alignSelf: "flex-start", maxHeight: "calc(100vh - 140px)", overflow: "auto" }}>
             <div style={{ border: "1px solid #ccc", borderRadius: 8, padding: 12 }}>
               <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 6 }}>Batch Tools</div>
               <div style={{ fontSize: 12, opacity: 0.85, lineHeight: 1.4 }}>
@@ -3510,7 +3517,7 @@ Ctrl/⌘-click: filter only`}
             </div>
           </div>
         ) : (
-<div style={{ flex: 1, position: "sticky", top: 12, alignSelf: "flex-start", maxHeight: "calc(100vh - 140px)", overflow: "auto" }}>
+<div style={{ minWidth: 0, position: "sticky", top: 12, alignSelf: "flex-start", maxHeight: "calc(100vh - 140px)", overflow: "auto" }}>
           {form ? (
             <div style={{ border: "1px solid #ccc", borderRadius: 8, padding: 12 }}>
               <div style={{ fontSize: 12, opacity: 0.8, marginBottom: 8 }}>

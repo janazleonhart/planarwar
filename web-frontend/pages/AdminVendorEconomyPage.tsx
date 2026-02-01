@@ -6,6 +6,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { api, getAdminCaps, getAuthToken } from "../lib/api";
 import { ItemPicker } from "../components/ItemPicker";
+import { AdminShell } from "../components/admin/AdminUI";
 
 type VendorSummary = {
   id: string;
@@ -460,7 +461,8 @@ export function AdminVendorEconomyPage() {
   }
 
   return (
-    <div style={{ padding: 16, fontFamily: "system-ui, sans-serif" }}>
+    <AdminShell title="Vendor Economy" subtitle="Stock/restock + price knobs for vendor items.">
+      <div style={{ padding: 16, fontFamily: "system-ui, sans-serif" }}>
       <h1 style={{ marginTop: 0 }}>Vendor Economy Config</h1>
 
       <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 12, alignItems: "center" }}>
@@ -765,5 +767,6 @@ export function AdminVendorEconomyPage() {
         uses same-origin API via <code>web-frontend/lib/api.ts</code>.
       </div>
     </div>
+    </AdminShell>
   );
 }

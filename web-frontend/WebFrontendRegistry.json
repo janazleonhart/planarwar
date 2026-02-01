@@ -157,6 +157,21 @@
       ],
       "service": "npm.package"
     },
+    "web-frontend.components.adminUi": {
+      "class": null,
+      "ctorArgs": [],
+      "dependsOn": [],
+      "kind": "ui",
+      "lifecycle": "singleton",
+      "notes": [
+        "Admin UI shell/components for consistent styling across admin editors.",
+        "Includes light theme + overrides for legacy inline dark styles."
+      ],
+      "owns": ["admin UI styling primitives"],
+      "path": "web-frontend/components/admin/AdminUI.tsx",
+      "provides": ["AdminShell/AdminPanel/AdminTwoCol/AdminNotice/AdminListItem"],
+      "service": "ui.component"
+    },
     "web-frontend.components.itemPicker": {
       "class": null,
       "ctorArgs": [],
@@ -175,6 +190,31 @@
         "ItemPicker component (autocomplete + validation + resolved label)"
       ],
       "service": "ui.component"
+    },
+    "web-frontend.pages.AdminAbilitiesPage": {
+      "path": "web-frontend/pages/AdminAbilitiesPage.tsx",
+      "class": "(page) AdminAbilitiesPage",
+      "tags": ["web-frontend", "admin", "abilities", "editor"],
+      "notes": "Admin Abilities Editor UI (v1): ability catalog + unlock rules, list/search + edit + upsert."
+    },
+    "web-frontend.pages.adminHub": {
+      "class": null,
+      "ctorArgs": [],
+      "dependsOn": [],
+      "kind": "ui",
+      "lifecycle": "singleton",
+      "notes": [
+        "Admin hub UI: entry page linking to individual admin tools (quests/items/npcs/spawn points/economy).",
+        "Uses same-origin /api requests when it checks admin capabilities (dev via Vite proxy; prod via reverse proxy / same host)."
+      ],
+      "owns": [
+        "client-side navigation state"
+      ],
+      "path": "web-frontend/pages/AdminHubPage.tsx",
+      "provides": [
+        "Admin landing page (hub navigation)"
+      ],
+      "service": "admin.hub"
     },
     "web-frontend.pages.adminItems": {
       "class": null,
@@ -273,7 +313,8 @@
         "Snapshot save supports tags (comma list) + notes; list supports sort + tag filter + search via query params.",
         "Scatter tool uses server-provided protoId datalist (/api/admin/spawn_points/proto_options) with name+id labels and manual fallback.",
         "Scatter tool adds quick-pick chips (common protoIds) to reduce typos and speed placement; manual entry still allowed.",
-        "Region filter adds quick-pick chips (common regionIds) to speed filtering without scrolling/typing."
+        "Region filter adds quick-pick chips (common regionIds) to speed filtering without scrolling/typing.",
+        "Wrapped in AdminShell for consistent admin layout; fixed stray trailing brace; keeps TS-heavy internals intact."
       ],
       "owns": [
         "UI persistence in localStorage (adminSpawnPointsPage.ui.v1)",
@@ -292,6 +333,29 @@
       ],
       "service": "admin.spawnPoints"
     },
+    "web-frontend.pages.adminSpells": {
+      "service": "admin.spells",
+      "kind": "ui",
+      "path": "web-frontend/pages/AdminSpellsPage.tsx",
+      "class": null,
+      "lifecycle": "singleton",
+      "ctorArgs": [],
+      "dependsOn": [],
+      "notes": [
+        "Uses same-origin /api requests (dev via Vite proxy; prod via reverse proxy / same host).",
+        "Endpoints: GET /api/admin/spells?q&limit&offset; POST /api/admin/spells; then refreshes list.",
+        "Supports search + paging so spell table growth doesn't break UX."
+      ],
+      "owns": [
+        "client-side form state",
+        "search + paging state (q/limit/offset)"
+      ],
+      "provides": [
+        "Spell list + edit/create UI",
+        "Search + paging for spell list",
+        "Edits tagsText/effectsText serialized fields"
+      ]
+    },
     "web-frontend.pages.adminVendorAudit": {
       "class": "AdminVendorAuditPage",
       "ctorArgs": [],
@@ -302,7 +366,8 @@
         "Uses same-origin /api requests (dev via Vite proxy; prod via reverse proxy / same host).",
         "Simple table UI with filters + pagination. Backed by /api/admin/vendor_audit.",
         "Server streaming CSV export.",
-        "Uses ItemPicker for itemId filter; displays item name + rarity from API join."
+        "Uses ItemPicker for itemId filter; displays item name + rarity from API join.",
+        "Wrapped in AdminShell for consistent admin layout; removed redundant page-level H1."
       ],
       "owns": [
         "Admin UI for vendor_log"
@@ -322,7 +387,8 @@
       "notes": [
         "Uses same-origin /api requests (dev via Vite proxy; prod via reverse proxy / same host).",
         "Editable vendor economy knobs (stockMax/restock cadence/price mults) with per-row save + optional stock reset.",
-        "Uses ItemPicker for item filtering; displays item name + rarity from API join."
+        "Uses ItemPicker for item filtering; displays item name + rarity from API join.",
+        "Wrapped in AdminShell for consistent admin layout; internal logic unchanged."
       ],
       "owns": [
         "Admin UI for vendor_item_economy"
@@ -332,7 +398,7 @@
         "/admin/vendor_economy"
       ],
       "service": "web.adminPages"
-    },
+    },    
     "web-frontend.pages.me": {
       "class": null,
       "ctorArgs": [],
@@ -442,54 +508,6 @@
         "Mode selector hub (launcher UI)"
       ],
       "service": "ui.modeHub"
-    },
-    "web-frontend.pages.adminHub": {
-      "class": null,
-      "ctorArgs": [],
-      "dependsOn": [],
-      "kind": "ui",
-      "lifecycle": "singleton",
-      "notes": [
-        "Admin hub UI: entry page linking to individual admin tools (quests/items/npcs/spawn points/economy).",
-        "Uses same-origin /api requests when it checks admin capabilities (dev via Vite proxy; prod via reverse proxy / same host)."
-      ],
-      "owns": [
-        "client-side navigation state"
-      ],
-      "path": "web-frontend/pages/AdminHubPage.tsx",
-      "provides": [
-        "Admin landing page (hub navigation)"
-      ],
-      "service": "admin.hub"
-    },
-    "web-frontend.pages.adminSpells": {
-      "service": "admin.spells",
-      "kind": "ui",
-      "path": "web-frontend/pages/AdminSpellsPage.tsx",
-      "class": null,
-      "lifecycle": "singleton",
-      "ctorArgs": [],
-      "dependsOn": [],
-      "notes": [
-        "Uses same-origin /api requests (dev via Vite proxy; prod via reverse proxy / same host).",
-        "Endpoints: GET /api/admin/spells?q&limit&offset; POST /api/admin/spells; then refreshes list.",
-        "Supports search + paging so spell table growth doesn't break UX."
-      ],
-      "owns": [
-        "client-side form state",
-        "search + paging state (q/limit/offset)"
-      ],
-      "provides": [
-        "Spell list + edit/create UI",
-        "Search + paging for spell list",
-        "Edits tagsText/effectsText serialized fields"
-      ]
-    },
-    "web-frontend.pages.AdminAbilitiesPage": {
-      "path": "web-frontend/pages/AdminAbilitiesPage.tsx",
-      "class": "(page) AdminAbilitiesPage",
-      "tags": ["web-frontend", "admin", "abilities", "editor"],
-      "notes": "Admin Abilities Editor UI (v1): ability catalog + unlock rules, list/search + edit + upsert."
-    }
+    }    
   }
 }
