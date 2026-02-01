@@ -1101,6 +1101,12 @@
         "maybeRequireAdmin(req,res,next)"
       ],
       "service": "http.middleware"
+    },
+    "web-backend.routes.adminSpells": {
+      "path": "web-backend/routes/adminSpells.ts",
+      "class": "(router) adminSpellsRouter",
+      "tags": ["web-backend", "admin", "spells", "editor"],
+      "notes": "Admin Spell Editor (v1) routes: list/search, get by id, upsert"
     }
   }
 }

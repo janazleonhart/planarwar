@@ -461,6 +461,12 @@
         "Admin landing page (hub navigation)"
       ],
       "service": "admin.hub"
+    },
+    "web-frontend.pages.AdminSpellsPage": {
+      "path": "web-frontend/pages/AdminSpellsPage.tsx",
+      "class": "(page) AdminSpellsPage",
+      "tags": ["web-frontend", "admin", "spells", "editor"],
+      "notes": "Admin Spell Editor (v1) UI: list/search, edit + upsert."
     }
   }
 }

@@ -6910,6 +6910,37 @@
         "Contract: skin_loot seed item_id references must exist in seeded items (items table seeds)."
       ]
     },
+    "test.contractAdminSpellsRoutes": {
+      "kind": "test.contract",
+      "path": "worldcore/test/contract_adminSpellsRoutes.test.ts",
+      "dependsOn": [
+        "web-backend.routes.adminSpells",
+        "web-frontend.pages.adminSpells"
+      ],
+      "notes": [
+        "Contract: AdminSpells editor wiring is present (route + UI endpoints).",
+        "Ensures core API verbs stay stable while the editor iterates.",
+        "Assertions are regex-based to avoid brittleness during refactors."
+      ],
+      "provides": [
+        "Guards /api/admin/spells GET+POST endpoints from accidental removal/renaming",
+        "Guards AdminSpellsPage fetch wiring (list + save)"
+      ]
+    },
+    "test.contractAdminSpellsSchemaColumns": {
+      "kind": "test.contract",
+      "path": "worldcore/test/contract_adminSpellsSchemaColumns.test.ts",
+      "dependsOn": [
+        "tools.seedSpellsColumnsAudit"
+      ],
+      "notes": [
+        "Contract: spells catalog schema includes the columns required by the admin spell editor + seed files.",
+        "Prevents drift between infra/schema SQL and editor/runtime expectations."
+      ],
+      "provides": [
+        "Fails fast if required columns are removed or renamed in 040_create_spells_table.sql"
+      ]
+    },
     "test.utils": {
       "dependsOn": [],
       "functions": [
@@ -7127,6 +7158,17 @@
         "Audits worldcore/infra/schema seed SQL: skin_loot.item_id must refer to an item seeded in items.",
         "Prevents seed drift where skin loot references non-existent item ids.",
         "Supports --schemaDir and --json."
+      ]
+    },
+    "tools.seedSpellsColumnsAudit": {
+      "kind": "tool",
+      "path": "worldcore/tools/seedSpellsColumnsAudit.ts",
+      "bin": "dist/worldcore/tools/seedSpellsColumnsAudit.js",
+      "dependsOn": [],
+      "notes": [
+        "Audits worldcore/infra/schema: spells table columns cover the admin editor + seed SQL expectations.",
+        "Prevents runtime/editor regressions when schema drifts.",
+        "Supports --schemaFile and --json."
       ]
     },
     "tools.simBrain": {
