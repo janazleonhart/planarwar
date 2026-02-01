@@ -2451,6 +2451,21 @@
         "Seeds a minimal common L1–10 spell kit (damage + dot + debuff + shield + hot) for classes that do not yet have bespoke kits.",
         "Designed to keep every class playable while per-class kits are authored later."
       ]
+    },
+    "infra.seed.055_seed_wave1_class_kit_mappings_L1_10": {
+      "kind": "service",
+      "path": "worldcore/infra/schema/055_seed_wave1_class_kit_mappings_L1_10.sql",
+      "class": "(sql) infra seed migration",
+      "lifecycle": "singleton",
+      "ctorArgs": [],
+      "dependsOn": [],
+      "provides": [],
+      "owns": [],
+      "notes": [
+        "Wave 1 bootstrap: maps not-yet-bespoke classes onto proven kits (templar/archmage/warlock spells; warrior abilities).",
+        "Idempotent UPSERTs (ON CONFLICT DO UPDATE) so re-running seeds is safe.",
+        "Intentionally does not touch Adventurer (special anti-datamine class rules)."
+      ]
     },    
     "interaction.ops": {
       "dependsOn": [
@@ -6998,6 +7013,20 @@
       "notes": [
         "Contract: ensures the repo always contains an idempotent seed granting a minimal L1–10 kit to classes without bespoke kits yet.",
         "Regex/text assertions only (intentionally not DB-coupled)."
+      ]
+    },
+    "test.contractWave1ClassKitMappingsL1_10": {
+      "kind": "test.contract",
+      "path": "worldcore/test/contract_wave1ClassKitMappings_L1_10.test.ts",
+      "dependsOn": [
+        "infra.seed.055_seed_wave1_class_kit_mappings_L1_10"
+      ],
+      "provides": [
+        "Guards Wave 1 class kit mapping seed presence",
+        "Guards coverage of mapped classes so kits don't silently vanish"
+      ],
+      "notes": [
+        "Text/regex contract (not DB-coupled). Ensures mapped classes remain covered while bespoke kits are authored later."
       ]
     },
     "test.utils": {
