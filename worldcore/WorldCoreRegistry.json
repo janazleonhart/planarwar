@@ -7260,6 +7260,24 @@
         "Fails fast if quest columns are removed or renamed in infra/schema SQL"
       ]
     },
+    "test.contractAdminHardeningRoutesAndAuth": {
+      "kind": "test.contract",
+      "path": "worldcore/test/contract_adminHardeningRoutesAndAuth.test.ts",
+      "dependsOn": [
+        "web-backend.middleware.adminAuth",
+        "web-backend.index"
+      ],
+      "notes": [
+        "Contract: /api/admin/* routes are mounted with maybeRequireAdmin(...) and adminAuth contains required RBAC semantics.",
+        "Guards against accidental removal/renaming of admin gating and root-only restrictions.",
+        "Structural/regex-based; does not spin up Express or require a live database."
+      ],
+      "provides": [
+        "Guards admin route mounts are gated by middleware",
+        "Guards adminAuth error codes and role mapping",
+        "Guards root-only spawn_points destructive endpoints remain protected"
+      ]
+    },
     "tools.simBrain": {
       "dependsOn": [
         "db.Database",
