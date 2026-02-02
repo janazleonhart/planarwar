@@ -234,17 +234,25 @@ export async function performNpcAttack(
     // Never let progression break combat
   }
 
-  // --- Resource generation for the attacker (fury v1) ---
-  try {
-    const primaryRes = getPrimaryPowerResourceForClass(char.classId);
-    if (primaryRes === "fury" && dmg > 0) {
+  // --- Resource generation for the attacker (fury/runic power v1) ---
+try {
+  const primaryRes = getPrimaryPowerResourceForClass(char.classId);
+  if (dmg > 0) {
+    if (primaryRes === "fury") {
       const gain = 5 + Math.floor(dmg / 5); // 6–15ish at low levels
       gainPowerResource(char, "fury", gain);
+    } else if (primaryRes === "runic_power") {
+      // Runic Power builds a little faster than Fury to support spender gameplay.
+      const gain = 6 + Math.floor(dmg / 6); // 6–18ish at low levels
+      gainPowerResource(char, "runic_power", gain);
     }
-  } catch {
-    // Ditto
   }
-  // --- Build combat line ---
+} catch {
+  // Never let progression break combat
+}
+
+// --- Build combat line ---
+
   // Keep spell/song direct damage lines consistent with DOT/HOT tick formatting.
   const prefix = opts.tagPrefix ?? "ability";
   const isWorldSpellLine =

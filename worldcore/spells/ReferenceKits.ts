@@ -257,6 +257,55 @@ export const REFERENCE_CLASS_KITS_L1_10 = {
     },
   ],
 
+  runic_knight: [
+    {
+      kind: "spell",
+      classId: "runic_knight",
+      spellId: "runic_knight_rune_strike",
+      minLevel: 1,
+      autoGrant: true,
+      isEnabled: true,
+      source: "reference_kit",
+    },
+    {
+      kind: "spell",
+      classId: "runic_knight",
+      spellId: "runic_knight_frost_brand",
+      minLevel: 3,
+      autoGrant: true,
+      isEnabled: true,
+      source: "reference_kit",
+    },
+    {
+      kind: "spell",
+      classId: "runic_knight",
+      spellId: "runic_knight_blood_siphon",
+      minLevel: 5,
+      autoGrant: true,
+      isEnabled: true,
+      source: "reference_kit",
+    },
+    {
+      kind: "spell",
+      classId: "runic_knight",
+      spellId: "runic_knight_bone_shield",
+      minLevel: 7,
+      autoGrant: true,
+      isEnabled: true,
+      source: "reference_kit",
+    },
+    {
+      kind: "spell",
+      classId: "runic_knight",
+      spellId: "runic_knight_plague_strike",
+      minLevel: 9,
+      autoGrant: true,
+      isEnabled: true,
+      source: "reference_kit",
+    },
+  ],
+
+
   templar: [
     {
       kind: "spell",

@@ -6,6 +6,7 @@
 // - Cooldown is checked first (no mutation).
 // - Resource is spent second (mutation).
 // - Cooldown is started last (mutation).
+// - On success, optional post-success resource gains may apply (builders).
 //
 // This module is intentionally small + deterministic to make contract tests easy.
 
@@ -13,7 +14,13 @@ import type { CharacterState } from "../characters/CharacterTypes";
 import type { PowerResourceKind } from "../resources/PowerResources";
 
 import { getCooldownRemaining, checkAndStartCooldown } from "./Cooldowns";
-import { trySpendPowerResource } from "../resources/PowerResources";
+import { gainPowerResource, trySpendPowerResource } from "../resources/PowerResources";
+
+const RUNIC_POWER_BUILDERS: Record<string, number> = {
+  // v1: Rune Strike is the primary early builder.
+  // It should always be usable at 0 RP (cost=0) and grant RP on use.
+  "runic_knight_rune_strike": 12,
+};
 
 export type ActionCostCooldownGateArgs = {
   char: CharacterState;
@@ -67,6 +74,12 @@ export function applyActionCostAndCooldownGates(args: ActionCostCooldownGateArgs
   if (cooldownMs > 0) {
     const cdErr = checkAndStartCooldown(args.char, bucket, key, cooldownMs, name, now);
     if (cdErr) return cdErr;
+  }
+
+  // 4) Post-success builders (mutation)
+  const rpGain = RUNIC_POWER_BUILDERS[key];
+  if (Number.isFinite(rpGain) && rpGain > 0) {
+    gainPowerResource(args.char, "runic_power", rpGain);
   }
 
   return null;

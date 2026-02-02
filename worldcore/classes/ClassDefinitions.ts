@@ -40,7 +40,7 @@ export type ClassArchetype =
   | "support"
   | "hybrid";
 
-export type PrimaryResourceId = "mana" | "fury" | "none";
+export type PrimaryResourceId = "mana" | "fury" | "runic_power" | "none";
 
 // Simple power-resource metadata for future use
 export interface PowerResourceSpec {
@@ -431,7 +431,7 @@ export const CLASS_DEFINITIONS: Record<ClassId, ClassDefinition> = {
     weaponFamilies: ["sword_1h", "mace_1h", "staff", "bow", "dagger"],
     powerResources: [
       { id: "mana", max: 100 },
-      { id: "fury", max: 100 },
+      { id: "runic_power", max: 100 },
     ],
   },
 
@@ -471,7 +471,7 @@ export const CLASS_DEFINITIONS: Record<ClassId, ClassDefinition> = {
     description: "Runic knight; plate + dark magic.",
     archetype: "tank",
     combatRole: "tank",
-    primaryResource: "fury", // using fury-ish resource for now
+    primaryResource: "runic_power", // v1: builds in combat; spent by rune strikes
     secondaryResource: "mana", // for spellcasting hooks later
     baseAttributes: BASE_10,
     perLevel: CLASS_PER_LEVEL.runic_knight,
@@ -485,7 +485,7 @@ export const CLASS_DEFINITIONS: Record<ClassId, ClassDefinition> = {
     ],
     favoredSpellSchools: ["shadow", "frost"],
     powerResources: [
-      { id: "fury", max: 100 },
+      { id: "runic_power", max: 100 },
       { id: "mana", max: 100 },
     ],
   },

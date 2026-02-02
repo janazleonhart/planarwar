@@ -118,3 +118,34 @@ test("[contract] casting gates: success spends resource then starts cooldown", (
   const remaining = getCooldownRemaining(char, "spells", "arcane_bolt", now);
   assert.ok(remaining > 0, "Cooldown should be active after success");
 });
+
+
+test("[contract] casting gates: Rune Strike grants Runic Power on successful use (builder semantics)", () => {
+  const char: any = {
+    id: "c1",
+    name: "Tester",
+    classId: "runic_knight",
+    level: 10,
+    progression: { powerResources: {} },
+    cooldowns: {},
+  };
+
+  // Start at 0 RP
+  const err = applyActionCostAndCooldownGates({
+    char,
+    bucket: "spells",
+    key: "runic_knight_rune_strike",
+    displayName: "Rune Strike",
+    cooldownMs: 0,
+    resourceType: "runic_power",
+    resourceCost: 0,
+    now: 123,
+  });
+
+  assert.equal(err, null);
+
+  const pools = (char.progression as any).powerResources;
+  assert.ok(pools.runic_power, "runic_power pool should exist");
+  assert.equal(pools.runic_power.max, 100);
+  assert.equal(pools.runic_power.current, 12);
+});

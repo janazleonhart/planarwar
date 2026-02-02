@@ -2484,6 +2484,59 @@
         "Adds unique Crusader spells instead of mapping to templar kit.",
         "Deletes old templar-mapped unlocks for Crusader (notes=wave1 kit: templar map)."
       ]
+    },
+    "infra.schema.057_seed_hunter_spellkit_L1_10": {
+      "class": "SchemaMigration",
+      "ctorArgs": [],
+      "dependsOn": ["worldcore/db/Database.ts"],
+      "kind": "service",
+      "lifecycle": "migration",
+      "notes": [
+        "Database seed: Hunter bespoke spellkit L1–10 (5 spells) + spell_unlocks autogrant schedule.",
+        "Also removes wave1 stopgap: ability_unlocks rows where hunter was mapped to warrior kit."
+      ],
+      "owns": [],
+      "path": "worldcore/infra/schema/057_seed_hunter_spellkit_L1_10.sql",
+      "provides": [
+        "hunter spells (L1–10)",
+        "spell_unlocks rows for hunter kit",
+        "cleanup of hunter stopgap ability_unlocks"
+      ]
+    },
+    "infra.schema.058_cleanup_hunter_spellkit_L1_10": {
+      "class": "SchemaMigration",
+      "ctorArgs": [],
+      "dependsOn": ["worldcore/db/Database.ts"],
+      "kind": "service",
+      "lifecycle": "migration",
+      "notes": [
+        "Database cleanup: canonicalize Hunter L1–10 spellkit by removing duplicate/ghost spell ids and re-seeding the correct 5 spells.",
+        "Keeps DB spell ids aligned with ReferenceKits + SpellTypes to prevent UI listing unknown/ungrantable spells."
+      ],
+      "owns": [],
+      "path": "worldcore/infra/schema/058_cleanup_hunter_spellkit_L1_10.sql",
+      "provides": [
+        "hunter spellkit canonical cleanup",
+        "removal of duplicate/ghost hunter spells",
+        "spell_unlocks corrected for hunter kit"
+      ]
+    },
+    "infra.schema.059_seed_runic_knight_spellkit_L1_10": {
+      "kind": "schema",
+      "service": "worldcore",
+      "path": "worldcore/infra/schema/059_seed_runic_knight_spellkit_L1_10.sql",
+      "lifecycle": "migration/seed",
+      "provides": [
+        "Runic Knight L1–10 spell kit (spells + unlocks) built around Runic Power"
+      ],
+      "owns": [
+        "public.spells (runic_knight_*)",
+        "public.spell_unlocks (runic_knight, bespoke kit)"
+      ],
+      "notes": [
+        "Removes any wave1 stopgap unlock mappings (notes like 'wave1 kit:%') for Runic Knight.",
+        "Seeds 5 bespoke spells and unlock schedule."
+      ]
     },    
     "interaction.ops": {
       "dependsOn": [
@@ -4966,7 +5019,8 @@
       "kind": "service",
       "notes": [
         "Manages Fury/Mana pools stored under char.progression.powerResources.",
-        "Provides class->primary resource mapping and helpers to spend/gain power."
+        "Provides class->primary resource mapping and helpers to spend/gain power.",
+        "Planned: Runic Power (runic_knight) as a combat-building spender resource."
       ],
       "path": "worldcore/resources/PowerResources.ts"
     },

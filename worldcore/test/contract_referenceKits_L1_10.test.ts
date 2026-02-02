@@ -41,15 +41,11 @@ function entriesFor(kits: any, classId: string): any[] {
   return Array.isArray(list) ? list : [];
 }
 
-function assertAllKitSpellsAutograntedBy10(kits: any, classId: string): void {
-  const entries = entriesFor(kits, classId);
-  if (!entries.length) return;
-
+function assertAutograntsAllSpellsBy10(kits: any, classId: string): void {
   const c = mkChar(classId, 10);
   ensureSpellbookAutogrants(c);
   const known = Object.keys(c.spellbook.known ?? {});
-
-  for (const e of entries) {
+  for (const e of entriesFor(kits, classId)) {
     if (e.kind !== "spell") continue;
     assert.ok(known.includes(String(e.spellId)), `${classId} should autogrant ${String(e.spellId)} by 10`);
   }
@@ -83,7 +79,7 @@ test("[contract] reference kits L1–10 are consistent + autogrant works in test
   const spellRules: any[] = [];
   const abilityRules: any[] = [];
 
-  for (const [classId, entries] of Object.entries(kits) as any[]) {
+  for (const [, entries] of Object.entries(kits) as any[]) {
     if (!Array.isArray(entries) || entries.length === 0) continue;
 
     for (const e of entries) {
@@ -113,20 +109,17 @@ test("[contract] reference kits L1–10 are consistent + autogrant works in test
   __setAbilityUnlocksForTest(abilityRules as any);
 
   try {
-    // Spell autogrants
-    assertAllKitSpellsAutograntedBy10(kits, "archmage");
-    assertAllKitSpellsAutograntedBy10(kits, "warlock");
-    assertAllKitSpellsAutograntedBy10(kits, "crusader");
-    assertAllKitSpellsAutograntedBy10(kits, "templar");
-    assertAllKitSpellsAutograntedBy10(kits, "hunter");
+    // Spell kits: by level 10 should know all kit spells
+    assertAutograntsAllSpellsBy10(kits, "archmage");
+    assertAutograntsAllSpellsBy10(kits, "warlock");
+    assertAutograntsAllSpellsBy10(kits, "templar");
+    assertAutograntsAllSpellsBy10(kits, "crusader");
+    assertAutograntsAllSpellsBy10(kits, "hunter");
+    assertAutograntsAllSpellsBy10(kits, "runic_knight");
 
-    // Ability learns (warlord kit)
+    // Warlord: ability learns by level (we only assert "known" lookup works when we simulate a learned entry)
     {
       const c = mkChar("warlord", 10);
-
-      // Ability learning is performed elsewhere (CharacterService), but the rules
-      // contract is that "known vs learnable" gates properly. Here we just assert
-      // that "known" lookup works when we simulate a learned entry.
       for (const e of entriesFor(kits, "warlord")) {
         if (e.kind !== "ability") continue;
         c.abilities.known[String(e.abilityId)] = { learnedAt: Date.now() };
