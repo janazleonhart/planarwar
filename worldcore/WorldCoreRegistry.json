@@ -2463,8 +2463,26 @@
       "owns": [],
       "notes": [
         "Wave 1 bootstrap: maps not-yet-bespoke classes onto proven kits (templar/archmage/warlock spells; warrior abilities).",
+        "Also updates mapped kit spell rows in public.spells to class_id='any' so cross-class unlocks can actually surface in runtime/UI queries.",
         "Idempotent UPSERTs (ON CONFLICT DO UPDATE) so re-running seeds is safe.",
         "Intentionally does not touch Adventurer (special anti-datamine class rules)."
+      ]
+    },
+    "infra.schema.056_seed_crusader_class_kit_L1_10": {
+      "kind": "schema",
+      "service": "worldcore",
+      "path": "worldcore/infra/schema/056_seed_crusader_class_kit_L1_10.sql",
+      "lifecycle": "migration/seed",
+      "provides": [
+        "Crusader L1–10 spell kit (spells + unlocks)"
+      ],
+      "owns": [
+        "public.spells (crusader_*)",
+        "public.spell_unlocks (crusader, wave1 kit)"
+      ],
+      "notes": [
+        "Adds unique Crusader spells instead of mapping to templar kit.",
+        "Deletes old templar-mapped unlocks for Crusader (notes=wave1 kit: templar map)."
       ]
     },    
     "interaction.ops": {
@@ -7027,6 +7045,32 @@
       ],
       "notes": [
         "Text/regex contract (not DB-coupled). Ensures mapped classes remain covered while bespoke kits are authored later."
+      ]
+    },
+    "test.contractCrusaderKitL1_10": {
+      "kind": "test",
+      "service": "worldcore",
+      "path": "worldcore/test/contract_crusaderKit_L1_10.test.ts",
+      "lifecycle": "contract",
+      "provides": [
+        "Guards Crusader reference kit presence + spell IDs exist in SpellTypes + mana resource exists"
+      ],
+      "dependsOn": [
+        "worldcore.reference.ReferenceKits",
+        "worldcore.spells.SpellTypes",
+        "worldcore.classes.ClassDefinitions"
+      ]
+    },
+    "test.contractSeedCrusaderKitL1_10": {
+      "kind": "test",
+      "service": "worldcore",
+      "path": "worldcore/test/contract_seedCrusaderKit_L1_10.test.ts",
+      "lifecycle": "contract",
+      "provides": [
+        "Guards schema seed file 056 exists + contains expected spell IDs + unlock insert"
+      ],
+      "dependsOn": [
+        "worldcore.infra.schema"
       ]
     },
     "test.utils": {

@@ -164,7 +164,7 @@ const CLASS_PER_LEVEL: Record<ClassId, Attributes> = {
 
 // ---- Full class definitions (v0 placeholders for base stats / gear) ----
 
-const CLASS_DEFINITIONS: Record<ClassId, ClassDefinition> = {
+export const CLASS_DEFINITIONS: Record<ClassId, ClassDefinition> = {
   virtuoso: {
     id: "virtuoso",
     displayName: "Virtuoso",
@@ -235,7 +235,9 @@ const CLASS_DEFINITIONS: Record<ClassId, ClassDefinition> = {
     description: "Paladin analogue: holy plate tank/support.",
     archetype: "tank",
     combatRole: "tank",
-    primaryResource: "mana", // you explicitly wanted pal/sk using mana
+    primaryResource: "mana",
+    // you explicitly wanted pal/sk using mana
+    powerResources: [{ id: "mana", max: 100 }],
     secondaryResource: null,
     baseAttributes: BASE_10,
     perLevel: CLASS_PER_LEVEL.crusader,

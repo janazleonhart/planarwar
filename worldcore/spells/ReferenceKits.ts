@@ -161,6 +161,54 @@ export const REFERENCE_CLASS_KITS_L1_10 = {
     },
   ],
 
+  crusader: [
+    {
+      kind: "spell",
+      classId: "crusader",
+      spellId: "crusader_righteous_strike",
+      minLevel: 1,
+      autoGrant: true,
+      isEnabled: true,
+      source: "reference_kit",
+    },
+    {
+      kind: "spell",
+      classId: "crusader",
+      spellId: "crusader_bleeding_wound",
+      minLevel: 3,
+      autoGrant: true,
+      isEnabled: true,
+      source: "reference_kit",
+    },
+    {
+      kind: "spell",
+      classId: "crusader",
+      spellId: "crusader_minor_mend",
+      minLevel: 5,
+      autoGrant: true,
+      isEnabled: true,
+      source: "reference_kit",
+    },
+    {
+      kind: "spell",
+      classId: "crusader",
+      spellId: "crusader_sun_guard",
+      minLevel: 7,
+      autoGrant: true,
+      isEnabled: true,
+      source: "reference_kit",
+    },
+    {
+      kind: "spell",
+      classId: "crusader",
+      spellId: "crusader_judgment",
+      minLevel: 9,
+      autoGrant: true,
+      isEnabled: true,
+      source: "reference_kit",
+    },
+  ],
+
   templar: [
     {
       kind: "spell",

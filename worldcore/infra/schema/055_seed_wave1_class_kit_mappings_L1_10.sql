@@ -9,14 +9,65 @@
 
 BEGIN;
 
+-- ===== Wave1 class->kit mapping table (preferred) =====
+-- Some pipelines use public.class_kit_mappings to resolve coverage kits.
+-- We seed it defensively (column-name tolerant) and keep Crusader OUT (it has a bespoke kit).
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.tables
+    WHERE table_schema = 'public' AND table_name = 'class_kit_mappings'
+  ) THEN
+    -- We support a few historical column namings: kit_class_id / kit_id / kit
+    IF EXISTS (
+      SELECT 1 FROM information_schema.columns
+      WHERE table_schema='public' AND table_name='class_kit_mappings' AND column_name='kit_class_id'
+    ) THEN
+      EXECUTE $wave1sql$
+        DELETE FROM public.class_kit_mappings WHERE class_id IN ('templar','hierophant','ascetic','prophet');
+        INSERT INTO public.class_kit_mappings (class_id, kit_class_id, note)
+        VALUES
+          ('templar','templar','wave1 kit: templar map'),
+          ('hierophant','templar','wave1 kit: templar map'),
+          ('ascetic','templar','wave1 kit: templar map'),
+          ('prophet','templar','wave1 kit: templar map');
+$wave1sql$;
+    ELSIF EXISTS (
+      SELECT 1 FROM information_schema.columns
+      WHERE table_schema='public' AND table_name='class_kit_mappings' AND column_name='kit_id'
+    ) THEN
+      EXECUTE $wave1sql$
+        DELETE FROM public.class_kit_mappings WHERE class_id IN ('templar','hierophant','ascetic','prophet');
+        INSERT INTO public.class_kit_mappings (class_id, kit_id, note)
+        VALUES
+          ('templar','templar','wave1 kit: templar map'),
+          ('hierophant','templar','wave1 kit: templar map'),
+          ('ascetic','templar','wave1 kit: templar map'),
+          ('prophet','templar','wave1 kit: templar map');
+$wave1sql$;
+    ELSIF EXISTS (
+      SELECT 1 FROM information_schema.columns
+      WHERE table_schema='public' AND table_name='class_kit_mappings' AND column_name='kit'
+    ) THEN
+      EXECUTE $wave1sql$
+        DELETE FROM public.class_kit_mappings WHERE class_id IN ('templar','hierophant','ascetic','prophet');
+        INSERT INTO public.class_kit_mappings (class_id, kit, note)
+        VALUES
+          ('templar','templar','wave1 kit: templar map'),
+          ('hierophant','templar','wave1 kit: templar map'),
+          ('ascetic','templar','wave1 kit: templar map'),
+          ('prophet','templar','wave1 kit: templar map');
+$wave1sql$;
+    ELSE
+      RAISE NOTICE '[wave1 kit mappings] public.class_kit_mappings exists but has no recognized kit column; skipping.';
+    END IF;
+  END IF;
+END $$;
+
+
 -- ===== Spells: map support-ish classes -> templar kit =====
 INSERT INTO public.spell_unlocks (class_id, spell_id, min_level, auto_grant, is_enabled, notes)
 VALUES
-  ('crusader', 'templar_restorative_prayer', 1, true, true, 'wave1 kit: templar map'),
-  ('crusader', 'templar_smite', 3, true, true, 'wave1 kit: templar map'),
-  ('crusader', 'templar_minor_cleanse', 5, true, true, 'wave1 kit: templar map'),
-  ('crusader', 'templar_aegis_of_light', 7, true, true, 'wave1 kit: templar map'),
-  ('crusader', 'templar_judgment', 9, true, true, 'wave1 kit: templar map'),
   ('hierophant', 'templar_restorative_prayer', 1, true, true, 'wave1 kit: templar map'),
   ('hierophant', 'templar_smite', 3, true, true, 'wave1 kit: templar map'),
   ('hierophant', 'templar_minor_cleanse', 5, true, true, 'wave1 kit: templar map'),
