@@ -297,7 +297,7 @@ export const CLASS_DEFINITIONS: Record<ClassId, ClassDefinition> = {
       "mace_2h",
     ],
     favoredWeaponSkills: ["one_handed", "two_handed"],
-    powerResources: [{ id: "fury", max: 100 }],
+    powerResources: [{ id: "mana", max: 100 }],
   },
 
   templar: {
@@ -456,13 +456,13 @@ export const CLASS_DEFINITIONS: Record<ClassId, ClassDefinition> = {
     description: "Ranged pet class; bows and beasts.",
     archetype: "ranged_dps",
     combatRole: "dps",
-    primaryResource: "fury", // could swap to mana later if we prefer
+    primaryResource: "mana", // v1: spells-based hunter kit
     secondaryResource: null,
     baseAttributes: BASE_10,
     perLevel: CLASS_PER_LEVEL.hunter,
     armorTypes: ["leather", "mail"],
     weaponFamilies: ["bow", "crossbow", "gun", "sword_1h", "axe_1h"],
-    powerResources: [{ id: "fury", max: 100 }],
+    powerResources: [{ id: "mana", max: 100 }],
   },
 
   runic_knight: {

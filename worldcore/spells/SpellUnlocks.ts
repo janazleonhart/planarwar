@@ -44,6 +44,12 @@ const FALLBACK_UNLOCKS: SpellUnlockRule[] = [
   { classId: "virtuoso", spellId: "virtuoso_song_rising_courage", minLevel: 1, autoGrant: true, isEnabled: true },
   { classId: "virtuoso", spellId: "virtuoso_hymn_woven_recovery", minLevel: 3, autoGrant: true, isEnabled: true },
   { classId: "virtuoso", spellId: "virtuoso_dissonant_battle_chant", minLevel: 5, autoGrant: true, isEnabled: true },
+
+  // Hunter starter kit (fallback; full kit comes from DB/reference kits)
+  { classId: "hunter", spellId: "hunter_steady_shot", minLevel: 1, autoGrant: true, isEnabled: true },
+  { classId: "hunter", spellId: "hunter_serrated_arrow", minLevel: 3, autoGrant: true, isEnabled: true },
+  { classId: "hunter", spellId: "hunter_field_dressing", minLevel: 5, autoGrant: true, isEnabled: true },
+
 ];
 
 let unlocks: SpellUnlockRule[] = [...FALLBACK_UNLOCKS];

@@ -209,6 +209,54 @@ export const REFERENCE_CLASS_KITS_L1_10 = {
     },
   ],
 
+  hunter: [
+    {
+      kind: "spell",
+      classId: "hunter",
+      spellId: "hunter_steady_shot",
+      minLevel: 1,
+      autoGrant: true,
+      isEnabled: true,
+      source: "reference_kit",
+    },
+    {
+      kind: "spell",
+      classId: "hunter",
+      spellId: "hunter_serrated_arrow",
+      minLevel: 3,
+      autoGrant: true,
+      isEnabled: true,
+      source: "reference_kit",
+    },
+    {
+      kind: "spell",
+      classId: "hunter",
+      spellId: "hunter_hunters_mark",
+      minLevel: 5,
+      autoGrant: true,
+      isEnabled: true,
+      source: "reference_kit",
+    },
+    {
+      kind: "spell",
+      classId: "hunter",
+      spellId: "hunter_field_dressing",
+      minLevel: 7,
+      autoGrant: true,
+      isEnabled: true,
+      source: "reference_kit",
+    },
+    {
+      kind: "spell",
+      classId: "hunter",
+      spellId: "hunter_aimed_shot",
+      minLevel: 9,
+      autoGrant: true,
+      isEnabled: true,
+      source: "reference_kit",
+    },
+  ],
+
   templar: [
     {
       kind: "spell",

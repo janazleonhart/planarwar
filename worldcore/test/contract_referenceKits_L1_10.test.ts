@@ -41,12 +41,25 @@ function entriesFor(kits: any, classId: string): any[] {
   return Array.isArray(list) ? list : [];
 }
 
+function assertAllKitSpellsAutograntedBy10(kits: any, classId: string): void {
+  const entries = entriesFor(kits, classId);
+  if (!entries.length) return;
+
+  const c = mkChar(classId, 10);
+  ensureSpellbookAutogrants(c);
+  const known = Object.keys(c.spellbook.known ?? {});
+
+  for (const e of entries) {
+    if (e.kind !== "spell") continue;
+    assert.ok(known.includes(String(e.spellId)), `${classId} should autogrant ${String(e.spellId)} by 10`);
+  }
+}
+
 test("[contract] reference kits L1–10 are consistent + autogrant works in test mode", () => {
   const kits = REFERENCE_CLASS_KITS_L1_10 as any;
 
   // --- basic integrity ---
   for (const [classId, entries] of Object.entries(kits) as any[]) {
-    // Skip placeholders for now
     if (!Array.isArray(entries) || entries.length === 0) continue;
 
     // Must include level 1
@@ -100,41 +113,14 @@ test("[contract] reference kits L1–10 are consistent + autogrant works in test
   __setAbilityUnlocksForTest(abilityRules as any);
 
   try {
-    // Archmage: by level 10 should know all kit spells
-    {
-      const c = mkChar("archmage", 10);
-      ensureSpellbookAutogrants(c);
-      const known = Object.keys(c.spellbook.known ?? {});
-      for (const e of entriesFor(kits, "archmage")) {
-        if (e.kind !== "spell") continue;
-        assert.ok(known.includes(String(e.spellId)), `archmage should autogrant ${String(e.spellId)} by 10`);
-      }
-    }
+    // Spell autogrants
+    assertAllKitSpellsAutograntedBy10(kits, "archmage");
+    assertAllKitSpellsAutograntedBy10(kits, "warlock");
+    assertAllKitSpellsAutograntedBy10(kits, "crusader");
+    assertAllKitSpellsAutograntedBy10(kits, "templar");
+    assertAllKitSpellsAutograntedBy10(kits, "hunter");
 
-    // Warlock: by level 10 should know all kit spells
-    {
-      const c = mkChar("warlock", 10);
-      ensureSpellbookAutogrants(c);
-      const known = Object.keys(c.spellbook.known ?? {});
-      for (const e of entriesFor(kits, "warlock")) {
-        if (e.kind !== "spell") continue;
-        assert.ok(known.includes(String(e.spellId)), `warlock should autogrant ${String(e.spellId)} by 10`);
-      }
-    }
-
-    
-    // Templar: by level 10 should know all kit spells
-    {
-      const c = mkChar("templar", 10);
-      ensureSpellbookAutogrants(c);
-      const known = Object.keys(c.spellbook.known ?? {});
-      for (const e of entriesFor(kits, "templar")) {
-        if (e.kind !== "spell") continue;
-        assert.ok(known.includes(String(e.spellId)), `templar should autogrant ${String(e.spellId)} by 10`);
-      }
-    }
-
-// Warlord: ability learns by level
+    // Ability learns (warlord kit)
     {
       const c = mkChar("warlord", 10);
 
