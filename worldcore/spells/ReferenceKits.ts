@@ -257,11 +257,11 @@ export const REFERENCE_CLASS_KITS_L1_10 = {
     },
   ],
 
-  runic_knight: [
+  illusionist: [
     {
       kind: "spell",
-      classId: "runic_knight",
-      spellId: "runic_knight_rune_strike",
+      classId: "illusionist",
+      spellId: "illusionist_mind_spike",
       minLevel: 1,
       autoGrant: true,
       isEnabled: true,
@@ -269,8 +269,8 @@ export const REFERENCE_CLASS_KITS_L1_10 = {
     },
     {
       kind: "spell",
-      classId: "runic_knight",
-      spellId: "runic_knight_frost_brand",
+      classId: "illusionist",
+      spellId: "illusionist_snare",
       minLevel: 3,
       autoGrant: true,
       isEnabled: true,
@@ -278,8 +278,8 @@ export const REFERENCE_CLASS_KITS_L1_10 = {
     },
     {
       kind: "spell",
-      classId: "runic_knight",
-      spellId: "runic_knight_blood_siphon",
+      classId: "illusionist",
+      spellId: "illusionist_mesmerize",
       minLevel: 5,
       autoGrant: true,
       isEnabled: true,
@@ -287,8 +287,8 @@ export const REFERENCE_CLASS_KITS_L1_10 = {
     },
     {
       kind: "spell",
-      classId: "runic_knight",
-      spellId: "runic_knight_bone_shield",
+      classId: "illusionist",
+      spellId: "illusionist_mirror_image",
       minLevel: 7,
       autoGrant: true,
       isEnabled: true,
@@ -296,15 +296,14 @@ export const REFERENCE_CLASS_KITS_L1_10 = {
     },
     {
       kind: "spell",
-      classId: "runic_knight",
-      spellId: "runic_knight_plague_strike",
+      classId: "illusionist",
+      spellId: "illusionist_phantasmal_burn",
       minLevel: 9,
       autoGrant: true,
       isEnabled: true,
       source: "reference_kit",
     },
   ],
-
 
   templar: [
     {
