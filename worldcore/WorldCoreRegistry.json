@@ -191,7 +191,7 @@
       ],
       "kind": "service",
       "notes": [
-        "Builds a one-line MUD description for a listing like '#12 Hematite Iron Ore [common] x20 – 3g each (total 60g) by Testing [active]'.",
+        "Builds a one-line MUD description for a listing like '#12 Hematite Iron Ore [common] x20 \u2013 3g each (total 60g) by Testing [active]'.",
         "Looks up item definitions via ctx.items?.get to resolve item name and rarity."
       ],
       "path": "worldcore/auction/AuctionFormat.ts"
@@ -451,7 +451,7 @@
       ],
       "kind": "service",
       "notes": [
-        "Postgres-backed character service using the characters table and CharacterRow → CharacterState mapping.",
+        "Postgres-backed character service using the characters table and CharacterRow \u2192 CharacterState mapping.",
         "Supports partial JSONB patching, XP/level gains with per-class attribute growth, and spell/equipment updates."
       ],
       "path": "worldcore/characters/PostgresCharacterService.ts"
@@ -609,9 +609,30 @@
       "notes": [
         "Centralized gates for action resource costs + cooldowns (spells/songs/abilities).",
         "Guarantees: cooldowns do not start and resources are not consumed if the action fails.",
-        "Order: check cooldown remaining → spend resource → start cooldown."
+        "Order: check cooldown remaining \u2192 spend resource \u2192 start cooldown.",
+        "Also supports post-success power builders (e.g., Rune Strike \u2192 Runic Power, Jab \u2192 Chi)."
       ],
       "path": "worldcore/combat/CastingGates.ts"
+    },
+    "combat.combatLog": {
+      "dependsOn": [],
+      "functions": [
+        "clampInt(n,min,max)",
+        "formatHpPart(hpAfter?, maxHp?)",
+        "formatWorldSpellDotTickLine(opts)",
+        "formatWorldSpellHotTickLine(opts)",
+        "formatWorldSpellDirectDamageLine(opts)"
+      ],
+      "kind": "service",
+      "notes": [
+        "Keep these formatters boring and stable; contract tests pin exact output shapes.",
+        "All formatters include hp/maxHp when provided, and clamp numeric values defensively."
+      ],
+      "path": "worldcore/combat/CombatLog.ts",
+      "provides": [
+        "Deterministic combat log line formatting for DOT/HOT ticks and direct spell hits.",
+        "Canonical [world] [spell:*] prefix used by mud_result lines for parsing and UI."
+      ]
     },
     "combat.cooldowns": {
       "dependsOn": [
@@ -766,6 +787,25 @@
       ],
       "path": "worldcore/combat/NpcCombat.ts"
     },
+    "combat.playerHotTicker": {
+      "dependsOn": [
+        "combat.combatLog",
+        "combat.statusEffects",
+        "core.entityManager",
+        "core.sessionManager"
+      ],
+      "functions": [
+        "tickAllPlayerHots(entities,sessions,nowMs)"
+      ],
+      "kind": "utility",
+      "notes": [
+        "Ticks HOTs stored on CharacterState for all sessions and applies healing to the corresponding player entity.",
+        "Used by TickEngine to keep periodic healing in the canonical heartbeat.",
+        "Controlled by PW_HOT_TICK_MESSAGES (default on)."
+      ],
+      "path": "worldcore/combat/PlayerHotTicker.ts",
+      "provides": []
+    },
     "combat.regionDangerAuras": {
       "dependsOn": [
         "world.regionDanger",
@@ -889,45 +929,6 @@
         "StatusEffect storage for characters and entities (NPCs).",
         "StatusEffect storage under char.progression.statusEffects.active"
       ]
-    },
-    "combat.combatLog": {
-      "kind": "service",
-      "path": "worldcore/combat/CombatLog.ts",
-      "dependsOn": [],
-      "functions": [
-        "clampInt(n,min,max)",
-        "formatHpPart(hpAfter?, maxHp?)",
-        "formatWorldSpellDotTickLine(opts)",
-        "formatWorldSpellHotTickLine(opts)",
-        "formatWorldSpellDirectDamageLine(opts)"
-      ],
-      "provides": [
-        "Deterministic combat log line formatting for DOT/HOT ticks and direct spell hits.",
-        "Canonical [world] [spell:*] prefix used by mud_result lines for parsing and UI."
-      ],
-      "notes": [
-        "Keep these formatters boring and stable; contract tests pin exact output shapes.",
-        "All formatters include hp/maxHp when provided, and clamp numeric values defensively."
-      ]
-    },
-    "combat.playerHotTicker": {
-      "dependsOn": [
-        "combat.combatLog",
-        "combat.statusEffects",
-        "core.entityManager",
-        "core.sessionManager"
-      ],
-      "functions": [
-        "tickAllPlayerHots(entities,sessions,nowMs)"
-      ],
-      "kind": "utility",
-      "notes": [
-        "Ticks HOTs stored on CharacterState for all sessions and applies healing to the corresponding player entity.",
-        "Used by TickEngine to keep periodic healing in the canonical heartbeat.",
-        "Controlled by PW_HOT_TICK_MESSAGES (default on)."
-      ],
-      "path": "worldcore/combat/PlayerHotTicker.ts",
-      "provides": []
     },
     "combat.statusStackingPolicy": {
       "class": null,
@@ -1891,24 +1892,6 @@
         "spawn_points.proto_id column"
       ]
     },
-    "infra.seed.029_seed_crafting_items_v1": {
-      "class": "SeedMigration",
-      "ctorArgs": [],
-      "dependsOn": [
-        "infra.schema.007_items",
-        "worldcore/db/Database.ts"
-      ],
-      "kind": "service",
-      "lifecycle": "migration",
-      "notes": [
-        "Seeds baseline content for 029 seed crafting items v1."
-      ],
-      "owns": [],
-      "path": "worldcore/infra/schema/029_seed_crafting_items_v1.sql",
-      "provides": [
-        "seed rows for items"
-      ]
-    },
     "infra.schema.030_trade_recipes": {
       "class": "SchemaMigration",
       "ctorArgs": [],
@@ -1933,55 +1916,6 @@
         "trade_recipe_outputs table"
       ]
     },
-    "infra.seed.031_trade_recipes_v1": {
-      "class": "SeedMigration",
-      "ctorArgs": [],
-      "dependsOn": [
-        "infra.schema.030_trade_recipes",
-        "infra.schema.007_items",
-        "worldcore/db/Database.ts"
-      ],
-      "kind": "service",
-      "lifecycle": "migration",
-      "notes": [
-        "Tradeskills v1 baseline DB recipes.",
-        "Safe to re-run; uses ON CONFLICT UPSERT patterns."
-      ],
-      "owns": [
-        "Baseline recipe seeds using UPSERT",
-        "Inputs/outputs rows for each seeded recipe"
-      ],
-      "path": "worldcore/infra/schema/031_seed_trade_recipes_v1.sql",
-      "provides": [
-        "smelt_iron_ingot recipe (DB)",
-        "brew_minor_heal recipe (DB)"
-      ]
-    },
-    "infra.seed.032_trade_recipes_cooking_v1": {
-      "class": "SeedMigration",
-      "ctorArgs": [],
-      "dependsOn": [
-        "infra.schema.030_trade_recipes",
-        "infra.schema.007_items",
-        "worldcore/db/Database.ts"
-      ],
-      "kind": "service",
-      "lifecycle": "migration",
-      "notes": [
-        "Migrates RecipeCatalog cooking recipes into DB so crafting is DB-authoritative.",
-        "Safe to re-run."
-      ],
-      "owns": [
-        "Starter cooking recipe seeds (UPSERT)",
-        "Deterministic inputs/outputs replacement per recipe"
-      ],
-      "path": "worldcore/infra/schema/032_seed_trade_recipes_cooking_v1.sql",
-      "provides": [
-        "cook_river_trout (DB recipe seed)",
-        "mill_wheat_flour (DB recipe seed)",
-        "bake_simple_bread (DB recipe seed)"
-      ]
-    },
     "infra.schema.033_trade_recipes_station_kind": {
       "class": "SchemaMigration",
       "ctorArgs": [],
@@ -2001,22 +1935,6 @@
       "provides": [
         "trade_recipes.station_kind",
         "idx_trade_recipes_station_kind"
-      ]
-    },
-    "infra.seed.034_trade_recipes_station_kinds_v1": {
-      "class": "SeedMigration",
-      "ctorArgs": [],
-      "dependsOn": [
-        "infra.schema.033_trade_recipes_station_kind"
-      ],
-      "kind": "service",
-      "lifecycle": "migration",
-      "owns": [
-        "Station policy for starter recipes: campfire portable; forge/alchemy_table/millstone/oven town-only"
-      ],
-      "path": "worldcore/infra/schema/034_seed_trade_recipes_station_kinds_v1.sql",
-      "provides": [
-        "Starter recipe station_kind assignments"
       ]
     },
     "infra.schema.035_skin_loot_v1": {
@@ -2066,24 +1984,6 @@
         "spawn_points.town_tier column"
       ]
     },
-    "infra.seed.038_seed_skin_loot_town_rat_v1": {
-      "class": "SeedMigration",
-      "ctorArgs": [],
-      "dependsOn": [
-        "infra.schema.035_skin_loot_v1",
-        "worldcore/db/Database.ts"
-      ],
-      "kind": "service",
-      "lifecycle": "migration",
-      "notes": [
-        "Seeds baseline content for 038 seed skin loot town rat v1."
-      ],
-      "owns": [],
-      "path": "worldcore/infra/schema/038_seed_skin_loot_town_rat_v1.sql",
-      "provides": [
-        "seed rows for skin_loot"
-      ]
-    },
     "infra.schema.039_fix_town_rat_tags_v1": {
       "class": "SchemaMigration",
       "ctorArgs": [],
@@ -2118,38 +2018,6 @@
         "public table"
       ]
     },
-    "infra.seed.041_seed_spells_mvp": {
-      "class": "SeedMigration",
-      "ctorArgs": [],
-      "dependsOn": [
-        "infra.schema.040_create_spells_table",
-        "worldcore/db/Database.ts"
-      ],
-      "kind": "service",
-      "lifecycle": "migration",
-      "notes": [
-        "Seeds baseline content for 041 seed spells mvp."
-      ],
-      "owns": [],
-      "path": "worldcore/infra/schema/041_seed_spells_mvp.sql",
-      "provides": [
-        "seed rows for public"
-      ]
-    },
-    "infra.schema.042_create_ability_unlocks": {
-      "class": "(sql) infra schema migration",
-      "ctorArgs": [],
-      "dependsOn": [],
-      "kind": "service",
-      "lifecycle": "singleton",
-      "notes": [
-        "Creates ability_unlocks table for DB-driven ability progression (class_id + ability_id + min_level + auto_grant).",
-        "Mirrors spell_unlocks model; supports abilities catalog join."
-      ],
-      "owns": [],
-      "path": "worldcore/infra/schema/042_create_ability_unlocks_table.sql",
-      "provides": []
-    },
     "infra.schema.042_create_abilities_catalog": {
       "class": "(sql) infra schema migration",
       "ctorArgs": [],
@@ -2164,31 +2032,18 @@
       "path": "worldcore/infra/schema/042_create_abilities_table.sql",
       "provides": []
     },
-    "infra.seed.042_seed_ability_unlocks_mvp": {
-      "class": "(sql) infra seed migration",
+    "infra.schema.042_create_ability_unlocks": {
+      "class": "(sql) infra schema migration",
       "ctorArgs": [],
       "dependsOn": [],
       "kind": "service",
       "lifecycle": "singleton",
       "notes": [
-        "Seeds MVP warrior ability unlocks for early UI/progression testing."
+        "Creates ability_unlocks table for DB-driven ability progression (class_id + ability_id + min_level + auto_grant).",
+        "Mirrors spell_unlocks model; supports abilities catalog join."
       ],
       "owns": [],
-      "path": "worldcore/infra/schema/042_seed_ability_unlocks_mvp.sql",
-      "provides": []
-    },
-    "infra.seed.042_seed_abilities_from_unlocks": {
-      "class": "(sql) infra seed migration",
-      "ctorArgs": [],
-      "dependsOn": [],
-      "kind": "service",
-      "lifecycle": "singleton",
-      "notes": [
-        "Ensures abilities catalog rows exist for any ability referenced by ability_unlocks (safe upsert).",
-        "Title-cases id into name when missing; does not overwrite existing descriptions."
-      ],
-      "owns": [],
-      "path": "worldcore/infra/schema/042_seed_abilities_from_unlocks.sql",
+      "path": "worldcore/infra/schema/042_create_ability_unlocks_table.sql",
       "provides": []
     },
     "infra.schema.043_create_npc_loot_table": {
@@ -2206,26 +2061,6 @@
       "path": "worldcore/infra/schema/043_create_npc_loot_table.sql",
       "provides": [
         "public table"
-      ]
-    },
-    "infra.seed.044_npc_loot_seed_v0": {
-      "class": "SeedMigration",
-      "ctorArgs": [],
-      "dependsOn": [
-        "infra.schema.043_create_npc_loot_table",
-        "infra.schema.007_items",
-        "infra.schema.024_npcs",
-        "worldcore/db/Database.ts"
-      ],
-      "kind": "service",
-      "lifecycle": "migration",
-      "notes": [
-        "Seeds baseline content for 044 npc loot seed v0."
-      ],
-      "owns": [],
-      "path": "worldcore/infra/schema/044_npc_loot_seed_v0.sql",
-      "provides": [
-        "seed rows for public"
       ]
     },
     "infra.schema.045_create_vendor_log": {
@@ -2310,19 +2145,6 @@
       "path": "worldcore/infra/schema/049_create_spell_unlocks_table.sql",
       "provides": []
     },
-    "infra.seed.049_seed_spell_unlocks_from_spells": {
-      "class": "(sql) infra seed migration",
-      "ctorArgs": [],
-      "dependsOn": [],
-      "kind": "service",
-      "lifecycle": "singleton",
-      "notes": [
-        "Bootstrap seed: derives initial spell_unlocks rows from spells catalog."
-      ],
-      "owns": [],
-      "path": "worldcore/infra/schema/049_seed_spell_unlocks_from_spells.sql",
-      "provides": []
-    },
     "infra.schema.050_add_spell_effect_payloads_v1": {
       "class": "(sql) infra schema migration",
       "ctorArgs": [],
@@ -2336,6 +2158,295 @@
       "path": "worldcore/infra/schema/050_add_spell_effect_payloads_v1.sql",
       "provides": []
     },
+    "infra.schema.056_seed_crusader_class_kit_L1_10": {
+      "kind": "schema",
+      "lifecycle": "migration/seed",
+      "notes": [
+        "Adds unique Crusader spells instead of mapping to templar kit.",
+        "Deletes old templar-mapped unlocks for Crusader (notes=wave1 kit: templar map)."
+      ],
+      "owns": [
+        "public.spells (crusader_*)",
+        "public.spell_unlocks (crusader, wave1 kit)"
+      ],
+      "path": "worldcore/infra/schema/056_seed_crusader_class_kit_L1_10.sql",
+      "provides": [
+        "Crusader L1\u201310 spell kit (spells + unlocks)"
+      ],
+      "service": "worldcore"
+    },
+    "infra.schema.057_seed_hunter_spellkit_L1_10": {
+      "class": "(sql) infra schema migration",
+      "ctorArgs": [],
+      "dependsOn": [],
+      "kind": "service",
+      "lifecycle": "singleton",
+      "notes": [
+        "Seeds Hunter reference kit into DB (idempotent)."
+      ],
+      "owns": [
+        "public.spells (hunter_*)",
+        "public.spell_unlocks (hunter, wave1 kit)"
+      ],
+      "path": "worldcore/infra/schema/057_seed_hunter_spellkit_L1_10.sql",
+      "provides": [
+        "Hunter L1\u201310 spell kit (spells + unlocks)"
+      ]
+    },
+    "infra.schema.058_cleanup_hunter_spellkit_L1_10": {
+      "class": "(sql) infra schema migration",
+      "ctorArgs": [],
+      "dependsOn": [],
+      "kind": "service",
+      "lifecycle": "singleton",
+      "notes": [
+        "Removes duplicate/merged Hunter definitions from earlier passes and keeps canonical ids."
+      ],
+      "owns": [
+        "public.spells (hunter_*)",
+        "public.spell_unlocks (hunter, wave1 kit)"
+      ],
+      "path": "worldcore/infra/schema/058_cleanup_hunter_spellkit_L1_10.sql",
+      "provides": [
+        "Hunter L1\u201310 spell kit cleanup (canonical ids + no duplicates)"
+      ]
+    },
+    "infra.schema.059_seed_illusionist_spellkit_L1_10": {
+      "class": "(sql) infra schema migration",
+      "ctorArgs": [],
+      "dependsOn": [],
+      "kind": "service",
+      "lifecycle": "singleton",
+      "notes": [
+        "Seeds Illusionist reference kit into DB (idempotent).",
+        "v0 control semantics use damageDealtPct suppression until movement/action gating exists."
+      ],
+      "owns": [
+        "public.spells (illusionist_*)",
+        "public.spell_unlocks (illusionist, wave1 kit)"
+      ],
+      "path": "worldcore/infra/schema/059_seed_illusionist_spellkit_L1_10.sql",
+      "provides": [
+        "Illusionist L1\u201310 spell kit (spells + unlocks)"
+      ]
+    },
+    "infra.schema.059_seed_runic_knight_spellkit_L1_10": {
+      "class": "(sql) infra schema migration",
+      "ctorArgs": [],
+      "dependsOn": [],
+      "kind": "service",
+      "lifecycle": "singleton",
+      "notes": [
+        "Seeds Runic Knight reference kit into DB (idempotent)."
+      ],
+      "owns": [
+        "public.spells (runic_knight_*)",
+        "public.spell_unlocks (runic_knight, wave1 kit)"
+      ],
+      "path": "worldcore/infra/schema/059_seed_runic_knight_spellkit_L1_10.sql",
+      "provides": [
+        "Runic Knight L1\u201310 spell kit (spells + unlocks)"
+      ]
+    },
+    "infra.schema.060_seed_ascetic_spellkit_L1_10": {
+      "class": "(sql) infra schema migration",
+      "ctorArgs": [],
+      "dependsOn": [],
+      "kind": "service",
+      "lifecycle": "singleton",
+      "notes": [
+        "Seeds Ascetic reference kit into DB (idempotent).",
+        "Chi is normalized to 100 and is built by Jab on successful use."
+      ],
+      "owns": [
+        "public.spells (ascetic_*)",
+        "public.spell_unlocks (ascetic, wave1 kit)"
+      ],
+      "path": "worldcore/infra/schema/060_seed_ascetic_spellkit_L1_10.sql",
+      "provides": [
+        "Ascetic L1\u201310 spell kit (spells + unlocks)",
+        "Introduces Chi (primary resource) for Ascetic"
+      ]
+    },
+    "infra.seed.029_seed_crafting_items_v1": {
+      "class": "SeedMigration",
+      "ctorArgs": [],
+      "dependsOn": [
+        "infra.schema.007_items",
+        "worldcore/db/Database.ts"
+      ],
+      "kind": "service",
+      "lifecycle": "migration",
+      "notes": [
+        "Seeds baseline content for 029 seed crafting items v1."
+      ],
+      "owns": [],
+      "path": "worldcore/infra/schema/029_seed_crafting_items_v1.sql",
+      "provides": [
+        "seed rows for items"
+      ]
+    },
+    "infra.seed.031_trade_recipes_v1": {
+      "class": "SeedMigration",
+      "ctorArgs": [],
+      "dependsOn": [
+        "infra.schema.030_trade_recipes",
+        "infra.schema.007_items",
+        "worldcore/db/Database.ts"
+      ],
+      "kind": "service",
+      "lifecycle": "migration",
+      "notes": [
+        "Tradeskills v1 baseline DB recipes.",
+        "Safe to re-run; uses ON CONFLICT UPSERT patterns."
+      ],
+      "owns": [
+        "Baseline recipe seeds using UPSERT",
+        "Inputs/outputs rows for each seeded recipe"
+      ],
+      "path": "worldcore/infra/schema/031_seed_trade_recipes_v1.sql",
+      "provides": [
+        "smelt_iron_ingot recipe (DB)",
+        "brew_minor_heal recipe (DB)"
+      ]
+    },
+    "infra.seed.032_trade_recipes_cooking_v1": {
+      "class": "SeedMigration",
+      "ctorArgs": [],
+      "dependsOn": [
+        "infra.schema.030_trade_recipes",
+        "infra.schema.007_items",
+        "worldcore/db/Database.ts"
+      ],
+      "kind": "service",
+      "lifecycle": "migration",
+      "notes": [
+        "Migrates RecipeCatalog cooking recipes into DB so crafting is DB-authoritative.",
+        "Safe to re-run."
+      ],
+      "owns": [
+        "Starter cooking recipe seeds (UPSERT)",
+        "Deterministic inputs/outputs replacement per recipe"
+      ],
+      "path": "worldcore/infra/schema/032_seed_trade_recipes_cooking_v1.sql",
+      "provides": [
+        "cook_river_trout (DB recipe seed)",
+        "mill_wheat_flour (DB recipe seed)",
+        "bake_simple_bread (DB recipe seed)"
+      ]
+    },
+    "infra.seed.034_trade_recipes_station_kinds_v1": {
+      "class": "SeedMigration",
+      "ctorArgs": [],
+      "dependsOn": [
+        "infra.schema.033_trade_recipes_station_kind"
+      ],
+      "kind": "service",
+      "lifecycle": "migration",
+      "owns": [
+        "Station policy for starter recipes: campfire portable; forge/alchemy_table/millstone/oven town-only"
+      ],
+      "path": "worldcore/infra/schema/034_seed_trade_recipes_station_kinds_v1.sql",
+      "provides": [
+        "Starter recipe station_kind assignments"
+      ]
+    },
+    "infra.seed.038_seed_skin_loot_town_rat_v1": {
+      "class": "SeedMigration",
+      "ctorArgs": [],
+      "dependsOn": [
+        "infra.schema.035_skin_loot_v1",
+        "worldcore/db/Database.ts"
+      ],
+      "kind": "service",
+      "lifecycle": "migration",
+      "notes": [
+        "Seeds baseline content for 038 seed skin loot town rat v1."
+      ],
+      "owns": [],
+      "path": "worldcore/infra/schema/038_seed_skin_loot_town_rat_v1.sql",
+      "provides": [
+        "seed rows for skin_loot"
+      ]
+    },
+    "infra.seed.041_seed_spells_mvp": {
+      "class": "SeedMigration",
+      "ctorArgs": [],
+      "dependsOn": [
+        "infra.schema.040_create_spells_table",
+        "worldcore/db/Database.ts"
+      ],
+      "kind": "service",
+      "lifecycle": "migration",
+      "notes": [
+        "Seeds baseline content for 041 seed spells mvp."
+      ],
+      "owns": [],
+      "path": "worldcore/infra/schema/041_seed_spells_mvp.sql",
+      "provides": [
+        "seed rows for public"
+      ]
+    },
+    "infra.seed.042_seed_abilities_from_unlocks": {
+      "class": "(sql) infra seed migration",
+      "ctorArgs": [],
+      "dependsOn": [],
+      "kind": "service",
+      "lifecycle": "singleton",
+      "notes": [
+        "Ensures abilities catalog rows exist for any ability referenced by ability_unlocks (safe upsert).",
+        "Title-cases id into name when missing; does not overwrite existing descriptions."
+      ],
+      "owns": [],
+      "path": "worldcore/infra/schema/042_seed_abilities_from_unlocks.sql",
+      "provides": []
+    },
+    "infra.seed.042_seed_ability_unlocks_mvp": {
+      "class": "(sql) infra seed migration",
+      "ctorArgs": [],
+      "dependsOn": [],
+      "kind": "service",
+      "lifecycle": "singleton",
+      "notes": [
+        "Seeds MVP warrior ability unlocks for early UI/progression testing."
+      ],
+      "owns": [],
+      "path": "worldcore/infra/schema/042_seed_ability_unlocks_mvp.sql",
+      "provides": []
+    },
+    "infra.seed.044_npc_loot_seed_v0": {
+      "class": "SeedMigration",
+      "ctorArgs": [],
+      "dependsOn": [
+        "infra.schema.043_create_npc_loot_table",
+        "infra.schema.007_items",
+        "infra.schema.024_npcs",
+        "worldcore/db/Database.ts"
+      ],
+      "kind": "service",
+      "lifecycle": "migration",
+      "notes": [
+        "Seeds baseline content for 044 npc loot seed v0."
+      ],
+      "owns": [],
+      "path": "worldcore/infra/schema/044_npc_loot_seed_v0.sql",
+      "provides": [
+        "seed rows for public"
+      ]
+    },
+    "infra.seed.049_seed_spell_unlocks_from_spells": {
+      "class": "(sql) infra seed migration",
+      "ctorArgs": [],
+      "dependsOn": [],
+      "kind": "service",
+      "lifecycle": "singleton",
+      "notes": [
+        "Bootstrap seed: derives initial spell_unlocks rows from spells catalog."
+      ],
+      "owns": [],
+      "path": "worldcore/infra/schema/049_seed_spell_unlocks_from_spells.sql",
+      "provides": []
+    },
     "infra.seed.050_seed_reference_class_kits_L1_10": {
       "class": "(sql) infra seed migration",
       "ctorArgs": [],
@@ -2343,7 +2454,7 @@
       "kind": "service",
       "lifecycle": "singleton",
       "notes": [
-        "Seeds Reference Class Kits L1–10 (MVP) used by deterministic progression tests."
+        "Seeds Reference Class Kits L1\u201310 (MVP) used by deterministic progression tests."
       ],
       "owns": [],
       "path": "worldcore/infra/schema/050_seed_reference_class_kits_L1_10.sql",
@@ -2369,7 +2480,7 @@
       "kind": "service",
       "lifecycle": "singleton",
       "notes": [
-        "Seeds spells catalog entries referenced by the L1–10 class kits."
+        "Seeds spells catalog entries referenced by the L1\u201310 class kits."
       ],
       "owns": [],
       "path": "worldcore/infra/schema/050_seed_spells_reference_kits_l1_10.sql",
@@ -2382,7 +2493,7 @@
       "kind": "service",
       "lifecycle": "singleton",
       "notes": [
-        "Seeds spell_unlocks for L1–10 reference kits; enables deterministic autogrant tests."
+        "Seeds spell_unlocks for L1\u201310 reference kits; enables deterministic autogrant tests."
       ],
       "owns": [],
       "path": "worldcore/infra/schema/051_seed_spell_unlocks_reference_kits_l1_10.sql",
@@ -2415,14 +2526,13 @@
       ]
     },
     "infra.seed.053_seed_basic_loot_items_v1": {
-      "kind": "service",
-      "path": "worldcore/infra/schema/053_seed_basic_loot_items_v1.sql",
       "class": "SeedMigration",
       "ctorArgs": [],
       "dependsOn": [
         "infra.schema.007_items",
         "worldcore/db/Database.ts"
       ],
+      "kind": "service",
       "lifecycle": "migration",
       "notes": [
         "Seeds minimal items required by early loot + tradeskill seeds (so npc_loot/skin_loot/recipes don't dangle).",
@@ -2431,6 +2541,7 @@
       "owns": [
         "Baseline item ids referenced by npc_loot and skin_loot seeds (rat_tail, rat_meat_raw, ore_iron_hematite)"
       ],
+      "path": "worldcore/infra/schema/053_seed_basic_loot_items_v1.sql",
       "provides": [
         "seed rows for items",
         "ore_iron_hematite item",
@@ -2439,104 +2550,34 @@
       ]
     },
     "infra.seed.054_seed_common_class_kits_L1_10": {
-      "kind": "service",
-      "path": "worldcore/infra/schema/054_seed_common_class_kits_L1_10.sql",
       "class": "(sql) infra seed migration",
-      "lifecycle": "singleton",
       "ctorArgs": [],
       "dependsOn": [],
-      "provides": [],
-      "owns": [],
+      "kind": "service",
+      "lifecycle": "singleton",
       "notes": [
-        "Seeds a minimal common L1–10 spell kit (damage + dot + debuff + shield + hot) for classes that do not yet have bespoke kits.",
+        "Seeds a minimal common L1\u201310 spell kit (damage + dot + debuff + shield + hot) for classes that do not yet have bespoke kits.",
         "Designed to keep every class playable while per-class kits are authored later."
-      ]
+      ],
+      "owns": [],
+      "path": "worldcore/infra/schema/054_seed_common_class_kits_L1_10.sql",
+      "provides": []
     },
     "infra.seed.055_seed_wave1_class_kit_mappings_L1_10": {
-      "kind": "service",
-      "path": "worldcore/infra/schema/055_seed_wave1_class_kit_mappings_L1_10.sql",
       "class": "(sql) infra seed migration",
-      "lifecycle": "singleton",
       "ctorArgs": [],
       "dependsOn": [],
-      "provides": [],
-      "owns": [],
+      "kind": "service",
+      "lifecycle": "singleton",
       "notes": [
         "Wave 1 bootstrap: maps not-yet-bespoke classes onto proven kits (templar/archmage/warlock spells; warrior abilities).",
         "Also updates mapped kit spell rows in public.spells to class_id='any' so cross-class unlocks can actually surface in runtime/UI queries.",
         "Idempotent UPSERTs (ON CONFLICT DO UPDATE) so re-running seeds is safe.",
         "Intentionally does not touch Adventurer (special anti-datamine class rules)."
-      ]
-    },
-    "infra.schema.056_seed_crusader_class_kit_L1_10": {
-      "kind": "schema",
-      "service": "worldcore",
-      "path": "worldcore/infra/schema/056_seed_crusader_class_kit_L1_10.sql",
-      "lifecycle": "migration/seed",
-      "provides": [
-        "Crusader L1–10 spell kit (spells + unlocks)"
       ],
-      "owns": [
-        "public.spells (crusader_*)",
-        "public.spell_unlocks (crusader, wave1 kit)"
-      ],
-      "notes": [
-        "Adds unique Crusader spells instead of mapping to templar kit.",
-        "Deletes old templar-mapped unlocks for Crusader (notes=wave1 kit: templar map)."
-      ]
-    },
-    "infra.schema.057_seed_hunter_spellkit_L1_10": {
-      "kind": "schema",
-      "service": "worldcore",
-      "path": "worldcore/infra/schema/057_seed_hunter_spellkit_L1_10.sql",
-      "lifecycle": "migration/seed",
-      "provides": [
-        "Hunter L1–10 spell kit (spells + unlocks)"
-      ],
-      "owns": [
-        "public.spells (hunter_*)",
-        "public.spell_unlocks (hunter, reference kit)"
-      ],
-      "notes": [
-        "Adds unique Hunter spells (Wave1 bespoke kit) instead of mapping to warrior abilities.",
-        "Idempotent: deletes any prior hunter_* spell rows + unlock rows before inserting.",
-        "Also removes the Wave1 stopgap ability_unlocks rows where hunter was mapped to warrior kit."
-      ]
-    },
-    "infra.schema.058_cleanup_hunter_spellkit_L1_10": {
-      "kind": "schema",
-      "service": "worldcore",
-      "path": "worldcore/infra/schema/058_cleanup_hunter_spellkit_L1_10.sql",
-      "lifecycle": "migration/seed",
-      "provides": [
-        "Hunter L1–10 spell kit canonical cleanup (removes duplicates/ghost ids)"
-      ],
-      "owns": [
-        "public.spells (hunter_*)",
-        "public.spell_unlocks (hunter, reference kit)"
-      ],
-      "notes": [
-        "Canonicalizes Hunter spell ids after first/second-pass overlap (removes duplicate/ghost spells).",
-        "Re-seeds the final 5-spell Hunter kit and matching spell_unlocks schedule.",
-        "Keeps DB spell ids aligned with ReferenceKits + SpellTypes so UI/cast semantics stay consistent."
-      ]
-    },
-    "infra.schema.059_seed_illusionist_spellkit_L1_10": {
-      "kind": "schema",
-      "service": "worldcore",
-      "path": "worldcore/infra/schema/059_seed_illusionist_spellkit_L1_10.sql",
-      "lifecycle": "migration/seed",
-      "provides": [
-        "Illusionist L1–10 spell kit (spells + unlocks)"
-      ],
-      "owns": [
-        "public.spells (illusionist_*)",
-        "public.spell_unlocks (illusionist, reference kit)"
-      ],
-      "notes": [
-        "Adds unique Illusionist spells for L1–10 (Wave1 bespoke kit).",
-        "v0 control model: snare/mez are represented as damageDealtPct suppression until true movement/action gating is implemented."
-      ]
+      "owns": [],
+      "path": "worldcore/infra/schema/055_seed_wave1_class_kit_mappings_L1_10.sql",
+      "provides": []
     },
     "interaction.ops": {
       "dependsOn": [
@@ -4127,7 +4168,7 @@
         "Refreshes personal nodes, then lists nearby entities within radius with short handles like rat.1.",
         "filter/group/sort flags",
         "--limit / --max",
-        "safe caps + “UI-friendly output shaping"
+        "safe caps + \u201cUI-friendly output shaping"
       ],
       "path": "worldcore/mud/commands/world/nearbyCommand.ts"
     },
@@ -4477,7 +4518,7 @@
         "Determines which NPCs are 'protected' (civilian, vendor, questgiver, protected_town, etc.) and records crimes against them on the attacker.",
         "Sets recentCrimeUntil and recentCrimeSeverity (minor|severe) on characters to drive guard response.",
         "law_exempt > law_protected > legacy tags precedence",
-        "guards/resources are never “protected” for crime purposes"
+        "guards/resources are never \u201cprotected\u201d for crime purposes"
       ],
       "path": "worldcore/npc/NpcCrime.ts"
     },
@@ -4497,7 +4538,7 @@
       ],
       "kind": "service",
       "notes": [
-        "Owns runtime NPC state, per-room maps, threat tables, and bridges EntityManager ↔ AI brain ↔ sessions/chat.",
+        "Owns runtime NPC state, per-room maps, threat tables, and bridges EntityManager \u2194 AI brain \u2194 sessions/chat.",
         "Spawns/Despawns NPCs, applies damage, records threat, coordinates guard/pack help, coward fleeing, gating, and drives AI decisions each tick.",
         "On lethal damage and before despawn, clears combat status effects so corpses don't keep ticking DOTs or carry modifiers."
       ],
@@ -5018,8 +5059,8 @@
       ],
       "kind": "service",
       "notes": [
-        "Manages Fury/Mana pools stored under char.progression.powerResources.",
-        "Provides class->primary resource mapping and helpers to spend/gain power."
+        "Manages Mana/Fury/Runic Power/Chi pools stored under char.progression.powerResources.",
+        "Provides class\u2192primary resource mapping and helpers to spend/gain power (including post-success builders)."
       ],
       "path": "worldcore/resources/PowerResources.ts"
     },
@@ -5108,7 +5149,7 @@
     "sim.brainActions": {
       "kind": "types",
       "notes": [
-        "Types for Mother-Brain style planning outputs (audit → plan actions → apply).",
+        "Types for Mother-Brain style planning outputs (audit \u2192 plan actions \u2192 apply).",
         "Includes PlaceSpawnAction used by SettlementPlanner + simBrain apply."
       ],
       "path": "worldcore/sim/BrainActions.ts"
@@ -5390,7 +5431,7 @@
       "kind": "module",
       "lifecycle": "static",
       "notes": [
-        "Reference class kits L1–10 (MVP) used for deterministic starter spell/ability unlock expectations and tests.",
+        "Reference class kits L1\u201310 (MVP) used for deterministic starter spell/ability unlock expectations and tests.",
         "Seeded into DB via 050/051 migrations and used by SpellLearning/AbilityLearning contract tests."
       ],
       "owns": [],
@@ -5586,7 +5627,7 @@
       "kind": "utility",
       "notes": [
         "Computes difficulty tier by radial distance from world center.",
-        "Uses max world radius ≈ 2048 units for current prime shard."
+        "Uses max world radius \u2248 2048 units for current prime shard."
       ],
       "path": "worldcore/terrain/regions/RegionDifficulty.ts",
       "provides": [
@@ -5719,6 +5760,173 @@
       "path": "worldcore/test/combatEngine.contract.test.ts",
       "provides": []
     },
+    "test.contractAdminAbilitiesRoutes": {
+      "dependsOn": [
+        "web-backend.routes.adminAbilities",
+        "web-frontend.pages.AdminAbilitiesPage"
+      ],
+      "kind": "test.contract",
+      "notes": [
+        "Contract: AdminAbilities editor wiring is present (route + UI endpoint references).",
+        "Regex-based assertions to avoid brittleness during UI refactors."
+      ],
+      "path": "worldcore/test/contract_adminAbilitiesRoutes.test.ts",
+      "provides": [
+        "Guards /api/admin/abilities GET+POST endpoints from accidental removal/renaming",
+        "Guards AdminAbilitiesPage fetch wiring (catalog)"
+      ]
+    },
+    "test.contractAdminAbilitiesSchemaColumns": {
+      "dependsOn": [
+        "infra.schema"
+      ],
+      "kind": "test.contract",
+      "notes": [
+        "Contract: abilities table schema includes columns required by the admin abilities editor.",
+        "Structural scan of worldcore/infra/schema/*.sql (no DB needed)."
+      ],
+      "path": "worldcore/test/contract_adminAbilitiesSchemaColumns.test.ts",
+      "provides": [
+        "Guards abilities schema columns used by AdminAbilities editor"
+      ]
+    },
+    "test.contractAdminAbilityUnlocksRoutes": {
+      "dependsOn": [
+        "web-backend.routes.adminAbilityUnlocks",
+        "web-frontend.pages.AdminAbilitiesPage"
+      ],
+      "kind": "test.contract",
+      "notes": [
+        "Contract: Admin ability_unlocks editor wiring is present (route + UI endpoint references).",
+        "Regex-based assertions to avoid brittleness during UI refactors."
+      ],
+      "path": "worldcore/test/contract_adminAbilityUnlocksRoutes.test.ts",
+      "provides": [
+        "Guards /api/admin/ability_unlocks GET+POST endpoints from accidental removal/renaming",
+        "Guards AdminAbilitiesPage fetch wiring (unlock rules)"
+      ]
+    },
+    "test.contractAdminAbilityUnlocksSchemaColumns": {
+      "dependsOn": [
+        "infra.schema"
+      ],
+      "kind": "test.contract",
+      "notes": [
+        "Contract: ability_unlocks table schema includes columns required by the admin unlock rules editor.",
+        "Structural scan of worldcore/infra/schema/*.sql (no DB needed)."
+      ],
+      "path": "worldcore/test/contract_adminAbilityUnlocksSchemaColumns.test.ts",
+      "provides": [
+        "Guards ability_unlocks schema columns used by AdminAbilities editor"
+      ]
+    },
+    "test.contractAdminHardeningRoutesAndAuth": {
+      "dependsOn": [
+        "web-backend.middleware.adminAuth",
+        "web-backend.index"
+      ],
+      "kind": "test.contract",
+      "notes": [
+        "Contract: /api/admin/* routes are mounted with maybeRequireAdmin(...) and adminAuth contains required RBAC semantics.",
+        "Guards against accidental removal/renaming of admin gating and root-only restrictions.",
+        "Structural/regex-based; does not spin up Express or require a live database."
+      ],
+      "path": "worldcore/test/contract_adminHardeningRoutesAndAuth.test.ts",
+      "provides": [
+        "Guards admin route mounts are gated by middleware",
+        "Guards adminAuth error codes and role mapping",
+        "Guards root-only spawn_points destructive endpoints remain protected"
+      ]
+    },
+    "test.contractAdminItemsRoutes": {
+      "dependsOn": [
+        "web-backend.routes.adminItems",
+        "web-frontend.pages.adminItems"
+      ],
+      "kind": "test.contract",
+      "notes": [
+        "Contract: AdminItems editor wiring is present (route + UI endpoints).",
+        "Ensures core API verbs stay stable while the editor iterates.",
+        "Assertions are regex-based to avoid brittleness during refactors."
+      ],
+      "path": "worldcore/test/contract_adminItemsRoutes.test.ts",
+      "provides": [
+        "Guards /api/admin/items GET+POST endpoints from accidental removal/renaming",
+        "Guards /api/admin/items/options typeahead endpoint for ItemPicker",
+        "Guards AdminItemsPage + ItemPicker fetch wiring"
+      ]
+    },
+    "test.contractAdminItemsSchemaColumns": {
+      "dependsOn": [],
+      "kind": "test.contract",
+      "notes": [
+        "Contract: items catalog schema includes minimum columns required by the admin items editor.",
+        "Keeps this conservative while item schema naming settles (no hard-coded kind/tags/enabled assumptions)."
+      ],
+      "path": "worldcore/test/contract_adminItemsSchemaColumns.test.ts",
+      "provides": [
+        "Fails fast if minimum columns are removed or renamed in infra/schema SQL"
+      ]
+    },
+    "test.contractAdminNpcsRoutes": {
+      "dependsOn": [
+        "web-backend.routes.adminNpcs",
+        "web-frontend.pages.adminNpcs"
+      ],
+      "kind": "test.contract",
+      "notes": [
+        "Contract: Admin NPC editor wiring is present (route + UI endpoints).",
+        "Guards /api/admin/npcs GET+POST endpoints from accidental removal/renaming.",
+        "Regex-based assertions to avoid brittleness during refactors."
+      ],
+      "path": "worldcore/test/contract_adminNpcsRoutes.test.ts",
+      "provides": [
+        "Guards /api/admin/npcs mount + basic verbs",
+        "Guards AdminNpcsPage fetch wiring"
+      ]
+    },
+    "test.contractAdminNpcsSchemaColumns": {
+      "dependsOn": [],
+      "kind": "test.contract",
+      "notes": [
+        "Contract: npcs table schema includes required columns for the admin NPC editor.",
+        "Scans all schema migrations (CREATE TABLE + ALTER TABLE ADD COLUMN)."
+      ],
+      "path": "worldcore/test/contract_adminNpcsSchemaColumns.test.ts",
+      "provides": [
+        "Fails fast if npc columns are removed or renamed in infra/schema SQL"
+      ]
+    },
+    "test.contractAdminQuestsRoutes": {
+      "dependsOn": [
+        "web-backend.routes.adminQuests",
+        "web-frontend.pages.adminQuests"
+      ],
+      "kind": "test.contract",
+      "notes": [
+        "Contract: Admin Quests editor wiring is present (route + UI endpoints).",
+        "Guards /api/admin/quests GET+POST endpoints from accidental removal/renaming.",
+        "Also asserts reward UX uses /api/admin/items/options (current editor behavior)."
+      ],
+      "path": "worldcore/test/contract_adminQuestsRoutes.test.ts",
+      "provides": [
+        "Guards /api/admin/quests mount + basic verbs",
+        "Guards AdminQuestsPage fetch wiring",
+        "Guards reward item picker dependency on /api/admin/items/options"
+      ]
+    },
+    "test.contractAdminQuestsSchemaColumns": {
+      "dependsOn": [],
+      "kind": "test.contract",
+      "notes": [
+        "Contract: quests, quest_objectives, quest_rewards schema include required columns for the admin quests editor.",
+        "Scans all schema migrations (CREATE TABLE + ALTER TABLE ADD COLUMN)."
+      ],
+      "path": "worldcore/test/contract_adminQuestsSchemaColumns.test.ts",
+      "provides": [
+        "Fails fast if quest columns are removed or renamed in infra/schema SQL"
+      ]
+    },
     "test.contractAdminSpawnPointsConfirmRequiredUi": {
       "class": null,
       "ctorArgs": [],
@@ -5753,6 +5961,37 @@
       "path": "worldcore/test/contract_adminSpawnPointsSnapshotRestoreRoutes.test.ts",
       "provides": [],
       "service": "test.contract"
+    },
+    "test.contractAdminSpellsRoutes": {
+      "dependsOn": [
+        "web-backend.routes.adminSpells",
+        "web-frontend.pages.adminSpells"
+      ],
+      "kind": "test.contract",
+      "notes": [
+        "Contract: AdminSpells editor wiring is present (route + UI endpoints).",
+        "Ensures core API verbs stay stable while the editor iterates.",
+        "Assertions are regex-based to avoid brittleness during refactors."
+      ],
+      "path": "worldcore/test/contract_adminSpellsRoutes.test.ts",
+      "provides": [
+        "Guards /api/admin/spells GET+POST endpoints from accidental removal/renaming",
+        "Guards AdminSpellsPage fetch wiring (list + save)"
+      ]
+    },
+    "test.contractAdminSpellsSchemaColumns": {
+      "dependsOn": [
+        "tools.seedSpellsColumnsAudit"
+      ],
+      "kind": "test.contract",
+      "notes": [
+        "Contract: spells catalog schema includes the columns required by the admin spell editor + seed files.",
+        "Prevents drift between infra/schema SQL and editor/runtime expectations."
+      ],
+      "path": "worldcore/test/contract_adminSpellsSchemaColumns.test.ts",
+      "provides": [
+        "Fails fast if required columns are removed or renamed in 040_create_spells_table.sql"
+      ]
     },
     "test.contractAttackNoSuchTargetMessage": {
       "class": null,
@@ -5847,6 +6086,31 @@
       "path": "worldcore/test/contract_combatEngine.test.ts",
       "provides": []
     },
+    "test.contractCombatLogDirectSpellDamageConsistent": {
+      "dependsOn": [
+        "combat.combatLog"
+      ],
+      "kind": "test",
+      "notes": [
+        "Locks CombatLog direct spell damage formatting to match DOT/HOT tick style and canonical prefix."
+      ],
+      "path": "worldcore/test/contract_combatLog_directSpellDamage_consistent.test.ts"
+    },
+    "test.contractCommonClassKitsL1_10": {
+      "dependsOn": [
+        "infra.seed.054_seed_common_class_kits_L1_10"
+      ],
+      "kind": "test.contract",
+      "notes": [
+        "Contract: ensures the repo always contains an idempotent seed granting a minimal L1\u201310 kit to classes without bespoke kits yet.",
+        "Regex/text assertions only (intentionally not DB-coupled)."
+      ],
+      "path": "worldcore/test/contract_commonClassKits_L1_10.test.ts",
+      "provides": [
+        "Guards existence of common L1\u201310 kit seed file",
+        "Guards that missing classes remain covered by basic unlocks"
+      ]
+    },
     "test.contractCraftingRequiresStations": {
       "class": null,
       "ctorArgs": [],
@@ -5865,6 +6129,20 @@
       "provides": [],
       "service": "test.contract"
     },
+    "test.contractCrusaderKitL1_10": {
+      "dependsOn": [
+        "worldcore.reference.ReferenceKits",
+        "worldcore.spells.SpellTypes",
+        "worldcore.classes.ClassDefinitions"
+      ],
+      "kind": "test",
+      "lifecycle": "contract",
+      "path": "worldcore/test/contract_crusaderKit_L1_10.test.ts",
+      "provides": [
+        "Guards Crusader reference kit presence + spell IDs exist in SpellTypes + mana resource exists"
+      ],
+      "service": "worldcore"
+    },
     "test.contractDebugEffectsCommand": {
       "dependsOn": [
         "mud.commands.debug.debugEffectsCommand",
@@ -5876,6 +6154,68 @@
       ],
       "path": "worldcore/test/contract_debugEffectsCommand.test.ts",
       "service": "test.contract"
+    },
+    "test.contractDotKillRewardsAttributionPipeline": {
+      "class": "(test) contract_dotKillRewards_attributionPipeline",
+      "ctorArgs": [],
+      "dependsOn": [
+        "worldcore/npc/NpcManager.ts",
+        "worldcore/combat/NpcDeathPipeline.ts",
+        "worldcore/combat/StatusEffects.ts"
+      ],
+      "kind": "test",
+      "lifecycle": "test",
+      "notes": [
+        "Ensures DOT killing blows award XP+loot via canonical NPC death pipeline (NpcManager.applyDotDamage -> handleNpcDeath)."
+      ],
+      "owns": [
+        "test:dotKillRewardsAttributionPipeline"
+      ],
+      "path": "worldcore/test/contract_dotKillRewards_attributionPipeline.test.ts",
+      "provides": [
+        "contract:dotKillRewardsAttributionPipeline"
+      ]
+    },
+    "test.contractDotStackingPerCaster": {
+      "class": "(test) contract_dotStacking_versionedByApplier_perCaster",
+      "ctorArgs": [],
+      "dependsOn": [
+        "worldcore/combat/StatusEffects.ts"
+      ],
+      "kind": "test",
+      "lifecycle": "test",
+      "notes": [
+        "Locks DOT default stacking policy to versioned_by_applier and prevents multi-caster overwrite."
+      ],
+      "owns": [
+        "test:dotStackingPerCaster"
+      ],
+      "path": "worldcore/test/contract_dotStacking_versionedByApplier_perCaster.test.ts",
+      "provides": [
+        "contract:dotStackingPerCaster"
+      ]
+    },
+    "test.contractDotTickEngineRoutesDeathPipeline": {
+      "class": "(test) contract_dotTickEngineRoutesThroughNpcManagerDeathPipeline",
+      "ctorArgs": [],
+      "dependsOn": [
+        "worldcore/core/TickEngine.ts",
+        "worldcore/npc/NpcManager.ts",
+        "worldcore/combat/StatusEffects.ts",
+        "worldcore/combat/NpcDeathPipeline.ts"
+      ],
+      "kind": "test",
+      "lifecycle": "test",
+      "notes": [
+        "Ensures TickEngine DOT ticks route through NpcManager.applyDotDamage so fatal ticks grant XP/loot and produce corpses/respawns."
+      ],
+      "owns": [
+        "test:dotTickEngineDeathPipeline"
+      ],
+      "path": "worldcore/test/contract_dotTickEngineRoutesThroughNpcManagerDeathPipeline.test.ts",
+      "provides": [
+        "contract:dotTickEngineDeathPipeline"
+      ]
     },
     "test.contractGatheringCommandsResourceTags": {
       "class": null,
@@ -6022,6 +6362,96 @@
       ],
       "path": "worldcore/test/contract_reloadSpawnsForcesHydration.test.ts"
     },
+    "test.contractSeedAbilityUnlocksReferToSeededAbilities": {
+      "class": null,
+      "ctorArgs": [],
+      "dependsOn": [
+        "tools.seedAbilityIdAudit"
+      ],
+      "kind": "test",
+      "lifecycle": "test",
+      "notes": [
+        "Contract: schema seeds must ensure ability_unlocks.ability_id values are represented in the abilities catalog seeding flow.",
+        "Models the bootstrap seed that populates abilities from ability_unlocks; fails if unlocks occur after the last bootstrap without explicit abilities inserts."
+      ],
+      "owns": [],
+      "path": "worldcore/test/contract_seedAbilityUnlocksReferToSeededAbilities.test.ts",
+      "provides": [],
+      "service": "test.contract"
+    },
+    "test.contractSeedCrusaderKitL1_10": {
+      "dependsOn": [
+        "worldcore.infra.schema"
+      ],
+      "kind": "test",
+      "lifecycle": "contract",
+      "path": "worldcore/test/contract_seedCrusaderKit_L1_10.test.ts",
+      "provides": [
+        "Guards schema seed file 056 exists + contains expected spell IDs + unlock insert"
+      ],
+      "service": "worldcore"
+    },
+    "test.contractSeedNpcLawTagsAreCorrect": {
+      "class": "(test)",
+      "ctorArgs": [],
+      "dependsOn": [],
+      "kind": "test",
+      "lifecycle": "static",
+      "notes": [
+        "Contract: NPC seed law tags preserve training dummy safety (law_exempt) and protected town civilians (law_protected)."
+      ],
+      "owns": [],
+      "path": "worldcore/test/contract_seedNpcLawTagsAreCorrect.test.ts",
+      "provides": []
+    },
+    "test.contractSeedSkinLootItemIdsExist": {
+      "class": "(test)",
+      "ctorArgs": [],
+      "dependsOn": [],
+      "kind": "test",
+      "lifecycle": "static",
+      "notes": [
+        "Contract: skin_loot seed item_id references must exist in seeded items (items table seeds)."
+      ],
+      "owns": [],
+      "path": "worldcore/test/contract_seedSkinLootItemIdsExist.test.ts",
+      "provides": []
+    },
+    "test.contractSeedSpellUnlocksReferToSeededSpells": {
+      "class": "(test)",
+      "ctorArgs": [],
+      "dependsOn": [],
+      "kind": "test",
+      "lifecycle": "static",
+      "notes": [
+        "Contract: seed integrity \u2014 any spell_id referenced in seed spell_unlocks must exist in seeded spells."
+      ],
+      "owns": [],
+      "path": "worldcore/test/contract_seedSpellUnlocksReferToSeededSpells.test.ts",
+      "provides": []
+    },
+    "test.contractShieldOverwriteOtherCasterReplaces": {
+      "dependsOn": [
+        "combat.statusEffects"
+      ],
+      "kind": "test",
+      "notes": [
+        "Contract: Same shield id from another caster overwrites (global last-write-wins).",
+        "Prevents multi-caster absorb stacking exploits for identical shield effects."
+      ],
+      "path": "worldcore/test/contract_shieldOverwrite_otherCaster_replaces.test.ts"
+    },
+    "test.contractShieldRefreshSameCasterReplaces": {
+      "dependsOn": [
+        "combat.statusEffects"
+      ],
+      "kind": "test",
+      "notes": [
+        "Contract: Shield recast by same caster replaces remaining absorb (no stacking).",
+        "Model A: global last-write-wins per shield id."
+      ],
+      "path": "worldcore/test/contract_shieldRefresh_sameCaster_replaces.test.ts"
+    },
     "test.contractSongEngineMelodyThrowAdvance": {
       "dependsOn": [
         "test.utils",
@@ -6110,6 +6540,64 @@
       "path": "worldcore/test/contract_spellCleanseSelfRemovesDebuff.test.ts",
       "provides": []
     },
+    "test.contractSpellCleanseSingleAllyDenyPathNoCostNoCooldown": {
+      "class": null,
+      "ctorArgs": [],
+      "dependsOn": [
+        "mud.spells",
+        "combat.cooldowns",
+        "resources.powerResources"
+      ],
+      "kind": "test",
+      "lifecycle": "test",
+      "notes": [
+        "Contract: cleanse_single_ally must resolve/deny invalid targets BEFORE spending mana or starting cooldown."
+      ],
+      "owns": [],
+      "path": "worldcore/test/contract_spellCleanseSingleAlly_denyPath_noCostNoCooldown.test.ts",
+      "provides": []
+    },
+    "test.contractSpellCleanseSingleAllyRemovesDebuffNotBuff": {
+      "class": "(test)",
+      "dependsOn": [],
+      "kind": "test",
+      "lifecycle": "test",
+      "notes": [
+        "Contract: cleanse_single_ally removes tagged debuffs from ally but does not remove unrelated buffs"
+      ],
+      "owns": [],
+      "path": "worldcore/test/contract_spellCleanseSingleAllyRemovesDebuffNotBuff.test.ts",
+      "provides": []
+    },
+    "test.contractSpellHotDoesNotTickPastExpiry": {
+      "class": "(test)",
+      "ctorArgs": [],
+      "dependsOn": [],
+      "kind": "test",
+      "lifecycle": "test",
+      "notes": [
+        "Contract: HOT must not tick beyond expiry boundary (duration clamp)."
+      ],
+      "owns": [],
+      "path": "worldcore/test/contract_spellHotDoesNotTickPastExpiry.test.ts",
+      "provides": []
+    },
+    "test.contractSpellHotRefreshDoesNotDoubleTick": {
+      "class": "(test)",
+      "ctorArgs": [],
+      "dependsOn": [
+        "mud.mudSpells",
+        "combat.statusEffects"
+      ],
+      "kind": "test",
+      "lifecycle": "test",
+      "notes": [
+        "Contract: HOT recast refreshes/extends duration without creating a second active instance and without double-ticking; cadence restarts from recast time."
+      ],
+      "owns": [],
+      "path": "worldcore/test/contract_spellHotRefreshDoesNotDoubleTick.test.ts",
+      "provides": []
+    },
     "test.contractSpellHotSelfTicks": {
       "class": "(test)",
       "dependsOn": [],
@@ -6122,6 +6610,11 @@
       "path": "worldcore/test/contract_spellHotSelfTicks.test.ts",
       "provides": []
     },
+    "test.contractSpellHotSingleAllyTicks": {
+      "kind": "test",
+      "notes": "[contract] heal_hot_single_ally applies HOT to ally and ticks healing deterministically",
+      "path": "worldcore/test/contract_spellHotSingleAllyTicks.test.ts"
+    },
     "test.contractSpellShieldAbsorbsDamage": {
       "class": "(test)",
       "dependsOn": [],
@@ -6132,6 +6625,35 @@
       ],
       "owns": [],
       "path": "worldcore/test/contract_spellShieldAbsorbsDamage.test.ts",
+      "provides": []
+    },
+    "test.contractSpellShieldSingleAllyAbsorbsDamage": {
+      "class": "(test)",
+      "dependsOn": [],
+      "kind": "test",
+      "lifecycle": "test",
+      "notes": [
+        "Contract: shield_single_ally applies absorb shield to ally and depletes/removes on damage"
+      ],
+      "owns": [],
+      "path": "worldcore/test/contract_spellShieldSingleAllyAbsorbsDamage.test.ts",
+      "provides": []
+    },
+    "test.contractSpellShieldSingleAllyDenyPathNoCostNoCooldown": {
+      "class": null,
+      "ctorArgs": [],
+      "dependsOn": [
+        "mud.spells",
+        "combat.cooldowns",
+        "resources.powerResources"
+      ],
+      "kind": "test",
+      "lifecycle": "test",
+      "notes": [
+        "Contract: shield_single_ally must resolve/deny invalid targets BEFORE spending mana or starting cooldown."
+      ],
+      "owns": [],
+      "path": "worldcore/test/contract_spellShieldSingleAlly_denyPath_noCostNoCooldown.test.ts",
       "provides": []
     },
     "test.contractStatusEffects": {
@@ -6344,6 +6866,20 @@
       "provides": [],
       "service": "test.contract"
     },
+    "test.contractWave1ClassKitMappingsL1_10": {
+      "dependsOn": [
+        "infra.seed.055_seed_wave1_class_kit_mappings_L1_10"
+      ],
+      "kind": "test.contract",
+      "notes": [
+        "Text/regex contract (not DB-coupled). Ensures mapped classes remain covered while bespoke kits are authored later."
+      ],
+      "path": "worldcore/test/contract_wave1ClassKitMappings_L1_10.test.ts",
+      "provides": [
+        "Guards Wave 1 class kit mapping seed presence",
+        "Guards coverage of mapped classes so kits don't silently vanish"
+      ]
+    },
     "test.contract_abilityLearningRules": {
       "class": "(test)",
       "ctorArgs": [],
@@ -6388,7 +6924,7 @@
       "kind": "test",
       "lifecycle": "test",
       "notes": [
-        "Contract: NPC debuffs + DOT vertical slice works end-to-end (cast → status apply → tick → damage).",
+        "Contract: NPC debuffs + DOT vertical slice works end-to-end (cast \u2192 status apply \u2192 tick \u2192 damage).",
         "Guards the DOT tick + defender snapshot seam so damageTakenPct modifiers influence both direct hits and DOT ticks."
       ],
       "owns": [],
@@ -6403,7 +6939,7 @@
       "kind": "test",
       "lifecycle": "static",
       "notes": [
-        "Contract: reference kits L1–10 are consistent and autogrant works in test mode."
+        "Contract: reference kits L1\u201310 are consistent and autogrant works in test mode."
       ],
       "owns": [],
       "path": "worldcore/test/contract_referenceKits_L1_10.test.ts",
@@ -6475,6 +7011,19 @@
       "provides": [],
       "service": "test.contract"
     },
+    "test.contract_templar_L1_10_kit_spellFlavor": {
+      "class": "(test)",
+      "ctorArgs": [],
+      "dependsOn": [],
+      "kind": "test",
+      "lifecycle": "static",
+      "notes": [
+        "Contract: templar L1\u201310 reference kit is playable in WORLDCORE_TEST mode; spells exist in SPELLS and have non-placeholder flavor; autogrant by level 10."
+      ],
+      "owns": [],
+      "path": "worldcore/test/contract_templar_L1_10_kit_spellFlavor.test.ts",
+      "provides": []
+    },
     "test.contract_townQuestBoardAcceptAndAbandon": {
       "dependsOn": [
         "quests.TownQuestBoard",
@@ -6522,6 +7071,24 @@
         "[contract] generated quest ids are unique and town-prefixed"
       ],
       "service": "test"
+    },
+    "test.contract_trainingDummySafety": {
+      "class": "(test) contract_trainingDummySafety",
+      "ctorArgs": [],
+      "dependsOn": [
+        "worldcore/npc/NpcTypes.ts",
+        "worldcore/npc/NpcCrime.ts",
+        "worldcore/combat/NpcCombat.ts"
+      ],
+      "kind": "test",
+      "lifecycle": "active",
+      "owns": [
+        "test:contract_trainingDummySafety"
+      ],
+      "path": "worldcore/test/contract_trainingDummySafety.test.ts",
+      "provides": [
+        "contract:trainingDummySafety"
+      ]
     },
     "test.duelService": {
       "dependsOn": [
@@ -6737,395 +7304,6 @@
       "path": "worldcore/test/statusEffects.contract.test.ts",
       "provides": []
     },
-    "test.contractDotKillRewardsAttributionPipeline": {
-      "kind": "test",
-      "path": "worldcore/test/contract_dotKillRewards_attributionPipeline.test.ts",
-      "class": "(test) contract_dotKillRewards_attributionPipeline",
-      "lifecycle": "test",
-      "ctorArgs": [],
-      "dependsOn": [
-        "worldcore/npc/NpcManager.ts",
-        "worldcore/combat/NpcDeathPipeline.ts",
-        "worldcore/combat/StatusEffects.ts"
-      ],
-      "provides": [
-        "contract:dotKillRewardsAttributionPipeline"
-      ],
-      "owns": [
-        "test:dotKillRewardsAttributionPipeline"
-      ],
-      "notes": [
-        "Ensures DOT killing blows award XP+loot via canonical NPC death pipeline (NpcManager.applyDotDamage -> handleNpcDeath)."
-      ]
-    },
-    "test.contractDotTickEngineRoutesDeathPipeline": {
-      "kind": "test",
-      "path": "worldcore/test/contract_dotTickEngineRoutesThroughNpcManagerDeathPipeline.test.ts",
-      "class": "(test) contract_dotTickEngineRoutesThroughNpcManagerDeathPipeline",
-      "lifecycle": "test",
-      "ctorArgs": [],
-      "dependsOn": [
-        "worldcore/core/TickEngine.ts",
-        "worldcore/npc/NpcManager.ts",
-        "worldcore/combat/StatusEffects.ts",
-        "worldcore/combat/NpcDeathPipeline.ts"
-      ],
-      "provides": [
-        "contract:dotTickEngineDeathPipeline"
-      ],
-      "owns": [
-        "test:dotTickEngineDeathPipeline"
-      ],
-      "notes": [
-        "Ensures TickEngine DOT ticks route through NpcManager.applyDotDamage so fatal ticks grant XP/loot and produce corpses/respawns."
-      ]
-    },
-    "test.contractDotStackingPerCaster": {
-      "kind": "test",
-      "path": "worldcore/test/contract_dotStacking_versionedByApplier_perCaster.test.ts",
-      "class": "(test) contract_dotStacking_versionedByApplier_perCaster",
-      "lifecycle": "test",
-      "ctorArgs": [],
-      "dependsOn": [
-        "worldcore/combat/StatusEffects.ts"
-      ],
-      "provides": [
-        "contract:dotStackingPerCaster"
-      ],
-      "owns": [
-        "test:dotStackingPerCaster"
-      ],
-      "notes": [
-        "Locks DOT default stacking policy to versioned_by_applier and prevents multi-caster overwrite."
-      ]
-    },
-    "test.contractCombatLogDirectSpellDamageConsistent": {
-      "kind": "test",
-      "path": "worldcore/test/contract_combatLog_directSpellDamage_consistent.test.ts",
-      "dependsOn": [
-        "combat.combatLog"
-      ],
-      "notes": [
-        "Locks CombatLog direct spell damage formatting to match DOT/HOT tick style and canonical prefix."
-      ]
-    },
-    "test.contractSpellCleanseSingleAllyRemovesDebuffNotBuff": {
-      "class": "(test)",
-      "dependsOn": [],
-      "kind": "test",
-      "lifecycle": "test",
-      "notes": [
-        "Contract: cleanse_single_ally removes tagged debuffs from ally but does not remove unrelated buffs"
-      ],
-      "owns": [],
-      "path": "worldcore/test/contract_spellCleanseSingleAllyRemovesDebuffNotBuff.test.ts",
-      "provides": []
-    },
-    "test.contractSpellShieldSingleAllyAbsorbsDamage": {
-      "class": "(test)",
-      "dependsOn": [],
-      "kind": "test",
-      "lifecycle": "test",
-      "notes": [
-        "Contract: shield_single_ally applies absorb shield to ally and depletes/removes on damage"
-      ],
-      "owns": [],
-      "path": "worldcore/test/contract_spellShieldSingleAllyAbsorbsDamage.test.ts",
-      "provides": []
-    },
-    "test.contractSpellShieldSingleAllyDenyPathNoCostNoCooldown": {
-      "kind": "test",
-      "lifecycle": "test",
-      "path": "worldcore/test/contract_spellShieldSingleAlly_denyPath_noCostNoCooldown.test.ts",
-      "class": null,
-      "ctorArgs": [],
-      "dependsOn": [
-        "mud.spells",
-        "combat.cooldowns",
-        "resources.powerResources"
-      ],
-      "provides": [],
-      "owns": [],
-      "notes": [
-        "Contract: shield_single_ally must resolve/deny invalid targets BEFORE spending mana or starting cooldown."
-      ]
-    },
-    "test.contractSpellHotSingleAllyTicks": {
-      "kind": "test",
-      "notes": "[contract] heal_hot_single_ally applies HOT to ally and ticks healing deterministically",
-      "path": "worldcore/test/contract_spellHotSingleAllyTicks.test.ts"
-    },
-    "test.contractSpellHotDoesNotTickPastExpiry": {
-      "kind": "test",
-      "path": "worldcore/test/contract_spellHotDoesNotTickPastExpiry.test.ts",
-      "class": "(test)",
-      "lifecycle": "test",
-      "ctorArgs": [],
-      "dependsOn": [],
-      "provides": [],
-      "owns": [],
-      "notes": [
-        "Contract: HOT must not tick beyond expiry boundary (duration clamp)."
-      ]
-    },
-    "test.contractSpellHotRefreshDoesNotDoubleTick": {
-      "kind": "test",
-      "path": "worldcore/test/contract_spellHotRefreshDoesNotDoubleTick.test.ts",
-      "class": "(test)",
-      "lifecycle": "test",
-      "ctorArgs": [],
-      "dependsOn": [
-        "mud.mudSpells",
-        "combat.statusEffects"
-      ],
-      "provides": [],
-      "owns": [],
-      "notes": [
-        "Contract: HOT recast refreshes/extends duration without creating a second active instance and without double-ticking; cadence restarts from recast time."
-      ]
-    },
-    "test.contractShieldRefreshSameCasterReplaces": {
-      "kind": "test",
-      "path": "worldcore/test/contract_shieldRefresh_sameCaster_replaces.test.ts",
-      "dependsOn": [
-        "combat.statusEffects"
-      ],
-      "notes": [
-        "Contract: Shield recast by same caster replaces remaining absorb (no stacking).",
-        "Model A: global last-write-wins per shield id."
-      ]
-    },
-    "test.contractShieldOverwriteOtherCasterReplaces": {
-      "kind": "test",
-      "path": "worldcore/test/contract_shieldOverwrite_otherCaster_replaces.test.ts",
-      "dependsOn": [
-        "combat.statusEffects"
-      ],
-      "notes": [
-        "Contract: Same shield id from another caster overwrites (global last-write-wins).",
-        "Prevents multi-caster absorb stacking exploits for identical shield effects."
-      ]
-    },
-    "test.contractSpellCleanseSingleAllyDenyPathNoCostNoCooldown": {
-      "kind": "test",
-      "lifecycle": "test",
-      "path": "worldcore/test/contract_spellCleanseSingleAlly_denyPath_noCostNoCooldown.test.ts",
-      "class": null,
-      "ctorArgs": [],
-      "dependsOn": [
-        "mud.spells",
-        "combat.cooldowns",
-        "resources.powerResources"
-      ],
-      "provides": [],
-      "owns": [],
-      "notes": [
-        "Contract: cleanse_single_ally must resolve/deny invalid targets BEFORE spending mana or starting cooldown."
-      ]
-    },
-    "test.contractSeedSpellUnlocksReferToSeededSpells": {
-      "kind": "test",
-      "path": "worldcore/test/contract_seedSpellUnlocksReferToSeededSpells.test.ts",
-      "class": "(test)",
-      "ctorArgs": [],
-      "lifecycle": "static",
-      "dependsOn": [],
-      "provides": [],
-      "owns": [],
-      "notes": [
-        "Contract: seed integrity — any spell_id referenced in seed spell_unlocks must exist in seeded spells."
-      ]
-    },
-    "test.contractSeedAbilityUnlocksReferToSeededAbilities": {
-      "service": "test.contract",
-      "kind": "test",
-      "lifecycle": "test",
-      "path": "worldcore/test/contract_seedAbilityUnlocksReferToSeededAbilities.test.ts",
-      "class": null,
-      "ctorArgs": [],
-      "dependsOn": [
-        "tools.seedAbilityIdAudit"
-      ],
-      "provides": [],
-      "owns": [],
-      "notes": [
-        "Contract: schema seeds must ensure ability_unlocks.ability_id values are represented in the abilities catalog seeding flow.",
-        "Models the bootstrap seed that populates abilities from ability_unlocks; fails if unlocks occur after the last bootstrap without explicit abilities inserts."
-      ]
-    },
-    "test.contract_templar_L1_10_kit_spellFlavor": {
-      "class": "(test)",
-      "ctorArgs": [],
-      "dependsOn": [],
-      "kind": "test",
-      "lifecycle": "static",
-      "notes": [
-        "Contract: templar L1–10 reference kit is playable in WORLDCORE_TEST mode; spells exist in SPELLS and have non-placeholder flavor; autogrant by level 10."
-      ],
-      "owns": [],
-      "path": "worldcore/test/contract_templar_L1_10_kit_spellFlavor.test.ts",
-      "provides": []
-    },
-    "test.contract_trainingDummySafety": {
-      "path": "worldcore/test/contract_trainingDummySafety.test.ts",
-      "kind": "test",
-      "class": "(test) contract_trainingDummySafety",
-      "lifecycle": "active",
-      "ctorArgs": [],
-      "dependsOn": [
-        "worldcore/npc/NpcTypes.ts",
-        "worldcore/npc/NpcCrime.ts",
-        "worldcore/combat/NpcCombat.ts"
-      ],
-      "provides": [
-        "contract:trainingDummySafety"
-      ],
-      "owns": [
-        "test:contract_trainingDummySafety"
-      ]
-    },
-    "test.contractSeedNpcLawTagsAreCorrect": {
-      "kind": "test",
-      "path": "worldcore/test/contract_seedNpcLawTagsAreCorrect.test.ts",
-      "class": "(test)",
-      "ctorArgs": [],
-      "lifecycle": "static",
-      "dependsOn": [],
-      "provides": [],
-      "owns": [],
-      "notes": [
-        "Contract: NPC seed law tags preserve training dummy safety (law_exempt) and protected town civilians (law_protected)."
-      ]
-    },
-    "test.contractSeedSkinLootItemIdsExist": {
-      "kind": "test",
-      "path": "worldcore/test/contract_seedSkinLootItemIdsExist.test.ts",
-      "class": "(test)",
-      "ctorArgs": [],
-      "dependsOn": [],
-      "lifecycle": "static",
-      "provides": [],
-      "owns": [],
-      "notes": [
-        "Contract: skin_loot seed item_id references must exist in seeded items (items table seeds)."
-      ]
-    },
-    "test.contractAdminSpellsRoutes": {
-      "kind": "test.contract",
-      "path": "worldcore/test/contract_adminSpellsRoutes.test.ts",
-      "dependsOn": [
-        "web-backend.routes.adminSpells",
-        "web-frontend.pages.adminSpells"
-      ],
-      "notes": [
-        "Contract: AdminSpells editor wiring is present (route + UI endpoints).",
-        "Ensures core API verbs stay stable while the editor iterates.",
-        "Assertions are regex-based to avoid brittleness during refactors."
-      ],
-      "provides": [
-        "Guards /api/admin/spells GET+POST endpoints from accidental removal/renaming",
-        "Guards AdminSpellsPage fetch wiring (list + save)"
-      ]
-    },
-    "test.contractAdminSpellsSchemaColumns": {
-      "kind": "test.contract",
-      "path": "worldcore/test/contract_adminSpellsSchemaColumns.test.ts",
-      "dependsOn": [
-        "tools.seedSpellsColumnsAudit"
-      ],
-      "notes": [
-        "Contract: spells catalog schema includes the columns required by the admin spell editor + seed files.",
-        "Prevents drift between infra/schema SQL and editor/runtime expectations."
-      ],
-      "provides": [
-        "Fails fast if required columns are removed or renamed in 040_create_spells_table.sql"
-      ]
-    },
-    "test.contractAdminItemsRoutes": {
-      "kind": "test.contract",
-      "path": "worldcore/test/contract_adminItemsRoutes.test.ts",
-      "dependsOn": [
-        "web-backend.routes.adminItems",
-        "web-frontend.pages.adminItems"
-      ],
-      "notes": [
-        "Contract: AdminItems editor wiring is present (route + UI endpoints).",
-        "Ensures core API verbs stay stable while the editor iterates.",
-        "Assertions are regex-based to avoid brittleness during refactors."
-      ],
-      "provides": [
-        "Guards /api/admin/items GET+POST endpoints from accidental removal/renaming",
-        "Guards /api/admin/items/options typeahead endpoint for ItemPicker",
-        "Guards AdminItemsPage + ItemPicker fetch wiring"
-      ]
-    },
-    "test.contractAdminItemsSchemaColumns": {
-      "kind": "test.contract",
-      "path": "worldcore/test/contract_adminItemsSchemaColumns.test.ts",
-      "dependsOn": [],
-      "notes": [
-        "Contract: items catalog schema includes minimum columns required by the admin items editor.",
-        "Keeps this conservative while item schema naming settles (no hard-coded kind/tags/enabled assumptions)."
-      ],
-      "provides": [
-        "Fails fast if minimum columns are removed or renamed in infra/schema SQL"
-      ]
-    },
-    "test.contractCommonClassKitsL1_10": {
-      "kind": "test.contract",
-      "path": "worldcore/test/contract_commonClassKits_L1_10.test.ts",
-      "dependsOn": [
-        "infra.seed.054_seed_common_class_kits_L1_10"
-      ],
-      "provides": [
-        "Guards existence of common L1–10 kit seed file",
-        "Guards that missing classes remain covered by basic unlocks"
-      ],
-      "notes": [
-        "Contract: ensures the repo always contains an idempotent seed granting a minimal L1–10 kit to classes without bespoke kits yet.",
-        "Regex/text assertions only (intentionally not DB-coupled)."
-      ]
-    },
-    "test.contractWave1ClassKitMappingsL1_10": {
-      "kind": "test.contract",
-      "path": "worldcore/test/contract_wave1ClassKitMappings_L1_10.test.ts",
-      "dependsOn": [
-        "infra.seed.055_seed_wave1_class_kit_mappings_L1_10"
-      ],
-      "provides": [
-        "Guards Wave 1 class kit mapping seed presence",
-        "Guards coverage of mapped classes so kits don't silently vanish"
-      ],
-      "notes": [
-        "Text/regex contract (not DB-coupled). Ensures mapped classes remain covered while bespoke kits are authored later."
-      ]
-    },
-    "test.contractCrusaderKitL1_10": {
-      "kind": "test",
-      "service": "worldcore",
-      "path": "worldcore/test/contract_crusaderKit_L1_10.test.ts",
-      "lifecycle": "contract",
-      "provides": [
-        "Guards Crusader reference kit presence + spell IDs exist in SpellTypes + mana resource exists"
-      ],
-      "dependsOn": [
-        "worldcore.reference.ReferenceKits",
-        "worldcore.spells.SpellTypes",
-        "worldcore.classes.ClassDefinitions"
-      ]
-    },
-    "test.contractSeedCrusaderKitL1_10": {
-      "kind": "test",
-      "service": "worldcore",
-      "path": "worldcore/test/contract_seedCrusaderKit_L1_10.test.ts",
-      "lifecycle": "contract",
-      "provides": [
-        "Guards schema seed file 056 exists + contains expected spell IDs + unlock insert"
-      ],
-      "dependsOn": [
-        "worldcore.infra.schema"
-      ]
-    },
     "test.utils": {
       "dependsOn": [],
       "functions": [
@@ -7262,45 +7440,77 @@
         "audit mode: summarize resource node coverage by bounds / proto kinds"
       ]
     },
-    "tools.seedNpcLawTagsAudit": {
-      "kind": "tool",
-      "path": "worldcore/tools/seedNpcLawTagsAudit.ts",
-      "bin": "dist/worldcore/tools/seedNpcLawTagsAudit.js",
-      "dependsOn": [],
-      "notes": [
-        "Audits worldcore/infra/schema seed SQL: training dummies must be law_exempt; protected civilians should be law_protected.",
-        "Prevents guard/crime regressions caused by seed tag drift.",
-        "Supports --schemaDir and --json."
-      ]
-    },
-    "tools.seedSpellIdAudit": {
-      "kind": "tool",
-      "path": "worldcore/tools/seedSpellIdAudit.ts",
-      "bin": "dist/worldcore/tools/seedSpellIdAudit.js",
-      "dependsOn": [],
-      "notes": [
-        "Audits worldcore/infra/schema seed SQL: spell_unlocks.spell_id must exist in spells.id (seeded).",
-        "Prevents FK failures during applySchema / seed runs.",
-        "Supports --schemaDir, --json, and --allowMissing for temporary exceptions."
-      ]
-    },
     "tools.seedAbilityIdAudit": {
-      "kind": "tool",
-      "path": "worldcore/tools/seedAbilityIdAudit.ts",
       "bin": "dist/worldcore/tools/seedAbilityIdAudit.js",
       "dependsOn": [],
+      "kind": "tool",
       "notes": [
         "Audits schema seed SQL: ensures ability_unlocks.ability_id is covered by the abilities catalog seeding flow.",
         "Models seed order: explicit INSERTs into abilities and/or 'seed abilities from unlocks' bootstrap scripts.",
         "Prevents UI/catalog drift when new ability_unlocks are added without catalog seeding."
-      ]
+      ],
+      "path": "worldcore/tools/seedAbilityIdAudit.ts"
+    },
+    "tools.seedNpcLawTagsAudit": {
+      "bin": "dist/worldcore/tools/seedNpcLawTagsAudit.js",
+      "dependsOn": [],
+      "kind": "tool",
+      "notes": [
+        "Audits worldcore/infra/schema seed SQL: training dummies must be law_exempt; protected civilians should be law_protected.",
+        "Prevents guard/crime regressions caused by seed tag drift.",
+        "Supports --schemaDir and --json."
+      ],
+      "path": "worldcore/tools/seedNpcLawTagsAudit.ts"
+    },
+    "tools.seedNpcLootItemIdAudit": {
+      "bin": "dist/worldcore/tools/seedNpcLootItemIdAudit.js",
+      "dependsOn": [],
+      "kind": "tool",
+      "notes": [
+        "Audits worldcore/infra/schema seed SQL: npc_loot.item_id must refer to an item seeded in items.",
+        "Prevents seed drift where loot tables reference non-existent item ids.",
+        "Supports --schemaDir and --json."
+      ],
+      "path": "worldcore/tools/seedNpcLootItemIdAudit.ts"
+    },
+    "tools.seedSkinLootItemIdAudit": {
+      "bin": "dist/worldcore/tools/seedSkinLootItemIdAudit.js",
+      "dependsOn": [],
+      "kind": "tool",
+      "notes": [
+        "Audits worldcore/infra/schema seed SQL: skin_loot.item_id must refer to an item seeded in items.",
+        "Prevents seed drift where skin loot references non-existent item ids.",
+        "Supports --schemaDir and --json."
+      ],
+      "path": "worldcore/tools/seedSkinLootItemIdAudit.ts"
+    },
+    "tools.seedSpellIdAudit": {
+      "bin": "dist/worldcore/tools/seedSpellIdAudit.js",
+      "dependsOn": [],
+      "kind": "tool",
+      "notes": [
+        "Audits worldcore/infra/schema seed SQL: spell_unlocks.spell_id must exist in spells.id (seeded).",
+        "Prevents FK failures during applySchema / seed runs.",
+        "Supports --schemaDir, --json, and --allowMissing for temporary exceptions."
+      ],
+      "path": "worldcore/tools/seedSpellIdAudit.ts"
+    },
+    "tools.seedSpellsColumnsAudit": {
+      "bin": "dist/worldcore/tools/seedSpellsColumnsAudit.js",
+      "dependsOn": [],
+      "kind": "tool",
+      "notes": [
+        "Audits worldcore/infra/schema: spells table columns cover the admin editor + seed SQL expectations.",
+        "Prevents runtime/editor regressions when schema drifts.",
+        "Supports --schemaFile and --json."
+      ],
+      "path": "worldcore/tools/seedSpellsColumnsAudit.ts"
     },
     "tools.seedSqlParse": {
-      "kind": "module",
-      "path": "worldcore/tools/seedSqlParse.ts",
       "class": "(module) seedSqlParse",
       "ctorArgs": [],
       "dependsOn": [],
+      "kind": "module",
       "lifecycle": "static",
       "notes": [
         "Small, dependency-free helpers for parsing seed SQL files in worldcore/infra/schema.",
@@ -7308,6 +7518,7 @@
         "Conservative parsing: only supports the INSERT/VALUES patterns used by this repo's seed migrations."
       ],
       "owns": [],
+      "path": "worldcore/tools/seedSqlParse.ts",
       "provides": [
         "resolveSchemaDir",
         "listSqlFiles",
@@ -7321,176 +7532,6 @@
         "extractFromValuesBlocks",
         "SeedSqlSource",
         "ResolveSchemaDirResult"
-      ]
-    },
-    "tools.seedNpcLootItemIdAudit": {
-      "kind": "tool",
-      "path": "worldcore/tools/seedNpcLootItemIdAudit.ts",
-      "bin": "dist/worldcore/tools/seedNpcLootItemIdAudit.js",
-      "dependsOn": [],
-      "notes": [
-        "Audits worldcore/infra/schema seed SQL: npc_loot.item_id must refer to an item seeded in items.",
-        "Prevents seed drift where loot tables reference non-existent item ids.",
-        "Supports --schemaDir and --json."
-      ]
-    },
-    "tools.seedSkinLootItemIdAudit": {
-      "kind": "tool",
-      "path": "worldcore/tools/seedSkinLootItemIdAudit.ts",
-      "bin": "dist/worldcore/tools/seedSkinLootItemIdAudit.js",
-      "dependsOn": [],
-      "notes": [
-        "Audits worldcore/infra/schema seed SQL: skin_loot.item_id must refer to an item seeded in items.",
-        "Prevents seed drift where skin loot references non-existent item ids.",
-        "Supports --schemaDir and --json."
-      ]
-    },
-    "tools.seedSpellsColumnsAudit": {
-      "kind": "tool",
-      "path": "worldcore/tools/seedSpellsColumnsAudit.ts",
-      "bin": "dist/worldcore/tools/seedSpellsColumnsAudit.js",
-      "dependsOn": [],
-      "notes": [
-        "Audits worldcore/infra/schema: spells table columns cover the admin editor + seed SQL expectations.",
-        "Prevents runtime/editor regressions when schema drifts.",
-        "Supports --schemaFile and --json."
-      ]
-    },
-    "test.contractAdminNpcsRoutes": {
-      "kind": "test.contract",
-      "path": "worldcore/test/contract_adminNpcsRoutes.test.ts",
-      "dependsOn": [
-        "web-backend.routes.adminNpcs",
-        "web-frontend.pages.adminNpcs"
-      ],
-      "notes": [
-        "Contract: Admin NPC editor wiring is present (route + UI endpoints).",
-        "Guards /api/admin/npcs GET+POST endpoints from accidental removal/renaming.",
-        "Regex-based assertions to avoid brittleness during refactors."
-      ],
-      "provides": [
-        "Guards /api/admin/npcs mount + basic verbs",
-        "Guards AdminNpcsPage fetch wiring"
-      ]
-    },
-    "test.contractAdminNpcsSchemaColumns": {
-      "kind": "test.contract",
-      "path": "worldcore/test/contract_adminNpcsSchemaColumns.test.ts",
-      "dependsOn": [],
-      "notes": [
-        "Contract: npcs table schema includes required columns for the admin NPC editor.",
-        "Scans all schema migrations (CREATE TABLE + ALTER TABLE ADD COLUMN)."
-      ],
-      "provides": [
-        "Fails fast if npc columns are removed or renamed in infra/schema SQL"
-      ]
-    },
-    "test.contractAdminQuestsRoutes": {
-      "kind": "test.contract",
-      "path": "worldcore/test/contract_adminQuestsRoutes.test.ts",
-      "dependsOn": [
-        "web-backend.routes.adminQuests",
-        "web-frontend.pages.adminQuests"
-      ],
-      "notes": [
-        "Contract: Admin Quests editor wiring is present (route + UI endpoints).",
-        "Guards /api/admin/quests GET+POST endpoints from accidental removal/renaming.",
-        "Also asserts reward UX uses /api/admin/items/options (current editor behavior)."
-      ],
-      "provides": [
-        "Guards /api/admin/quests mount + basic verbs",
-        "Guards AdminQuestsPage fetch wiring",
-        "Guards reward item picker dependency on /api/admin/items/options"
-      ]
-    },
-    "test.contractAdminQuestsSchemaColumns": {
-      "kind": "test.contract",
-      "path": "worldcore/test/contract_adminQuestsSchemaColumns.test.ts",
-      "dependsOn": [],
-      "notes": [
-        "Contract: quests, quest_objectives, quest_rewards schema include required columns for the admin quests editor.",
-        "Scans all schema migrations (CREATE TABLE + ALTER TABLE ADD COLUMN)."
-      ],
-      "provides": [
-        "Fails fast if quest columns are removed or renamed in infra/schema SQL"
-      ]
-    },
-    "test.contractAdminHardeningRoutesAndAuth": {
-      "kind": "test.contract",
-      "path": "worldcore/test/contract_adminHardeningRoutesAndAuth.test.ts",
-      "dependsOn": [
-        "web-backend.middleware.adminAuth",
-        "web-backend.index"
-      ],
-      "notes": [
-        "Contract: /api/admin/* routes are mounted with maybeRequireAdmin(...) and adminAuth contains required RBAC semantics.",
-        "Guards against accidental removal/renaming of admin gating and root-only restrictions.",
-        "Structural/regex-based; does not spin up Express or require a live database."
-      ],
-      "provides": [
-        "Guards admin route mounts are gated by middleware",
-        "Guards adminAuth error codes and role mapping",
-        "Guards root-only spawn_points destructive endpoints remain protected"
-      ]
-    },
-    "test.contractAdminAbilitiesRoutes": {
-      "kind": "test.contract",
-      "path": "worldcore/test/contract_adminAbilitiesRoutes.test.ts",
-      "dependsOn": [
-        "web-backend.routes.adminAbilities",
-        "web-frontend.pages.AdminAbilitiesPage"
-      ],
-      "notes": [
-        "Contract: AdminAbilities editor wiring is present (route + UI endpoint references).",
-        "Regex-based assertions to avoid brittleness during UI refactors."
-      ],
-      "provides": [
-        "Guards /api/admin/abilities GET+POST endpoints from accidental removal/renaming",
-        "Guards AdminAbilitiesPage fetch wiring (catalog)"
-      ]
-    },
-    "test.contractAdminAbilityUnlocksRoutes": {
-      "kind": "test.contract",
-      "path": "worldcore/test/contract_adminAbilityUnlocksRoutes.test.ts",
-      "dependsOn": [
-        "web-backend.routes.adminAbilityUnlocks",
-        "web-frontend.pages.AdminAbilitiesPage"
-      ],
-      "notes": [
-        "Contract: Admin ability_unlocks editor wiring is present (route + UI endpoint references).",
-        "Regex-based assertions to avoid brittleness during UI refactors."
-      ],
-      "provides": [
-        "Guards /api/admin/ability_unlocks GET+POST endpoints from accidental removal/renaming",
-        "Guards AdminAbilitiesPage fetch wiring (unlock rules)"
-      ]
-    },
-    "test.contractAdminAbilitiesSchemaColumns": {
-      "kind": "test.contract",
-      "path": "worldcore/test/contract_adminAbilitiesSchemaColumns.test.ts",
-      "dependsOn": [
-        "infra.schema"
-      ],
-      "notes": [
-        "Contract: abilities table schema includes columns required by the admin abilities editor.",
-        "Structural scan of worldcore/infra/schema/*.sql (no DB needed)."
-      ],
-      "provides": [
-        "Guards abilities schema columns used by AdminAbilities editor"
-      ]
-    },
-    "test.contractAdminAbilityUnlocksSchemaColumns": {
-      "kind": "test.contract",
-      "path": "worldcore/test/contract_adminAbilityUnlocksSchemaColumns.test.ts",
-      "dependsOn": [
-        "infra.schema"
-      ],
-      "notes": [
-        "Contract: ability_unlocks table schema includes columns required by the admin unlock rules editor.",
-        "Structural scan of worldcore/infra/schema/*.sql (no DB needed)."
-      ],
-      "provides": [
-        "Guards ability_unlocks schema columns used by AdminAbilities editor"
       ]
     },
     "tools.simBrain": {
@@ -7510,7 +7551,7 @@
       "notes": [
         "Dev Simulation Harness CLI entrypoint.",
         "Includes Mother Brain wave planning commands (mother-wave/mother-status) for brain-owned spawn_points pipelines.",
-        "Follows audit → plan → apply pattern with safe default rollback unless --commit.",
+        "Follows audit \u2192 plan \u2192 apply pattern with safe default rollback unless --commit.",
         "Safety rails: refuses literal '...' arg; refuses --commit without explicit --bounds (unless --allowDefaultBounds).",
         "Artifacts are dev-only outputs; keep them gitignored.",
         "Town vendor wiring: by default, `simBrain era` AND `simBrain mother-wave` seed vendor anchors for town-like spawns (disable with --noTownVendors)."
@@ -7935,7 +7976,7 @@
       ],
       "kind": "utility",
       "notes": [
-        "Tracks per-region dynamic danger score and effective tier (1–5) based on base distance ring + recent activity.",
+        "Tracks per-region dynamic danger score and effective tier (1\u20135) based on base distance ring + recent activity.",
         "Applies exponential-style decay over time so regions cool down naturally.",
         "Used by cowardice, Region Peril aura, debug_region_danger, and debug_bump_region_danger."
       ],
@@ -8462,7 +8503,7 @@
       "kind": "worldgen_stage",
       "lifecycle": "stateless",
       "notes": [
-        "Stage 2.3.4 – biome assignment per cell + connected biome clusters.",
+        "Stage 2.3.4 \u2013 biome assignment per cell + connected biome clusters.",
         "Outputs biomeMap + cluster IDs + counts per biome."
       ],
       "path": "worldcore/terrain/worldgen/WGEv2Biomes.ts",
@@ -8481,7 +8522,7 @@
       "kind": "worldgen_stage",
       "lifecycle": "stateless",
       "notes": [
-        "Stage 2.3.5 – settlements, roads, and POIs.",
+        "Stage 2.3.5 \u2013 settlements, roads, and POIs.",
         "Scores candidate cells, picks settlements with spacing, builds a road graph, scatters points of interest."
       ],
       "path": "worldcore/terrain/worldgen/WGEv2Civilization.ts",
@@ -8498,7 +8539,7 @@
       "kind": "worldgen_stage",
       "lifecycle": "stateless",
       "notes": [
-        "Stage 2.3.3 – temperature, moisture, and compact climate zones.",
+        "Stage 2.3.3 \u2013 temperature, moisture, and compact climate zones.",
         "Can optionally use erosion outputs to bias humidity near rivers/lakes."
       ],
       "path": "worldcore/terrain/worldgen/WGEv2Climate.ts",
@@ -8514,7 +8555,7 @@
       "kind": "worldgen_stage",
       "lifecycle": "stateless",
       "notes": [
-        "Stage 2.3.2 – hydrology, erosion, rivers, lakes.",
+        "Stage 2.3.2 \u2013 hydrology, erosion, rivers, lakes.",
         "Outputs updated elevation, water, sediment, flow dirs, river/lake masks."
       ],
       "path": "worldcore/terrain/worldgen/WGEv2Erosion.ts",
@@ -8528,7 +8569,7 @@
       "kind": "worldgen_stage",
       "lifecycle": "stateless",
       "notes": [
-        "Stage 2.3.1 – base landforms: tectonics, continents, uplift, macro elevation.",
+        "Stage 2.3.1 \u2013 base landforms: tectonics, continents, uplift, macro elevation.",
         "First stage in the WGEv2 pipeline; everything else builds on its LandformResult."
       ],
       "path": "worldcore/terrain/worldgen/WGEv2Landforms.ts",
@@ -8548,7 +8589,7 @@
       "kind": "worldgen_stage",
       "lifecycle": "stateless",
       "notes": [
-        "Stage 2.3.6 – resource node placement (ore/herb/wood/fish/rare) plus per-kind masks.",
+        "Stage 2.3.6 \u2013 resource node placement (ore/herb/wood/fish/rare) plus per-kind masks.",
         "Respects biome, elevation, climate, hydrology, and avoids city centers while tagging 'near settlement' nodes."
       ],
       "path": "worldcore/terrain/worldgen/WGEv2Resources.ts",

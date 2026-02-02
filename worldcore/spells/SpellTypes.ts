@@ -888,6 +888,93 @@ illusionist_phantasmal_burn: {
   damageMultiplier: 0.55,
   flatBonus: 3,
 },
+
+// Ascetic reference kit (L1–10)
+// Chi loop: Jab builds Chi (builder semantics live in CastingGates), spenders consume Chi.
+ascetic_jab: {
+  id: "ascetic_jab",
+  name: "Jab",
+  kind: "damage_single_npc",
+  classId: "ascetic",
+  minLevel: 1,
+  description: "A fast, disciplined strike. Builds Chi.",
+  resourceType: "chi",
+  resourceCost: 0,
+  cooldownMs: 2000,
+  damageMultiplier: 0.95,
+  flatBonus: 6,
+},
+
+ascetic_tiger_palm: {
+  id: "ascetic_tiger_palm",
+  name: "Tiger Palm",
+  kind: "damage_single_npc",
+  classId: "ascetic",
+  minLevel: 3,
+  description: "Channel Chi into a focused palm strike.",
+  resourceType: "chi",
+  resourceCost: 12,
+  cooldownMs: 2500,
+  damageMultiplier: 1.05,
+  flatBonus: 7,
+},
+
+ascetic_crippling_strike: {
+  id: "ascetic_crippling_strike",
+  name: "Crippling Strike",
+  kind: "debuff_single_npc",
+  classId: "ascetic",
+  minLevel: 5,
+  description: "A precise hit to tendons and balance. Slows the target’s offense (v0).",
+  statusEffect: {
+    id: "debuff_ascetic_crippling_strike",
+    name: "Crippling Strike",
+    durationMs: 8_000,
+    maxStacks: 1,
+    stacks: 1,
+    modifiers: { damageDealtPct: -10 },
+    tags: ["debuff", "martial", "ascetic", "reference_kit"],
+  },
+  resourceType: "chi",
+  resourceCost: 10,
+  cooldownMs: 12000,
+},
+
+ascetic_flying_kick: {
+  id: "ascetic_flying_kick",
+  name: "Flying Kick",
+  kind: "damage_single_npc",
+  classId: "ascetic",
+  minLevel: 7,
+  description: "A leap and a kick delivered like punctuation. The sentence ends here.",
+  resourceType: "chi",
+  resourceCost: 18,
+  cooldownMs: 6000,
+  damageMultiplier: 1.18,
+  flatBonus: 10,
+},
+
+ascetic_inner_focus: {
+  id: "ascetic_inner_focus",
+  name: "Inner Focus",
+  kind: "buff_self",
+  classId: "ascetic",
+  minLevel: 9,
+  description: "Breath slows. Sight sharpens. Your next moments are yours to command.",
+  statusEffect: {
+    id: "buff_ascetic_inner_focus",
+    name: "Inner Focus",
+    durationMs: 10_000,
+    maxStacks: 1,
+    stacks: 1,
+    modifiers: { damageTakenPct: -8, attributes: { agi: 2, sta: 2 } },
+    tags: ["buff", "martial", "ascetic", "reference_kit"],
+  },
+  resourceType: "chi",
+  resourceCost: 16,
+  cooldownMs: 20000,
+},
+
   // Virtuoso songs
   // ─────────────────────────────────────────────────────────────────────────────
   virtuoso_song_rising_courage: {

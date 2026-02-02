@@ -1,12 +1,13 @@
 // worldcore/resources/PowerResources.ts
 //
-// Power resources (mana/fury/runic_power).
+// Power resources (mana/fury/runic_power/chi).
 // Stored under char.progression.powerResources (JSON-like).
 //
 // Conventions:
 // - mana starts full (max)
 // - fury starts empty (0)
 // - runic_power starts empty (0)
+// - chi starts empty (0)
 // - all v1 pools normalize max=100
 //
 
@@ -15,7 +16,7 @@ import { Logger } from "../utils/logger";
 
 const log = Logger.scope("RESOURCES");
 
-export type PowerResourceKind = "fury" | "mana" | "runic_power";
+export type PowerResourceKind = "fury" | "mana" | "runic_power" | "chi";
 
 export interface PowerResourcePool {
   current: number;
@@ -88,7 +89,7 @@ export function trySpendPowerResource(char: CharacterState, kind: PowerResourceK
   const pool = getOrInitPowerResource(char, kind);
 
   if (pool.current < c) {
-    const label = kind === "runic_power" ? "runic power" : kind;
+    const label = kind === "runic_power" ? "runic power" : kind === "chi" ? "chi" : kind;
     return `You don't have enough ${label} (${pool.current}/${c} needed).`;
   }
 
@@ -115,6 +116,9 @@ export function getPrimaryPowerResourceForClass(classId: string | undefined | nu
 
   // Runic power users
   if (id === "runic_knight") return "runic_power";
+
+  // Chi users
+  if (id === "ascetic") return "chi";
 
   // Mana casters / hybrids
   const manaClasses = new Set<string>([
@@ -149,7 +153,6 @@ export function getPrimaryPowerResourceForClass(classId: string | undefined | nu
     "warlord",
     "ravager",
     "cutthroat",
-    "ascetic",
     "adventurer",
     // generic/legacy
     "warrior",

@@ -304,6 +304,54 @@ export const REFERENCE_CLASS_KITS_L1_10 = {
       source: "reference_kit",
     },
   ],
+  ascetic: [
+    {
+      kind: "spell",
+      classId: "ascetic",
+      spellId: "ascetic_jab",
+      minLevel: 1,
+      autoGrant: true,
+      isEnabled: true,
+      source: "reference_kit",
+    },
+    {
+      kind: "spell",
+      classId: "ascetic",
+      spellId: "ascetic_tiger_palm",
+      minLevel: 3,
+      autoGrant: true,
+      isEnabled: true,
+      source: "reference_kit",
+    },
+    {
+      kind: "spell",
+      classId: "ascetic",
+      spellId: "ascetic_crippling_strike",
+      minLevel: 5,
+      autoGrant: true,
+      isEnabled: true,
+      source: "reference_kit",
+    },
+    {
+      kind: "spell",
+      classId: "ascetic",
+      spellId: "ascetic_flying_kick",
+      minLevel: 7,
+      autoGrant: true,
+      isEnabled: true,
+      source: "reference_kit",
+    },
+    {
+      kind: "spell",
+      classId: "ascetic",
+      spellId: "ascetic_inner_focus",
+      minLevel: 9,
+      autoGrant: true,
+      isEnabled: true,
+      source: "reference_kit",
+    },
+  ],
+
 
   templar: [
     {

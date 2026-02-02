@@ -40,7 +40,7 @@ export type ClassArchetype =
   | "support"
   | "hybrid";
 
-export type PrimaryResourceId = "mana" | "fury" | "runic_power" | "none";
+export type PrimaryResourceId = "mana" | "fury" | "runic_power" | "chi" | "none";
 
 // Simple power-resource metadata for future use
 export interface PowerResourceSpec {
@@ -206,7 +206,8 @@ export const CLASS_DEFINITIONS: Record<ClassId, ClassDefinition> = {
     description: "Monk-style martial artist; fists and focus.",
     archetype: "melee_dps",
     combatRole: "dps",
-    primaryResource: "fury", // later could split to “chi”
+    primaryResource: "chi",
+    powerResources: [{ id: "chi", max: 100 }],
     secondaryResource: null,
     baseAttributes: BASE_10,
     perLevel: CLASS_PER_LEVEL.ascetic,

@@ -16,10 +16,13 @@ import type { PowerResourceKind } from "../resources/PowerResources";
 import { getCooldownRemaining, checkAndStartCooldown } from "./Cooldowns";
 import { gainPowerResource, trySpendPowerResource } from "../resources/PowerResources";
 
-const RUNIC_POWER_BUILDERS: Record<string, number> = {
+const POST_SUCCESS_POWER_GAINS: Record<string, { kind: PowerResourceKind; amount: number }> = {
   // v1: Rune Strike is the primary early builder.
   // It should always be usable at 0 RP (cost=0) and grant RP on use.
-  "runic_knight_rune_strike": 12,
+  "runic_knight_rune_strike": { kind: "runic_power", amount: 12 },
+
+  // v1: Ascetic builder. Core monk loop: Jab → build Chi → spenders.
+  "ascetic_jab": { kind: "chi", amount: 12 },
 };
 
 export type ActionCostCooldownGateArgs = {
@@ -77,9 +80,9 @@ export function applyActionCostAndCooldownGates(args: ActionCostCooldownGateArgs
   }
 
   // 4) Post-success builders (mutation)
-  const rpGain = RUNIC_POWER_BUILDERS[key];
-  if (Number.isFinite(rpGain) && rpGain > 0) {
-    gainPowerResource(args.char, "runic_power", rpGain);
+  const gain = POST_SUCCESS_POWER_GAINS[key];
+  if (gain && Number.isFinite(gain.amount) && gain.amount > 0) {
+    gainPowerResource(args.char, gain.kind, gain.amount);
   }
 
   return null;
