@@ -448,6 +448,55 @@ export const REFERENCE_CLASS_KITS_L1_10 = {
       source: "reference_kit",
     },
   ],
+revenant: [
+  {
+    kind: "spell",
+    classId: "revenant",
+    spellId: "revenant_shadow_slash",
+    minLevel: 1,
+    autoGrant: true,
+    isEnabled: true,
+    source: "reference_kit",
+  },
+  {
+    kind: "spell",
+    classId: "revenant",
+    spellId: "revenant_deathly_miasma",
+    minLevel: 3,
+    autoGrant: true,
+    isEnabled: true,
+    source: "reference_kit",
+  },
+  {
+    kind: "spell",
+    classId: "revenant",
+    spellId: "revenant_soul_siphon",
+    minLevel: 5,
+    autoGrant: true,
+    isEnabled: true,
+    source: "reference_kit",
+  },
+  {
+    kind: "spell",
+    classId: "revenant",
+    spellId: "revenant_dark_ward",
+    minLevel: 7,
+    autoGrant: true,
+    isEnabled: true,
+    source: "reference_kit",
+  },
+  {
+    kind: "spell",
+    classId: "revenant",
+    spellId: "revenant_dread_presence",
+    minLevel: 9,
+    autoGrant: true,
+    isEnabled: true,
+    source: "reference_kit",
+  },
+],
+
+
   templar: [
     {
       kind: "spell",

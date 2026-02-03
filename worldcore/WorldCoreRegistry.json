@@ -2618,7 +2618,28 @@
         "Seeds Hierophant reference kit into DB (idempotent).",
         "Uses existing status-effect spine (hot + dot + buff + debuff)."
       ]
-    },
+    },"infra.schema.063_seed_revenant_spellkit_L1_10": {
+  "kind": "service",
+  "class": "(sql) infra schema migration",
+  "path": "worldcore/infra/schema/063_seed_revenant_spellkit_L1_10.sql",
+  "lifecycle": "singleton",
+  "ctorArgs": [],
+  "dependsOn": [],
+  "provides": [
+    "Revenant L1–10 spell kit (spells + unlocks)",
+    "Wave1 shadow knight DOT/shield/debuff baseline"
+  ],
+  "owns": [
+    "public.spells (revenant_*)",
+    "public.spell_unlocks (revenant, wave1 kit)"
+  ],
+  "notes": [
+    "Seeds Revenant reference kit into DB (idempotent).",
+    "Uses existing status-effect spine (dot + absorb shield + debuff).",
+    "No pet/minion verbs in Wave1; undead summoning arrives with the Pet Engine milestone."
+  ]
+},
+
     "interaction.ops": {
       "dependsOn": [
         "targeting.finders"

@@ -114,6 +114,7 @@ test("[contract] reference kits L1–10 are consistent + autogrant works in test
     assertAutograntsAllSpellsBy10(kits, "warlock");
     assertAutograntsAllSpellsBy10(kits, "templar");
     assertAutograntsAllSpellsBy10(kits, "crusader");
+    assertAutograntsAllSpellsBy10(kits, "revenant");
     assertAutograntsAllSpellsBy10(kits, "hunter");
     assertAutograntsAllSpellsBy10(kits, "runic_knight");
     assertAutograntsAllSpellsBy10(kits, "illusionist");

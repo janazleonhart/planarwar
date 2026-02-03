@@ -1186,6 +1186,108 @@ hierophant_sunfire: {
   flatBonus: 3,
 },
 
+// Revenant reference kit (L1–10)
+// Shadow knight / SK analogue. Uses mana, curses, wards, and self-sustain.
+revenant_shadow_slash: {
+  id: "revenant_shadow_slash",
+  name: "Shadow Slash",
+  kind: "damage_single_npc",
+  classId: "revenant",
+  minLevel: 1,
+  description: "A brutal slash laced with shadow. The blade bites twice: steel and dread.",
+  school: "shadow",
+  resourceType: "mana",
+  resourceCost: 10,
+  cooldownMs: 2500,
+  damageMultiplier: 1.03,
+  flatBonus: 7,
+},
+
+revenant_deathly_miasma: {
+  id: "revenant_deathly_miasma",
+  name: "Deathly Miasma",
+  kind: "damage_dot_single_npc",
+  classId: "revenant",
+  minLevel: 3,
+  description: "A choking haze of decay that gnaws at the target over time.",
+  school: "shadow",
+  statusEffect: {
+    id: "dot_revenant_deathly_miasma",
+    name: "Deathly Miasma",
+    durationMs: 10_000,
+    maxStacks: 1,
+    stacks: 1,
+    modifiers: {},
+    tags: ["dot", "debuff", "shadow", "revenant", "reference_kit"],
+    dot: { tickIntervalMs: 2000, spreadDamageAcrossTicks: true },
+  },
+  resourceType: "mana",
+  resourceCost: 14,
+  cooldownMs: 12000,
+  damageMultiplier: 0.55,
+  flatBonus: 3,
+},
+
+revenant_soul_siphon: {
+  id: "revenant_soul_siphon",
+  name: "Soul Siphon",
+  kind: "heal_self",
+  classId: "revenant",
+  minLevel: 5,
+  description: "Steal a sliver of vitality. It’s not “healing,” it’s reclamation.",
+  school: "shadow",
+  resourceType: "mana",
+  resourceCost: 16,
+  cooldownMs: 6000,
+  healAmount: 18,
+},
+
+revenant_dark_ward: {
+  id: "revenant_dark_ward",
+  name: "Dark Ward",
+  kind: "shield_self",
+  classId: "revenant",
+  minLevel: 7,
+  description: "A veil of shadow wraps around you, swallowing the next few strikes.",
+  school: "shadow",
+  statusEffect: {
+    id: "shield_revenant_dark_ward",
+    name: "Dark Ward",
+    durationMs: 12_000,
+    maxStacks: 1,
+    stacks: 1,
+    modifiers: {},
+    tags: ["shield", "shadow", "revenant", "reference_kit"],
+    absorb: { amount: 34 },
+  },
+  resourceType: "mana",
+  resourceCost: 18,
+  cooldownMs: 18000,
+},
+
+revenant_dread_presence: {
+  id: "revenant_dread_presence",
+  name: "Dread Presence",
+  kind: "debuff_single_npc",
+  classId: "revenant",
+  minLevel: 9,
+  description: "Your presence crushes resolve. The target’s blows lose their conviction.",
+  school: "shadow",
+  statusEffect: {
+    id: "debuff_revenant_dread_presence",
+    name: "Dread Presence",
+    durationMs: 10_000,
+    maxStacks: 1,
+    stacks: 1,
+    modifiers: { damageDealtPct: -12 },
+    tags: ["debuff", "fear", "shadow", "revenant", "reference_kit"],
+  },
+  resourceType: "mana",
+  resourceCost: 18,
+  cooldownMs: 20000,
+},
+
+
   // Virtuoso songs
   // ─────────────────────────────────────────────────────────────────────────────
   virtuoso_song_rising_courage: {
