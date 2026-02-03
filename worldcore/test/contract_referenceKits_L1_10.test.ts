@@ -119,6 +119,7 @@ test("[contract] reference kits L1–10 are consistent + autogrant works in test
     assertAutograntsAllSpellsBy10(kits, "illusionist");
     assertAutograntsAllSpellsBy10(kits, "ascetic");
     assertAutograntsAllSpellsBy10(kits, "prophet");
+    assertAutograntsAllSpellsBy10(kits, "hierophant");
 
     // Warlord: ability learns by level (we only assert "known" lookup works when we simulate a learned entry)
     {

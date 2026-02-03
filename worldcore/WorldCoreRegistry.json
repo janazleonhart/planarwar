@@ -2599,6 +2599,26 @@
         "Uses existing status-effect spine (dot + absorb shield + buff)."
       ]
     },
+    "infra.schema.062_seed_hierophant_spellkit_L1_10": {
+      "kind": "service",
+      "class": "(sql) infra schema migration",
+      "path": "worldcore/infra/schema/062_seed_hierophant_spellkit_L1_10.sql",
+      "lifecycle": "singleton",
+      "ctorArgs": [],
+      "dependsOn": [],
+      "provides": [
+        "Hierophant L1–10 spell kit (spells + unlocks)",
+        "Wave1 nature HOT/DOT/buff baseline"
+      ],
+      "owns": [
+        "public.spells (hierophant_*)",
+        "public.spell_unlocks (hierophant, wave1 kit)"
+      ],
+      "notes": [
+        "Seeds Hierophant reference kit into DB (idempotent).",
+        "Uses existing status-effect spine (hot + dot + buff + debuff)."
+      ]
+    },
     "interaction.ops": {
       "dependsOn": [
         "targeting.finders"
