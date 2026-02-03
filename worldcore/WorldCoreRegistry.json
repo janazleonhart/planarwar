@@ -7365,6 +7365,24 @@
       "path": "worldcore/test/statusEffects.contract.test.ts",
       "provides": []
     },
+    "test.contractAttackAutoSwingEngagedTargetRequired": {
+      "kind": "test",
+      "service": "test.contract",
+      "path": "worldcore/test/contract_attack_autoSwing_engagedTargetRequired.test.ts",
+      "class": null,
+      "lifecycle": "test",
+      "ctorArgs": [],
+      "dependsOn": [
+        "mud.commands.combat.attack",
+        "characters.types"
+      ],
+      "provides": [],
+      "owns": [],
+      "notes": [
+        "Contract: attack with no target is deny-by-default unless the attacker has an engagedTargetId in the room.",
+        "Also asserts auto-swing only hits the engaged target (no room-wide damage regression)."
+      ]
+    },
     "test.utils": {
       "dependsOn": [],
       "functions": [

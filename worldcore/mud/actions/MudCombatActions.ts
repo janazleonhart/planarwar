@@ -27,7 +27,7 @@ import {
 import { applyProgressionForEvent } from "../MudProgressionHooks";
 import { applyProgressionEvent } from "../../progression/ProgressionCore";
 
-import { applySimpleDamageToPlayer, markInCombat } from "../../combat/entityCombat";
+import { applySimpleDamageToPlayer, markInCombat, isDeadEntity } from "../../combat/entityCombat";
 import { gatePlayerDamageFromPlayerEntity } from "../MudCombatGates";
 import { DUEL_SERVICE } from "../../pvp/DuelService";
 
@@ -106,13 +106,86 @@ export function announceSpawnToRoom(ctx: MudContext, roomId: string, text: strin
 // Shared attack handler used by MUD attack command.
 // ---------------------------------------------------------------------------
 
+
+// ---- Engaged target tracking ------------------------------------------------
+//
+// We store the engaged target on the *player entity* (not the character state)
+// because:
+// - it is room-scoped combat intent (not persistent player data)
+// - it naturally resets on respawn / rehydrate
+//
+// Convention:
+//   (playerEntity as any).engagedTargetId?: string
+//
+// This is used by "auto-attack intent" (attack with no explicit target).
+
+function getEntitiesInRoomSafe(entities: any, roomId: string): any[] {
+  const rid = String(roomId ?? "");
+  if (!rid) return [];
+
+  try {
+    const fn = entities?.getEntitiesInRoom;
+    if (typeof fn === "function") {
+      const out = fn.call(entities, rid);
+      return Array.isArray(out) ? out : [];
+    }
+  } catch {
+    // fall through
+  }
+
+  try {
+    const fn = entities?.getAll;
+    if (typeof fn === "function") {
+      const all = fn.call(entities);
+      const arr = Array.isArray(all) ? all : Array.from(all ?? []);
+      return arr.filter((e: any) => String(e?.roomId ?? "") === rid);
+    }
+  } catch {
+    // fall through
+  }
+
+  return [];
+}
+
+function getEngagedTargetInRoom(ctx: MudContext, selfEntity: any): any | null {
+  const roomId = String(selfEntity?.roomId ?? "");
+  if (!roomId) return null;
+
+  const engagedId = String((selfEntity as any)?.engagedTargetId ?? "").trim();
+  if (!engagedId) return null;
+
+  const roomEnts = getEntitiesInRoomSafe(ctx.entities, roomId);
+  for (const e of roomEnts) {
+    if (String((e as any)?.id ?? "") === engagedId) return e;
+  }
+
+  return null;
+}
+
+function clearEngagedTarget(selfEntity: any): void {
+  try {
+    delete (selfEntity as any).engagedTargetId;
+  } catch {
+    (selfEntity as any).engagedTargetId = undefined;
+  }
+}
+
+function setEngagedTarget(selfEntity: any, targetEntity: any): void {
+  const tid = String((targetEntity as any)?.id ?? "").trim();
+  if (!tid) return;
+  (selfEntity as any).engagedTargetId = tid;
+}
+
+// ---------------------------------------------------------------------------
+// Shared attack handler used by MUD attack command.
+// ---------------------------------------------------------------------------
+
 export async function handleAttackAction(
   ctx: MudContext,
   char: CharacterState,
   targetNameRaw: string,
 ): Promise<string> {
   const targetName = (targetNameRaw ?? "").trim();
-  if (!targetName) return "Usage: attack <target>";
 
   if (!ctx.entities) return "Combat is not available here (no entity manager).";
 
@@ -124,22 +197,46 @@ export async function handleAttackAction(
 
   const roomId = selfEntity.roomId ?? char.shardId;
 
-  // 1) Try NPC target first (rats, ore, dummies, etc.)
-  const npcTarget = resolveTargetInRoom(ctx.entities as any, roomId, targetNameRaw, {
-    selfId: selfEntity.id,
-    // Only NPC-like entities are eligible here. Player targets are handled separately below.
-    filter: (e: any) => e?.type === "npc" || e?.type === "mob",
-    // Keep consistent with nearby output unless a command enforces something tighter downstream.
-    radius: 30,
-  });
+  // --- Auto-attack intent (no explicit target) ---
+  // Deny-by-default to prevent room-cleave bugs.
+  // Only allowed if the player already has an engaged target in this room.
+  let engagedTarget: any | null = null;
+  if (!targetName) {
+    engagedTarget = getEngagedTargetInRoom(ctx, selfEntity);
+
+    if (!engagedTarget) {
+      // If we had an engagedTargetId but it no longer exists, clear it.
+      const hadId = String((selfEntity as any)?.engagedTargetId ?? "").trim();
+      if (hadId) clearEngagedTarget(selfEntity);
+
+      return "[combat] You are not engaged with a target.";
+    }
+
+    if (isDeadEntity(engagedTarget) || engagedTarget.alive === false) {
+      clearEngagedTarget(selfEntity);
+      return "[combat] Your engaged target is already dead.";
+    }
+  }
+
+  // 1) NPC target (rats, ore, dummies, etc.)
+  const npcTarget = engagedTarget && (engagedTarget.type === "npc" || engagedTarget.type === "mob")
+    ? engagedTarget
+    : resolveTargetInRoom(ctx.entities as any, roomId, targetNameRaw, {
+        selfId: selfEntity.id,
+        filter: (e: any) => e?.type === "npc" || e?.type === "mob",
+        radius: 30,
+      });
+
   if (npcTarget) {
+    // Engage this target (for subsequent attack-with-no-args swings).
+    setEngagedTarget(selfEntity, npcTarget);
+
     // Prevent double-kills / double-loot / double-respawn scheduling.
-    // If the entity is already dead, you shouldn't be able to attack it.
-    if (npcTarget.alive === false) {
+    if ((npcTarget as any).alive === false) {
       return `That is already dead.`;
     }
 
-    const npcState = ctx.npcs?.getNpcStateByEntityId(npcTarget.id);
+    const npcState = ctx.npcs?.getNpcStateByEntityId((npcTarget as any).id);
     const protoId = npcState?.protoId;
 
     // Training dummy: use the non-lethal dummy HP pool and NEVER route through NpcCombat
@@ -172,15 +269,26 @@ export async function handleAttackAction(
 
     // Normal NPC attack flow.
     // Kill progression is centralized inside performNpcAttack(...) above.
-    return await performNpcAttack(ctx, char, selfEntity, npcTarget);
+    return await performNpcAttack(ctx, char, selfEntity as any, npcTarget as any);
   }
 
-  // 2) Try another player – duel-gated PvP (open PvP zones can come later).
-  const playerFound = findTargetPlayerEntityByName(ctx, roomId, targetNameRaw);
-  const playerTarget: any = playerFound ? (playerFound as any).entity ?? playerFound : null;
+  // 2) Player target – duel-gated PvP (open PvP zones can come later).
+  const playerTarget: any =
+    engagedTarget && engagedTarget.type === "player"
+      ? engagedTarget
+      : (() => {
+          const found = findTargetPlayerEntityByName(ctx, roomId, targetNameRaw);
+          const ent = found ? (found as any).entity ?? found : null;
+          return ent;
+        })();
+
   const playerTargetName: string =
-    (playerFound as any)?.name ?? (playerTarget as any)?.name ?? targetNameRaw;
+    (playerTarget as any)?.name ?? targetNameRaw;
+
   if (playerTarget) {
+    // Engage this target for subsequent swings.
+    setEngagedTarget(selfEntity, playerTarget);
+
     const gateRes = await gatePlayerDamageFromPlayerEntity(ctx, char, roomId, playerTarget);
     if (!gateRes.allowed) {
       return gateRes.reason;

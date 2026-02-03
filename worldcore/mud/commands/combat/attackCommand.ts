@@ -7,7 +7,14 @@ export async function handleAttackCommand(
   char: any,
   input: { cmd: string; args: string[]; parts: string[]; world?: any }
 ): Promise<string> {
-  const targetNameRaw = input.args.join(" ").trim();
-  if (!targetNameRaw) return "Usage: attack <targetName>";
+  const targetNameRaw = String(input.args.join(" ") ?? "").trim();
+
+  // Behavior:
+  // - `attack <target>` engages that target.
+  // - `attack` (no args) swings at your engaged target (deny-by-default).
+  if (!targetNameRaw) {
+    return handleAttackAction(ctx, char, "");
+  }
+
   return handleAttackAction(ctx, char, targetNameRaw);
 }
