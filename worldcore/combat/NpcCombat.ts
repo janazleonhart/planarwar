@@ -248,12 +248,15 @@ export async function performNpcAttack(
       // Never let progression break combat.
     }
 
-    if (phys.outcome !== "hit") {
+    const wasBlocked = phys.outcome === "block";
+
+    // Miss / dodge / parry fully prevent damage.
+    // Block reduces damage but still counts as a landed swing for combat flow.
+    if (phys.outcome !== "hit" && !wasBlocked) {
       let line = "[combat] ";
       if (phys.outcome === "miss") line += `You miss ${npc.name}.`;
       else if (phys.outcome === "dodge") line += `${npc.name} dodges your attack.`;
-      else if (phys.outcome === "parry") line += `${npc.name} parries your attack.`;
-      else line += `${npc.name} blocks your attack.`;
+      else line += `${npc.name} parries your attack.`;
 
       // Parry can immediately riposte (simple counter-swing).
       if (phys.outcome === "parry" && phys.riposte) {
@@ -262,6 +265,11 @@ export async function performNpcAttack(
       }
 
       return line;
+    }
+
+    if (wasBlocked) {
+      (opts as any)._pwWasBlocked = true;
+      (opts as any)._pwBlockMultiplier = typeof phys.blockMultiplier === "number" ? phys.blockMultiplier : 0.7;
     }
 
     // Feed crit/glancing/multi-strike hints into damage computation below.
@@ -278,10 +286,26 @@ export async function performNpcAttack(
     applyDefenderDamageTakenMods: true,
   });
 
-  // rawDamage = what CombatEngine rolled
+  // rawDamage = what CombatEngine rolled (pre-mitigation by block)
   const baseRawDamage = result.damage;
   const strikes = typeof (opts as any)._pwStrikes === "number" ? (opts as any)._pwStrikes : 1;
-  const rawDamage = Math.max(0, Math.floor(baseRawDamage * Math.max(1, strikes)));
+
+  const preBlockRaw = Math.max(0, Math.floor(baseRawDamage * Math.max(1, strikes)));
+
+  const blockMult =
+    typeof (opts as any)._pwBlockMultiplier === "number"
+      ? (opts as any)._pwBlockMultiplier
+      : 1;
+
+  const wasBlocked = (opts as any)._pwWasBlocked === true;
+
+  let rawDamage = preBlockRaw;
+  if (wasBlocked && blockMult > 0 && blockMult < 1) {
+    rawDamage = Math.max(0, Math.floor(preBlockRaw * blockMult));
+    // Min-damage rule: blocked hits can still chip for 1 if there was any base damage.
+    if (preBlockRaw > 0 && rawDamage < 1) rawDamage = 1;
+  }
+
   let dmg = rawDamage;
 
   // Snapshot HP before damage for messaging
@@ -384,6 +408,10 @@ try {
       line += ` (${overkill} overkill)`;
     }
     line += `. (${newHp}/${targetMaxHp ?? "?"} HP)`;
+  }
+
+  if (wasBlocked) {
+    line += " (Blocked!)";
   }
 
   if (result.wasCrit) {
@@ -648,7 +676,7 @@ export function applySimpleNpcCounterAttack(
     defenderCanBlock: true,
     allowCrit: false,
     allowMultiStrike: false,
-    allowRiposte: false,
+    allowRiposte: true,
   });
 
   // Progress defense skill whenever you're attacked (v1: simple +1 tick).
@@ -656,20 +684,45 @@ export function applySimpleNpcCounterAttack(
     gainDefenseSkill(defenderChar, 1);
   }
 
-  if (phys.outcome !== "hit") {
+  const wasBlocked = phys.outcome === "block";
+
+  if (phys.outcome !== "hit" && !wasBlocked) {
     // Tag NPC as in combat even on avoided swings.
     markInCombat(n);
 
     let line = "[combat] ";
     if (phys.outcome === "miss") line += `${npc.name} misses you.`;
     else if (phys.outcome === "dodge") line += `You dodge ${npc.name}'s attack.`;
-    else if (phys.outcome === "parry") line += `You parry ${npc.name}'s attack.`;
-    else line += `You block ${npc.name}'s attack.`;
+    else line += `You parry ${npc.name}'s attack.`;
+
+    // Parry can immediately riposte back into the attacker.
+    // This is intentionally conservative: riposte damage is a small chip and cannot kill.
+    if (phys.outcome === "parry" && phys.riposte) {
+      try {
+        const hp = typeof (npc as any).hp === "number" ? (npc as any).hp : undefined;
+        if (hp && hp > 1) {
+          const ripDmg = 1; // v1: safe, deterministic
+          (npc as any).hp = Math.max(1, hp - ripDmg);
+          markInCombat(n);
+          line += ` (Riposte! You strike back for ${ripDmg}.)`;
+        }
+      } catch {
+        // Best-effort; riposte must never crash combat.
+      }
+    }
+
     return line;
   }
 
-  const dmg = computeNpcMeleeDamage(npc);
+  // Block reduces incoming damage but does not prevent the hit entirely.
+  const dmgBase = computeNpcMeleeDamage(npc);
+  const blockMult = wasBlocked && typeof phys.blockMultiplier === "number" ? phys.blockMultiplier : 1;
 
+  let dmg = dmgBase;
+  if (wasBlocked && blockMult > 0 && blockMult < 1) {
+    dmg = Math.max(0, Math.floor(dmgBase * blockMult));
+    if (dmgBase > 0 && dmg < 1) dmg = 1;
+  }
   // IMPORTANT: pass the CharacterState so damageTakenPct (cowardice, curses, etc.)
   // can actually modify incoming damage.
   const char = defenderChar;
@@ -690,13 +743,17 @@ export function applySimpleNpcCounterAttack(
       deadChar.melody.active = false;
     }
     return (
-      `[combat] ${npc.name} hits you for ${dmg} damage. ` +
+      (wasBlocked
+        ? `[combat] You block ${npc.name}'s attack, but still take ${dmg} damage. `
+        : `[combat] ${npc.name} hits you for ${dmg} damage. `) +
       `You die. (0/${maxHp} HP) ` +
       "Use 'respawn' to return to safety or wait for someone to resurrect you."
     );
   }
 
-  return `[combat] ${npc.name} hits you for ${dmg} damage. (${newHp}/${maxHp} HP)`;
+  return wasBlocked
+    ? `[combat] You block ${npc.name}'s attack, but still take ${dmg} damage. (${newHp}/${maxHp} HP)`
+    : `[combat] ${npc.name} hits you for ${dmg} damage. (${newHp}/${maxHp} HP)`;
 }
 
 /**

@@ -56,6 +56,11 @@ export interface PhysicalHitResult {
   // True when defender parries and can riposte (caller decides how to apply).
   riposte: boolean;
 
+
+  // Suggested damage multiplier when outcome===\"block\".
+  // Callers may reduce damage instead of treating block as a full avoid.
+  blockMultiplier: number;
+
   // Debug-only (useful in tests / telemetry).
   hitChance: number;
 }
@@ -131,6 +136,7 @@ export function resolvePhysicalHit(req: PhysicalHitRequest): PhysicalHitResult {
       critChance: 0,
       glancingChance: 0,
       riposte: false,
+      blockMultiplier: 1,
       hitChance,
     };
   }
@@ -157,6 +163,7 @@ export function resolvePhysicalHit(req: PhysicalHitRequest): PhysicalHitResult {
       critChance: 0,
       glancingChance: 0,
       riposte: false,
+      blockMultiplier: 1,
       hitChance,
     };
   }
@@ -169,6 +176,7 @@ export function resolvePhysicalHit(req: PhysicalHitRequest): PhysicalHitResult {
       critChance: 0,
       glancingChance: 0,
       riposte,
+      blockMultiplier: 1,
       hitChance,
     };
   }
@@ -180,6 +188,7 @@ export function resolvePhysicalHit(req: PhysicalHitRequest): PhysicalHitResult {
       critChance: 0,
       glancingChance: 0,
       riposte: false,
+      blockMultiplier: 0.7,
       hitChance,
     };
   }
@@ -210,6 +219,7 @@ export function resolvePhysicalHit(req: PhysicalHitRequest): PhysicalHitResult {
     critChance,
     glancingChance,
     riposte: false,
+    blockMultiplier: 1,
     hitChance,
   };
 }
