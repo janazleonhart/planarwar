@@ -74,6 +74,54 @@ export function getWeaponSkillLevel(
 }
 
 /**
+ * Compute weapon-skill gain (points) for a single swing attempt.
+ *
+ * Design goals:
+ * - Skill should increase when fighting non-trivial enemies.
+ * - Trivial targets should not train skills.
+ * - Training slows as you approach the cap.
+ *
+ * v1 policy:
+ * - If defender is 10+ levels below attacker => 0 gain
+ * - Otherwise gain 1 point per attempt while < 80% cap
+ * - Near cap (>= 80%), require an actual hit to gain 1 point
+ * - On hit vs near-level (defender >= attacker-2), add +1 bonus while below 60% cap
+ */
+export function computeWeaponSkillGainOnSwingAttempt(opts: {
+  attackerLevel: number;
+  defenderLevel: number;
+  currentPoints: number;
+  capPoints: number;
+  didHit: boolean;
+}): number {
+  const attackerLevel = Number.isFinite(opts.attackerLevel) && opts.attackerLevel > 0 ? Math.floor(opts.attackerLevel) : 1;
+  const defenderLevel = Number.isFinite(opts.defenderLevel) && opts.defenderLevel > 0 ? Math.floor(opts.defenderLevel) : 1;
+  const cap = Number.isFinite(opts.capPoints) && opts.capPoints > 0 ? Math.floor(opts.capPoints) : attackerLevel * 5;
+  const current = Math.max(0, Math.floor(opts.currentPoints || 0));
+
+  if (current >= cap) return 0;
+
+  // Too trivial => no training.
+  if (defenderLevel <= attackerLevel - 10) return 0;
+
+  const pct = cap > 0 ? current / cap : 0;
+
+  // Near cap: only train on actual hits.
+  if (pct >= 0.8) {
+    return opts.didHit ? 1 : 0;
+  }
+
+  let gain = 1; // baseline attempt gain
+
+  // Bonus for landing hits on near-level enemies while still learning.
+  if (opts.didHit && defenderLevel >= attackerLevel - 2 && pct < 0.6) {
+    gain += 1;
+  }
+
+  return gain;
+}
+
+/**
  * Same logic for spells: no training → use level,
  * trained → use skill/5.
  */

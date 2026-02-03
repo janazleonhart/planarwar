@@ -789,18 +789,20 @@
       "path": "worldcore/combat/NpcCombat.ts"
     },
     "combat.physicalHitResolver": {
-      "kind": "service",
-      "path": "worldcore/combat/PhysicalHitResolver.ts",
       "dependsOn": [
         "characters.types",
         "combat.engine",
         "skills.progression"
       ],
-      "functions": ["resolvePhysicalHit"],
+      "functions": [
+        "resolvePhysicalHit"
+      ],
+      "kind": "service",
       "notes": [
         "Skill-based physical hit resolution: miss/dodge/parry/block, crit hooks, double/triple attack hooks, and parry->riposte hook.",
         "Foundation for future pets, taunt/threat, shield tech, and stealth openers."
-      ]
+      ],
+      "path": "worldcore/combat/PhysicalHitResolver.ts"
     },
     "combat.playerHotTicker": {
       "dependsOn": [
@@ -1907,24 +1909,6 @@
         "spawn_points.proto_id column"
       ]
     },
-    "infra.seed.029_seed_crafting_items_v1": {
-      "class": "SeedMigration",
-      "ctorArgs": [],
-      "dependsOn": [
-        "infra.schema.007_items",
-        "worldcore/db/Database.ts"
-      ],
-      "kind": "service",
-      "lifecycle": "migration",
-      "notes": [
-        "Seeds baseline content for 029 seed crafting items v1."
-      ],
-      "owns": [],
-      "path": "worldcore/infra/schema/029_seed_crafting_items_v1.sql",
-      "provides": [
-        "seed rows for items"
-      ]
-    },
     "infra.schema.030_trade_recipes": {
       "class": "SchemaMigration",
       "ctorArgs": [],
@@ -1949,55 +1933,6 @@
         "trade_recipe_outputs table"
       ]
     },
-    "infra.seed.031_trade_recipes_v1": {
-      "class": "SeedMigration",
-      "ctorArgs": [],
-      "dependsOn": [
-        "infra.schema.030_trade_recipes",
-        "infra.schema.007_items",
-        "worldcore/db/Database.ts"
-      ],
-      "kind": "service",
-      "lifecycle": "migration",
-      "notes": [
-        "Tradeskills v1 baseline DB recipes.",
-        "Safe to re-run; uses ON CONFLICT UPSERT patterns."
-      ],
-      "owns": [
-        "Baseline recipe seeds using UPSERT",
-        "Inputs/outputs rows for each seeded recipe"
-      ],
-      "path": "worldcore/infra/schema/031_seed_trade_recipes_v1.sql",
-      "provides": [
-        "smelt_iron_ingot recipe (DB)",
-        "brew_minor_heal recipe (DB)"
-      ]
-    },
-    "infra.seed.032_trade_recipes_cooking_v1": {
-      "class": "SeedMigration",
-      "ctorArgs": [],
-      "dependsOn": [
-        "infra.schema.030_trade_recipes",
-        "infra.schema.007_items",
-        "worldcore/db/Database.ts"
-      ],
-      "kind": "service",
-      "lifecycle": "migration",
-      "notes": [
-        "Migrates RecipeCatalog cooking recipes into DB so crafting is DB-authoritative.",
-        "Safe to re-run."
-      ],
-      "owns": [
-        "Starter cooking recipe seeds (UPSERT)",
-        "Deterministic inputs/outputs replacement per recipe"
-      ],
-      "path": "worldcore/infra/schema/032_seed_trade_recipes_cooking_v1.sql",
-      "provides": [
-        "cook_river_trout (DB recipe seed)",
-        "mill_wheat_flour (DB recipe seed)",
-        "bake_simple_bread (DB recipe seed)"
-      ]
-    },
     "infra.schema.033_trade_recipes_station_kind": {
       "class": "SchemaMigration",
       "ctorArgs": [],
@@ -2017,22 +1952,6 @@
       "provides": [
         "trade_recipes.station_kind",
         "idx_trade_recipes_station_kind"
-      ]
-    },
-    "infra.seed.034_trade_recipes_station_kinds_v1": {
-      "class": "SeedMigration",
-      "ctorArgs": [],
-      "dependsOn": [
-        "infra.schema.033_trade_recipes_station_kind"
-      ],
-      "kind": "service",
-      "lifecycle": "migration",
-      "owns": [
-        "Station policy for starter recipes: campfire portable; forge/alchemy_table/millstone/oven town-only"
-      ],
-      "path": "worldcore/infra/schema/034_seed_trade_recipes_station_kinds_v1.sql",
-      "provides": [
-        "Starter recipe station_kind assignments"
       ]
     },
     "infra.schema.035_skin_loot_v1": {
@@ -2082,24 +2001,6 @@
         "spawn_points.town_tier column"
       ]
     },
-    "infra.seed.038_seed_skin_loot_town_rat_v1": {
-      "class": "SeedMigration",
-      "ctorArgs": [],
-      "dependsOn": [
-        "infra.schema.035_skin_loot_v1",
-        "worldcore/db/Database.ts"
-      ],
-      "kind": "service",
-      "lifecycle": "migration",
-      "notes": [
-        "Seeds baseline content for 038 seed skin loot town rat v1."
-      ],
-      "owns": [],
-      "path": "worldcore/infra/schema/038_seed_skin_loot_town_rat_v1.sql",
-      "provides": [
-        "seed rows for skin_loot"
-      ]
-    },
     "infra.schema.039_fix_town_rat_tags_v1": {
       "class": "SchemaMigration",
       "ctorArgs": [],
@@ -2133,51 +2034,6 @@
       "provides": [
         "public table"
       ]
-    },
-    "infra.seed.041_seed_spells_mvp": {
-      "class": "SeedMigration",
-      "ctorArgs": [],
-      "dependsOn": [
-        "infra.schema.040_create_spells_table",
-        "worldcore/db/Database.ts"
-      ],
-      "kind": "service",
-      "lifecycle": "migration",
-      "notes": [
-        "Seeds baseline content for 041 seed spells mvp."
-      ],
-      "owns": [],
-      "path": "worldcore/infra/schema/041_seed_spells_mvp.sql",
-      "provides": [
-        "seed rows for public"
-      ]
-    },
-    "infra.seed.042_seed_abilities_from_unlocks": {
-      "class": "(sql) infra seed migration",
-      "ctorArgs": [],
-      "dependsOn": [],
-      "kind": "service",
-      "lifecycle": "singleton",
-      "notes": [
-        "Ensures abilities catalog rows exist for any ability referenced by ability_unlocks (safe upsert).",
-        "Title-cases id into name when missing; does not overwrite existing descriptions."
-      ],
-      "owns": [],
-      "path": "worldcore/infra/schema/042_seed_abilities_from_unlocks.sql",
-      "provides": []
-    },
-    "infra.seed.042_seed_ability_unlocks_mvp": {
-      "class": "(sql) infra seed migration",
-      "ctorArgs": [],
-      "dependsOn": [],
-      "kind": "service",
-      "lifecycle": "singleton",
-      "notes": [
-        "Seeds MVP warrior ability unlocks for early UI/progression testing."
-      ],
-      "owns": [],
-      "path": "worldcore/infra/schema/042_seed_ability_unlocks_mvp.sql",
-      "provides": []
     },
     "infra.schema.042_create_abilities_catalog": {
       "class": "(sql) infra schema migration",
@@ -2222,26 +2078,6 @@
       "path": "worldcore/infra/schema/043_create_npc_loot_table.sql",
       "provides": [
         "public table"
-      ]
-    },
-    "infra.seed.044_npc_loot_seed_v0": {
-      "class": "SeedMigration",
-      "ctorArgs": [],
-      "dependsOn": [
-        "infra.schema.043_create_npc_loot_table",
-        "infra.schema.007_items",
-        "infra.schema.024_npcs",
-        "worldcore/db/Database.ts"
-      ],
-      "kind": "service",
-      "lifecycle": "migration",
-      "notes": [
-        "Seeds baseline content for 044 npc loot seed v0."
-      ],
-      "owns": [],
-      "path": "worldcore/infra/schema/044_npc_loot_seed_v0.sql",
-      "provides": [
-        "seed rows for public"
       ]
     },
     "infra.schema.045_create_vendor_log": {
@@ -2326,58 +2162,6 @@
       "path": "worldcore/infra/schema/049_create_spell_unlocks_table.sql",
       "provides": []
     },
-    "infra.seed.049_seed_spell_unlocks_from_spells": {
-      "class": "(sql) infra seed migration",
-      "ctorArgs": [],
-      "dependsOn": [],
-      "kind": "service",
-      "lifecycle": "singleton",
-      "notes": [
-        "Bootstrap seed: derives initial spell_unlocks rows from spells catalog."
-      ],
-      "owns": [],
-      "path": "worldcore/infra/schema/049_seed_spell_unlocks_from_spells.sql",
-      "provides": []
-    },
-    "infra.seed.050_seed_reference_class_kits_L1_10": {
-      "class": "(sql) infra seed migration",
-      "ctorArgs": [],
-      "dependsOn": [],
-      "kind": "service",
-      "lifecycle": "singleton",
-      "notes": [
-        "Seeds Reference Class Kits L1\u201310 (MVP) used by deterministic progression tests."
-      ],
-      "owns": [],
-      "path": "worldcore/infra/schema/050_seed_reference_class_kits_L1_10.sql",
-      "provides": []
-    },
-    "infra.seed.050_seed_reference_status_effect_spells_v1": {
-      "class": "(sql) infra seed migration",
-      "ctorArgs": [],
-      "dependsOn": [],
-      "kind": "service",
-      "lifecycle": "singleton",
-      "notes": [
-        "Seeds reference status effect spells (cleanse/HoT/shield/DOT) for System I MVP."
-      ],
-      "owns": [],
-      "path": "worldcore/infra/schema/050_seed_reference_status_effect_spells_v1.sql",
-      "provides": []
-    },
-    "infra.seed.050_seed_spells_reference_kits_l1_10": {
-      "class": "(sql) infra seed migration",
-      "ctorArgs": [],
-      "dependsOn": [],
-      "kind": "service",
-      "lifecycle": "singleton",
-      "notes": [
-        "Seeds spells catalog entries referenced by the L1\u201310 class kits."
-      ],
-      "owns": [],
-      "path": "worldcore/infra/schema/050_seed_spells_reference_kits_l1_10.sql",
-      "provides": []
-    },
     "infra.schema.050_add_spell_effect_payloads_v1": {
       "class": "(sql) infra schema migration",
       "ctorArgs": [],
@@ -2389,99 +2173,6 @@
       ],
       "owns": [],
       "path": "worldcore/infra/schema/050_add_spell_effect_payloads_v1.sql",
-      "provides": []
-    },
-    "infra.seed.051_seed_spell_unlocks_reference_kits_l1_10": {
-      "class": "(sql) infra seed migration",
-      "ctorArgs": [],
-      "dependsOn": [],
-      "kind": "service",
-      "lifecycle": "singleton",
-      "notes": [
-        "Seeds spell_unlocks for L1\u201310 reference kits; enables deterministic autogrant tests."
-      ],
-      "owns": [],
-      "path": "worldcore/infra/schema/051_seed_spell_unlocks_reference_kits_l1_10.sql",
-      "provides": []
-    },
-    "infra.seed.052_seed_npcs_training_dummies_and_civilian_v1": {
-      "class": "SeedMigration",
-      "ctorArgs": [],
-      "dependsOn": [
-        "infra.schema.024_npcs",
-        "worldcore/db/Database.ts"
-      ],
-      "kind": "service",
-      "lifecycle": "migration",
-      "notes": [
-        "Seeds training dummies and a protected town civilian prototype.",
-        "Training dummies are explicitly law-exempt so guard/crime logic never reacts to DPS testing.",
-        "Idempotent UPSERT into npcs(id)."
-      ],
-      "owns": [
-        "Law tag correctness for training_dummy*",
-        "Baseline town civilian prototype used by guard/crime tests"
-      ],
-      "path": "worldcore/infra/schema/052_seed_npcs_training_dummies_and_civilian_v1.sql",
-      "provides": [
-        "training_dummy NPC prototype",
-        "training_dummy_big NPC prototype",
-        "town_civilian NPC prototype",
-        "seed rows for npcs"
-      ]
-    },
-    "infra.seed.053_seed_basic_loot_items_v1": {
-      "class": "SeedMigration",
-      "ctorArgs": [],
-      "dependsOn": [
-        "infra.schema.007_items",
-        "worldcore/db/Database.ts"
-      ],
-      "kind": "service",
-      "lifecycle": "migration",
-      "notes": [
-        "Seeds minimal items required by early loot + tradeskill seeds (so npc_loot/skin_loot/recipes don't dangle).",
-        "Idempotent UPSERT keyed by items(id)."
-      ],
-      "owns": [
-        "Baseline item ids referenced by npc_loot and skin_loot seeds (rat_tail, rat_meat_raw, ore_iron_hematite)"
-      ],
-      "path": "worldcore/infra/schema/053_seed_basic_loot_items_v1.sql",
-      "provides": [
-        "seed rows for items",
-        "ore_iron_hematite item",
-        "rat_tail item",
-        "rat_meat_raw item"
-      ]
-    },
-    "infra.seed.054_seed_common_class_kits_L1_10": {
-      "class": "(sql) infra seed migration",
-      "ctorArgs": [],
-      "dependsOn": [],
-      "kind": "service",
-      "lifecycle": "singleton",
-      "notes": [
-        "Seeds a minimal common L1\u201310 spell kit (damage + dot + debuff + shield + hot) for classes that do not yet have bespoke kits.",
-        "Designed to keep every class playable while per-class kits are authored later."
-      ],
-      "owns": [],
-      "path": "worldcore/infra/schema/054_seed_common_class_kits_L1_10.sql",
-      "provides": []
-    },
-    "infra.seed.055_seed_wave1_class_kit_mappings_L1_10": {
-      "class": "(sql) infra seed migration",
-      "ctorArgs": [],
-      "dependsOn": [],
-      "kind": "service",
-      "lifecycle": "singleton",
-      "notes": [
-        "Wave 1 bootstrap: maps not-yet-bespoke classes onto proven kits (templar/archmage/warlock spells; warrior abilities).",
-        "Also updates mapped kit spell rows in public.spells to class_id='any' so cross-class unlocks can actually surface in runtime/UI queries.",
-        "Idempotent UPSERTs (ON CONFLICT DO UPDATE) so re-running seeds is safe.",
-        "Intentionally does not touch Adventurer (special anti-datamine class rules)."
-      ],
-      "owns": [],
-      "path": "worldcore/infra/schema/055_seed_wave1_class_kit_mappings_L1_10.sql",
       "provides": []
     },
     "infra.schema.056_seed_crusader_class_kit_L1_10": {
@@ -2595,66 +2286,377 @@
       ]
     },
     "infra.schema.061_seed_prophet_spellkit_L1_10": {
-      "kind": "service",
       "class": "(sql) infra schema migration",
-      "path": "worldcore/infra/schema/061_seed_prophet_spellkit_L1_10.sql",
-      "lifecycle": "singleton",
       "ctorArgs": [],
       "dependsOn": [],
-      "provides": [
-        "Prophet L1–10 spell kit (spells + unlocks)",
-        "Wave1 shaman-ish DOT/shield/buff/heal baseline"
+      "kind": "service",
+      "lifecycle": "singleton",
+      "notes": [
+        "Seeds Prophet reference kit into DB (idempotent).",
+        "Uses existing status-effect spine (dot + absorb shield + buff)."
       ],
       "owns": [
         "public.spells (prophet_*)",
         "public.spell_unlocks (prophet, wave1 kit)"
       ],
-      "notes": [
-        "Seeds Prophet reference kit into DB (idempotent).",
-        "Uses existing status-effect spine (dot + absorb shield + buff)."
+      "path": "worldcore/infra/schema/061_seed_prophet_spellkit_L1_10.sql",
+      "provides": [
+        "Prophet L1\u201310 spell kit (spells + unlocks)",
+        "Wave1 shaman-ish DOT/shield/buff/heal baseline"
       ]
     },
     "infra.schema.062_seed_hierophant_spellkit_L1_10": {
-      "kind": "service",
       "class": "(sql) infra schema migration",
-      "path": "worldcore/infra/schema/062_seed_hierophant_spellkit_L1_10.sql",
-      "lifecycle": "singleton",
       "ctorArgs": [],
       "dependsOn": [],
-      "provides": [
-        "Hierophant L1–10 spell kit (spells + unlocks)",
-        "Wave1 nature HOT/DOT/buff baseline"
+      "kind": "service",
+      "lifecycle": "singleton",
+      "notes": [
+        "Seeds Hierophant reference kit into DB (idempotent).",
+        "Uses existing status-effect spine (hot + dot + buff + debuff)."
       ],
       "owns": [
         "public.spells (hierophant_*)",
         "public.spell_unlocks (hierophant, wave1 kit)"
       ],
-      "notes": [
-        "Seeds Hierophant reference kit into DB (idempotent).",
-        "Uses existing status-effect spine (hot + dot + buff + debuff)."
+      "path": "worldcore/infra/schema/062_seed_hierophant_spellkit_L1_10.sql",
+      "provides": [
+        "Hierophant L1\u201310 spell kit (spells + unlocks)",
+        "Wave1 nature HOT/DOT/buff baseline"
       ]
-    },"infra.schema.063_seed_revenant_spellkit_L1_10": {
-  "kind": "service",
-  "class": "(sql) infra schema migration",
-  "path": "worldcore/infra/schema/063_seed_revenant_spellkit_L1_10.sql",
-  "lifecycle": "singleton",
-  "ctorArgs": [],
-  "dependsOn": [],
-  "provides": [
-    "Revenant L1–10 spell kit (spells + unlocks)",
-    "Wave1 shadow knight DOT/shield/debuff baseline"
-  ],
-  "owns": [
-    "public.spells (revenant_*)",
-    "public.spell_unlocks (revenant, wave1 kit)"
-  ],
-  "notes": [
-    "Seeds Revenant reference kit into DB (idempotent).",
-    "Uses existing status-effect spine (dot + absorb shield + debuff).",
-    "No pet/minion verbs in Wave1; undead summoning arrives with the Pet Engine milestone."
-  ]
-},
-
+    },
+    "infra.schema.063_seed_revenant_spellkit_L1_10": {
+      "class": "(sql) infra schema migration",
+      "ctorArgs": [],
+      "dependsOn": [],
+      "kind": "service",
+      "lifecycle": "singleton",
+      "notes": [
+        "Seeds Revenant reference kit into DB (idempotent).",
+        "Uses existing status-effect spine (dot + absorb shield + debuff).",
+        "No pet/minion verbs in Wave1; undead summoning arrives with the Pet Engine milestone."
+      ],
+      "owns": [
+        "public.spells (revenant_*)",
+        "public.spell_unlocks (revenant, wave1 kit)"
+      ],
+      "path": "worldcore/infra/schema/063_seed_revenant_spellkit_L1_10.sql",
+      "provides": [
+        "Revenant L1\u201310 spell kit (spells + unlocks)",
+        "Wave1 shadow knight DOT/shield/debuff baseline"
+      ]
+    },
+    "infra.seed.029_seed_crafting_items_v1": {
+      "class": "SeedMigration",
+      "ctorArgs": [],
+      "dependsOn": [
+        "infra.schema.007_items",
+        "worldcore/db/Database.ts"
+      ],
+      "kind": "service",
+      "lifecycle": "migration",
+      "notes": [
+        "Seeds baseline content for 029 seed crafting items v1."
+      ],
+      "owns": [],
+      "path": "worldcore/infra/schema/029_seed_crafting_items_v1.sql",
+      "provides": [
+        "seed rows for items"
+      ]
+    },
+    "infra.seed.031_trade_recipes_v1": {
+      "class": "SeedMigration",
+      "ctorArgs": [],
+      "dependsOn": [
+        "infra.schema.030_trade_recipes",
+        "infra.schema.007_items",
+        "worldcore/db/Database.ts"
+      ],
+      "kind": "service",
+      "lifecycle": "migration",
+      "notes": [
+        "Tradeskills v1 baseline DB recipes.",
+        "Safe to re-run; uses ON CONFLICT UPSERT patterns."
+      ],
+      "owns": [
+        "Baseline recipe seeds using UPSERT",
+        "Inputs/outputs rows for each seeded recipe"
+      ],
+      "path": "worldcore/infra/schema/031_seed_trade_recipes_v1.sql",
+      "provides": [
+        "smelt_iron_ingot recipe (DB)",
+        "brew_minor_heal recipe (DB)"
+      ]
+    },
+    "infra.seed.032_trade_recipes_cooking_v1": {
+      "class": "SeedMigration",
+      "ctorArgs": [],
+      "dependsOn": [
+        "infra.schema.030_trade_recipes",
+        "infra.schema.007_items",
+        "worldcore/db/Database.ts"
+      ],
+      "kind": "service",
+      "lifecycle": "migration",
+      "notes": [
+        "Migrates RecipeCatalog cooking recipes into DB so crafting is DB-authoritative.",
+        "Safe to re-run."
+      ],
+      "owns": [
+        "Starter cooking recipe seeds (UPSERT)",
+        "Deterministic inputs/outputs replacement per recipe"
+      ],
+      "path": "worldcore/infra/schema/032_seed_trade_recipes_cooking_v1.sql",
+      "provides": [
+        "cook_river_trout (DB recipe seed)",
+        "mill_wheat_flour (DB recipe seed)",
+        "bake_simple_bread (DB recipe seed)"
+      ]
+    },
+    "infra.seed.034_trade_recipes_station_kinds_v1": {
+      "class": "SeedMigration",
+      "ctorArgs": [],
+      "dependsOn": [
+        "infra.schema.033_trade_recipes_station_kind"
+      ],
+      "kind": "service",
+      "lifecycle": "migration",
+      "owns": [
+        "Station policy for starter recipes: campfire portable; forge/alchemy_table/millstone/oven town-only"
+      ],
+      "path": "worldcore/infra/schema/034_seed_trade_recipes_station_kinds_v1.sql",
+      "provides": [
+        "Starter recipe station_kind assignments"
+      ]
+    },
+    "infra.seed.038_seed_skin_loot_town_rat_v1": {
+      "class": "SeedMigration",
+      "ctorArgs": [],
+      "dependsOn": [
+        "infra.schema.035_skin_loot_v1",
+        "worldcore/db/Database.ts"
+      ],
+      "kind": "service",
+      "lifecycle": "migration",
+      "notes": [
+        "Seeds baseline content for 038 seed skin loot town rat v1."
+      ],
+      "owns": [],
+      "path": "worldcore/infra/schema/038_seed_skin_loot_town_rat_v1.sql",
+      "provides": [
+        "seed rows for skin_loot"
+      ]
+    },
+    "infra.seed.041_seed_spells_mvp": {
+      "class": "SeedMigration",
+      "ctorArgs": [],
+      "dependsOn": [
+        "infra.schema.040_create_spells_table",
+        "worldcore/db/Database.ts"
+      ],
+      "kind": "service",
+      "lifecycle": "migration",
+      "notes": [
+        "Seeds baseline content for 041 seed spells mvp."
+      ],
+      "owns": [],
+      "path": "worldcore/infra/schema/041_seed_spells_mvp.sql",
+      "provides": [
+        "seed rows for public"
+      ]
+    },
+    "infra.seed.042_seed_abilities_from_unlocks": {
+      "class": "(sql) infra seed migration",
+      "ctorArgs": [],
+      "dependsOn": [],
+      "kind": "service",
+      "lifecycle": "singleton",
+      "notes": [
+        "Ensures abilities catalog rows exist for any ability referenced by ability_unlocks (safe upsert).",
+        "Title-cases id into name when missing; does not overwrite existing descriptions."
+      ],
+      "owns": [],
+      "path": "worldcore/infra/schema/042_seed_abilities_from_unlocks.sql",
+      "provides": []
+    },
+    "infra.seed.042_seed_ability_unlocks_mvp": {
+      "class": "(sql) infra seed migration",
+      "ctorArgs": [],
+      "dependsOn": [],
+      "kind": "service",
+      "lifecycle": "singleton",
+      "notes": [
+        "Seeds MVP warrior ability unlocks for early UI/progression testing."
+      ],
+      "owns": [],
+      "path": "worldcore/infra/schema/042_seed_ability_unlocks_mvp.sql",
+      "provides": []
+    },
+    "infra.seed.044_npc_loot_seed_v0": {
+      "class": "SeedMigration",
+      "ctorArgs": [],
+      "dependsOn": [
+        "infra.schema.043_create_npc_loot_table",
+        "infra.schema.007_items",
+        "infra.schema.024_npcs",
+        "worldcore/db/Database.ts"
+      ],
+      "kind": "service",
+      "lifecycle": "migration",
+      "notes": [
+        "Seeds baseline content for 044 npc loot seed v0."
+      ],
+      "owns": [],
+      "path": "worldcore/infra/schema/044_npc_loot_seed_v0.sql",
+      "provides": [
+        "seed rows for public"
+      ]
+    },
+    "infra.seed.049_seed_spell_unlocks_from_spells": {
+      "class": "(sql) infra seed migration",
+      "ctorArgs": [],
+      "dependsOn": [],
+      "kind": "service",
+      "lifecycle": "singleton",
+      "notes": [
+        "Bootstrap seed: derives initial spell_unlocks rows from spells catalog."
+      ],
+      "owns": [],
+      "path": "worldcore/infra/schema/049_seed_spell_unlocks_from_spells.sql",
+      "provides": []
+    },
+    "infra.seed.050_seed_reference_class_kits_L1_10": {
+      "class": "(sql) infra seed migration",
+      "ctorArgs": [],
+      "dependsOn": [],
+      "kind": "service",
+      "lifecycle": "singleton",
+      "notes": [
+        "Seeds Reference Class Kits L1\u201310 (MVP) used by deterministic progression tests."
+      ],
+      "owns": [],
+      "path": "worldcore/infra/schema/050_seed_reference_class_kits_L1_10.sql",
+      "provides": []
+    },
+    "infra.seed.050_seed_reference_status_effect_spells_v1": {
+      "class": "(sql) infra seed migration",
+      "ctorArgs": [],
+      "dependsOn": [],
+      "kind": "service",
+      "lifecycle": "singleton",
+      "notes": [
+        "Seeds reference status effect spells (cleanse/HoT/shield/DOT) for System I MVP."
+      ],
+      "owns": [],
+      "path": "worldcore/infra/schema/050_seed_reference_status_effect_spells_v1.sql",
+      "provides": []
+    },
+    "infra.seed.050_seed_spells_reference_kits_l1_10": {
+      "class": "(sql) infra seed migration",
+      "ctorArgs": [],
+      "dependsOn": [],
+      "kind": "service",
+      "lifecycle": "singleton",
+      "notes": [
+        "Seeds spells catalog entries referenced by the L1\u201310 class kits."
+      ],
+      "owns": [],
+      "path": "worldcore/infra/schema/050_seed_spells_reference_kits_l1_10.sql",
+      "provides": []
+    },
+    "infra.seed.051_seed_spell_unlocks_reference_kits_l1_10": {
+      "class": "(sql) infra seed migration",
+      "ctorArgs": [],
+      "dependsOn": [],
+      "kind": "service",
+      "lifecycle": "singleton",
+      "notes": [
+        "Seeds spell_unlocks for L1\u201310 reference kits; enables deterministic autogrant tests."
+      ],
+      "owns": [],
+      "path": "worldcore/infra/schema/051_seed_spell_unlocks_reference_kits_l1_10.sql",
+      "provides": []
+    },
+    "infra.seed.052_seed_npcs_training_dummies_and_civilian_v1": {
+      "class": "SeedMigration",
+      "ctorArgs": [],
+      "dependsOn": [
+        "infra.schema.024_npcs",
+        "worldcore/db/Database.ts"
+      ],
+      "kind": "service",
+      "lifecycle": "migration",
+      "notes": [
+        "Seeds training dummies and a protected town civilian prototype.",
+        "Training dummies are explicitly law-exempt so guard/crime logic never reacts to DPS testing.",
+        "Idempotent UPSERT into npcs(id)."
+      ],
+      "owns": [
+        "Law tag correctness for training_dummy*",
+        "Baseline town civilian prototype used by guard/crime tests"
+      ],
+      "path": "worldcore/infra/schema/052_seed_npcs_training_dummies_and_civilian_v1.sql",
+      "provides": [
+        "training_dummy NPC prototype",
+        "training_dummy_big NPC prototype",
+        "town_civilian NPC prototype",
+        "seed rows for npcs"
+      ]
+    },
+    "infra.seed.053_seed_basic_loot_items_v1": {
+      "class": "SeedMigration",
+      "ctorArgs": [],
+      "dependsOn": [
+        "infra.schema.007_items",
+        "worldcore/db/Database.ts"
+      ],
+      "kind": "service",
+      "lifecycle": "migration",
+      "notes": [
+        "Seeds minimal items required by early loot + tradeskill seeds (so npc_loot/skin_loot/recipes don't dangle).",
+        "Idempotent UPSERT keyed by items(id)."
+      ],
+      "owns": [
+        "Baseline item ids referenced by npc_loot and skin_loot seeds (rat_tail, rat_meat_raw, ore_iron_hematite)"
+      ],
+      "path": "worldcore/infra/schema/053_seed_basic_loot_items_v1.sql",
+      "provides": [
+        "seed rows for items",
+        "ore_iron_hematite item",
+        "rat_tail item",
+        "rat_meat_raw item"
+      ]
+    },
+    "infra.seed.054_seed_common_class_kits_L1_10": {
+      "class": "(sql) infra seed migration",
+      "ctorArgs": [],
+      "dependsOn": [],
+      "kind": "service",
+      "lifecycle": "singleton",
+      "notes": [
+        "Seeds a minimal common L1\u201310 spell kit (damage + dot + debuff + shield + hot) for classes that do not yet have bespoke kits.",
+        "Designed to keep every class playable while per-class kits are authored later."
+      ],
+      "owns": [],
+      "path": "worldcore/infra/schema/054_seed_common_class_kits_L1_10.sql",
+      "provides": []
+    },
+    "infra.seed.055_seed_wave1_class_kit_mappings_L1_10": {
+      "class": "(sql) infra seed migration",
+      "ctorArgs": [],
+      "dependsOn": [],
+      "kind": "service",
+      "lifecycle": "singleton",
+      "notes": [
+        "Wave 1 bootstrap: maps not-yet-bespoke classes onto proven kits (templar/archmage/warlock spells; warrior abilities).",
+        "Also updates mapped kit spell rows in public.spells to class_id='any' so cross-class unlocks can actually surface in runtime/UI queries.",
+        "Idempotent UPSERTs (ON CONFLICT DO UPDATE) so re-running seeds is safe.",
+        "Intentionally does not touch Adventurer (special anti-datamine class rules)."
+      ],
+      "owns": [],
+      "path": "worldcore/infra/schema/055_seed_wave1_class_kit_mappings_L1_10.sql",
+      "provides": []
+    },
     "interaction.ops": {
       "dependsOn": [
         "targeting.finders"
@@ -3051,7 +3053,8 @@
         "performNpcAttack(ctx, char, selfEntity, npc, opts?):Promise<string>",
         "scheduleNpcCorpseAndRespawn(ctx, npcEntityId):void",
         "announceSpawnToRoom(ctx, roomId, text):void",
-        "handleAttackAction(ctx, char, targetNameRaw):Promise<string>"
+        "handleAttackAction(ctx, char, targetNameRaw):Promise<string>",
+        "handleTauntAction(ctx, char, targetNameRaw):Promise<string>"
       ]
     },
     "mud.actions.legacy": {
@@ -3239,6 +3242,25 @@
         "Delegates to MudSpells.handleCastCommand for spell gating + effects."
       ],
       "path": "worldcore/mud/commands/combat/castCommand.ts"
+    },
+    "mud.commands.combat.taunt": {
+      "dependsOn": [
+        "mud.context",
+        "mud.actions.combat",
+        "npc.manager",
+        "npc.threat"
+      ],
+      "function": "handleTauntCommand",
+      "invokedBy": [
+        "mud.handler"
+      ],
+      "kind": "mud_command",
+      "notes": [
+        "Implements 'taunt [target]'.",
+        "If no target is provided, taunt uses the player's engaged target (deny-by-default).",
+        "Routes to handleTauntAction, which applies a temporary forced-target threat override on the NPC."
+      ],
+      "path": "worldcore/mud/commands/combat/tauntCommand.ts"
     },
     "mud.commands.craft": {
       "class": null,
@@ -4652,12 +4674,16 @@
     "npc.threat": {
       "functions": [
         "updateThreatFromDamage",
+        "applyTauntToThreat",
+        "getTopThreatTarget",
+        "getThreatValue",
         "getLastAttackerFromThreat"
       ],
       "kind": "service",
       "notes": [
-        "Minimal threat bookkeeping: last attacker entity id and timestamp.",
-        "Used by NpcManager to steer AI targeting toward whoever last harmed the NPC."
+        "Threat bookkeeping for NPC AI targeting.",
+        "Back-compat fields: lastAttackerEntityId + lastAggroAt.",
+        "v2 adds a lightweight threat table (threatByEntityId) plus a taunt/forced-target window."
       ],
       "path": "worldcore/npc/NpcThreat.ts"
     },
@@ -5401,12 +5427,15 @@
         "getSpellSchoolSkill",
         "gainSpellSchoolSkill",
         "getSongSchoolSkill",
-        "gainSongSchoolSkill"
+        "gainSongSchoolSkill",
+        "getDefenseSkill",
+        "gainDefenseSkill"
       ],
       "kind": "service",
       "notes": [
         "Stores weapon, spell, and song instrument skills under char.progression.skills.",
-        "Skills are capped at level * 10 and default to 0 if missing."
+        "Skills are capped at level * 10 and default to 0 if missing.",
+        "v1 adds defense skill storage under progression.skills.defense for physical avoidance scaling."
       ],
       "path": "worldcore/skills/SkillProgression.ts"
     },
@@ -6069,6 +6098,24 @@
         "Fails fast if required columns are removed or renamed in 040_create_spells_table.sql"
       ]
     },
+    "test.contractAttackAutoSwingEngagedTargetRequired": {
+      "class": null,
+      "ctorArgs": [],
+      "dependsOn": [
+        "mud.commands.combat.attack",
+        "characters.types"
+      ],
+      "kind": "test",
+      "lifecycle": "test",
+      "notes": [
+        "Contract: attack with no target is deny-by-default unless the attacker has an engagedTargetId in the room.",
+        "Also asserts auto-swing only hits the engaged target (no room-wide damage regression)."
+      ],
+      "owns": [],
+      "path": "worldcore/test/contract_attack_autoSwing_engagedTargetRequired.test.ts",
+      "provides": [],
+      "service": "test.contract"
+    },
     "test.contractAttackNoSuchTargetMessage": {
       "class": null,
       "ctorArgs": [],
@@ -6408,6 +6455,46 @@
       "path": "worldcore/test/contract_motherBrainWaveReplaceTreatsDeletedAsNew.test.ts",
       "provides": [],
       "service": "test.contract"
+    },
+    "test.contractNpcThreatTauntOverridesTopThreat": {
+      "kind": "test",
+      "notes": [
+        "Contract: taunt forces the current target briefly, then threat resumes to top threat after expiry."
+      ],
+      "path": "worldcore/test/contract_npcThreat_tauntOverridesTopThreat.test.ts",
+      "service": "npc.threat"
+    },
+    "test.contractPhysicalHitResolverCritMultiRiposte": {
+      "class": "(test)",
+      "dependsOn": [],
+      "kind": "test",
+      "lifecycle": "test",
+      "notes": [
+        "Contract: resolver can deterministically produce parry->riposte and crit+triple outcomes (foundation for class proc systems)."
+      ],
+      "owns": [],
+      "path": "worldcore/test/contract_physicalHitResolver_crit_multi_riposte.test.ts",
+      "provides": []
+    },
+    "test.contractPhysicalHitResolverDefenseSkillInfluence": {
+      "kind": "test",
+      "notes": [
+        "Contract: defenderDefenseSkillPoints increases avoidance deterministically in resolvePhysicalHit."
+      ],
+      "path": "worldcore/test/contract_physicalHitResolver_defenseSkillInfluence.test.ts",
+      "service": "combat.physicalHitResolver"
+    },
+    "test.contractPhysicalHitResolverWeaponSkillScaling": {
+      "class": "(test)",
+      "dependsOn": [],
+      "kind": "test",
+      "lifecycle": "test",
+      "notes": [
+        "Contract: weapon skill + level influence hit outcomes; low-level familiarity floor allows L1 to hit L1\u2013L3 with untrained weapons; high-level untrained misses more."
+      ],
+      "owns": [],
+      "path": "worldcore/test/contract_physicalHitResolver_weaponSkillScaling.test.ts",
+      "provides": []
     },
     "test.contractQuestsCommandHelpMentionsTurninListIndex": {
       "class": null,
@@ -7380,46 +7467,23 @@
       "path": "worldcore/test/statusEffects.contract.test.ts",
       "provides": []
     },
-    "test.contractAttackAutoSwingEngagedTargetRequired": {
+    "test.contractWeaponSkillProgressionCapAndEffect": {
       "kind": "test",
       "service": "test.contract",
-      "path": "worldcore/test/contract_attack_autoSwing_engagedTargetRequired.test.ts",
+      "path": "worldcore/test/contract_weaponSkill_progression_cap_and_effect.test.ts",
       "class": null,
       "lifecycle": "test",
       "ctorArgs": [],
       "dependsOn": [
-        "mud.commands.combat.attack",
-        "characters.types"
+        "combat.physicalHitResolver",
+        "combat.combatScaling",
+        "skills.progression",
+        "combat.npc"
       ],
       "provides": [],
       "owns": [],
       "notes": [
-        "Contract: attack with no target is deny-by-default unless the attacker has an engagedTargetId in the room.",
-        "Also asserts auto-swing only hits the engaged target (no room-wide damage regression)."
-      ]
-    },
-    "test.contractPhysicalHitResolverWeaponSkillScaling": {
-      "kind": "test",
-      "lifecycle": "test",
-      "class": "(test)",
-      "path": "worldcore/test/contract_physicalHitResolver_weaponSkillScaling.test.ts",
-      "dependsOn": [],
-      "provides": [],
-      "owns": [],
-      "notes": [
-        "Contract: weapon skill + level influence hit outcomes; low-level familiarity floor allows L1 to hit L1–L3 with untrained weapons; high-level untrained misses more."
-      ]
-    },
-    "test.contractPhysicalHitResolverCritMultiRiposte": {
-      "kind": "test",
-      "lifecycle": "test",
-      "class": "(test)",
-      "path": "worldcore/test/contract_physicalHitResolver_crit_multi_riposte.test.ts",
-      "dependsOn": [],
-      "provides": [],
-      "owns": [],
-      "notes": [
-        "Contract: resolver can deterministically produce parry->riposte and crit+triple outcomes (foundation for class proc systems)."
+        "Contract: non-trivial swing attempts train weapon skills; trivial mobs do not; cap enforced (level*5); training materially improves hit chance deterministically."
       ]
     },
     "test.utils": {

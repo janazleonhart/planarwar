@@ -36,12 +36,15 @@ import {
   gainWeaponSkill,
   gainSpellSchoolSkill,
   gainSongSchoolSkill,
+  gainDefenseSkill,
   getWeaponSkill,
+  getDefenseSkill,
   type SongSchoolId,
 } from "../skills/SkillProgression";
 import { computeEffectiveAttributes } from "../characters/Stats";
 import { getSpawnPoint } from "../world/SpawnPointCache";
 import { resolvePhysicalHit } from "./PhysicalHitResolver";
+import { computeWeaponSkillGainOnSwingAttempt, getWeaponSkillCapPoints } from "./CombatScaling";
 function envInt(name: string, fallback: number): number {
   const raw = process.env[name];
   if (raw == null || raw === "") return fallback;
@@ -202,17 +205,22 @@ export async function performNpcAttack(
   const defenderLevel = getDefenderLevel(ctx, npc);
 
   if (isPhysical) {
+    const weaponSkillId: WeaponSkillId = (opts.weaponSkill ?? "one_handed") as WeaponSkillId;
+
     let weaponSkillPoints = 0;
     try {
-      weaponSkillPoints = getWeaponSkill(char, opts.weaponSkill ?? "one_handed");
+      weaponSkillPoints = getWeaponSkill(char, weaponSkillId);
     } catch {
       weaponSkillPoints = 0;
     }
+
+    const capPoints = getWeaponSkillCapPoints(char);
 
     const phys = resolvePhysicalHit({
       attackerLevel: char.level ?? 1,
       defenderLevel,
       weaponSkillPoints,
+      defenderDefenseSkillPoints: defenderLevel * 5,
       // Later: wire defenderCanBlock/parry based on proto/gear/tags
       defenderCanDodge: true,
       defenderCanParry: true,
@@ -221,6 +229,24 @@ export async function performNpcAttack(
       allowCrit: true,
       allowMultiStrike: true,
     });
+
+    // --- Weapon-skill progression (attempt-based; non-trivial targets only) ---
+    // Train even on misses/avoids so players can climb out of "untrained" hell,
+    // but do not allow trivial targets to power-level skills.
+    try {
+      const gain = computeWeaponSkillGainOnSwingAttempt({
+        attackerLevel: char.level ?? 1,
+        defenderLevel,
+        currentPoints: weaponSkillPoints,
+        capPoints,
+        didHit: phys.outcome === "hit",
+      });
+      if (gain > 0) {
+        gainWeaponSkill(char, weaponSkillId, gain);
+      }
+    } catch {
+      // Never let progression break combat.
+    }
 
     if (phys.outcome !== "hit") {
       let line = "[combat] ";
@@ -281,8 +307,8 @@ export async function performNpcAttack(
       (npc as any).hp = newHp;
     }
 
-    // Always update threat so brains see the attacker
-    ctx.npcs.recordDamage(npc.id, selfEntity.id);
+    // Update threat so brains see the attacker (use actual damage when available)
+    ctx.npcs.recordDamage(npc.id, selfEntity.id, dmg);
   } else {
     // Legacy / test fallback with no NpcManager
     (npc as any).hp = newHp;
@@ -291,10 +317,6 @@ export async function performNpcAttack(
   // --- Skill progression for the attacker ---
   try {
     const channel = opts.channel ?? "weapon";
-    if (channel === "weapon" || channel === "ability") {
-      // v1: treat everything as one-handed until we track real weapon types
-      gainWeaponSkill(char, "one_handed", 1);
-    }
     if (channel === "spell") {
       if (opts.songSchool) {
         // Songs train their instrument/vocal school only
@@ -609,11 +631,48 @@ export function applySimpleNpcCounterAttack(
     // Best-effort; fall through to normal behavior on failure.
   }
 
+  // --- Physical outcome resolution (NPC -> Player) ---
+  const npcLevel = getDefenderLevel(ctx, npc);
+  const defenderLevel = (ctx.session?.character?.level ?? 1) as number;
+
+  const defenderChar = (ctx.session?.character ?? null) as CharacterState | null;
+  const defenseSkillPoints = defenderChar ? getDefenseSkill(defenderChar) : 0;
+
+  const phys = resolvePhysicalHit({
+    attackerLevel: npcLevel,
+    defenderLevel,
+    weaponSkillPoints: npcLevel * 5,
+    defenderDefenseSkillPoints: defenseSkillPoints,
+    defenderCanDodge: true,
+    defenderCanParry: true,
+    defenderCanBlock: true,
+    allowCrit: false,
+    allowMultiStrike: false,
+    allowRiposte: false,
+  });
+
+  // Progress defense skill whenever you're attacked (v1: simple +1 tick).
+  if (defenderChar) {
+    gainDefenseSkill(defenderChar, 1);
+  }
+
+  if (phys.outcome !== "hit") {
+    // Tag NPC as in combat even on avoided swings.
+    markInCombat(n);
+
+    let line = "[combat] ";
+    if (phys.outcome === "miss") line += `${npc.name} misses you.`;
+    else if (phys.outcome === "dodge") line += `You dodge ${npc.name}'s attack.`;
+    else if (phys.outcome === "parry") line += `You parry ${npc.name}'s attack.`;
+    else line += `You block ${npc.name}'s attack.`;
+    return line;
+  }
+
   const dmg = computeNpcMeleeDamage(npc);
 
   // IMPORTANT: pass the CharacterState so damageTakenPct (cowardice, curses, etc.)
   // can actually modify incoming damage.
-  const char = (ctx.session?.character ?? null) as CharacterState | null;
+  const char = defenderChar;
 
   const { newHp, maxHp, killed } = applySimpleDamageToPlayer(
     player,

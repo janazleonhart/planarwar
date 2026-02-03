@@ -15,6 +15,7 @@ interface SkillRoot {
   weapons?: WeaponSkillMap;
   spells?: SpellSchoolMap;
   songs?: SongSchoolMap;
+  defense?: number;
 }
 
 function ensureSkillRoot(char: CharacterState): SkillRoot {
@@ -84,14 +85,51 @@ export function gainWeaponSkill(
   const map = ensureWeaponSkills(char);
   const current = getWeaponSkill(char, skill); // 0 if missing
 
-  // v1 cap: level * 10
+  // v1 cap (EQ-like): level * 5
   const level =
     typeof char.level === "number" && char.level > 0 ? char.level : 1;
-  const cap = level * 10;
+  const cap = level * 5;
 
   const next = Math.min(cap, current + amount);
   map[skill] = next;
 }
+
+
+
+// --- Defense skill ---
+
+/**
+ * Defense skill is a defender-side progression stat used by the physical hit resolver.
+ * v1: stored as a single scalar under progression.skills.defense.
+ *
+ * Cap (v1): level * 5 (matches weapon skills cap).
+ */
+export function getDefenseSkill(char: CharacterState): number {
+  const root = ensureSkillRoot(char);
+  const value = (root as any).defense;
+
+  if (typeof value !== "number" || value < 0) {
+    return 0;
+  }
+
+  return value;
+}
+
+export function gainDefenseSkill(char: CharacterState, amount: number): void {
+  if (amount <= 0) return;
+
+  const root = ensureSkillRoot(char);
+  const current = getDefenseSkill(char);
+
+  const level =
+    typeof char.level === "number" && char.level > 0 ? char.level : 1;
+  // Keep defense cap aligned with physical resolver (level * 5).
+  const cap = level * 5;
+
+  const next = Math.min(cap, current + amount);
+  (root as any).defense = next;
+}
+
 
 // --- Spell school skills ---
 
@@ -121,7 +159,7 @@ export function gainSpellSchoolSkill(
 
   const level =
     typeof char.level === "number" && char.level > 0 ? char.level : 1;
-  const cap = level * 10;
+  const cap = level * 5;
 
   const next = Math.min(cap, current + amount);
   map[school] = next;
@@ -155,7 +193,7 @@ export function gainSongSchoolSkill(
 
   const level =
     typeof char.level === "number" && char.level > 0 ? char.level : 1;
-  const cap = level * 10;
+  const cap = level * 5;
 
   const next = Math.min(cap, current + amount);
   map[school] = next;

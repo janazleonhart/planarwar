@@ -29,6 +29,9 @@ import { LocalSimpleAggroBrain } from "../ai/LocalSimpleNpcBrain";
 
 import {
   getLastAttackerFromThreat,
+  getTopThreatTarget,
+  getThreatValue,
+  applyTauntToThreat,
   type NpcThreatState,
   updateThreatFromDamage,
 } from "./NpcThreat";
@@ -519,7 +522,7 @@ export class NpcManager {
     }
   }
 
-  recordDamage(targetEntityId: string, attackerEntityId: string): void {
+  recordDamage(targetEntityId: string, attackerEntityId: string, threatAmount?: number): void {
     const st = this.npcsByEntityId.get(targetEntityId);
     if (!st) return;
 
@@ -540,6 +543,7 @@ export class NpcManager {
     const threat = updateThreatFromDamage(
       this.npcThreat.get(targetEntityId),
       attackerEntityId,
+      typeof threatAmount === "number" ? threatAmount : 1,
     );
     this.npcThreat.set(targetEntityId, threat);
 
@@ -552,6 +556,50 @@ export class NpcManager {
       });
     }
   }
+
+  /**
+   * Apply a taunt to an NPC: temporarily force the NPC to focus the taunter.
+   * Returns false if the target NPC doesn't exist or cannot be taunted.
+   */
+  taunt(targetEntityId: string, taunterEntityId: string, opts?: { durationMs?: number; threatBoost?: number }): boolean {
+    const st = this.npcsByEntityId.get(targetEntityId);
+    if (!st) return false;
+
+    const e = this.entities.get(targetEntityId) as any;
+    const proto =
+      getNpcPrototype(st.templateId) ??
+      getNpcPrototype(st.protoId) ??
+      DEFAULT_NPC_PROTOTYPES[st.templateId] ??
+      DEFAULT_NPC_PROTOTYPES[st.protoId];
+
+    // Service-provider NPCs are not aggroable/tauntable.
+    if (isServiceProtectedNpcProto(proto) || (e as any)?.invulnerable === true) {
+      (e as any).invulnerable = true;
+      (e as any).isServiceProvider = true;
+      return false;
+    }
+
+    const threat = applyTauntToThreat(
+      this.npcThreat.get(targetEntityId),
+      taunterEntityId,
+      {
+        durationMs: opts?.durationMs,
+        threatBoost: opts?.threatBoost,
+      },
+    );
+    this.npcThreat.set(targetEntityId, threat);
+
+    st.lastAggroAt = threat.lastAggroAt;
+    st.lastAttackerEntityId = threat.lastAttackerEntityId;
+
+    return true;
+  }
+
+  getTopThreatTarget(entityId: string, now: number = Date.now()): string | undefined {
+    return getTopThreatTarget(this.npcThreat.get(entityId), now);
+  }
+
+
 
   private hasCalledGuardHelp(npcId: string, offenderId: string): boolean {
     return this.guardHelpCalled.get(npcId)?.has(offenderId) ?? false;
@@ -841,6 +889,8 @@ export class NpcManager {
           behavior === "coward");
 
       const threat = this.npcThreat.get(entityId);
+      const now = Date.now();
+      const topThreatId = getTopThreatTarget(threat, now);
 
       // Build perception
       const playersInRoom: PerceivedPlayer[] = [];
@@ -876,10 +926,10 @@ export class NpcManager {
           });
         }
 
-        if (threat?.lastAttackerEntityId) {
+                if (topThreatId) {
           playersInRoom.sort((a, b) => {
-            if (a.entityId === threat.lastAttackerEntityId) return -1;
-            if (b.entityId === threat.lastAttackerEntityId) return 1;
+            if (a.entityId === topThreatId) return -1;
+            if (b.entityId === topThreatId) return 1;
             return 0;
           });
         }
@@ -901,7 +951,7 @@ export class NpcManager {
         roomIsSafeHub,
         npcName,
         hostile,
-        currentTargetId: undefined,
+        currentTargetId: topThreatId,
         playersInRoom,
         sinceLastDecisionMs: deltaMs,
         lastAggroAt: threat?.lastAggroAt,

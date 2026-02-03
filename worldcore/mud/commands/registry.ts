@@ -49,6 +49,7 @@ import { handleAbilitiesCommand } from "./player/abilitiesCommand";
 import { handleSpellsCommand } from "./player/spellsCommand";
 import { handleAttackCommand } from "./combat/attackCommand";
 import { handleAutoAttackCommand } from "./combat/autoAttackCommand";
+import { handleTauntCommand } from "./combat/tauntCommand";
 
 // Gathering
 import { handlePickingCommand } from "./gathering/pickingCommand";
@@ -211,6 +212,7 @@ export const COMMANDS: Record<string, MudCommandHandlerFn> = {
   spell: async (ctx, char) => handleSpellsCommand(ctx),
   spells: async (ctx, char) => handleSpellsCommand(ctx),
   attack: handleAttackCommand,
+  taunt: handleTauntCommand,
   autoattack: handleAutoAttackCommand,
 
   // Gathering

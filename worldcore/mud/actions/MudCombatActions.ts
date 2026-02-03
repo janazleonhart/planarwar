@@ -376,3 +376,67 @@ export async function handleAttackAction(
   // 4) No valid target.
   return `[world] No such target: '${targetNameRaw}'.`;
 }
+
+
+// ---------------------------------------------------------------------------
+// Taunt handler (threat override).
+// ---------------------------------------------------------------------------
+
+export async function handleTauntAction(
+  ctx: MudContext,
+  char: CharacterState,
+  targetNameRaw: string,
+): Promise<string> {
+  const targetName = (targetNameRaw ?? "").trim();
+
+  if (!ctx.entities) return "Combat is not available here (no entity manager).";
+
+  const selfEntity = ctx.entities.getEntityByOwner(ctx.session.id);
+  if (!selfEntity) return "You have no body here.";
+
+  const roomId = (selfEntity as any).roomId ?? char.shardId;
+
+  // If no explicit target, use engaged target (deny-by-default).
+  let target: any | null = null;
+  if (!targetName) {
+    target = getEngagedTargetInRoom(ctx, selfEntity);
+    if (!target) {
+      const hadId = String((selfEntity as any)?.engagedTargetId ?? "").trim();
+      if (hadId) clearEngagedTarget(selfEntity);
+      return "[combat] You are not engaged with a target.";
+    }
+  }
+
+  // Resolve NPC target in room if needed
+  const npcTarget =
+    target && (target.type === "npc" || target.type === "mob")
+      ? target
+      : resolveTargetInRoom(ctx.entities as any, roomId, targetNameRaw, {
+          selfId: selfEntity.id,
+          filter: (e: any) => e?.type === "npc" || e?.type === "mob",
+          radius: 30,
+        });
+
+  if (!npcTarget) {
+    return "No such target.";
+  }
+
+  if (isDeadEntity(npcTarget) || (npcTarget as any).alive === false) {
+    clearEngagedTarget(selfEntity);
+    return "[combat] That target is already dead.";
+  }
+
+  // Engage for subsequent `attack` with no args
+  setEngagedTarget(selfEntity, npcTarget);
+
+  if (!ctx.npcs || typeof ctx.npcs.taunt !== "function") {
+    return "Taunt is not available (NPC manager not wired).";
+  }
+
+  const ok = ctx.npcs.taunt(npcTarget.id, selfEntity.id, { durationMs: 4000, threatBoost: 10 });
+  if (!ok) {
+    return "[combat] That target cannot be taunted.";
+  }
+
+  return `[combat] You taunt ${npcTarget.name}.`;
+}
