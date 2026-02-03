@@ -7528,6 +7528,30 @@
         "Contract: PhysicalHitResolver surfaces blockMultiplier (<1) on block outcome and riposte flag on parry when allowRiposte is enabled."
       ]
     },
+    "test.contractNpcCombatCounterattackBlockMitigation": {
+      "kind": "test",
+      "lifecycle": "test",
+      "class": "(test)",
+      "path": "worldcore/test/contract_npcCombat_counterattack_blockMitigation.test.ts",
+      "dependsOn": [],
+      "provides": [],
+      "owns": [],
+      "notes": [
+        "Contract: NPC counter-attack treats block as partial mitigation (reduced damage), not a full avoid, and can be tested deterministically via injected RNG."
+      ]
+    },
+    "test.contractNpcCombatPlayerRiposteOnParry": {
+      "kind": "test",
+      "lifecycle": "test",
+      "class": "(test)",
+      "path": "worldcore/test/contract_npcCombat_playerRiposte_onParry.test.ts",
+      "dependsOn": [],
+      "provides": [],
+      "owns": [],
+      "notes": [
+        "Contract: When the player parries an NPC counter-attack, NpcCombat performs a single immediate player riposte counter-swing (non-lethal in v1.1.x)."
+      ]
+    },
     "test.utils": {
       "dependsOn": [],
       "functions": [

@@ -337,6 +337,20 @@ export async function handleAbilityCommand(
 
       log.debug("ability", { id: abilityKey, target: npc?.name, roomId });
 
+      // Mug = pickpocket + damage.
+      // NOTE: We intentionally roll theft BEFORE awaiting the attack.
+      // Some contract tests pin Math.random for the synchronous call site.
+      let mugAttempt: { success: boolean; amount: number } | null = null;
+      if (tagHas(ability, "mug")) {
+        const npcLevel = Number((npc as any).level ?? 1);
+        const charLevel = Number((char as any).level ?? 1);
+        const chance = Math.max(0.05, Math.min(0.95, 0.65 + 0.05 * (charLevel - npcLevel))); // mug is slightly easier
+        const roll = Math.random();
+        const success = roll < chance;
+        const amount = success ? 1 + Math.floor(Math.random() * 2) : 0;
+        mugAttempt = { success, amount };
+      }
+
       const combatLine = await performNpcAttack(ctx as any, char as any, selfEntity as any, npc as any, {
         abilityName: (ability as any).name,
         tagPrefix,
@@ -347,17 +361,10 @@ export async function handleAbilityCommand(
         spellSchool: (ability as any).spellSchool,
       } as any);
 
-      // Mug = pickpocket + damage. Attempt theft after the attack.
-      if (tagHas(ability, "mug")) {
-        const npcLevel = Number((npc as any).level ?? 1);
-        const charLevel = Number((char as any).level ?? 1);
-        const chance = Math.max(0.05, Math.min(0.95, 0.65 + 0.05 * (charLevel - npcLevel))); // mug is slightly easier
-        const roll = Math.random();
-        const success = roll < chance;
-        if (success) {
-          const amount = 1 + Math.floor(Math.random() * 2);
-          addCurrency((char as any).inventory, "gold", amount);
-          return `${combatLine}\n[world] You mug ${npc.name} and steal ${amount} gold.`;
+      if (mugAttempt) {
+        if (mugAttempt.success) {
+          addCurrency((char as any).inventory, "gold", mugAttempt.amount);
+          return `${combatLine}\n[world] You mug ${npc.name} and steal ${mugAttempt.amount} gold.`;
         }
         return `${combatLine}\n[world] You fail to steal anything.`;
       }

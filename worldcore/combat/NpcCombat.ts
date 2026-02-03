@@ -248,34 +248,40 @@ export async function performNpcAttack(
       // Never let progression break combat.
     }
 
-    const wasBlocked = phys.outcome === "block";
+    
+let blockMultiplier: number | null = null;
+let blockLine: string | null = null;
 
-    // Miss / dodge / parry fully prevent damage.
-    // Block reduces damage but still counts as a landed swing for combat flow.
-    if (phys.outcome !== "hit" && !wasBlocked) {
-      let line = "[combat] ";
-      if (phys.outcome === "miss") line += `You miss ${npc.name}.`;
-      else if (phys.outcome === "dodge") line += `${npc.name} dodges your attack.`;
-      else line += `${npc.name} parries your attack.`;
+if (phys.outcome !== "hit") {
+  let line = "[combat] ";
+  if (phys.outcome === "miss") line += `You miss ${npc.name}.`;
+  else if (phys.outcome === "dodge") line += `${npc.name} dodges your attack.`;
+  else if (phys.outcome === "parry") line += `${npc.name} parries your attack.`;
+  else {
+    // Block is a partial mitigation (not a full avoid).
+    const mult = typeof (phys as any).blockMultiplier === "number" ? (phys as any).blockMultiplier : 0.7;
+    blockMultiplier = mult;
+    blockLine = `${npc.name} blocks your attack.`;
+  }
 
-      // Parry can immediately riposte (simple counter-swing).
-      if (phys.outcome === "parry" && phys.riposte) {
-        const rip = applySimpleNpcCounterAttack(ctx, npc, selfEntity);
-        if (rip) line += " (Riposte!) " + rip;
-      }
+  // Parry can immediately riposte (counter-swing). Riposte swings must not chain.
+  if (phys.outcome === "parry" && phys.riposte) {
+    const rip = applySimpleNpcCounterAttack(ctx, npc, selfEntity, { isRiposte: true, rng: (ctx as any)?.combatRng });
+    if (rip) line += " (Riposte!) " + rip;
+  }
 
-      return line;
-    }
+  // Dodge/parry/miss end the attack. Block proceeds with reduced damage.
+  if (phys.outcome !== "block") {
+    return line;
+  }
+}
 
-    if (wasBlocked) {
-      (opts as any)._pwWasBlocked = true;
-      (opts as any)._pwBlockMultiplier = typeof phys.blockMultiplier === "number" ? phys.blockMultiplier : 0.7;
-    }
-
-    // Feed crit/glancing/multi-strike hints into damage computation below.
-    (opts as any)._pwCritChance = phys.critChance;
-    (opts as any)._pwGlancingChance = phys.glancingChance;
-    (opts as any)._pwStrikes = phys.strikes;
+// Feed crit/glancing/multi-strike hints into damage computation below.
+(opts as any)._pwCritChance = phys.critChance;
+(opts as any)._pwGlancingChance = phys.glancingChance;
+(opts as any)._pwStrikes = phys.strikes;
+(opts as any)._pwBlockMultiplier = blockMultiplier;
+(opts as any)._pwBlockLine = blockLine;
   }
   const result = computeDamage(source, target, {
     damageMultiplier: opts.damageMultiplier,
@@ -286,27 +292,17 @@ export async function performNpcAttack(
     applyDefenderDamageTakenMods: true,
   });
 
-  // rawDamage = what CombatEngine rolled (pre-mitigation by block)
+  // rawDamage = what CombatEngine rolled
   const baseRawDamage = result.damage;
   const strikes = typeof (opts as any)._pwStrikes === "number" ? (opts as any)._pwStrikes : 1;
-
-  const preBlockRaw = Math.max(0, Math.floor(baseRawDamage * Math.max(1, strikes)));
-
-  const blockMult =
-    typeof (opts as any)._pwBlockMultiplier === "number"
-      ? (opts as any)._pwBlockMultiplier
-      : 1;
-
-  const wasBlocked = (opts as any)._pwWasBlocked === true;
-
-  let rawDamage = preBlockRaw;
-  if (wasBlocked && blockMult > 0 && blockMult < 1) {
-    rawDamage = Math.max(0, Math.floor(preBlockRaw * blockMult));
-    // Min-damage rule: blocked hits can still chip for 1 if there was any base damage.
-    if (preBlockRaw > 0 && rawDamage < 1) rawDamage = 1;
-  }
-
+  const rawDamage = Math.max(0, Math.floor(baseRawDamage * Math.max(1, strikes)));
   let dmg = rawDamage;
+
+  // Apply block mitigation (if defender blocked this swing).
+  const blockMult = typeof (opts as any)._pwBlockMultiplier === "number" ? (opts as any)._pwBlockMultiplier : null;
+  if (blockMult != null) {
+    dmg = Math.max(1, Math.floor(dmg * blockMult));
+  }
 
   // Snapshot HP before damage for messaging
   const prevHp = (npc as any).hp ?? (npc as any).maxHp ?? 1;
@@ -402,17 +398,15 @@ try {
       hpAfter: newHp,
       maxHp,
     });
-  } else {
-    line = `${tag} You hit ${npc.name} for ${rawDamage} damage`;
-    if (overkill > 0) {
-      line += ` (${overkill} overkill)`;
-    }
-    line += `. (${newHp}/${targetMaxHp ?? "?"} HP)`;
-  }
 
-  if (wasBlocked) {
-    line += " (Blocked!)";
+} else {
+  const blk = (opts as any)._pwBlockLine as string | null;
+  line = `${tag} ${blk ? blk + " " : ""}You hit ${npc.name} for ${rawDamage} damage`;
+  if (overkill > 0) {
+    line += ` (${overkill} overkill)`;
   }
+  line += `. (${newHp}/${targetMaxHp ?? "?"} HP)`;
+}
 
   if (result.wasCrit) {
     line += " (Critical hit!)";
@@ -585,16 +579,136 @@ try {
   return line;
 }
 
+export interface NpcCounterAttackOptions {
+  /**
+   * When true, this swing is a riposte counter-swing.
+   * Riposte swings must never themselves trigger additional ripostes (no infinite ping-pong).
+   */
+  isRiposte?: boolean;
+
+  /**
+   * Deterministic RNG hook for tests.
+   * If omitted, PhysicalHitResolver will use its own deterministic default in test env.
+   */
+  rng?: () => number;
+}
+
+
 /**
  * Very simple NPC → player counter-attack used by all v1 brains.
  *
  * Cowards are special-cased: they never get this free swing.
  * Their only reaction should be “run away” on the next brain tick.
  */
+
+export interface PlayerRiposteOptions {
+  rng?: () => number;
+}
+
+function applySimplePlayerRiposteAgainstNpc(
+  ctx: SimpleCombatContext,
+  player: Entity,
+  npc: Entity,
+  opts: PlayerRiposteOptions = {},
+): string | null {
+  const p: any = player;
+  const n: any = npc;
+
+  const char = (ctx.session?.character ?? null) as CharacterState | null;
+  if (!char) return null;
+  if (isDeadEntity(p) || isDeadEntity(n)) return null;
+
+  const defenderLevel = getDefenderLevel(ctx, npc);
+  const attackerLevel = (char.level ?? 1) as number;
+
+  // v1.1.1: riposte is a real counter-swing, but we keep it non-lethal until
+  // kill/reward pipelines are unified for reactive hits.
+  const weaponSkillId: WeaponSkillId = "one_handed";
+  let weaponSkillPoints = 0;
+  try {
+    weaponSkillPoints = getWeaponSkill(char, weaponSkillId);
+  } catch {
+    weaponSkillPoints = 0;
+  }
+
+  const phys = resolvePhysicalHit({
+    attackerLevel,
+    defenderLevel,
+    weaponSkillPoints,
+    defenderDefenseSkillPoints: defenderLevel * 5,
+    defenderCanDodge: true,
+    defenderCanParry: true,
+    defenderCanBlock: true,
+    allowCrit: false,
+    allowMultiStrike: false,
+    // Riposte swings must never chain.
+    allowRiposte: false,
+    rng: opts.rng,
+  });
+
+  if (phys.outcome !== "hit" && phys.outcome !== "block") {
+    if (phys.outcome === "miss") return `You miss ${npc.name} with your riposte.`;
+    if (phys.outcome === "dodge") return `${npc.name} dodges your riposte.`;
+    if (phys.outcome === "parry") return `${npc.name} parries your riposte.`;
+    return null;
+  }
+
+  // Riposte damage is intentionally conservative in v1.1.x.
+  // We avoid the full computeEffectiveAttributes/computeDamage pipeline here because
+  // contract tests frequently provide minimal character objects.
+  // NOTE: Once reactive-kill reward handling is unified, riposte can call the full pipeline.
+  let dmg = 1;
+
+  // Block mitigates riposte damage too.
+  if (phys.outcome === "block") {
+    const mult = typeof (phys as any).blockMultiplier === "number" ? (phys as any).blockMultiplier : 0.7;
+    dmg = Math.max(1, Math.floor(dmg * mult));
+  }
+
+  const prevHp = typeof n.hp === "number" ? n.hp : (typeof n.maxHp === "number" ? n.maxHp : 1);
+  const maxHp = typeof n.maxHp === "number" ? n.maxHp : prevHp;
+
+  // Safety rail: riposte is non-lethal until we unify kill/reward handling.
+  const cappedDmg = Math.max(0, Math.min(dmg, Math.max(0, prevHp - 1)));
+
+  let newHp = prevHp;
+  if (cappedDmg > 0) {
+    if (ctx.npcs) {
+      const appliedHp = ctx.npcs.applyDamage(npc.id, cappedDmg, {
+        character: char,
+        entityId: player.id,
+      });
+
+      if (typeof appliedHp === "number") {
+        newHp = appliedHp;
+      } else {
+        newHp = Math.max(1, prevHp - cappedDmg);
+        n.hp = newHp;
+      }
+
+      try {
+        ctx.npcs.recordDamage(npc.id, player.id, cappedDmg);
+      } catch {
+        // ignore
+      }
+    } else {
+      newHp = Math.max(1, prevHp - cappedDmg);
+      n.hp = newHp;
+    }
+  }
+
+  markInCombat(p);
+  markInCombat(n);
+
+  const maybeBlock = phys.outcome === "block" ? `${npc.name} blocks your riposte. ` : "";
+  return `${maybeBlock}You riposte ${npc.name} for ${cappedDmg} damage. (${newHp}/${maxHp} HP)`;
+}
+
 export function applySimpleNpcCounterAttack(
   ctx: SimpleCombatContext,
   npc: Entity,
   player: Entity,
+  opts: NpcCounterAttackOptions = {},
 ): string | null {
   const p: any = player;
   const n: any = npc;
@@ -676,7 +790,9 @@ export function applySimpleNpcCounterAttack(
     defenderCanBlock: true,
     allowCrit: false,
     allowMultiStrike: false,
-    allowRiposte: true,
+    // Player parries may riposte unless this NPC swing is itself a riposte.
+    allowRiposte: opts.isRiposte ? false : true,
+    rng: opts.rng,
   });
 
   // Progress defense skill whenever you're attacked (v1: simple +1 tick).
@@ -684,45 +800,72 @@ export function applySimpleNpcCounterAttack(
     gainDefenseSkill(defenderChar, 1);
   }
 
-  const wasBlocked = phys.outcome === "block";
+  
+if (phys.outcome !== "hit") {
+  // Tag NPC as in combat even on avoided swings.
+  markInCombat(n);
 
-  if (phys.outcome !== "hit" && !wasBlocked) {
-    // Tag NPC as in combat even on avoided swings.
-    markInCombat(n);
+  let line = "[combat] ";
 
-    let line = "[combat] ";
-    if (phys.outcome === "miss") line += `${npc.name} misses you.`;
-    else if (phys.outcome === "dodge") line += `You dodge ${npc.name}'s attack.`;
-    else line += `You parry ${npc.name}'s attack.`;
+  if (phys.outcome === "miss") {
+    line += `${npc.name} misses you.`;
+    return line;
+  }
 
-    // Parry can immediately riposte back into the attacker.
-    // This is intentionally conservative: riposte damage is a small chip and cannot kill.
-    if (phys.outcome === "parry" && phys.riposte) {
-      try {
-        const hp = typeof (npc as any).hp === "number" ? (npc as any).hp : undefined;
-        if (hp && hp > 1) {
-          const ripDmg = 1; // v1: safe, deterministic
-          (npc as any).hp = Math.max(1, hp - ripDmg);
-          markInCombat(n);
-          line += ` (Riposte! You strike back for ${ripDmg}.)`;
-        }
-      } catch {
-        // Best-effort; riposte must never crash combat.
-      }
+  if (phys.outcome === "dodge") {
+    line += `You dodge ${npc.name}'s attack.`;
+    return line;
+  }
+
+  if (phys.outcome === "parry") {
+    line += `You parry ${npc.name}'s attack.`;
+
+    // A successful parry can trigger an immediate player riposte counter-swing.
+    // Riposte swings must never chain into further ripostes.
+    if (phys.riposte && !opts.isRiposte) {
+      const rip = applySimplePlayerRiposteAgainstNpc(ctx, player, npc, { rng: opts.rng });
+      if (rip) line += ` (Riposte!) ${rip}`;
     }
 
     return line;
   }
 
-  // Block reduces incoming damage but does not prevent the hit entirely.
-  const dmgBase = computeNpcMeleeDamage(npc);
-  const blockMult = wasBlocked && typeof phys.blockMultiplier === "number" ? phys.blockMultiplier : 1;
+  // Block is partial mitigation (not a full avoid): apply reduced damage.
+  const base = computeNpcMeleeDamage(npc);
+  const mult = typeof (phys as any).blockMultiplier === "number" ? (phys as any).blockMultiplier : 0.7;
+  const dmgBlocked = Math.max(1, Math.floor(base * mult));
 
-  let dmg = dmgBase;
-  if (wasBlocked && blockMult > 0 && blockMult < 1) {
-    dmg = Math.max(0, Math.floor(dmgBase * blockMult));
-    if (dmgBase > 0 && dmg < 1) dmg = 1;
+  // IMPORTANT: pass the CharacterState so damageTakenPct (cowardice, curses, etc.)
+  // can actually modify incoming damage.
+  const char = defenderChar;
+
+  const { newHp, maxHp, killed } = applySimpleDamageToPlayer(
+    player,
+    dmgBlocked,
+    char ?? undefined,
+    "physical",
+  );
+
+  // Tag NPC as "in combat" too (player is tagged inside applySimpleDamageToPlayer).
+  markInCombat(n);
+
+  if (killed) {
+    const deadChar = ctx.session.character as any;
+    if (deadChar?.melody) {
+      deadChar.melody.active = false;
+    }
+    return (
+      `[combat] You block ${npc.name}'s attack but still take ${dmgBlocked} damage. ` +
+      `You die. (0/${maxHp} HP) ` +
+      "Use 'respawn' to return to safety or wait for someone to resurrect you."
+    );
   }
+
+  return `[combat] You block ${npc.name}'s attack and take ${dmgBlocked} damage. (${newHp}/${maxHp} HP)`;
+}
+
+const dmg = computeNpcMeleeDamage(npc);
+
   // IMPORTANT: pass the CharacterState so damageTakenPct (cowardice, curses, etc.)
   // can actually modify incoming damage.
   const char = defenderChar;
@@ -743,17 +886,13 @@ export function applySimpleNpcCounterAttack(
       deadChar.melody.active = false;
     }
     return (
-      (wasBlocked
-        ? `[combat] You block ${npc.name}'s attack, but still take ${dmg} damage. `
-        : `[combat] ${npc.name} hits you for ${dmg} damage. `) +
+      `[combat] ${npc.name} hits you for ${dmg} damage. ` +
       `You die. (0/${maxHp} HP) ` +
       "Use 'respawn' to return to safety or wait for someone to resurrect you."
     );
   }
 
-  return wasBlocked
-    ? `[combat] You block ${npc.name}'s attack, but still take ${dmg} damage. (${newHp}/${maxHp} HP)`
-    : `[combat] ${npc.name} hits you for ${dmg} damage. (${newHp}/${maxHp} HP)`;
+  return `[combat] ${npc.name} hits you for ${dmg} damage. (${newHp}/${maxHp} HP)`;
 }
 
 /**

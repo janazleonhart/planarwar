@@ -56,9 +56,8 @@ export interface PhysicalHitResult {
   // True when defender parries and can riposte (caller decides how to apply).
   riposte: boolean;
 
-
-  // Suggested damage multiplier when outcome===\"block\".
-  // Callers may reduce damage instead of treating block as a full avoid.
+  // When outcome==="block", caller should multiply base damage by this.
+  // For all other outcomes this should be 1.
   blockMultiplier: number;
 
   // Debug-only (useful in tests / telemetry).
