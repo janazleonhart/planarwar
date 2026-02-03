@@ -36,10 +36,12 @@ import {
   gainWeaponSkill,
   gainSpellSchoolSkill,
   gainSongSchoolSkill,
+  getWeaponSkill,
   type SongSchoolId,
 } from "../skills/SkillProgression";
 import { computeEffectiveAttributes } from "../characters/Stats";
 import { getSpawnPoint } from "../world/SpawnPointCache";
+import { resolvePhysicalHit } from "./PhysicalHitResolver";
 function envInt(name: string, fallback: number): number {
   const raw = process.env[name];
   if (raw == null || raw === "") return fallback;
@@ -53,6 +55,26 @@ function envBool(name: string, fallback: boolean): boolean {
   return raw === "1" || raw.toLowerCase() === "true" || raw.toLowerCase() === "yes";
 }
 
+
+function getDefenderLevel(ctx: any, npc: Entity): number {
+  const n: any = npc as any;
+  if (typeof n.level === "number" && n.level > 0) return Math.floor(n.level);
+
+  try {
+    if (ctx?.npcs) {
+      const st = ctx.npcs.getNpcStateByEntityId(npc.id);
+      if (st) {
+        const proto = getNpcPrototype(st.templateId) ?? getNpcPrototype(st.protoId);
+        const lvl = (proto as any)?.level;
+        if (typeof lvl === "number" && lvl > 0) return Math.floor(lvl);
+      }
+    }
+  } catch {
+    // ignore
+  }
+
+  return 1;
+}
 const log = Logger.scope("NPC_COMBAT");
 
 type SimpleCombatContext = {
@@ -173,15 +195,67 @@ export async function performNpcAttack(
     defenderStatus,
   };
 
+
+  // --- Physical hit resolution (miss/dodge/parry/block + crit/multi/riposte hooks) ---
+  const channel = opts.channel ?? "weapon";
+  const isPhysical = channel === "weapon" || channel === "ability";
+  const defenderLevel = getDefenderLevel(ctx, npc);
+
+  if (isPhysical) {
+    let weaponSkillPoints = 0;
+    try {
+      weaponSkillPoints = getWeaponSkill(char, opts.weaponSkill ?? "one_handed");
+    } catch {
+      weaponSkillPoints = 0;
+    }
+
+    const phys = resolvePhysicalHit({
+      attackerLevel: char.level ?? 1,
+      defenderLevel,
+      weaponSkillPoints,
+      // Later: wire defenderCanBlock/parry based on proto/gear/tags
+      defenderCanDodge: true,
+      defenderCanParry: true,
+      defenderCanBlock: true,
+      allowRiposte: true,
+      allowCrit: true,
+      allowMultiStrike: true,
+    });
+
+    if (phys.outcome !== "hit") {
+      let line = "[combat] ";
+      if (phys.outcome === "miss") line += `You miss ${npc.name}.`;
+      else if (phys.outcome === "dodge") line += `${npc.name} dodges your attack.`;
+      else if (phys.outcome === "parry") line += `${npc.name} parries your attack.`;
+      else line += `${npc.name} blocks your attack.`;
+
+      // Parry can immediately riposte (simple counter-swing).
+      if (phys.outcome === "parry" && phys.riposte) {
+        const rip = applySimpleNpcCounterAttack(ctx, npc, selfEntity);
+        if (rip) line += " (Riposte!) " + rip;
+      }
+
+      return line;
+    }
+
+    // Feed crit/glancing/multi-strike hints into damage computation below.
+    (opts as any)._pwCritChance = phys.critChance;
+    (opts as any)._pwGlancingChance = phys.glancingChance;
+    (opts as any)._pwStrikes = phys.strikes;
+  }
   const result = computeDamage(source, target, {
     damageMultiplier: opts.damageMultiplier,
     flatBonus: opts.flatBonus,
+    critChance: typeof (opts as any)._pwCritChance === "number" ? (opts as any)._pwCritChance : undefined,
+    glancingChance: typeof (opts as any)._pwGlancingChance === "number" ? (opts as any)._pwGlancingChance : undefined,
     // Enable defender taken modifiers when we have a snapshot (NPC debuffs).
     applyDefenderDamageTakenMods: true,
   });
 
   // rawDamage = what CombatEngine rolled
-  const rawDamage = result.damage;
+  const baseRawDamage = result.damage;
+  const strikes = typeof (opts as any)._pwStrikes === "number" ? (opts as any)._pwStrikes : 1;
+  const rawDamage = Math.max(0, Math.floor(baseRawDamage * Math.max(1, strikes)));
   let dmg = rawDamage;
 
   // Snapshot HP before damage for messaging
@@ -294,6 +368,12 @@ try {
     line += " (Critical hit!)";
   } else if (result.wasGlancing) {
     line += " (Glancing blow.)";
+  }
+
+  if (strikes === 2) {
+    line += " (Double Attack!)";
+  } else if (strikes === 3) {
+    line += " (Triple Attack!)";
   }
 
   // If the NPC survives, simple counterattack and we’re done.

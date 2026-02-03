@@ -80,6 +80,18 @@ export interface CombatAttackParams {
 
   damageSchool?: DamageSchool;
 
+  // Optional deterministic RNG hook (used by contract tests / simulations)
+  rng?: () => number;
+
+  // Optional override chances (0..1). If omitted, v1 defaults are used.
+  critChance?: number;
+  glancingChance?: number;
+
+  // Optional hard switches
+  forceCrit?: boolean;
+  disableCrit?: boolean;
+  disableGlancing?: boolean;
+
   /**
    * Optional: apply defender status-based *incoming* damage modifiers
    * (damageTakenPct + damageTakenPctBySchool[school]) inside computeDamage.
@@ -157,6 +169,8 @@ export function computeDamage(
         : ((source.spellSchool as DamageSchool) ?? "arcane")
       : "physical");
 
+  const rand = params.rng ?? Math.random;
+
   const eff = source.effective || {};
   const str = eff.str ?? (source.char as any).attributes?.str ?? 10;
   const int = eff.int ?? (source.char as any).attributes?.int ?? 10;
@@ -216,7 +230,7 @@ export function computeDamage(
   }
 
   // Tiny random roll, same feel as your current mob damage
-  const roll = 0.8 + Math.random() * 0.4; // ±20%
+  const roll = 0.8 + rand() * 0.4; // ±20%
   let dmg = base * roll;
 
   // Ability multipliers / flat bonus
@@ -246,19 +260,30 @@ export function computeDamage(
     dmg *= 1 + damageDealtPct;
   }
 
-  // Very simple crit system v1 (later: proper crit chance per class/weapon)
-  const critRoll = Math.random();
+  // Very simple crit system v1 (expand later: proper per-class/per-weapon)
+  const defaultCritChance = 0.05;
+  const critChance = typeof params.critChance === "number" ? params.critChance : defaultCritChance;
+
   let wasCrit = false;
-  if (critRoll < 0.05) {
-    dmg *= 1.5;
-    wasCrit = true;
+  if (!params.disableCrit) {
+    const critRoll = rand();
+    if (params.forceCrit || critRoll < critChance) {
+      dmg *= 1.5;
+      wasCrit = true;
+    }
   }
 
   // Very simple glancing system for weapon swings, v1
   let wasGlancing = false;
-  if (source.channel === "weapon" && Math.random() < 0.1) {
-    dmg *= 0.7;
-    wasGlancing = true;
+  if (source.channel === "weapon" && !params.disableGlancing) {
+    const defaultGlancingChance = 0.1;
+    const glancingChance =
+      typeof params.glancingChance === "number" ? params.glancingChance : defaultGlancingChance;
+
+    if (rand() < glancingChance) {
+      dmg *= 0.7;
+      wasGlancing = true;
+    }
   }
 
   // --- Mitigation (armor/resists) ---

@@ -770,7 +770,8 @@
         "skills.progression",
         "utils.logger",
         "utils.random",
-        "combat.damagePolicy"
+        "combat.damagePolicy",
+        "combat.physicalHitResolver"
       ],
       "functions": [
         "performNpcAttack",
@@ -786,6 +787,20 @@
         "Corpse/despawn/respawn flow assumes combat status effects are cleared on death and do not tick on corpses."
       ],
       "path": "worldcore/combat/NpcCombat.ts"
+    },
+    "combat.physicalHitResolver": {
+      "kind": "service",
+      "path": "worldcore/combat/PhysicalHitResolver.ts",
+      "dependsOn": [
+        "characters.types",
+        "combat.engine",
+        "skills.progression"
+      ],
+      "functions": ["resolvePhysicalHit"],
+      "notes": [
+        "Skill-based physical hit resolution: miss/dodge/parry/block, crit hooks, double/triple attack hooks, and parry->riposte hook.",
+        "Foundation for future pets, taunt/threat, shield tech, and stealth openers."
+      ]
     },
     "combat.playerHotTicker": {
       "dependsOn": [
@@ -7381,6 +7396,30 @@
       "notes": [
         "Contract: attack with no target is deny-by-default unless the attacker has an engagedTargetId in the room.",
         "Also asserts auto-swing only hits the engaged target (no room-wide damage regression)."
+      ]
+    },
+    "test.contractPhysicalHitResolverWeaponSkillScaling": {
+      "kind": "test",
+      "lifecycle": "test",
+      "class": "(test)",
+      "path": "worldcore/test/contract_physicalHitResolver_weaponSkillScaling.test.ts",
+      "dependsOn": [],
+      "provides": [],
+      "owns": [],
+      "notes": [
+        "Contract: weapon skill + level influence hit outcomes; low-level familiarity floor allows L1 to hit L1–L3 with untrained weapons; high-level untrained misses more."
+      ]
+    },
+    "test.contractPhysicalHitResolverCritMultiRiposte": {
+      "kind": "test",
+      "lifecycle": "test",
+      "class": "(test)",
+      "path": "worldcore/test/contract_physicalHitResolver_crit_multi_riposte.test.ts",
+      "dependsOn": [],
+      "provides": [],
+      "owns": [],
+      "notes": [
+        "Contract: resolver can deterministically produce parry->riposte and crit+triple outcomes (foundation for class proc systems)."
       ]
     },
     "test.utils": {
