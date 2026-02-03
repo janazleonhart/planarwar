@@ -5,7 +5,9 @@ import type { WeaponSkillId, SpellSchoolId } from "../combat/CombatEngine";
 import type { PowerResourceKind } from "../mud/MudResources";
 
 export type AbilityKind =
-  | "melee_single"; // later: melee_aoe, spell_single, spell_aoe, buff, etc.
+  | "melee_single"
+  | "self_buff"
+  | "utility_target"; // later: melee_aoe, spell_single, spell_aoe, etc.
 
 export interface AbilityDefinition {
   id: string;
@@ -98,8 +100,8 @@ export const ABILITIES: Record<string, AbilityDefinition> = {
     selfVulnerabilityStacks: 1,
   },
 
-// --- Reference kit (System 5.4): WARLORD L1–10 abilities ---
-warlord_brutal_slam: {
+  // --- Reference kit (System 5.4): WARLORD L1–10 abilities ---
+  warlord_brutal_slam: {
     id: "warlord_brutal_slam",
     name: "Brutal Slam",
     description: "A heavy slam that hits a single target hard.",
@@ -116,7 +118,7 @@ warlord_brutal_slam: {
     tags: ["reference_kit", "warlord", "bruiser"],
   },
 
-warlord_sunder_blow: {
+  warlord_sunder_blow: {
     id: "warlord_sunder_blow",
     name: "Sunder Blow",
     description: "A vicious strike meant to crack armor and keep pressure on.",
@@ -133,10 +135,11 @@ warlord_sunder_blow: {
     tags: ["reference_kit", "warlord", "bruiser"],
   },
 
-warlord_bulwark_bash: {
+  warlord_bulwark_bash: {
     id: "warlord_bulwark_bash",
     name: "Bulwark Bash",
-    description: "A shield-heavy bash that trades burst for control and durability.",
+    description:
+      "A shield-heavy bash that trades burst for control and durability.",
     classId: "warlord",
     minLevel: 7,
     kind: "melee_single",
@@ -150,12 +153,67 @@ warlord_bulwark_bash: {
     tags: ["reference_kit", "warlord", "bruiser"],
   },
 
+  // --- Cutthroat (stealth + theft kit) ---
+  cutthroat_stealth: {
+    id: "cutthroat_stealth",
+    name: "Stealth",
+    description:
+      "Slip into the shadows. Breaks if you attack, pickpocket, or get caught.",
+    classId: "cutthroat",
+    minLevel: 1,
+    kind: "self_buff",
+    channel: "ability",
+    // Stealth is a stance/toggle: keep it responsive.
+    cooldownMs: 0,
+    tags: ["cutthroat", "stealth", "buff"],
+  },
 
+  cutthroat_pickpocket: {
+    id: "cutthroat_pickpocket",
+    name: "Pickpocket",
+    description: "Attempt to steal a small amount of gold from a nearby target.",
+    classId: "cutthroat",
+    minLevel: 2,
+    kind: "utility_target",
+    channel: "ability",
+    cooldownMs: 4000,
+    tags: ["cutthroat", "stealth_required", "breaks_stealth", "theft"],
+  },
+
+  cutthroat_backstab: {
+    id: "cutthroat_backstab",
+    name: "Backstab",
+    description: "A vicious strike from the shadows.",
+    classId: "cutthroat",
+    minLevel: 3,
+    kind: "melee_single",
+    channel: "ability",
+    weaponSkill: "one_handed",
+    cooldownMs: 6000,
+    damageMultiplier: 2.0,
+    flatBonus: 6,
+    tags: ["cutthroat", "stealth_required", "breaks_stealth", "backstab"],
+  },
+
+  // Mug = pickpocket with a damage component.
+  cutthroat_mug: {
+    id: "cutthroat_mug",
+    name: "Mug",
+    description:
+      "Strike your target and attempt to steal from them in the same motion.",
+    classId: "cutthroat",
+    minLevel: 5,
+    kind: "melee_single",
+    channel: "ability",
+    weaponSkill: "one_handed",
+    cooldownMs: 8000,
+    damageMultiplier: 1.25,
+    flatBonus: 2,
+    tags: ["cutthroat", "stealth_required", "breaks_stealth", "mug", "theft"],
+  },
 };
 
-export function findAbilityByNameOrId(
-  input: string,
-): AbilityDefinition | null {
+export function findAbilityByNameOrId(input: string): AbilityDefinition | null {
   const needle = input.trim().toLowerCase();
   if (!needle) return null;
 

@@ -14,7 +14,7 @@ import { resistMultiplier } from "./Resists";
 const log = Logger.scope("COMBAT");
 
 // v1 enums: we keep these very small and expand later.
-export type WeaponSkillId = "unarmed" | "one_handed" | "two_handed" | "ranged";
+export type WeaponSkillId = "unarmed" | "one_handed" | "two_handed" | "ranged" | "dagger";
 
 export type SpellSchoolId =
   | "arcane"

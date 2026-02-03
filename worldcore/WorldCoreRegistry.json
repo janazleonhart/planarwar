@@ -706,7 +706,8 @@
       "kind": "service",
       "notes": [
         "Core damage math for weapon, ability, spell, and song channels.",
-        "Scales off STR/INT, level, weapon skill, spell school, or song instrument skill, with crit/glancing and rough armor/resist mitigation."
+        "Scales off STR/INT, level, weapon skill, spell school, or song instrument skill, with crit/glancing and rough armor/resist mitigation.",
+        "WeaponSkillId expanded to include 'dagger' for Cutthroat/rogue kits; training uses the existing weapon-skill progression plumbing."
       ],
       "path": "worldcore/combat/CombatEngine.ts"
     },
@@ -3001,23 +3002,31 @@
       "path": "worldcore/movement/moveOps.ts"
     },
     "mud.abilities": {
-      "dependsOn": [
-        "mud.context",
-        "abilities.table",
-        "resources.power",
-        "combat.cooldowns",
-        "mud.actions.combat"
-      ],
       "kind": "service",
       "lifecycle": "stateless",
-      "notes": [
-        "Implements 'abilities' and 'ability <name> [target]'.",
-        "Gates by class/level/cooldown/resource, then delegates actual damage to performNpcAttack."
-      ],
       "path": "worldcore/mud/MudAbilities.ts",
+      "dependsOn": [
+        "mud.context",
+        "abilities.types",
+        "abilities.unlocks",
+        "abilities.learning",
+        "resources.power",
+        "combat.castingGates",
+        "combat.statusEffects",
+        "combat.serviceProtection",
+        "targeting.resolver",
+        "npc.types",
+        "items.inventoryHelpers",
+        "mud.actions.combat"
+      ],
       "provides": [
         "handleAbilityCommand(ctx:MudContext, char:CharacterState, abilityName:string, targetName?:string):Promise<string>",
         "listKnownAbilitiesForChar(char:CharacterState):AbilityDefinition[]"
+      ],
+      "notes": [
+        "Implements 'abilities' and 'ability <name> [target]'.",
+        "Guarantee: deny-path gates (target validation + service protection + stealth requirements) happen BEFORE cost/cooldown gates.",
+        "Cutthroat: stealth toggle + stealth-required abilities (pickpocket/backstab/mug) + breaks-stealth semantics."
       ]
     },
     "mud.actions": {
@@ -6266,6 +6275,27 @@
       ],
       "service": "worldcore"
     },
+    "test.contractCutthroatStealthPickpocketBackstabMug": {
+      "kind": "test.contract",
+      "path": "worldcore/test/contract_cutthroat_stealth_pickpocket_backstab_mug.test.ts",
+      "dependsOn": [
+        "mud.abilities",
+        "abilities.types",
+        "combat.statusEffects",
+        "mud.actions.combat",
+        "items.inventoryHelpers"
+      ],
+      "notes": [
+        "Contract: stealth toggles on/off and is represented as a status-effect tag.",
+        "Contract: stealth-required abilities deny BEFORE cost/cooldown gates when not stealthed.",
+        "Contract: pickpocket and mug both break stealth; mug deals damage + steals gold deterministically under fixed RNG."
+      ],
+      "provides": [
+        "Guards stealth state storage semantics (progression.statusEffects.active)",
+        "Guards deny-path ordering for stealth-gated abilities",
+        "Guards mug = damage + steal behavior"
+      ]
+    },
     "test.contractDebugEffectsCommand": {
       "dependsOn": [
         "mud.commands.debug.debugEffectsCommand",
@@ -7043,6 +7073,25 @@
         "Guards coverage of mapped classes so kits don't silently vanish"
       ]
     },
+    "test.contractWeaponSkillProgressionCapAndEffect": {
+      "class": null,
+      "ctorArgs": [],
+      "dependsOn": [
+        "combat.physicalHitResolver",
+        "combat.combatScaling",
+        "skills.progression",
+        "combat.npc"
+      ],
+      "kind": "test",
+      "lifecycle": "test",
+      "notes": [
+        "Contract: non-trivial swing attempts train weapon skills; trivial mobs do not; cap enforced (level*5); training materially improves hit chance deterministically."
+      ],
+      "owns": [],
+      "path": "worldcore/test/contract_weaponSkill_progression_cap_and_effect.test.ts",
+      "provides": [],
+      "service": "test.contract"
+    },
     "test.contract_abilityLearningRules": {
       "class": "(test)",
       "ctorArgs": [],
@@ -7466,25 +7515,6 @@
       "owns": [],
       "path": "worldcore/test/statusEffects.contract.test.ts",
       "provides": []
-    },
-    "test.contractWeaponSkillProgressionCapAndEffect": {
-      "kind": "test",
-      "service": "test.contract",
-      "path": "worldcore/test/contract_weaponSkill_progression_cap_and_effect.test.ts",
-      "class": null,
-      "lifecycle": "test",
-      "ctorArgs": [],
-      "dependsOn": [
-        "combat.physicalHitResolver",
-        "combat.combatScaling",
-        "skills.progression",
-        "combat.npc"
-      ],
-      "provides": [],
-      "owns": [],
-      "notes": [
-        "Contract: non-trivial swing attempts train weapon skills; trivial mobs do not; cap enforced (level*5); training materially improves hit chance deterministically."
-      ]
     },
     "test.utils": {
       "dependsOn": [],
