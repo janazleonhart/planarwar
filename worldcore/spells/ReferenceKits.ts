@@ -353,6 +353,53 @@ export const REFERENCE_CLASS_KITS_L1_10 = {
   ],
 
 
+  prophet: [
+    {
+      kind: "spell",
+      classId: "prophet",
+      spellId: "prophet_lightning_bolt",
+      minLevel: 1,
+      autoGrant: true,
+      isEnabled: true,
+      source: "reference_kit",
+    },
+    {
+      kind: "spell",
+      classId: "prophet",
+      spellId: "prophet_flame_shock",
+      minLevel: 3,
+      autoGrant: true,
+      isEnabled: true,
+      source: "reference_kit",
+    },
+    {
+      kind: "spell",
+      classId: "prophet",
+      spellId: "prophet_earth_shield",
+      minLevel: 5,
+      autoGrant: true,
+      isEnabled: true,
+      source: "reference_kit",
+    },
+    {
+      kind: "spell",
+      classId: "prophet",
+      spellId: "prophet_ancestral_vigor",
+      minLevel: 7,
+      autoGrant: true,
+      isEnabled: true,
+      source: "reference_kit",
+    },
+    {
+      kind: "spell",
+      classId: "prophet",
+      spellId: "prophet_healing_wave",
+      minLevel: 9,
+      autoGrant: true,
+      isEnabled: true,
+      source: "reference_kit",
+    },
+  ],
   templar: [
     {
       kind: "spell",
