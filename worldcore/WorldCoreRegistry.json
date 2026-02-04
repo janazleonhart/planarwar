@@ -7570,6 +7570,72 @@
         "contract:npcCombatNpcRiposteRealDamage"
       ]
     },
+    "test.contractNpcThreatDecayAssist": {
+      "class": "(test) contract_npcThreat_decay_assist",
+      "ctorArgs": [],
+      "dependsOn": [
+        "worldcore/npc/NpcThreat.ts"
+      ],
+      "kind": "test",
+      "lifecycle": "active",
+      "owns": [
+        "test:contract_npcThreat_decay_assist"
+      ],
+      "path": "worldcore/test/contract_npcThreat_decay_assist.test.ts",
+      "provides": [
+        "contract:npcThreatDecayAssist"
+      ]
+    },
+    "test.contractNpcCombatAssistSameRoom": {
+      "class": "(test) contract_npcCombat_assist_sameRoom",
+      "ctorArgs": [],
+      "dependsOn": [
+        "worldcore/combat/NpcCombat.ts",
+        "worldcore/npc/NpcThreat.ts"
+      ],
+      "kind": "test",
+      "lifecycle": "active",
+      "owns": [
+        "test:contract_npcCombat_assist_sameRoom"
+      ],
+      "path": "worldcore/test/contract_npcCombat_assist_sameRoom.test.ts",
+      "provides": [
+        "contract:npcCombatAssistSameRoom"
+      ]
+    },
+    "test.contractNpcThreatDecayIntegration": {
+      "class": "(test) contract_npcThreat_decay_integration",
+      "ctorArgs": [],
+      "dependsOn": [
+        "worldcore/npc/NpcThreat.ts"
+      ],
+      "kind": "test",
+      "lifecycle": "active",
+      "owns": [
+        "test:contract_npcThreat_decay_integration"
+      ],
+      "path": "worldcore/test/contract_npcThreat_decay_integration.test.ts",
+      "provides": [
+        "contract:npcThreatDecayIntegration"
+      ]
+    },
+    "test.contractNpcCombatAssistThrottle": {
+      "class": "(test) contract_npcCombat_assist_throttle",
+      "ctorArgs": [],
+      "dependsOn": [
+        "worldcore/combat/NpcCombat.ts",
+        "worldcore/npc/NpcThreat.ts"
+      ],
+      "kind": "test",
+      "lifecycle": "active",
+      "owns": [
+        "test:contract_npcCombat_assist_throttle"
+      ],
+      "path": "worldcore/test/contract_npcCombat_assist_throttle.test.ts",
+      "provides": [
+        "contract:npcCombatAssistThrottle"
+      ]
+    },
     "test.utils": {
       "dependsOn": [],
       "functions": [

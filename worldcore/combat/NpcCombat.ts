@@ -4,6 +4,7 @@ import type { CharacterState } from "../characters/CharacterTypes";
 import type { Entity } from "../shared/Entity";
 import { Logger } from "../utils/logger";
 import { getNpcPrototype } from "../npc/NpcTypes";
+import { getAssistTargetForAlly } from "../npc/NpcThreat";
 import {
   isServiceProtectedNpcProto,
   serviceProtectedCombatLine,
@@ -494,6 +495,12 @@ if (phys.outcome !== "hit") {
 
     // Update threat so brains see the attacker (use actual damage when available)
     ctx.npcs.recordDamage(npc.id, selfEntity.id, dmg);
+    // Option A: same-room assist (conservative opt-in via proto tags)
+    try {
+      tryAssistNearbyNpcs(ctx, npc.id, selfEntity.id, Date.now(), Math.floor(Math.max(1, dmg) * 0.25));
+    } catch {
+      // Assist is best-effort; combat should never fail because help logic failed.
+    }
   } else {
     // Legacy / test fallback with no NpcManager
     (npc as any).hp = newHp;
@@ -940,6 +947,99 @@ const dmg = computeNpcMeleeDamage(npc);
 /**
  * Small helper for sending “X returns.” style flavor to a room.
  */
+
+/**
+ * Best-effort: extract entity ids from a Room-ish object without depending on a concrete Room implementation.
+ * This keeps assist wiring robust across server/client test contexts.
+ */
+function getRoomEntityIds(room: any): string[] {
+  if (!room) return [];
+  if (Array.isArray(room.entityIds)) return room.entityIds.filter((x: any) => typeof x === "string");
+  const st = room.state ?? room._state;
+  if (st && Array.isArray(st.entityIds)) return st.entityIds.filter((x: any) => typeof x === "string");
+
+  const ents = room.entities ?? room._entities;
+  if (ents instanceof Map) return Array.from(ents.keys()).filter((x) => typeof x === "string");
+  if (ents && typeof ents === "object") return Object.keys(ents);
+
+  return [];
+}
+
+/**
+ * Option A: Assist wiring (same-room).
+ * When an NPC is attacked, nearby "social/assist" NPCs may join combat by seeding threat on the attacker.
+ *
+ * This is intentionally conservative: only opt-in NPCs (tags include 'social' or 'assist') will assist by default.
+ */
+export function tryAssistNearbyNpcs(
+  ctx: SimpleCombatContext,
+  allyNpcEntityId: string,
+  attackerEntityId: string,
+  now: number,
+  seedThreat: number,
+): number {
+  if (!ctx?.npcs || !ctx?.entities || !ctx?.rooms) return 0;
+
+  const allySt = ctx.npcs.getNpcStateByEntityId(allyNpcEntityId);
+  if (!allySt) return 0;
+
+  const roomId = allySt.roomId;
+  const room: any = roomId ? ctx.rooms.get(roomId) : undefined;
+  if (!room) return 0;
+
+  const allyEnt: any = ctx.entities.get(allyNpcEntityId);
+  if ((allyEnt as any)?.type === "node") return 0;
+
+  const ids = getRoomEntityIds(room);
+  let assisted = 0;
+
+  const ASSIST_COOLDOWN_MS = 4000;
+
+  const allyThreat: any = (allySt as any).threat;
+  const assistTarget = getAssistTargetForAlly(allyThreat, now);
+  if (!assistTarget) return 0;
+
+  if (assistTarget !== attackerEntityId) return 0;
+
+  for (const id of ids) {
+    if (!id || id === allyNpcEntityId) continue;
+
+    const ent: any = ctx.entities.get(id);
+    if (!ent || ent.type !== "npc") continue;
+    if (ent.alive === false) continue;
+
+    const st = ctx.npcs.getNpcStateByEntityId(id);
+    if (!st) continue;
+
+    const lastAssistAt = ((ent as any)._pwLastAssistAt ?? (st as any).lastAssistAt) as number | undefined;
+    if (lastAssistAt && now - lastAssistAt < ASSIST_COOLDOWN_MS) continue;
+
+    const proto = getNpcPrototype(st.templateId) ?? getNpcPrototype(st.protoId);
+    const tags = (proto?.tags ?? (st as any).tags ?? (ent as any).tags ?? []) as any[];
+    if (!tags || !Array.isArray(tags)) continue;
+    // Never assist with training dummies.
+    if (tags.includes("training_dummy") || tags.includes("dummy")) continue;
+
+    // Conservative opt-in assist: only social/assist NPCs.
+    const isSocial = tags.includes("social") || tags.includes("assist") || tags.includes("calls_for_help");
+    if (!isSocial) continue;
+
+    // Don't assist if this NPC is service-protected (prevents tools/admin fixtures from train).
+    if (isServiceProtectedNpcProto(proto)) continue;
+
+    // Seed threat on assister so its brain can pick up the attacker.
+    // Use minimum 1 to ensure target selection sees it.
+    (ent as any)._pwLastAssistAt = now;
+    (st as any).lastAssistAt = now;
+
+    ctx.npcs.recordDamage(id, attackerEntityId, Math.max(1, seedThreat));
+    assisted++;
+  }
+
+  return assisted;
+}
+
+
 export function announceSpawnToRoom(
   ctx: SimpleCombatContext,
   roomId: string,
