@@ -2,6 +2,10 @@
 //
 // Contract: NPC counter-attack treats block as partial mitigation (reduced damage),
 // not a full avoid, and can be tested deterministically via injected RNG.
+//
+// NOTE: computeNpcMeleeDamage() uses Math.random internally (via entityCombat). This
+// contract keeps determinism by patching Math.random *inside an async test* so restore
+// occurs after awaited work completes.
 
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -17,7 +21,7 @@ function rngSeq(values: number[]): () => number {
   };
 }
 
-test("[contract] NpcCombat: counter-attack block reduces damage deterministically", () => {
+test("[contract] NpcCombat: counter-attack block reduces damage deterministically", async () => {
   const oldRandom = Math.random;
   try {
     // Make computeNpcMeleeDamage deterministic: roll = 0.8 + 0 * 0.4
@@ -36,17 +40,17 @@ test("[contract] NpcCombat: counter-attack block reduces damage deterministicall
     // Force:
     // - hit check passes (0.01)
     // - avoid roll lands in the "block" band (0.08 at L10 is inside ~[0.075, 0.093))
-    const line = applySimpleNpcCounterAttack(ctx, npc, player, {
+    const line = await applySimpleNpcCounterAttack(ctx, npc, player, {
       rng: rngSeq([0.01, 0.08]),
     });
 
     assert.ok(line);
-    assert.match(line as string, /block/i);
+    assert.match(line, /block/i);
 
     // base = attackPower(10), roll=0.8 => 8
     // blockMultiplier defaults to 0.7 => floor(8 * 0.7) = 5
     assert.equal(player.hp, 95);
-    assert.match(line as string, /take 5 damage/i);
+    assert.match(line, /take 5 damage/i);
   } finally {
     Math.random = oldRandom;
   }

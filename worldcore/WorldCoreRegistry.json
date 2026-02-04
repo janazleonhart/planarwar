@@ -7552,6 +7552,24 @@
         "Contract: When the player parries an NPC counter-attack, NpcCombat performs a single immediate player riposte counter-swing (non-lethal in v1.1.x)."
       ]
     },
+    "test.contractNpcCombatNpcRiposteRealDamage": {
+      "class": "(test) contract_npcCombat_npcRiposte_realDamage",
+      "ctorArgs": [],
+      "dependsOn": [
+        "worldcore/combat/NpcCombat.ts",
+        "worldcore/combat/CombatEngine.ts",
+        "worldcore/combat/PhysicalHitResolver.ts"
+      ],
+      "kind": "test",
+      "lifecycle": "active",
+      "owns": [
+        "test:contract_npcCombat_npcRiposte_realDamage"
+      ],
+      "path": "worldcore/test/contract_npcCombat_npcRiposte_realDamage.test.ts",
+      "provides": [
+        "contract:npcCombatNpcRiposteRealDamage"
+      ]
+    },
     "test.utils": {
       "dependsOn": [],
       "functions": [

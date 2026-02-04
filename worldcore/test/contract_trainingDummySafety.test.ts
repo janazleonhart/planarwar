@@ -7,6 +7,9 @@ import { DEFAULT_NPC_PROTOTYPES } from "../npc/NpcTypes";
 import { isProtectedNpc, recordNpcCrimeAgainst } from "../npc/NpcCrime";
 import { applySimpleNpcCounterAttack } from "../combat/NpcCombat";
 
+// NOTE: applySimpleNpcCounterAttack became async (returns Promise<string|null>)
+// once reactive/riposte kill authority was unified. Tests must await.
+
 test("[contract] training dummies are law-exempt (guards should not react)", () => {
   const small = DEFAULT_NPC_PROTOTYPES.training_dummy;
   const big = DEFAULT_NPC_PROTOTYPES.training_dummy_big;
@@ -17,7 +20,6 @@ test("[contract] training dummies are law-exempt (guards should not react)", () 
 
 test("[contract] training dummy crime is not recorded on attacker", () => {
   const attacker: any = { id: "char_1", shardId: "prime_shard" };
-
   const npc: any = {
     entityId: "npc_1",
     protoId: "training_dummy_big",
@@ -29,7 +31,6 @@ test("[contract] training dummy crime is not recorded on attacker", () => {
   };
 
   const res = recordNpcCrimeAgainst(npc, attacker, { newHp: 9999 });
-
   assert.equal(res, null, "no crime result should be produced for training dummy");
   assert.equal(
     attacker.recentCrimeUntil ?? 0,
@@ -38,7 +39,7 @@ test("[contract] training dummy crime is not recorded on attacker", () => {
   );
 });
 
-test("[contract] training dummies never counter-attack (even the big one)", () => {
+test("[contract] training dummies never counter-attack (even the big one)", async () => {
   const player: any = { id: "p1", name: "Player", hp: 100, maxHp: 100, alive: true };
   const dummy: any = { id: "n1", name: "Sturdy Training Dummy", hp: 10000, maxHp: 10000, alive: true };
 
@@ -53,7 +54,7 @@ test("[contract] training dummies never counter-attack (even the big one)", () =
   };
 
   const before = player.hp;
-  const line = applySimpleNpcCounterAttack(ctx, dummy, player);
+  const line = await applySimpleNpcCounterAttack(ctx, dummy, player);
 
   assert.equal(line, null, "counter-attack line must be null for training dummy");
   assert.equal(player.hp, before, "player HP must not change from dummy counter-attack");

@@ -104,6 +104,10 @@ export interface NpcAttackOptions {
   // For Virtuoso songs
   songSchool?: SongSchoolId;
   isSong?: boolean;
+
+
+  // Deterministic RNG injection for contract tests
+  rng?: () => number;
 }
 
 /**
@@ -116,6 +120,166 @@ export interface NpcAttackOptions {
  *
  * Returns a human-readable combat line for MUD output.
  */
+
+async function finalizeNpcKillAndRewards(
+  ctx: SimpleCombatContext,
+  char: CharacterState,
+  selfEntity: Entity,
+  npc: Entity,
+  line: string,
+): Promise<string> {
+  // --- NPC death: XP + loot ---
+    (npc as any).alive = false;
+
+    // Death clears combat status effects (DOTs/debuffs) so corpses don't keep ticking.
+    try {
+      clearAllStatusEffectsFromEntity(npc as any);
+    } catch {
+      // ignore
+    }
+
+    // Notify room listeners immediately (corpse state / client visuals / post-kill actions).
+    // Safe no-op if the client ignores entity_update.
+    try {
+      const st = ctx.npcs?.getNpcStateByEntityId(npc.id);
+      const rid = st?.roomId ?? (npc as any)?.roomId;
+      const room = rid ? ctx.rooms?.get(rid) : undefined;
+      room?.broadcast("entity_update", {
+        id: npc.id,
+        hp: 0,
+        maxHp: (npc as any)?.maxHp ?? 1,
+        alive: false,
+      });
+    } catch {
+      // ignore
+    }
+    line += ` You slay ${npc.name}!`;
+
+    // Resolve prototype for rewards
+    let xpReward = 10;
+    let lootEntries:
+      | {
+          itemId: string;
+          chance: number;
+          minQty: number;
+          maxQty: number;
+        }[]
+      | [] = [];
+
+    try {
+      if (ctx.npcs) {
+        const npcState = ctx.npcs.getNpcStateByEntityId(npc.id);
+        if (npcState) {
+          const proto = getNpcPrototype(npcState.protoId);
+          if (proto) {
+            if (typeof proto.xpReward === "number") {
+              xpReward = proto.xpReward;
+            } else if (typeof proto.level === "number") {
+              xpReward = 5 + proto.level * 3;
+            }
+            if (proto.loot && proto.loot.length > 0) {
+              lootEntries = proto.loot;
+            }
+          }
+        }
+      }
+    } catch (err) {
+      log.warn("Error resolving NPC prototype for rewards", {
+        err,
+        npcId: npc.id,
+        npcName: npc.name,
+      });
+    }
+
+    // --- XP reward (same pattern as debug_xp) ---
+    if (ctx.characters) {
+      const userId = ctx.session.identity?.userId;
+      if (userId) {
+        try {
+          const updated = await ctx.characters.grantXp(userId, char.id, xpReward);
+          if (updated) {
+            ctx.session.character = updated;
+            char.level = updated.level;
+            char.xp = updated.xp;
+            char.attributes = updated.attributes;
+            line += ` You gain ${xpReward} XP.`;
+          }
+        } catch (err) {
+          log.warn("grantXp from NPC kill failed", {
+            err,
+            charId: char.id,
+            npc: npc.name,
+          });
+        }
+      }
+    }
+
+    // --- Loot reward (same behavior as before) ---
+    const lootLines: string[] = [];
+    const inventory = char.inventory;
+
+    if (lootEntries.length > 0) {
+      for (const entry of lootEntries) {
+        const r = Math.random();
+        if (r > entry.chance) continue;
+
+        const qty = rollInt(entry.minQty, entry.maxQty);
+        if (qty <= 0) continue;
+
+        const res = await deliverItemToBagsOrMail(
+          { items: ctx.items, mail: ctx.mail, session: ctx.session },
+          {
+            itemId: entry.itemId,
+            qty,
+            inventory,
+            ownerKind: "account",
+            sourceName: npc.name,
+            sourceVerb: "looting",
+            mailSubject: "Overflow loot",
+          },
+        );
+
+        if (res.added <= 0 && res.mailed <= 0 && res.leftover > 0) {
+          log.warn("Loot delivery failed; dropping overflow", {
+            itemId: entry.itemId,
+            npc: npc.name,
+            qty,
+            leftover: res.leftover,
+          });
+          continue;
+        }
+
+        if (res.added > 0) {
+          lootLines.push(describeLootLine(res.itemId, res.added, res.name));
+        }
+        if (res.mailed > 0) {
+          lootLines.push(describeLootLine(res.itemId, res.mailed, res.name) + " (via mail)");
+        }
+      }
+
+      if (lootLines.length > 0) {
+        ctx.session.character = char;
+        if (ctx.characters) {
+          try {
+            await ctx.characters.saveCharacter(char);
+          } catch (err) {
+            log.warn("Failed to save character after loot", {
+              err,
+              charId: char.id,
+            });
+          }
+        }
+
+        line += ` You loot ${lootLines.join(", ")}.`;
+      }
+    }
+
+    // Corpse + respawn handling (unchanged behavior)
+    scheduleNpcCorpseAndRespawn(ctx, npc.id);
+
+  return line;
+}
+
 export async function performNpcAttack(
   ctx: SimpleCombatContext,
   char: CharacterState,
@@ -228,6 +392,7 @@ export async function performNpcAttack(
       allowRiposte: true,
       allowCrit: true,
       allowMultiStrike: true,
+      rng: opts.rng,
     });
 
     // --- Weapon-skill progression (attempt-based; non-trivial targets only) ---
@@ -266,7 +431,7 @@ if (phys.outcome !== "hit") {
 
   // Parry can immediately riposte (counter-swing). Riposte swings must not chain.
   if (phys.outcome === "parry" && phys.riposte) {
-    const rip = applySimpleNpcCounterAttack(ctx, npc, selfEntity, { isRiposte: true, rng: (ctx as any)?.combatRng });
+    const rip = await applySimpleNpcCounterAttack(ctx, npc, selfEntity, { isRiposte: true, rng: opts.rng });
     if (rip) line += " (Riposte!) " + rip;
   }
 
@@ -422,161 +587,12 @@ try {
 
   // If the NPC survives, simple counterattack and we’re done.
   if (newHp > 0) {
-    const counter = applySimpleNpcCounterAttack(ctx, npc, selfEntity);
+    const counter = await applySimpleNpcCounterAttack(ctx, npc, selfEntity);
     if (counter) line += " " + counter;
     return line;
   }
 
-  // --- NPC death: XP + loot ---
-  (npc as any).alive = false;
-
-  // Death clears combat status effects (DOTs/debuffs) so corpses don't keep ticking.
-  try {
-    clearAllStatusEffectsFromEntity(npc as any);
-  } catch {
-    // ignore
-  }
-
-  // Notify room listeners immediately (corpse state / client visuals / post-kill actions).
-  // Safe no-op if the client ignores entity_update.
-  try {
-    const st = ctx.npcs?.getNpcStateByEntityId(npc.id);
-    const rid = st?.roomId ?? (npc as any)?.roomId;
-    const room = rid ? ctx.rooms?.get(rid) : undefined;
-    room?.broadcast("entity_update", {
-      id: npc.id,
-      hp: 0,
-      maxHp: (npc as any)?.maxHp ?? 1,
-      alive: false,
-    });
-  } catch {
-    // ignore
-  }
-  line += ` You slay ${npc.name}!`;
-
-  // Resolve prototype for rewards
-  let xpReward = 10;
-  let lootEntries:
-    | {
-        itemId: string;
-        chance: number;
-        minQty: number;
-        maxQty: number;
-      }[]
-    | [] = [];
-
-  try {
-    if (ctx.npcs) {
-      const npcState = ctx.npcs.getNpcStateByEntityId(npc.id);
-      if (npcState) {
-        const proto = getNpcPrototype(npcState.protoId);
-        if (proto) {
-          if (typeof proto.xpReward === "number") {
-            xpReward = proto.xpReward;
-          } else if (typeof proto.level === "number") {
-            xpReward = 5 + proto.level * 3;
-          }
-          if (proto.loot && proto.loot.length > 0) {
-            lootEntries = proto.loot;
-          }
-        }
-      }
-    }
-  } catch (err) {
-    log.warn("Error resolving NPC prototype for rewards", {
-      err,
-      npcId: npc.id,
-      npcName: npc.name,
-    });
-  }
-
-  // --- XP reward (same pattern as debug_xp) ---
-  if (ctx.characters) {
-    const userId = ctx.session.identity?.userId;
-    if (userId) {
-      try {
-        const updated = await ctx.characters.grantXp(userId, char.id, xpReward);
-        if (updated) {
-          ctx.session.character = updated;
-          char.level = updated.level;
-          char.xp = updated.xp;
-          char.attributes = updated.attributes;
-          line += ` You gain ${xpReward} XP.`;
-        }
-      } catch (err) {
-        log.warn("grantXp from NPC kill failed", {
-          err,
-          charId: char.id,
-          npc: npc.name,
-        });
-      }
-    }
-  }
-
-  // --- Loot reward (same behavior as before) ---
-  const lootLines: string[] = [];
-  const inventory = char.inventory;
-
-  if (lootEntries.length > 0) {
-    for (const entry of lootEntries) {
-      const r = Math.random();
-      if (r > entry.chance) continue;
-
-      const qty = rollInt(entry.minQty, entry.maxQty);
-      if (qty <= 0) continue;
-
-      const res = await deliverItemToBagsOrMail(
-        { items: ctx.items, mail: ctx.mail, session: ctx.session },
-        {
-          itemId: entry.itemId,
-          qty,
-          inventory,
-          ownerKind: "account",
-          sourceName: npc.name,
-          sourceVerb: "looting",
-          mailSubject: "Overflow loot",
-        },
-      );
-
-      if (res.added <= 0 && res.mailed <= 0 && res.leftover > 0) {
-        log.warn("Loot delivery failed; dropping overflow", {
-          itemId: entry.itemId,
-          npc: npc.name,
-          qty,
-          leftover: res.leftover,
-        });
-        continue;
-      }
-
-      if (res.added > 0) {
-        lootLines.push(describeLootLine(res.itemId, res.added, res.name));
-      }
-      if (res.mailed > 0) {
-        lootLines.push(describeLootLine(res.itemId, res.mailed, res.name) + " (via mail)");
-      }
-    }
-
-    if (lootLines.length > 0) {
-      ctx.session.character = char;
-      if (ctx.characters) {
-        try {
-          await ctx.characters.saveCharacter(char);
-        } catch (err) {
-          log.warn("Failed to save character after loot", {
-            err,
-            charId: char.id,
-          });
-        }
-      }
-
-      line += ` You loot ${lootLines.join(", ")}.`;
-    }
-  }
-
-  // Corpse + respawn handling (unchanged behavior)
-  scheduleNpcCorpseAndRespawn(ctx, npc.id);
-
-  return line;
+    return await finalizeNpcKillAndRewards(ctx, char, selfEntity, npc, line);
 }
 
 export interface NpcCounterAttackOptions {
@@ -605,12 +621,12 @@ export interface PlayerRiposteOptions {
   rng?: () => number;
 }
 
-function applySimplePlayerRiposteAgainstNpc(
+async function applySimplePlayerRiposteAgainstNpc(
   ctx: SimpleCombatContext,
   player: Entity,
   npc: Entity,
   opts: PlayerRiposteOptions = {},
-): string | null {
+): Promise<string | null> {
   const p: any = player;
   const n: any = npc;
 
@@ -653,28 +669,45 @@ function applySimplePlayerRiposteAgainstNpc(
     return null;
   }
 
-  // Riposte damage is intentionally conservative in v1.1.x.
-  // We avoid the full computeEffectiveAttributes/computeDamage pipeline here because
-  // contract tests frequently provide minimal character objects.
-  // NOTE: Once reactive-kill reward handling is unified, riposte can call the full pipeline.
-  let dmg = 1;
+  // v1.1.4: riposte uses the real weapon damage model (but stays deterministic).
+// We intentionally avoid computeEffectiveAttributes() here because contract tests
+// often provide minimal character objects; CombatEngine.computeDamage() already
+// falls back to safe defaults when attributes are missing.
+const source: CombatSource = {
+  char,
+  effective: {},
+  channel: "weapon",
+  weaponSkill: weaponSkillId,
+  tags: ["riposte"],
+};
+const target: CombatTarget = { entity: npc };
 
-  // Block mitigates riposte damage too.
-  if (phys.outcome === "block") {
-    const mult = typeof (phys as any).blockMultiplier === "number" ? (phys as any).blockMultiplier : 0.7;
-    dmg = Math.max(1, Math.floor(dmg * mult));
-  }
+// Disable crit/glancing for ripostes (for now) to keep RNG consumption minimal
+// and results stable in contract tests.
+let dmg = computeDamage(source, target, {
+  rng: opts.rng,
+  disableCrit: true,
+  disableGlancing: true,
+}).damage;
+
+// Block mitigates riposte damage too (this multiplier comes from the hit resolver).
+if (phys.outcome === "block") {
+  const mult =
+    typeof (phys as any).blockMultiplier === "number"
+      ? (phys as any).blockMultiplier
+      : 0.7;
+  dmg = Math.max(1, Math.floor(dmg * mult));
+}
 
   const prevHp = typeof n.hp === "number" ? n.hp : (typeof n.maxHp === "number" ? n.maxHp : 1);
   const maxHp = typeof n.maxHp === "number" ? n.maxHp : prevHp;
 
-  // Safety rail: riposte is non-lethal until we unify kill/reward handling.
-  const cappedDmg = Math.max(0, Math.min(dmg, Math.max(0, prevHp - 1)));
+  // v1.1.3: riposte can be lethal; kill/rewards are unified via finalizeNpcKillAndRewards.
 
   let newHp = prevHp;
-  if (cappedDmg > 0) {
+  if (dmg > 0) {
     if (ctx.npcs) {
-      const appliedHp = ctx.npcs.applyDamage(npc.id, cappedDmg, {
+      const appliedHp = ctx.npcs.applyDamage(npc.id, dmg, {
         character: char,
         entityId: player.id,
       });
@@ -682,17 +715,17 @@ function applySimplePlayerRiposteAgainstNpc(
       if (typeof appliedHp === "number") {
         newHp = appliedHp;
       } else {
-        newHp = Math.max(1, prevHp - cappedDmg);
+        newHp = Math.max(0, prevHp - dmg);
         n.hp = newHp;
       }
 
       try {
-        ctx.npcs.recordDamage(npc.id, player.id, cappedDmg);
+        ctx.npcs.recordDamage(npc.id, player.id, dmg);
       } catch {
         // ignore
       }
     } else {
-      newHp = Math.max(1, prevHp - cappedDmg);
+      newHp = Math.max(0, prevHp - dmg);
       n.hp = newHp;
     }
   }
@@ -700,16 +733,25 @@ function applySimplePlayerRiposteAgainstNpc(
   markInCombat(p);
   markInCombat(n);
 
+  if (newHp <= 0) {
+    const baseLine = `You riposte ${npc.name} for ${dmg} damage.`;
+    try {
+      return await finalizeNpcKillAndRewards(ctx, char, player, npc, baseLine);
+    } catch {
+      return baseLine;
+    }
+  }
+
   const maybeBlock = phys.outcome === "block" ? `${npc.name} blocks your riposte. ` : "";
-  return `${maybeBlock}You riposte ${npc.name} for ${cappedDmg} damage. (${newHp}/${maxHp} HP)`;
+  return `${maybeBlock}You riposte ${npc.name} for ${dmg} damage. (${newHp}/${maxHp} HP)`;
 }
 
-export function applySimpleNpcCounterAttack(
+export async function applySimpleNpcCounterAttack(
   ctx: SimpleCombatContext,
   npc: Entity,
   player: Entity,
   opts: NpcCounterAttackOptions = {},
-): string | null {
+): Promise<string | null> {
   const p: any = player;
   const n: any = npc;
 
@@ -823,7 +865,7 @@ if (phys.outcome !== "hit") {
     // A successful parry can trigger an immediate player riposte counter-swing.
     // Riposte swings must never chain into further ripostes.
     if (phys.riposte && !opts.isRiposte) {
-      const rip = applySimplePlayerRiposteAgainstNpc(ctx, player, npc, { rng: opts.rng });
+      const rip = await applySimplePlayerRiposteAgainstNpc(ctx, player, npc, { rng: opts.rng });
       if (rip) line += ` (Riposte!) ${rip}`;
     }
 
