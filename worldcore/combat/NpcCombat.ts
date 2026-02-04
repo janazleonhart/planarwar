@@ -26,7 +26,7 @@ import {
   type WeaponSkillId,
   type SpellSchoolId,
 } from "./CombatEngine";
-import { computeEntityCombatStatusSnapshot, clearAllStatusEffectsFromEntity } from "./StatusEffects";
+import { computeEntityCombatStatusSnapshot, clearAllStatusEffectsFromEntity, getActiveStatusEffectsForEntity } from "./StatusEffects";
 import { formatWorldSpellDirectDamageLine } from "./CombatLog";
 import type { AttackChannel } from "../actions/ActionTypes";
 import {
@@ -57,6 +57,13 @@ function envBool(name: string, fallback: boolean): boolean {
   const raw = process.env[name];
   if (raw == null || raw === "") return fallback;
   return raw === "1" || raw.toLowerCase() === "true" || raw.toLowerCase() === "yes";
+}
+
+function envFloat(name: string, fallback: number): number {
+  const raw = process.env[name];
+  if (raw == null || raw === "") return fallback;
+  const n = Number.parseFloat(raw);
+  return Number.isFinite(n) ? n : fallback;
 }
 
 
@@ -497,7 +504,7 @@ if (phys.outcome !== "hit") {
     ctx.npcs.recordDamage(npc.id, selfEntity.id, dmg);
     // Option A: same-room assist (conservative opt-in via proto tags)
     try {
-      tryAssistNearbyNpcs(ctx, npc.id, selfEntity.id, Date.now(), Math.floor(Math.max(1, dmg) * 0.25));
+      tryAssistNearbyNpcs(ctx, npc.id, selfEntity.id, Date.now(), Math.floor(Math.max(1, dmg) * 0.25), dmg);
     } catch {
       // Assist is best-effort; combat should never fail because help logic failed.
     }
@@ -954,22 +961,92 @@ const dmg = computeNpcMeleeDamage(npc);
  */
 function getRoomEntityIds(room: any): string[] {
   if (!room) return [];
-  if (Array.isArray(room.entityIds)) return room.entityIds.filter((x: any) => typeof x === "string");
+  if (Array.isArray(room.entityIds))
+    return room.entityIds.filter((x: any) => typeof x === "string");
   const st = room.state ?? room._state;
-  if (st && Array.isArray(st.entityIds)) return st.entityIds.filter((x: any) => typeof x === "string");
+  if (st && Array.isArray(st.entityIds))
+    return st.entityIds.filter((x: any) => typeof x === "string");
 
   const ents = room.entities ?? room._entities;
-  if (ents instanceof Map) return Array.from(ents.keys()).filter((x) => typeof x === "string");
+  if (ents instanceof Map)
+    return Array.from(ents.keys()).filter((x) => typeof x === "string");
   if (ents && typeof ents === "object") return Object.keys(ents);
 
   return [];
 }
 
+type GridRoomCoord = { shard: string; gx: number; gy: number };
+
+function parseGridRoomId(roomId: string): GridRoomCoord | null {
+  // Expected formats:
+  // - "prime_shard:0,-1"
+  // - "prime:12,34"
+  const idx = roomId.indexOf(":");
+  if (idx <= 0) return null;
+  const shard = roomId.slice(0, idx);
+  const rest = roomId.slice(idx + 1);
+  const parts = rest.split(",");
+  if (parts.length !== 2) return null;
+  const gx = Number.parseInt(parts[0], 10);
+  const gy = Number.parseInt(parts[1], 10);
+  if (!Number.isFinite(gx) || !Number.isFinite(gy)) return null;
+  return { shard, gx, gy };
+}
+
+function formatGridRoomId(c: GridRoomCoord): string {
+  return `${c.shard}:${c.gx},${c.gy}`;
+}
+
+function getNearbyRoomIds(roomId: string, radiusTiles: number): string[] {
+  if (radiusTiles <= 0) return [roomId];
+  const parsed = parseGridRoomId(roomId);
+  if (!parsed) return [roomId];
+
+  const r = Math.max(0, Math.floor(radiusTiles));
+  const out: string[] = [];
+  for (let dx = -r; dx <= r; dx++) {
+    for (let dy = -r; dy <= r; dy++) {
+      // Diamond (Manhattan) neighborhood keeps it tighter than a square.
+      if (Math.abs(dx) + Math.abs(dy) > r) continue;
+      out.push(formatGridRoomId({ shard: parsed.shard, gx: parsed.gx + dx, gy: parsed.gy + dy }));
+    }
+  }
+  return out;
+}
+
+function computeAssistSeedThreat(baseSeedThreat: number, proto: any, ent: any): number {
+  const tags = (proto?.tags ?? ent?.tags ?? []) as any[];
+  const name = (typeof ent?.name === "string" ? ent.name : "") as string;
+
+  let mult = 1;
+
+  const hasTag = (t: string) => Array.isArray(tags) && tags.includes(t);
+  const nameHas = (sub: string) => name.toLowerCase().includes(sub);
+
+  // Flavor-based heuristics (deterministic):
+  // - rats/vermin help a little
+  // - guards/soldiers help a lot
+  if (hasTag("rat") || hasTag("vermin") || nameHas("rat")) mult *= 0.5;
+  if (hasTag("guard") || hasTag("soldier") || hasTag("elite") || nameHas("guard")) mult *= 2;
+
+  // Explicit tuning tags override heuristics if present.
+  if (hasTag("assist_weak")) mult = 0.5;
+  if (hasTag("assist_strong")) mult = 2;
+
+  const scaled = Math.round(baseSeedThreat * mult);
+  return Math.max(1, Number.isFinite(scaled) ? scaled : Math.max(1, Math.round(baseSeedThreat)));
+}
+
 /**
- * Option A: Assist wiring (same-room).
- * When an NPC is attacked, nearby "social/assist" NPCs may join combat by seeding threat on the attacker.
+ * Assist wiring (Option B default): radius-based assist with per-assister throttle.
  *
- * This is intentionally conservative: only opt-in NPCs (tags include 'social' or 'assist') will assist by default.
+ * - Same-room assist still works even if room ids aren't grid-formatted.
+ * - If room ids are grid-formatted ("shard:x,y"), allies within a small tile radius can assist,
+ *   enabling "train" behavior when players ignore gating/escape mobs.
+ *
+ * Env knobs:
+ * - PW_ASSIST_RADIUS_TILES (default 2) : Manhattan radius in tile rooms.
+ * - PW_ASSIST_CALLS_LINE (default true): emit a "calls for help!" chat line when assist triggers.
  */
 export function tryAssistNearbyNpcs(
   ctx: SimpleCombatContext,
@@ -977,6 +1054,7 @@ export function tryAssistNearbyNpcs(
   attackerEntityId: string,
   now: number,
   seedThreat: number,
+  damageDealt?: number,
 ): number {
   if (!ctx?.npcs || !ctx?.entities || !ctx?.rooms) return 0;
 
@@ -984,25 +1062,379 @@ export function tryAssistNearbyNpcs(
   if (!allySt) return 0;
 
   const roomId = allySt.roomId;
-  const room: any = roomId ? ctx.rooms.get(roomId) : undefined;
-  if (!room) return 0;
+  if (!roomId) return 0;
 
   const allyEnt: any = ctx.entities.get(allyNpcEntityId);
   if ((allyEnt as any)?.type === "node") return 0;
 
-  const ids = getRoomEntityIds(room);
-  let assisted = 0;
-
-  const ASSIST_COOLDOWN_MS = 4000;
+  // --- Gate-for-help ("trains") ---
+  // Some NPCs can "gate" to call allies from a much larger radius.
+  // This is *event-driven* (piggybacks on tryAssist calls) to keep it simple.
+  const gateEnabled = envBool("PW_GATE_FOR_HELP_ENABLED", true);
+  const gateTag = String(process.env.PW_GATE_FOR_HELP_TAG ?? "gater");
+  const gateCastMs = envInt("PW_GATE_FOR_HELP_CAST_MS", 9000);
+  const gateCooldownMs = envInt("PW_GATE_FOR_HELP_COOLDOWN_MS", 20000);
+  const gateHpPct = envFloat("PW_GATE_FOR_HELP_HP_PCT", 0.5);
+  const gateRadiusTiles = envInt("PW_GATE_FOR_HELP_RADIUS_TILES", 6);
+  const gateSeedThreatMult = envFloat("PW_GATE_FOR_HELP_SEED_MULT", 2);
+  const gateInterruptHpPct = envFloat("PW_GATE_FOR_HELP_INTERRUPT_HP_PCT", 0.12);
+  const gateInterruptFlat = envInt("PW_GATE_FOR_HELP_INTERRUPT_FLAT", 0);
 
   const allyThreat: any = (allySt as any).threat;
   const assistTarget = getAssistTargetForAlly(allyThreat, now);
-  if (!assistTarget) return 0;
 
-  if (assistTarget !== attackerEntityId) return 0;
+  const ASSIST_COOLDOWN_MS = envInt("PW_ASSIST_COOLDOWN_MS", 4000);
+  let radiusTiles = envInt("PW_ASSIST_RADIUS_TILES", 2);
+  const enableCallsLine = envBool("PW_ASSIST_CALLS_LINE", true);
 
-  for (const id of ids) {
+  // Resolve ally proto/tags for gate logic.
+  const allyProto = getNpcPrototype(allySt.templateId) ?? getNpcPrototype(allySt.protoId);
+  const allyTags = (allyProto?.tags ?? (allySt as any).tags ?? (allyEnt as any).tags ?? []) as any[];
+  const isTrainingDummy = Array.isArray(allyTags) && (allyTags.includes("training_dummy") || allyTags.includes("dummy"));
+
+  // Gate state is stored on the ally entity to avoid schema churn.
+  const lastGateAt: number | undefined = (allyEnt as any)?._pwLastGateForHelpAt;
+  let gateEndsAt: number | undefined = (allyEnt as any)?._pwGateForHelpEndsAt;
+  const gateDid: boolean | undefined = (allyEnt as any)?._pwGateForHelpDid;
+
+  const hp = typeof (allyEnt as any)?.hp === "number" ? (allyEnt as any).hp : undefined;
+  const maxHp = typeof (allyEnt as any)?.maxHp === "number" ? (allyEnt as any).maxHp : undefined;
+  const hpPctNow = hp != null && maxHp != null && maxHp > 0 ? hp / maxHp : 1;
+
+  const hasGateTag =
+    gateEnabled &&
+    Array.isArray(allyTags) &&
+    (allyTags.includes(gateTag) || allyTags.includes("gater") || allyTags.includes("gate_for_help") || allyTags.includes("calls_for_help_gate"));
+  const canStartGate =
+    gateEnabled &&
+    hasGateTag &&
+    !!assistTarget &&
+    assistTarget === attackerEntityId &&
+    !isTrainingDummy &&
+    hpPctNow <= gateHpPct &&
+    (!lastGateAt || now - lastGateAt >= gateCooldownMs) &&
+    (!gateEndsAt || (gateDid && now - (lastGateAt ?? 0) >= gateCooldownMs));
+
+  // If a gate is in progress, we don't do normal small-radius assist.
+  // Instead we wait for the cast to complete then do a big-radius assist burst.
+  if (gateEnabled && hasGateTag && gateEndsAt && !gateDid) {
+
+// Hard CC interrupt: if the gater is stunned/rooted/etc during the cast, cancel immediately.
+try {
+  const ccTagsRaw = String(process.env.PW_GATE_FOR_HELP_CC_TAGS ?? "stun,root,mez,incapacitate,fear,sleep,knockdown");
+  const ccTags = ccTagsRaw.split(",").map((s) => s.trim()).filter(Boolean);
+  if (ccTags.length > 0) {
+    const active = getActiveStatusEffectsForEntity(allyEnt as any, now);
+    const hasCc = active.some((e) => Array.isArray(e.tags) && e.tags.some((t) => ccTags.includes(String(t))));
+    if (hasCc) {
+      (allyEnt as any)._pwGateForHelpEndsAt = undefined;
+      (allyEnt as any)._pwGateForHelpDid = true;
+      (allyEnt as any)._pwLastGateForHelpAt = now;
+      (allyEnt as any)._pwGateForHelpWavesRemaining = 0;
+      (allyEnt as any)._pwGateForHelpNextWaveAt = 0;
+      try {
+        const room: any = ctx.rooms.get(roomId);
+        room?.broadcast?.("chat", {
+          from: "[combat]",
+          sessionId: "system",
+          text: `${allyEnt?.name ?? "Someone"}'s gate is interrupted!`,
+          t: now,
+        });
+      } catch {
+        // ignore
+      }
+      return 0;
+    }
+  }
+} catch {
+  // ignore
+}
+
+// Pushback: taking damage during the cast delays completion (up to caps).
+const gatePushbackPerDmgMs = envInt("PW_GATE_FOR_HELP_PUSHBACK_PER_DMG_MS", 50);
+const gatePushbackMaxMs = envInt("PW_GATE_FOR_HELP_PUSHBACK_MAX_MS", 2000);
+const gatePushbackTotalMaxMs = envInt("PW_GATE_FOR_HELP_PUSHBACK_TOTAL_MAX_MS", 6000);
+    // Interrupt window: taking enough damage while gating cancels the gate.
+    const dmgIn = Math.max(0, Number(damageDealt ?? 0));
+    if (dmgIn > 0) {
+      const prevDmg = Number((allyEnt as any)._pwGateForHelpDamageTaken ?? 0);
+      const nextDmg = prevDmg + dmgIn;
+      (allyEnt as any)._pwGateForHelpDamageTaken = nextDmg;
+
+// Apply pushback based on incoming damage.
+if (gatePushbackPerDmgMs > 0 && gateEndsAt) {
+  const rawPush = Math.floor(dmgIn * gatePushbackPerDmgMs);
+  const push = Math.max(0, Math.min(gatePushbackMaxMs, rawPush));
+  const prevTotal = Number((allyEnt as any)._pwGateForHelpPushbackTotalMs ?? 0);
+  const total = Math.min(gatePushbackTotalMaxMs, prevTotal + push);
+  const applied = Math.max(0, total - prevTotal);
+  if (applied > 0) {
+    gateEndsAt = gateEndsAt + applied;
+    (allyEnt as any)._pwGateForHelpEndsAt = gateEndsAt;
+    (allyEnt as any)._pwGateForHelpPushbackTotalMs = total;
+  }
+}
+
+
+      const hpBase = typeof maxHp === "number" ? maxHp : 0;
+      const pctThreshold = Math.floor(Math.max(0, hpBase) * Math.max(0, gateInterruptHpPct));
+      const threshold = Math.max(gateInterruptFlat, pctThreshold);
+
+      if (threshold > 0 && nextDmg >= threshold) {
+        (allyEnt as any)._pwGateForHelpEndsAt = undefined;
+        (allyEnt as any)._pwGateForHelpDid = true;
+        (allyEnt as any)._pwLastGateForHelpAt = now;
+        try {
+          const room: any = ctx.rooms.get(roomId);
+          room?.broadcast?.("chat", {
+            from: "[combat]",
+            sessionId: "system",
+            text: `${allyEnt?.name ?? "Someone"}'s gate fizzles!`,
+            t: now,
+          });
+        } catch {
+          // ignore
+        }
+        return 0;
+      }
+    }
+    const gateEndsAtNow = Number((allyEnt as any)?._pwGateForHelpEndsAt ?? gateEndsAt ?? 0);
+    if (gateEndsAtNow > 0 && now >= gateEndsAtNow) {
+      // Cast complete: start or continue multi-wave assist pulses.
+      const waveIntervalMs = envInt("PW_GATE_FOR_HELP_WAVE_INTERVAL_MS", 3000);
+      const maxWaves = envInt("PW_GATE_FOR_HELP_WAVES", 3);
+      const maxEsc = envInt("PW_GATE_FOR_HELP_ESCALATION_MAX", 3);
+      const escRadiusStep = envInt("PW_GATE_FOR_HELP_ESCALATION_RADIUS_STEP", 1);
+      const escSeedMultStep = envFloat("PW_GATE_FOR_HELP_ESCALATION_SEED_MULT_STEP", 0.5);
+
+      // Escalation increases after each successful gate completion.
+      const prevEsc = Number((allyEnt as any)._pwGateForHelpEscalation ?? 0);
+      const escNow = Math.min(maxEsc, Math.max(0, prevEsc) + 1);
+      (allyEnt as any)._pwGateForHelpEscalation = escNow;
+
+      // Initialize waves if this is the first completion tick.
+      const existingWaves = Number((allyEnt as any)._pwGateForHelpWavesRemaining ?? 0);
+      if (!Number.isFinite(existingWaves) || existingWaves <= 0) {
+        const wavesTotal = Math.max(1, Math.floor(maxWaves));
+        (allyEnt as any)._pwGateForHelpWavesRemaining = wavesTotal;
+        (allyEnt as any)._pwGateForHelpNextWaveAt = now; // wave 1 fires immediately
+      }
+
+      // Gate is considered "did" once the first completion tick happens.
+      (allyEnt as any)._pwGateForHelpDid = true;
+      (allyEnt as any)._pwLastGateForHelpAt = now;
+
+      const nextWaveAt = Number((allyEnt as any)._pwGateForHelpNextWaveAt ?? now);
+      let wavesRemaining = Number((allyEnt as any)._pwGateForHelpWavesRemaining ?? 0);
+
+      if (wavesRemaining > 0 && now >= nextWaveAt) {
+        const waveIndex = Math.max(0, (Math.max(1, Math.floor(maxWaves)) - wavesRemaining));
+        const isFirstWave = waveIndex === 0;
+
+        try {
+          const room: any = ctx.rooms.get(roomId);
+          room?.broadcast?.("chat", {
+            from: "[combat]",
+            sessionId: "system",
+            text: isFirstWave
+              ? `${allyEnt?.name ?? "Someone"} gates for help!`
+              : `${allyEnt?.name ?? "Someone"} tears the rift wider!`,
+            t: now,
+          });
+        } catch {
+          // ignore
+        }
+
+        // Compute this wave's radius + seed with escalation.
+        const effectiveRadius = Math.max(0, Math.floor(gateRadiusTiles + escNow * escRadiusStep));
+        const effectiveSeedMult = Math.max(1, gateSeedThreatMult + escNow * escSeedMultStep);
+        const boostedSeed = Math.max(1, Math.round(seedThreat * effectiveSeedMult));
+
+        const gateTarget = ((allyEnt as any)._pwGateForHelpTargetId ?? attackerEntityId) as string;
+
+        // Consume a wave and schedule the next one.
+        wavesRemaining = Math.max(0, wavesRemaining - 1);
+        (allyEnt as any)._pwGateForHelpWavesRemaining = wavesRemaining;
+        (allyEnt as any)._pwGateForHelpNextWaveAt = now + waveIntervalMs;
+
+        const maxAssists = envInt("PW_GATE_FOR_HELP_MAX_ASSISTS_PER_WAVE", 3);
+        const pulledArr = ((allyEnt as any)._pwGateForHelpPulledIds ?? []) as string[];
+        const exclude = new Set<string>(pulledArr);
+        return doAssistScan(
+          ctx,
+          roomId,
+          allyNpcEntityId,
+          gateTarget,
+          now,
+          boostedSeed,
+          effectiveRadius,
+          ASSIST_COOLDOWN_MS,
+          enableCallsLine,
+          allyEnt,
+          maxAssists,
+          exclude,
+          (id) => {
+            if (!exclude.has(id)) { exclude.add(id); pulledArr.push(id); }
+            (allyEnt as any)._pwGateForHelpPulledIds = pulledArr;
+          },
+        );
+      }
+
+      return 0;
+    }
+    return 0;
+  }  // If a completed gate has remaining waves scheduled, process them here (event-driven).
+  const wavesRemainingPost = Number((allyEnt as any)._pwGateForHelpWavesRemaining ?? 0);
+  const nextWaveAtPost = Number((allyEnt as any)._pwGateForHelpNextWaveAt ?? 0);
+  if (gateEnabled && hasGateTag && gateDid && wavesRemainingPost > 0 && now >= nextWaveAtPost) {
+    const waveIntervalMs = envInt("PW_GATE_FOR_HELP_WAVE_INTERVAL_MS", 3000);
+    const maxWaves = envInt("PW_GATE_FOR_HELP_WAVES", 3);
+    const maxEsc = envInt("PW_GATE_FOR_HELP_ESCALATION_MAX", 3);
+    const escRadiusStep = envInt("PW_GATE_FOR_HELP_ESCALATION_RADIUS_STEP", 1);
+    const escSeedMultStep = envFloat("PW_GATE_FOR_HELP_ESCALATION_SEED_MULT_STEP", 0.5);
+
+    // Optional post-cast disruption: taking enough damage collapses the rift and stops future waves.
+    const dmgInPost = Math.max(0, Number(damageDealt ?? 0));
+    if (dmgInPost > 0) {
+      const prevPost = Number((allyEnt as any)._pwGateForHelpPostDamageTaken ?? 0);
+      const nextPost = prevPost + dmgInPost;
+      (allyEnt as any)._pwGateForHelpPostDamageTaken = nextPost;
+
+      const hpBase = typeof maxHp === "number" ? maxHp : 0;
+      const pctThreshold = Math.floor(Math.max(0, hpBase) * Math.max(0, gateInterruptHpPct));
+      const threshold = Math.max(gateInterruptFlat, pctThreshold);
+
+      if (threshold > 0 && nextPost >= threshold) {
+        (allyEnt as any)._pwGateForHelpWavesRemaining = 0;
+        (allyEnt as any)._pwGateForHelpNextWaveAt = 0;
+        try {
+          const room: any = ctx.rooms.get(roomId);
+          room?.broadcast?.("chat", {
+            from: "[combat]",
+            sessionId: "system",
+            text: `${allyEnt?.name ?? "Someone"}'s rift collapses!`,
+            t: now,
+          });
+        } catch {
+          // ignore
+        }
+        return 0;
+      }
+    }
+
+    const escNow = Math.min(maxEsc, Math.max(0, Number((allyEnt as any)._pwGateForHelpEscalation ?? 0)));
+    const wavesTotal = Math.max(1, Math.floor(maxWaves));
+    const waveIndex = Math.max(0, wavesTotal - wavesRemainingPost);
+    const isFirstWave = waveIndex === 0;
+
+    try {
+      const room: any = ctx.rooms.get(roomId);
+      room?.broadcast?.("chat", {
+        from: "[combat]",
+        sessionId: "system",
+        text: isFirstWave
+          ? `${allyEnt?.name ?? "Someone"} gates for help!`
+          : `${allyEnt?.name ?? "Someone"} tears the rift wider!`,
+        t: now,
+      });
+    } catch {
+      // ignore
+    }
+
+    const effectiveRadius = Math.max(0, Math.floor(gateRadiusTiles + escNow * escRadiusStep));
+    const effectiveSeedMult = Math.max(1, gateSeedThreatMult + escNow * escSeedMultStep);
+    const boostedSeed = Math.max(1, Math.round(seedThreat * effectiveSeedMult));
+    const gateTarget = ((allyEnt as any)._pwGateForHelpTargetId ?? attackerEntityId) as string;
+
+    (allyEnt as any)._pwGateForHelpWavesRemaining = Math.max(0, wavesRemainingPost - 1);
+    (allyEnt as any)._pwGateForHelpNextWaveAt = now + waveIntervalMs;
+
+    const maxAssists = envInt("PW_GATE_FOR_HELP_MAX_ASSISTS_PER_WAVE", 3);
+    const pulledArr = ((allyEnt as any)._pwGateForHelpPulledIds ?? []) as string[];
+const exclude = new Set<string>(pulledArr);
+return doAssistScan(
+  ctx,
+  roomId,
+  allyNpcEntityId,
+  gateTarget,
+  now,
+  boostedSeed,
+  effectiveRadius,
+  ASSIST_COOLDOWN_MS,
+  enableCallsLine,
+  allyEnt,
+  maxAssists,
+  exclude,
+  (id) => {
+    if (!exclude.has(id)) { exclude.add(id); pulledArr.push(id); }
+    (allyEnt as any)._pwGateForHelpPulledIds = pulledArr;
+  },
+);
+  }
+
+  // Start a new gate cast if eligible.
+  if (canStartGate) {
+    (allyEnt as any)._pwGateForHelpEndsAt = now + gateCastMs;
+    (allyEnt as any)._pwGateForHelpDid = false;
+    (allyEnt as any)._pwLastGateForHelpAt = now;
+    (allyEnt as any)._pwGateForHelpTargetId = attackerEntityId;
+    (allyEnt as any)._pwGateForHelpPulledIds = [];
+    (allyEnt as any)._pwGateForHelpDamageTaken = 0;
+    (allyEnt as any)._pwGateForHelpPushbackTotalMs = 0;
+    try {
+      const room: any = ctx.rooms.get(roomId);
+      room?.broadcast?.("chat", {
+        from: "[combat]",
+        sessionId: "system",
+        text: `${allyEnt?.name ?? "Someone"} begins to gate for help...`,
+        t: now,
+      });
+    } catch {
+      // ignore
+    }
+    return 0;
+  }
+
+  // Default assist: small radius.
+  if (!assistTarget || assistTarget !== attackerEntityId) return 0;
+  return doAssistScan(ctx, roomId, allyNpcEntityId, attackerEntityId, now, seedThreat, radiusTiles, ASSIST_COOLDOWN_MS, enableCallsLine, allyEnt, -1, undefined, undefined);
+}
+
+
+function doAssistScan(
+  ctx: SimpleCombatContext,
+  roomId: string,
+  allyNpcEntityId: string,
+  attackerEntityId: string,
+  now: number,
+  seedThreat: number,
+  radiusTiles: number,
+  ASSIST_COOLDOWN_MS: number,
+  enableCallsLine: boolean,
+  allyEnt: any,
+  maxAssists: number,
+  excludeNpcEntityIds?: Set<string>,
+  onAssisted?: (npcEntityId: string) => void,
+): number {
+  // Gather candidate entity ids across nearby rooms (includes same room).
+  const roomIds = getNearbyRoomIds(roomId, radiusTiles);
+  const candidateNpcIds: string[] = [];
+
+  for (const rid of roomIds) {
+    const room: any = ctx.rooms.get(rid);
+    if (!room) continue;
+    for (const id of getRoomEntityIds(room)) {
+      if (id && typeof id === "string") candidateNpcIds.push(id);
+    }
+  }
+
+  candidateNpcIds.sort();
+
+  let assisted = 0;
+
+  for (const id of candidateNpcIds) {
     if (!id || id === allyNpcEntityId) continue;
+    if (excludeNpcEntityIds && excludeNpcEntityIds.has(id)) continue;
 
     const ent: any = ctx.entities.get(id);
     if (!ent || ent.type !== "npc") continue;
@@ -1017,29 +1449,50 @@ export function tryAssistNearbyNpcs(
     const proto = getNpcPrototype(st.templateId) ?? getNpcPrototype(st.protoId);
     const tags = (proto?.tags ?? (st as any).tags ?? (ent as any).tags ?? []) as any[];
     if (!tags || !Array.isArray(tags)) continue;
+
     // Never assist with training dummies.
     if (tags.includes("training_dummy") || tags.includes("dummy")) continue;
 
     // Conservative opt-in assist: only social/assist NPCs.
-    const isSocial = tags.includes("social") || tags.includes("assist") || tags.includes("calls_for_help");
+    const isSocial = tags.includes("social") || tags.includes("assist") || tags.includes("calls_for_help") || tags.includes("calls_for_help_gate");
     if (!isSocial) continue;
+
+    if (maxAssists > 0 && assisted >= maxAssists) break;
 
     // Don't assist if this NPC is service-protected (prevents tools/admin fixtures from train).
     if (isServiceProtectedNpcProto(proto)) continue;
 
     // Seed threat on assister so its brain can pick up the attacker.
-    // Use minimum 1 to ensure target selection sees it.
     (ent as any)._pwLastAssistAt = now;
     (st as any).lastAssistAt = now;
 
-    ctx.npcs.recordDamage(id, attackerEntityId, Math.max(1, seedThreat));
+    const scaledSeed = computeAssistSeedThreat(seedThreat, proto, ent);
+    ctx.npcs.recordDamage(id, attackerEntityId, scaledSeed);
     assisted++;
+    try { onAssisted?.(id); } catch { /* ignore */ }
+  }
+
+  // Flavor: announce the call for help once per assist trigger.
+  if (assisted > 0 && enableCallsLine) {
+    const room: any = ctx.rooms.get(roomId);
+    const lastCallAt = (allyEnt as any)?._pwLastCallsForHelpAt as number | undefined;
+    if (!lastCallAt || now - lastCallAt >= ASSIST_COOLDOWN_MS) {
+      try {
+        if (allyEnt) (allyEnt as any)._pwLastCallsForHelpAt = now;
+        room?.broadcast?.("chat", {
+          from: "[combat]",
+          sessionId: "system",
+          text: `${(allyEnt?.name ?? "Someone")} calls for help!`,
+          t: now,
+        });
+      } catch {
+        // ignore
+      }
+    }
   }
 
   return assisted;
 }
-
-
 export function announceSpawnToRoom(
   ctx: SimpleCombatContext,
   roomId: string,

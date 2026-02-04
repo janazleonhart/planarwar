@@ -191,7 +191,7 @@
       ],
       "kind": "service",
       "notes": [
-        "Builds a one-line MUD description for a listing like '#12 Hematite Iron Ore [common] x20 – 3g each (total 60g) by Testing [active]'.",
+        "Builds a one-line MUD description for a listing like '#12 Hematite Iron Ore [common] x20 \u2013 3g each (total 60g) by Testing [active]'.",
         "Looks up item definitions via ctx.items?.get to resolve item name and rarity."
       ],
       "path": "worldcore/auction/AuctionFormat.ts"
@@ -451,7 +451,7 @@
       ],
       "kind": "service",
       "notes": [
-        "Postgres-backed character service using the characters table and CharacterRow → CharacterState mapping.",
+        "Postgres-backed character service using the characters table and CharacterRow \u2192 CharacterState mapping.",
         "Supports partial JSONB patching, XP/level gains with per-class attribute growth, and spell/equipment updates."
       ],
       "path": "worldcore/characters/PostgresCharacterService.ts"
@@ -609,8 +609,8 @@
       "notes": [
         "Centralized gates for action resource costs + cooldowns (spells/songs/abilities).",
         "Guarantees: cooldowns do not start and resources are not consumed if the action fails.",
-        "Order: check cooldown remaining → spend resource → start cooldown.",
-        "Also supports post-success power builders (e.g., Rune Strike → Runic Power, Jab → Chi)."
+        "Order: check cooldown remaining \u2192 spend resource \u2192 start cooldown.",
+        "Also supports post-success power builders (e.g., Rune Strike \u2192 Runic Power, Jab \u2192 Chi)."
       ],
       "path": "worldcore/combat/CastingGates.ts"
     },
@@ -2189,7 +2189,7 @@
       ],
       "path": "worldcore/infra/schema/056_seed_crusader_class_kit_L1_10.sql",
       "provides": [
-        "Crusader L1–10 spell kit (spells + unlocks)"
+        "Crusader L1\u201310 spell kit (spells + unlocks)"
       ],
       "service": "worldcore"
     },
@@ -2208,7 +2208,7 @@
       ],
       "path": "worldcore/infra/schema/057_seed_hunter_spellkit_L1_10.sql",
       "provides": [
-        "Hunter L1–10 spell kit (spells + unlocks)"
+        "Hunter L1\u201310 spell kit (spells + unlocks)"
       ]
     },
     "infra.schema.058_cleanup_hunter_spellkit_L1_10": {
@@ -2226,7 +2226,7 @@
       ],
       "path": "worldcore/infra/schema/058_cleanup_hunter_spellkit_L1_10.sql",
       "provides": [
-        "Hunter L1–10 spell kit cleanup (canonical ids + no duplicates)"
+        "Hunter L1\u201310 spell kit cleanup (canonical ids + no duplicates)"
       ]
     },
     "infra.schema.059_seed_illusionist_spellkit_L1_10": {
@@ -2245,7 +2245,7 @@
       ],
       "path": "worldcore/infra/schema/059_seed_illusionist_spellkit_L1_10.sql",
       "provides": [
-        "Illusionist L1–10 spell kit (spells + unlocks)"
+        "Illusionist L1\u201310 spell kit (spells + unlocks)"
       ]
     },
     "infra.schema.059_seed_runic_knight_spellkit_L1_10": {
@@ -2263,7 +2263,7 @@
       ],
       "path": "worldcore/infra/schema/059_seed_runic_knight_spellkit_L1_10.sql",
       "provides": [
-        "Runic Knight L1–10 spell kit (spells + unlocks)"
+        "Runic Knight L1\u201310 spell kit (spells + unlocks)"
       ]
     },
     "infra.schema.060_seed_ascetic_spellkit_L1_10": {
@@ -2282,7 +2282,7 @@
       ],
       "path": "worldcore/infra/schema/060_seed_ascetic_spellkit_L1_10.sql",
       "provides": [
-        "Ascetic L1–10 spell kit (spells + unlocks)",
+        "Ascetic L1\u201310 spell kit (spells + unlocks)",
         "Introduces Chi (primary resource) for Ascetic"
       ]
     },
@@ -2302,7 +2302,7 @@
       ],
       "path": "worldcore/infra/schema/061_seed_prophet_spellkit_L1_10.sql",
       "provides": [
-        "Prophet L1–10 spell kit (spells + unlocks)",
+        "Prophet L1\u201310 spell kit (spells + unlocks)",
         "Wave1 shaman-ish DOT/shield/buff/heal baseline"
       ]
     },
@@ -2322,7 +2322,7 @@
       ],
       "path": "worldcore/infra/schema/062_seed_hierophant_spellkit_L1_10.sql",
       "provides": [
-        "Hierophant L1–10 spell kit (spells + unlocks)",
+        "Hierophant L1\u201310 spell kit (spells + unlocks)",
         "Wave1 nature HOT/DOT/buff baseline"
       ]
     },
@@ -2343,7 +2343,7 @@
       ],
       "path": "worldcore/infra/schema/063_seed_revenant_spellkit_L1_10.sql",
       "provides": [
-        "Revenant L1–10 spell kit (spells + unlocks)",
+        "Revenant L1\u201310 spell kit (spells + unlocks)",
         "Wave1 shadow knight DOT/shield/debuff baseline"
       ]
     },
@@ -2533,7 +2533,7 @@
       "kind": "service",
       "lifecycle": "singleton",
       "notes": [
-        "Seeds Reference Class Kits L1–10 (MVP) used by deterministic progression tests."
+        "Seeds Reference Class Kits L1\u201310 (MVP) used by deterministic progression tests."
       ],
       "owns": [],
       "path": "worldcore/infra/schema/050_seed_reference_class_kits_L1_10.sql",
@@ -2559,7 +2559,7 @@
       "kind": "service",
       "lifecycle": "singleton",
       "notes": [
-        "Seeds spells catalog entries referenced by the L1–10 class kits."
+        "Seeds spells catalog entries referenced by the L1\u201310 class kits."
       ],
       "owns": [],
       "path": "worldcore/infra/schema/050_seed_spells_reference_kits_l1_10.sql",
@@ -2572,7 +2572,7 @@
       "kind": "service",
       "lifecycle": "singleton",
       "notes": [
-        "Seeds spell_unlocks for L1–10 reference kits; enables deterministic autogrant tests."
+        "Seeds spell_unlocks for L1\u201310 reference kits; enables deterministic autogrant tests."
       ],
       "owns": [],
       "path": "worldcore/infra/schema/051_seed_spell_unlocks_reference_kits_l1_10.sql",
@@ -2635,7 +2635,7 @@
       "kind": "service",
       "lifecycle": "singleton",
       "notes": [
-        "Seeds a minimal common L1–10 spell kit (damage + dot + debuff + shield + hot) for classes that do not yet have bespoke kits.",
+        "Seeds a minimal common L1\u201310 spell kit (damage + dot + debuff + shield + hot) for classes that do not yet have bespoke kits.",
         "Designed to keep every class playable while per-class kits are authored later."
       ],
       "owns": [],
@@ -4275,7 +4275,7 @@
         "Refreshes personal nodes, then lists nearby entities within radius with short handles like rat.1.",
         "filter/group/sort flags",
         "--limit / --max",
-        "safe caps + “UI-friendly output shaping"
+        "safe caps + \u201cUI-friendly output shaping"
       ],
       "path": "worldcore/mud/commands/world/nearbyCommand.ts"
     },
@@ -4625,7 +4625,7 @@
         "Determines which NPCs are 'protected' (civilian, vendor, questgiver, protected_town, etc.) and records crimes against them on the attacker.",
         "Sets recentCrimeUntil and recentCrimeSeverity (minor|severe) on characters to drive guard response.",
         "law_exempt > law_protected > legacy tags precedence",
-        "guards/resources are never “protected” for crime purposes"
+        "guards/resources are never \u201cprotected\u201d for crime purposes"
       ],
       "path": "worldcore/npc/NpcCrime.ts"
     },
@@ -4645,7 +4645,7 @@
       ],
       "kind": "service",
       "notes": [
-        "Owns runtime NPC state, per-room maps, threat tables, and bridges EntityManager ↔ AI brain ↔ sessions/chat.",
+        "Owns runtime NPC state, per-room maps, threat tables, and bridges EntityManager \u2194 AI brain \u2194 sessions/chat.",
         "Spawns/Despawns NPCs, applies damage, records threat, coordinates guard/pack help, coward fleeing, gating, and drives AI decisions each tick.",
         "On lethal damage and before despawn, clears combat status effects so corpses don't keep ticking DOTs or carry modifiers."
       ],
@@ -5171,7 +5171,7 @@
       "kind": "service",
       "notes": [
         "Manages Mana/Fury/Runic Power/Chi pools stored under char.progression.powerResources.",
-        "Provides class→primary resource mapping and helpers to spend/gain power (including post-success builders)."
+        "Provides class\u2192primary resource mapping and helpers to spend/gain power (including post-success builders)."
       ],
       "path": "worldcore/resources/PowerResources.ts"
     },
@@ -5260,7 +5260,7 @@
     "sim.brainActions": {
       "kind": "types",
       "notes": [
-        "Types for Mother-Brain style planning outputs (audit → plan actions → apply).",
+        "Types for Mother-Brain style planning outputs (audit \u2192 plan actions \u2192 apply).",
         "Includes PlaceSpawnAction used by SettlementPlanner + simBrain apply."
       ],
       "path": "worldcore/sim/BrainActions.ts"
@@ -5545,7 +5545,7 @@
       "kind": "module",
       "lifecycle": "static",
       "notes": [
-        "Reference class kits L1–10 (MVP) used for deterministic starter spell/ability unlock expectations and tests.",
+        "Reference class kits L1\u201310 (MVP) used for deterministic starter spell/ability unlock expectations and tests.",
         "Seeded into DB via 050/051 migrations and used by SpellLearning/AbilityLearning contract tests."
       ],
       "owns": [],
@@ -5741,7 +5741,7 @@
       "kind": "utility",
       "notes": [
         "Computes difficulty tier by radial distance from world center.",
-        "Uses max world radius ≈ 2048 units for current prime shard."
+        "Uses max world radius \u2248 2048 units for current prime shard."
       ],
       "path": "worldcore/terrain/regions/RegionDifficulty.ts",
       "provides": [
@@ -6234,12 +6234,12 @@
       ],
       "kind": "test.contract",
       "notes": [
-        "Contract: ensures the repo always contains an idempotent seed granting a minimal L1–10 kit to classes without bespoke kits yet.",
+        "Contract: ensures the repo always contains an idempotent seed granting a minimal L1\u201310 kit to classes without bespoke kits yet.",
         "Regex/text assertions only (intentionally not DB-coupled)."
       ],
       "path": "worldcore/test/contract_commonClassKits_L1_10.test.ts",
       "provides": [
-        "Guards existence of common L1–10 kit seed file",
+        "Guards existence of common L1\u201310 kit seed file",
         "Guards that missing classes remain covered by basic unlocks"
       ]
     },
@@ -6486,6 +6486,168 @@
       "provides": [],
       "service": "test.contract"
     },
+    "test.contractNpcCombatAssistRadiusPolicy": {
+      "class": "(test) contract_npcCombat_assist_radiusPolicy",
+      "ctorArgs": [],
+      "dependsOn": [
+        "worldcore/combat/NpcCombat.ts",
+        "worldcore/npc/NpcThreat.ts"
+      ],
+      "kind": "test",
+      "lifecycle": "active",
+      "owns": [
+        "test:contract_npcCombat_assist_radiusPolicy"
+      ],
+      "path": "worldcore/test/contract_npcCombat_assist_radiusPolicy.test.ts",
+      "provides": [
+        "contract:npcCombatAssistRadiusPolicy"
+      ]
+    },
+    "test.contractNpcCombatAssistSameRoom": {
+      "class": "(test) contract_npcCombat_assist_sameRoom",
+      "ctorArgs": [],
+      "dependsOn": [
+        "worldcore/combat/NpcCombat.ts",
+        "worldcore/npc/NpcThreat.ts"
+      ],
+      "kind": "test",
+      "lifecycle": "active",
+      "owns": [
+        "test:contract_npcCombat_assist_sameRoom"
+      ],
+      "path": "worldcore/test/contract_npcCombat_assist_sameRoom.test.ts",
+      "provides": [
+        "contract:npcCombatAssistSameRoom"
+      ]
+    },
+    "test.contractNpcCombatAssistStrengthScaling": {
+      "class": "(test) contract_npcCombat_assist_strengthScaling",
+      "ctorArgs": [],
+      "dependsOn": [
+        "worldcore/combat/NpcCombat.ts",
+        "worldcore/npc/NpcThreat.ts"
+      ],
+      "kind": "test",
+      "lifecycle": "active",
+      "owns": [
+        "test:contract_npcCombat_assist_strengthScaling"
+      ],
+      "path": "worldcore/test/contract_npcCombat_assist_strengthScaling.test.ts",
+      "provides": [
+        "contract:npcCombatAssistStrengthScaling"
+      ]
+    },
+    "test.contractNpcCombatAssistThrottle": {
+      "class": "(test) contract_npcCombat_assist_throttle",
+      "ctorArgs": [],
+      "dependsOn": [
+        "worldcore/combat/NpcCombat.ts",
+        "worldcore/npc/NpcThreat.ts"
+      ],
+      "kind": "test",
+      "lifecycle": "active",
+      "owns": [
+        "test:contract_npcCombat_assist_throttle"
+      ],
+      "path": "worldcore/test/contract_npcCombat_assist_throttle.test.ts",
+      "provides": [
+        "contract:npcCombatAssistThrottle"
+      ]
+    },
+    "test.contractNpcCombatGateForHelp": {
+      "class": "(test) contract_npcCombat_gateForHelp",
+      "ctorArgs": [],
+      "dependsOn": [
+        "worldcore/combat/NpcCombat.ts"
+      ],
+      "kind": "test",
+      "lifecycle": "active",
+      "owns": [
+        "test:contract_npcCombat_gateForHelp"
+      ],
+      "path": "worldcore/test/contract_npcCombat_gateForHelp.test.ts",
+      "provides": [
+        "contract:npcCombatGateForHelp"
+      ],
+      "notes": [
+        "Contract: gater NPC begins a long cast then pulls social allies from an expanded assist radius (train behavior).",
+        "Uses npc tags (eg: 'gater') and env knobs PW_GATE_FOR_HELP_* to tune cast time, radius, cooldown, and trigger HP% threshold."
+      ]
+    },
+    "test.contractNpcCombatCounterattackBlockMitigation": {
+      "kind": "test",
+      "lifecycle": "test",
+      "class": "(test)",
+      "path": "worldcore/test/contract_npcCombat_counterattack_blockMitigation.test.ts",
+      "dependsOn": [],
+      "provides": [],
+      "owns": [],
+      "notes": [
+        "Contract: NPC counter-attack treats block as partial mitigation (reduced damage), not a full avoid, and can be tested deterministically via injected RNG."
+      ]
+    },
+    "test.contractNpcCombatNpcRiposteRealDamage": {
+      "class": "(test) contract_npcCombat_npcRiposte_realDamage",
+      "ctorArgs": [],
+      "dependsOn": [
+        "worldcore/combat/NpcCombat.ts",
+        "worldcore/combat/CombatEngine.ts",
+        "worldcore/combat/PhysicalHitResolver.ts"
+      ],
+      "kind": "test",
+      "lifecycle": "active",
+      "owns": [
+        "test:contract_npcCombat_npcRiposte_realDamage"
+      ],
+      "path": "worldcore/test/contract_npcCombat_npcRiposte_realDamage.test.ts",
+      "provides": [
+        "contract:npcCombatNpcRiposteRealDamage"
+      ]
+    },
+    "test.contractNpcCombatPlayerRiposteOnParry": {
+      "kind": "test",
+      "lifecycle": "test",
+      "class": "(test)",
+      "path": "worldcore/test/contract_npcCombat_playerRiposte_onParry.test.ts",
+      "dependsOn": [],
+      "provides": [],
+      "owns": [],
+      "notes": [
+        "Contract: When the player parries an NPC counter-attack, NpcCombat performs a single immediate player riposte counter-swing (non-lethal in v1.1.x)."
+      ]
+    },
+    "test.contractNpcThreatDecayAssist": {
+      "class": "(test) contract_npcThreat_decay_assist",
+      "ctorArgs": [],
+      "dependsOn": [
+        "worldcore/npc/NpcThreat.ts"
+      ],
+      "kind": "test",
+      "lifecycle": "active",
+      "owns": [
+        "test:contract_npcThreat_decay_assist"
+      ],
+      "path": "worldcore/test/contract_npcThreat_decay_assist.test.ts",
+      "provides": [
+        "contract:npcThreatDecayAssist"
+      ]
+    },
+    "test.contractNpcThreatDecayIntegration": {
+      "class": "(test) contract_npcThreat_decay_integration",
+      "ctorArgs": [],
+      "dependsOn": [
+        "worldcore/npc/NpcThreat.ts"
+      ],
+      "kind": "test",
+      "lifecycle": "active",
+      "owns": [
+        "test:contract_npcThreat_decay_integration"
+      ],
+      "path": "worldcore/test/contract_npcThreat_decay_integration.test.ts",
+      "provides": [
+        "contract:npcThreatDecayIntegration"
+      ]
+    },
     "test.contractNpcThreatTauntOverridesTopThreat": {
       "kind": "test",
       "notes": [
@@ -6493,6 +6655,18 @@
       ],
       "path": "worldcore/test/contract_npcThreat_tauntOverridesTopThreat.test.ts",
       "service": "npc.threat"
+    },
+    "test.contractPhysicalHitResolverBlockAndRiposteFlags": {
+      "kind": "test",
+      "lifecycle": "test",
+      "class": "(test)",
+      "path": "worldcore/test/contract_physicalHitResolver_block_and_riposteFlags.test.ts",
+      "dependsOn": [],
+      "provides": [],
+      "owns": [],
+      "notes": [
+        "Contract: PhysicalHitResolver surfaces blockMultiplier (<1) on block outcome and riposte flag on parry when allowRiposte is enabled."
+      ]
     },
     "test.contractPhysicalHitResolverCritMultiRiposte": {
       "class": "(test)",
@@ -6520,7 +6694,7 @@
       "kind": "test",
       "lifecycle": "test",
       "notes": [
-        "Contract: weapon skill + level influence hit outcomes; low-level familiarity floor allows L1 to hit L1–L3 with untrained weapons; high-level untrained misses more."
+        "Contract: weapon skill + level influence hit outcomes; low-level familiarity floor allows L1 to hit L1\u2013L3 with untrained weapons; high-level untrained misses more."
       ],
       "owns": [],
       "path": "worldcore/test/contract_physicalHitResolver_weaponSkillScaling.test.ts",
@@ -6617,7 +6791,7 @@
       "kind": "test",
       "lifecycle": "static",
       "notes": [
-        "Contract: seed integrity — any spell_id referenced in seed spell_unlocks must exist in seeded spells."
+        "Contract: seed integrity \u2014 any spell_id referenced in seed spell_unlocks must exist in seeded spells."
       ],
       "owns": [],
       "path": "worldcore/test/contract_seedSpellUnlocksReferToSeededSpells.test.ts",
@@ -7136,7 +7310,7 @@
       "kind": "test",
       "lifecycle": "test",
       "notes": [
-        "Contract: NPC debuffs + DOT vertical slice works end-to-end (cast → status apply → tick → damage).",
+        "Contract: NPC debuffs + DOT vertical slice works end-to-end (cast \u2192 status apply \u2192 tick \u2192 damage).",
         "Guards the DOT tick + defender snapshot seam so damageTakenPct modifiers influence both direct hits and DOT ticks."
       ],
       "owns": [],
@@ -7151,7 +7325,7 @@
       "kind": "test",
       "lifecycle": "static",
       "notes": [
-        "Contract: reference kits L1–10 are consistent and autogrant works in test mode."
+        "Contract: reference kits L1\u201310 are consistent and autogrant works in test mode."
       ],
       "owns": [],
       "path": "worldcore/test/contract_referenceKits_L1_10.test.ts",
@@ -7230,7 +7404,7 @@
       "kind": "test",
       "lifecycle": "static",
       "notes": [
-        "Contract: templar L1–10 reference kit is playable in WORLDCORE_TEST mode; spells exist in SPELLS and have non-placeholder flavor; autogrant by level 10."
+        "Contract: templar L1\u201310 reference kit is playable in WORLDCORE_TEST mode; spells exist in SPELLS and have non-placeholder flavor; autogrant by level 10."
       ],
       "owns": [],
       "path": "worldcore/test/contract_templar_L1_10_kit_spellFlavor.test.ts",
@@ -7516,124 +7690,87 @@
       "path": "worldcore/test/statusEffects.contract.test.ts",
       "provides": []
     },
-    "test.contractPhysicalHitResolverBlockAndRiposteFlags": {
+    "test.contractNpcCombatGateForHelpInterrupt": {
+      "class": "(test) contract_npcCombat_gateForHelp_interrupt",
+      "ctorArgs": [],
+      "dependsOn": [
+        "worldcore/combat/NpcCombat.ts"
+      ],
       "kind": "test",
-      "lifecycle": "test",
-      "class": "(test)",
-      "path": "worldcore/test/contract_physicalHitResolver_block_and_riposteFlags.test.ts",
-      "dependsOn": [],
-      "provides": [],
-      "owns": [],
+      "lifecycle": "active",
+      "owns": [
+        "test:contract_npcCombat_gateForHelp_interrupt"
+      ],
+      "path": "worldcore/test/contract_npcCombat_gateForHelp_interrupt.test.ts",
+      "provides": [
+        "contract:npcCombatGateForHelpInterrupt"
+      ]
+    },
+    "test.contractNpcCombatGateForHelpMultiWave": {
+      "class": "(test) contract_npcCombat_gateForHelp_multiWave",
+      "ctorArgs": [],
+      "dependsOn": [
+        "worldcore/combat/NpcCombat.ts"
+      ],
+      "kind": "test",
+      "lifecycle": "active",
+      "owns": [
+        "test:contract_npcCombat_gateForHelp_multiWave"
+      ],
+      "path": "worldcore/test/contract_npcCombat_gateForHelp_multiWave.test.ts",
+      "provides": [
+        "contract:npcCombatGateForHelpMultiWave"
+      ],
       "notes": [
-        "Contract: PhysicalHitResolver surfaces blockMultiplier (<1) on block outcome and riposte flag on parry when allowRiposte is enabled."
+        "Contract: gate-for-help can fire multiple pulses (waves), each capped, pulling additional social allies deterministically."
       ]
     },
-    "test.contractNpcCombatCounterattackBlockMitigation": {
+    "test.contractNpcCombatGateForHelpEscalation": {
+      "class": "(test) contract_npcCombat_gateForHelp_escalation",
+      "ctorArgs": [],
+      "dependsOn": [
+        "worldcore/combat/NpcCombat.ts"
+      ],
       "kind": "test",
-      "lifecycle": "test",
-      "class": "(test)",
-      "path": "worldcore/test/contract_npcCombat_counterattack_blockMitigation.test.ts",
-      "dependsOn": [],
-      "provides": [],
-      "owns": [],
+      "lifecycle": "active",
+      "owns": [
+        "test:contract_npcCombat_gateForHelp_escalation"
+      ],
+      "path": "worldcore/test/contract_npcCombat_gateForHelp_escalation.test.ts",
+      "provides": [
+        "contract:npcCombatGateForHelpEscalation"
+      ],
       "notes": [
-        "Contract: NPC counter-attack treats block as partial mitigation (reduced damage), not a full avoid, and can be tested deterministically via injected RNG."
+        "Contract: repeated successful gates escalate assist radius (train severity grows if players ignore gaters)."
       ]
     },
-    "test.contractNpcCombatPlayerRiposteOnParry": {
-      "kind": "test",
-      "lifecycle": "test",
-      "class": "(test)",
-      "path": "worldcore/test/contract_npcCombat_playerRiposte_onParry.test.ts",
-      "dependsOn": [],
-      "provides": [],
-      "owns": [],
+    "test.contractNpcCombatGateForHelpPushbackInterrupt": {
+      "dependsOn": [
+        "combat.npcCombat"
+      ],
+      "kind": "test.contract",
       "notes": [
-        "Contract: When the player parries an NPC counter-attack, NpcCombat performs a single immediate player riposte counter-swing (non-lethal in v1.1.x)."
+        "Contract: gate-for-help cast can be delayed by pushback (damage slows casting without canceling).",
+        "Guards deterministic timing: gate completion must not fire early when pushback is applied."
+      ],
+      "path": "worldcore/test/contract_npcCombat_gateForHelp_pushbackInterrupt.test.ts",
+      "provides": [
+        "Guards gate pushback timing invariants"
       ]
     },
-    "test.contractNpcCombatNpcRiposteRealDamage": {
-      "class": "(test) contract_npcCombat_npcRiposte_realDamage",
-      "ctorArgs": [],
+    "test.contractNpcCombatGateForHelpCcInterrupt": {
       "dependsOn": [
-        "worldcore/combat/NpcCombat.ts",
-        "worldcore/combat/CombatEngine.ts",
-        "worldcore/combat/PhysicalHitResolver.ts"
+        "combat.npcCombat",
+        "combat.statusEffects"
       ],
-      "kind": "test",
-      "lifecycle": "active",
-      "owns": [
-        "test:contract_npcCombat_npcRiposte_realDamage"
+      "kind": "test.contract",
+      "notes": [
+        "Contract: crowd control (stun/silence/root/knockdown) interrupts gate-for-help casting immediately.",
+        "Guards that interrupted casts do not later fire assist waves."
       ],
-      "path": "worldcore/test/contract_npcCombat_npcRiposte_realDamage.test.ts",
+      "path": "worldcore/test/contract_npcCombat_gateForHelp_ccInterrupt.test.ts",
       "provides": [
-        "contract:npcCombatNpcRiposteRealDamage"
-      ]
-    },
-    "test.contractNpcThreatDecayAssist": {
-      "class": "(test) contract_npcThreat_decay_assist",
-      "ctorArgs": [],
-      "dependsOn": [
-        "worldcore/npc/NpcThreat.ts"
-      ],
-      "kind": "test",
-      "lifecycle": "active",
-      "owns": [
-        "test:contract_npcThreat_decay_assist"
-      ],
-      "path": "worldcore/test/contract_npcThreat_decay_assist.test.ts",
-      "provides": [
-        "contract:npcThreatDecayAssist"
-      ]
-    },
-    "test.contractNpcCombatAssistSameRoom": {
-      "class": "(test) contract_npcCombat_assist_sameRoom",
-      "ctorArgs": [],
-      "dependsOn": [
-        "worldcore/combat/NpcCombat.ts",
-        "worldcore/npc/NpcThreat.ts"
-      ],
-      "kind": "test",
-      "lifecycle": "active",
-      "owns": [
-        "test:contract_npcCombat_assist_sameRoom"
-      ],
-      "path": "worldcore/test/contract_npcCombat_assist_sameRoom.test.ts",
-      "provides": [
-        "contract:npcCombatAssistSameRoom"
-      ]
-    },
-    "test.contractNpcThreatDecayIntegration": {
-      "class": "(test) contract_npcThreat_decay_integration",
-      "ctorArgs": [],
-      "dependsOn": [
-        "worldcore/npc/NpcThreat.ts"
-      ],
-      "kind": "test",
-      "lifecycle": "active",
-      "owns": [
-        "test:contract_npcThreat_decay_integration"
-      ],
-      "path": "worldcore/test/contract_npcThreat_decay_integration.test.ts",
-      "provides": [
-        "contract:npcThreatDecayIntegration"
-      ]
-    },
-    "test.contractNpcCombatAssistThrottle": {
-      "class": "(test) contract_npcCombat_assist_throttle",
-      "ctorArgs": [],
-      "dependsOn": [
-        "worldcore/combat/NpcCombat.ts",
-        "worldcore/npc/NpcThreat.ts"
-      ],
-      "kind": "test",
-      "lifecycle": "active",
-      "owns": [
-        "test:contract_npcCombat_assist_throttle"
-      ],
-      "path": "worldcore/test/contract_npcCombat_assist_throttle.test.ts",
-      "provides": [
-        "contract:npcCombatAssistThrottle"
+        "Guards gate CC interruption semantics"
       ]
     },
     "test.utils": {
@@ -7883,7 +8020,7 @@
       "notes": [
         "Dev Simulation Harness CLI entrypoint.",
         "Includes Mother Brain wave planning commands (mother-wave/mother-status) for brain-owned spawn_points pipelines.",
-        "Follows audit → plan → apply pattern with safe default rollback unless --commit.",
+        "Follows audit \u2192 plan \u2192 apply pattern with safe default rollback unless --commit.",
         "Safety rails: refuses literal '...' arg; refuses --commit without explicit --bounds (unless --allowDefaultBounds).",
         "Artifacts are dev-only outputs; keep them gitignored.",
         "Town vendor wiring: by default, `simBrain era` AND `simBrain mother-wave` seed vendor anchors for town-like spawns (disable with --noTownVendors)."
@@ -8308,7 +8445,7 @@
       ],
       "kind": "utility",
       "notes": [
-        "Tracks per-region dynamic danger score and effective tier (1–5) based on base distance ring + recent activity.",
+        "Tracks per-region dynamic danger score and effective tier (1\u20135) based on base distance ring + recent activity.",
         "Applies exponential-style decay over time so regions cool down naturally.",
         "Used by cowardice, Region Peril aura, debug_region_danger, and debug_bump_region_danger."
       ],
@@ -8835,7 +8972,7 @@
       "kind": "worldgen_stage",
       "lifecycle": "stateless",
       "notes": [
-        "Stage 2.3.4 – biome assignment per cell + connected biome clusters.",
+        "Stage 2.3.4 \u2013 biome assignment per cell + connected biome clusters.",
         "Outputs biomeMap + cluster IDs + counts per biome."
       ],
       "path": "worldcore/terrain/worldgen/WGEv2Biomes.ts",
@@ -8854,7 +8991,7 @@
       "kind": "worldgen_stage",
       "lifecycle": "stateless",
       "notes": [
-        "Stage 2.3.5 – settlements, roads, and POIs.",
+        "Stage 2.3.5 \u2013 settlements, roads, and POIs.",
         "Scores candidate cells, picks settlements with spacing, builds a road graph, scatters points of interest."
       ],
       "path": "worldcore/terrain/worldgen/WGEv2Civilization.ts",
@@ -8871,7 +9008,7 @@
       "kind": "worldgen_stage",
       "lifecycle": "stateless",
       "notes": [
-        "Stage 2.3.3 – temperature, moisture, and compact climate zones.",
+        "Stage 2.3.3 \u2013 temperature, moisture, and compact climate zones.",
         "Can optionally use erosion outputs to bias humidity near rivers/lakes."
       ],
       "path": "worldcore/terrain/worldgen/WGEv2Climate.ts",
@@ -8887,7 +9024,7 @@
       "kind": "worldgen_stage",
       "lifecycle": "stateless",
       "notes": [
-        "Stage 2.3.2 – hydrology, erosion, rivers, lakes.",
+        "Stage 2.3.2 \u2013 hydrology, erosion, rivers, lakes.",
         "Outputs updated elevation, water, sediment, flow dirs, river/lake masks."
       ],
       "path": "worldcore/terrain/worldgen/WGEv2Erosion.ts",
@@ -8901,7 +9038,7 @@
       "kind": "worldgen_stage",
       "lifecycle": "stateless",
       "notes": [
-        "Stage 2.3.1 – base landforms: tectonics, continents, uplift, macro elevation.",
+        "Stage 2.3.1 \u2013 base landforms: tectonics, continents, uplift, macro elevation.",
         "First stage in the WGEv2 pipeline; everything else builds on its LandformResult."
       ],
       "path": "worldcore/terrain/worldgen/WGEv2Landforms.ts",
@@ -8921,7 +9058,7 @@
       "kind": "worldgen_stage",
       "lifecycle": "stateless",
       "notes": [
-        "Stage 2.3.6 – resource node placement (ore/herb/wood/fish/rare) plus per-kind masks.",
+        "Stage 2.3.6 \u2013 resource node placement (ore/herb/wood/fish/rare) plus per-kind masks.",
         "Respects biome, elevation, climate, hydrology, and avoids city centers while tagging 'near settlement' nodes."
       ],
       "path": "worldcore/terrain/worldgen/WGEv2Resources.ts",
