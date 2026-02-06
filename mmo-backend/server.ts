@@ -2,7 +2,9 @@
 
 import http from "http";
 import { WebSocketServer, WebSocket } from "ws";
+import "dotenv/config";
 
+import { tickPetsForCharacter } from "../worldcore/pets/PetAi";
 import { Logger } from "../worldcore/utils/logger";
 import { startHeartbeat } from "../worldcore/core/Heartbeat";
 import { PostgresAuthService } from "../worldcore/auth/PostgresAuthService";
@@ -172,6 +174,25 @@ async function main() {
           })
           .catch((err) => {
             log.warn("Song tick failed for session", {
+              sessionId: s.id,
+              charId: ch.id,
+              err: String(err),
+            });
+          });
+
+        // Pet tick (v1.2): stance-driven AI-lite swings even when player is idle.
+        tickPetsForCharacter(ctx, ch, nowMs)
+          .then((result) => {
+            if (!result || !String(result).trim()) return;
+            sessions.send(s, "chat", {
+              from: "[world]",
+              sessionId: "system",
+              text: String(result),
+              t: nowMs,
+            });
+          })
+          .catch((err) => {
+            log.warn("Pet tick failed for session", {
               sessionId: s.id,
               charId: ch.id,
               err: String(err),

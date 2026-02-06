@@ -260,32 +260,44 @@ export function computeDamage(
     dmg *= 1 + damageDealtPct;
   }
 
-  // Very simple crit system v1 (expand later: proper per-class/per-weapon)
-  const defaultCritChance = 0.05;
-  const critChance = typeof params.critChance === "number" ? params.critChance : defaultCritChance;
+// --- Crit / Glancing (RNG) ---
+// Ordering notes:
+// - We always consume RNG for crit and glancing checks when enabled to keep deterministic RNG streams stable.
+// - Glancing hits cannot crit (common physical-system convention). If both rolls succeed, glancing wins.
+const defaultCritChance = 0.05;
+const critChance = typeof params.critChance === "number" ? params.critChance : defaultCritChance;
 
-  let wasCrit = false;
-  if (!params.disableCrit) {
-    const critRoll = rand();
-    if (params.forceCrit || critRoll < critChance) {
-      dmg *= 1.5;
-      wasCrit = true;
-    }
-  }
+const defaultGlancingChance = 0.1;
+const glancingChance =
+  typeof params.glancingChance === "number" ? params.glancingChance : defaultGlancingChance;
 
-  // Very simple glancing system for weapon swings, v1
-  let wasGlancing = false;
-  if (source.channel === "weapon" && !params.disableGlancing) {
-    const defaultGlancingChance = 0.1;
-    const glancingChance =
-      typeof params.glancingChance === "number" ? params.glancingChance : defaultGlancingChance;
+let wasCrit = false;
+let wasGlancing = false;
 
-    if (rand() < glancingChance) {
-      dmg *= 0.7;
-      wasGlancing = true;
-    }
-  }
+// Crit check
+const critRoll = rand();
+if (!params.disableCrit && (params.forceCrit || critRoll < critChance)) {
+  wasCrit = true;
+}
 
+// Glancing check (weapon only)
+const glanceRoll = rand();
+if (source.channel === "weapon" && !params.disableGlancing && glanceRoll < glancingChance) {
+  wasGlancing = true;
+}
+
+// Resolve precedence: glancing hits cannot crit.
+if (wasGlancing) {
+  wasCrit = false;
+}
+
+// Apply multipliers after resolving precedence.
+if (wasCrit) {
+  dmg *= 1.5;
+}
+if (wasGlancing) {
+  dmg *= 0.7;
+}
   // --- Mitigation (armor/resists) ---
   // Defender snapshot (optional) lets armor/resist buffs modify mitigation.
   const defenderStatus = target.defenderStatus;

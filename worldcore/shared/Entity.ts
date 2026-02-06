@@ -12,6 +12,12 @@ export interface Entity {
   // Owner session (for player-controlled entities)
   ownerSessionId?: string;
 
+  // Optional owner entity id (for pets/minions that follow a player entity)
+  ownerEntityId?: string;
+
+  // Optional engaged target used by combat helpers (players store this too)
+  engagedTargetId?: string;
+
   // Position
   x: number;
   y: number;
@@ -38,8 +44,20 @@ export interface Entity {
 
   // Targeting (combat stub)
   targetId?: string;
+
+  // --- Pet/minion fields (v1) ---
+
+  // Optional pet class/profile id (v1.3)
+  petClass?: string;
+
+  // Optional pet tags (v1.3) used for profile resolution
+  petTags?: string[];
+  petMode?: "passive" | "defensive" | "aggressive";
+  followOwner?: boolean;
 }
 
 export function getEntityRotY(e: Entity): number {
   return typeof e.rotY === "number" ? e.rotY : 0;
+
+
 }

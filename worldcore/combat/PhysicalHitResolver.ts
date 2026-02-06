@@ -196,11 +196,21 @@ export function resolvePhysicalHit(req: PhysicalHitRequest): PhysicalHitResult {
   const allowCrit = req.allowCrit !== false;
   const allowMulti = req.allowMultiStrike !== false;
 
-  // Crit chance scales mildly with familiarity.
-  const critChance = allowCrit ? clamp(0.05 + familiarity * 0.06 - defenseFamiliarity * 0.05, 0, 0.20) : 0;
+  // Crit chance: baseline + familiarity, reduced by defender defense and by level disadvantage.
+// Caller may override via params.critChance.
+const skillGap = familiarity - defenseFamiliarity; // -1..1
+const critBase = 0.03 + familiarity * 0.07;
+const critDefensePenalty = defenseFamiliarity * 0.02;
+const critGapAdj = clamp(skillGap * 0.04, -0.05, 0.05);
+const critLevelAdj = delta >= 0 ? clamp(delta * 0.005, 0, 0.03) : clamp(delta * 0.01, -0.06, 0);
+const critChance = allowCrit ? clamp(critBase - critDefensePenalty + critGapAdj + critLevelAdj, 0, 0.25) : 0;
 
-  // Glancing is more common when untrained.
-  const glancingChance = clamp(0.08 + (1 - familiarity) * 0.08, 0.05, 0.20);
+// Glancing: partial hits are more common when untrained and/or when attacking into higher defense/level.
+// This is meant to feel like "my swings are landing poorly" rather than a full avoid.
+const glanceBase = 0.02 + (1 - familiarity) * 0.14;
+const glanceGapAdj = clamp((defenseFamiliarity - familiarity) * 0.10, 0, 0.10);
+const glanceLevelAdj = delta >= 0 ? -clamp(delta * 0.005, 0, 0.03) : clamp((-delta) * 0.01, 0, 0.08);
+const glancingChance = clamp(glanceBase + glanceGapAdj + glanceLevelAdj, 0.01, 0.25);
 
   let strikes = 1;
   if (allowMulti) {

@@ -26,11 +26,34 @@ export interface NpcThreatState {
   // New: taunt/forced-target override
   forcedTargetEntityId?: string;
   forcedUntil?: number;
+  // Optional: last taunt application timestamp (used for taunt immunity windows).
+  lastTauntAt?: number;
 
   // New (v1.1.6): optional decay bookkeeping.
   // If present, callers may pass this state back in and decayThreat() can use it.
   lastDecayAt?: number;
 }
+
+function envNumber(name: string, fallback: number): number {
+  const raw = String((process.env as any)?.[name] ?? "").trim();
+  if (!raw) return fallback;
+  const n = Number(raw);
+  return Number.isFinite(n) ? n : fallback;
+}
+
+function envBool(name: string, fallback: boolean): boolean {
+  const raw = String((process.env as any)?.[name] ?? "").trim().toLowerCase();
+  if (!raw) return fallback;
+  if (["1","true","yes","y","on"].includes(raw)) return true;
+  if (["0","false","no","n","off"].includes(raw)) return false;
+  return fallback;
+}
+
+const PW_THREAT_DECAY_PER_SEC_DEFAULT = envNumber("PW_THREAT_DECAY_PER_SEC", 1);
+const PW_THREAT_PRUNE_BELOW_DEFAULT = envNumber("PW_THREAT_PRUNE_BELOW", 0);
+
+const PW_ASSIST_AGGRO_WINDOW_MS_DEFAULT = Math.max(0, Math.floor(envNumber("PW_ASSIST_AGGRO_WINDOW_MS", 5000)));
+const PW_ASSIST_MIN_TOP_THREAT_DEFAULT = envNumber("PW_ASSIST_MIN_TOP_THREAT", 1);
 
 function nowMs(): number {
   return Date.now();
@@ -97,7 +120,7 @@ export function applyTauntToThreat(
   const threatBoost =
     typeof opts?.threatBoost === "number" && opts.threatBoost > 0
       ? opts.threatBoost
-      : 1;
+      : PW_ASSIST_MIN_TOP_THREAT_DEFAULT;
 
   let next = updateThreatFromDamage(current, taunterEntityId, 0, now);
   const table = shallowCopyThreat(next.threatByEntityId);
@@ -126,6 +149,7 @@ export function applyTauntToThreat(
 
   next.forcedTargetEntityId = taunterEntityId;
   next.forcedUntil = now + durationMs;
+  next.lastTauntAt = now;
 
   // Also set back-compat lastAttacker to taunter so older brains behave well.
   next.lastAttackerEntityId = taunterEntityId;
@@ -211,8 +235,8 @@ export function decayThreat(
   if (!current) return current;
 
   const now = opts?.now ?? nowMs();
-  const decayPerSec = typeof opts?.decayPerSec === "number" && opts.decayPerSec > 0 ? opts.decayPerSec : 1;
-  const pruneBelow = typeof opts?.pruneBelow === "number" ? opts.pruneBelow : 0;
+  const decayPerSec = typeof opts?.decayPerSec === "number" && opts.decayPerSec > 0 ? opts.decayPerSec : PW_THREAT_DECAY_PER_SEC_DEFAULT;
+  const pruneBelow = typeof opts?.pruneBelow === "number" ? opts.pruneBelow : PW_THREAT_PRUNE_BELOW_DEFAULT;
 
   const baseLast =
     typeof opts?.lastDecayAt === "number"
@@ -278,7 +302,7 @@ export function getAssistTargetForAlly(
   const windowMs =
     typeof opts?.windowMs === "number" && opts.windowMs > 0
       ? Math.floor(opts.windowMs)
-      : 5000;
+      : PW_ASSIST_AGGRO_WINDOW_MS_DEFAULT;
   const minTopThreat =
     typeof opts?.minTopThreat === "number" && opts.minTopThreat > 0
       ? opts.minTopThreat

@@ -14,6 +14,7 @@ import type { CharacterState } from "../../characters/CharacterTypes";
 import type { Entity } from "../../shared/Entity";
 import { resolveTargetInRoom } from "../../targeting/TargetResolver";
 import { canDamage } from "../../combat/DamagePolicy";
+import { clearStatusEffectsByTags, getActiveStatusEffects } from "../../combat/StatusEffects";
 
 import { computeEffectiveAttributes } from "../../characters/Stats";
 
@@ -101,6 +102,61 @@ export function scheduleNpcCorpseAndRespawn(ctx: MudContext, entityId: string): 
 export function announceSpawnToRoom(ctx: MudContext, roomId: string, text: string): void {
   return announceSpawnToRoomCore(ctx, roomId, text);
 }
+
+// --- Stealth integration (combat/threat/engage) ---
+// Stealth is represented as a status-effect tag on the CharacterState.
+// We reveal (break stealth) on ANY hostile melee commit to prevent threat/assist leakage.
+function ensureStatusEffectsSpineForCombat(char: CharacterState): void {
+  const anyChar: any = char as any;
+  if (!anyChar.progression || typeof anyChar.progression !== "object") anyChar.progression = {};
+  const prog: any = anyChar.progression;
+  if (!prog.statusEffects || typeof prog.statusEffects !== "object") prog.statusEffects = {};
+  const se: any = prog.statusEffects;
+  if (!se.active || typeof se.active !== "object") se.active = {};
+}
+
+function isStealthedForCombat(char: CharacterState): boolean {
+  try {
+    const active = getActiveStatusEffects(char as any);
+    return active.some((e: any) => Array.isArray(e?.tags) && e.tags.includes("stealth"));
+  } catch {
+    return false;
+  }
+}
+
+function dropStatusTagFromActiveForCombat(char: CharacterState, tag: string): void {
+  ensureStatusEffectsSpineForCombat(char);
+  const needle = String(tag ?? "").toLowerCase().trim();
+  if (!needle) return;
+  const activeMap: Record<string, any> = ((char as any).progression.statusEffects.active ?? {}) as any;
+  for (const [k, v] of Object.entries(activeMap)) {
+    const tags: any[] = Array.isArray((v as any)?.tags) ? (v as any).tags : [];
+    if (tags.some((t) => String(t).toLowerCase().trim() === needle)) {
+      delete (activeMap as any)[k];
+    }
+  }
+}
+
+function breakStealthForCombat(char: CharacterState): void {
+  // Clear any active status effects with the "stealth" tag.
+  ensureStatusEffectsSpineForCombat(char);
+  clearStatusEffectsByTags(char as any, ["stealth"], Number.MAX_SAFE_INTEGER);
+  // Defensive: if anything injected directly, ensure the tag is removed from the active map too.
+  dropStatusTagFromActiveForCombat(char, "stealth");
+}
+
+function envNumber(name: string, fallback: number): number {
+  const raw = String((process.env as any)?.[name] ?? "").trim();
+  const n = Number(raw);
+  return Number.isFinite(n) ? n : fallback;
+}
+
+function clampNumber(n: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, n));
+}
+
+// Damage multiplier applied to the first melee action performed while stealthed.
+const PW_STEALTH_OPENER_DAMAGE_MULT = clampNumber(envNumber("PW_STEALTH_OPENER_DAMAGE_MULT", 1.35), 1.0, 5.0);
 
 // ---------------------------------------------------------------------------
 // Shared attack handler used by MUD attack command.
@@ -197,6 +253,9 @@ export async function handleAttackAction(
 
   const roomId = selfEntity.roomId ?? char.shardId;
 
+  const wasStealthed = isStealthedForCombat(char);
+  const openerMult = wasStealthed ? PW_STEALTH_OPENER_DAMAGE_MULT : 1;
+
   // --- Auto-attack intent (no explicit target) ---
   // Deny-by-default to prevent room-cleave bugs.
   // Only allowed if the player already has an engaged target in this room.
@@ -244,12 +303,17 @@ export async function handleAttackAction(
     if (protoId === "training_dummy_big") {
       const dummyInstance = getTrainingDummyForRoom(roomId);
 
-      markInCombat(selfEntity);
+      if (wasStealthed) breakStealthForCombat(char);
+
+      if (wasStealthed) breakStealthForCombat(char);
+
+    markInCombat(selfEntity);
       markInCombat(dummyInstance as any);
       startTrainingDummyAi(ctx, ctx.session.id, roomId);
 
       const effective = computeEffectiveAttributes(char, ctx.items);
-      const dmg = computeTrainingDummyDamage(effective);
+      const baseDmg = computeTrainingDummyDamage(effective);
+      const dmg = Math.max(1, Math.round(baseDmg * openerMult));
 
       dummyInstance.hp = Math.max(0, dummyInstance.hp - dmg);
 
@@ -269,7 +333,8 @@ export async function handleAttackAction(
 
     // Normal NPC attack flow.
     // Kill progression is centralized inside performNpcAttack(...) above.
-    return await performNpcAttack(ctx, char, selfEntity as any, npcTarget as any);
+    if (wasStealthed) breakStealthForCombat(char);
+    return await performNpcAttack(ctx, char, selfEntity as any, npcTarget as any, wasStealthed ? { damageMultiplier: openerMult } : undefined);
   }
 
   // 2) Player target – duel-gated PvP (open PvP zones can come later).
@@ -312,7 +377,8 @@ export async function handleAttackAction(
     }
 
     const effective = computeEffectiveAttributes(char, ctx.items);
-    const dmg = computeTrainingDummyDamage(effective);
+    const baseDmg = computeTrainingDummyDamage(effective);
+    const dmg = Math.max(1, Math.round(baseDmg * openerMult));
 
     const { newHp, maxHp, killed } = applySimpleDamageToPlayer(
       playerTarget as any,
@@ -355,7 +421,8 @@ export async function handleAttackAction(
     startTrainingDummyAi(ctx, ctx.session.id, roomId);
 
     const effective = computeEffectiveAttributes(char, ctx.items);
-    const dmg = computeTrainingDummyDamage(effective);
+    const baseDmg = computeTrainingDummyDamage(effective);
+    const dmg = Math.max(1, Math.round(baseDmg * openerMult));
 
     dummyInstance.hp = Math.max(0, dummyInstance.hp - dmg);
 

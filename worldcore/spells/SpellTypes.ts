@@ -25,6 +25,7 @@ export type SpellKind =
   | "buff_self"
   | "buff_single_ally"
   | "debuff_single_npc"
+  | "summon_pet"
   // Back-compat alias: some earlier WIP code used this shorter kind.
   | "dot_single_npc"
   | "damage_dot_single_npc";
@@ -129,6 +130,14 @@ export interface SpellDefinition {
   dotFlatDamage?: number;
   dotMaxTicks?: number;
 
+
+// Pet summoning (v1.4)
+summon?: {
+  petProtoId: string;
+  petClass?: string;
+  hpMult?: number;
+  dmgMult?: number;
+};
   // Songs
   isSong?: boolean;
   songSchool?: SongSchoolId;
@@ -186,6 +195,78 @@ export const SPELLS: Record<string, SpellDefinition> = {
     isDebug: true,
   },
 
+
+debug_summon_wolf: {
+  id: "debug_summon_wolf",
+  name: "Summon Wolf (Debug)",
+  description: "Summons a simple wolf companion.",
+  kind: "summon_pet",
+  classId: "debug",
+  minLevel: 1,
+  school: "arcane",
+  resourceType: "mana",
+  resourceCost: 0,
+  cooldownMs: 0,
+    summon: { petProtoId: "pet_wolf", petClass: "beast" },
+  },
+
+  // --- Pet summon tiers (v1.5 contracts) ---
+
+  // Magician
+  magician_summon_wolf_i: {
+    id: "magician_summon_wolf_i",
+    name: "Summon Wolf I",
+    description: "Summons a loyal wolf companion.",
+    kind: "summon_pet",
+    classId: "magician",
+    minLevel: 1,
+    school: "arcane",
+    resourceType: "mana",
+    resourceCost: 0,
+    cooldownMs: 0,
+    summon: { petProtoId: "pet_wolf", petClass: "beast" },
+  },
+  magician_summon_wolf_ii: {
+    id: "magician_summon_wolf_ii",
+    name: "Summon Wolf II",
+    description: "Summons a stronger wolf companion.",
+    kind: "summon_pet",
+    classId: "magician",
+    minLevel: 10,
+    school: "arcane",
+    resourceType: "mana",
+    resourceCost: 0,
+    cooldownMs: 0,
+    summon: { petProtoId: "pet_wolf_alpha", petClass: "beast" },
+  },
+
+  // Hunter
+  hunter_call_wolf_i: {
+    id: "hunter_call_wolf_i",
+    name: "Summon Wolf I",
+    description: "Summons a loyal wolf companion.",
+    kind: "summon_pet",
+    classId: "hunter",
+    minLevel: 1,
+    school: "nature",
+    resourceType: "mana",
+    resourceCost: 0,
+    cooldownMs: 0,
+    summon: { petProtoId: "pet_wolf", petClass: "beast" },
+  },
+  hunter_call_wolf_ii: {
+    id: "hunter_call_wolf_ii",
+    name: "Summon Wolf II",
+    description: "Summons a stronger wolf companion.",
+    kind: "summon_pet",
+    classId: "hunter",
+    minLevel: 10,
+    school: "nature",
+    resourceType: "mana",
+    resourceCost: 0,
+    cooldownMs: 0,
+    summon: { petProtoId: "pet_wolf_alpha", petClass: "beast" },
+  },
   // ─────────────────────────────────────────────────────────────────────────────
   // Class spells
   // ─────────────────────────────────────────────────────────────────────────────

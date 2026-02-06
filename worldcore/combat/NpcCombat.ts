@@ -46,6 +46,7 @@ import { computeEffectiveAttributes } from "../characters/Stats";
 import { getSpawnPoint } from "../world/SpawnPointCache";
 import { resolvePhysicalHit } from "./PhysicalHitResolver";
 import { computeWeaponSkillGainOnSwingAttempt, getWeaponSkillCapPoints } from "./CombatScaling";
+
 function envInt(name: string, fallback: number): number {
   const raw = process.env[name];
   if (raw == null || raw === "") return fallback;
@@ -1037,6 +1038,10 @@ function computeAssistSeedThreat(baseSeedThreat: number, proto: any, ent: any): 
   return Math.max(1, Number.isFinite(scaled) ? scaled : Math.max(1, Math.round(baseSeedThreat)));
 }
 
+// Assist gating knobs (wired to env; defaults match NpcThreat.getAssistTargetForAlly defaults)
+const PW_ASSIST_AGGRO_WINDOW_MS = Math.max(0, envInt("PW_ASSIST_AGGRO_WINDOW_MS", 5000));
+const PW_ASSIST_MIN_TOP_THREAT = Math.max(0, envInt("PW_ASSIST_MIN_TOP_THREAT", 1));
+
 /**
  * Assist wiring (Option B default): radius-based assist with per-assister throttle.
  *
@@ -1081,7 +1086,7 @@ export function tryAssistNearbyNpcs(
   const gateInterruptFlat = envInt("PW_GATE_FOR_HELP_INTERRUPT_FLAT", 0);
 
   const allyThreat: any = (allySt as any).threat;
-  const assistTarget = getAssistTargetForAlly(allyThreat, now);
+  const assistTarget = getAssistTargetForAlly(allyThreat, now, { windowMs: PW_ASSIST_AGGRO_WINDOW_MS, minTopThreat: PW_ASSIST_MIN_TOP_THREAT });
 
   const ASSIST_COOLDOWN_MS = envInt("PW_ASSIST_COOLDOWN_MS", 4000);
   let radiusTiles = envInt("PW_ASSIST_RADIUS_TILES", 2);

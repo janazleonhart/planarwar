@@ -4582,7 +4582,8 @@
         "Supports damage_single_npc and heal_self kinds.",
         "Supports Virtuoso song casts (isSong + songSchool) including melody-driven auto-casts via SongEngine.",
         "Applies song scaling from song school skill and an optional equipped instrument bonus (instrumentPct / instrumentPctBySchool) for deterministic song tuning.",
-        "Tracks cooldowns and power resource costs via CastingGates / PowerResources; trains song schools on successful song casts."
+        "Tracks cooldowns and power resource costs via CastingGates / PowerResources; trains song schools on successful song casts.",
+        "Implements summon_pet: creates (or replaces) a single pet entity for the caster using ctx.entities.createPetEntity and PetProfiles."
       ],
       "path": "worldcore/mud/MudSpells.ts",
       "provides": [
@@ -5572,6 +5573,7 @@
         "Defines SpellDefinition and SpellKind plus the SPELLS registry.",
         "Includes debug_arcane_bolt, mage_fire_bolt, cleric_minor_heal, and Virtuoso song spells.",
         "SpellKind includes buff/debuff/DOT kinds (buff_self, buff_single_ally, debuff_single_npc, damage_dot_single_npc).",
+        "SpellKind includes \"summon_pet\" for spell-driven pet/minion creation.",
         "SpellStatusEffect payloads define status effect id/modifiers/duration/maxStacks for buff/debuff/DOT spells.",
         "Current wiring: buff_self and buff_single_ally are implemented in MudSpells; NPC debuffs/DOTs remain a TODO until NPC statusEffects + ticking lands."
       ],
@@ -7771,6 +7773,20 @@
       "path": "worldcore/test/contract_npcCombat_gateForHelp_ccInterrupt.test.ts",
       "provides": [
         "Guards gate CC interruption semantics"
+      ]
+    },
+    "test.contractPetSummonSpellTiers": {
+      "kind": "test",
+      "path": "worldcore/test/contract_petSummon_spellTiers.test.ts",
+      "deps": [
+        "worldcore.mud.MudSpells",
+        "worldcore.spells.SpellTypes",
+        "worldcore.world.RegionFlags",
+        "worldcore.core.EntityManager",
+        "worldcore.pets.PetProfiles"
+      ],
+      "provides": [
+        "Contract: summon_pet spells support tier gating, resummon replacement, and deny-path ordering (no cost/cooldown when denied)."
       ]
     },
     "test.utils": {

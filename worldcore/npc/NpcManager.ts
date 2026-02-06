@@ -50,6 +50,16 @@ import {
 import { getCombatRoleForClass } from "../classes/ClassDefinitions";
 import type { CharacterState } from "../characters/CharacterTypes";
 
+function envNumber(name: string, fallback: number): number {
+  const raw = String((process.env as any)?.[name] ?? "").trim();
+  const n = Number(raw);
+  return Number.isFinite(n) ? n : fallback;
+}
+
+// Prevent taunt spam-lock; during this window, new taunts from OTHER entities are ignored.
+const PW_TAUNT_IMMUNITY_MS = Math.max(0, Math.floor(envNumber("PW_TAUNT_IMMUNITY_MS", 0)));
+
+
 const log = Logger.scope("NPC");
 
 /**
@@ -579,8 +589,19 @@ export class NpcManager {
       return false;
     }
 
+    const threat0 = this.npcThreat.get(targetEntityId);
+
+    // Taunt immunity: during the immunity window, ignore new taunts from other entities.
+    if (PW_TAUNT_IMMUNITY_MS > 0) {
+      const lastTauntAt = typeof (threat0 as any)?.lastTauntAt === "number" ? (threat0 as any).lastTauntAt : 0;
+      const forcedTarget = String((threat0 as any)?.forcedTargetEntityId ?? "").trim();
+      if (lastTauntAt > 0 && Date.now() - lastTauntAt < PW_TAUNT_IMMUNITY_MS && forcedTarget && forcedTarget !== taunterEntityId) {
+        return false;
+      }
+    }
+
     const threat = applyTauntToThreat(
-      this.npcThreat.get(targetEntityId),
+      threat0,
       taunterEntityId,
       {
         durationMs: opts?.durationMs,

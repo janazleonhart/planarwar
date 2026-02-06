@@ -93,6 +93,53 @@ export class EntityManager {
     return e;
   }
 
+/**
+ * Create a pet entity bound to an owner entity id.
+ * v1: pets are simple room-bound entities that reuse the existing combat pipeline.
+ */
+createPetEntity(roomId: string, model: string, ownerEntityId: string): Entity {
+  const id = uuidv4();
+
+  const e: Entity = {
+    id,
+    type: "pet",
+    roomId,
+    model,
+    ownerEntityId,
+    x: 0,
+    y: 0,
+    z: 0,
+    rotY: 0,
+    hp: 40,
+    maxHp: 40,
+    alive: true,
+    name: model,
+    petMode: "defensive",
+    followOwner: true,
+  } as any;
+
+  this.entities.set(id, e);
+  log.info("Pet entity created", { entityId: e.id, model, roomId, ownerEntityId });
+  return e;
+}
+
+/** Returns the first pet owned by the given owner entity id (v1 supports 1 pet). */
+getPetByOwnerEntityId(ownerEntityId: string): Entity | undefined {
+  const e = Array.from(this.entities.values()).find(
+    (ent: any) => ent.type === "pet" && String((ent as any).ownerEntityId ?? "") === String(ownerEntityId)
+  );
+  return e;
+}
+
+/** Remove the pet owned by owner entity id (v1). Returns true if removed. */
+removePetForOwnerEntityId(ownerEntityId: string): boolean {
+  const pet = this.getPetByOwnerEntityId(ownerEntityId);
+  if (!pet) return false;
+  this.removeEntity(pet.id);
+  log.info("Pet entity removed", { entityId: pet.id, ownerEntityId });
+  return true;
+}
+
   /** Direct lookup by entity id. */
   get(id: string): Entity | undefined {
     return this.entities.get(id);

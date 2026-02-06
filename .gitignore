@@ -34,3 +34,5 @@ error2.txt
 worldcore/spells/SpellTypes.ts
 rg-output.txt
 web-backend/data/spawn_snapshots/
+mmo-backend/.env.local
+mmo-backend/.env.example

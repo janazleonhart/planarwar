@@ -8,6 +8,7 @@ import {
   computeTrainingDummyDamage,
   startTrainingDummyAi,
 } from "./MudTrainingDummy";
+import { performNpcAttack, type NpcAttackOptions } from "./actions/MudCombatActions";
 import { COMMANDS } from "./commands/registry";
 import type { MudContext } from "./MudContext";
 import { DUEL_SERVICE } from "../pvp/DuelService";
@@ -89,6 +90,111 @@ function isPlayerDead(ctx: MudContext, char: CharacterState): boolean {
 
   return false;
 }
+
+function syncPetFollow(ctx: MudContext): void {
+  const em: any = (ctx as any)?.entities;
+  const session: any = (ctx as any)?.session;
+  if (!em || typeof em.getEntityByOwner !== "function" || typeof em.getPetByOwnerEntityId !== "function") return;
+
+  const sid = String(session?.id ?? session?.sessionId ?? "").trim();
+  if (!sid) return;
+
+  const owner = em.getEntityByOwner(sid);
+  if (!owner) return;
+
+  const pet = em.getPetByOwnerEntityId(owner.id);
+  if (!pet) return;
+
+  // v1: if followOwner flag set, snap pet into owner's room
+  const follow = (pet as any).followOwner === true;
+  if (!follow) return;
+
+  if (pet.roomId !== owner.roomId) {
+    pet.roomId = owner.roomId;
+  }
+}
+
+
+function envInt(name: string, fallback: number): number {
+  const raw = String((process.env as any)?.[name] ?? "").trim();
+  if (!raw) return fallback;
+  const n = Number(raw);
+  return Number.isFinite(n) ? Math.trunc(n) : fallback;
+}
+
+function envNumber(name: string, fallback: number): number {
+  const raw = String((process.env as any)?.[name] ?? "").trim();
+  if (!raw) return fallback;
+  const n = Number(raw);
+  return Number.isFinite(n) ? n : fallback;
+}
+
+function envBool(name: string, fallback: boolean): boolean {
+  const raw = String((process.env as any)?.[name] ?? "").trim().toLowerCase();
+  if (!raw) return fallback;
+  if (raw === "1" || raw === "true" || raw === "yes" || raw === "y" || raw === "on") return true;
+  if (raw === "0" || raw === "false" || raw === "no" || raw === "n" || raw === "off") return false;
+  return fallback;
+}
+
+export async function maybePetAutoAttackAfterCommand(
+  ctx: MudContext,
+  char: CharacterState,
+  verb: string,
+  opts?: {
+    now?: number;
+    perform?: typeof performNpcAttack;
+  }
+): Promise<string | undefined> {
+  // Skip on explicit pet commands to avoid double-swing.
+  if (String(verb) === "pet") return undefined;
+
+  const enabled = envBool("PW_PET_AI_ENABLED", true);
+  if (!enabled) return undefined;
+
+  const em: any = (ctx as any)?.entities;
+  const session: any = (ctx as any)?.session;
+  if (!em || typeof em.getEntityByOwner !== "function" || typeof em.getPetByOwnerEntityId !== "function") return undefined;
+
+  const sid = String(session?.id ?? session?.sessionId ?? "").trim();
+  if (!sid) return undefined;
+
+  const owner = em.getEntityByOwner(sid);
+  if (!owner) return undefined;
+
+  const pet = em.getPetByOwnerEntityId(owner.id);
+  if (!pet) return undefined;
+
+  const mode = String((pet as any).petMode ?? "defensive").toLowerCase();
+  if (mode === "passive") return undefined;
+
+  // Must be in same room to act (v1.1).
+  if (String(pet.roomId) !== String(owner.roomId)) return undefined;
+
+  // Must have an engaged target to assist (v1.1).
+  const engagedId = String((owner as any).engagedTargetId ?? "").trim();
+  if (!engagedId) return undefined;
+
+  const roomId = String(owner.roomId ?? "");
+  const ents: any[] = em.getEntitiesInRoom?.(roomId) ?? [];
+  const target = ents.find((e: any) => String(e?.id ?? "") === engagedId);
+  if (!target) return undefined;
+  if ((target as any).alive === false || (target as any).hp <= 0) return undefined;
+
+  const now = typeof opts?.now === "number" ? opts!.now : Date.now();
+  const cdMs = Math.max(0, envInt("PW_PET_AI_COOLDOWN_MS", 1200));
+  const nextAt = Number((pet as any)._pwPetAiNextAt ?? 0);
+  if (Number.isFinite(nextAt) && now < nextAt) return undefined;
+  (pet as any)._pwPetAiNextAt = now + cdMs;
+
+  const dmgMult = Math.max(0, envNumber("PW_PET_DAMAGE_MULT", 0.8));
+  const attackOpts: NpcAttackOptions = { damageMultiplier: dmgMult };
+
+  const perform = opts?.perform ?? performNpcAttack;
+  const line = await perform(ctx, char, pet as any, target as any, attackOpts);
+  return line ? `[pet] ${String(line).replace(/^\[(world|combat)\]\s*/i, "")}` : undefined;
+}
+
 
 export async function handleMudCommand(
   char: CharacterState,
@@ -293,11 +399,24 @@ export async function handleMudCommand(
     return "You are dead and cannot do that. Use 'respawn' to return to safety or wait for someone to resurrect you.";
   }
 
-  return await handler(ctx, char, {
+  const out = await handler(ctx, char, {
     cmd: verb,
     args,
     parts,
     world,
     services: MUD_SERVICES,
   });
+
+  // Pet follow sync (v1): if you moved rooms and your pet is set to follow, snap it along.
+  syncPetFollow(ctx);
+
+  // Pet AI-lite (v1.1): opportunistic one-swing assist after player commands while engaged.
+  let petLine: string | undefined = undefined;
+  try {
+    petLine = await maybePetAutoAttackAfterCommand(ctx, char, verb);
+  } catch {
+    // Never break command output.
+  }
+
+  return petLine ? String(out) + "\n" + petLine : out;
 }

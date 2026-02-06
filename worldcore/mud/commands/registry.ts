@@ -98,6 +98,8 @@ import { handleDebugEffects } from "./debug/debugEffectsCommand";
 // NEW: hot reload command (gated, but not prefixed)
 import { handleReloadCommand } from "./debug/reloadCommand";
 
+import { handlePetCommand } from "./petCommand";
+
 import type { MudCommandHandlerFn } from "./types";
 
 export const COMMANDS: Record<string, MudCommandHandlerFn> = {
@@ -278,4 +280,7 @@ export const COMMANDS: Record<string, MudCommandHandlerFn> = {
 
   event_give_any: withDebugGate(handleEventGiveAny, "owner"),
   event_mail_reward: withDebugGate(handleEventMailReward, "gm"),
+
+  // Pets (v1)
+  pet: handlePetCommand,
 };

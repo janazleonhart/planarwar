@@ -6,6 +6,7 @@ import type { CharacterState, SpellbookState } from "../characters/CharacterType
 import { Logger } from "../utils/logger";
 import { canDamage } from "../combat/DamagePolicy";
 import { SPELLS, SpellDefinition, findSpellByNameOrId } from "../spells/SpellTypes";
+import { applyProfileToPetVitals } from "../pets/PetProfiles";
 import { performNpcAttack } from "./MudActions";
 import { resolveTargetInRoom } from "../targeting/TargetResolver";
 import { findTargetPlayerEntityByName } from "../targeting/targetFinders";
@@ -33,7 +34,7 @@ import type { SongSchoolId } from "../skills/SkillProgression";
 import { applyStatusEffect, applyStatusEffectToEntity, clearStatusEffectsByTags } from "../combat/StatusEffects";
 import { applyActionCostAndCooldownGates } from "../combat/CastingGates";
 import { computeSongScalar } from "../songs/SongScaling";
-
+import { isCombatEnabledForRegion } from "../world/RegionFlags";
 const log = Logger.scope("MUD_SPELLS");
 
 function getItemStatsForScaling(itemId: string, itemService: any): Record<string, any> | undefined {
@@ -392,7 +393,123 @@ export async function castSpellForCharacter(
 
 
   switch (spell.kind) {
-    case "damage_single_npc": {
+    
+    case "summon_pet": {
+      // Pet summoning is treated as a combat action for region gating.
+      // Tests often only bind the player's entity to a room (not the session), so we resolve room in this order:
+      //   1) ctx.session.roomId
+      //   2) char.roomId / char.room
+      //   3) owner player entity roomId (via EntityManager)
+      const ownerSessionId = String((ctx as any)?.session?.id ?? "");
+
+      const ownerEntity =
+        ownerSessionId && typeof (ctx.entities as any)?.getEntityByOwner === "function"
+          ? (ctx.entities as any).getEntityByOwner(ownerSessionId)
+          : null;
+
+      const ownerEntityId = String((ownerEntity as any)?.id ?? "");
+
+      const roomId =
+        String((ctx as any)?.session?.roomId ?? "") ||
+        String((char as any)?.roomId ?? "") ||
+        String((char as any)?.room ?? "") ||
+        String((ownerEntity as any)?.roomId ?? "");
+
+      if (!roomId) return "[world] You are nowhere (missing room).";
+
+      // Deny path: combat disabled regions must block BEFORE cost/cooldown and BEFORE pet spawn.
+      try {
+        const shardId = String((char as any)?.shardId ?? "prime_shard");
+        const allowed = await isCombatEnabledForRegion(shardId, roomId);
+        if (!allowed) return "[world] Combat is disabled here.";
+      } catch {
+        // best-effort: if RegionFlags isn't wired, don't crash
+      }
+
+      const summon = (spell as any)?.summon as any;
+      const petProtoId = String(summon?.petProtoId ?? "").trim();
+      if (!petProtoId) return "This spell has no summon payload.";
+
+      // Enforce single active pet for this owner (v1).
+      // Prefer canonical EntityManager helpers if present; otherwise fall back to room scan.
+      if (ownerEntityId) {
+        try {
+          const removePetForOwner =
+            (ctx.entities as any)?.removePetForOwnerEntityId ??
+            (ctx.entities as any)?.removePetForOwnerId; // legacy alias, if any
+          if (typeof removePetForOwner === "function") {
+            removePetForOwner(ownerEntityId);
+          } else {
+            const ents: any[] = (ctx.entities as any)?.getEntitiesInRoom?.(roomId) ?? [];
+            for (const e of ents) {
+              if (!e) continue;
+              if (String((e as any).type ?? "") !== "pet") continue;
+              if (String((e as any).ownerEntityId ?? "") !== ownerEntityId) continue;
+              (ctx.entities as any)?.removeEntity?.(String((e as any).id));
+            }
+          }
+        } catch {
+          // ignore
+        }
+      }
+
+      // Create the pet entity.
+      const createPetEntity = (ctx.entities as any)?.createPetEntity;
+      const createNpcEntity = (ctx.entities as any)?.createNpcEntity;
+
+      let pet: any;
+
+      if (typeof createPetEntity === "function" && ownerEntityId) {
+        // EntityManager signature is (roomId, model, ownerEntityId).
+        try {
+          pet = createPetEntity(roomId, petProtoId, ownerEntityId);
+        } catch {
+          // If some contexts provide an object signature, support that too.
+          pet = createPetEntity({ roomId, model: petProtoId, ownerEntityId });
+        }
+      } else if (typeof createNpcEntity === "function") {
+        // Fallback: create an NPC and re-tag it as a pet.
+        try {
+          // EntityManager signature is (roomId, model).
+          pet = createNpcEntity(roomId, petProtoId);
+        } catch {
+          // Some contexts may use an object signature.
+          pet = createNpcEntity({ roomId, model: petProtoId });
+        }
+        (pet as any).type = "pet";
+        (pet as any).ownerEntityId = ownerEntityId;
+      } else {
+        return "[spell] Cannot summon: entity factory missing.";
+      }
+
+      // Tag pet metadata (non-breaking; used by later systems and audits).
+      (pet as any).ownerSessionId = ownerSessionId || (pet as any).ownerSessionId;
+      (pet as any).petClass = summon?.petClass;
+
+      // Default stance + follow semantics (v1)
+      (pet as any).petMode = String(summon?.stance ?? (pet as any).petMode ?? "defensive");
+      (pet as any).followOwner =
+        typeof summon?.followOwner === "boolean" ? summon.followOwner : Boolean((pet as any).followOwner ?? true);
+
+      // Apply pet vitals profile if a class/profile is supplied.
+      try {
+        applyProfileToPetVitals(pet);
+      } catch {
+        // ignore
+      }
+
+      // Register with entity manager + room (best-effort; different contexts wire these differently).
+      try {
+        (ctx.entities as any)?.addEntity?.(pet);
+      } catch {}
+      try {
+        (ctx.rooms as any)?.getRoom?.(roomId)?.addEntity?.(String((pet as any).id));
+      } catch {}
+
+      return `[spell:${spell.name}] You summon ${petProtoId}.`;
+    }
+
+	    case "damage_single_npc": {
       const targetName = targetRaw || "rat";
 
       const npc = resolveTargetInRoom(ctx.entities as any, roomId, targetName, {
@@ -605,7 +722,7 @@ export async function castSpellForCharacter(
       return `[${gate.label}] You hit ${playerTargetName} for ${dmgFinal} damage. (${newHp}/${maxHp} HP)`;
     }
 
-case "heal_self": {
+	    case "heal_self": {
       const hp = (selfEntity as any).hp ?? 0;
       const maxHp = (selfEntity as any).maxHp ?? 0;
 
