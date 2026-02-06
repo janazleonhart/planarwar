@@ -90,7 +90,10 @@ function clamp01(n: number): number {
 }
 
 function getProcKey(p: ItemProcDef, idx: number): string {
-  return String(p.id ?? p.name ?? `proc_${idx}`);
+  const base = String((p as any).id ?? (p as any).name ?? `proc_${idx}`);
+  const slot = String((p as any).slot ?? "unknown");
+  const itemId = String((p as any).itemId ?? "");
+  return `${slot}:${itemId}:${base}`;
 }
 
 function isProcReady(pet: any, key: string, now: number): boolean {
@@ -105,6 +108,27 @@ function setProcCooldown(pet: any, key: string, now: number, icdMs: number | und
   const map: any = (pet as any)._pwProcCd ?? ((pet as any)._pwProcCd = {});
   map[key] = now + ms;
 }
+
+const PW_PET_PROC_SLOT_ICD_DEFAULT_MS = Math.max(0, envInt("PW_PET_PROC_SLOT_ICD_DEFAULT_MS", 250));
+
+function getProcSlot(p: any): string {
+  const slot = String(p?.slot ?? "unknown").trim();
+  return slot || "unknown";
+}
+
+function isProcSlotReady(pet: any, slot: string, now: number): boolean {
+  const map: any = (pet as any)._pwProcSlotCd ?? ((pet as any)._pwProcSlotCd = {});
+  const readyAt = Number(map[slot] ?? 0);
+  return !Number.isFinite(readyAt) || readyAt <= now;
+}
+
+function setProcSlotCooldown(pet: any, slot: string, now: number, icdMs: number | undefined): void {
+  const ms = Number(icdMs ?? PW_PET_PROC_SLOT_ICD_DEFAULT_MS);
+  if (!Number.isFinite(ms) || ms <= 0) return;
+  const map: any = (pet as any)._pwProcSlotCd ?? ((pet as any)._pwProcSlotCd = {});
+  map[slot] = now + ms;
+}
+
 
 
 function resolveProcApplyTo(p: any, trigger: string): "target" | "self" | "owner" {
@@ -159,6 +183,11 @@ async function tryTriggerPetOnHitProcs(
       const chance = clamp01(Number(p.chance ?? 0));
       if (chance <= 0) continue;
 
+      const slot = getProcSlot(p);
+
+      // v1.5: per-slot ICD buckets (prevents multi-proc storms from the same piece)
+      if (!isProcSlotReady(petEntity, slot, now)) continue;
+
       const key = getProcKey(p, i);
       if (!isProcReady(petEntity, key, now)) continue;
 
@@ -170,6 +199,7 @@ async function tryTriggerPetOnHitProcs(
         if (Number.isFinite(procDepth) && procDepth > 0 && !p.allowProcChain) {
           // Guard against runaway proc-chaining unless explicitly allowed.
           setProcCooldown(petEntity, key, now, p.icdMs);
+          setProcSlotCooldown(petEntity, slot, now, p.icdMs);
           continue;
         }
 
@@ -252,6 +282,7 @@ async function tryTriggerPetOnHitProcs(
                 const label = String((p as any).name ?? (spell as any).name ?? "Proc");
                 snippets.push(`[proc:${label}] triggers`);
                 setProcCooldown(petEntity, key, now, p.icdMs);
+        setProcSlotCooldown(petEntity, slot, now, p.icdMs);
                 continue;
               }
             }
@@ -265,6 +296,7 @@ async function tryTriggerPetOnHitProcs(
       if (dmg <= 0) {
         // No-op proc in v1
         setProcCooldown(petEntity, key, now, p.icdMs);
+        setProcSlotCooldown(petEntity, slot, now, p.icdMs);
         continue;
       }
 
@@ -285,10 +317,177 @@ async function tryTriggerPetOnHitProcs(
       snippets.push(`[proc:${name}] hits for ${dmg}`);
 
       setProcCooldown(petEntity, key, now, p.icdMs);
+      setProcSlotCooldown(petEntity, slot, now, p.icdMs);
     }
 
     if (extraDamage <= 0 || snippets.length === 0) return null;
     const newHp = (targetNpc as any).hp;
+    return { extraDamage, snippets, newHp };
+  } catch {
+    return null;
+  }
+
+
+}
+
+async function tryTriggerPetOnBeingHitProcs(
+  ctx: SimpleCombatContext,
+  ownerChar: CharacterState,
+  petEntity: any,
+  attackerNpc: Entity,
+  opts: any,
+): Promise<{ extraDamage: number; snippets: string[]; newHp?: number } | null> {
+  try {
+    if (!ctx?.npcs) return null;
+    if (!petEntity || petEntity.type !== "pet") return null;
+    if (!petEntity.equipment) return null;
+
+    const procs = collectItemProcsFromGear(petEntity, (ctx as any).items);
+    if (!procs || procs.length === 0) return null;
+
+    const now = Date.now();
+    let extraDamage = 0;
+    const snippets: string[] = [];
+
+    for (let i = 0; i < procs.length; i++) {
+      const p = procs[i];
+      const trig = String(p.trigger ?? "on_hit").toLowerCase();
+      if (trig !== "on_being_hit") continue;
+
+      const chance = clamp01(Number(p.chance ?? 0));
+      if (chance <= 0) continue;
+
+      const slot = getProcSlot(p);
+      if (!isProcSlotReady(petEntity, slot, now)) continue;
+
+      const key = getProcKey(p, i);
+      if (!isProcReady(petEntity, key, now)) continue;
+
+      if (rng01(opts) > chance) continue;
+
+      // v2: spell procs (status/buff/debuff/DOT/direct)
+      try {
+        const procDepth = Number((opts as any)?.procDepth ?? 0);
+        if (Number.isFinite(procDepth) && procDepth > 0 && !p.allowProcChain) {
+          setProcCooldown(petEntity, key, now, p.icdMs);
+          setProcSlotCooldown(petEntity, slot, now, p.icdMs);
+          continue;
+        }
+
+        const spellId = String((p as any).spellId ?? "").trim();
+        if (spellId) {
+          const spell = (SPELLS as any)[spellId] as SpellDefinition | undefined;
+          if (spell) {
+            const applyTo = resolveProcApplyTo(p, trig);
+            const recipient = resolveProcRecipientEntity(ctx as any, petEntity as any, attackerNpc as any, applyTo) as any;
+            if (recipient) {
+              let did = false;
+
+              const se: any = (spell as any).statusEffect;
+              if (se && typeof se === "object") {
+                const input: any = {
+                  id: String(se.id ?? `proc_${spell.id}`),
+                  sourceKind: "item",
+                  sourceId: `proc:${spell.id}`,
+                  name: se.name ?? (spell as any).name,
+                  durationMs: Number(se.durationMs ?? (spell as any).durationMs ?? 5000),
+                  maxStacks: se.maxStacks,
+                  stacks: se.stacks,
+                  initialStacks: se.stacks,
+                  modifiers: se.modifiers ?? {},
+                  tags: se.tags,
+                  stackingPolicy: se.stackingPolicy,
+                  stackingGroupId: se.stackingGroupId,
+                  appliedByKind: "npc",
+                  appliedById: String(petEntity?.id ?? "unknown"),
+                };
+
+                if (!Number.isFinite(input.durationMs) || input.durationMs <= 0) input.durationMs = 5000;
+
+                const kind = String((spell as any).kind ?? "");
+                if ((kind === "damage_dot_single_npc" || kind === "dot_single_npc") && !input.dot) {
+                  const tick = Number((spell as any).dotTickMs ?? 2000);
+                  const total = Number((spell as any).dotFlatDamage ?? 0);
+                  const maxTicks = Number((spell as any).dotMaxTicks ?? 0);
+                  if (tick > 0 && total > 0 && maxTicks > 0) {
+                    input.dot = {
+                      tickIntervalMs: tick,
+                      perTickDamage: Math.max(1, Math.ceil(total / maxTicks)),
+                      damageSchool: (spell as any).school ?? "pure",
+                    };
+                    if (!Number.isFinite(input.durationMs) || input.durationMs <= 0) input.durationMs = tick * maxTicks;
+                  }
+                }
+
+                try {
+                  applyStatusEffectToEntity(recipient as any, input, now);
+                  did = true;
+                } catch {
+                  // ignore
+                }
+              }
+
+              if (!did) {
+                const dmgFromSpell = Math.max(0, Math.floor(Number((spell as any).flatBonus ?? 0)));
+                if (dmgFromSpell > 0 && String(recipient.type) === "npc" && ctx?.npcs) {
+                  const prevHp = (recipient as any).hp ?? (recipient as any).maxHp ?? 1;
+                  const appliedHp = ctx.npcs.applyDamage(recipient.id, dmgFromSpell, {
+                    character: ownerChar,
+                    entityId: String(petEntity.id),
+                    tag: "pet_proc_spell",
+                  });
+
+                  let afterHp = Math.max(0, prevHp - dmgFromSpell);
+                  if (typeof appliedHp === "number") afterHp = appliedHp;
+                  else (recipient as any).hp = afterHp;
+
+                  extraDamage += dmgFromSpell;
+                  did = true;
+                }
+              }
+
+              if (did) {
+                const label = String((p as any).name ?? (spell as any).name ?? "Proc");
+                snippets.push(`[proc:${label}] triggers`);
+                setProcCooldown(petEntity, key, now, p.icdMs);
+                setProcSlotCooldown(petEntity, slot, now, p.icdMs);
+                continue;
+              }
+            }
+          }
+        }
+      } catch {
+        // ignore
+      }
+
+      const dmg = Math.max(0, Math.floor(Number(p.damage ?? 0)));
+      if (dmg <= 0) {
+        setProcCooldown(petEntity, key, now, p.icdMs);
+        setProcSlotCooldown(petEntity, slot, now, p.icdMs);
+        continue;
+      }
+
+      const prevHp = (attackerNpc as any).hp ?? (attackerNpc as any).maxHp ?? 1;
+      const appliedHp = ctx.npcs.applyDamage(attackerNpc.id, dmg, {
+        character: ownerChar,
+        entityId: String(petEntity.id),
+        tag: "pet_proc",
+      });
+
+      let afterHp = Math.max(0, prevHp - dmg);
+      if (typeof appliedHp === "number") afterHp = appliedHp;
+      else (attackerNpc as any).hp = afterHp;
+
+      extraDamage += dmg;
+      const name = String(p.name ?? "Proc");
+      snippets.push(`[proc:${name}] hits for ${dmg}`);
+
+      setProcCooldown(petEntity, key, now, p.icdMs);
+      setProcSlotCooldown(petEntity, slot, now, p.icdMs);
+    }
+
+    if (extraDamage <= 0 && snippets.length === 0) return null;
+    const newHp = (attackerNpc as any).hp;
     return { extraDamage, snippets, newHp };
   } catch {
     return null;
@@ -1116,7 +1315,9 @@ export async function applySimpleNpcCounterAttack(
   }
 
   
-if (phys.outcome !== "hit") {
+let procSuffix = "";
+
+  if (phys.outcome !== "hit") {
   // Tag NPC as in combat even on avoided swings.
   markInCombat(n);
 
@@ -1164,6 +1365,18 @@ if (phys.outcome !== "hit") {
   // Tag NPC as "in combat" too (player is tagged inside applySimpleDamageToPlayer).
   markInCombat(n);
 
+  try {
+    if ((player as any)?.type === "pet") {
+      const c = (ctx.session?.character ?? defenderChar ?? {}) as any;
+      const r = await tryTriggerPetOnBeingHitProcs(ctx, c as any, player as any, npc as any, { rng: opts.rng });
+      if (r && Array.isArray(r.snippets) && r.snippets.length) {
+        procSuffix = " " + r.snippets.join(" " );
+      }
+    }
+  } catch {
+    // best-effort
+  }
+
   if (killed) {
     const deadChar = ctx.session.character as any;
     if (deadChar?.melody) {
@@ -1176,7 +1389,7 @@ if (phys.outcome !== "hit") {
     );
   }
 
-  return `[combat] You block ${npc.name}'s attack and take ${dmgBlocked} damage. (${newHp}/${maxHp} HP)`;
+  return `[combat] You block ${npc.name}'s attack and take ${dmgBlocked} damage. (${newHp}/${maxHp} HP)` + procSuffix;
 }
 
 const dmg = computeNpcMeleeDamage(npc);
@@ -1192,6 +1405,19 @@ const dmg = computeNpcMeleeDamage(npc);
     "physical",
   );
 
+
+
+    try {
+    if ((player as any)?.type === "pet") {
+      const c = (ctx.session?.character ?? defenderChar ?? {}) as any;
+      const r = await tryTriggerPetOnBeingHitProcs(ctx, c as any, player as any, npc as any, { rng: opts.rng });
+      if (r && Array.isArray(r.snippets) && r.snippets.length) {
+        procSuffix = " " + r.snippets.join(" ");
+      }
+    }
+  } catch {
+    // best-effort
+  }
   // Tag NPC as "in combat" too (player is tagged inside applySimpleDamageToPlayer).
   markInCombat(n);
 
@@ -1207,7 +1433,7 @@ const dmg = computeNpcMeleeDamage(npc);
     );
   }
 
-  return `[combat] ${npc.name} hits you for ${dmg} damage. (${newHp}/${maxHp} HP)`;
+  return `[combat] ${npc.name} hits you for ${dmg} damage. (${newHp}/${maxHp} HP)` + procSuffix;
 }
 
 /**

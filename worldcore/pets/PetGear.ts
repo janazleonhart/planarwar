@@ -26,6 +26,10 @@ export type ItemProcDef = {
   chance?: number; // 0..1
   icdMs?: number;
 
+  // Added v1.5: proc sources (for per-slot ICD buckets + debugging)
+  slot?: string;
+  itemId?: string;
+
   damage?: number;
   spellId?: string;
   applyTo?: "target" | "self" | "owner";
@@ -181,10 +185,10 @@ export function collectItemProcsFromGear(pet: any, itemService: any): ItemProcDe
 
     if (Array.isArray(maybe)) {
       for (const p of maybe) {
-        if (p && typeof p === "object") out.push(p as ItemProcDef);
+        if (p && typeof p === "object") out.push({ ...(p as any), slot: String(slot), itemId: itemId } as ItemProcDef);
       }
     } else if (typeof maybe === "object") {
-      out.push(maybe as ItemProcDef);
+      out.push({ ...(maybe as any), slot: String(slot), itemId: itemId } as ItemProcDef);
     }
   }
 

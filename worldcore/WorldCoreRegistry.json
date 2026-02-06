@@ -9223,6 +9223,19 @@
       "provides": [
         "run(input:ResourceInput, ctx?:WorldGenContext):ResourceResult"
       ]
+    },
+    "test.contractPetProcSlotIcd": {
+      "dependsOn": [
+        "combat.npcCombat",
+        "pets.gear",
+        "combat.statusEffects",
+        "spells.types"
+      ],
+      "kind": "test",
+      "notes": [
+        "[contract] pet proc: per-slot internal cooldown buckets prevent multiple procs from the same gear slot in one swing; armor on_being_hit procs can apply status effects."
+      ],
+      "path": "worldcore/test/contract_pet_proc_slot_icd.test.ts"
     }
   }
 }
