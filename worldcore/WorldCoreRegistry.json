@@ -6812,6 +6812,45 @@
       ],
       "path": "worldcore/test/contract_petGear_persistence.test.ts"
     },
+    "test.contractPetProcChainPolicy": {
+      "dependsOn": [
+        "combat.npcCombat",
+        "pets.gear",
+        "combat.statusEffects",
+        "spells.types"
+      ],
+      "kind": "test",
+      "notes": [
+        "[contract] proc chain policy: default disables proc-on-proc; when enabled (PW_PROC_ALLOW_PROC_ON_PROC=1, PW_PROC_MAX_DEPTH>=2) and allowProcChain=true, a being-hit proc can trigger chained on-hit procs."
+      ],
+      "path": "worldcore/test/contract_pet_proc_chain_policy.test.ts"
+    },
+    "test.contractPetProcSlotIcd": {
+      "dependsOn": [
+        "combat.npcCombat",
+        "pets.gear",
+        "combat.statusEffects",
+        "spells.types"
+      ],
+      "kind": "test",
+      "notes": [
+        "[contract] pet proc: per-slot internal cooldown buckets prevent multiple procs from the same gear slot in one swing; armor on_being_hit procs can apply status effects."
+      ],
+      "path": "worldcore/test/contract_pet_proc_slot_icd.test.ts"
+    },
+    "test.contractPetProcV2CastSpell": {
+      "dependsOn": [
+        "combat.npcCombat",
+        "pets.gear",
+        "spells.types",
+        "combat.statusEffects"
+      ],
+      "kind": "test",
+      "notes": [
+        "[contract] pet proc v2: item procs may specify spellId to apply a status effect to the proc recipient (target/self/owner)."
+      ],
+      "path": "worldcore/test/contract_pet_proc_v2_castSpell.test.ts"
+    },
     "test.contractPetProfiles": {
       "dependsOn": [
         "pets.profiles"
@@ -6883,19 +6922,6 @@
         "[contract] pet tick role AI: role behaviors (heal/utility) act and still attack when stable; verifies role-specific decisions are deterministic."
       ],
       "path": "worldcore/test/contract_pet_tick_role_ai.test.ts"
-    },
-    "test.contractPetProcV2CastSpell": {
-      "dependsOn": [
-        "combat.npcCombat",
-        "pets.gear",
-        "spells.types",
-        "combat.statusEffects"
-      ],
-      "kind": "test",
-      "notes": [
-        "[contract] pet proc v2: item procs may specify spellId to apply a status effect to the proc recipient (target/self/owner)."
-      ],
-      "path": "worldcore/test/contract_pet_proc_v2_castSpell.test.ts"
     },
     "test.contractPhysicalHitResolverBlockAndRiposteFlags": {
       "class": "(test)",
@@ -9223,19 +9249,6 @@
       "provides": [
         "run(input:ResourceInput, ctx?:WorldGenContext):ResourceResult"
       ]
-    },
-    "test.contractPetProcSlotIcd": {
-      "dependsOn": [
-        "combat.npcCombat",
-        "pets.gear",
-        "combat.statusEffects",
-        "spells.types"
-      ],
-      "kind": "test",
-      "notes": [
-        "[contract] pet proc: per-slot internal cooldown buckets prevent multiple procs from the same gear slot in one swing; armor on_being_hit procs can apply status effects."
-      ],
-      "path": "worldcore/test/contract_pet_proc_slot_icd.test.ts"
     }
   }
 }

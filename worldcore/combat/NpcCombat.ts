@@ -129,6 +129,38 @@ function setProcSlotCooldown(pet: any, slot: string, now: number, icdMs: number 
   map[slot] = now + ms;
 }
 
+// --- Proc chain policy (v1) -------------------------------------------------
+// Safe-by-default recursion guard for item procs.
+//
+// Concepts:
+// - procDepth: 0 = base combat event, 1+ = proc-triggered evaluation.
+// - PW_PROC_ALLOW_PROC_ON_PROC: when enabled, certain procs may trigger a chained
+//   evaluation (e.g. "thorns" on_being_hit causing a chained on_hit evaluation).
+// - PW_PROC_MAX_DEPTH: max depth *exclusive*; with default=1 only depth 0 runs.
+//   If PW_PROC_MAX_DEPTH=2 then depth 0 and depth 1 are allowed.
+
+const PW_PROC_ALLOW_PROC_ON_PROC_DEFAULT = false;
+const PW_PROC_MAX_DEPTH_DEFAULT = 1;
+
+function getProcMaxDepth(): number {
+  const raw = envInt("PW_PROC_MAX_DEPTH", PW_PROC_MAX_DEPTH_DEFAULT);
+  return Math.max(1, raw);
+}
+
+function isProcOnProcEnabled(): boolean {
+  return envBool("PW_PROC_ALLOW_PROC_ON_PROC", PW_PROC_ALLOW_PROC_ON_PROC_DEFAULT);
+}
+
+function getProcSeenSet(opts: any): Set<string> {
+  const existing = opts?.procSeen;
+  if (existing && typeof existing.add === "function" && typeof existing.has === "function") {
+    return existing as Set<string>;
+  }
+  const s = new Set<string>();
+  if (opts && typeof opts === "object") (opts as any).procSeen = s;
+  return s;
+}
+
 
 
 function resolveProcApplyTo(p: any, trigger: string): "target" | "self" | "owner" {
@@ -172,6 +204,9 @@ async function tryTriggerPetOnHitProcs(
     if (!procs || procs.length === 0) return null;
 
     const now = Date.now();
+    const procDepth = Number((opts as any)?.procDepth ?? 0);
+    if (Number.isFinite(procDepth) && procDepth > 0 && !isProcOnProcEnabled()) return null;
+    const seen = getProcSeenSet(opts);
     let extraDamage = 0;
     const snippets: string[] = [];
 
@@ -189,13 +224,13 @@ async function tryTriggerPetOnHitProcs(
       if (!isProcSlotReady(petEntity, slot, now)) continue;
 
       const key = getProcKey(p, i);
+      if (seen.has(key)) continue;
       if (!isProcReady(petEntity, key, now)) continue;
 
       if (rng01(opts) > chance) continue;
 
       // v2: spell procs (status/buff/debuff/DOT/direct)
       try {
-        const procDepth = Number((opts as any)?.procDepth ?? 0);
         if (Number.isFinite(procDepth) && procDepth > 0 && !p.allowProcChain) {
           // Guard against runaway proc-chaining unless explicitly allowed.
           setProcCooldown(petEntity, key, now, p.icdMs);
@@ -281,6 +316,7 @@ async function tryTriggerPetOnHitProcs(
               if (did) {
                 const label = String((p as any).name ?? (spell as any).name ?? "Proc");
                 snippets.push(`[proc:${label}] triggers`);
+                seen.add(key);
                 setProcCooldown(petEntity, key, now, p.icdMs);
         setProcSlotCooldown(petEntity, slot, now, p.icdMs);
                 continue;
@@ -316,11 +352,29 @@ async function tryTriggerPetOnHitProcs(
       const name = String(p.name ?? "Proc");
       snippets.push(`[proc:${name}] hits for ${dmg}`);
 
+      seen.add(key);
+
+      if (p.allowProcChain) {
+        const chain = await maybeTriggerProcChainFromBeingHit(
+          ctx,
+          ownerChar,
+          petEntity,
+          targetNpc,
+          opts,
+          procDepth,
+          seen,
+        );
+        if (chain) {
+          extraDamage += Number(chain.extraDamage ?? 0);
+          if (Array.isArray(chain.snippets)) snippets.push(...chain.snippets);
+        }
+      }
+
       setProcCooldown(petEntity, key, now, p.icdMs);
       setProcSlotCooldown(petEntity, slot, now, p.icdMs);
     }
 
-    if (extraDamage <= 0 || snippets.length === 0) return null;
+    if (extraDamage <= 0 && snippets.length === 0) return null;
     const newHp = (targetNpc as any).hp;
     return { extraDamage, snippets, newHp };
   } catch {
@@ -328,6 +382,30 @@ async function tryTriggerPetOnHitProcs(
   }
 
 
+}
+
+async function maybeTriggerProcChainFromBeingHit(
+  ctx: SimpleCombatContext,
+  ownerChar: CharacterState,
+  petEntity: any,
+  attackerNpc: Entity,
+  opts: any,
+  procDepth: number,
+  seen: Set<string>,
+): Promise<{ extraDamage: number; snippets: string[] } | null> {
+  try {
+    if (!isProcOnProcEnabled()) return null;
+    if (!Number.isFinite(procDepth)) return null;
+    const nextDepth = procDepth + 1;
+    if (nextDepth >= getProcMaxDepth()) return null;
+    return await tryTriggerPetOnHitProcs(ctx, ownerChar, petEntity, attackerNpc, {
+      ...(opts ?? {}),
+      procDepth: nextDepth,
+      procSeen: seen,
+    });
+  } catch {
+    return null;
+  }
 }
 
 async function tryTriggerPetOnBeingHitProcs(
@@ -346,6 +424,9 @@ async function tryTriggerPetOnBeingHitProcs(
     if (!procs || procs.length === 0) return null;
 
     const now = Date.now();
+    const procDepth = Number((opts as any)?.procDepth ?? 0);
+    if (Number.isFinite(procDepth) && procDepth > 0 && !isProcOnProcEnabled()) return null;
+    const seen = getProcSeenSet(opts);
     let extraDamage = 0;
     const snippets: string[] = [];
 
@@ -361,6 +442,7 @@ async function tryTriggerPetOnBeingHitProcs(
       if (!isProcSlotReady(petEntity, slot, now)) continue;
 
       const key = getProcKey(p, i);
+      if (seen.has(key)) continue;
       if (!isProcReady(petEntity, key, now)) continue;
 
       if (rng01(opts) > chance) continue;
@@ -447,8 +529,28 @@ async function tryTriggerPetOnBeingHitProcs(
               }
 
               if (did) {
+                seen.add(key);
                 const label = String((p as any).name ?? (spell as any).name ?? "Proc");
                 snippets.push(`[proc:${label}] triggers`);
+
+                // Optional proc-on-proc chain: allow a successful on_being_hit proc to
+                // trigger a chained on_hit evaluation against the attacker.
+                if (p.allowProcChain) {
+                  const chain = await maybeTriggerProcChainFromBeingHit(
+                    ctx,
+                    ownerChar,
+                    petEntity,
+                    attackerNpc,
+                    opts,
+                    procDepth,
+                    seen,
+                  );
+                  if (chain) {
+                    extraDamage += Number(chain.extraDamage ?? 0);
+                    if (Array.isArray(chain.snippets)) snippets.push(...chain.snippets);
+                  }
+                }
+
                 setProcCooldown(petEntity, key, now, p.icdMs);
                 setProcSlotCooldown(petEntity, slot, now, p.icdMs);
                 continue;
@@ -481,6 +583,24 @@ async function tryTriggerPetOnBeingHitProcs(
       extraDamage += dmg;
       const name = String(p.name ?? "Proc");
       snippets.push(`[proc:${name}] hits for ${dmg}`);
+
+      seen.add(key);
+
+      if (p.allowProcChain) {
+        const chain = await maybeTriggerProcChainFromBeingHit(
+          ctx,
+          ownerChar,
+          petEntity,
+          attackerNpc,
+          opts,
+          procDepth,
+          seen,
+        );
+        if (chain) {
+          extraDamage += Number(chain.extraDamage ?? 0);
+          if (Array.isArray(chain.snippets)) snippets.push(...chain.snippets);
+        }
+      }
 
       setProcCooldown(petEntity, key, now, p.icdMs);
       setProcSlotCooldown(petEntity, slot, now, p.icdMs);
