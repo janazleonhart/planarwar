@@ -7,6 +7,7 @@ import { Logger } from "../utils/logger";
 import { canDamage } from "../combat/DamagePolicy";
 import { SPELLS, SpellDefinition, findSpellByNameOrId } from "../spells/SpellTypes";
 import { applyProfileToPetVitals } from "../pets/PetProfiles";
+import { applyPetGearToVitals } from "../pets/PetGear";
 import { performNpcAttack } from "./MudActions";
 import { resolveTargetInRoom } from "../targeting/TargetResolver";
 import { findTargetPlayerEntityByName } from "../targeting/targetFinders";
@@ -474,12 +475,38 @@ export async function castSpellForCharacter(
       // Default stance + follow semantics (v1)
       (pet as any).petMode = String(summon?.stance ?? "defensive");
       (pet as any).followOwner = typeof summon?.followOwner === "boolean" ? summon.followOwner : true;
-      (pet as any).petClass = String(summon?.petClass ?? "").trim() || undefined;
+
+      // v1.4: Role first, species/skin second.
+      // - petRole: pet_tank | pet_dps | pet_heal | pet_utility
+      // - petClass: flavor/species (beast/undead/demon/elemental/construct) or legacy tag
+      (pet as any).petRole = String(summon?.petRole ?? summon?.role ?? "").trim() || undefined;
+      (pet as any).petClass = String(summon?.petClass ?? summon?.petSkin ?? "").trim() || undefined;
+
+      // Tags are additive; we normalize/enforce in PetProfiles.
+      const tagsIn = Array.isArray(summon?.petTags) ? summon.petTags : [];
       (pet as any).petTags = Array.isArray((pet as any).petTags) ? (pet as any).petTags : [];
-      if ((pet as any).petClass) (pet as any).petTags.push((pet as any).petClass);
+      for (const t of tagsIn) (pet as any).petTags.push(t);
+
+      // If the character already had persisted pet gear, attach it to the new entity.
+      // This keeps the "swap pet" loop feeling consistent.
+      try {
+        const flagsPet = (char as any)?.progression?.flags?.pet;
+        if (flagsPet && typeof flagsPet === "object" && flagsPet.gear && typeof flagsPet.gear === "object") {
+          (pet as any).equipment = flagsPet.gear;
+        }
+      } catch {
+        // ignore
+      }
 
       try {
         applyProfileToPetVitals(pet as any);
+      } catch {
+        // best-effort
+      }
+
+      // v1.4: Pet gear influences vitals immediately (damage hooks consume cached bonuses).
+      try {
+        applyPetGearToVitals(pet as any, (ctx as any).items);
       } catch {
         // best-effort
       }
@@ -491,6 +518,7 @@ export async function castSpellForCharacter(
         flags.pet = {
           active: true,
           protoId: petProtoId,
+          petRole: (pet as any).petRole ?? undefined,
           petClass: (pet as any).petClass ?? undefined,
           mode: (pet as any).petMode ?? "defensive",
           followOwner: (pet as any).followOwner !== false,

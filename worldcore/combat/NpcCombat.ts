@@ -43,6 +43,8 @@ import {
   type SongSchoolId,
 } from "../skills/SkillProgression";
 import { computeEffectiveAttributes } from "../characters/Stats";
+import { getProfileDamageMult } from "../pets/PetProfiles";
+import { collectItemProcsFromGear, getPetGearDamageMult, type ItemProcDef } from "../pets/PetGear";
 import { getSpawnPoint } from "../world/SpawnPointCache";
 import { resolvePhysicalHit } from "./PhysicalHitResolver";
 import { computeWeaponSkillGainOnSwingAttempt, getWeaponSkillCapPoints } from "./CombatScaling";
@@ -65,6 +67,108 @@ function envFloat(name: string, fallback: number): number {
   if (raw == null || raw === "") return fallback;
   const n = Number.parseFloat(raw);
   return Number.isFinite(n) ? n : fallback;
+}
+
+// --- Pet item proc hooks (v1) ----------------------------------------------
+// Pets can wear normal gear, and gear may define simple proc payloads.
+// We keep proc processing conservative and best-effort.
+
+function rng01(opts: any): number {
+  try {
+    const r = typeof opts?.rng === "function" ? opts.rng() : Math.random();
+    if (!Number.isFinite(r)) return Math.random();
+    // normalize to [0,1)
+    return Math.max(0, Math.min(0.999999999, r));
+  } catch {
+    return Math.random();
+  }
+}
+
+function clamp01(n: number): number {
+  return Math.max(0, Math.min(1, n));
+}
+
+function getProcKey(p: ItemProcDef, idx: number): string {
+  return String(p.id ?? p.name ?? `proc_${idx}`);
+}
+
+function isProcReady(pet: any, key: string, now: number): boolean {
+  const map: any = (pet as any)._pwProcCd ?? ((pet as any)._pwProcCd = {});
+  const readyAt = Number(map[key] ?? 0);
+  return !Number.isFinite(readyAt) || readyAt <= now;
+}
+
+function setProcCooldown(pet: any, key: string, now: number, icdMs: number | undefined): void {
+  const ms = Number(icdMs ?? 0);
+  if (!Number.isFinite(ms) || ms <= 0) return;
+  const map: any = (pet as any)._pwProcCd ?? ((pet as any)._pwProcCd = {});
+  map[key] = now + ms;
+}
+
+async function tryTriggerPetOnHitProcs(
+  ctx: SimpleCombatContext,
+  ownerChar: CharacterState,
+  petEntity: any,
+  targetNpc: Entity,
+  opts: any,
+): Promise<{ extraDamage: number; snippets: string[]; newHp?: number } | null> {
+  try {
+    if (!ctx?.npcs) return null;
+    if (!petEntity || petEntity.type !== "pet") return null;
+    if (!petEntity.equipment) return null;
+
+    const procs = collectItemProcsFromGear(petEntity, (ctx as any).items);
+    if (!procs || procs.length === 0) return null;
+
+    const now = Date.now();
+    let extraDamage = 0;
+    const snippets: string[] = [];
+
+    for (let i = 0; i < procs.length; i++) {
+      const p = procs[i];
+      const trig = String(p.trigger ?? "on_hit").toLowerCase();
+      if (trig !== "on_hit") continue;
+
+      const chance = clamp01(Number(p.chance ?? 0));
+      if (chance <= 0) continue;
+
+      const key = getProcKey(p, i);
+      if (!isProcReady(petEntity, key, now)) continue;
+
+      if (rng01(opts) > chance) continue;
+
+      const dmg = Math.max(0, Math.floor(Number(p.damage ?? 0)));
+      if (dmg <= 0) {
+        // No-op proc in v1
+        setProcCooldown(petEntity, key, now, p.icdMs);
+        continue;
+      }
+
+      // Apply proc damage through NpcManager so death pipeline stays consistent.
+      const prevHp = (targetNpc as any).hp ?? (targetNpc as any).maxHp ?? 1;
+      const appliedHp = ctx.npcs.applyDamage(targetNpc.id, dmg, {
+        character: ownerChar,
+        entityId: String(petEntity.id),
+        tag: "pet_proc",
+      });
+
+      let afterHp = Math.max(0, prevHp - dmg);
+      if (typeof appliedHp === "number") afterHp = appliedHp;
+      else (targetNpc as any).hp = afterHp;
+
+      extraDamage += dmg;
+      const name = String(p.name ?? "Proc");
+      snippets.push(`[proc:${name}] hits for ${dmg}`);
+
+      setProcCooldown(petEntity, key, now, p.icdMs);
+    }
+
+    if (extraDamage <= 0 || snippets.length === 0) return null;
+    const newHp = (targetNpc as any).hp;
+    return { extraDamage, snippets, newHp };
+  } catch {
+    return null;
+  }
 }
 
 
@@ -467,7 +571,19 @@ if (phys.outcome !== "hit") {
   });
 
   // rawDamage = what CombatEngine rolled
-  const baseRawDamage = result.damage;
+  let baseRawDamage = result.damage;
+
+  // v1.4: If the attacker is a pet entity, apply role/species + gear damage multipliers.
+  // Note: CombatEngine currently scales from the *owner character*; this multiplier
+  // makes the pet distinct without changing the entire damage pipeline.
+  if ((selfEntity as any)?.type === "pet") {
+    try {
+      const petMult = Math.max(0.1, getProfileDamageMult(selfEntity as any) * getPetGearDamageMult(selfEntity as any));
+      baseRawDamage = Math.max(0, Math.floor(baseRawDamage * petMult));
+    } catch {
+      // best-effort
+    }
+  }
   const strikes = typeof (opts as any)._pwStrikes === "number" ? (opts as any)._pwStrikes : 1;
   const rawDamage = Math.max(0, Math.floor(baseRawDamage * Math.max(1, strikes)));
   let dmg = rawDamage;
@@ -602,6 +718,24 @@ try {
 
   // If the NPC survives, simple counterattack and we’re done.
   if (newHp > 0) {
+    // v1.4: Pet gear procs (on hit). These are *extra* effects after the main hit.
+    // We keep the output additive and do not reformat the primary hit line.
+    try {
+      if ((selfEntity as any)?.type === "pet") {
+        const proc = await tryTriggerPetOnHitProcs(ctx, char, selfEntity as any, npc as any, opts);
+        if (proc && proc.snippets.length) {
+          line += " " + proc.snippets.join("; ") + ".";
+          // If a proc killed the NPC, skip counterattack and route through reward pipeline.
+          const hpNow = (npc as any).hp ?? newHp;
+          if (hpNow <= 0) {
+            return await finalizeNpcKillAndRewards(ctx, char, selfEntity, npc, line);
+          }
+        }
+      }
+    } catch {
+      // ignore
+    }
+
     const counter = await applySimpleNpcCounterAttack(ctx, npc, selfEntity);
     if (counter) line += " " + counter;
     return line;

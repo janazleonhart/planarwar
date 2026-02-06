@@ -35,6 +35,7 @@ import { SpawnPointService } from "./SpawnPointService";
 import { SpawnService } from "./SpawnService";
 import { SpawnHydrator } from "./SpawnHydrator";
 import { applyProfileToPetVitals } from "../pets/PetProfiles";
+import { applyPetGearToVitals } from "../pets/PetGear";
 import { WorldEventBus } from "./WorldEventBus";
 import { NpcManager } from "../npc/NpcManager";
 import { NpcSpawnController } from "../npc/NpcSpawnController";
@@ -196,16 +197,25 @@ export async function createWorldServices(
 
         const pet: any = entities.createPetEntity(owner.roomId, protoId, ownerEntityId) as any;
         pet.ownerSessionId = session.id; // owner-only visibility
+        pet.petRole = String(petCfg.petRole ?? "").trim() || undefined;
         pet.petClass = String(petCfg.petClass ?? "").trim() || undefined;
         pet.petMode = String(petCfg.mode ?? "defensive");
         pet.followOwner = petCfg.followOwner !== false;
 
-        // Pet gear persistence (v1): attach persisted gear to the pet entity.
-        // This slice only persists and reattaches gear; combat stat scaling will be added later.
+        // Pet gear persistence: attach persisted gear to the pet entity.
         pet.equipment = (petCfg.gear && typeof petCfg.gear === "object") ? petCfg.gear : {};
 
         try {
           applyProfileToPetVitals(pet);
+        } catch {
+          // best-effort
+        }
+
+        // v1.4: Pet gear affects max HP immediately; damage hooks use cached bonuses.
+        try {
+          // WorldServices does not own the item service; gear bonuses will be recomputed
+          // later when the live mud context (with ctx.items) is available.
+          applyPetGearToVitals(pet as any, undefined);
         } catch {
           // best-effort
         }
