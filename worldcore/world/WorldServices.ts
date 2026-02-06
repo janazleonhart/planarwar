@@ -34,6 +34,7 @@ import { ServerWorldManager } from "./ServerWorldManager";
 import { SpawnPointService } from "./SpawnPointService";
 import { SpawnService } from "./SpawnService";
 import { SpawnHydrator } from "./SpawnHydrator";
+import { applyProfileToPetVitals } from "../pets/PetProfiles";
 import { WorldEventBus } from "./WorldEventBus";
 import { NpcManager } from "../npc/NpcManager";
 import { NpcSpawnController } from "../npc/NpcSpawnController";
@@ -149,24 +150,79 @@ export async function createWorldServices(
 
   const rooms = new RoomManager(sessions, entities, world, {
     onWorldRoomJoined: async (session, roomId) => {
-      if (!autoHydrateSpawns) return;
-
       // Hydrate POI placeholders for the region the character is *actually* in.
       // Note: session.roomId is a shard/world room, not a region id once the player starts moving.
       const char: any = (session as any).character;
       if (!char) return;
 
-      const region = world.getRegionAt(char.posX ?? 0, char.posZ ?? 0);
-      const regionId = char.lastRegionId ?? region?.id ?? roomId;
+      if (autoHydrateSpawns) {
+        const region = world.getRegionAt(char.posX ?? 0, char.posZ ?? 0);
+        const regionId = char.lastRegionId ?? region?.id ?? roomId;
 
-      // NOTE: hook expects void | Promise<void>; rehydrateRoom returns a result object.
-      await spawnHydrator.rehydrateRoom({
-        shardId,
-        regionId,
-        roomId,
-        // no force; per-region cache avoids rehydrating on every join
-      });
-},
+        // NOTE: hook expects void | Promise<void>; rehydrateRoom returns a result object.
+        await spawnHydrator.rehydrateRoom({
+          shardId,
+          regionId,
+          roomId,
+          // no force; per-region cache avoids rehydrating on every join
+        });
+      }
+
+      // Pet persistence hook (v1): if the character has a persisted active pet,
+      // ensure it exists as an entity after joining a world room.
+      try {
+        const charAny: any = (session as any).character;
+        if (!charAny) return;
+
+        const flags: any = charAny?.progression?.flags ?? {};
+        const petCfg: any = flags?.pet && typeof flags.pet === "object" ? flags.pet : null;
+        if (!petCfg || petCfg.active !== true || petCfg.autoSummon === false) return;
+
+        const owner = entities.getEntityByOwner(session.id);
+        if (!owner) return;
+
+        const ownerEntityId = String((owner as any).id ?? "");
+        if (!ownerEntityId) return;
+
+        // Enforce single active pet.
+        try {
+          entities.removePetForOwnerEntityId(ownerEntityId);
+        } catch {
+          // ignore
+        }
+
+        const protoId = String(petCfg.protoId ?? "").trim();
+        if (!protoId) return;
+
+        const pet: any = entities.createPetEntity(owner.roomId, protoId, ownerEntityId) as any;
+        pet.ownerSessionId = session.id; // owner-only visibility
+        pet.petClass = String(petCfg.petClass ?? "").trim() || undefined;
+        pet.petMode = String(petCfg.mode ?? "defensive");
+        pet.followOwner = petCfg.followOwner !== false;
+
+        try {
+          applyProfileToPetVitals(pet);
+        } catch {
+          // best-effort
+        }
+
+        // Tell the owning client about their pet (best-effort; visual clients).
+        try {
+          const r = rooms.get(owner.roomId);
+          if (r) {
+            sessions.send(session, "entity_spawn" as any, {
+              id: pet.id,
+              ownerSessionId: session.id,
+              entity: pet,
+            } as any);
+          }
+        } catch {
+          // ignore
+        }
+      } catch {
+        // Never block join.
+      }
+    },
   });
 
   // Respawns / regions

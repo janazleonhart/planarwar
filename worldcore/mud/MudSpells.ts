@@ -396,25 +396,20 @@ export async function castSpellForCharacter(
     
     case "summon_pet": {
       // Pet summoning is treated as a combat action for region gating.
-      // Tests often only bind the player's entity to a room (not the session), so we resolve room in this order:
-      //   1) ctx.session.roomId
-      //   2) char.roomId / char.room
-      //   3) owner player entity roomId (via EntityManager)
-      const ownerSessionId = String((ctx as any)?.session?.id ?? "");
-
+      // In WORLDCORE_TEST, RegionFlags overrides are keyed by "regionId" — our tests use roomId as regionId.
+      const ownerSessionId = String((ctx as any)?.session?.id ?? "").trim();
       const ownerEntity =
         ownerSessionId && typeof (ctx.entities as any)?.getEntityByOwner === "function"
           ? (ctx.entities as any).getEntityByOwner(ownerSessionId)
           : null;
 
-      const ownerEntityId = String((ownerEntity as any)?.id ?? "");
+      if (!ownerEntity) return "[world] You do not have an active body in the world.";
 
       const roomId =
+        String((ownerEntity as any)?.roomId ?? "") ||
         String((ctx as any)?.session?.roomId ?? "") ||
         String((char as any)?.roomId ?? "") ||
-        String((char as any)?.room ?? "") ||
-        String((ownerEntity as any)?.roomId ?? "");
-
+        String((char as any)?.room ?? "");
       if (!roomId) return "[world] You are nowhere (missing room).";
 
       // Deny path: combat disabled regions must block BEFORE cost/cooldown and BEFORE pet spawn.
@@ -430,86 +425,88 @@ export async function castSpellForCharacter(
       const petProtoId = String(summon?.petProtoId ?? "").trim();
       if (!petProtoId) return "This spell has no summon payload.";
 
-      // Enforce single active pet for this owner (v1).
-      // Prefer canonical EntityManager helpers if present; otherwise fall back to room scan.
-      if (ownerEntityId) {
-        try {
-          const removePetForOwner =
-            (ctx.entities as any)?.removePetForOwnerEntityId ??
-            (ctx.entities as any)?.removePetForOwnerId; // legacy alias, if any
-          if (typeof removePetForOwner === "function") {
-            removePetForOwner(ownerEntityId);
-          } else {
-            const ents: any[] = (ctx.entities as any)?.getEntitiesInRoom?.(roomId) ?? [];
-            for (const e of ents) {
-              if (!e) continue;
-              if (String((e as any).type ?? "") !== "pet") continue;
-              if (String((e as any).ownerEntityId ?? "") !== ownerEntityId) continue;
-              (ctx.entities as any)?.removeEntity?.(String((e as any).id));
-            }
-          }
-        } catch {
-          // ignore
-        }
+      const ownerEntityId = String((ownerEntity as any)?.id ?? "");
+
+      // Enforce single active pet: remove any existing pet for this owner.
+      try {
+	        const ents: any = ctx.entities as any;
+
+	        // Preferred (EntityManager) helper.
+	        if (typeof ents?.removePetForOwnerEntityId === "function") {
+	          ents.removePetForOwnerEntityId(ownerEntityId);
+	        } else {
+	          // Test harness + lightweight entity adapters expose removeEntity + getPetByOwnerEntityId/getAll.
+	          const existing: any =
+	            (typeof ents?.getPetByOwnerEntityId === "function" ? ents.getPetByOwnerEntityId(ownerEntityId) : null) ||
+	            (typeof ents?.getAll === "function"
+	              ? ents
+	                  .getAll()
+	                  .find((e: any) => e?.type === "pet" && String(e?.ownerEntityId ?? "") === String(ownerEntityId))
+	              : null);
+
+	          if (existing && typeof ents?.removeEntity === "function") {
+	            ents.removeEntity(existing.id);
+	          }
+	        }
+      } catch {
+        // ignore
       }
 
-      // Create the pet entity.
       const createPetEntity = (ctx.entities as any)?.createPetEntity;
       const createNpcEntity = (ctx.entities as any)?.createNpcEntity;
 
       let pet: any;
-
-      if (typeof createPetEntity === "function" && ownerEntityId) {
-        // EntityManager signature is (roomId, model, ownerEntityId).
-        try {
-          pet = createPetEntity(roomId, petProtoId, ownerEntityId);
-        } catch {
-          // If some contexts provide an object signature, support that too.
-          pet = createPetEntity({ roomId, model: petProtoId, ownerEntityId });
-        }
+      if (typeof createPetEntity === "function") {
+        // EntityManager signature: (roomId, model, ownerEntityId)
+        pet = createPetEntity(roomId, petProtoId, ownerEntityId);
       } else if (typeof createNpcEntity === "function") {
-        // Fallback: create an NPC and re-tag it as a pet.
-        try {
-          // EntityManager signature is (roomId, model).
-          pet = createNpcEntity(roomId, petProtoId);
-        } catch {
-          // Some contexts may use an object signature.
-          pet = createNpcEntity({ roomId, model: petProtoId });
-        }
+        // Legacy fallback: treat pet like an NPC with extra tags.
+        pet = createNpcEntity(roomId, petProtoId);
         (pet as any).type = "pet";
         (pet as any).ownerEntityId = ownerEntityId;
       } else {
         return "[spell] Cannot summon: entity factory missing.";
       }
 
-      // Tag pet metadata (non-breaking; used by later systems and audits).
-      (pet as any).ownerSessionId = ownerSessionId || (pet as any).ownerSessionId;
-      (pet as any).petClass = summon?.petClass;
+      // Personal visibility: pets are owner-only for v1.
+      (pet as any).ownerSessionId = ownerSessionId;
 
       // Default stance + follow semantics (v1)
-      (pet as any).petMode = String(summon?.stance ?? (pet as any).petMode ?? "defensive");
-      (pet as any).followOwner =
-        typeof summon?.followOwner === "boolean" ? summon.followOwner : Boolean((pet as any).followOwner ?? true);
+      (pet as any).petMode = String(summon?.stance ?? "defensive");
+      (pet as any).followOwner = typeof summon?.followOwner === "boolean" ? summon.followOwner : true;
+      (pet as any).petClass = String(summon?.petClass ?? "").trim() || undefined;
+      (pet as any).petTags = Array.isArray((pet as any).petTags) ? (pet as any).petTags : [];
+      if ((pet as any).petClass) (pet as any).petTags.push((pet as any).petClass);
 
-      // Apply pet vitals profile if a class/profile is supplied.
       try {
-        applyProfileToPetVitals(pet);
+        applyProfileToPetVitals(pet as any);
       } catch {
-        // ignore
+        // best-effort
       }
 
-      // Register with entity manager + room (best-effort; different contexts wire these differently).
+      // Persist desired pet state so reconnect/world rejoin can restore it.
       try {
-        (ctx.entities as any)?.addEntity?.(pet);
-      } catch {}
-      try {
-        (ctx.rooms as any)?.getRoom?.(roomId)?.addEntity?.(String((pet as any).id));
-      } catch {}
+        const prog: any = (char as any).progression ?? ((char as any).progression = {});
+        const flags: any = prog.flags ?? (prog.flags = {});
+        flags.pet = {
+          active: true,
+          protoId: petProtoId,
+          petClass: (pet as any).petClass ?? undefined,
+          mode: (pet as any).petMode ?? "defensive",
+          followOwner: (pet as any).followOwner !== false,
+          autoSummon: true,
+        };
+
+        (ctx as any)?.session && ((ctx as any).session.character = char);
+        await (ctx as any)?.characters?.saveCharacter?.(char);
+      } catch {
+        // never fail the cast for persistence
+      }
 
       return `[spell:${spell.name}] You summon ${petProtoId}.`;
     }
 
-	    case "damage_single_npc": {
+case "damage_single_npc": {
       const targetName = targetRaw || "rat";
 
       const npc = resolveTargetInRoom(ctx.entities as any, roomId, targetName, {
@@ -722,7 +719,7 @@ export async function castSpellForCharacter(
       return `[${gate.label}] You hit ${playerTargetName} for ${dmgFinal} damage. (${newHp}/${maxHp} HP)`;
     }
 
-	    case "heal_self": {
+case "heal_self": {
       const hp = (selfEntity as any).hp ?? 0;
       const maxHp = (selfEntity as any).maxHp ?? 0;
 

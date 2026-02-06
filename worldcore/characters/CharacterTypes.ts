@@ -117,6 +117,16 @@ export function defaultSkills(): SkillsState {
 
 export type AbilitiesState = Record<string, any>;
 
+// v1 pet persistence: stored under character.progression.flags.pet
+export type PetProgressionFlags = {
+  active?: boolean;
+  protoId?: string;
+  petClass?: string;
+  mode?: "passive" | "defensive" | "aggressive" | string;
+  followOwner?: boolean;
+  autoSummon?: boolean;
+};
+
 export interface ProgressionState {
   aa?: Record<string, any>;
   rebirth?: Record<string, any>;
@@ -130,7 +140,7 @@ export interface ProgressionState {
   quests?: QuestStateMap;
 
   collects?: Record<string, number>;
-  flags?: Record<string, any>;
+  flags?: (Record<string, any> & { pet?: PetProgressionFlags });
   exploration?: Record<string, number>;
 
   gathering?: Partial<Record<GatheringKind, GatheringStats>>;

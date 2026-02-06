@@ -72,18 +72,61 @@ export async function handlePetCommand(
     if (!em || typeof em.createPetEntity !== "function") return "[pet] Pet system is not available.";
 
     const pet = em.createPetEntity(roomId, proto, self.id);
-        const petClass = String(args[2] ?? "").trim();
-        if (petClass) (pet as any).petClass = petClass;
-        // Seed tags for profile resolution (v1.3)
-        (pet as any).petTags = Array.isArray((pet as any).petTags) ? (pet as any).petTags : [];
-        if (petClass) (pet as any).petTags.push(petClass);
-        applyProfileToPetVitals(pet as any);
+
+    const petClass = String(args[2] ?? "").trim();
+    if (petClass) (pet as any).petClass = petClass;
+
+    // Owner-only visibility (v1)
+    (pet as any).ownerSessionId = String((ctx as any)?.session?.id ?? "");
+
+    // Seed tags for profile resolution (v1.3)
+    (pet as any).petTags = Array.isArray((pet as any).petTags) ? (pet as any).petTags : [];
+    if (petClass) (pet as any).petTags.push(petClass);
+
+    try {
+      applyProfileToPetVitals(pet as any);
+    } catch {
+      // ignore
+    }
+
+    // Persist desired pet state for reconnect restore.
+    try {
+      const prog: any = (char as any).progression ?? ((char as any).progression = {});
+      const flags: any = prog.flags ?? (prog.flags = {});
+      flags.pet = {
+        active: true,
+        protoId: proto,
+        petClass: petClass || undefined,
+        mode: String((pet as any).petMode ?? "defensive"),
+        followOwner: (pet as any).followOwner !== false,
+        autoSummon: true,
+      };
+
+      (ctx as any)?.session && ((ctx as any).session.character = char);
+      await (ctx as any)?.characters?.saveCharacter?.(char);
+    } catch {
+      // best-effort
+    }
+
     return `[pet] You summon ${pet.name ?? proto}.`;
   }
 
   if (sub === "dismiss" || sub === "despawn") {
     if (!em || typeof em.removePetForOwnerEntityId !== "function") return "[pet] Pet system is not available.";
     const ok = em.removePetForOwnerEntityId(self.id);
+
+    // Persist: mark pet inactive.
+    try {
+      const prog: any = (char as any).progression ?? ((char as any).progression = {});
+      const flags: any = prog.flags ?? (prog.flags = {});
+      const prev: any = flags.pet && typeof flags.pet === "object" ? flags.pet : {};
+      flags.pet = { ...prev, active: false };
+      (ctx as any)?.session && ((ctx as any).session.character = char);
+      await (ctx as any)?.characters?.saveCharacter?.(char);
+    } catch {
+      // best-effort
+    }
+
     return ok ? "[pet] Your pet vanishes." : "[pet] You have no pet.";
   }
 
@@ -91,6 +134,18 @@ export async function handlePetCommand(
     const pet = getPetForOwner(ctx, self.id);
     if (!pet) return "[pet] You have no pet.";
     (pet as any).followOwner = sub === "follow";
+
+    try {
+      const prog: any = (char as any).progression ?? ((char as any).progression = {});
+      const flags: any = prog.flags ?? (prog.flags = {});
+      const prev: any = flags.pet && typeof flags.pet === "object" ? flags.pet : {};
+      flags.pet = { ...prev, followOwner: (pet as any).followOwner === true };
+      (ctx as any)?.session && ((ctx as any).session.character = char);
+      await (ctx as any)?.characters?.saveCharacter?.(char);
+    } catch {
+      // best-effort
+    }
+
     return sub === "follow" ? "[pet] Your pet will follow you." : "[pet] Your pet stays here.";
   }
 
@@ -98,6 +153,18 @@ export async function handlePetCommand(
     const pet = getPetForOwner(ctx, self.id);
     if (!pet) return "[pet] You have no pet.";
     (pet as any).petMode = sub;
+
+    try {
+      const prog: any = (char as any).progression ?? ((char as any).progression = {});
+      const flags: any = prog.flags ?? (prog.flags = {});
+      const prev: any = flags.pet && typeof flags.pet === "object" ? flags.pet : {};
+      flags.pet = { ...prev, mode: sub };
+      (ctx as any)?.session && ((ctx as any).session.character = char);
+      await (ctx as any)?.characters?.saveCharacter?.(char);
+    } catch {
+      // best-effort
+    }
+
     return `[pet] Pet mode set to ${sub}.`;
   }
 
