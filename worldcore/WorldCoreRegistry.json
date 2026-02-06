@@ -2850,25 +2850,21 @@
     },
     "items.petEquipmentOps": {
       "dependsOn": [
-        "utils.logger",
         "items.catalog",
-        "items.inventoryHelpers",
-        "mail.service",
-        "characters.service?",
-        "loot.OverflowDelivery",
-        "items.equipmentOps"
-      ],
-      "functions": [
-        "petEquipFirstMatchingFromBags",
-        "petUnequipToBags",
-        "formatPetGear"
+        "loot.OverflowDelivery"
       ],
       "kind": "service",
+      "lifecycle": "stateless",
       "notes": [
-        "Pet gear swap logic operating on character.inventory and progression.flags.pet.gear.",
-        "Uses OverflowDelivery for bag overflow; refuses swaps when displaced pet gear cannot be delivered safely."
+        "Pet equipment operations: equip/unequip items onto pets using the same item templates as players.",
+        "Moves real items between owner inventory and char.progression.flags.pet.gear with overflow-to-mail safety."
       ],
-      "path": "worldcore/items/petEquipmentOps.ts"
+      "path": "worldcore/items/petEquipmentOps.ts",
+      "provides": [
+        "petEquipFirstMatchingFromBags(ctx,char,slot):Promise<string>",
+        "petUnequipToBags(ctx,char,slot):Promise<string>",
+        "formatPetGear(char):string"
+      ]
     },
     "items.resolve": {
       "dependsOn": [
@@ -4604,8 +4600,7 @@
         "Supports damage_single_npc and heal_self kinds.",
         "Supports Virtuoso song casts (isSong + songSchool) including melody-driven auto-casts via SongEngine.",
         "Applies song scaling from song school skill and an optional equipped instrument bonus (instrumentPct / instrumentPctBySchool) for deterministic song tuning.",
-        "Tracks cooldowns and power resource costs via CastingGates / PowerResources; trains song schools on successful song casts.",
-        "Implements summon_pet: creates (or replaces) a single pet entity for the caster using ctx.entities.createPetEntity and PetProfiles."
+        "Tracks cooldowns and power resource costs via CastingGates / PowerResources; trains song schools on successful song casts."
       ],
       "path": "worldcore/mud/MudSpells.ts",
       "provides": [
@@ -4726,6 +4721,49 @@
         "Includes DEFAULT_NPC_PROTOTYPES (training_dummy, town_rat, coward_rat, ore_vein_small, town_guard, rat_pack_raider, bandit_caster, starter_alchemist) plus guard call radius helpers and a live prototype registry."
       ],
       "path": "worldcore/npc/NpcTypes.ts"
+    },
+    "pets.ai": {
+      "dependsOn": [
+        "pets.profiles",
+        "combat.statusEffects",
+        "combat.playerHotTicker",
+        "mud.actions.combat"
+      ],
+      "kind": "service",
+      "lifecycle": "stateless",
+      "notes": [
+        "Pet tick AI: follow/mode behaviors plus role kit actions (tank/dps/heal/utility) and swing cadence.",
+        "Role kits use StatusEffects for DOT/HOT/buffs/debuffs and can also trigger item procs."
+      ],
+      "path": "worldcore/pets/PetAi.ts"
+    },
+    "pets.gear": {
+      "dependsOn": [
+        "items.catalog"
+      ],
+      "kind": "service",
+      "lifecycle": "stateless",
+      "notes": [
+        "Computes pet gear bonuses and proc definitions from equipped items (shared with player item templates).",
+        "Used during pet spawn/rehydrate and by pet AI/combat to read gear scaling and procs."
+      ],
+      "path": "worldcore/pets/PetGear.ts"
+    },
+    "pets.profiles": {
+      "dependsOn": [
+        "pets.gear"
+      ],
+      "kind": "service",
+      "lifecycle": "stateless",
+      "notes": [
+        "Role-based pet profile resolver (pet_tank/pet_dps/pet_heal/pet_utility) with optional species/flavor tags.",
+        "Applies baseline vitals and attaches role metadata for downstream AI/combat."
+      ],
+      "path": "worldcore/pets/PetProfiles.ts",
+      "provides": [
+        "applyProfileToPetVitals(pet):void",
+        "resolvePetRole(pet):string"
+      ]
     },
     "progression.core": {
       "dependsOn": [
@@ -5595,7 +5633,6 @@
         "Defines SpellDefinition and SpellKind plus the SPELLS registry.",
         "Includes debug_arcane_bolt, mage_fire_bolt, cleric_minor_heal, and Virtuoso song spells.",
         "SpellKind includes buff/debuff/DOT kinds (buff_self, buff_single_ally, debuff_single_npc, damage_dot_single_npc).",
-        "SpellKind includes \"summon_pet\" for spell-driven pet/minion creation.",
         "SpellStatusEffect payloads define status effect id/modifiers/duration/maxStacks for buff/debuff/DOT spells.",
         "Current wiring: buff_self and buff_single_ally are implemented in MudSpells; NPC debuffs/DOTs remain a TODO until NPC statusEffects + ticking lands."
       ],
@@ -6763,19 +6800,102 @@
       "path": "worldcore/test/contract_npcThreat_tauntOverridesTopThreat.test.ts",
       "service": "npc.threat"
     },
-    "test.contractPetSummonSpellTiers": {
-      "deps": [
-        "worldcore.mud.MudSpells",
-        "worldcore.spells.SpellTypes",
-        "worldcore.world.RegionFlags",
-        "worldcore.core.EntityManager",
-        "worldcore.pets.PetProfiles"
+    "test.contractPetGearPersistence": {
+      "dependsOn": [
+        "items.petEquipmentOps",
+        "characters.persist",
+        "items.catalog"
       ],
       "kind": "test",
-      "path": "worldcore/test/contract_petSummon_spellTiers.test.ts",
-      "provides": [
-        "Contract: summon_pet spells support tier gating, resummon replacement, and deny-path ordering (no cost/cooldown when denied)."
-      ]
+      "notes": [
+        "[contract] pet gear persistence: equip/unequip round-trips through progression.flags.pet.gear and persists via character snapshot/patch."
+      ],
+      "path": "worldcore/test/contract_petGear_persistence.test.ts"
+    },
+    "test.contractPetProfiles": {
+      "dependsOn": [
+        "pets.profiles"
+      ],
+      "kind": "test",
+      "notes": [
+        "[contract] pet profiles: validates applyProfileToPetVitals applies expected baseline vitals and tags."
+      ],
+      "path": "worldcore/test/contract_pet_profiles.test.ts"
+    },
+    "test.contractPetRoleKits": {
+      "dependsOn": [
+        "pets.ai",
+        "combat.statusEffects",
+        "combat.playerHotTicker",
+        "mud.actions.combat"
+      ],
+      "kind": "test",
+      "notes": [
+        "[contract] pet role kits: tank stonehide/taunt, dps rend DOT, utility disrupt debuff, heal mend/regen HOT; healer healing tick suppresses swing that tick."
+      ],
+      "path": "worldcore/test/contract_pet_role_kits.test.ts"
+    },
+    "test.contractPetRoleProfiles": {
+      "dependsOn": [
+        "pets.profiles"
+      ],
+      "kind": "test",
+      "notes": [
+        "[contract] pet role profiles: validates role baseline vitals differ and role resolution is stable across flavor tags."
+      ],
+      "path": "worldcore/test/contract_pet_roleProfiles.test.ts"
+    },
+    "test.contractPetSummonSpellTiers": {
+      "dependsOn": [
+        "mud.spells",
+        "pets.profiles",
+        "core.entities",
+        "combat.cooldowns",
+        "resources.power"
+      ],
+      "kind": "test",
+      "notes": [
+        "[contract] summon_pet spell tiers: validates tier selection, deny path ordering, and resummon replaces existing pet (single active pet)."
+      ],
+      "path": "worldcore/test/contract_petSummon_spellTiers.test.ts"
+    },
+    "test.contractPetTickAi": {
+      "dependsOn": [
+        "pets.ai",
+        "mud.actions.combat",
+        "core.entities"
+      ],
+      "kind": "test",
+      "notes": [
+        "[contract] pet tick AI: defensive swings when owner engaged and respects cooldown enforcement."
+      ],
+      "path": "worldcore/test/contract_pet_tick_ai.test.ts"
+    },
+    "test.contractPetTickRoleAi": {
+      "dependsOn": [
+        "pets.ai",
+        "pets.profiles",
+        "combat.statusEffects",
+        "mud.actions.combat"
+      ],
+      "kind": "test",
+      "notes": [
+        "[contract] pet tick role AI: role behaviors (heal/utility) act and still attack when stable; verifies role-specific decisions are deterministic."
+      ],
+      "path": "worldcore/test/contract_pet_tick_role_ai.test.ts"
+    },
+    "test.contractPetProcV2CastSpell": {
+      "dependsOn": [
+        "combat.npcCombat",
+        "pets.gear",
+        "spells.types",
+        "combat.statusEffects"
+      ],
+      "kind": "test",
+      "notes": [
+        "[contract] pet proc v2: item procs may specify spellId to apply a status effect to the proc recipient (target/self/owner)."
+      ],
+      "path": "worldcore/test/contract_pet_proc_v2_castSpell.test.ts"
     },
     "test.contractPhysicalHitResolverBlockAndRiposteFlags": {
       "class": "(test)",

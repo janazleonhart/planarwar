@@ -25,11 +25,13 @@ export type ItemProcDef = {
   trigger?: "on_hit" | "on_being_hit";
   chance?: number; // 0..1
   icdMs?: number;
-  // v1: simple direct damage proc
+
   damage?: number;
-  // Optional label for messaging/debug
+  spellId?: string;
+  applyTo?: "target" | "self" | "owner";
+  allowProcChain?: boolean;
+
   name?: string;
-  // Optional internal id
   id?: string;
 };
 
@@ -80,6 +82,22 @@ function num(v: any): number {
   return Number.isFinite(n) ? n : 0;
 }
 
+function resolveEquippedItemId(stack: any): string | null {
+  if (!stack) return null;
+  if (typeof stack === "string") {
+    const s = stack.trim();
+    return s ? s : null;
+  }
+  if (typeof stack === "object") {
+    const v = (stack as any).itemId ?? (stack as any).id;
+    if (typeof v === "string") {
+      const s = v.trim();
+      return s ? s : null;
+    }
+  }
+  return null;
+}
+
 // Conservative mapping constants.
 // These are *not* meant to be final tuning; they're here so pet gear immediately
 // matters without blowing up balance.
@@ -98,8 +116,9 @@ export function computePetGearBonuses(pet: any, itemService: any): PetGearBonuse
 
   for (const slot of Object.keys(equip)) {
     const stack: any = equip[slot];
-    if (!stack || !stack.itemId) continue;
-    const stats = getStatsForItem(String(stack.itemId), itemService);
+    const itemId = resolveEquippedItemId(stack);
+    if (!itemId) continue;
+    const stats = getStatsForItem(itemId, itemService);
     if (!stats) continue;
 
     // Explicit pet knobs (best)
@@ -152,8 +171,9 @@ export function collectItemProcsFromGear(pet: any, itemService: any): ItemProcDe
 
   for (const slot of Object.keys(equip)) {
     const stack: any = equip[slot];
-    if (!stack || !stack.itemId) continue;
-    const stats = getStatsForItem(String(stack.itemId), itemService);
+    const itemId = resolveEquippedItemId(stack);
+    if (!itemId) continue;
+    const stats = getStatsForItem(itemId, itemService);
     if (!stats) continue;
 
     const maybe = (stats as any).procs ?? (stats as any).proc ?? (stats as any).procOnHit;

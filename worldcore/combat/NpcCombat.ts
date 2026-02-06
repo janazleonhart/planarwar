@@ -26,7 +26,8 @@ import {
   type WeaponSkillId,
   type SpellSchoolId,
 } from "./CombatEngine";
-import { computeEntityCombatStatusSnapshot, clearAllStatusEffectsFromEntity, getActiveStatusEffectsForEntity } from "./StatusEffects";
+import { computeEntityCombatStatusSnapshot, clearAllStatusEffectsFromEntity, getActiveStatusEffectsForEntity, applyStatusEffectToEntity } from "./StatusEffects";
+import { SPELLS, type SpellDefinition } from "../spells/SpellTypes";
 import { formatWorldSpellDirectDamageLine } from "./CombatLog";
 import type { AttackChannel } from "../actions/ActionTypes";
 import {
@@ -105,6 +106,32 @@ function setProcCooldown(pet: any, key: string, now: number, icdMs: number | und
   map[key] = now + ms;
 }
 
+
+function resolveProcApplyTo(p: any, trigger: string): "target" | "self" | "owner" {
+  const a = String(p?.applyTo ?? "").trim().toLowerCase();
+  if (a === "target" || a === "self" || a === "owner") return a as any;
+  return trigger === "on_being_hit" ? "self" : "target";
+}
+
+function resolveProcRecipientEntity(
+  ctx: any,
+  petEntity: any,
+  targetNpc: Entity,
+  applyTo: "target" | "self" | "owner",
+): Entity | null {
+  if (applyTo === "target") return targetNpc;
+  if (applyTo === "self") return petEntity as any;
+  try {
+    const oid = String(petEntity?.ownerEntityId ?? "").trim();
+    if (oid && ctx?.entities && typeof ctx.entities.get === "function") {
+      return ctx.entities.get(oid) as any;
+    }
+  } catch {
+    // ignore
+  }
+  return null;
+}
+
 async function tryTriggerPetOnHitProcs(
   ctx: SimpleCombatContext,
   ownerChar: CharacterState,
@@ -136,6 +163,103 @@ async function tryTriggerPetOnHitProcs(
       if (!isProcReady(petEntity, key, now)) continue;
 
       if (rng01(opts) > chance) continue;
+
+      // v2: spell procs (status/buff/debuff/DOT/direct)
+      try {
+        const procDepth = Number((opts as any)?.procDepth ?? 0);
+        if (Number.isFinite(procDepth) && procDepth > 0 && !p.allowProcChain) {
+          // Guard against runaway proc-chaining unless explicitly allowed.
+          setProcCooldown(petEntity, key, now, p.icdMs);
+          continue;
+        }
+
+        const spellId = String((p as any).spellId ?? "").trim();
+        if (spellId) {
+          const spell = (SPELLS as any)[spellId] as SpellDefinition | undefined;
+          if (spell) {
+            const applyTo = resolveProcApplyTo(p, trig);
+            const recipient = resolveProcRecipientEntity(ctx as any, petEntity as any, targetNpc as any, applyTo) as any;
+            if (recipient) {
+              let did = false;
+              // Prefer status effects when defined.
+              const se: any = (spell as any).statusEffect;
+              if (se && typeof se === "object") {
+                const input: any = {
+                  id: String(se.id ?? `proc_${spell.id}`),
+                  sourceKind: "item",
+                  sourceId: `proc:${spell.id}`,
+                  name: se.name ?? (spell as any).name,
+                  // Some spell definitions omit duration on the embedded statusEffect.
+                  // Default conservatively so the effect is observable and testable.
+                  durationMs: Number(se.durationMs ?? (spell as any).durationMs ?? 5000),
+                  maxStacks: se.maxStacks,
+                  stacks: se.stacks,
+                  initialStacks: se.stacks,
+                  modifiers: se.modifiers ?? {},
+                  tags: se.tags,
+                  stackingPolicy: se.stackingPolicy,
+                  stackingGroupId: se.stackingGroupId,
+                  appliedByKind: "npc",
+                  appliedById: String(petEntity?.id ?? "unknown"),
+                };
+
+                if (!Number.isFinite(input.durationMs) || input.durationMs <= 0) input.durationMs = 5000;
+
+                const kind = String((spell as any).kind ?? "");
+                if ((kind === "damage_dot_single_npc" || kind === "dot_single_npc") && !input.dot) {
+                  const tick = Number((spell as any).dotTickMs ?? 2000);
+                  const total = Number((spell as any).dotFlatDamage ?? 0);
+                  const maxTicks = Number((spell as any).dotMaxTicks ?? 0);
+                  if (tick > 0 && total > 0 && maxTicks > 0) {
+                    input.dot = {
+                      tickIntervalMs: tick,
+                      perTickDamage: Math.max(1, Math.ceil(total / maxTicks)),
+                      damageSchool: (spell as any).school ?? "pure",
+                    };
+                    if (!Number.isFinite(input.durationMs) || input.durationMs <= 0) input.durationMs = tick * maxTicks;
+                  }
+                }
+
+                try {
+                  applyStatusEffectToEntity(recipient as any, input, now);
+                  did = true;
+                } catch {
+                  // ignore
+                }
+              }
+
+              // Direct damage fallback for proc spells without statusEffect.
+              if (!did) {
+                const dmgFromSpell = Math.max(0, Math.floor(Number((spell as any).flatBonus ?? 0)));
+                if (dmgFromSpell > 0 && String(recipient.type) === "npc" && ctx?.npcs) {
+                  const prevHp = (recipient as any).hp ?? (recipient as any).maxHp ?? 1;
+                  const appliedHp = ctx.npcs.applyDamage(recipient.id, dmgFromSpell, {
+                    character: ownerChar,
+                    entityId: String(petEntity.id),
+                    tag: "pet_proc_spell",
+                  });
+
+                  let afterHp = Math.max(0, prevHp - dmgFromSpell);
+                  if (typeof appliedHp === "number") afterHp = appliedHp;
+                  else (recipient as any).hp = afterHp;
+
+                  extraDamage += dmgFromSpell;
+                  did = true;
+                }
+              }
+
+              if (did) {
+                const label = String((p as any).name ?? (spell as any).name ?? "Proc");
+                snippets.push(`[proc:${label}] triggers`);
+                setProcCooldown(petEntity, key, now, p.icdMs);
+                continue;
+              }
+            }
+          }
+        }
+      } catch {
+        // ignore proc spell errors
+      }
 
       const dmg = Math.max(0, Math.floor(Number(p.damage ?? 0)));
       if (dmg <= 0) {
