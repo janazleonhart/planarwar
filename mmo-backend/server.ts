@@ -20,6 +20,7 @@ import { setNpcPrototypes } from "../worldcore/npc/NpcTypes";
 import { installFileLogTap } from "./FileLogTap";
 import type { MudContext } from "../worldcore/mud/MudContext";
 import { tickSongsForCharacter, setMelodyActive, } from "../worldcore/songs/SongEngine";
+import { persistCharacterSnapshot } from "../worldcore/characters/characterPersist";
 import {
   createWorldServices,
   type WorldServicesOptions,
@@ -597,15 +598,63 @@ async function main() {
     );
 
     socket.on("close", () => {
-      // Safety: stop any running melody on logout/disconnect
-      const char = session.character;
-      if (char) {
-        setMelodyActive(char as CharacterState, false);
-      }
+      // WS close event is sync; we run async persistence best-effort.
+      void (async () => {
+        const char = session.character as CharacterState | undefined;
 
-      // Ensure we leave room so despawn broadcasts and membership doesn't leak
-      rooms.leaveRoom(session);
-      sessions.removeSession(session.id);
+        // Safety: stop any running melody on logout/disconnect
+        if (char) {
+          setMelodyActive(char, false);
+        }
+
+        // Best-effort: persist character snapshot (includes progression.flags.pet)
+        // BEFORE we leave the room so lastRegionId/pos are correct.
+        if (char) {
+          try {
+            // Sync from live entity + session room if available.
+            const ent = entities.getEntityByOwner(session.id);
+            if (ent) {
+              (char as any).posX = (ent as any).x ?? char.posX;
+              (char as any).posY = (ent as any).y ?? char.posY;
+              (char as any).posZ = (ent as any).z ?? char.posZ;
+            }
+            if (session.roomId) {
+              (char as any).lastRegionId = session.roomId;
+            }
+
+            const ctx: MudContext = {
+              sessions,
+              guilds,
+              session,
+              world,
+              characters,
+              entities,
+              items,
+              rooms,
+              npcs,
+              trades,
+              vendors,
+              bank,
+              auctions,
+              mail,
+              respawns,
+            } as any;
+
+            await persistCharacterSnapshot(ctx, char);
+          } catch (err: any) {
+            // Dev mode sessions may have no identity/userId. Never crash close.
+            log.debug("persistCharacterSnapshot skipped/failed on disconnect", {
+              sessionId: session.id,
+              charId: (char as any)?.id,
+              err: String(err?.message ?? err),
+            });
+          }
+        }
+
+        // Ensure we leave room so despawn broadcasts and membership doesn't leak
+        rooms.leaveRoom(session);
+        sessions.removeSession(session.id);
+      })();
     });
   });
 
