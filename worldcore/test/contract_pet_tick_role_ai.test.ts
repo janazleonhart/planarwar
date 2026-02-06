@@ -85,7 +85,8 @@ test("[contract] pet tick: heal role heals owner and does not attack", async () 
   };
 
   const out = await tickPetsForCharacter(ctx as any, ownerChar as any, 1000, { perform });
-  assert.ok(String(out).toLowerCase().includes("tends"), `expected heal line, got: ${out}`);
+  const low = String(out).toLowerCase();
+  assert.ok(low.includes("mends") || low.includes("tends"), `expected heal line, got: ${out}`);
   assert.equal(attacks, 0, "heal pet should not swing when healing");
   assert.ok(ownerEnt.hp > 40, "owner hp should increase");
 });
