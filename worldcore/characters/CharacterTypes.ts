@@ -125,6 +125,10 @@ export type PetProgressionFlags = {
   mode?: "passive" | "defensive" | "aggressive" | string;
   followOwner?: boolean;
   autoSummon?: boolean;
+
+  // Pet Gear v1:
+  // Map of slot -> ItemStack|null (same shape as character.equipment)
+  gear?: EquipmentState;
 };
 
 export interface ProgressionState {

@@ -1,15 +1,33 @@
 // worldcore/mud/commands/petCommand.ts
 //
-// Pet Engine v1:
-// - Command-driven pet control (no AI yet)
-// - One pet per owner (v1)
+// Pet Engine v1.x:
+// - Command-driven pet control
+// - Stored stance/follow + gear state on character progression flags
+//
+// Pet Gear v1:
+// - pet gear is real items moved from owner inventory
+// - persists in progression.flags.pet.gear
+// - later: will apply stats to pet entity on spawn
 
 import type { MudContext } from "../MudContext";
 import type { CharacterState } from "../../characters/CharacterTypes";
 import type { MudCommandInput } from "./types";
 import type { Entity } from "../../shared/Entity";
 import { performNpcAttack } from "../actions/MudCombatActions";
-import { applyProfileToPetVitals, getProfileDamageMult } from "../../pets/PetProfiles";
+import { applyProfileToPetVitals } from "../../pets/PetProfiles";
+import { persistCharacterSnapshot } from "../../characters/characterPersist";
+import {
+  petEquipFirstMatchingFromBags,
+  petUnequipToBags,
+  formatPetGear,
+} from "../../items/petEquipmentOps";
+
+function ensurePetFlags(char: any): any {
+  if (!char.progression) char.progression = {};
+  if (!char.progression.flags) char.progression.flags = {};
+  if (!char.progression.flags.pet) char.progression.flags.pet = {};
+  return char.progression.flags.pet;
+}
 
 function getSelfPlayerEntity(ctx: MudContext): Entity | undefined {
   const em: any = (ctx as any)?.entities;
@@ -35,16 +53,26 @@ function findTargetInRoomByNameOrId(ctx: MudContext, roomId: string, raw: string
   const needle = String(raw ?? "").trim().toLowerCase();
   if (!needle) return undefined;
   const ents = getEntitiesInRoom(ctx, roomId);
-  return ents.find((e: any) => String(e?.id ?? "").toLowerCase() === needle) ??
+  return (
+    ents.find((e: any) => String(e?.id ?? "").toLowerCase() === needle) ??
     ents.find((e: any) => String(e?.name ?? "").toLowerCase() === needle) ??
-    ents.find((e: any) => String(e?.model ?? "").toLowerCase() === needle);
+    ents.find((e: any) => String(e?.model ?? "").toLowerCase() === needle)
+  );
+}
+
+async function bestEffortPersist(ctx: MudContext, char: CharacterState): Promise<void> {
+  try {
+    await persistCharacterSnapshot(ctx as any, char as any);
+  } catch {
+    // never block the command on persistence
+  }
 }
 
 export async function handlePetCommand(
   ctx: MudContext,
   char: CharacterState,
   input: MudCommandInput
-): Promise<string> {
+): Promise<string | null> {
   const args = Array.isArray((input as any)?.args) ? (input as any).args : [];
   const sub = String(args[0] ?? "").toLowerCase();
 
@@ -57,75 +85,85 @@ export async function handlePetCommand(
   if (!sub || sub === "help") {
     return [
       "[pet] Commands:",
-      "  pet summon [protoId] [class] - summon a pet (dev v1.3; real summoning will be spell-driven).",
-      "  pet dismiss               - dismiss your pet.",
-      "  pet follow | stay         - toggle follow behavior.",
-      "  pet passive|defensive|aggressive - set mode (v1 stored, AI later).",
-      "  pet attack [target]       - pet attacks target (defaults to your engaged target).",
+      "  pet summon [protoId] [class]  - dev summon (spell-driven summoning is primary).",
+      "  pet dismiss                   - dismiss your pet (persists).",
+      "  pet follow | stay             - toggle follow behavior (persists).",
+      "  pet passive|defensive|aggressive - set mode (persists).",
+      "  pet attack [target]           - pet attacks target (defaults to your engaged target).",
+      "  pet gear                      - show pet equipment.",
+      "  pet equip <slot>              - equips first matching item from your bags onto pet.",
+      "  pet unequip <slot>            - unequips pet item back to your bags/mail.",
     ].join("\n");
   }
 
+  const petFlags = ensurePetFlags(char as any);
+
+  // -----------------------
+  // Pet gear commands
+  // -----------------------
+  if (sub === "gear") {
+    return formatPetGear(char as any);
+  }
+
+  if (sub === "equip") {
+    const slot = String(args[1] ?? "");
+    const msg = await petEquipFirstMatchingFromBags(ctx as any, char as any, slot);
+    await bestEffortPersist(ctx, char);
+    return `[pet] ${msg}`;
+  }
+
+  if (sub === "unequip") {
+    const slot = String(args[1] ?? "");
+    const msg = await petUnequipToBags(ctx as any, char as any, slot);
+    await bestEffortPersist(ctx, char);
+    return `[pet] ${msg}`;
+  }
+
+  // -----------------------
+  // Existing commands
+  // -----------------------
   if (sub === "summon") {
     const proto = String(args[1] ?? "pet_wolf").trim() || "pet_wolf";
+
+    if (!em || typeof em.createPetEntity !== "function") return "[pet] Pet system is not available.";
+
+    // enforce single pet
     const existing = getPetForOwner(ctx, self.id);
     if (existing) return `[pet] You already have a pet (${existing.name ?? existing.model ?? existing.id}).`;
-    if (!em || typeof em.createPetEntity !== "function") return "[pet] Pet system is not available.";
 
     const pet = em.createPetEntity(roomId, proto, self.id);
 
     const petClass = String(args[2] ?? "").trim();
     if (petClass) (pet as any).petClass = petClass;
 
-    // Owner-only visibility (v1)
-    (pet as any).ownerSessionId = String((ctx as any)?.session?.id ?? "");
-
-    // Seed tags for profile resolution (v1.3)
+    // Seed tags for profile resolution
     (pet as any).petTags = Array.isArray((pet as any).petTags) ? (pet as any).petTags : [];
     if (petClass) (pet as any).petTags.push(petClass);
 
-    try {
-      applyProfileToPetVitals(pet as any);
-    } catch {
-      // ignore
-    }
+    applyProfileToPetVitals(pet as any);
 
-    // Persist desired pet state for reconnect restore.
-    try {
-      const prog: any = (char as any).progression ?? ((char as any).progression = {});
-      const flags: any = prog.flags ?? (prog.flags = {});
-      flags.pet = {
-        active: true,
-        protoId: proto,
-        petClass: petClass || undefined,
-        mode: String((pet as any).petMode ?? "defensive"),
-        followOwner: (pet as any).followOwner !== false,
-        autoSummon: true,
-      };
+    // persist intent
+    petFlags.active = true;
+    petFlags.protoId = proto;
+    if (petClass) petFlags.petClass = petClass;
+    petFlags.autoSummon = true;
+    if (petFlags.mode == null) petFlags.mode = "defensive";
+    if (petFlags.followOwner == null) petFlags.followOwner = true;
 
-      (ctx as any)?.session && ((ctx as any).session.character = char);
-      await (ctx as any)?.characters?.saveCharacter?.(char);
-    } catch {
-      // best-effort
-    }
+    await bestEffortPersist(ctx, char);
 
     return `[pet] You summon ${pet.name ?? proto}.`;
   }
 
   if (sub === "dismiss" || sub === "despawn") {
     if (!em || typeof em.removePetForOwnerEntityId !== "function") return "[pet] Pet system is not available.";
+
     const ok = em.removePetForOwnerEntityId(self.id);
 
-    // Persist: mark pet inactive.
-    try {
-      const prog: any = (char as any).progression ?? ((char as any).progression = {});
-      const flags: any = prog.flags ?? (prog.flags = {});
-      const prev: any = flags.pet && typeof flags.pet === "object" ? flags.pet : {};
-      flags.pet = { ...prev, active: false };
-      (ctx as any)?.session && ((ctx as any).session.character = char);
-      await (ctx as any)?.characters?.saveCharacter?.(char);
-    } catch {
-      // best-effort
-    }
+    // persist state (do not delete gear)
+    petFlags.active = false;
+
+    await bestEffortPersist(ctx, char);
 
     return ok ? "[pet] Your pet vanishes." : "[pet] You have no pet.";
   }
@@ -133,37 +171,24 @@ export async function handlePetCommand(
   if (sub === "follow" || sub === "stay") {
     const pet = getPetForOwner(ctx, self.id);
     if (!pet) return "[pet] You have no pet.";
-    (pet as any).followOwner = sub === "follow";
 
-    try {
-      const prog: any = (char as any).progression ?? ((char as any).progression = {});
-      const flags: any = prog.flags ?? (prog.flags = {});
-      const prev: any = flags.pet && typeof flags.pet === "object" ? flags.pet : {};
-      flags.pet = { ...prev, followOwner: (pet as any).followOwner === true };
-      (ctx as any)?.session && ((ctx as any).session.character = char);
-      await (ctx as any)?.characters?.saveCharacter?.(char);
-    } catch {
-      // best-effort
-    }
+    const follow = sub === "follow";
+    (pet as any).followOwner = follow;
 
-    return sub === "follow" ? "[pet] Your pet will follow you." : "[pet] Your pet stays here.";
+    petFlags.followOwner = follow;
+    await bestEffortPersist(ctx, char);
+
+    return follow ? "[pet] Your pet will follow you." : "[pet] Your pet stays here.";
   }
 
   if (sub === "passive" || sub === "defensive" || sub === "aggressive") {
     const pet = getPetForOwner(ctx, self.id);
     if (!pet) return "[pet] You have no pet.";
+
     (pet as any).petMode = sub;
 
-    try {
-      const prog: any = (char as any).progression ?? ((char as any).progression = {});
-      const flags: any = prog.flags ?? (prog.flags = {});
-      const prev: any = flags.pet && typeof flags.pet === "object" ? flags.pet : {};
-      flags.pet = { ...prev, mode: sub };
-      (ctx as any)?.session && ((ctx as any).session.character = char);
-      await (ctx as any)?.characters?.saveCharacter?.(char);
-    } catch {
-      // best-effort
-    }
+    petFlags.mode = sub;
+    await bestEffortPersist(ctx, char);
 
     return `[pet] Pet mode set to ${sub}.`;
   }
@@ -172,19 +197,15 @@ export async function handlePetCommand(
     const pet = getPetForOwner(ctx, self.id);
     if (!pet) return "[pet] You have no pet.";
 
-    // Target: explicit arg or owner's engaged target.
     let targetRaw = String(args[1] ?? "").trim();
-    if (!targetRaw) {
-      targetRaw = String((self as any).engagedTargetId ?? "").trim();
-    }
+    if (!targetRaw) targetRaw = String((self as any).engagedTargetId ?? "").trim();
     if (!targetRaw) return "[pet] No target. Engage something or specify a target.";
 
     const target = findTargetInRoomByNameOrId(ctx, roomId, targetRaw);
     if (!target) return "[pet] Target not found in this room.";
 
-    // v1: execute a single melee attack using the shared pipeline.
     (pet as any).engagedTargetId = String((target as any).id ?? "");
-    pet.roomId = roomId; // safety
+    (pet as any).roomId = roomId;
 
     return await performNpcAttack(ctx, char, pet as any, target as any);
   }

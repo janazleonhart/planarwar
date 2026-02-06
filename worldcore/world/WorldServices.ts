@@ -200,6 +200,10 @@ export async function createWorldServices(
         pet.petMode = String(petCfg.mode ?? "defensive");
         pet.followOwner = petCfg.followOwner !== false;
 
+        // Pet gear persistence (v1): attach persisted gear to the pet entity.
+        // This slice only persists and reattaches gear; combat stat scaling will be added later.
+        pet.equipment = (petCfg.gear && typeof petCfg.gear === "object") ? petCfg.gear : {};
+
         try {
           applyProfileToPetVitals(pet);
         } catch {

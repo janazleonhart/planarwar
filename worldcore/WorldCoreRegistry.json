@@ -2848,6 +2848,28 @@
       ],
       "path": "worldcore/items/OverflowPolicy.ts"
     },
+    "items.petEquipmentOps": {
+      "dependsOn": [
+        "utils.logger",
+        "items.catalog",
+        "items.inventoryHelpers",
+        "mail.service",
+        "characters.service?",
+        "loot.OverflowDelivery",
+        "items.equipmentOps"
+      ],
+      "functions": [
+        "petEquipFirstMatchingFromBags",
+        "petUnequipToBags",
+        "formatPetGear"
+      ],
+      "kind": "service",
+      "notes": [
+        "Pet gear swap logic operating on character.inventory and progression.flags.pet.gear.",
+        "Uses OverflowDelivery for bag overflow; refuses swaps when displaced pet gear cannot be delivered safely."
+      ],
+      "path": "worldcore/items/petEquipmentOps.ts"
+    },
     "items.resolve": {
       "dependsOn": [
         "items.service",
@@ -3002,9 +3024,6 @@
       "path": "worldcore/movement/moveOps.ts"
     },
     "mud.abilities": {
-      "kind": "service",
-      "lifecycle": "stateless",
-      "path": "worldcore/mud/MudAbilities.ts",
       "dependsOn": [
         "mud.context",
         "abilities.types",
@@ -3019,14 +3038,17 @@
         "items.inventoryHelpers",
         "mud.actions.combat"
       ],
-      "provides": [
-        "handleAbilityCommand(ctx:MudContext, char:CharacterState, abilityName:string, targetName?:string):Promise<string>",
-        "listKnownAbilitiesForChar(char:CharacterState):AbilityDefinition[]"
-      ],
+      "kind": "service",
+      "lifecycle": "stateless",
       "notes": [
         "Implements 'abilities' and 'ability <name> [target]'.",
         "Guarantee: deny-path gates (target validation + service protection + stealth requirements) happen BEFORE cost/cooldown gates.",
         "Cutthroat: stealth toggle + stealth-required abilities (pickpocket/backstab/mug) + breaks-stealth semantics."
+      ],
+      "path": "worldcore/mud/MudAbilities.ts",
+      "provides": [
+        "handleAbilityCommand(ctx:MudContext, char:CharacterState, abilityName:string, targetName?:string):Promise<string>",
+        "listKnownAbilitiesForChar(char:CharacterState):AbilityDefinition[]"
       ]
     },
     "mud.actions": {
@@ -6278,8 +6300,6 @@
       "service": "worldcore"
     },
     "test.contractCutthroatStealthPickpocketBackstabMug": {
-      "kind": "test.contract",
-      "path": "worldcore/test/contract_cutthroat_stealth_pickpocket_backstab_mug.test.ts",
       "dependsOn": [
         "mud.abilities",
         "abilities.types",
@@ -6287,11 +6307,13 @@
         "mud.actions.combat",
         "items.inventoryHelpers"
       ],
+      "kind": "test.contract",
       "notes": [
         "Contract: stealth toggles on/off and is represented as a status-effect tag.",
         "Contract: stealth-required abilities deny BEFORE cost/cooldown gates when not stealthed.",
         "Contract: pickpocket and mug both break stealth; mug deals damage + steals gold deterministically under fixed RNG."
       ],
+      "path": "worldcore/test/contract_cutthroat_stealth_pickpocket_backstab_mug.test.ts",
       "provides": [
         "Guards stealth state storage semantics (progression.statusEffects.active)",
         "Guards deny-path ordering for stealth-gated abilities",
@@ -6556,6 +6578,18 @@
         "contract:npcCombatAssistThrottle"
       ]
     },
+    "test.contractNpcCombatCounterattackBlockMitigation": {
+      "class": "(test)",
+      "dependsOn": [],
+      "kind": "test",
+      "lifecycle": "test",
+      "notes": [
+        "Contract: NPC counter-attack treats block as partial mitigation (reduced damage), not a full avoid, and can be tested deterministically via injected RNG."
+      ],
+      "owns": [],
+      "path": "worldcore/test/contract_npcCombat_counterattack_blockMitigation.test.ts",
+      "provides": []
+    },
     "test.contractNpcCombatGateForHelp": {
       "class": "(test) contract_npcCombat_gateForHelp",
       "ctorArgs": [],
@@ -6564,28 +6598,99 @@
       ],
       "kind": "test",
       "lifecycle": "active",
+      "notes": [
+        "Contract: gater NPC begins a long cast then pulls social allies from an expanded assist radius (train behavior).",
+        "Uses npc tags (eg: 'gater') and env knobs PW_GATE_FOR_HELP_* to tune cast time, radius, cooldown, and trigger HP% threshold."
+      ],
       "owns": [
         "test:contract_npcCombat_gateForHelp"
       ],
       "path": "worldcore/test/contract_npcCombat_gateForHelp.test.ts",
       "provides": [
         "contract:npcCombatGateForHelp"
-      ],
-      "notes": [
-        "Contract: gater NPC begins a long cast then pulls social allies from an expanded assist radius (train behavior).",
-        "Uses npc tags (eg: 'gater') and env knobs PW_GATE_FOR_HELP_* to tune cast time, radius, cooldown, and trigger HP% threshold."
       ]
     },
-    "test.contractNpcCombatCounterattackBlockMitigation": {
-      "kind": "test",
-      "lifecycle": "test",
-      "class": "(test)",
-      "path": "worldcore/test/contract_npcCombat_counterattack_blockMitigation.test.ts",
-      "dependsOn": [],
-      "provides": [],
-      "owns": [],
+    "test.contractNpcCombatGateForHelpCcInterrupt": {
+      "dependsOn": [
+        "combat.npcCombat",
+        "combat.statusEffects"
+      ],
+      "kind": "test.contract",
       "notes": [
-        "Contract: NPC counter-attack treats block as partial mitigation (reduced damage), not a full avoid, and can be tested deterministically via injected RNG."
+        "Contract: crowd control (stun/silence/root/knockdown) interrupts gate-for-help casting immediately.",
+        "Guards that interrupted casts do not later fire assist waves."
+      ],
+      "path": "worldcore/test/contract_npcCombat_gateForHelp_ccInterrupt.test.ts",
+      "provides": [
+        "Guards gate CC interruption semantics"
+      ]
+    },
+    "test.contractNpcCombatGateForHelpEscalation": {
+      "class": "(test) contract_npcCombat_gateForHelp_escalation",
+      "ctorArgs": [],
+      "dependsOn": [
+        "worldcore/combat/NpcCombat.ts"
+      ],
+      "kind": "test",
+      "lifecycle": "active",
+      "notes": [
+        "Contract: repeated successful gates escalate assist radius (train severity grows if players ignore gaters)."
+      ],
+      "owns": [
+        "test:contract_npcCombat_gateForHelp_escalation"
+      ],
+      "path": "worldcore/test/contract_npcCombat_gateForHelp_escalation.test.ts",
+      "provides": [
+        "contract:npcCombatGateForHelpEscalation"
+      ]
+    },
+    "test.contractNpcCombatGateForHelpInterrupt": {
+      "class": "(test) contract_npcCombat_gateForHelp_interrupt",
+      "ctorArgs": [],
+      "dependsOn": [
+        "worldcore/combat/NpcCombat.ts"
+      ],
+      "kind": "test",
+      "lifecycle": "active",
+      "owns": [
+        "test:contract_npcCombat_gateForHelp_interrupt"
+      ],
+      "path": "worldcore/test/contract_npcCombat_gateForHelp_interrupt.test.ts",
+      "provides": [
+        "contract:npcCombatGateForHelpInterrupt"
+      ]
+    },
+    "test.contractNpcCombatGateForHelpMultiWave": {
+      "class": "(test) contract_npcCombat_gateForHelp_multiWave",
+      "ctorArgs": [],
+      "dependsOn": [
+        "worldcore/combat/NpcCombat.ts"
+      ],
+      "kind": "test",
+      "lifecycle": "active",
+      "notes": [
+        "Contract: gate-for-help can fire multiple pulses (waves), each capped, pulling additional social allies deterministically."
+      ],
+      "owns": [
+        "test:contract_npcCombat_gateForHelp_multiWave"
+      ],
+      "path": "worldcore/test/contract_npcCombat_gateForHelp_multiWave.test.ts",
+      "provides": [
+        "contract:npcCombatGateForHelpMultiWave"
+      ]
+    },
+    "test.contractNpcCombatGateForHelpPushbackInterrupt": {
+      "dependsOn": [
+        "combat.npcCombat"
+      ],
+      "kind": "test.contract",
+      "notes": [
+        "Contract: gate-for-help cast can be delayed by pushback (damage slows casting without canceling).",
+        "Guards deterministic timing: gate completion must not fire early when pushback is applied."
+      ],
+      "path": "worldcore/test/contract_npcCombat_gateForHelp_pushbackInterrupt.test.ts",
+      "provides": [
+        "Guards gate pushback timing invariants"
       ]
     },
     "test.contractNpcCombatNpcRiposteRealDamage": {
@@ -6607,16 +6712,16 @@
       ]
     },
     "test.contractNpcCombatPlayerRiposteOnParry": {
+      "class": "(test)",
+      "dependsOn": [],
       "kind": "test",
       "lifecycle": "test",
-      "class": "(test)",
-      "path": "worldcore/test/contract_npcCombat_playerRiposte_onParry.test.ts",
-      "dependsOn": [],
-      "provides": [],
-      "owns": [],
       "notes": [
         "Contract: When the player parries an NPC counter-attack, NpcCombat performs a single immediate player riposte counter-swing (non-lethal in v1.1.x)."
-      ]
+      ],
+      "owns": [],
+      "path": "worldcore/test/contract_npcCombat_playerRiposte_onParry.test.ts",
+      "provides": []
     },
     "test.contractNpcThreatDecayAssist": {
       "class": "(test) contract_npcThreat_decay_assist",
@@ -6658,17 +6763,31 @@
       "path": "worldcore/test/contract_npcThreat_tauntOverridesTopThreat.test.ts",
       "service": "npc.threat"
     },
+    "test.contractPetSummonSpellTiers": {
+      "deps": [
+        "worldcore.mud.MudSpells",
+        "worldcore.spells.SpellTypes",
+        "worldcore.world.RegionFlags",
+        "worldcore.core.EntityManager",
+        "worldcore.pets.PetProfiles"
+      ],
+      "kind": "test",
+      "path": "worldcore/test/contract_petSummon_spellTiers.test.ts",
+      "provides": [
+        "Contract: summon_pet spells support tier gating, resummon replacement, and deny-path ordering (no cost/cooldown when denied)."
+      ]
+    },
     "test.contractPhysicalHitResolverBlockAndRiposteFlags": {
+      "class": "(test)",
+      "dependsOn": [],
       "kind": "test",
       "lifecycle": "test",
-      "class": "(test)",
-      "path": "worldcore/test/contract_physicalHitResolver_block_and_riposteFlags.test.ts",
-      "dependsOn": [],
-      "provides": [],
-      "owns": [],
       "notes": [
         "Contract: PhysicalHitResolver surfaces blockMultiplier (<1) on block outcome and riposte flag on parry when allowRiposte is enabled."
-      ]
+      ],
+      "owns": [],
+      "path": "worldcore/test/contract_physicalHitResolver_block_and_riposteFlags.test.ts",
+      "provides": []
     },
     "test.contractPhysicalHitResolverCritMultiRiposte": {
       "class": "(test)",
@@ -7691,103 +7810,6 @@
       "owns": [],
       "path": "worldcore/test/statusEffects.contract.test.ts",
       "provides": []
-    },
-    "test.contractNpcCombatGateForHelpInterrupt": {
-      "class": "(test) contract_npcCombat_gateForHelp_interrupt",
-      "ctorArgs": [],
-      "dependsOn": [
-        "worldcore/combat/NpcCombat.ts"
-      ],
-      "kind": "test",
-      "lifecycle": "active",
-      "owns": [
-        "test:contract_npcCombat_gateForHelp_interrupt"
-      ],
-      "path": "worldcore/test/contract_npcCombat_gateForHelp_interrupt.test.ts",
-      "provides": [
-        "contract:npcCombatGateForHelpInterrupt"
-      ]
-    },
-    "test.contractNpcCombatGateForHelpMultiWave": {
-      "class": "(test) contract_npcCombat_gateForHelp_multiWave",
-      "ctorArgs": [],
-      "dependsOn": [
-        "worldcore/combat/NpcCombat.ts"
-      ],
-      "kind": "test",
-      "lifecycle": "active",
-      "owns": [
-        "test:contract_npcCombat_gateForHelp_multiWave"
-      ],
-      "path": "worldcore/test/contract_npcCombat_gateForHelp_multiWave.test.ts",
-      "provides": [
-        "contract:npcCombatGateForHelpMultiWave"
-      ],
-      "notes": [
-        "Contract: gate-for-help can fire multiple pulses (waves), each capped, pulling additional social allies deterministically."
-      ]
-    },
-    "test.contractNpcCombatGateForHelpEscalation": {
-      "class": "(test) contract_npcCombat_gateForHelp_escalation",
-      "ctorArgs": [],
-      "dependsOn": [
-        "worldcore/combat/NpcCombat.ts"
-      ],
-      "kind": "test",
-      "lifecycle": "active",
-      "owns": [
-        "test:contract_npcCombat_gateForHelp_escalation"
-      ],
-      "path": "worldcore/test/contract_npcCombat_gateForHelp_escalation.test.ts",
-      "provides": [
-        "contract:npcCombatGateForHelpEscalation"
-      ],
-      "notes": [
-        "Contract: repeated successful gates escalate assist radius (train severity grows if players ignore gaters)."
-      ]
-    },
-    "test.contractNpcCombatGateForHelpPushbackInterrupt": {
-      "dependsOn": [
-        "combat.npcCombat"
-      ],
-      "kind": "test.contract",
-      "notes": [
-        "Contract: gate-for-help cast can be delayed by pushback (damage slows casting without canceling).",
-        "Guards deterministic timing: gate completion must not fire early when pushback is applied."
-      ],
-      "path": "worldcore/test/contract_npcCombat_gateForHelp_pushbackInterrupt.test.ts",
-      "provides": [
-        "Guards gate pushback timing invariants"
-      ]
-    },
-    "test.contractNpcCombatGateForHelpCcInterrupt": {
-      "dependsOn": [
-        "combat.npcCombat",
-        "combat.statusEffects"
-      ],
-      "kind": "test.contract",
-      "notes": [
-        "Contract: crowd control (stun/silence/root/knockdown) interrupts gate-for-help casting immediately.",
-        "Guards that interrupted casts do not later fire assist waves."
-      ],
-      "path": "worldcore/test/contract_npcCombat_gateForHelp_ccInterrupt.test.ts",
-      "provides": [
-        "Guards gate CC interruption semantics"
-      ]
-    },
-    "test.contractPetSummonSpellTiers": {
-      "kind": "test",
-      "path": "worldcore/test/contract_petSummon_spellTiers.test.ts",
-      "deps": [
-        "worldcore.mud.MudSpells",
-        "worldcore.spells.SpellTypes",
-        "worldcore.world.RegionFlags",
-        "worldcore.core.EntityManager",
-        "worldcore.pets.PetProfiles"
-      ],
-      "provides": [
-        "Contract: summon_pet spells support tier gating, resummon replacement, and deny-path ordering (no cost/cooldown when denied)."
-      ]
     },
     "test.utils": {
       "dependsOn": [],
