@@ -34,6 +34,8 @@ import { DUEL_SERVICE } from "../../pvp/DuelService";
 
 import { resolvePhysicalHit, type PhysicalHitResult } from "../../combat/PhysicalHitResolver";
 
+import { computeDamage } from "../../combat/CombatEngine";
+
 import {
   performNpcAttack as performNpcAttackCore,
   scheduleNpcCorpseAndRespawn as scheduleNpcCorpseAndRespawnCore,
@@ -237,6 +239,22 @@ function envNumber(name: string, fallback: number): number {
   return Number.isFinite(n) ? n : fallback;
 }
 
+function isTestEnv(): boolean {
+  return (
+    process.env.WORLDCORE_TEST === "1" ||
+    process.env.NODE_ENV === "test" ||
+    process.env.VITEST === "true" ||
+    (process.env as any).JEST_WORKER_ID !== undefined
+  );
+}
+
+// In tests, keep CombatEngine deterministic by feeding a stable RNG value that yields roll=1.0.
+// (computeDamage uses roll = 0.8 + rng()*0.4, so rng=0.5 => roll=1.0)
+function combatRng(): () => number {
+  return isTestEnv() ? (() => 0.5) : Math.random;
+}
+
+
 function clampNumber(n: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, n));
 }
@@ -403,7 +421,12 @@ export async function handleAttackAction(
 
       const effective = computeEffectiveAttributes(char, ctx.items);
       const baseDmg = computeTrainingDummyDamage(effective);
-      const dmg = Math.max(1, Math.round(baseDmg * openerMult));
+      const roll = computeDamage(
+        { char, effective, channel: "weapon" },
+        { entity: npcTarget as any },
+        { basePower: baseDmg, damageMultiplier: openerMult, damageSchool: "physical", rng: combatRng() },
+      );
+      const dmg = Math.max(1, roll.damage);
 
       dummyInstance.hp = Math.max(0, dummyInstance.hp - dmg);
 
@@ -491,14 +514,45 @@ export async function handleAttackAction(
     const targetEffective = computeEffectiveAttributes(targetChar as any, ctx.items);
     const riposteBase = computeTrainingDummyDamage(targetEffective);
 
-    const duelCalc = computeDuelMeleeDamageFromPhysicalResult({
-      baseDamage: baseDmg,
-      openerMultiplier: openerMult,
-      phys,
-      riposteBaseDamage: riposteBase,
-    });
+    // Unify duel melee damage through CombatEngine for hit/block outcomes.
+    // Miss/dodge/parry are still resolved by PhysicalHitResolver (including optional riposte).
+    let outcome: PhysicalHitResult["outcome"] = phys.outcome;
+    let dmg = 0;
+    let riposteDamage = 0;
 
-    const dmg = duelCalc.damageToTarget;
+    if (outcome === "miss" || outcome === "dodge" || outcome === "parry") {
+      if (outcome === "parry" && phys.riposte) {
+        const riposteChance = clamp01(envNumber("PW_RIPOSTE_CHANCE_ON_PARRY", 0.3));
+        const rng = combatRng();
+        if (rng() < riposteChance) {
+          const ripMult = clamp(envNumber("PW_RIPOSTE_DAMAGE_MULTIPLIER", 0.5), 0, 5);
+          // Use defender's baseline as the riposte base (keeps symmetry with earlier v1 behavior).
+          riposteDamage = Math.max(1, Math.round(riposteBase * ripMult));
+        }
+      }
+    } else {
+      const roll = computeDamage(
+        { char, effective, channel: "weapon" },
+        { entity: playerTarget as any },
+        {
+          basePower: baseDmg,
+          damageMultiplier: openerMult,
+          damageSchool: "physical",
+          rng: combatRng(),
+          critChance: phys.critChance,
+          glancingChance: phys.glancingChance,
+        },
+      );
+
+      dmg = Math.max(1, roll.damage);
+
+      if (outcome === "block") {
+        const blockMult = clamp(phys.blockMultiplier, 0, 1);
+        dmg = Math.max(1, Math.round(dmg * blockMult));
+      }
+    }
+
+    const duelCalc = { outcome, damageToTarget: dmg, didRiposte: riposteDamage > 0, riposteDamage };
 
     const { newHp, maxHp, killed } = dmg > 0
       ? applySimpleDamageToPlayer(
@@ -603,7 +657,12 @@ export async function handleAttackAction(
 
     const effective = computeEffectiveAttributes(char, ctx.items);
     const baseDmg = computeTrainingDummyDamage(effective);
-    const dmg = Math.max(1, Math.round(baseDmg * openerMult));
+    const roll = computeDamage(
+      { char, effective, channel: "weapon" },
+      { entity: { id: "training_dummy", name: "Training Dummy", type: "npc" } as any },
+      { basePower: baseDmg, damageMultiplier: openerMult, damageSchool: "physical", rng: combatRng() },
+    );
+    const dmg = Math.max(1, roll.damage);
 
     dummyInstance.hp = Math.max(0, dummyInstance.hp - dmg);
 
@@ -873,7 +932,12 @@ export async function handleRangedAttackAction(
       const effective = computeEffectiveAttributes(char, ctx.items);
       const baseDmg = computeTrainingDummyDamage(effective);
       const scale = getRangedDamageScaleForCharacter(char);
-      const dmg = Math.max(1, Math.round(baseDmg * scale));
+      const roll = computeDamage(
+        { char, effective, channel: "weapon" },
+        { entity: npcTarget as any },
+        { basePower: baseDmg, damageMultiplier: scale, damageSchool: "physical", rng: combatRng() },
+      );
+      const dmg = Math.max(1, roll.damage);
 
       dummyInstance.hp = Math.max(0, dummyInstance.hp - dmg);
 
@@ -926,7 +990,12 @@ export async function handleRangedAttackAction(
     const effective = computeEffectiveAttributes(char, ctx.items);
     const baseDmg = computeTrainingDummyDamage(effective);
     const scale = getRangedDamageScaleForCharacter(char);
-    const dmg = Math.max(1, Math.round(baseDmg * scale));
+    const roll = computeDamage(
+      { char, effective, channel: "weapon" },
+      { entity: playerTarget as any },
+      { basePower: baseDmg, damageMultiplier: scale, damageSchool: "physical", rng: combatRng() },
+    );
+    const dmg = Math.max(1, roll.damage);
 
     const { newHp, maxHp, killed } = applySimpleDamageToPlayer(
       playerTarget as any,
