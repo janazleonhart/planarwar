@@ -481,6 +481,9 @@ function getRotYRadSafe(e: any): number {
 
 function canSeeTargetForwardCone(selfEntity: any, targetEntity: any, fovDeg: number): boolean {
   const fov = Math.max(1, Math.min(360, Number(fovDeg ?? 120)));
+  // 360° means "don't require facing" (room LoS is handled elsewhere in the
+  // future; for now we treat this as always-visible).
+  if (fov >= 359.999) return true;
   const half = (fov * Math.PI) / 360;
 
   const sx = Number((selfEntity as any)?.x ?? 0);
@@ -513,7 +516,10 @@ function getRangedMaxRange(): number {
 }
 
 function getRangedFovDeg(): number {
-  return clampNumber(envRange("PW_RANGED_FOV_DEG", 140), 30, 360);
+  // Default is 360 so ranged works naturally without forcing the player to
+  // face a target just to shoot it. Contract tests can override this to validate
+  // "target behind you" denial.
+  return clampNumber(envRange("PW_RANGED_FOV_DEG", 360), 30, 360);
 }
 
 export async function handleRangedAttackAction(
@@ -578,9 +584,10 @@ export async function handleRangedAttackAction(
     return `[combat] ${targetEntity.name} is out of range.`;
   }
 
-  // Line-of-sight (v1): forward cone
+  // Facing requirement (optional): forward cone. Default FOV is 360° so this
+  // usually passes unless configured for "must face" gameplay.
   if (!canSeeTargetForwardCone(selfEntity, targetEntity, getRangedFovDeg())) {
-    return `[combat] You don't have line of sight to ${targetEntity.name}.`;
+    return `[combat] You must face ${targetEntity.name} to shoot.`;
   }
 
   // Break stealth on hostile commit.
