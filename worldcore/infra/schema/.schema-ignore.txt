@@ -1,0 +1,7 @@
+// worldcore/infra/schema/.schema-ignore.txt
+
+# Add migration ids here ONLY if they were applied in DB but intentionally removed/retired on disk.
+# One id per line, '#' comments allowed.
+#
+# Example:
+# 042_old_experiment.sql

@@ -1393,6 +1393,28 @@
         "SQL audit for npc law tags"
       ]
     },
+    "infra.schemaIgnoreJson": {
+      "dependsOn": [],
+      "kind": "data",
+      "lifecycle": "static",
+      "notes": [
+        "Optional allow-list for intentionally retired migrations that were applied in DB but removed on disk.",
+        "JSON form (array, or {ignore:[...], missing:[...]})"
+      ],
+      "path": "worldcore/infra/schema/.schema-ignore.json",
+      "provides": []
+    },
+    "infra.schemaIgnoreTxt": {
+      "dependsOn": [],
+      "kind": "data",
+      "lifecycle": "static",
+      "notes": [
+        "Optional allow-list for intentionally retired migrations (text).",
+        "One id per line; # comments allowed."
+      ],
+      "path": "worldcore/infra/schema/.schema-ignore.txt",
+      "provides": []
+    },
     "infra.schema.001_init_shards": {
       "class": "SchemaMigration",
       "ctorArgs": [],
@@ -8018,6 +8040,19 @@
       "path": "worldcore/test/statusEffects.contract.test.ts",
       "provides": []
     },
+    "test.contract_schemaAppliedMissingMigrations": {
+      "dependsOn": [
+        "tools.schemaMissingMigrationsLib"
+      ],
+      "kind": "test",
+      "lifecycle": "test",
+      "notes": [
+        "Contract: applied migrations missing on disk are detected deterministically and can be allow-listed."
+      ],
+      "owns": [],
+      "path": "worldcore/test/contract_schemaAppliedMissingMigrations.test.ts",
+      "provides": []
+    },
     "test.utils": {
       "dependsOn": [],
       "functions": [
@@ -8157,6 +8192,30 @@
         "audit mode: summarize resource node coverage by bounds / proto kinds"
       ]
     },
+    "tools.schemaAppliedMissingAudit": {
+      "class": "ToolScript",
+      "ctorArgs": [],
+      "dependsOn": [
+        "worldcore/db/Database.ts",
+        "utils.logger",
+        "tools.schemaMissingMigrationsLib",
+        "worldcore/tools/schemaMigrationLib.ts"
+      ],
+      "kind": "service",
+      "lifecycle": "tool",
+      "notes": [
+        "Audit tool: reports migrations recorded as applied in schema_migrations but missing on disk.",
+        "Companion to applySchema's missing-on-disk guard; supports ignore list."
+      ],
+      "owns": [
+        "Applied-vs-disk integrity reporting"
+      ],
+      "path": "worldcore/tools/schemaAppliedMissingAudit.ts",
+      "provides": [
+        "Reports applied migrations missing on disk",
+        "Exit code 2 when missing migrations found"
+      ]
+    },
     "tools.schemaFilenameAudit": {
       "bin": "dist/worldcore/tools/schemaFilenameAudit.js",
       "dependsOn": [
@@ -8193,6 +8252,21 @@
         "computeSha256Hex",
         "computeFileSha256Hex"
       ]
+    },
+    "tools.schemaMissingMigrationsLib": {
+      "dependsOn": [],
+      "functions": [
+        "loadSchemaMissingIgnoreList",
+        "computeAppliedMissingOnDisk",
+        "parseSchemaIgnoreJson",
+        "parseSchemaIgnoreTxt"
+      ],
+      "kind": "helper",
+      "notes": [
+        "Shared helpers for detecting applied migrations that are missing on disk.",
+        "Supports an explicit allow-list via .schema-ignore.json / .schema-ignore.txt"
+      ],
+      "path": "worldcore/tools/schemaMissingMigrationsLib.ts"
     },
     "tools.schemaOrderPolicy": {
       "kind": "module",

@@ -23,6 +23,12 @@ import {
   listSchemaMigrationFiles,
   computeFileSha256Hex,
 } from "./schemaMigrationLib";
+import {
+  loadSchemaMissingIgnoreList,
+  computeAppliedMissingOnDisk,
+  SCHEMA_IGNORE_JSON,
+  SCHEMA_IGNORE_TXT,
+} from "./schemaMissingMigrationsLib";
 
 type Args = {
   dir: string;
@@ -157,6 +163,46 @@ async function getAppliedRows(): Promise<AppliedRow[]> {
   return out;
 }
 
+async function missingOnDiskCheck(params: {
+  log: any;
+  schemaDir: string;
+  applied: AppliedRow[];
+  diskFiles: string[];
+}): Promise<void> {
+  const { log, schemaDir, applied, diskFiles } = params;
+
+  const allowMissing = process.env.PW_SCHEMA_ALLOW_MISSING === "1";
+  const ignore = loadSchemaMissingIgnoreList(schemaDir);
+
+  const appliedIds = applied.map((r) => r.id);
+  const missing = computeAppliedMissingOnDisk({
+    appliedIds,
+    diskIds: diskFiles,
+    ignoreIds: ignore,
+  });
+
+  if (missing.length === 0) return;
+
+  const lines = missing.map((m) => ` - ${m}`).join("\n");
+  const msg =
+    `Schema integrity error: DB contains applied migrations that are missing on disk.\n` +
+    `Schema dir: ${schemaDir}\n\n` +
+    `${lines}\n\n` +
+    `This usually means a migration file was renamed/deleted after it was applied.\n` +
+    `Restore the file(s), or explicitly allow-list intentionally retired migrations via\n` +
+    `  ${SCHEMA_IGNORE_JSON} (json) or ${SCHEMA_IGNORE_TXT} (text) in the schema directory.\n` +
+    `\n` +
+    `To temporarily bypass (NOT recommended), set PW_SCHEMA_ALLOW_MISSING=1.`;
+
+  if (allowMissing) {
+    log.warn(msg);
+    return;
+  }
+
+  log.error(msg);
+  throw new Error("Applied migrations missing on disk");
+}
+
 async function driftCheckAppliedFiles(params: {
   log: any;
   schemaDir: string;
@@ -258,6 +304,7 @@ async function main(): Promise<void> {
   }
 
   const appliedRows = await getAppliedRows();
+  await missingOnDiskCheck({ log, schemaDir, applied: appliedRows, diskFiles: files });
   await driftCheckAppliedFiles({ log, schemaDir, applied: appliedRows });
 
   const appliedSet = new Set(appliedRows.map((r) => r.id));
