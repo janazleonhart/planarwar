@@ -6,9 +6,7 @@ import assert from "node:assert/strict";
 import { handleRangedAttackAction } from "../mud/actions/MudCombatActions";
 import { getTrainingDummyForRoom } from "../mud/MudTrainingDummy";
 
-// Ensure deterministic ranged config for this contract suite.
-process.env.PW_RANGED_MAX_RANGE = "14";
-process.env.PW_RANGED_FOV_DEG = "140";
+// NOTE: Set PW_RANGED_* per-test to avoid env leakage from other suites.
 
 type AnyChar = any;
 type AnySession = any;
@@ -41,7 +39,14 @@ function makeChar(args: {
     },
     flags: {},
     statusEffects: {},
-    attributes: { str: 10, agi: 10, int: 10, sta: 10, wis: 10, cha: 10 },
+    // Baseline attributes are important for deterministic training dummy damage.
+    attributes: {
+      str: 10,
+      agi: 10,
+      sta: 10,
+      int: 10,
+      spi: 10,
+    },
   };
 }
 
@@ -85,10 +90,16 @@ function makeCtx(args: {
     },
   };
 
+  // Provide an empty blueprint so LoS checks are deterministic and don't default-deny.
+  const world = {
+    getWorldBlueprintForRoom: (_roomId: string) => ({ objects: [] as any[] }),
+  };
+
   return {
     session: args.casterSession,
     sessions,
     entities,
+    world,
     npcs: {
       getNpcStateByEntityId: (id: string) => {
         // We only care about the dummy proto hook for these contracts.
@@ -101,6 +112,10 @@ function makeCtx(args: {
 }
 
 test("[contract] ranged verb: within range + LoS succeeds", async () => {
+  process.env.PW_RANGED_MAX_RANGE = "14";
+  // Keep success path independent of facing rules.
+  process.env.PW_RANGED_FOV_DEG = "360";
+
   const roomId = "prime_shard:0,0";
 
   const caster = makeChar({ id: "char_ranged_ok", name: "Archer" });
@@ -117,7 +132,7 @@ test("[contract] ranged verb: within range + LoS succeeds", async () => {
     x: 0,
     y: 0,
     z: 0,
-    rotY: 0, // facing +Z
+    rotY: 0,
     tags: [],
   };
 
@@ -137,16 +152,24 @@ test("[contract] ranged verb: within range + LoS succeeds", async () => {
 
   const ctx = makeCtx({ roomId, casterSession, allSessions: [casterSession], entities: [selfEnt, dummy] });
 
-  const state = getTrainingDummyForRoom(roomId);
-  const before = state.hp;
+  const before = getTrainingDummyForRoom(roomId).hp;
   const line = await handleRangedAttackAction(ctx, caster, "Training Dummy");
 
-  assert.ok(String(line).includes("You"), `Expected a combat line, got: ${line}`);
+  // Be stricter than "includes('You')" because deny lines also contain "You".
+  // Accept either classic "hit" phrasing or the newer "shoot ... for X damage" phrasing.
+  const lower = String(line).toLowerCase();
+  const looksLikeHit = lower.includes(" hit ") || lower.includes(" you hit ");
+  const looksLikeShoot = lower.includes("you shoot") && lower.includes(" damage");
+  assert.ok(looksLikeHit || looksLikeShoot, `Expected a successful damage line, got: ${line}`);
+
   const after = getTrainingDummyForRoom(roomId).hp;
-  assert.ok(after < before, "Expected dummy HP pool to decrease");
+  assert.ok(after < before, `Expected dummy HP pool to decrease (before=${before}, after=${after}).`);
 });
 
 test("[contract] ranged verb: out of range denies", async () => {
+  process.env.PW_RANGED_MAX_RANGE = "14";
+  process.env.PW_RANGED_FOV_DEG = "360";
+
   const roomId = "prime_shard:0,0";
 
   const caster = makeChar({ id: "char_ranged_oob", name: "Archer" });
@@ -189,6 +212,10 @@ test("[contract] ranged verb: out of range denies", async () => {
 });
 
 test("[contract] ranged verb: target behind you denies LoS", async () => {
+  process.env.PW_RANGED_MAX_RANGE = "14";
+  // Narrow cone so "behind" is meaningful.
+  process.env.PW_RANGED_FOV_DEG = "90";
+
   const roomId = "prime_shard:0,0";
 
   const caster = makeChar({ id: "char_ranged_los", name: "Archer" });
@@ -205,7 +232,7 @@ test("[contract] ranged verb: target behind you denies LoS", async () => {
     x: 0,
     y: 0,
     z: 0,
-    rotY: 0, // facing +Z
+    rotY: 0,
     tags: [],
   };
 
@@ -219,13 +246,14 @@ test("[contract] ranged verb: target behind you denies LoS", async () => {
     alive: true,
     x: 0,
     y: 0,
-    z: -6, // behind
+    z: -6,
     tags: [],
   };
 
   const ctx = makeCtx({ roomId, casterSession, allSessions: [casterSession], entities: [selfEnt, dummy] });
 
   const line = await handleRangedAttackAction(ctx, caster, "Training Dummy");
-  assert.ok(String(line).toLowerCase().includes("line of sight"), `Expected LoS denial, got: ${line}`);
+  const lower = String(line).toLowerCase();
+  assert.ok(lower.includes("must face") || lower.includes("line of sight"), `Expected facing/LoS denial, got: ${line}`);
   assert.equal(dummy.hp, 20);
 });

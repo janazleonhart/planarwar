@@ -16,6 +16,7 @@ export const HELP_ENTRIES: { cmd: string; desc: string; debug?: boolean }[] = [
 
   // World
   { cmd: "look", desc: "Describe your current region." },
+  { cmd: "face <target|dir|deg>", desc: "Turn to face a target or direction (n,ne,e,... or degrees)." },
   { cmd: "examine <thing>", desc: "Examine an NPC/resource in your area." },
   { cmd: "nearby", desc: "List nearby entities." },
   { cmd: "map [radius]", desc: "Show an ASCII map around you." },

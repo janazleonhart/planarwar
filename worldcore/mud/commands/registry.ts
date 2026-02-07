@@ -8,6 +8,7 @@ import { handleMailCommand } from "./social/mailCommand";
 import { handleCraftCommand } from "./craftCommand";
 
 import { handleLookCommand } from "./world/lookCommand";
+import { handleFaceCommand } from "./world/faceCommand";
 import { handleExamineCommand } from "./world/examineCommand";
 import { handleInspectRegionCommand } from "./world/inspectRegionCommand";
 import { handleNearbyCommand } from "./world/nearbyCommand";
@@ -159,6 +160,7 @@ export const COMMANDS: Record<string, MudCommandHandlerFn> = {
   // World
   look: async (ctx, char, input) =>
     handleLookCommand(ctx, char, input, (ctx as any).world ?? undefined),
+  face: handleFaceCommand,
   examine: handleExamineCommand,
   inspect_region: handleInspectRegionCommand,
   nearby: handleNearbyCommand,
