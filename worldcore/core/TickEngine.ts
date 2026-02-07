@@ -8,6 +8,7 @@ import { Logger } from "../utils/logger";
 import { NpcManager } from "../npc/NpcManager";
 import { tickEntityStatusEffectsAndApplyDots } from "../combat/StatusEffects";
 import { formatWorldSpellDotTickLine } from "../combat/CombatLog";
+import { tickAllPlayerHots } from "../combat/PlayerHotTicker";
 
 export interface TickEngineConfig {
   intervalMs: number; // tick interval (e.g. 50ms for 20 TPS)
@@ -110,6 +111,16 @@ export class TickEngine {
       this.tickNpcStatusDots(now);
     } catch (err: any) {
       this.log.warn("Error during NPC status DOT tick", { error: String(err) });
+    }
+
+    // Player HOTs (periodic healing) should tick in the canonical heartbeat.
+    // This enables out-of-combat regeneration effects without requiring combat loop glue.
+    try {
+      if (process.env.PW_TICK_PLAYER_HOTS !== "0") {
+        tickAllPlayerHots(this.entities, this.sessions, now);
+      }
+    } catch (err: any) {
+      this.log.warn("Error during player HOT tick", { error: String(err) });
     }
 
     // Global hook for systems that want a heartbeat (SongEngine, etc.)

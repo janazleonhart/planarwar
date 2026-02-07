@@ -8,8 +8,10 @@ import type { SpellDefinition } from "../spells/SpellTypes";
 
 import { EntityManager } from "../core/EntityManager";
 import { SessionManager } from "../core/SessionManager";
+import { RoomManager } from "../core/RoomManager";
+import { ServerWorldManager } from "../world/ServerWorldManager";
+import { TickEngine } from "../core/TickEngine";
 import { castSpellForCharacter } from "../mud/MudSpells";
-import { tickAllPlayerHots } from "../combat/PlayerHotTicker";
 
 function makeChar(name: string): CharacterState {
   return {
@@ -34,12 +36,14 @@ function makeChar(name: string): CharacterState {
   } as any;
 }
 
-test("[contract] TickEngine-like loop ticks player HOTs via PlayerHotTicker", async () => {
+test("[contract] TickEngine ticks player HOTs in heartbeat", async () => {
   const realNow = Date.now;
   Date.now = () => 1_000_000;
 
-  const oldEnv = process.env.PW_HOT_TICK_MESSAGES;
+  const oldHotMsgs = process.env.PW_HOT_TICK_MESSAGES;
+  const oldTickHots = process.env.PW_TICK_PLAYER_HOTS;
   process.env.PW_HOT_TICK_MESSAGES = "1";
+  process.env.PW_TICK_PLAYER_HOTS = "1";
 
   try {
     const entities = new EntityManager();
@@ -100,8 +104,18 @@ test("[contract] TickEngine-like loop ticks player HOTs via PlayerHotTicker", as
     const msg = await castSpellForCharacter(ctx, char, spell, "");
     assert.ok(msg.includes("regenerating") || msg.includes("Regeneration"), msg);
 
+    const roomsMgr = new RoomManager(sessions, entities);
+    const world = new ServerWorldManager(0xabc);
+    const ticks = new TickEngine(entities, roomsMgr, sessions, world, { intervalMs: 50 });
+
+    // TickEngine.tick() is private and no-ops unless running.
+    // For contract tests we manually enable running and call the private tick.
+    (ticks as any).running = true;
+    (ticks as any).lastTickAt = 1_000_000;
+
     // First tick @ t=+2000
-    tickAllPlayerHots(entities, sessions, 1_002_000);
+    Date.now = () => 1_002_000;
+    (ticks as any).tick();
     assert.equal(player.hp, 17);
 
     // Ensure a HOT tick combat line was emitted.
@@ -111,11 +125,15 @@ test("[contract] TickEngine-like loop ticks player HOTs via PlayerHotTicker", as
     assert.ok(text.includes("restores 7 health"), text);
 
     // Second tick @ t=+4000
-    tickAllPlayerHots(entities, sessions, 1_004_000);
+    Date.now = () => 1_004_000;
+    (ticks as any).tick();
     assert.equal(player.hp, 24);
   } finally {
     Date.now = realNow;
-    if (oldEnv === undefined) delete process.env.PW_HOT_TICK_MESSAGES;
-    else process.env.PW_HOT_TICK_MESSAGES = oldEnv;
+    if (oldHotMsgs === undefined) delete process.env.PW_HOT_TICK_MESSAGES;
+    else process.env.PW_HOT_TICK_MESSAGES = oldHotMsgs;
+
+    if (oldTickHots === undefined) delete process.env.PW_TICK_PLAYER_HOTS;
+    else process.env.PW_TICK_PLAYER_HOTS = oldTickHots;
   }
 });
