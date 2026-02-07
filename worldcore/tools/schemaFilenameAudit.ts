@@ -4,6 +4,8 @@
 import fs from "node:fs";
 import path from "node:path";
 
+import { listSqlFilesSorted } from "./schemaOrderPolicy";
+
 export type SchemaPrefixCollision = {
   prefix: string;
   files: string[]; // basenames
@@ -41,14 +43,7 @@ function resolveSchemaDir(explicit?: string): string {
 }
 
 function listSqlFiles(schemaDir: string): string[] {
-  const entries = fs.readdirSync(schemaDir, { withFileTypes: true });
-  const files: string[] = [];
-  for (const e of entries) {
-    if (!e.isFile()) continue;
-    if (!e.name.toLowerCase().endsWith(".sql")) continue;
-    files.push(e.name);
-  }
-  return files.sort((a, b) => a.localeCompare(b));
+  return listSqlFilesSorted(schemaDir);
 }
 
 export function extractNumericPrefix(basename: string): string | null {

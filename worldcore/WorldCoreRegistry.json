@@ -7654,6 +7654,28 @@
       ],
       "service": "test"
     },
+    "test.contract_schemaFilenameAudit": {
+      "class": "(test)",
+      "ctorArgs": [],
+      "dependsOn": [
+        "tools.schemaFilenameAudit"
+      ],
+      "kind": "test",
+      "lifecycle": "static",
+      "notes": [
+        "Contract: schema filename audit detects duplicate numeric prefixes deterministically."
+      ],
+      "owns": [],
+      "path": "worldcore/test/contract_schemaFilenameAudit.test.ts",
+      "provides": []
+    },
+    "test.contract_schemaOrderPolicy": {
+      "kind": "test",
+      "path": "worldcore/test/contract_schemaOrderPolicy.test.ts",
+      "dependsOn": [
+        "tools.schemaOrderPolicy"
+      ]
+    },
     "test.contract_spellLearningRules": {
       "class": "(test)",
       "ctorArgs": [],
@@ -7996,21 +8018,6 @@
       "path": "worldcore/test/statusEffects.contract.test.ts",
       "provides": []
     },
-    "test.contract_schemaFilenameAudit": {
-      "class": "(test)",
-      "ctorArgs": [],
-      "dependsOn": [
-        "tools.schemaFilenameAudit"
-      ],
-      "kind": "test",
-      "lifecycle": "static",
-      "notes": [
-        "Contract: schema filename audit detects duplicate numeric prefixes deterministically."
-      ],
-      "owns": [],
-      "path": "worldcore/test/contract_schemaFilenameAudit.test.ts",
-      "provides": []
-    },
     "test.utils": {
       "dependsOn": [],
       "functions": [
@@ -8152,7 +8159,9 @@
     },
     "tools.schemaFilenameAudit": {
       "bin": "dist/worldcore/tools/schemaFilenameAudit.js",
-      "dependsOn": [],
+      "dependsOn": [
+        "tools.schemaOrderPolicy"
+      ],
       "kind": "tool",
       "notes": [
         "Audits worldcore/infra/schema SQL filenames for duplicate numeric prefixes (e.g. 042_*.sql).",
@@ -8164,7 +8173,9 @@
     "tools.schemaMigrationLib": {
       "class": "(module) schemaMigrationLib",
       "ctorArgs": [],
-      "dependsOn": [],
+      "dependsOn": [
+        "tools.schemaOrderPolicy"
+      ],
       "kind": "module",
       "lifecycle": "static",
       "notes": [
@@ -8182,6 +8193,12 @@
         "computeSha256Hex",
         "computeFileSha256Hex"
       ]
+    },
+    "tools.schemaOrderPolicy": {
+      "kind": "module",
+      "path": "worldcore/tools/schemaOrderPolicy.ts",
+      "dependsOn": [],
+      "notes": "Authoritative ordering policy for schema SQL files (numeric prefix then lexicographic tie-break)."
     },
     "tools.seedAbilityIdAudit": {
       "bin": "dist/worldcore/tools/seedAbilityIdAudit.js",

@@ -7,6 +7,8 @@
 import fs from "node:fs";
 import crypto from "node:crypto";
 
+import { listSqlFilesSorted } from "./schemaOrderPolicy";
+
 /**
  * Returns true if the filename is considered a schema migration file.
  * Convention: 3-digit prefix + underscore + name + .sql
@@ -16,18 +18,13 @@ export function isSchemaMigrationFilename(name: string): boolean {
 }
 
 /**
- * List schema migration filenames in deterministic order (lexicographic).
- * Matches applySchema.ts behavior.
+ * List schema migration filenames in deterministic order.
+ * Ordering policy is defined in schemaOrderPolicy.
  */
 export function listSchemaMigrationFiles(schemaDir: string): string[] {
   if (!fs.existsSync(schemaDir)) return [];
 
-  return fs
-    .readdirSync(schemaDir, { withFileTypes: true })
-    .filter((d) => d.isFile())
-    .map((d) => d.name)
-    .filter(isSchemaMigrationFilename)
-    .sort((a, b) => a.localeCompare(b));
+  return listSqlFilesSorted(schemaDir).filter(isSchemaMigrationFilename);
 }
 
 /**
