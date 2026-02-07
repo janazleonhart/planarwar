@@ -1656,6 +1656,10 @@ function isStealthedPlayerEntity(entity: any, now: number): boolean {
 const PW_ASSIST_AGGRO_WINDOW_MS = Math.max(0, envInt("PW_ASSIST_AGGRO_WINDOW_MS", 5000));
 const PW_ASSIST_MIN_TOP_THREAT = Math.max(0, envInt("PW_ASSIST_MIN_TOP_THREAT", 1));
 
+// Weighted assist seeding (disabled by default to preserve legacy behavior)
+// NOTE: do NOT cache these at module load; tests set env at runtime.
+// Read assist seeding knobs dynamically inside tryAssistNearbyNpcs.
+
 /**
  * Assist wiring (Option B default): radius-based assist with per-assister throttle.
  *
@@ -1890,7 +1894,7 @@ if (gatePushbackPerDmgMs > 0 && gateEndsAt) {
           allyNpcEntityId,
           gateTarget,
           now,
-          boostedSeed,
+          boostedSeed, allyThreat,
           effectiveRadius,
           ASSIST_COOLDOWN_MS,
           enableCallsLine,
@@ -1982,7 +1986,7 @@ return doAssistScan(
   allyNpcEntityId,
   gateTarget,
   now,
-  boostedSeed,
+  boostedSeed, allyThreat,
   effectiveRadius,
   ASSIST_COOLDOWN_MS,
   enableCallsLine,
@@ -2021,7 +2025,7 @@ return doAssistScan(
 
   // Default assist: small radius.
   if (!assistTarget || assistTarget !== attackerEntityId) return 0;
-  return doAssistScan(ctx, roomId, allyNpcEntityId, attackerEntityId, now, seedThreat, radiusTiles, ASSIST_COOLDOWN_MS, enableCallsLine, allyEnt, -1, undefined, undefined);
+  return doAssistScan(ctx, roomId, allyNpcEntityId, attackerEntityId, now, seedThreat, allyThreat, radiusTiles, ASSIST_COOLDOWN_MS, enableCallsLine, allyEnt, -1, undefined, undefined);
 }
 
 
@@ -2032,6 +2036,7 @@ function doAssistScan(
   attackerEntityId: string,
   now: number,
   seedThreat: number,
+  allyThreat: any,
   radiusTiles: number,
   ASSIST_COOLDOWN_MS: number,
   enableCallsLine: boolean,
@@ -2091,7 +2096,31 @@ function doAssistScan(
     (st as any).lastAssistAt = now;
 
     const scaledSeed = computeAssistSeedThreat(seedThreat, proto, ent);
-    ctx.npcs.recordDamage(id, attackerEntityId, scaledSeed);
+    const topExtra = Math.max(0, envInt("PW_ASSIST_SEED_TOP_TARGET_THREAT", 0));
+    ctx.npcs.recordDamage(id, attackerEntityId, scaledSeed + topExtra);
+
+    // Weighted threat share: seed the assister with a shaped version of the ally's threat table.
+    // Disabled by default (PW_ASSIST_SHARE_THREAT_PCT=0 or PW_ASSIST_MAX_SHARED_TARGETS=0) to preserve legacy contract expectations.
+    const sharePct = Math.max(0, envFloat("PW_ASSIST_SHARE_THREAT_PCT", 0));
+    const maxShared = Math.max(0, envInt("PW_ASSIST_MAX_SHARED_TARGETS", 0));
+    if (sharePct > 0 && maxShared > 0 && allyThreat && allyThreat.threatByEntityId) {
+      try {
+        const entries = Object.entries(allyThreat.threatByEntityId as Record<string, number>)
+          .filter(([tid, v]) => tid !== attackerEntityId && typeof v === "number" && v > 0)
+          .sort((a, b) => {
+            const dv = (b[1] as number) - (a[1] as number);
+            return dv !== 0 ? dv : String(a[0]).localeCompare(String(b[0]));
+          })
+          .slice(0, maxShared);
+        for (const [tid, v] of entries) {
+          const amt = Math.max(1, Math.floor((v as number) * sharePct));
+          ctx.npcs.recordDamage(id, tid, amt);
+        }
+      } catch {
+        // ignore
+      }
+    }
+
     assisted++;
     try { onAssisted?.(id); } catch { /* ignore */ }
   }

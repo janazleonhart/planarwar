@@ -8362,6 +8362,23 @@
       "path": "worldcore/test/contract_npcThreat_tauntForce_takeover.test.ts",
       "service": "npc.threat"
     },
+    "test.contract_npcCombat_assist_threatShare": {
+      "kind": "test",
+      "service": "combat.npc",
+      "path": "worldcore/test/contract_npcCombat_assist_threatShare.test.ts",
+      "class": "(test) contract_npcCombat_assist_threatShare",
+      "lifecycle": "active",
+      "provides": [
+        "test:contract_npcCombat_assist_threatShare"
+      ],
+      "dependsOn": [
+        "combat.npcCombat",
+        "npc.npcThreat"
+      ],
+      "notes": [
+        "Contract: when enabled, assist seeds additional threat buckets from the ally's threat table (train-friendly group behavior)."
+      ]
+    },
     "test.utils": {
       "dependsOn": [],
       "functions": [
