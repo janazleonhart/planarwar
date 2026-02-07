@@ -10,6 +10,7 @@ import { tickEntityStatusEffectsAndApplyDots } from "../combat/StatusEffects";
 import { formatWorldSpellDotTickLine } from "../combat/CombatLog";
 import { tickAllPlayerHots } from "../combat/PlayerHotTicker";
 import { pruneAllConnectedPlayerStatuses } from "../status/StatusRuntime";
+import { syncServerBuffsToConnectedPlayers } from "../status/ServerBuffs";
 
 export interface TickEngineConfig {
   intervalMs: number; // tick interval (e.g. 50ms for 20 TPS)
@@ -132,6 +133,16 @@ export class TickEngine {
       }
     } catch (err: any) {
       this.log.warn("Error during player HOT tick", { error: String(err) });
+    }
+
+    // Server-wide buffs (events/donation perks) should be applied to connected players.
+    // This is intentionally best-effort and lightweight.
+    try {
+      if (process.env.PW_TICK_SERVER_BUFFS !== "0") {
+        syncServerBuffsToConnectedPlayers(this.entities, this.sessions, now);
+      }
+    } catch (err: any) {
+      this.log.warn("Error during server buff sync", { error: String(err) });
     }
 
     // Global hook for systems that want a heartbeat (SongEngine, etc.)

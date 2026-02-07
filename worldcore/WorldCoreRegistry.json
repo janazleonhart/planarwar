@@ -3573,6 +3573,24 @@
       ],
       "path": "worldcore/mud/commands/debug/reloadCommand.ts"
     },
+    "mud.commands.debug.serverBuffCommand": {
+      "kind": "mud_command_group",
+      "path": "worldcore/mud/commands/debug/serverBuffCommand.ts",
+      "dependsOn": [
+        "mud.context",
+        "status.serverBuffs"
+      ],
+      "functions": [
+        "handleDebugServerBuff"
+      ],
+      "invokedBy": [
+        "mud.commands.debug.serverbuff (via mud/commands/registry.ts)"
+      ],
+      "notes": [
+        "Admin/debug command to manage server-wide buffs (list/add/remove/clearall).",
+        "Applies immediately to connected players by calling syncServerBuffsToConnectedPlayers; stored buffs are synced each TickEngine heartbeat when enabled."
+      ]
+    },
     "mud.commands.debug.vulnerability": {
       "dependsOn": [
         "mud.context",
@@ -5820,6 +5838,33 @@
         "If the spell_unlocks table is missing, the system falls back to the code unlock list; creating the table/migrations is planned once class progression is stabilized."
       ],
       "path": "worldcore/spells/SpellUnlocks.ts"
+    },
+    "status.serverBuffs": {
+      "kind": "service",
+      "path": "worldcore/status/ServerBuffs.ts",
+      "dependsOn": [
+        "combat.statusEffects",
+        "core.sessions",
+        "core.entities",
+        "characters.types",
+        "shared.session"
+      ],
+      "functions": [
+        "listServerBuffs",
+        "addServerBuff",
+        "removeServerBuff",
+        "clearAllServerBuffs",
+        "syncServerBuffsToConnectedPlayers",
+        "clearServerBuffFromConnectedPlayers"
+      ],
+      "notes": [
+        "Server-wide buffs/events/donation perks implemented as normal StatusEffects applied to all connected players.",
+        "v1: in-memory ACTIVE map only; future slice can persist to db/redis and rehydrate on boot.",
+        "Effect IDs are namespaced as server_buff:<id> to avoid collision with normal spell/status IDs."
+      ],
+      "provides": [
+        "Server buff list + sync/apply helpers (StatusEffects-backed)."
+      ]
     },
     "strategy.regionService": {
       "class": "RegionService",
@@ -8222,6 +8267,25 @@
       "owns": [],
       "path": "worldcore/test/statusEffects.contract.test.ts",
       "provides": []
+    },
+    "test.contractServerBuffsApplyAndSync": {
+      "kind": "test",
+      "lifecycle": "test",
+      "path": "worldcore/test/contract_serverBuffs_applyAndSync.test.ts",
+      "dependsOn": [
+        "status.serverBuffs",
+        "combat.statusEffects",
+        "core.entities",
+        "core.sessions",
+        "characters.types"
+      ],
+      "class": "(test)",
+      "ctorArgs": [],
+      "notes": [
+        "Contract: ServerBuffs sync applies active server buffs to connected players (including players that connect after the buff is active)."
+      ],
+      "provides": [],
+      "owns": []
     },
     "test.utils": {
       "dependsOn": [],
