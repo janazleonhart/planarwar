@@ -8294,6 +8294,22 @@
         "[contract] threat decay is deterministic; assist respects aggro window; assist does not acquire stealthed targets"
       ]
     },
+    "test.contractNpcThreatThreatTransferRedirects": {
+      "kind": "test",
+      "notes": [
+        "Contract: threat transfer redirects generated NPC threat to another entity (misdirect / redirect)."
+      ],
+      "path": "worldcore/test/contract_npcThreat_threatTransfer_redirects.test.ts",
+      "service": "npc.threat"
+    },
+    "test.contractNpcThreatTauntForceTakeover": {
+      "kind": "test",
+      "notes": [
+        "Contract: taunt in forceTakeover mode makes the taunter become actual top threat after expiry."
+      ],
+      "path": "worldcore/test/contract_npcThreat_tauntForce_takeover.test.ts",
+      "service": "npc.threat"
+    },
     "test.utils": {
       "dependsOn": [],
       "functions": [

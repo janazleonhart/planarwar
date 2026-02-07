@@ -32,6 +32,7 @@ import {
   getTopThreatTarget,
   getThreatValue,
   applyTauntToThreat,
+  addThreatValue,
   decayThreat,
   type NpcThreatState,
   updateThreatFromDamage,
@@ -39,7 +40,7 @@ import {
 
 import { recordNpcCrimeAgainst, isProtectedNpc } from "./NpcCrime";
 import { isServiceProtectedNpcProto } from "../combat/ServiceProtection";
-import { clearAllStatusEffectsFromEntity } from "../combat/StatusEffects";
+import { clearAllStatusEffectsFromEntity, getActiveStatusEffectsForEntity } from "../combat/StatusEffects";
 import { handleNpcDeath } from "../combat/NpcDeathPipeline";
 
 import {
@@ -551,11 +552,59 @@ export class NpcManager {
       return;
     }
 
-    const threat = updateThreatFromDamage(
-      this.npcThreat.get(targetEntityId),
-      attackerEntityId,
-      typeof threatAmount === "number" ? threatAmount : 1,
-    );
+    const now = Date.now();
+    const amt = typeof threatAmount === "number" ? threatAmount : 1;
+
+    // Threat transfer: if the attacker is under a "threat redirect" effect,
+    // credit some (or all) of their generated threat to another entity.
+    let toId: string | undefined;
+    let pct = 0;
+    try {
+      const attackerEnt: any = this.entities.get(attackerEntityId);
+      if (attackerEnt) {
+        const active = getActiveStatusEffectsForEntity(attackerEnt as any, now);
+        for (const eff of active) {
+          const mod: any = (eff as any)?.modifiers ?? {};
+          const candidate = String(mod?.threatTransferToEntityId ?? "").trim();
+          if (!candidate) continue;
+          const rawPct = typeof mod?.threatTransferPct === "number" ? mod.threatTransferPct : 1;
+          const clamped = Math.max(0, Math.min(1, rawPct));
+          // Deterministic: choose the highest transfer pct; tie-break by id.
+          if (clamped > pct || (clamped === pct && candidate < String(toId ?? "\uffff"))) {
+            toId = candidate;
+            pct = clamped;
+          }
+        }
+      }
+    } catch {
+      // ignore
+    }
+
+    let threat = this.npcThreat.get(targetEntityId);
+    if (toId && pct > 0 && toId !== attackerEntityId && this.entities.get(toId)) {
+      const transferred = amt * pct;
+      const remaining = amt - transferred;
+
+      // Credit the receiver WITHOUT changing lastAttacker (preserve damage dealer).
+      threat = addThreatValue(threat, toId, transferred, now, {
+        setLastAttacker: true,
+        lastAttackerEntityId: attackerEntityId,
+      });
+
+      if (remaining > 0) {
+        threat = addThreatValue(threat, attackerEntityId, remaining, now, {
+          setLastAttacker: true,
+          lastAttackerEntityId: attackerEntityId,
+        });
+      }
+    } else {
+      threat = updateThreatFromDamage(
+        threat,
+        attackerEntityId,
+        amt,
+        now,
+      );
+    }
     this.npcThreat.set(targetEntityId, threat);
 
     st.lastAggroAt = threat.lastAggroAt;

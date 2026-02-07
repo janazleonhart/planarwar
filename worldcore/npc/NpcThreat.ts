@@ -55,6 +55,10 @@ const PW_THREAT_PRUNE_BELOW_DEFAULT = envNumber("PW_THREAT_PRUNE_BELOW", 0);
 const PW_ASSIST_AGGRO_WINDOW_MS_DEFAULT = Math.max(0, Math.floor(envNumber("PW_ASSIST_AGGRO_WINDOW_MS", 5000)));
 const PW_ASSIST_MIN_TOP_THREAT_DEFAULT = envNumber("PW_ASSIST_MIN_TOP_THREAT", 1);
 
+// If true, taunt also forces the taunter to *take over* top threat (so expiry keeps target).
+// If false (default), taunt is only a temporary forced-target override and will resume to prior top threat.
+const PW_TAUNT_FORCE_TAKEOVER_DEFAULT = envBool("PW_TAUNT_FORCE_TAKEOVER", false);
+
 function nowMs(): number {
   return Date.now();
 }
@@ -80,6 +84,26 @@ export function updateThreatFromDamage(
   threatAmount: number = 1,
   now: number = nowMs(),
 ): NpcThreatState {
+  return addThreatValue(current, attackerEntityId, threatAmount, now, {
+    setLastAttacker: true,
+    lastAttackerEntityId: attackerEntityId,
+  });
+}
+
+/**
+ * Low-level helper: add threat to a bucket (after decay), optionally controlling
+ * whether `lastAttackerEntityId` is updated.
+ */
+export function addThreatValue(
+  current: NpcThreatState | undefined,
+  entityId: string,
+  threatAmount: number,
+  now: number = nowMs(),
+  opts?: {
+    setLastAttacker?: boolean;
+    lastAttackerEntityId?: string;
+  },
+): NpcThreatState {
   const amt = clampNonNeg(threatAmount);
 
   // Apply decay BEFORE we overwrite lastAggroAt for this new event.
@@ -87,12 +111,15 @@ export function updateThreatFromDamage(
 
   const next: NpcThreatState = { ...(decayed ?? {}) };
 
-  // Back-compat fields
-  next.lastAttackerEntityId = attackerEntityId;
+  // Always update lastAggroAt for any threat event.
   next.lastAggroAt = now;
 
+  if (opts?.setLastAttacker) {
+    next.lastAttackerEntityId = opts?.lastAttackerEntityId ?? entityId;
+  }
+
   const table = shallowCopyThreat(next.threatByEntityId);
-  table[attackerEntityId] = clampNonNeg((typeof table[attackerEntityId] === "number" ? table[attackerEntityId] : 0) + amt);
+  table[entityId] = clampNonNeg((typeof table[entityId] === "number" ? table[entityId] : 0) + amt);
   next.threatByEntityId = table;
 
   return next;
@@ -108,6 +135,7 @@ export function applyTauntToThreat(
   opts?: {
     durationMs?: number;
     threatBoost?: number;
+    forceTakeover?: boolean;
     now?: number;
   },
 ): NpcThreatState {
@@ -121,6 +149,9 @@ export function applyTauntToThreat(
     typeof opts?.threatBoost === "number" && opts.threatBoost > 0
       ? opts.threatBoost
       : PW_ASSIST_MIN_TOP_THREAT_DEFAULT;
+
+  const forceTakeover =
+    typeof opts?.forceTakeover === "boolean" ? opts.forceTakeover : PW_TAUNT_FORCE_TAKEOVER_DEFAULT;
 
   let next = updateThreatFromDamage(current, taunterEntityId, 0, now);
   const table = shallowCopyThreat(next.threatByEntityId);
@@ -140,9 +171,16 @@ export function applyTauntToThreat(
 
   if (threatBoost > 0) {
     const desired = currentTaunterThreat + threatBoost;
-    // Cap strictly below the current max so expiry returns to prior top threat.
-    const cap = maxOther > 0 ? maxOther - 0.001 : 0;
-    table[taunterEntityId] = clampNonNeg(Math.min(desired, cap));
+
+    if (forceTakeover) {
+      // "Force" semantics: ensure taunter becomes actual top threat.
+      table[taunterEntityId] = clampNonNeg(Math.max(desired, maxOther + threatBoost));
+    } else {
+      // Default semantics: taunt does NOT permanently steal top threat.
+      // Cap strictly below the current max so expiry returns to prior top threat.
+      const cap = maxOther > 0 ? maxOther - 0.001 : 0;
+      table[taunterEntityId] = clampNonNeg(Math.min(desired, cap));
+    }
   }
 
   next.threatByEntityId = table;
