@@ -218,6 +218,16 @@ type ActiveBucket = StatusEffectInstance | StatusEffectInstance[];
 
 interface InternalStatusState {
   active: Record<string, ActiveBucket>;
+  meta?: {
+    /** Last time tickStatusEffectsInternal ran for this state. */
+    lastTickAtMs?: number;
+    /** Last time we pruned at least one effect. */
+    lastPruneAtMs?: number;
+    /** Number of effect instances pruned in the last tick. */
+    lastPrunedCount?: number;
+    /** Total number of effect instances pruned over time. */
+    totalPrunedCount?: number;
+  };
 }
 
 /**
@@ -230,6 +240,10 @@ function ensureStatusState(char: CharacterState): InternalStatusState {
     prog.statusEffects = { active: {} as Record<string, ActiveBucket> };
   } else if (!prog.statusEffects.active) {
     prog.statusEffects.active = {} as Record<string, ActiveBucket>;
+  }
+
+  if (!prog.statusEffects.meta || typeof prog.statusEffects.meta !== 'object') {
+    prog.statusEffects.meta = {} as any;
   }
 
   (char as any).progression = prog;
@@ -246,6 +260,10 @@ function ensureEntityStatusState(entity: Entity): InternalStatusState {
     e.combatStatusEffects = { active: {} as Record<string, ActiveBucket> };
   } else if (!e.combatStatusEffects.active) {
     e.combatStatusEffects.active = {} as Record<string, ActiveBucket>;
+  }
+
+  if (!e.combatStatusEffects.meta || typeof e.combatStatusEffects.meta !== 'object') {
+    e.combatStatusEffects.meta = {} as any;
   }
 
   return e.combatStatusEffects as InternalStatusState;
@@ -375,8 +393,14 @@ export function tickEntityStatusEffects(
 }
 
 function tickStatusEffectsInternal(state: InternalStatusState, now: number): void {
+  const meta = (state.meta = state.meta ?? {});
+  meta.lastTickAtMs = now;
+
+  let prunedCount = 0;
+
   for (const [key, bucket] of Object.entries(state.active)) {
     const items = normalizeBucket(bucket);
+    const before = items.length;
     const kept: StatusEffectInstance[] = [];
 
     for (const inst of items) {
@@ -400,7 +424,14 @@ function tickStatusEffectsInternal(state: InternalStatusState, now: number): voi
       kept.push(inst);
     }
 
+    prunedCount += Math.max(0, before - kept.length);
     writeBucket(state, key, kept);
+  }
+
+  meta.lastPrunedCount = prunedCount;
+  if (prunedCount > 0) {
+    meta.lastPruneAtMs = now;
+    meta.totalPrunedCount = (meta.totalPrunedCount ?? 0) + prunedCount;
   }
 }
 

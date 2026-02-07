@@ -236,6 +236,22 @@ function resolveTargetEntity(ctx: any, char: any, input: MudInput): ResolveResul
   };
 }
 
+function fmtStatusMeta(meta: any): string {
+  if (!meta || typeof meta !== 'object') return '';
+  const lastTick = typeof meta.lastTickAtMs === 'number' ? meta.lastTickAtMs : null;
+  const lastPrune = typeof meta.lastPruneAtMs === 'number' ? meta.lastPruneAtMs : null;
+  const lastPruned = typeof meta.lastPrunedCount === 'number' ? meta.lastPrunedCount : null;
+  const totalPruned = typeof meta.totalPrunedCount === 'number' ? meta.totalPrunedCount : null;
+
+  const bits: string[] = [];
+  if (lastTick != null) bits.push(`lastTickAtMs=${lastTick}`);
+  if (lastPrune != null) bits.push(`lastPruneAtMs=${lastPrune}`);
+  if (lastPruned != null) bits.push(`lastPrunedCount=${lastPruned}`);
+  if (totalPruned != null) bits.push(`totalPrunedCount=${totalPruned}`);
+
+  return bits.length ? bits.join(' ') : '';
+}
+
 function fmtMsRemaining(expiresAtMs: number, now: number): string {
   if (!Number.isFinite(expiresAtMs)) return "?";
   const d = expiresAtMs - now;
@@ -475,6 +491,9 @@ export async function handleDebugEffects(ctx: any, char: any, input: MudInput): 
   }
 
   lines.push(`[debug_effects] Entity effects: ${entityEffects.length}`);
+  const entMeta = (ent as any)?.combatStatusEffects?.meta;
+  const entMetaLine = fmtStatusMeta(entMeta);
+  if (entMetaLine) lines.push(`[debug_effects] Entity meta: ${entMetaLine}`);
   if (entityEffects.length === 0) {
     lines.push("  (none)");
   } else {
@@ -498,6 +517,9 @@ export async function handleDebugEffects(ctx: any, char: any, input: MudInput): 
 
   if (targetChar) {
     lines.push(`[debug_effects] Character effects: ${charEffects.length}`);
+    const charMeta = (targetChar as any)?.progression?.statusEffects?.meta;
+    const charMetaLine = fmtStatusMeta(charMeta);
+    if (charMetaLine) lines.push(`[debug_effects] Character meta: ${charMetaLine}`);
     if (charEffects.length === 0) {
       lines.push("  (none)");
     } else {
