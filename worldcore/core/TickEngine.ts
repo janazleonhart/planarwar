@@ -11,6 +11,7 @@ import { formatWorldSpellDotTickLine } from "../combat/CombatLog";
 import { tickAllPlayerHots } from "../combat/PlayerHotTicker";
 import { pruneAllConnectedPlayerStatuses } from "../status/StatusRuntime";
 import { syncServerBuffsToConnectedPlayers } from "../status/ServerBuffs";
+import { syncServerEventsToRuntime } from "../status/ServerEvents";
 
 export interface TickEngineConfig {
   intervalMs: number; // tick interval (e.g. 50ms for 20 TPS)
@@ -133,6 +134,16 @@ export class TickEngine {
       }
     } catch (err: any) {
       this.log.warn("Error during player HOT tick", { error: String(err) });
+    }
+
+    // Server Events (scheduled envelopes) should materialize into persisted server buffs.
+    // This is intentionally best-effort and rate-limited.
+    try {
+      if (process.env.PW_TICK_SERVER_EVENTS !== "0") {
+        void syncServerEventsToRuntime(this.entities, this.sessions, now);
+      }
+    } catch (err: any) {
+      this.log.warn("Error during server event sync", { error: String(err) });
     }
 
     // Server-wide buffs (events/donation perks) should be applied to connected players.

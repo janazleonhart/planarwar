@@ -2381,9 +2381,21 @@
         "Creates server_state_kv (JSONB key/value) and server_buffs (persisted server-wide buffs).",
         "RECOMMENDATION: rename this migration to 065_* to avoid numeric prefix collision with existing 064_* migrations."
       ],
-      "path": "worldcore/infra/schema/064_server_state_kv_and_server_buffs.sql",
+      "path": "worldcore/infra/schema/065_server_state_kv_and_server_buffs.sql",
       "provides": [
         "DB tables: server_state_kv, server_buffs."
+      ]
+    },
+    "infra.schema.066_server_events_v1": {
+      "kind": "schema_migration",
+      "path": "worldcore/infra/schema/066_server_events_v1.sql",
+      "dependsOn": [],
+      "provides": [
+        "DB tables: server_events, server_event_effects."
+      ],
+      "notes": [
+        "Creates persisted server events (server_events) and their effects (server_event_effects).",
+        "ServerEvents runtime syncs active events into server_buffs (currently only effect_kind=grant_server_buff)."
       ]
     },
     "infra.schemaIgnoreJson": {
@@ -3608,6 +3620,27 @@
         "Applies immediately to connected players by calling syncServerBuffsToConnectedPlayers; stored buffs are synced each TickEngine heartbeat when enabled."
       ],
       "path": "worldcore/mud/commands/debug/serverBuffCommand.ts"
+    },
+    "mud.commands.debug.serverEventCommand": {
+      "kind": "mud_command_group",
+      "path": "worldcore/mud/commands/debug/serverEventCommand.ts",
+      "dependsOn": [
+        "mud.context",
+        "status.serverEvents"
+      ],
+      "functions": [
+        "handleDebugServerEvent"
+      ],
+      "invokedBy": [
+        "mud.commands.debug.serverevent (via mud/commands/registry.ts)"
+      ],
+      "provides": [
+        "Admin/debug command to manage persisted server events and their effects."
+      ],
+      "notes": [
+        "Subcommands: list/add/enable/disable/effect_add_buff/effect_del/delete/reload.",
+        "reload clears runtime cache so next tick will re-sync events."
+      ]
     },
     "mud.commands.debug.vulnerability": {
       "dependsOn": [
@@ -5948,6 +5981,50 @@
       "path": "worldcore/status/PostgresServerKvService.ts",
       "provides": [
         "Server-level JSONB KV store (server_state_kv)."
+      ]
+    },
+    "status.serverEvents.db": {
+      "kind": "service",
+      "class": "PostgresServerEventService",
+      "path": "worldcore/status/PostgresServerEventService.ts",
+      "dependsOn": [
+        "db.main"
+      ],
+      "functions": [
+        "listActive",
+        "upsertEvent",
+        "setEnabled",
+        "deleteEvent",
+        "addEffect",
+        "deleteEffect"
+      ],
+      "provides": [
+        "CRUD + active-window query for persisted server events and effects."
+      ],
+      "notes": [
+        "Postgres-backed server event store (server_events + server_event_effects).",
+        "Designed to be safe under `node --test` by lazy-loading DB module similar to other Postgres* services."
+      ]
+    },
+    "status.serverEvents": {
+      "kind": "service",
+      "path": "worldcore/status/ServerEvents.ts",
+      "dependsOn": [
+        "core.entities",
+        "core.sessions",
+        "status.serverBuffs",
+        "status.serverEvents.db"
+      ],
+      "functions": [
+        "syncServerEventsToRuntime",
+        "resetServerEventsRuntimeCache"
+      ],
+      "provides": [
+        "Heartbeat-driven synchronization of active server events into persisted server_buffs."
+      ],
+      "notes": [
+        "A lightweight programmable 'server events' layer (weekend buffs, donation perks, scheduled boosts).",
+        "v0 supports effect_kind=grant_server_buff only; future can add set_server_kv and recurrence rules."
       ]
     },
     "strategy.regionService": {
