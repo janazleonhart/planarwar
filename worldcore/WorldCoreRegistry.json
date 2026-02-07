@@ -82,6 +82,14 @@
       ],
       "path": "worldcore/ai/brains/BehaviorContext.ts"
     },
+    "ai.brainTypes": {
+      "kind": "model",
+      "notes": [
+        "Defines NpcPerception, PerceivedPlayer, and NpcDecision variants (idle, attack_entity, move_to_room, say, flee) plus NpcBrain interface.",
+        "Engine-agnostic AI contract usable in-process or over-the-wire to a remote AI service."
+      ],
+      "path": "worldcore/ai/NpcBrainTypes.ts"
+    },
     "ai.brains.aggressive": {
       "dependsOn": [
         "ai.brainTypes",
@@ -141,14 +149,6 @@
         "Neutral brain: always returns null; used for non-hostile NPCs that currently do nothing."
       ],
       "path": "worldcore/ai/brains/NeutralBrain.ts"
-    },
-    "ai.brainTypes": {
-      "kind": "model",
-      "notes": [
-        "Defines NpcPerception, PerceivedPlayer, and NpcDecision variants (idle, attack_entity, move_to_room, say, flee) plus NpcBrain interface.",
-        "Engine-agnostic AI contract usable in-process or over-the-wire to a remote AI service."
-      ],
-      "path": "worldcore/ai/NpcBrainTypes.ts"
     },
     "ai.localSimpleBrain": {
       "class": "LocalSimpleAggroBrain",
@@ -1326,9 +1326,12 @@
         "world.npcs?"
       ],
       "dependsOn": [
+        "combat.playerHotTicker",
         "core.entities",
         "core.rooms",
         "core.sessions",
+        "status.runtime",
+        "status.serverBuffs",
         "world.manager",
         "world.npcs?"
       ],
@@ -1339,7 +1342,10 @@
         "Ticks NPCs via NpcManager.updateAll each tick (if provided).",
         "Calls cfg.onTick(now, tick, deltaMs) hook for systems like SongEngine.",
         "Logs basic stats periodically.",
-        "Ticks NPC status effects + DOT damage each tick (best-effort), skipping dead NPCs/corpses."
+        "Ticks NPC status effects + DOT damage each tick (best-effort), skipping dead NPCs/corpses.",
+        "Ticks player HOTs each heartbeat via PlayerHotTicker (PW_TICK_PLAYER_HOTS).",
+        "Prunes expired player status effects each heartbeat via StatusRuntime (PW_TICK_PLAYER_STATUS).",
+        "Syncs server-wide buffs/events onto connected players (PW_TICK_SERVER_BUFFS)."
       ],
       "path": "worldcore/core/TickEngine.ts",
       "provides": [
@@ -2366,6 +2372,18 @@
       "provides": [
         "Outrider L1\u201310 spell kit (spells + unlocks)",
         "Wave1 ranger DOT/mark/defensive utility baseline"
+      ]
+    },
+    "infra.schema.065_server_state_kv_and_server_buffs": {
+      "dependsOn": [],
+      "kind": "schema_migration",
+      "notes": [
+        "Creates server_state_kv (JSONB key/value) and server_buffs (persisted server-wide buffs).",
+        "RECOMMENDATION: rename this migration to 065_* to avoid numeric prefix collision with existing 064_* migrations."
+      ],
+      "path": "worldcore/infra/schema/064_server_state_kv_and_server_buffs.sql",
+      "provides": [
+        "DB tables: server_state_kv, server_buffs."
       ]
     },
     "infra.schemaIgnoreJson": {
@@ -3574,8 +3592,6 @@
       "path": "worldcore/mud/commands/debug/reloadCommand.ts"
     },
     "mud.commands.debug.serverBuffCommand": {
-      "kind": "mud_command_group",
-      "path": "worldcore/mud/commands/debug/serverBuffCommand.ts",
       "dependsOn": [
         "mud.context",
         "status.serverBuffs"
@@ -3586,10 +3602,12 @@
       "invokedBy": [
         "mud.commands.debug.serverbuff (via mud/commands/registry.ts)"
       ],
+      "kind": "mud_command_group",
       "notes": [
         "Admin/debug command to manage server-wide buffs (list/add/remove/clearall).",
         "Applies immediately to connected players by calling syncServerBuffsToConnectedPlayers; stored buffs are synced each TickEngine heartbeat when enabled."
-      ]
+      ],
+      "path": "worldcore/mud/commands/debug/serverBuffCommand.ts"
     },
     "mud.commands.debug.vulnerability": {
       "dependsOn": [
@@ -4158,55 +4176,58 @@
     "mud.commands.registry": {
       "dependsOn": [
         "mud.commands.bank",
-        "mud.commands.guildBank",
-        "mud.commands.economy.trade",
-        "mud.commands.economy.vendor",
-        "mud.commands.economy.auction",
-        "mud.commands.social.mail",
-        "mud.commands.craft",
-        "mud.commands.world.look",
-        "mud.commands.world.examine",
-        "mud.commands.world.inspectRegion",
-        "mud.commands.world.nearby",
-        "mud.commands.world.map",
-        "mud.commands.world.save",
-        "mud.commands.world.move",
-        "mud.commands.world.walkto",
-        "mud.commands.world.interact",
-        "mud.commands.world.talk",
-        "mud.commands.social.chat",
-        "mud.commands.social.guildChat",
-        "mud.commands.social.who",
-        "mud.commands.meta.help",
-        "mud.commands.player.inventory",
-        "mud.commands.player.itemInfo",
-        "mud.commands.player.equipment",
-        "mud.commands.player.stats",
-        "mud.commands.player.recovery",
-        "mud.commands.player.resources",
-        "mud.commands.player.skills",
-        "mud.commands.player.melody",
-        "mud.commands.player.abilities",
-        "mud.commands.player.songs",
-        "mud.commands.player.spells",
-        "mud.commands.combat.cast",
         "mud.commands.combat.ability",
         "mud.commands.combat.attack",
         "mud.commands.combat.autoattack",
-        "mud.commands.gathering.picking",
-        "mud.commands.gathering.mining",
-        "mud.commands.gathering.quarrying",
-        "mud.commands.progression.quests",
-        "mud.commands.progression.progress",
-        "mud.commands.progression.titles",
+        "mud.commands.combat.cast",
+        "mud.commands.craft",
+        "mud.commands.debug.debugThreatCommand",
         "mud.commands.debug.handlers",
+        "mud.commands.debug.serverBuffCommand",
         "mud.commands.debug.withDebugGate",
+        "mud.commands.economy.auction",
+        "mud.commands.economy.trade",
+        "mud.commands.economy.vendor",
+        "mud.commands.gathering.mining",
+        "mud.commands.gathering.picking",
+        "mud.commands.gathering.quarrying",
+        "mud.commands.guildBank",
+        "mud.commands.meta.help",
+        "mud.commands.player.abilities",
+        "mud.commands.player.equipment",
+        "mud.commands.player.inventory",
+        "mud.commands.player.itemInfo",
+        "mud.commands.player.melody",
+        "mud.commands.player.recovery",
+        "mud.commands.player.resources",
+        "mud.commands.player.skills",
+        "mud.commands.player.songs",
+        "mud.commands.player.spells",
+        "mud.commands.player.stats",
+        "mud.commands.progression.progress",
+        "mud.commands.progression.quests",
+        "mud.commands.progression.titles",
+        "mud.commands.social.chat",
+        "mud.commands.social.guildChat",
+        "mud.commands.social.mail",
+        "mud.commands.social.who",
+        "mud.commands.world.examine",
+        "mud.commands.world.inspectRegion",
+        "mud.commands.world.interact",
+        "mud.commands.world.look",
+        "mud.commands.world.map",
+        "mud.commands.world.move",
+        "mud.commands.world.nearby",
+        "mud.commands.world.save",
+        "mud.commands.world.talk",
+        "mud.commands.world.walkto",
         "rewards.RewardDelivery"
       ],
       "kind": "registry",
       "notes": [
         "Maps text commands (bank, move, cast, etc.) to specific handler functions.",
-        "Central router used by MudCommandHandler to dispatch player commands."
+        "Central router used by MudCommandHandler to dispatch player commands.",
+        "Registers MUD commands and aliases (including debug/admin commands)."
       ],
       "path": "worldcore/mud/commands/registry.ts"
     },
@@ -4341,22 +4362,22 @@
       "path": "worldcore/mud/commands/world/inspectRegionCommand.ts"
     },
     "mud.commands.world.face": {
-      "kind": "mud_command",
-      "path": "worldcore/mud/commands/world/faceCommand.ts",
-      "function": "handleFaceCommand",
-      "invokedBy": [
-        "mud.handler",
-        "mud.commands.registry"
-      ],
       "dependsOn": [
         "mud.context",
         "core.entities",
         "targeting.resolver"
       ],
+      "function": "handleFaceCommand",
+      "invokedBy": [
+        "mud.handler",
+        "mud.commands.registry"
+      ],
+      "kind": "mud_command",
       "notes": [
         "Implements 'face' to explicitly set player facing (direction/angle) or face toward a target in the room.",
         "Used to make ranged FOV/LoS predictable in the MUD until a UI facing control exists."
-      ]
+      ],
+      "path": "worldcore/mud/commands/world/faceCommand.ts"
     },
     "mud.commands.world.inspect": {
       "kind": "alias",
@@ -4968,6 +4989,20 @@
       ],
       "path": "worldcore/progression/ProgressionCore.ts"
     },
+    "progression.eventSink": {
+      "dependsOn": [
+        "progression.core"
+      ],
+      "functions": [
+        "recordEvent"
+      ],
+      "kind": "service_contract",
+      "notes": [
+        "Async sink interface for streaming ProgressionEvent records to external stores.",
+        "Extends events with userId, characterId, shardId, roomId, and occurredAt."
+      ],
+      "path": "worldcore/progression/ProgressionEventSink.ts"
+    },
     "progression.events.highLevel": {
       "kind": "model",
       "notes": [
@@ -4983,20 +5018,6 @@
         "Defines ProgressEventKind, GatheringKind, GatheringStats, and ProgressEvent payload."
       ],
       "path": "worldcore/progression/ProgressEvents.ts"
-    },
-    "progression.eventSink": {
-      "dependsOn": [
-        "progression.core"
-      ],
-      "functions": [
-        "recordEvent"
-      ],
-      "kind": "service_contract",
-      "notes": [
-        "Async sink interface for streaming ProgressionEvent records to external stores.",
-        "Extends events with userId, characterId, shardId, roomId, and occurredAt."
-      ],
-      "path": "worldcore/progression/ProgressionEventSink.ts"
     },
     "progression.helpers": {
       "dependsOn": [
@@ -5217,6 +5238,35 @@
       ],
       "path": "worldcore/pvp/PvpRules.ts"
     },
+    "quests.TownQuestBoard": {
+      "dependsOn": [
+        "quests.QuestGenerator",
+        "quests.QuestRegistry",
+        "quests.QuestState",
+        "progression.core",
+        "characters.service",
+        "core.EntityManager",
+        "core.RoomManager"
+      ],
+      "functions": [
+        "renderTownQuestBoard(ctx, char)",
+        "acceptTownQuest(ctx, char, idOrIndex)",
+        "abandonQuest(ctx, char, idOrIndex)",
+        "resolveQuestDefinitionFromStateId(questId, entry)"
+      ],
+      "kind": "service",
+      "notes": [
+        "Quest Board v0: lists deterministic generated quests for current town context (region/town key + tier + epoch).",
+        "Acceptance creates QuestState entries (quests are no longer implicitly active just because they exist in the registry).",
+        "resolveQuestDefinitionFromStateId enables QuestEngine/QuestText/turnInQuest to resolve generated quests without needing live ctx."
+      ],
+      "path": "worldcore/quests/TownQuestBoard.ts",
+      "provides": [
+        "Town-scoped deterministic quest board output",
+        "Accept/abandon writes QuestState entries",
+        "Quest definition resolution for generated quests via QuestSource metadata"
+      ]
+    },
     "quests.engine": {
       "dependsOn": [
         "progression.core",
@@ -5333,35 +5383,6 @@
         "No auto-activation."
       ],
       "path": "worldcore/quests/QuestText.ts"
-    },
-    "quests.TownQuestBoard": {
-      "dependsOn": [
-        "quests.QuestGenerator",
-        "quests.QuestRegistry",
-        "quests.QuestState",
-        "progression.core",
-        "characters.service",
-        "core.EntityManager",
-        "core.RoomManager"
-      ],
-      "functions": [
-        "renderTownQuestBoard(ctx, char)",
-        "acceptTownQuest(ctx, char, idOrIndex)",
-        "abandonQuest(ctx, char, idOrIndex)",
-        "resolveQuestDefinitionFromStateId(questId, entry)"
-      ],
-      "kind": "service",
-      "notes": [
-        "Quest Board v0: lists deterministic generated quests for current town context (region/town key + tier + epoch).",
-        "Acceptance creates QuestState entries (quests are no longer implicitly active just because they exist in the registry).",
-        "resolveQuestDefinitionFromStateId enables QuestEngine/QuestText/turnInQuest to resolve generated quests without needing live ctx."
-      ],
-      "path": "worldcore/quests/TownQuestBoard.ts",
-      "provides": [
-        "Town-scoped deterministic quest board output",
-        "Accept/abandon writes QuestState entries",
-        "Quest definition resolution for generated quests via QuestSource metadata"
-      ]
     },
     "quests.turnInQuest": {
       "dependsOn": [
@@ -5839,9 +5860,28 @@
       ],
       "path": "worldcore/spells/SpellUnlocks.ts"
     },
+    "status.runtime": {
+      "dependsOn": [
+        "combat.statusEffects",
+        "characters.types",
+        "core.entities",
+        "core.sessions"
+      ],
+      "functions": [
+        "ensureCharacterStatusState",
+        "pruneCharacterExpiredStatusEffects",
+        "isCharacterStealthed",
+        "pruneAllConnectedPlayerStatuses"
+      ],
+      "kind": "utility",
+      "notes": [
+        "Tiny non-combat wrapper around StatusEffects spine (progression.statusEffects).",
+        "Used to safely prune/inspect buffs/debuffs out of combat and centralize stealth checks."
+      ],
+      "path": "worldcore/status/StatusRuntime.ts",
+      "provides": []
+    },
     "status.serverBuffs": {
-      "kind": "service",
-      "path": "worldcore/status/ServerBuffs.ts",
       "dependsOn": [
         "combat.statusEffects",
         "core.sessions",
@@ -5857,13 +5897,57 @@
         "syncServerBuffsToConnectedPlayers",
         "clearServerBuffFromConnectedPlayers"
       ],
+      "kind": "service",
       "notes": [
         "Server-wide buffs/events/donation perks implemented as normal StatusEffects applied to all connected players.",
         "v1: in-memory ACTIVE map only; future slice can persist to db/redis and rehydrate on boot.",
         "Effect IDs are namespaced as server_buff:<id> to avoid collision with normal spell/status IDs."
       ],
+      "path": "worldcore/status/ServerBuffs.ts",
       "provides": [
         "Server buff list + sync/apply helpers (StatusEffects-backed)."
+      ]
+    },
+    "status.serverBuffs.db": {
+      "class": "PostgresServerBuffService",
+      "dependsOn": [
+        "db.main"
+      ],
+      "functions": [
+        "list",
+        "upsert",
+        "remove",
+        "clearAll"
+      ],
+      "kind": "service",
+      "notes": [
+        "Postgres-backed persistence for server-wide buffs (table: server_buffs).",
+        "Safe to import in unit tests: DB module is lazy-imported and treated as a no-op under `node --test`."
+      ],
+      "path": "worldcore/status/PostgresServerBuffService.ts",
+      "provides": [
+        "CRUD for persisted server buffs used by status.serverBuffs."
+      ]
+    },
+    "status.serverKv.db": {
+      "class": "PostgresServerKvService",
+      "dependsOn": [
+        "db.main"
+      ],
+      "functions": [
+        "getJson",
+        "setJson",
+        "deleteKey",
+        "listKeys"
+      ],
+      "kind": "service",
+      "notes": [
+        "Tiny Postgres-backed JSONB key/value store for global server knobs (feature flags, multipliers, event config).",
+        "Intended as a foundation for future programmable events/donation-driven switches."
+      ],
+      "path": "worldcore/status/PostgresServerKvService.ts",
+      "provides": [
+        "Server-level JSONB KV store (server_state_kv)."
       ]
     },
     "strategy.regionService": {
@@ -6142,251 +6226,6 @@
       "owns": [],
       "path": "worldcore/test/combatEngine.contract.test.ts",
       "provides": []
-    },
-    "test.contract_abilityLearningRules": {
-      "class": "(test)",
-      "ctorArgs": [],
-      "dependsOn": [],
-      "kind": "test",
-      "lifecycle": "static",
-      "notes": [
-        "Contract: ability learning rules (autogrant <= level, deterministic)."
-      ],
-      "owns": [],
-      "path": "worldcore/test/contract_abilityLearningRules.test.ts",
-      "provides": []
-    },
-    "test.contract_nearbyHandles_resolution": {
-      "class": null,
-      "ctorArgs": [],
-      "dependsOn": [
-        "mud.handles.nearbyHandles"
-      ],
-      "kind": "test",
-      "lifecycle": "test",
-      "notes": [
-        "Contract: nearby-handle snapshot prefers alive entities over corpses when distance ties (corpse should sort last).",
-        "Contract: nearby-handle snapshot hides personal nodes owned by other sessions (no cross-player leakage)."
-      ],
-      "owns": [],
-      "path": "worldcore/test/contract_nearbyHandles_resolution.test.ts",
-      "provides": [],
-      "service": "test.contract"
-    },
-    "test.contract_npcDebuffsAndDots": {
-      "class": null,
-      "ctorArgs": [],
-      "dependsOn": [
-        "test.utils",
-        "mud.spells",
-        "spells.types",
-        "combat.statusEffects",
-        "combat.npc",
-        "core.tickEngine"
-      ],
-      "kind": "test",
-      "lifecycle": "test",
-      "notes": [
-        "Contract: NPC debuffs + DOT vertical slice works end-to-end (cast \u2192 status apply \u2192 tick \u2192 damage).",
-        "Guards the DOT tick + defender snapshot seam so damageTakenPct modifiers influence both direct hits and DOT ticks."
-      ],
-      "owns": [],
-      "path": "worldcore/test/contract_npcDebuffsAndDots.test.ts",
-      "provides": [],
-      "service": "test.contract"
-    },
-    "test.contract_referenceKits_L1_10": {
-      "class": "(test)",
-      "ctorArgs": [],
-      "dependsOn": [],
-      "kind": "test",
-      "lifecycle": "static",
-      "notes": [
-        "Contract: reference kits L1\u201310 are consistent and autogrant works in test mode."
-      ],
-      "owns": [],
-      "path": "worldcore/test/contract_referenceKits_L1_10.test.ts",
-      "provides": []
-    },
-    "test.contract_reloadSpawnsInvalidatesHydratorCache": {
-      "dependsOn": [
-        "mud.commands.debug.reload",
-        "dev.hotReloadService",
-        "world.spawnHydrator"
-      ],
-      "kind": "test",
-      "notes": [
-        "Guards against stale POI hydration when spawn_points change at runtime."
-      ],
-      "path": "worldcore/test/contract_reloadSpawnsInvalidatesHydratorCache.test.ts",
-      "provides": [
-        "[contract] reload spawns invalidates SpawnHydrator hydration cache before POI rehydrate",
-        "Asserts hot reload report includes SpawnHydrator=cleared"
-      ],
-      "service": "test"
-    },
-    "test.contract_schemaAppliedMissingMigrations": {
-      "dependsOn": [
-        "tools.schemaMissingMigrationsLib"
-      ],
-      "kind": "test",
-      "lifecycle": "test",
-      "notes": [
-        "Contract: applied migrations missing on disk are detected deterministically and can be allow-listed."
-      ],
-      "owns": [],
-      "path": "worldcore/test/contract_schemaAppliedMissingMigrations.test.ts",
-      "provides": []
-    },
-    "test.contract_schemaFilenameAudit": {
-      "class": "(test)",
-      "ctorArgs": [],
-      "dependsOn": [
-        "tools.schemaFilenameAudit"
-      ],
-      "kind": "test",
-      "lifecycle": "static",
-      "notes": [
-        "Contract: schema filename audit detects duplicate numeric prefixes deterministically."
-      ],
-      "owns": [],
-      "path": "worldcore/test/contract_schemaFilenameAudit.test.ts",
-      "provides": []
-    },
-    "test.contract_schemaOrderPolicy": {
-      "dependsOn": [
-        "tools.schemaOrderPolicy"
-      ],
-      "kind": "test",
-      "path": "worldcore/test/contract_schemaOrderPolicy.test.ts"
-    },
-    "test.contract_spellLearningRules": {
-      "class": "(test)",
-      "ctorArgs": [],
-      "dependsOn": [],
-      "kind": "test",
-      "lifecycle": "static",
-      "notes": [
-        "Contract: spell learning rules (autogrant <= level, deterministic)."
-      ],
-      "owns": [],
-      "path": "worldcore/test/contract_spellLearningRules.test.ts",
-      "provides": []
-    },
-    "test.contract_statusEffects_clearOnDeath": {
-      "class": null,
-      "ctorArgs": [],
-      "dependsOn": [
-        "combat.statusEffects"
-      ],
-      "kind": "test",
-      "lifecycle": "test",
-      "notes": [
-        "Contract: death clears combat status effects (DOTs, debuffs, etc.).",
-        "Guards that corpses do not keep ticking DOTs, and ticking stops immediately when lethal DOT damage is applied."
-      ],
-      "owns": [],
-      "path": "worldcore/test/contract_statusEffects_clearOnDeath.test.ts",
-      "provides": [],
-      "service": "test.contract"
-    },
-    "test.contract_statusStackingPolicy_versionedByApplier": {
-      "class": null,
-      "ctorArgs": [],
-      "dependsOn": [
-        "test.utils",
-        "combat.statusEffects",
-        "combat.statusStackingPolicy"
-      ],
-      "kind": "test",
-      "lifecycle": "test",
-      "notes": [
-        "Contract: versioned_by_applier stacks distinct versions by distinct appliers (cap enforced).",
-        "Same applier upgrades their slot (no duplicate stacks). Same version does not stack; refresh/replace semantics are last-write-wins."
-      ],
-      "owns": [],
-      "path": "worldcore/test/contract_statusStackingPolicy_versionedByApplier.test.ts",
-      "provides": [],
-      "service": "test.contract"
-    },
-    "test.contract_templar_L1_10_kit_spellFlavor": {
-      "class": "(test)",
-      "ctorArgs": [],
-      "dependsOn": [],
-      "kind": "test",
-      "lifecycle": "static",
-      "notes": [
-        "Contract: templar L1\u201310 reference kit is playable in WORLDCORE_TEST mode; spells exist in SPELLS and have non-placeholder flavor; autogrant by level 10."
-      ],
-      "owns": [],
-      "path": "worldcore/test/contract_templar_L1_10_kit_spellFlavor.test.ts",
-      "provides": []
-    },
-    "test.contract_townQuestBoardAcceptAndAbandon": {
-      "dependsOn": [
-        "quests.TownQuestBoard",
-        "quests.text",
-        "mud.commands.progression.quests"
-      ],
-      "kind": "test",
-      "notes": [
-        "Covers the minimal quest runtime loop: board -> accept -> questlog -> abandon."
-      ],
-      "path": "worldcore/test/contract_townQuestBoardAcceptAndAbandon.test.ts",
-      "provides": [
-        "[contract] town quest board accept adds quest to questlog",
-        "[contract] quest abandon removes quest from questlog"
-      ],
-      "service": "test"
-    },
-    "test.contract_townQuestGeneratorDeterminism": {
-      "dependsOn": [
-        "quests.generator"
-      ],
-      "kind": "test",
-      "notes": [
-        "Guards reproducibility for generated quest sets so server restarts and tooling yield identical results."
-      ],
-      "path": "worldcore/test/contract_townQuestGeneratorDeterminism.test.ts",
-      "provides": [
-        "[contract] town quest generator is deterministic for identical inputs",
-        "[contract] different epoch changes output (seeded variance)"
-      ],
-      "service": "test"
-    },
-    "test.contract_townQuestGeneratorObjectivePool": {
-      "dependsOn": [
-        "quests.generator",
-        "quests.types"
-      ],
-      "kind": "test",
-      "notes": [
-        "Prevents the generator from emitting impossible objectives until content pools expand intentionally."
-      ],
-      "path": "worldcore/test/contract_townQuestGeneratorObjectivePool.test.ts",
-      "provides": [
-        "[contract] generated quest objectives only use safe ids from the current content set",
-        "[contract] generated quest ids are unique and town-prefixed"
-      ],
-      "service": "test"
-    },
-    "test.contract_trainingDummySafety": {
-      "class": "(test) contract_trainingDummySafety",
-      "ctorArgs": [],
-      "dependsOn": [
-        "worldcore/npc/NpcTypes.ts",
-        "worldcore/npc/NpcCrime.ts",
-        "worldcore/combat/NpcCombat.ts"
-      ],
-      "kind": "test",
-      "lifecycle": "active",
-      "owns": [
-        "test:contract_trainingDummySafety"
-      ],
-      "path": "worldcore/test/contract_trainingDummySafety.test.ts",
-      "provides": [
-        "contract:trainingDummySafety"
-      ]
     },
     "test.contractAdminAbilitiesRoutes": {
       "dependsOn": [
@@ -6677,6 +6516,28 @@
       "provides": [],
       "service": "test.contract"
     },
+    "test.contractCastSpellPreGatesNoLeak": {
+      "class": null,
+      "ctorArgs": [],
+      "dependsOn": [
+        "mud.spells",
+        "mud.combatGates",
+        "combat.damagePolicy",
+        "pvp.duels",
+        "combat.castingGates",
+        "test.utils"
+      ],
+      "kind": "test",
+      "lifecycle": "test",
+      "notes": [
+        "Contract: castSpell must consult denial gates (region combat disabled, PvP/duel denial) BEFORE spending resources or starting cooldowns.",
+        "Also asserts duels end when a spell kill occurs."
+      ],
+      "owns": [],
+      "path": "worldcore/test/contract_castSpell_preGates_noLeak.test.ts",
+      "provides": [],
+      "service": "test.contract"
+    },
     "test.contractCastingDeniedDoesNotConsumeCostOrCooldown": {
       "class": null,
       "ctorArgs": [],
@@ -6714,28 +6575,6 @@
       ],
       "owns": [],
       "path": "worldcore/test/contract_castingGates_costCooldown.test.ts",
-      "provides": [],
-      "service": "test.contract"
-    },
-    "test.contractCastSpellPreGatesNoLeak": {
-      "class": null,
-      "ctorArgs": [],
-      "dependsOn": [
-        "mud.spells",
-        "mud.combatGates",
-        "combat.damagePolicy",
-        "pvp.duels",
-        "combat.castingGates",
-        "test.utils"
-      ],
-      "kind": "test",
-      "lifecycle": "test",
-      "notes": [
-        "Contract: castSpell must consult denial gates (region combat disabled, PvP/duel denial) BEFORE spending resources or starting cooldowns.",
-        "Also asserts duels end when a spell kill occurs."
-      ],
-      "owns": [],
-      "path": "worldcore/test/contract_castSpell_preGates_noLeak.test.ts",
       "provides": [],
       "service": "test.contract"
     },
@@ -6904,16 +6743,16 @@
       ]
     },
     "test.contractFaceCommandRangedFov": {
-      "kind": "test",
-      "path": "worldcore/test/contract_faceCommand_rangedFov.test.ts",
       "dependsOn": [
         "mud.actions.combat",
         "mud.trainingDummy",
         "mud.commands.world.face"
       ],
+      "kind": "test",
       "notes": [
         "[contract] face command: facing a target enables ranged LoS/FOV success and prevents behind-you shots."
-      ]
+      ],
+      "path": "worldcore/test/contract_faceCommand_rangedFov.test.ts"
     },
     "test.contractGatheringCommandsResourceTags": {
       "class": null,
@@ -7570,6 +7409,25 @@
       "path": "worldcore/test/contract_seedSpellUnlocksReferToSeededSpells.test.ts",
       "provides": []
     },
+    "test.contractServerBuffsApplyAndSync": {
+      "class": "(test)",
+      "ctorArgs": [],
+      "dependsOn": [
+        "status.serverBuffs",
+        "combat.statusEffects",
+        "core.entities",
+        "core.sessions",
+        "characters.types"
+      ],
+      "kind": "test",
+      "lifecycle": "test",
+      "notes": [
+        "Contract: ServerBuffs sync applies active server buffs to connected players (including players that connect after the buff is active)."
+      ],
+      "owns": [],
+      "path": "worldcore/test/contract_serverBuffs_applyAndSync.test.ts",
+      "provides": []
+    },
     "test.contractShieldOverwriteOtherCasterReplaces": {
       "dependsOn": [
         "combat.statusEffects"
@@ -7722,21 +7580,6 @@
       "path": "worldcore/test/contract_spellHotDoesNotTickPastExpiry.test.ts",
       "provides": []
     },
-    "test.contractStatusEffectsPruneMeta": {
-      "class": "(test)",
-      "ctorArgs": [],
-      "dependsOn": [
-        "combat.statusEffects"
-      ],
-      "kind": "test",
-      "lifecycle": "test",
-      "notes": [
-        "Contract: tickStatusEffects records prune metadata (lastPrunedCount/totalPrunedCount/lastPruneAtMs) for debug tooling."
-      ],
-      "owns": [],
-      "path": "worldcore/test/contract_statusEffects_pruneMeta.test.ts",
-      "provides": []
-    },
     "test.contractSpellHotRefreshDoesNotDoubleTick": {
       "class": "(test)",
       "ctorArgs": [],
@@ -7821,6 +7664,21 @@
       ],
       "owns": [],
       "path": "worldcore/test/contract_statusEffects.test.ts",
+      "provides": []
+    },
+    "test.contractStatusEffectsPruneMeta": {
+      "class": "(test)",
+      "ctorArgs": [],
+      "dependsOn": [
+        "combat.statusEffects"
+      ],
+      "kind": "test",
+      "lifecycle": "test",
+      "notes": [
+        "Contract: tickStatusEffects records prune metadata (lastPrunedCount/totalPrunedCount/lastPruneAtMs) for debug tooling."
+      ],
+      "owns": [],
+      "path": "worldcore/test/contract_statusEffects_pruneMeta.test.ts",
       "provides": []
     },
     "test.contractTargetFindersNpc": {
@@ -8054,6 +7912,388 @@
       "provides": [],
       "service": "test.contract"
     },
+    "test.contract_abilityLearningRules": {
+      "class": "(test)",
+      "ctorArgs": [],
+      "dependsOn": [],
+      "kind": "test",
+      "lifecycle": "static",
+      "notes": [
+        "Contract: ability learning rules (autogrant <= level, deterministic)."
+      ],
+      "owns": [],
+      "path": "worldcore/test/contract_abilityLearningRules.test.ts",
+      "provides": []
+    },
+    "test.contract_debugThreatCommand": {
+      "class": "(test)",
+      "ctorArgs": [],
+      "dependsOn": [
+        "mud.commands.debug.debugThreatCommand",
+        "npc.threat",
+        "core.entities",
+        "core.sessions"
+      ],
+      "kind": "test",
+      "lifecycle": "test",
+      "notes": [
+        "Contract: debug_threat prints room summary and per-NPC threat table output."
+      ],
+      "owns": [],
+      "path": "worldcore/test/contract_debugThreatCommand.test.ts",
+      "provides": []
+    },
+    "test.contract_debugThreat_watch_set": {
+      "class": "(test)",
+      "ctorArgs": [],
+      "dependsOn": [
+        "mud.commands.debug.debugThreatCommand",
+        "npc.threat",
+        "core.entities",
+        "core.sessions"
+      ],
+      "kind": "test",
+      "lifecycle": "test",
+      "notes": [
+        "Contract: debug_threat supports --watch and dev-only --set/--add/--clear/--force helpers."
+      ],
+      "owns": [],
+      "path": "worldcore/test/contract_debugThreat_watch_set.test.ts",
+      "provides": []
+    },
+    "test.contract_nearbyHandles_resolution": {
+      "class": null,
+      "ctorArgs": [],
+      "dependsOn": [
+        "mud.handles.nearbyHandles"
+      ],
+      "kind": "test",
+      "lifecycle": "test",
+      "notes": [
+        "Contract: nearby-handle snapshot prefers alive entities over corpses when distance ties (corpse should sort last).",
+        "Contract: nearby-handle snapshot hides personal nodes owned by other sessions (no cross-player leakage)."
+      ],
+      "owns": [],
+      "path": "worldcore/test/contract_nearbyHandles_resolution.test.ts",
+      "provides": [],
+      "service": "test.contract"
+    },
+    "test.contract_npcCombat_assist_threatShare": {
+      "class": "(test)",
+      "ctorArgs": [],
+      "dependsOn": [
+        "combat.npc",
+        "npc.threat",
+        "combat.statusEffects"
+      ],
+      "kind": "test",
+      "lifecycle": "test",
+      "notes": [
+        "Contract: assist seeds weighted threat share from ally threat table when enabled; skips invalid/stealthed shared targets."
+      ],
+      "owns": [],
+      "path": "worldcore/test/contract_npcCombat_assist_threatShare.test.ts",
+      "provides": []
+    },
+    "test.contract_npcDebuffsAndDots": {
+      "class": null,
+      "ctorArgs": [],
+      "dependsOn": [
+        "test.utils",
+        "mud.spells",
+        "spells.types",
+        "combat.statusEffects",
+        "combat.npc",
+        "core.tickEngine"
+      ],
+      "kind": "test",
+      "lifecycle": "test",
+      "notes": [
+        "Contract: NPC debuffs + DOT vertical slice works end-to-end (cast \u2192 status apply \u2192 tick \u2192 damage).",
+        "Guards the DOT tick + defender snapshot seam so damageTakenPct modifiers influence both direct hits and DOT ticks."
+      ],
+      "owns": [],
+      "path": "worldcore/test/contract_npcDebuffsAndDots.test.ts",
+      "provides": [],
+      "service": "test.contract"
+    },
+    "test.contract_npcThreat_forcedClear_breadcrumb": {
+      "class": "(test)",
+      "ctorArgs": [],
+      "dependsOn": [
+        "npc.threat"
+      ],
+      "kind": "test",
+      "lifecycle": "test",
+      "notes": [
+        "Contract: when forced target is cleared due to invalidation, forcedCleared* breadcrumb metadata is recorded for debug tooling."
+      ],
+      "owns": [],
+      "path": "worldcore/test/contract_npcThreat_forcedClear_breadcrumb.test.ts",
+      "provides": []
+    },
+    "test.contract_npcThreat_selectTarget_filtersInvalidForced": {
+      "class": "(test)",
+      "ctorArgs": [],
+      "dependsOn": [
+        "npc.threat",
+        "combat.statusEffects",
+        "status.runtime"
+      ],
+      "kind": "test",
+      "lifecycle": "test",
+      "notes": [
+        "Contract: forced target is cleared when invalid (stealth/dead/out-of-room) and selection falls back to valid top threat."
+      ],
+      "owns": [],
+      "path": "worldcore/test/contract_npcThreat_selectTarget_filtersInvalidForced.test.ts",
+      "provides": []
+    },
+    "test.contract_referenceKits_L1_10": {
+      "class": "(test)",
+      "ctorArgs": [],
+      "dependsOn": [],
+      "kind": "test",
+      "lifecycle": "static",
+      "notes": [
+        "Contract: reference kits L1\u201310 are consistent and autogrant works in test mode."
+      ],
+      "owns": [],
+      "path": "worldcore/test/contract_referenceKits_L1_10.test.ts",
+      "provides": []
+    },
+    "test.contract_reloadSpawnsInvalidatesHydratorCache": {
+      "dependsOn": [
+        "mud.commands.debug.reload",
+        "dev.hotReloadService",
+        "world.spawnHydrator"
+      ],
+      "kind": "test",
+      "notes": [
+        "Guards against stale POI hydration when spawn_points change at runtime."
+      ],
+      "path": "worldcore/test/contract_reloadSpawnsInvalidatesHydratorCache.test.ts",
+      "provides": [
+        "[contract] reload spawns invalidates SpawnHydrator hydration cache before POI rehydrate",
+        "Asserts hot reload report includes SpawnHydrator=cleared"
+      ],
+      "service": "test"
+    },
+    "test.contract_schemaAppliedMissingMigrations": {
+      "dependsOn": [
+        "tools.schemaMissingMigrationsLib"
+      ],
+      "kind": "test",
+      "lifecycle": "test",
+      "notes": [
+        "Contract: applied migrations missing on disk are detected deterministically and can be allow-listed."
+      ],
+      "owns": [],
+      "path": "worldcore/test/contract_schemaAppliedMissingMigrations.test.ts",
+      "provides": []
+    },
+    "test.contract_schemaFilenameAudit": {
+      "class": "(test)",
+      "ctorArgs": [],
+      "dependsOn": [
+        "tools.schemaFilenameAudit"
+      ],
+      "kind": "test",
+      "lifecycle": "static",
+      "notes": [
+        "Contract: schema filename audit detects duplicate numeric prefixes deterministically."
+      ],
+      "owns": [],
+      "path": "worldcore/test/contract_schemaFilenameAudit.test.ts",
+      "provides": []
+    },
+    "test.contract_schemaOrderPolicy": {
+      "dependsOn": [
+        "tools.schemaOrderPolicy"
+      ],
+      "kind": "test",
+      "path": "worldcore/test/contract_schemaOrderPolicy.test.ts"
+    },
+    "test.contract_serverBuffs_applyAndSync": {
+      "class": "(test)",
+      "ctorArgs": [],
+      "dependsOn": [
+        "status.serverBuffs",
+        "combat.statusEffects",
+        "core.sessions",
+        "core.entities"
+      ],
+      "kind": "test",
+      "lifecycle": "test",
+      "notes": [
+        "Contract: server-wide buffs can be added/removed and sync to connected players."
+      ],
+      "owns": [],
+      "path": "worldcore/test/contract_serverBuffs_applyAndSync.test.ts",
+      "provides": []
+    },
+    "test.contract_spellLearningRules": {
+      "class": "(test)",
+      "ctorArgs": [],
+      "dependsOn": [],
+      "kind": "test",
+      "lifecycle": "static",
+      "notes": [
+        "Contract: spell learning rules (autogrant <= level, deterministic)."
+      ],
+      "owns": [],
+      "path": "worldcore/test/contract_spellLearningRules.test.ts",
+      "provides": []
+    },
+    "test.contract_statusEffects_clearOnDeath": {
+      "class": null,
+      "ctorArgs": [],
+      "dependsOn": [
+        "combat.statusEffects"
+      ],
+      "kind": "test",
+      "lifecycle": "test",
+      "notes": [
+        "Contract: death clears combat status effects (DOTs, debuffs, etc.).",
+        "Guards that corpses do not keep ticking DOTs, and ticking stops immediately when lethal DOT damage is applied."
+      ],
+      "owns": [],
+      "path": "worldcore/test/contract_statusEffects_clearOnDeath.test.ts",
+      "provides": [],
+      "service": "test.contract"
+    },
+    "test.contract_statusStackingPolicy_versionedByApplier": {
+      "class": null,
+      "ctorArgs": [],
+      "dependsOn": [
+        "test.utils",
+        "combat.statusEffects",
+        "combat.statusStackingPolicy"
+      ],
+      "kind": "test",
+      "lifecycle": "test",
+      "notes": [
+        "Contract: versioned_by_applier stacks distinct versions by distinct appliers (cap enforced).",
+        "Same applier upgrades their slot (no duplicate stacks). Same version does not stack; refresh/replace semantics are last-write-wins."
+      ],
+      "owns": [],
+      "path": "worldcore/test/contract_statusStackingPolicy_versionedByApplier.test.ts",
+      "provides": [],
+      "service": "test.contract"
+    },
+    "test.contract_templar_L1_10_kit_spellFlavor": {
+      "class": "(test)",
+      "ctorArgs": [],
+      "dependsOn": [],
+      "kind": "test",
+      "lifecycle": "static",
+      "notes": [
+        "Contract: templar L1\u201310 reference kit is playable in WORLDCORE_TEST mode; spells exist in SPELLS and have non-placeholder flavor; autogrant by level 10."
+      ],
+      "owns": [],
+      "path": "worldcore/test/contract_templar_L1_10_kit_spellFlavor.test.ts",
+      "provides": []
+    },
+    "test.contract_tickEngine_playerHotTicks": {
+      "class": "(test)",
+      "ctorArgs": [],
+      "dependsOn": [
+        "core.tickEngine",
+        "combat.playerHotTicker",
+        "combat.statusEffects"
+      ],
+      "kind": "test",
+      "lifecycle": "test",
+      "notes": [
+        "Contract: TickEngine heartbeat ticks player HOTs via PlayerHotTicker when enabled."
+      ],
+      "owns": [],
+      "path": "worldcore/test/contract_tickEngine_playerHotTicks.test.ts",
+      "provides": []
+    },
+    "test.contract_tickEngine_playerStatusPrunes": {
+      "class": "(test)",
+      "ctorArgs": [],
+      "dependsOn": [
+        "core.tickEngine",
+        "status.runtime",
+        "combat.statusEffects"
+      ],
+      "kind": "test",
+      "lifecycle": "test",
+      "notes": [
+        "Contract: TickEngine heartbeat prunes expired player statuses via StatusRuntime when enabled."
+      ],
+      "owns": [],
+      "path": "worldcore/test/contract_tickEngine_playerStatusPrunes.test.ts",
+      "provides": []
+    },
+    "test.contract_townQuestBoardAcceptAndAbandon": {
+      "dependsOn": [
+        "quests.TownQuestBoard",
+        "quests.text",
+        "mud.commands.progression.quests"
+      ],
+      "kind": "test",
+      "notes": [
+        "Covers the minimal quest runtime loop: board -> accept -> questlog -> abandon."
+      ],
+      "path": "worldcore/test/contract_townQuestBoardAcceptAndAbandon.test.ts",
+      "provides": [
+        "[contract] town quest board accept adds quest to questlog",
+        "[contract] quest abandon removes quest from questlog"
+      ],
+      "service": "test"
+    },
+    "test.contract_townQuestGeneratorDeterminism": {
+      "dependsOn": [
+        "quests.generator"
+      ],
+      "kind": "test",
+      "notes": [
+        "Guards reproducibility for generated quest sets so server restarts and tooling yield identical results."
+      ],
+      "path": "worldcore/test/contract_townQuestGeneratorDeterminism.test.ts",
+      "provides": [
+        "[contract] town quest generator is deterministic for identical inputs",
+        "[contract] different epoch changes output (seeded variance)"
+      ],
+      "service": "test"
+    },
+    "test.contract_townQuestGeneratorObjectivePool": {
+      "dependsOn": [
+        "quests.generator",
+        "quests.types"
+      ],
+      "kind": "test",
+      "notes": [
+        "Prevents the generator from emitting impossible objectives until content pools expand intentionally."
+      ],
+      "path": "worldcore/test/contract_townQuestGeneratorObjectivePool.test.ts",
+      "provides": [
+        "[contract] generated quest objectives only use safe ids from the current content set",
+        "[contract] generated quest ids are unique and town-prefixed"
+      ],
+      "service": "test"
+    },
+    "test.contract_trainingDummySafety": {
+      "class": "(test) contract_trainingDummySafety",
+      "ctorArgs": [],
+      "dependsOn": [
+        "worldcore/npc/NpcTypes.ts",
+        "worldcore/npc/NpcCrime.ts",
+        "worldcore/combat/NpcCombat.ts"
+      ],
+      "kind": "test",
+      "lifecycle": "active",
+      "owns": [
+        "test:contract_trainingDummySafety"
+      ],
+      "path": "worldcore/test/contract_trainingDummySafety.test.ts",
+      "provides": [
+        "contract:trainingDummySafety"
+      ]
+    },
     "test.duelService": {
       "dependsOn": [
         "combat.duelService",
@@ -8267,25 +8507,6 @@
       "owns": [],
       "path": "worldcore/test/statusEffects.contract.test.ts",
       "provides": []
-    },
-    "test.contractServerBuffsApplyAndSync": {
-      "kind": "test",
-      "lifecycle": "test",
-      "path": "worldcore/test/contract_serverBuffs_applyAndSync.test.ts",
-      "dependsOn": [
-        "status.serverBuffs",
-        "combat.statusEffects",
-        "core.entities",
-        "core.sessions",
-        "characters.types"
-      ],
-      "class": "(test)",
-      "ctorArgs": [],
-      "notes": [
-        "Contract: ServerBuffs sync applies active server buffs to connected players (including players that connect after the buff is active)."
-      ],
-      "provides": [],
-      "owns": []
     },
     "test.utils": {
       "dependsOn": [],

@@ -39,6 +39,7 @@ import { applyPetGearToVitals } from "../pets/PetGear";
 import { WorldEventBus } from "./WorldEventBus";
 import { NpcManager } from "../npc/NpcManager";
 import { NpcSpawnController } from "../npc/NpcSpawnController";
+import { loadPersistedServerBuffs } from "../status/ServerBuffs";
 
 import type { AuctionService } from "../auction/AuctionService";
 import type { BankService } from "../bank/BankService";
@@ -292,6 +293,17 @@ export async function createWorldServices(
   const vendors: VendorService = new PostgresVendorService();
   const bank: BankService = new PostgresBankService();
   const auctions: AuctionService = new PostgresAuctionService();
+
+  // Load persisted server-wide buffs early so TickEngine can sync them to players.
+  // Safe in unit tests (no-op).
+  try {
+    const loaded = await loadPersistedServerBuffs(Date.now());
+    if (loaded > 0) {
+      log.info("Loaded persisted server buffs", { count: loaded });
+    }
+  } catch (err) {
+    log.warn("Failed to load persisted server buffs; continuing", { err });
+  }
 
   // Wire canonical NPC death pipeline services (DOT ticks must award XP/loot too).
   try {
