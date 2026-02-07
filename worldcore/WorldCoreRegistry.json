@@ -7996,6 +7996,21 @@
       "path": "worldcore/test/statusEffects.contract.test.ts",
       "provides": []
     },
+    "test.contract_schemaFilenameAudit": {
+      "class": "(test)",
+      "ctorArgs": [],
+      "dependsOn": [
+        "tools.schemaFilenameAudit"
+      ],
+      "kind": "test",
+      "lifecycle": "static",
+      "notes": [
+        "Contract: schema filename audit detects duplicate numeric prefixes deterministically."
+      ],
+      "owns": [],
+      "path": "worldcore/test/contract_schemaFilenameAudit.test.ts",
+      "provides": []
+    },
     "test.utils": {
       "dependsOn": [],
       "functions": [
@@ -8134,6 +8149,17 @@
         "dry-run preview: prints planned inserts/updates with seed + density controls (use --commit to write)",
         "audit mode: summarize resource node coverage by bounds / proto kinds"
       ]
+    },
+    "tools.schemaFilenameAudit": {
+      "bin": "dist/worldcore/tools/schemaFilenameAudit.js",
+      "dependsOn": [],
+      "kind": "tool",
+      "notes": [
+        "Audits worldcore/infra/schema SQL filenames for duplicate numeric prefixes (e.g. 042_*.sql).",
+        "Duplicates are allowed (lexicographic order is deterministic), but can confuse humans and migration review.",
+        "Default behavior is warn-only; enable strict mode with --strict or PW_SCHEMA_DUPLICATE_PREFIX_STRICT=1."
+      ],
+      "path": "worldcore/tools/schemaFilenameAudit.ts"
     },
     "tools.schemaMigrationLib": {
       "class": "(module) schemaMigrationLib",
