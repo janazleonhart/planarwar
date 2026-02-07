@@ -29,8 +29,10 @@ function usage(): string {
     "  serverevent effect_del <effectIdNumber>",
     "  serverevent reload",
     "",
-    "Effect kind v0:",
+    "Effect kinds v0:",
     "  grant_server_buff payload: { id, name?, modifiers?, tags?, maxStacks?, initialStacks?, effectId? }",
+    "  set_server_kv payload: { key, value }  (writes server_kv key event.<eventId>.<key>)",
+    "  broadcast_message payload: { text, oncePerActivation? }",
   ].join("\n");
 }
 

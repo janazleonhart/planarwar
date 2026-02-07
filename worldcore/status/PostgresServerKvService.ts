@@ -28,6 +28,35 @@ async function getDb(): Promise<any> {
 }
 
 export class PostgresServerKvService {
+  /**
+   * List keys matching a prefix.
+   *
+   * Intended for small namespaces like `event.*` so the server can
+   * reconcile and clean up per-event derived keys.
+   */
+  async listKeysByPrefix(prefix: string): Promise<string[]> {
+    if (isNodeTestRuntime()) return [];
+
+    const p = String(prefix ?? "");
+    if (!p) return [];
+
+    // Escape LIKE wildcards in the prefix.
+    const escaped = p.replace(/[\%_]/g, (m) => "\\" + m);
+
+    const db = await getDb();
+    const res = await db.query(
+      `
+      SELECT key
+      FROM server_kv
+      WHERE key LIKE $1
+      ORDER BY key ASC
+      `,
+      [escaped + "%"],
+    );
+
+    return ((res.rows ?? []) as any[]).map((r) => String(r.key));
+  }
+
   async get<T = any>(key: string): Promise<T | undefined> {
     if (isNodeTestRuntime()) return undefined;
 
