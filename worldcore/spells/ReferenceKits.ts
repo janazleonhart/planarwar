@@ -257,6 +257,57 @@ export const REFERENCE_CLASS_KITS_L1_10 = {
     },
   ],
 
+  // Outrider (Ranger) reference kit (L1–10)
+  // NOTE: Kept intentionally simple: a basic shot, a bleed, a mark, a self-utility, and a heavier shot.
+  // This class is expected to lean on the ranged verb pipeline (shoot/autofire) once weapon pacing is wired.
+  outrider: [
+    {
+      kind: "spell",
+      classId: "outrider",
+      spellId: "outrider_quick_shot",
+      minLevel: 1,
+      autoGrant: true,
+      isEnabled: true,
+      source: "reference_kit",
+    },
+    {
+      kind: "spell",
+      classId: "outrider",
+      spellId: "outrider_barbed_arrow",
+      minLevel: 3,
+      autoGrant: true,
+      isEnabled: true,
+      source: "reference_kit",
+    },
+    {
+      kind: "spell",
+      classId: "outrider",
+      spellId: "outrider_mark_prey",
+      minLevel: 5,
+      autoGrant: true,
+      isEnabled: true,
+      source: "reference_kit",
+    },
+    {
+      kind: "spell",
+      classId: "outrider",
+      spellId: "outrider_evasive_roll",
+      minLevel: 7,
+      autoGrant: true,
+      isEnabled: true,
+      source: "reference_kit",
+    },
+    {
+      kind: "spell",
+      classId: "outrider",
+      spellId: "outrider_aimed_shot",
+      minLevel: 9,
+      autoGrant: true,
+      isEnabled: true,
+      source: "reference_kit",
+    },
+  ],
+
   illusionist: [
     {
       kind: "spell",

@@ -50,6 +50,11 @@ const FALLBACK_UNLOCKS: SpellUnlockRule[] = [
   { classId: "hunter", spellId: "hunter_serrated_arrow", minLevel: 3, autoGrant: true, isEnabled: true },
   { classId: "hunter", spellId: "hunter_field_dressing", minLevel: 5, autoGrant: true, isEnabled: true },
 
+  // Outrider starter kit (fallback; full kit comes from DB/reference kits)
+  { classId: "outrider", spellId: "outrider_quick_shot", minLevel: 1, autoGrant: true, isEnabled: true },
+  { classId: "outrider", spellId: "outrider_barbed_arrow", minLevel: 3, autoGrant: true, isEnabled: true },
+  { classId: "outrider", spellId: "outrider_evasive_roll", minLevel: 5, autoGrant: true, isEnabled: true },
+
 ];
 
 let unlocks: SpellUnlockRule[] = [...FALLBACK_UNLOCKS];

@@ -859,6 +859,109 @@ hunter_aimed_shot: {
 },
 
 
+// Outrider (Ranger) reference kit (L1–10)
+// NOTE: These spell ids must exist in the in-code fallback map for test-mode autogrants.
+// DB should be aligned via: 064_seed_outrider_spellkit_L1_10.sql
+outrider_quick_shot: {
+  id: "outrider_quick_shot",
+  name: "Quick Shot",
+  kind: "damage_single_npc",
+  classId: "outrider",
+  minLevel: 1,
+  description: "A fast, practical shot. Not glamorous—effective.",
+  school: "nature",
+  resourceType: "mana",
+  resourceCost: 7,
+  cooldownMs: 1500,
+  damageMultiplier: 0.95,
+  flatBonus: 6,
+},
+
+outrider_barbed_arrow: {
+  id: "outrider_barbed_arrow",
+  name: "Barbed Arrow",
+  kind: "damage_dot_single_npc",
+  classId: "outrider",
+  minLevel: 3,
+  description: "A barbed head that keeps cutting—bleed them out over time.",
+  school: "nature",
+  statusEffect: {
+    id: "dot_outrider_barbed",
+    name: "Barbed",
+    durationMs: 10_000,
+    maxStacks: 1,
+    stacks: 1,
+    modifiers: {},
+    tags: ["dot", "debuff", "bleed", "nature", "outrider", "reference_kit"],
+    dot: { tickIntervalMs: 2000, spreadDamageAcrossTicks: true },
+  },
+  resourceType: "mana",
+  resourceCost: 10,
+  cooldownMs: 12000,
+  damageMultiplier: 0.50,
+  flatBonus: 3,
+},
+
+outrider_mark_prey: {
+  id: "outrider_mark_prey",
+  name: "Mark Prey",
+  kind: "debuff_single_npc",
+  classId: "outrider",
+  minLevel: 5,
+  description: "Paint the target with intent—your follow-up hits land harder.",
+  school: "nature",
+  statusEffect: {
+    id: "debuff_outrider_mark_prey",
+    name: "Mark Prey",
+    durationMs: 10_000,
+    maxStacks: 1,
+    stacks: 1,
+    modifiers: { damageTakenPct: 7 },
+    tags: ["debuff", "nature", "outrider", "reference_kit"],
+  },
+  resourceType: "mana",
+  resourceCost: 9,
+  cooldownMs: 12000,
+},
+
+outrider_evasive_roll: {
+  id: "outrider_evasive_roll",
+  name: "Evasive Roll",
+  kind: "buff_self",
+  classId: "outrider",
+  minLevel: 7,
+  description: "A quick roll and reset—briefly harden yourself against incoming hits.",
+  school: "nature",
+  statusEffect: {
+    id: "buff_outrider_evasive_roll",
+    name: "Evasive Roll",
+    durationMs: 6_000,
+    maxStacks: 1,
+    stacks: 1,
+    modifiers: { damageTakenPct: -8 },
+    tags: ["buff", "nature", "outrider", "reference_kit"],
+  },
+  resourceType: "mana",
+  resourceCost: 10,
+  cooldownMs: 18000,
+},
+
+outrider_aimed_shot: {
+  id: "outrider_aimed_shot",
+  name: "Aimed Shot",
+  kind: "damage_single_npc",
+  classId: "outrider",
+  minLevel: 9,
+  description: "Take a breath, find the gap, and punish it.",
+  school: "nature",
+  resourceType: "mana",
+  resourceCost: 12,
+  cooldownMs: 6500,
+  damageMultiplier: 1.18,
+  flatBonus: 8,
+},
+
+
 // Illusionist reference kit (L1–10)
 // NOTE: "mez"/"snare" semantics will graduate to real control once we wire action/move gating.
 // For now, we model them using damageDealtPct suppression so they behave safely with the current

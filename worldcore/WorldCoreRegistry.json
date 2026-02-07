@@ -2347,6 +2347,27 @@
         "Wave1 shadow knight DOT/shield/debuff baseline"
       ]
     },
+    "infra.schema.064_seed_outrider_spellkit_L1_10": {
+      "class": "(sql) infra schema migration",
+      "ctorArgs": [],
+      "dependsOn": [],
+      "kind": "service",
+      "lifecycle": "singleton",
+      "notes": [
+        "Seeds Outrider (Ranger) reference kit into DB (idempotent).",
+        "Designed to complement the ranged verb pipeline (shoot/autofire).",
+        "Uses existing status-effect spine (DOT + debuff + self buff)."
+      ],
+      "owns": [
+        "public.spells (outrider_*)",
+        "public.spell_unlocks (outrider, reference kit)"
+      ],
+      "path": "worldcore/infra/schema/064_seed_outrider_spellkit_L1_10.sql",
+      "provides": [
+        "Outrider L1\u201310 spell kit (spells + unlocks)",
+        "Wave1 ranger DOT/mark/defensive utility baseline"
+      ]
+    },
     "infra.schemaIgnoreJson": {
       "dependsOn": [],
       "kind": "data",
