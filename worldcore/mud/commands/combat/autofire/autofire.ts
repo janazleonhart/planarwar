@@ -27,9 +27,75 @@ function clamp(n: number, lo: number, hi: number): number {
   return Math.max(lo, Math.min(hi, n));
 }
 
-export function getAutoFireIntervalMs(): number {
-  // v1 cadence. Later: weapon speed / haste / ammo.
+function getBaseAutoFireIntervalMs(): number {
+  // Back-compat knob used by tests and early balancing.
+  // If weapon pacing is not available, we fall back to this value.
   return clamp(envNumber("PW_AUTOFIRE_MS", 2000), 10, 10000);
+}
+
+function readWeaponSpeedMsFromItemStack(stack: any): number | null {
+  if (!stack) return null;
+  const meta = (stack as any).meta ?? {};
+  // Allow a few reasonable spellings while the item model is still evolving.
+  const candidates = [
+    meta.speedMs,
+    meta.weaponSpeedMs,
+    meta.cadenceMs,
+    meta.attackSpeedMs,
+    meta?.weapon?.speedMs,
+    meta?.weapon?.speed_ms,
+  ];
+  for (const v of candidates) {
+    const n = Number(v);
+    if (Number.isFinite(n) && n > 0) return n;
+  }
+  return null;
+}
+
+function readWeaponSpeedMs(char: CharacterState): number | null {
+  const eq: any = (char as any)?.equipment ?? {};
+  const candidates = [
+    eq.ranged,
+    eq.range,
+    eq.weapon_ranged,
+    eq.rangedWeapon,
+  ];
+  for (const s of candidates) {
+    const n = readWeaponSpeedMsFromItemStack(s);
+    if (n != null) return n;
+  }
+
+  // Placeholder stat (optional): allows pacing to be tuned even before real weapons exist.
+  const statCandidates = [
+    (char as any)?.attributes?.rangedWeaponSpeedMs,
+    (char as any)?.attributes?.rangedSpeedMs,
+    (char as any)?.progression?.combat?.rangedSpeedMs,
+  ];
+  for (const v of statCandidates) {
+    const n = Number(v);
+    if (Number.isFinite(n) && n > 0) return n;
+  }
+
+  return null;
+}
+
+/**
+ * Autofire cadence in ms.
+ *
+ * Priority:
+ *  1) equipped ranged weapon speed (item meta)
+ *  2) placeholder stats (attributes/progression)
+ *  3) PW_AUTOFIRE_MS fallback
+ */
+export function getAutoFireIntervalMsForCharacter(char: CharacterState): number {
+  const baseMs = getBaseAutoFireIntervalMs();
+
+  const weaponMs = readWeaponSpeedMs(char);
+  if (weaponMs == null) return baseMs;
+
+  const minMs = clamp(envNumber("PW_AUTOFIRE_WEAPON_MIN_MS", 250), 1, 10000);
+  const maxMs = clamp(envNumber("PW_AUTOFIRE_WEAPON_MAX_MS", 4000), minMs, 20000);
+  return clamp(weaponMs, minMs, maxMs);
 }
 
 function stopAutoFireForSession(sessionId: string): void {
@@ -82,7 +148,7 @@ export function startAutoFire(ctx: MudContext, char: CharacterState): string {
   // Clear any existing autofire for this session.
   stopAutoFireForSession(sessionId);
 
-  const intervalMs = getAutoFireIntervalMs();
+  const intervalMs = getAutoFireIntervalMsForCharacter(char);
 
   const timer = setInterval(() => {
     // If the session disappears, stop autofire to avoid leaking.
@@ -102,7 +168,7 @@ export function startAutoFire(ctx: MudContext, char: CharacterState): string {
       try {
         (ctx as any).sessions?.send?.((ctx as any).session, "mud_result", {
           text: "[combat] You are dead; autofire stops.",
-});
+        });
       } catch {
         // ignore
       }

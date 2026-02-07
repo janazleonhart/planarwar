@@ -3221,7 +3221,7 @@
         "utils.logger"
       ],
       "functions": [
-        "getAutoFireIntervalMs",
+        "getAutoFireIntervalMsForCharacter",
         "startAutoFire",
         "stopAutoFire",
         "isAutoFireEnabledForSession"
@@ -3229,6 +3229,7 @@
       "kind": "service",
       "notes": [
         "Manages per-session autofire timers for ranged attacks (engaged-target fallback).",
+        "Cadence is weapon-speed based when ranged weapon speed is available (equipment meta or placeholder stats), otherwise falls back to PW_AUTOFIRE_MS.",
         "Uses the existing ranged verb pipeline for range/LoS gates; suppresses denial spam."
       ],
       "path": "worldcore/mud/commands/combat/autofire/autofire.ts"
@@ -6604,6 +6605,22 @@
         "Verifies no damage/spam when no engaged target, and no further shots after off."
       ],
       "path": "worldcore/test/contract_autofire_basic.test.ts",
+      "provides": [],
+      "service": "test.contract"
+    },
+    "test.contractAutofireWeaponSpeedCadence": {
+      "class": null,
+      "ctorArgs": [],
+      "dependsOn": [
+        "mud.autofire"
+      ],
+      "kind": "test",
+      "lifecycle": "test",
+      "notes": [
+        "Contract: autofire cadence prefers equipped ranged weapon speed (equipment meta) when present.",
+        "Contract: when no weapon speed is available, cadence falls back to PW_AUTOFIRE_MS."
+      ],
+      "path": "worldcore/test/contract_autofire_weaponSpeedCadence.test.ts",
       "provides": [],
       "service": "test.contract"
     },
