@@ -7309,6 +7309,25 @@
         "contract:npcThreatDecayIntegration"
       ]
     },
+    "test.contractNpcThreatSelectTargetFiltersInvalidForced": {
+      "class": "(test) contract_npcThreat_selectTarget_filtersInvalidForced",
+      "ctorArgs": [],
+      "dependsOn": [
+        "worldcore/npc/NpcThreat.ts"
+      ],
+      "kind": "test",
+      "lifecycle": "active",
+      "notes": [
+        "Contract: threat selector clears an invalid forced target (e.g., stealth/out-of-room) and falls back to the best valid threat."
+      ],
+      "owns": [
+        "test:contract_npcThreat_selectTarget_filtersInvalidForced"
+      ],
+      "path": "worldcore/test/contract_npcThreat_selectTarget_filtersInvalidForced.test.ts",
+      "provides": [
+        "contract:npcThreatSelectTargetFiltersInvalidForced"
+      ]
+    },
     "test.contractNpcThreatTauntOverridesTopThreat": {
       "kind": "test",
       "notes": [

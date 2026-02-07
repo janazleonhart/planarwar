@@ -30,6 +30,7 @@ import { LocalSimpleAggroBrain } from "../ai/LocalSimpleNpcBrain";
 import {
   getLastAttackerFromThreat,
   getTopThreatTarget,
+  selectThreatTarget,
   getThreatValue,
   applyTauntToThreat,
   addThreatValue,
@@ -968,12 +969,36 @@ export class NpcManager {
         this.npcThreat.set(entityId, threat);
       }
 
-      const topThreatId = getTopThreatTarget(threat, now);
-
       // Build perception
       const playersInRoom: PerceivedPlayer[] = [];
+      let topThreatId: string | undefined;
       try {
         const ents = this.entities.getEntitiesInRoom(roomId) as any[];
+
+        // Resolve current target with visibility rules (stealth/out-of-room/dead).
+        const byId = new Map<string, any>();
+        for (const e of ents) {
+          if (e?.id) byId.set(String(e.id), e);
+        }
+
+        const sel = selectThreatTarget(threat, now, (id) => {
+          const e = byId.get(String(id));
+          if (!e) return false;
+          if (e.alive === false) return false;
+          if (typeof e.hp === "number" && e.hp <= 0) return false;
+
+          const t = String(e.type ?? "");
+          if (t === "player" || t === "character") {
+            const active = getActiveStatusEffectsForEntity(e as any, now);
+            if (active.some((se: any) => Array.isArray(se?.tags) && se.tags.includes("stealth"))) return false;
+          }
+          return true;
+        });
+
+        topThreatId = sel.targetId;
+        if (sel.nextThreat && sel.nextThreat !== threat) {
+          this.npcThreat.set(entityId, sel.nextThreat);
+        }
 
         for (const e of ents) {
           if (e.type !== "player") continue;
@@ -1004,7 +1029,7 @@ export class NpcManager {
           });
         }
 
-                if (topThreatId) {
+        if (topThreatId) {
           playersInRoom.sort((a, b) => {
             if (a.entityId === topThreatId) return -1;
             if (b.entityId === topThreatId) return 1;

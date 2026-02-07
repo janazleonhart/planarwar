@@ -150,7 +150,14 @@ function startWatchForSession(ctx: any, sessionId: string, roomId: string, npcEn
         }
         const threat = (ctx.npcs as any).getThreatState?.(String(npc.id)) as NpcThreatState | undefined;
         const top = getTopThreatTarget(threat, now);
-        send(`[debug][threat][watch] ${entityLabel(npc)} top=${top ? String(top).slice(0, 8) : "(none)"}`);
+        const forcedRem =
+          threat?.forcedTargetEntityId &&
+          typeof threat.forcedUntil === "number" &&
+          now < threat.forcedUntil
+            ? Math.max(0, Math.floor(threat.forcedUntil - now))
+            : 0;
+        const forcedTxt = forcedRem > 0 ? ` forced=${String(threat!.forcedTargetEntityId).slice(0, 8)}(${forcedRem}ms)` : "";
+        send(`[debug][threat][watch] ${entityLabel(npc)} top=${top ? String(top).slice(0, 8) : "(none)"}${forcedTxt}`);
         return;
       }
 
@@ -159,7 +166,11 @@ function startWatchForSession(ctx: any, sessionId: string, roomId: string, npcEn
       for (const npc of npcsInRoom.slice(0, 10)) {
         const threat = (ctx.npcs as any).getThreatState?.(String(npc.id)) as NpcThreatState | undefined;
         const top = getTopThreatTarget(threat, now);
-        parts.push(`${String(npc.name ?? "NPC")}:${top ? String(top).slice(0, 8) : "-"}`);
+        const forcedActive =
+          !!threat?.forcedTargetEntityId &&
+          typeof threat?.forcedUntil === "number" &&
+          now < (threat?.forcedUntil ?? 0);
+        parts.push(`${String(npc.name ?? "NPC")}:${top ? String(top).slice(0, 8) : "-"}${forcedActive ? "!" : ""}`);
       }
       send(`[debug][threat][watch] ${parts.join(" ")}`);
     } catch {

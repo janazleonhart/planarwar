@@ -208,29 +208,62 @@ export function getTopThreatTarget(
   threat?: NpcThreatState,
   now: number = nowMs(),
 ): string | undefined {
-  if (!threat) return undefined;
+  return selectThreatTarget(threat, now, () => true).targetId;
+}
 
-  if (
-    threat.forcedTargetEntityId &&
-    typeof threat.forcedUntil === "number" &&
-    now < threat.forcedUntil
-  ) {
-    return threat.forcedTargetEntityId;
-  }
+/**
+ * Select a threat target with an external validity predicate.
+ *
+ * This is the "real" selector used by NPC brains so they can respect
+ * visibility rules (stealth / out-of-room / dead targets) without baking those
+ * concepts into the threat bookkeeping itself.
+ *
+ * Behavior:
+ * - If a forced target is active AND valid => return it.
+ * - If a forced target is active BUT invalid => clear the forced window and
+ *   fall back to normal top-threat selection.
+ * - Normal selection chooses the highest-threat valid entry.
+ * - Back-compat fallback to lastAttackerEntityId if valid.
+ */
+export function selectThreatTarget(
+  threat: NpcThreatState | undefined,
+  now: number = nowMs(),
+  isValidTarget: (entityId: string) => boolean,
+): { targetId?: string; nextThreat?: NpcThreatState } {
+  if (!threat) return { targetId: undefined, nextThreat: threat };
 
-  const table = threat.threatByEntityId ?? {};
-  let bestId: string | undefined;
-  let best = -1;
+  let next: NpcThreatState | undefined = threat;
 
-  for (const [id, v] of Object.entries(table)) {
-    const n = typeof v === "number" ? v : 0;
-    if (n > best) {
-      best = n;
-      bestId = id;
+  const forcedId = threat.forcedTargetEntityId;
+  const forcedUntil = typeof threat.forcedUntil === "number" ? threat.forcedUntil : undefined;
+  const forcedActive = !!forcedId && typeof forcedUntil === "number" && now < forcedUntil;
+
+  if (forcedActive && forcedId) {
+    if (isValidTarget(forcedId)) {
+      return { targetId: forcedId, nextThreat: threat };
     }
+
+    // Forced target is no longer valid: clear the override so brains can recover.
+    next = { ...threat };
+    delete (next as any).forcedTargetEntityId;
+    delete (next as any).forcedUntil;
   }
 
-  return bestId ?? threat.lastAttackerEntityId;
+  const table = (next?.threatByEntityId ?? {}) as Record<string, number>;
+  const entries = Object.entries(table)
+    .map(([id, v]) => ({ id, v: typeof v === "number" ? v : 0 }))
+    .filter((e) => e.v > 0)
+    .sort((a, b) => b.v - a.v);
+
+  for (const e of entries) {
+    if (isValidTarget(e.id)) return { targetId: e.id, nextThreat: next };
+  }
+
+  if (next?.lastAttackerEntityId && isValidTarget(next.lastAttackerEntityId)) {
+    return { targetId: next.lastAttackerEntityId, nextThreat: next };
+  }
+
+  return { targetId: undefined, nextThreat: next };
 }
 
 /**
