@@ -6624,6 +6624,23 @@
       "provides": [],
       "service": "test.contract"
     },
+    "test.contractRangedWeaponSpeedDamageScale": {
+      "class": null,
+      "ctorArgs": [],
+      "dependsOn": [
+        "mud.actions.combat",
+        "mud.trainingDummy"
+      ],
+      "kind": "test",
+      "lifecycle": "test",
+      "notes": [
+        "Contract: ranged per-shot damage is normalized by weapon cadence (fast weapons hit lighter; slow weapons hit harder).",
+        "Uses the training dummy HP pool to compare a fast vs slow weapon shot under the same baseline cadence."
+      ],
+      "path": "worldcore/test/contract_ranged_weaponSpeed_damageScale.test.ts",
+      "provides": [],
+      "service": "test.contract"
+    },
     "test.contractCastingDeniedDoesNotConsumeCostOrCooldown": {
       "class": null,
       "ctorArgs": [],

@@ -522,6 +522,78 @@ function getRangedFovDeg(): number {
   return clampNumber(envRange("PW_RANGED_FOV_DEG", 360), 30, 360);
 }
 
+function getRangedDamageBaseCadenceMs(): number {
+  // Reference cadence used to normalize per-shot damage scaling.
+  // Defaults to PW_AUTOFIRE_MS (if present) so early balance knobs stay coherent.
+  const fallback = envRange("PW_AUTOFIRE_MS", 2000);
+  return clampNumber(envRange("PW_RANGED_DAMAGE_BASE_CADENCE_MS", fallback), 10, 20000);
+}
+
+function getRangedDamageScaleMin(): number {
+  return clampNumber(envRange("PW_RANGED_DAMAGE_SCALE_MIN", 0.5), 0.05, 10);
+}
+
+function getRangedDamageScaleMax(): number {
+  return clampNumber(envRange("PW_RANGED_DAMAGE_SCALE_MAX", 2.0), 0.05, 10);
+}
+
+function readWeaponSpeedMsFromItemStack(stack: any): number | null {
+  if (!stack) return null;
+  const meta = (stack as any).meta ?? {};
+  const candidates = [
+    meta.speedMs,
+    meta.weaponSpeedMs,
+    meta.cadenceMs,
+    meta.attackSpeedMs,
+    meta?.weapon?.speedMs,
+    meta?.weapon?.speed_ms,
+  ];
+  for (const v of candidates) {
+    const n = Number(v);
+    if (Number.isFinite(n) && n > 0) return n;
+  }
+  return null;
+}
+
+function readRangedWeaponSpeedMs(char: CharacterState): number | null {
+  const eq: any = (char as any)?.equipment ?? {};
+  const candidates = [eq.ranged, eq.range, eq.weapon_ranged, eq.rangedWeapon];
+  for (const s of candidates) {
+    const n = readWeaponSpeedMsFromItemStack(s);
+    if (n != null) return n;
+  }
+
+  const statCandidates = [
+    (char as any)?.attributes?.rangedWeaponSpeedMs,
+    (char as any)?.attributes?.rangedSpeedMs,
+    (char as any)?.progression?.combat?.rangedSpeedMs,
+  ];
+  for (const v of statCandidates) {
+    const n = Number(v);
+    if (Number.isFinite(n) && n > 0) return n;
+  }
+
+  return null;
+}
+
+/**
+ * Damage scale applied to ranged per-shot damage so weapon speed changes cadence feel
+ * without turning the fastest weapon into the highest DPS.
+ *
+ * scale = clamp(weaponSpeedMs / baseCadenceMs, minScale, maxScale)
+ */
+function getRangedDamageScaleForCharacter(char: CharacterState): number {
+  const weaponMs = readRangedWeaponSpeedMs(char);
+  if (weaponMs == null) return 1;
+
+  const base = getRangedDamageBaseCadenceMs();
+  const minS = getRangedDamageScaleMin();
+  const maxS = Math.max(minS, getRangedDamageScaleMax());
+
+  const raw = weaponMs / Math.max(1, base);
+  return clampNumber(raw, minS, maxS);
+}
+
 export async function handleRangedAttackAction(
   ctx: MudContext,
   char: CharacterState,
@@ -612,7 +684,8 @@ export async function handleRangedAttackAction(
 
       const effective = computeEffectiveAttributes(char, ctx.items);
       const baseDmg = computeTrainingDummyDamage(effective);
-      const dmg = Math.max(1, Math.round(baseDmg));
+      const scale = getRangedDamageScaleForCharacter(char);
+      const dmg = Math.max(1, Math.round(baseDmg * scale));
 
       dummyInstance.hp = Math.max(0, dummyInstance.hp - dmg);
 
@@ -630,7 +703,10 @@ export async function handleRangedAttackAction(
       return line;
     }
 
+    const scale = getRangedDamageScaleForCharacter(char);
+
     return await performNpcAttack(ctx, char, selfEntity as any, npcTarget as any, {
+      damageMultiplier: scale,
       // v1: ranged uses same damage model; later: weapon/ranged skill, ammo, falloff.
     });
   }
@@ -655,7 +731,8 @@ export async function handleRangedAttackAction(
 
     const effective = computeEffectiveAttributes(char, ctx.items);
     const baseDmg = computeTrainingDummyDamage(effective);
-    const dmg = Math.max(1, Math.round(baseDmg));
+    const scale = getRangedDamageScaleForCharacter(char);
+    const dmg = Math.max(1, Math.round(baseDmg * scale));
 
     const { newHp, maxHp, killed } = applySimpleDamageToPlayer(
       playerTarget as any,
