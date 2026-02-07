@@ -6624,6 +6624,23 @@
       "provides": [],
       "service": "test.contract"
     },
+    "test.contractDuelMeleeParryBlockRiposteMath": {
+      "class": null,
+      "ctorArgs": [],
+      "dependsOn": [
+        "mud.actions.combat",
+        "combat.physicalHitResolver"
+      ],
+      "kind": "test",
+      "lifecycle": "test",
+      "notes": [
+        "Contract: duel melee math respects PhysicalHitResolver outcomes (hit/block/parry) and computes parry->riposte damage using env knobs.",
+        "This is a pure contract around the exported helper used by MudCombatActions so duel wiring stays testable without a full DuelService harness."
+      ],
+      "path": "worldcore/test/contract_duelMelee_parryBlockRiposte_math.test.ts",
+      "provides": [],
+      "service": "test.contract"
+    },
     "test.contractRangedWeaponSpeedDamageScale": {
       "class": null,
       "ctorArgs": [],

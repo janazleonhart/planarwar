@@ -32,6 +32,8 @@ import { applySimpleDamageToPlayer, markInCombat, isDeadEntity } from "../../com
 import { gatePlayerDamageFromPlayerEntity } from "../MudCombatGates";
 import { DUEL_SERVICE } from "../../pvp/DuelService";
 
+import { resolvePhysicalHit, type PhysicalHitResult } from "../../combat/PhysicalHitResolver";
+
 import {
   performNpcAttack as performNpcAttackCore,
   scheduleNpcCorpseAndRespawn as scheduleNpcCorpseAndRespawnCore,
@@ -122,6 +124,69 @@ function isStealthedForCombat(char: CharacterState): boolean {
   } catch {
     return false;
   }
+}
+
+function clamp(n: number, lo: number, hi: number): number {
+  if (!Number.isFinite(n)) return lo;
+  if (n < lo) return lo;
+  if (n > hi) return hi;
+  return n;
+}
+
+function clamp01(n: number): number {
+  return clamp(n, 0, 1);
+}
+
+function getWeaponSkillPointsForChar(char: CharacterState): number {
+  // v0: many classes don't track weapon skills yet. When present, prefer it.
+  const anyChar: any = char as any;
+  const v =
+    anyChar?.progression?.weaponSkills?.melee ??
+    anyChar?.progression?.skills?.melee ??
+    anyChar?.progression?.skills?.weaponSkillPoints ??
+    0;
+  const n = Number(v);
+  return Number.isFinite(n) ? Math.max(0, Math.floor(n)) : 0;
+}
+
+function getDefenseSkillPointsForChar(char: CharacterState): number {
+  const anyChar: any = char as any;
+  const v = anyChar?.progression?.skills?.defense ?? anyChar?.progression?.skills?.defenseSkillPoints ?? 0;
+  const n = Number(v);
+  return Number.isFinite(n) ? Math.max(0, Math.floor(n)) : 0;
+}
+
+export function computeDuelMeleeDamageFromPhysicalResult(args: {
+  baseDamage: number;
+  openerMultiplier: number;
+  phys: PhysicalHitResult;
+  riposteBaseDamage?: number;
+  rng?: () => number;
+}): { outcome: PhysicalHitResult["outcome"]; damageToTarget: number; didRiposte: boolean; riposteDamage: number } {
+  const rng = args.rng ?? Math.random;
+
+  const base = Math.max(0, Number(args.baseDamage) || 0);
+  const openerMult = Number.isFinite(args.openerMultiplier) ? args.openerMultiplier : 1;
+
+  const outcome = args.phys.outcome;
+  if (outcome === "miss" || outcome === "dodge" || outcome === "parry") {
+    const didRiposte = outcome === "parry" && !!args.phys.riposte;
+    let riposteDamage = 0;
+    if (didRiposte) {
+      const riposteChance = clamp01(envNumber("PW_RIPOSTE_CHANCE_ON_PARRY", 0.3));
+      if (rng() < riposteChance) {
+        const ripMult = clamp(envNumber("PW_RIPOSTE_DAMAGE_MULTIPLIER", 0.5), 0, 5);
+        const ripBase = Math.max(0, Number(args.riposteBaseDamage) || base);
+        riposteDamage = Math.max(1, Math.round(ripBase * ripMult));
+      }
+    }
+    return { outcome, damageToTarget: 0, didRiposte: riposteDamage > 0, riposteDamage };
+  }
+
+  // hit/block
+  const blockMult = outcome === "block" ? clamp(args.phys.blockMultiplier, 0, 1) : 1;
+  const dmg = Math.max(1, Math.round(base * openerMult * blockMult));
+  return { outcome, damageToTarget: dmg, didRiposte: false, riposteDamage: 0 };
 }
 
 function dropStatusTagFromActiveForCombat(char: CharacterState, tag: string): void {
@@ -305,8 +370,6 @@ export async function handleAttackAction(
 
       if (wasStealthed) breakStealthForCombat(char);
 
-      if (wasStealthed) breakStealthForCombat(char);
-
     markInCombat(selfEntity);
       markInCombat(dummyInstance as any);
       startTrainingDummyAi(ctx, ctx.session.id, roomId);
@@ -378,15 +441,41 @@ export async function handleAttackAction(
 
     const effective = computeEffectiveAttributes(char, ctx.items);
     const baseDmg = computeTrainingDummyDamage(effective);
-    const dmg = Math.max(1, Math.round(baseDmg * openerMult));
 
-    const { newHp, maxHp, killed } = applySimpleDamageToPlayer(
-      playerTarget as any,
-      dmg,
-      targetChar as any,
-      "physical",
-      { mode: ctxMode },
-    );
+    const phys = resolvePhysicalHit({
+      attackerLevel: Number((char as any).level) || 1,
+      defenderLevel: Number((targetChar as any).level) || 1,
+      weaponSkillPoints: getWeaponSkillPointsForChar(char),
+      defenderDefenseSkillPoints: getDefenseSkillPointsForChar(targetChar as any),
+      defenderCanDodge: true,
+      defenderCanParry: true,
+      defenderCanBlock: true,
+      allowCrit: true,
+      allowMultiStrike: false,
+      allowRiposte: true,
+    });
+
+    const targetEffective = computeEffectiveAttributes(targetChar as any, ctx.items);
+    const riposteBase = computeTrainingDummyDamage(targetEffective);
+
+    const duelCalc = computeDuelMeleeDamageFromPhysicalResult({
+      baseDamage: baseDmg,
+      openerMultiplier: openerMult,
+      phys,
+      riposteBaseDamage: riposteBase,
+    });
+
+    const dmg = duelCalc.damageToTarget;
+
+    const { newHp, maxHp, killed } = dmg > 0
+      ? applySimpleDamageToPlayer(
+          playerTarget as any,
+          dmg,
+          targetChar as any,
+          "physical",
+          { mode: ctxMode },
+        )
+      : { newHp: (playerTarget as any).hp, maxHp: (playerTarget as any).maxHp, killed: false };
 
     markInCombat(selfEntity);
     markInCombat(playerTarget as any);
@@ -396,11 +485,62 @@ export async function handleAttackAction(
       ctx.sessions.send(targetSession as any, "chat", {
         from: "[world]",
         sessionId: "system",
-        text: killed
+        text: duelCalc.outcome === "miss"
+          ? `[${label}] ${selfEntity.name} swings and misses you.`
+          : duelCalc.outcome === "dodge"
+          ? `[${label}] You dodge ${selfEntity.name}'s attack.`
+          : duelCalc.outcome === "parry"
+          ? `[${label}] You parry ${selfEntity.name}'s attack.`
+          : duelCalc.outcome === "block"
+          ? killed
+            ? `[${label}] ${selfEntity.name} hits you (blocked) for ${dmg} damage. You fall. (0/${maxHp} HP)`
+            : `[${label}] ${selfEntity.name} hits you (blocked) for ${dmg} damage. (${newHp}/${maxHp} HP)`
+          : killed
           ? `[${label}] ${selfEntity.name} hits you for ${dmg} damage. You fall. (0/${maxHp} HP)`
           : `[${label}] ${selfEntity.name} hits you for ${dmg} damage. (${newHp}/${maxHp} HP)`,
         t: now,
       });
+    }
+
+    // Parry->riposte (best-effort): apply damage back to the attacker and notify both.
+    if (duelCalc.riposteDamage > 0) {
+      const selfChar: any = char as any;
+      const { newHp: selfNewHp, maxHp: selfMaxHp, killed: selfKilled } = applySimpleDamageToPlayer(
+        selfEntity as any,
+        duelCalc.riposteDamage,
+        selfChar,
+        "physical",
+        { mode: ctxMode },
+      );
+
+      // Notify attacker (best-effort).
+      try {
+        ctx.sessions?.send?.(ctx.session as any, "chat", {
+          from: "[world]",
+          sessionId: "system",
+          text: selfKilled
+            ? `[${label}] ${playerTargetName} ripostes you for ${duelCalc.riposteDamage} damage. You fall. (0/${selfMaxHp} HP)`
+            : `[${label}] ${playerTargetName} ripostes you for ${duelCalc.riposteDamage} damage. (${selfNewHp}/${selfMaxHp} HP)`,
+          t: now,
+        });
+      } catch {
+        // ignore
+      }
+
+      // Notify defender.
+      if (targetSession && ctx.sessions) {
+        ctx.sessions.send(targetSession as any, "chat", {
+          from: "[world]",
+          sessionId: "system",
+          text: `[${label}] You riposte ${selfEntity.name} for ${duelCalc.riposteDamage} damage.`,
+          t: now,
+        });
+      }
+
+      if (selfKilled && ctxMode === "duel") {
+        DUEL_SERVICE.endDuelFor(char.id, "death", now);
+        return `[${label}] ${playerTargetName} ripostes you for ${duelCalc.riposteDamage} damage. You are defeated. (0/${selfMaxHp} HP)`;
+      }
     }
 
     if (killed) {
@@ -409,7 +549,15 @@ export async function handleAttackAction(
       return `[${label}] You hit ${playerTargetName} for ${dmg} damage. You defeat them. (0/${maxHp} HP)`;
     }
 
-    return `[${label}] You hit ${playerTargetName} for ${dmg} damage. (${newHp}/${maxHp} HP)`;
+    if (dmg <= 0) {
+      if (duelCalc.outcome === "miss") return `[${label}] You miss ${playerTargetName}.`;
+      if (duelCalc.outcome === "dodge") return `[${label}] ${playerTargetName} dodges your attack.`;
+      if (duelCalc.outcome === "parry") return `[${label}] ${playerTargetName} parries your attack.`;
+      return `[${label}] You fail to harm ${playerTargetName}.`;
+    }
+
+    const suffix = duelCalc.outcome === "block" ? " (blocked)" : "";
+    return `[${label}] You hit ${playerTargetName}${suffix} for ${dmg} damage. (${newHp}/${maxHp} HP)`;
   }
 
   // 3) Fallback: name-only training dummy (if no NPC entity was matched)
