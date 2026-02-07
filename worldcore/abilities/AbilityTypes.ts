@@ -7,7 +7,34 @@ import type { PowerResourceKind } from "../mud/MudResources";
 export type AbilityKind =
   | "melee_single"
   | "self_buff"
-  | "utility_target"; // later: melee_aoe, spell_single, spell_aoe, etc.
+  | "utility_target"
+  | "debuff_single_npc"
+  | "damage_dot_single_npc"; // later: melee_aoe, spell_single, spell_aoe, etc.
+
+// Lightweight mirror of SpellTypes.statusEffect (kept intentionally small).
+// Abilities are still code-defined; this is only used by MudAbilities handlers.
+export interface AbilityStatusEffectDef {
+  id: string;
+  name?: string;
+
+  durationMs: number;
+  stacks?: number;
+  maxStacks?: number;
+
+  modifiers: Record<string, any>;
+  tags?: string[];
+
+  // DOT knobs (if kind = damage_dot_single_npc)
+  dot?: {
+    tickIntervalMs: number;
+    /** If false, perTickDamage uses the full roll (no spreading). Default true. */
+    spreadDamageAcrossTicks?: boolean;
+  };
+
+  // Optional extended stacking policy fields (forward compatible)
+  stackingPolicy?: any;
+  stackingGroupId?: string;
+}
 
 export interface AbilityDefinition {
   id: string;
@@ -43,6 +70,9 @@ export interface AbilityDefinition {
   // Optional: apply vulnerability to the *caster* when this ability is used
   // (e.g. Reckless Assault: "hit harder but take more damage for a bit")
   selfVulnerabilityStacks?: number;
+
+  // Optional StatusEffect payload (for debuff/DOT ability kinds)
+  statusEffect?: AbilityStatusEffectDef;
 }
 
 export const ABILITIES: Record<string, AbilityDefinition> = {

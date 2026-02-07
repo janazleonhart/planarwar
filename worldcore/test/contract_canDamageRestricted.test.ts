@@ -77,6 +77,7 @@ const ALLOWLIST = new Set<string>([
   // Combat entrypoints that are allowed to consult async policy:
   "worldcore/mud/MudSpells.ts",
   "worldcore/mud/actions/MudCombatActions.ts",
+  "worldcore/mud/MudAbilities.ts",
   "worldcore/combat/NpcCombat.ts",
 
   // If you add new combat entrypoints later (e.g. PvpService, CrimeService),

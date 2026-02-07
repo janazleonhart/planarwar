@@ -31,8 +31,12 @@ import { getPrimaryPowerResourceForClass } from "../resources/PowerResources";
 
 import { performNpcAttack } from "./MudActions";
 
+import { canDamage } from "../combat/DamagePolicy";
+
 import {
   applyStatusEffect,
+  applyStatusEffectToEntity,
+  tickEntityStatusEffectsAndApplyDots,
   clearStatusEffectsByTags,
   getActiveStatusEffects,
 } from "../combat/StatusEffects";
@@ -372,7 +376,124 @@ export async function handleAbilityCommand(
       return combatLine;
     }
 
-    default:
+    
+
+case "debuff_single_npc":
+case "damage_dot_single_npc": {
+  const targetRaw = (targetNameRaw ?? "").trim();
+  if (!targetRaw) return "Usage: ability <name> <target>";
+
+  const npc = resolveTargetInRoom(entities as any, roomId, targetRaw, {
+    selfId: String(selfEntity.id),
+    filter: (e: any) => e?.type === "npc" || e?.type === "mob",
+    radius: 30,
+  });
+
+  if (!npc) return `[world] No such target: '${targetRaw}'.`;
+
+  // Service protection gate: deny BEFORE consuming cooldown/resources.
+  if (isServiceProtectedNpcTarget(ctx, npc)) {
+    return serviceProtectedCombatLine(npc.name);
+  }
+
+  // Lane G: async DamagePolicy backstop (region combat disabled, etc.) BEFORE spending cost/cd.
+  try {
+    const policy = await canDamage(
+      { entity: selfEntity as any, char },
+      { entity: npc as any },
+      { shardId: (char as any).shardId, regionId: roomId, inDuel: false },
+    );
+    if (policy && policy.allowed === false) {
+      return policy.reason ?? "You cannot attack here.";
+    }
+  } catch {
+    // Best-effort: never let policy lookup crash ability usage.
+  }
+
+  // Cost/cooldown gates (must remain side-effect safe on denial).
+  const resourceType =
+    (ability as any).resourceType ?? getPrimaryPowerResourceForClass((char as any).classId);
+  const resourceCost = (ability as any).resourceCost ?? 0;
+
+  const gateErr = applyActionCostAndCooldownGates({
+    char: char as any,
+    bucket: "abilities",
+    key: abilityKey || String((ability as any).id ?? ability.name),
+    displayName: (ability as any).name,
+    cooldownMs: (ability as any).cooldownMs ?? 0,
+    resourceType: resourceType as any,
+    resourceCost,
+  });
+  if (gateErr) return gateErr;
+
+  // Ensure status spines exist.
+  ensureStatusEffectsSpine(char);
+
+  const now = Date.now();
+  const statusDef: any = (ability as any).statusEffect;
+
+  if (!statusDef || typeof statusDef !== "object") {
+    return `[world] '${(ability as any).name}' has no statusEffect definition.`;
+  }
+
+  // Build StatusEffects input.
+  // NOTE: We intentionally apply to ENTITY so NPCs can hold debuffs/DOTs.
+  const input: any = {
+    id: statusDef.id ?? String((ability as any).id ?? abilityKey ?? ability.name),
+    name: statusDef.name ?? (ability as any).name,
+    durationMs: statusDef.durationMs ?? 8000,
+    stacks: statusDef.stacks ?? 1,
+    maxStacks: statusDef.maxStacks ?? statusDef.stacks ?? 1,
+    tags: Array.isArray(statusDef.tags) ? statusDef.tags : [],
+    source: statusDef.source ?? "ability",
+    applierId: String(selfEntity.id),
+    applierKind: "player",
+    modifiers: statusDef.modifiers ?? statusDef.payload ?? {},
+  };
+
+  if ((ability as any).kind === "damage_dot_single_npc") {
+    // For DOT abilities we store a dot payload on the effect; ticking is handled elsewhere (TickEngine/NpcCombat).
+    // If the ability provides a dot template, accept it; otherwise, compute a small default.
+    const ticks = Number(statusDef.dot?.ticks ?? 3);
+    const tickMs = Number(statusDef.dot?.tickMs ?? 1000);
+    const perTick = Number(statusDef.dot?.perTick ?? 1);
+
+    input.dot = { ticks, tickMs, perTick, remainingTicks: ticks, lastTickAt: 0 };
+  }
+
+  applyStatusEffectToEntity(npc as any, input, now);
+
+  // Optional immediate tick for deterministic test harnesses.
+  if ((ability as any).kind === "damage_dot_single_npc" && (statusDef.dot?.tickImmediately ?? false)) {
+    tickEntityStatusEffectsAndApplyDots(npc as any, now, (amount: number, meta?: any) => {
+      const anyNpc: any = npc as any;
+      const hp0 = Number(anyNpc.hp ?? 0);
+      const dmg = Math.max(0, Number(amount ?? 0));
+      anyNpc.hp = Math.max(0, hp0 - dmg);
+
+      // Lightweight attribution hook for future kill-credit/threat work:
+      // StatusEffects may pass meta like { sourceKind, sourceId, ... }.
+      if (meta && typeof meta === "object") {
+        anyNpc.lastDotDamage = { amount: dmg, meta, at: now };
+      }
+    });
+  }
+
+  // Put both parties into combat.
+  try {
+    (selfEntity as any).inCombat = true;
+    (npc as any).inCombat = true;
+  } catch {
+    // ignore
+  }
+
+  if ((ability as any).kind === "damage_dot_single_npc") {
+    return `[world] You afflict ${npc.name} with ${(ability as any).name}.`;
+  }
+  return `[world] You afflict ${npc.name} with ${(ability as any).name}.`;
+}
+
+default:
       return "That kind of ability is not implemented yet.";
   }
 }

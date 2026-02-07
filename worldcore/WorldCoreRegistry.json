@@ -8094,6 +8094,26 @@
       "provides": [],
       "service": "test.contract"
     },
+    "test.contract_npcDebuffDotAbilities": {
+      "class": null,
+      "ctorArgs": [],
+      "dependsOn": [
+        "mud.abilities",
+        "abilities.types",
+        "combat.statusEffects",
+        "core.tickEngine"
+      ],
+      "kind": "test",
+      "lifecycle": "test",
+      "notes": [
+        "Contract: ability-kind debuffs and DOTs can apply StatusEffects to NPC entities and tick via tickEntityStatusEffectsAndApplyDots.",
+        "Locks in the shared seam so future ability work doesn't regress NPC debuff/DOT behavior." 
+      ],
+      "owns": [],
+      "path": "worldcore/test/contract_npcDebuffDotAbilities.test.ts",
+      "provides": [],
+      "service": "test.contract"
+    },
     "test.contract_npcThreat_forcedClear_breadcrumb": {
       "class": "(test)",
       "ctorArgs": [],
