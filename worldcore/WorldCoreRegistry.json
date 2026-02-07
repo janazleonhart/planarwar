@@ -3733,6 +3733,27 @@
       ],
       "path": "worldcore/mud/commands/meta/helpCommand.ts"
     },
+    "mud.commands.pet": {
+      "dependsOn": [
+        "mud.context",
+        "mud.commands.types",
+        "characters.types",
+        "shared.entities",
+        "mud.actions.combat",
+        "pets.profiles",
+        "characters.persist"
+      ],
+      "function": "handlePetCommand",
+      "invokedBy": [
+        "mud.handler"
+      ],
+      "kind": "mud_command",
+      "notes": [
+        "Implements 'pet <subcommand> ...' for Pet Engine v1.x.",
+        "Supports summon/dismiss/attack/return/follow/stay/stance/gear and forwards to combat actions where relevant."
+      ],
+      "path": "worldcore/mud/commands/petCommand.ts"
+    },
     "mud.commands.player.abilities": {
       "dependsOn": [
         "mud.abilities"
@@ -7993,13 +8014,15 @@
       "ctorArgs": [],
       "dependsOn": [
         "worldcore/db/Database.ts",
-        "utils.logger"
+        "utils.logger",
+        "tools.schemaMigrationLib"
       ],
       "kind": "service",
       "lifecycle": "tool",
       "notes": [
         "This tool is required now that DB-backed recipes are authoritative.",
-        "Without a runner, new schema/seed files rely on manual psql execution."
+        "Without a runner, new schema/seed files rely on manual psql execution.",
+        "Performs drift detection: if an applied migration file content changes, applySchema errors by default (set PW_SCHEMA_ALLOW_DRIFT=1 to warn-only)."
       ],
       "owns": [
         "Migration ordering",
@@ -8010,7 +8033,8 @@
       "provides": [
         "Applies SQL files under worldcore/infra/schema in numeric order",
         "Tracks applied migrations in schema_migrations",
-        "Supports --dry-run"
+        "Supports --dry-run",
+        "Detects applied migration drift via sha256 checksum in schema_migrations"
       ]
     },
     "tools.auditNpcLawTags": {
@@ -8109,6 +8133,28 @@
         "plan/commit: deterministic baseline resource spawn_points (ore/herb/wood/fish/rare) within --bounds",
         "dry-run preview: prints planned inserts/updates with seed + density controls (use --commit to write)",
         "audit mode: summarize resource node coverage by bounds / proto kinds"
+      ]
+    },
+    "tools.schemaMigrationLib": {
+      "class": "(module) schemaMigrationLib",
+      "ctorArgs": [],
+      "dependsOn": [],
+      "kind": "module",
+      "lifecycle": "static",
+      "notes": [
+        "Shared helpers for schema migration tooling (sha256 checksums + deterministic schema file listing).",
+        "Used by tools.applySchema to detect drift: applied migration files must not be edited."
+      ],
+      "owns": [
+        "Checksum helpers",
+        "Schema dir deterministic ordering"
+      ],
+      "path": "worldcore/tools/schemaMigrationLib.ts",
+      "provides": [
+        "isSchemaMigrationFilename",
+        "listSchemaMigrationFiles",
+        "computeSha256Hex",
+        "computeFileSha256Hex"
       ]
     },
     "tools.seedAbilityIdAudit": {
