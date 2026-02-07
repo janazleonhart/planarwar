@@ -97,6 +97,7 @@ import { handleDebugRegionDanger, handleDebugBumpRegionDanger } from "./debug/re
 import { handleDebugVulnerability } from "./debug/vulnerabilityCommands";
 import { handleDebugRegionEvent, handleDebugRegionPvp } from "./debug/regionEventCommands";
 import { handleDebugEffects } from "./debug/debugEffectsCommand";
+import { handleDebugThreat } from "./debug/debugThreatCommand";
 
 // NEW: hot reload command (gated, but not prefixed)
 import { handleReloadCommand } from "./debug/reloadCommand";
@@ -274,6 +275,7 @@ export const COMMANDS: Record<string, MudCommandHandlerFn> = {
   debug_reset: withDebugGate(handleDebugResetLevel, "dev"),
   debug_hurt: withDebugGate(handleDebugHurt, "dev"),
   debug_effects: withDebugGate(handleDebugEffects, "dev"),
+  debug_threat: withDebugGate(handleDebugThreat, "dev"),
   debug_spawn_rat: withDebugGate(handleDebugSpawnRat, "gm"),
   debug_spawn_ore: withDebugGate(handleDebugSpawnOre, "gm"),
   debug_spawns_here: withDebugGate(handleDebugSpawnsHere, "gm"),

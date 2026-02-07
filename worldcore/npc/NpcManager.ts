@@ -1403,4 +1403,19 @@ export class NpcManager {
       });
     }
   }
+
+  /**
+   * Debug helper: return the raw threat state for an NPC entity id.
+   *
+   * Intentionally read-only; callers must not mutate the returned object.
+   * Returns undefined if the entity has no threat state (not an NPC, despawned, etc.).
+   *
+   * Used by debug commands (e.g. debug_threat).
+   */
+  getThreatState(entityId: string) {
+    const id = String(entityId ?? "").trim();
+    if (!id) return undefined;
+    return this.npcThreat.get(id);
+  }
+
 }

@@ -3433,6 +3433,24 @@
       ],
       "path": "worldcore/mud/commands/debug/debugEffectsCommand.ts"
     },
+    "mud.commands.debug.debugThreatCommand": {
+      "dependsOn": [
+        "mud.context",
+        "mud.handles.nearbyHandles",
+        "npc.threat",
+        "npc.manager"
+      ],
+      "function": "handleDebugThreat",
+      "invokedBy": [
+        "mud.commands.registry"
+      ],
+      "kind": "mud_command",
+      "notes": [
+        "Debug: 'debug_threat' lists NPCs in the room and can dump an NPC threat table with forced target state.",
+        "Supports NearbyHandles (e.g. rat.1) and '--json' output."
+      ],
+      "path": "worldcore/mud/commands/debug/debugThreatCommand.ts"
+    },
     "mud.commands.debug.handlers": {
       "dependsOn": [
         "mud.context",
@@ -6101,6 +6119,23 @@
       ],
       "owns": [],
       "path": "worldcore/test/contract_nearbyHandles_resolution.test.ts",
+      "provides": [],
+      "service": "test.contract"
+    },
+    "test.contract_debugThreatCommand": {
+      "class": "(test)",
+      "ctorArgs": [],
+      "dependsOn": [
+        "mud.commands.debug.debug_threat",
+        "npc.manager"
+      ],
+      "kind": "test",
+      "lifecycle": "static",
+      "notes": [
+        "Contract: debug_threat prints an NPC threat table deterministically."
+      ],
+      "owns": [],
+      "path": "worldcore/test/contract_debugThreatCommand.test.ts",
       "provides": [],
       "service": "test.contract"
     },
