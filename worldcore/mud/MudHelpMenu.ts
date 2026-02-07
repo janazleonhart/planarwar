@@ -32,6 +32,17 @@ export const HELP_ENTRIES: { cmd: string; desc: string; debug?: boolean }[] = [
   { cmd: "equip <slot>", desc: "Equip the first matching item from bags into a slot." },
   { cmd: "unequip <slot>", desc: "Move an equipped item back to bags." },
 
+  // Pets
+  { cmd: "pet [help]", desc: "Pet commands (summon/dismiss/follow/stay/mode/attack/gear/equip/unequip)." },
+  { cmd: "pet summon [protoId] [class]", desc: "Dev summon a pet (spell-driven summoning is primary)." },
+  { cmd: "pet dismiss", desc: "Dismiss your current pet (persists)." },
+  { cmd: "pet follow | stay", desc: "Toggle follow behavior (persists)." },
+  { cmd: "pet passive|defensive|aggressive", desc: "Set pet mode (persists)." },
+  { cmd: "pet attack [target]", desc: "Order your pet to attack (defaults to your engaged target)." },
+  { cmd: "pet gear", desc: "Show pet equipment." },
+  { cmd: "pet equip <slot>", desc: "Equip the first matching item from your bags onto the pet." },
+  { cmd: "pet unequip <slot>", desc: "Unequip pet item back to your bags/mail." },
+
   // Combat
   { cmd: "attack <target>", desc: "Attack a target (NPCs/training dummy)." },
   { cmd: "autoattack [on|off]", desc: "Toggle autoattacking the training dummy." },
