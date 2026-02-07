@@ -1418,4 +1418,78 @@ export class NpcManager {
     return this.npcThreat.get(id);
   }
 
+  /**
+   * Debug-only: clear an NPC's threat table.
+   * Returns false if the entity is not an NPC runtime state.
+   */
+  debugClearThreat(entityId: string): boolean {
+    const id = String(entityId ?? "").trim();
+    if (!id) return false;
+    if (!this.npcsByEntityId.has(id)) return false;
+    this.npcThreat.set(id, {
+      lastAttackerEntityId: undefined,
+      lastAggroAt: undefined,
+      threatByEntityId: {},
+      forcedTargetEntityId: undefined,
+      forcedUntil: undefined,
+      lastTauntAt: undefined,
+    });
+    return true;
+  }
+
+  /**
+   * Debug-only: set (or add) a specific threat value for a target entity.
+   */
+  debugSetThreatValue(
+    npcEntityId: string,
+    targetEntityId: string,
+    value: number,
+    opts?: { add?: boolean; now?: number },
+  ): boolean {
+    const npcId = String(npcEntityId ?? "").trim();
+    const targetId = String(targetEntityId ?? "").trim();
+    if (!npcId || !targetId) return false;
+    if (!this.npcsByEntityId.has(npcId)) return false;
+
+    const now = opts?.now ?? Date.now();
+    const current = this.npcThreat.get(npcId) ?? {};
+    const table = { ...(current.threatByEntityId ?? {}) } as Record<string, number>;
+    const base = typeof table[targetId] === "number" ? table[targetId] : 0;
+    const nextVal = Math.max(0, (opts?.add ? base + value : value));
+    table[targetId] = nextVal;
+
+    this.npcThreat.set(npcId, {
+      ...current,
+      lastAggroAt: now,
+      lastAttackerEntityId: current.lastAttackerEntityId ?? targetId,
+      threatByEntityId: table,
+    });
+    return true;
+  }
+
+  /**
+   * Debug-only: force an NPC's target for a duration (ms).
+   */
+  debugForceTarget(
+    npcEntityId: string,
+    targetEntityId: string,
+    durationMs: number,
+    opts?: { now?: number },
+  ): boolean {
+    const npcId = String(npcEntityId ?? "").trim();
+    const targetId = String(targetEntityId ?? "").trim();
+    if (!npcId || !targetId) return false;
+    if (!this.npcsByEntityId.has(npcId)) return false;
+
+    const now = opts?.now ?? Date.now();
+    const dur = Math.max(0, Math.floor(durationMs));
+    const current = this.npcThreat.get(npcId) ?? {};
+    this.npcThreat.set(npcId, {
+      ...current,
+      forcedTargetEntityId: targetId,
+      forcedUntil: now + dur,
+    });
+    return true;
+  }
+
 }

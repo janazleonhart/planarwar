@@ -6,6 +6,8 @@
 //   debug_threat                      (lists NPCs in room with top target)
 //   debug_threat <npcHandle|entityId> (dumps threat table for one NPC)
 //   debug_threat <...> --json         (JSON output)
+//   debug_threat <...> --watch [ms]   (stream updates; use --watch off to stop)
+//   debug_threat <...> --set <targetHandle|entityId> <value> [--add] [--clear] [--force <ms>]
 //
 // Notes:
 // - Uses NearbyHandles numbering (e.g. rat.1) when possible.
@@ -17,6 +19,17 @@ import { resolveNearbyHandleInRoom, getEntityXZ } from "../../handles/NearbyHand
 type MudInput = { cmd: string; args: string[]; parts: string[] };
 
 const DEFAULT_NEARBY_RADIUS = 30;
+const DEFAULT_WATCH_MS = 500;
+
+type WatchEntry = {
+  timer: NodeJS.Timeout;
+  roomId: string;
+  npcEntityId?: string; // if omitted, watch all NPCs in the room
+  intervalMs: number;
+};
+
+// One watcher per session.
+const WATCHERS = new Map<string, WatchEntry>();
 
 function norm(s: unknown): string {
   return String(s ?? "").trim().toLowerCase();
@@ -27,11 +40,44 @@ function parseFlag(args: string[], flag: string): boolean {
   return (args ?? []).some((a) => norm(a) === f || norm(a) === `--${f.replace(/^--/, "")}`);
 }
 
+function valuesAfterFlag(args: string[], flag: string, count: number): string[] {
+  const out: string[] = [];
+  const f = norm(flag).replace(/^--/, "");
+  const list = args ?? [];
+  for (let i = 0; i < list.length; i++) {
+    const a = norm(list[i]).replace(/^--/, "");
+    if (a !== f) continue;
+    for (let j = 1; j <= count; j++) {
+      const v = String(list[i + j] ?? "").trim();
+      if (!v || norm(v).startsWith("--")) break;
+      out.push(v);
+    }
+    break;
+  }
+  while (out.length < count) out.push("");
+  return out;
+}
+
+function getAfterFlag(args: string[], flag: string): string {
+  const f = norm(flag).replace(/^--/, "");
+  const a = args ?? [];
+  for (let i = 0; i < a.length; i++) {
+    const v = norm(a[i]).replace(/^--/, "");
+    if (v !== f) continue;
+    const next = a[i + 1];
+    if (!next) return "";
+    if (norm(next).startsWith("--")) return "";
+    return String(next).trim();
+  }
+  return "";
+}
+
 function firstNonFlag(args: string[]): string {
   for (const a of args ?? []) {
     const v = norm(a);
     if (!v) continue;
     if (v.startsWith("--")) continue;
+    if (v === "watch" || v === "set") continue;
     return String(a).trim();
   }
   return "";
@@ -48,6 +94,82 @@ function getRoomEntities(ctx: any, roomId: string): any[] {
 
 function getSelfEntity(ctx: any): any | null {
   return (ctx?.entities as any)?.getEntityByOwner?.(ctx?.session?.id) ?? null;
+}
+
+function stopWatchForSession(ctx: any, sessionId: string): string {
+  const w = WATCHERS.get(sessionId);
+  if (!w) return "[debug][threat] Watch is already off.";
+  clearInterval(w.timer);
+  WATCHERS.delete(sessionId);
+  return "[debug][threat] Watch stopped.";
+}
+
+function startWatchForSession(ctx: any, sessionId: string, roomId: string, npcEntityId: string | undefined, intervalMs: number): string {
+  // Stop any existing watcher.
+  const prev = WATCHERS.get(sessionId);
+  if (prev) {
+    clearInterval(prev.timer);
+    WATCHERS.delete(sessionId);
+  }
+
+  const safeMs = Math.max(50, Math.min(5000, Math.floor(intervalMs)));
+
+  const timer = setInterval(() => {
+    try {
+      const session = (ctx?.sessions as any)?.get?.(sessionId) ?? ctx?.session;
+      if (!session) {
+        // Session disappeared; stop.
+        stopWatchForSession(ctx, sessionId);
+        return;
+      }
+
+      const now = Date.now();
+      const entities = getRoomEntities(ctx, roomId);
+      const npcsInRoom = entities.filter(isNpcLike);
+
+      // Helper: send a line.
+      const send = (text: string) => {
+        try {
+          (ctx?.sessions as any)?.send?.(session, "mud_result", { text });
+        } catch {
+          /* ignore */
+        }
+      };
+
+      if (!npcsInRoom.length) {
+        send("[debug][threat][watch] No NPCs in room.");
+        return;
+      }
+
+      if (npcEntityId) {
+        const npc = npcsInRoom.find((n) => String(n.id) === String(npcEntityId));
+        if (!npc) {
+          send("[debug][threat][watch] NPC no longer present; stopping.");
+          stopWatchForSession(ctx, sessionId);
+          return;
+        }
+        const threat = (ctx.npcs as any).getThreatState?.(String(npc.id)) as NpcThreatState | undefined;
+        const top = getTopThreatTarget(threat, now);
+        send(`[debug][threat][watch] ${entityLabel(npc)} top=${top ? String(top).slice(0, 8) : "(none)"}`);
+        return;
+      }
+
+      // All NPCs summary (top target only)
+      const parts: string[] = [];
+      for (const npc of npcsInRoom.slice(0, 10)) {
+        const threat = (ctx.npcs as any).getThreatState?.(String(npc.id)) as NpcThreatState | undefined;
+        const top = getTopThreatTarget(threat, now);
+        parts.push(`${String(npc.name ?? "NPC")}:${top ? String(top).slice(0, 8) : "-"}`);
+      }
+      send(`[debug][threat][watch] ${parts.join(" ")}`);
+    } catch {
+      // ignore
+    }
+  }, safeMs);
+
+  WATCHERS.set(sessionId, { timer, roomId, npcEntityId, intervalMs: safeMs });
+  if (npcEntityId) return `[debug][threat] Watch started for ${String(npcEntityId).slice(0, 8)} every ${safeMs}ms.`;
+  return `[debug][threat] Watch started for room NPCs every ${safeMs}ms.`;
 }
 
 function resolveEntityInRoom(ctx: any, char: any, roomId: string, raw: string): any | null {
@@ -179,15 +301,36 @@ export async function handleDebugThreat(ctx: any, char: any, input: MudInput): P
   if (!ctx?.entities) return "[debug] Entity manager unavailable.";
   if (!ctx?.npcs) return "[debug] NPC manager unavailable.";
 
+  const sessionId = String(ctx?.session?.id ?? "");
+  if (!sessionId) return "[debug] Missing session.";
+
   const now = Date.now();
   const json = parseFlag(input?.args ?? [], "json");
+  const watch = parseFlag(input?.args ?? [], "watch");
+  const stop = parseFlag(input?.args ?? [], "stop") || (watch && norm(getAfterFlag(input?.args ?? [], "watch")) === "off");
+
+  const setMode = parseFlag(input?.args ?? [], "set");
+  const clearMode = parseFlag(input?.args ?? [], "clear");
+  const addMode = parseFlag(input?.args ?? [], "add");
+  const forceMsRaw = getAfterFlag(input?.args ?? [], "force");
+  const forceMs = toNum(forceMsRaw);
+
   const token = firstNonFlag(input?.args ?? []);
 
   const entities = getRoomEntities(ctx, roomId);
   const npcsInRoom = entities.filter(isNpcLike);
 
+  // Stop watch.
+  if (stop) {
+    return stopWatchForSession(ctx, sessionId);
+  }
+
   // No arg: list NPCs with top target.
   if (!token) {
+    if (watch) {
+      const ms = toNum(getAfterFlag(input?.args ?? [], "watch")) ?? DEFAULT_WATCH_MS;
+      return startWatchForSession(ctx, sessionId, roomId, undefined, ms);
+    }
     if (!npcsInRoom.length) return "[debug][threat] No NPCs in this room.";
     const lines: string[] = ["[debug][threat] NPCs in room:"];
     for (const n of npcsInRoom.slice(0, 50)) {
@@ -203,6 +346,47 @@ export async function handleDebugThreat(ctx: any, char: any, input: MudInput): P
   const npcEntity = target && isNpcLike(target) ? target : null;
 
   if (!npcEntity) return `[debug][threat] Could not resolve NPC '${token}'.`;
+
+  // --watch for a specific NPC
+  if (watch) {
+    const ms = toNum(getAfterFlag(input?.args ?? [], "watch")) ?? DEFAULT_WATCH_MS;
+    return startWatchForSession(ctx, sessionId, roomId, String(npcEntity.id), ms);
+  }
+
+  // --set / --clear threat state (dev-only, gated at registry level)
+  if (setMode || clearMode) {
+    const setArgs = input?.args ?? [];
+
+    // If --clear was provided without --set.
+    if (clearMode && !setMode) {
+      (ctx.npcs as any).debugClearThreat?.(String(npcEntity.id));
+      return `[debug][threat] Cleared threat for ${entityLabel(npcEntity)}.`;
+    }
+
+    const [targetTok, valueTok] = valuesAfterFlag(setArgs, "set", 2);
+
+    if (clearMode) {
+      (ctx.npcs as any).debugClearThreat?.(String(npcEntity.id));
+    }
+
+    const targetEnt = resolveEntityInRoom(ctx, char, roomId, targetTok);
+    if (!targetEnt) return `[debug][threat] Could not resolve target '${targetTok}'.`;
+
+    const value = toNum(valueTok);
+    if (value == null) return `[debug][threat] Invalid threat value '${valueTok}'.`;
+
+    (ctx.npcs as any).debugSetThreatValue?.(String(npcEntity.id), String(targetEnt.id), value, {
+      add: addMode,
+      now,
+    });
+
+    if (typeof forceMs === "number" && forceMs > 0) {
+      (ctx.npcs as any).debugForceTarget?.(String(npcEntity.id), String(targetEnt.id), Math.floor(forceMs), { now });
+    }
+
+    const verb = addMode ? "Added" : "Set";
+    return `[debug][threat] ${verb} threat for ${entityLabel(npcEntity)}: ${String(targetEnt.id).slice(0, 8)} = ${value}${clearMode ? " (cleared first)" : ""}${typeof forceMs === "number" && forceMs > 0 ? ` force=${Math.floor(forceMs)}ms` : ""}.`;
+  }
 
   const threat = (ctx.npcs as any).getThreatState?.(String(npcEntity.id)) as NpcThreatState | undefined;
 

@@ -6139,6 +6139,23 @@
       "provides": [],
       "service": "test.contract"
     },
+    "test.contract_debugThreatWatchSet": {
+      "class": "(test)",
+      "ctorArgs": [],
+      "dependsOn": [
+        "mud.commands.debug.debug_threat",
+        "npc.manager"
+      ],
+      "kind": "test",
+      "lifecycle": "static",
+      "notes": [
+        "Contract: debug_threat --watch and --set/--clear/--force operate deterministically without throwing."
+      ],
+      "owns": [],
+      "path": "worldcore/test/contract_debugThreat_watch_set.test.ts",
+      "provides": [],
+      "service": "test.contract"
+    },
     "test.contract_npcDebuffsAndDots": {
       "class": null,
       "ctorArgs": [],
