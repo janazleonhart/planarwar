@@ -13,6 +13,26 @@ import { resistMultiplier } from "./Resists";
 
 const log = Logger.scope("COMBAT");
 
+function envNumber(name: string, fallback: number): number {
+  const raw = String((process.env as any)?.[name] ?? "").trim();
+  const n = Number(raw);
+  return Number.isFinite(n) ? n : fallback;
+}
+
+function clamp01(n: number): number {
+  if (!Number.isFinite(n)) return 0;
+  if (n < 0) return 0;
+  if (n > 1) return 1;
+  return n;
+}
+
+function clamp(n: number, lo: number, hi: number): number {
+  if (!Number.isFinite(n)) return lo;
+  if (n < lo) return lo;
+  if (n > hi) return hi;
+  return n;
+}
+
 // v1 enums: we keep these very small and expand later.
 export type WeaponSkillId = "unarmed" | "one_handed" | "two_handed" | "ranged" | "dagger";
 
@@ -262,14 +282,21 @@ export function computeDamage(
 
 // --- Crit / Glancing (RNG) ---
 // Ordering notes:
-// - We always consume RNG for crit and glancing checks when enabled to keep deterministic RNG streams stable.
+// - We always consume RNG for crit and glancing checks to keep deterministic RNG streams stable.
 // - Glancing hits cannot crit (common physical-system convention). If both rolls succeed, glancing wins.
-const defaultCritChance = 0.05;
-const critChance = typeof params.critChance === "number" ? params.critChance : defaultCritChance;
+//
+// Tuning knobs:
+// - PW_CRIT_CHANCE_BASE (default 0.05)
+// - PW_CRIT_MULTIPLIER  (default 1.5)
+// - PW_GLANCE_CHANCE_BASE (default 0.10)
+// - PW_GLANCE_MULTIPLIER  (default 0.70)
+const defaultCritChance = clamp01(envNumber("PW_CRIT_CHANCE_BASE", 0.05));
+const critChance =
+  typeof params.critChance === "number" ? clamp01(params.critChance) : defaultCritChance;
 
-const defaultGlancingChance = 0.1;
+const defaultGlancingChance = clamp01(envNumber("PW_GLANCE_CHANCE_BASE", 0.1));
 const glancingChance =
-  typeof params.glancingChance === "number" ? params.glancingChance : defaultGlancingChance;
+  typeof params.glancingChance === "number" ? clamp01(params.glancingChance) : defaultGlancingChance;
 
 let wasCrit = false;
 let wasGlancing = false;
@@ -293,10 +320,12 @@ if (wasGlancing) {
 
 // Apply multipliers after resolving precedence.
 if (wasCrit) {
-  dmg *= 1.5;
+  const mult = clamp(envNumber("PW_CRIT_MULTIPLIER", 1.5), 1.0, 5.0);
+  dmg *= mult;
 }
 if (wasGlancing) {
-  dmg *= 0.7;
+  const mult = clamp(envNumber("PW_GLANCE_MULTIPLIER", 0.7), 0.05, 1.0);
+  dmg *= mult;
 }
   // --- Mitigation (armor/resists) ---
   // Defender snapshot (optional) lets armor/resist buffs modify mitigation.

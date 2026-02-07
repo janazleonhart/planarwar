@@ -7395,6 +7395,20 @@
       "path": "worldcore/test/contract_physicalHitResolver_crit_multi_riposte.test.ts",
       "provides": []
     },
+    "test.contractCombatEngineCritGlance": {
+      "class": "(test)",
+      "dependsOn": [
+        "combat.engine"
+      ],
+      "kind": "test",
+      "lifecycle": "test",
+      "notes": [
+        "Contract: CombatEngine crit/glancing are deterministic with seeded RNG; glancing overrides crit; glancing does not apply to spell channel."
+      ],
+      "owns": [],
+      "path": "worldcore/test/contract_combatEngine_crit_glance.test.ts",
+      "provides": []
+    },
     "test.contractPhysicalHitResolverDefenseSkillInfluence": {
       "kind": "test",
       "notes": [
