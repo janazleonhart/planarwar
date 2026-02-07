@@ -27,6 +27,12 @@ const MUD_SERVICES = {
 const DEAD_BLOCKED_COMMANDS = new Set<string>([
   "attack",
   "autoattack",
+  "autofire",
+  "af",
+  "shoot",
+  "fire",
+  "throw",
+  "ranged",
   "taunt",
   "cast",
   "ability",

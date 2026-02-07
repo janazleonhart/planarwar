@@ -50,6 +50,7 @@ import { handleSpellsCommand } from "./player/spellsCommand";
 import { handleAttackCommand } from "./combat/attackCommand";
 import { handleShootCommand } from "./combat/shootCommand";
 import { handleAutoAttackCommand } from "./combat/autoAttackCommand";
+import { handleAutoFireCommand } from "./combat/autofireCommand";
 import { handleTauntCommand } from "./combat/tauntCommand";
 
 // Gathering
@@ -223,6 +224,8 @@ export const COMMANDS: Record<string, MudCommandHandlerFn> = {
   ranged: handleShootCommand,
   taunt: handleTauntCommand,
   autoattack: handleAutoAttackCommand,
+  autofire: handleAutoFireCommand,
+  af: handleAutoFireCommand,
 
   // Gathering
   pick: handlePickingCommand,

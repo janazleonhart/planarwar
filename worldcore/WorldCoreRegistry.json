@@ -1393,28 +1393,6 @@
         "SQL audit for npc law tags"
       ]
     },
-    "infra.schemaIgnoreJson": {
-      "dependsOn": [],
-      "kind": "data",
-      "lifecycle": "static",
-      "notes": [
-        "Optional allow-list for intentionally retired migrations that were applied in DB but removed on disk.",
-        "JSON form (array, or {ignore:[...], missing:[...]})"
-      ],
-      "path": "worldcore/infra/schema/.schema-ignore.json",
-      "provides": []
-    },
-    "infra.schemaIgnoreTxt": {
-      "dependsOn": [],
-      "kind": "data",
-      "lifecycle": "static",
-      "notes": [
-        "Optional allow-list for intentionally retired migrations (text).",
-        "One id per line; # comments allowed."
-      ],
-      "path": "worldcore/infra/schema/.schema-ignore.txt",
-      "provides": []
-    },
     "infra.schema.001_init_shards": {
       "class": "SchemaMigration",
       "ctorArgs": [],
@@ -2369,6 +2347,28 @@
         "Wave1 shadow knight DOT/shield/debuff baseline"
       ]
     },
+    "infra.schemaIgnoreJson": {
+      "dependsOn": [],
+      "kind": "data",
+      "lifecycle": "static",
+      "notes": [
+        "Optional allow-list for intentionally retired migrations that were applied in DB but removed on disk.",
+        "JSON form (array, or {ignore:[...], missing:[...]})"
+      ],
+      "path": "worldcore/infra/schema/.schema-ignore.json",
+      "provides": []
+    },
+    "infra.schemaIgnoreTxt": {
+      "dependsOn": [],
+      "kind": "data",
+      "lifecycle": "static",
+      "notes": [
+        "Optional allow-list for intentionally retired migrations (text).",
+        "One id per line; # comments allowed."
+      ],
+      "path": "worldcore/infra/schema/.schema-ignore.txt",
+      "provides": []
+    },
     "infra.seed.029_seed_crafting_items_v1": {
       "class": "SeedMigration",
       "ctorArgs": [],
@@ -3190,6 +3190,28 @@
       ],
       "path": "worldcore/mud/commands/combat/autoattack/trainingDummyAutoAttack.ts"
     },
+    "mud.autofire": {
+      "dependsOn": [
+        "mud.context",
+        "core.sessions",
+        "core.entities",
+        "mud.actions.combat",
+        "combat.entityCombat",
+        "utils.logger"
+      ],
+      "functions": [
+        "getAutoFireIntervalMs",
+        "startAutoFire",
+        "stopAutoFire",
+        "isAutoFireEnabledForSession"
+      ],
+      "kind": "service",
+      "notes": [
+        "Manages per-session autofire timers for ranged attacks (engaged-target fallback).",
+        "Uses the existing ranged verb pipeline for range/LoS gates; suppresses denial spam."
+      ],
+      "path": "worldcore/mud/commands/combat/autofire/autofire.ts"
+    },
     "mud.combatGates": {
       "dependsOn": [
         "pvp.duels",
@@ -3275,6 +3297,22 @@
         "Looks up TrainingDummyDeps from input.services.trainingDummy and toggles autoattack on/off."
       ],
       "path": "worldcore/mud/commands/combat/autoAttackCommand.ts"
+    },
+    "mud.commands.combat.autofire": {
+      "dependsOn": [
+        "mud.context",
+        "mud.autofire"
+      ],
+      "function": "handleAutoFireCommand",
+      "invokedBy": [
+        "mud.handler"
+      ],
+      "kind": "mud_command",
+      "notes": [
+        "Implements 'autofire [on|off|toggle]' (alias: af).",
+        "Toggles periodic ranged attacks at your engaged target."
+      ],
+      "path": "worldcore/mud/commands/combat/autofireCommand.ts"
     },
     "mud.commands.combat.cast": {
       "dependsOn": [
@@ -6266,6 +6304,25 @@
       "provides": [],
       "service": "test.contract"
     },
+    "test.contractAutofireBasic": {
+      "class": null,
+      "ctorArgs": [],
+      "dependsOn": [
+        "test.utils",
+        "mud.commands.combat.autofire",
+        "mud.actions.combat",
+        "mud.trainingDummy"
+      ],
+      "kind": "test",
+      "lifecycle": "test",
+      "notes": [
+        "Contract: autofire toggles on/off and periodically shoots at engaged target on cadence.",
+        "Verifies no damage/spam when no engaged target, and no further shots after off."
+      ],
+      "path": "worldcore/test/contract_autofire_basic.test.ts",
+      "provides": [],
+      "service": "test.contract"
+    },
     "test.contractCastSpellPreGatesNoLeak": {
       "class": null,
       "ctorArgs": [],
@@ -7045,6 +7102,28 @@
       "provides": [],
       "service": "test.contract"
     },
+    "test.contractRangedVerbsEngagedTarget": {
+      "dependsOn": [
+        "mud.actions.combat",
+        "mud.trainingDummy"
+      ],
+      "kind": "test",
+      "notes": [
+        "[contract] ranged verbs: no-arg uses engaged target (autofire intent foundation) and denies when not engaged."
+      ],
+      "path": "worldcore/test/contract_ranged_verbs_engaged_target.test.ts"
+    },
+    "test.contractRangedVerbsTargeting": {
+      "dependsOn": [
+        "mud.actions.combat",
+        "mud.trainingDummy"
+      ],
+      "kind": "test",
+      "notes": [
+        "[contract] ranged verbs: range + forward-cone LoS deny paths and success path against training dummy."
+      ],
+      "path": "worldcore/test/contract_ranged_verbs_targeting.test.ts"
+    },
     "test.contractReloadSpawnsForcesHydration": {
       "dependsOn": [
         "mud.commands.debug.reload",
@@ -7676,6 +7755,19 @@
       ],
       "service": "test"
     },
+    "test.contract_schemaAppliedMissingMigrations": {
+      "dependsOn": [
+        "tools.schemaMissingMigrationsLib"
+      ],
+      "kind": "test",
+      "lifecycle": "test",
+      "notes": [
+        "Contract: applied migrations missing on disk are detected deterministically and can be allow-listed."
+      ],
+      "owns": [],
+      "path": "worldcore/test/contract_schemaAppliedMissingMigrations.test.ts",
+      "provides": []
+    },
     "test.contract_schemaFilenameAudit": {
       "class": "(test)",
       "ctorArgs": [],
@@ -7692,11 +7784,11 @@
       "provides": []
     },
     "test.contract_schemaOrderPolicy": {
-      "kind": "test",
-      "path": "worldcore/test/contract_schemaOrderPolicy.test.ts",
       "dependsOn": [
         "tools.schemaOrderPolicy"
-      ]
+      ],
+      "kind": "test",
+      "path": "worldcore/test/contract_schemaOrderPolicy.test.ts"
     },
     "test.contract_spellLearningRules": {
       "class": "(test)",
@@ -8040,41 +8132,6 @@
       "path": "worldcore/test/statusEffects.contract.test.ts",
       "provides": []
     },
-    "test.contract_schemaAppliedMissingMigrations": {
-      "dependsOn": [
-        "tools.schemaMissingMigrationsLib"
-      ],
-      "kind": "test",
-      "lifecycle": "test",
-      "notes": [
-        "Contract: applied migrations missing on disk are detected deterministically and can be allow-listed."
-      ],
-      "owns": [],
-      "path": "worldcore/test/contract_schemaAppliedMissingMigrations.test.ts",
-      "provides": []
-    },
-    "test.contractRangedVerbsTargeting": {
-      "dependsOn": [
-        "mud.actions.combat",
-        "mud.trainingDummy"
-      ],
-      "kind": "test",
-      "notes": [
-        "[contract] ranged verbs: range + forward-cone LoS deny paths and success path against training dummy."
-      ],
-      "path": "worldcore/test/contract_ranged_verbs_targeting.test.ts"
-    },
-    "test.contractRangedVerbsEngagedTarget": {
-      "dependsOn": [
-        "mud.actions.combat",
-        "mud.trainingDummy"
-      ],
-      "kind": "test",
-      "notes": [
-        "[contract] ranged verbs: no-arg uses engaged target (autofire intent foundation) and denies when not engaged."
-      ],
-      "path": "worldcore/test/contract_ranged_verbs_engaged_target.test.ts"
-    },
     "test.utils": {
       "dependsOn": [],
       "functions": [
@@ -8291,10 +8348,10 @@
       "path": "worldcore/tools/schemaMissingMigrationsLib.ts"
     },
     "tools.schemaOrderPolicy": {
-      "kind": "module",
-      "path": "worldcore/tools/schemaOrderPolicy.ts",
       "dependsOn": [],
-      "notes": "Authoritative ordering policy for schema SQL files (numeric prefix then lexicographic tie-break)."
+      "kind": "module",
+      "notes": "Authoritative ordering policy for schema SQL files (numeric prefix then lexicographic tie-break).",
+      "path": "worldcore/tools/schemaOrderPolicy.ts"
     },
     "tools.seedAbilityIdAudit": {
       "bin": "dist/worldcore/tools/seedAbilityIdAudit.js",

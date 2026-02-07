@@ -46,6 +46,7 @@ export const HELP_ENTRIES: { cmd: string; desc: string; debug?: boolean }[] = [
   // Combat
   { cmd: "attack <target>", desc: "Attack a target (NPCs/training dummy)." },
   { cmd: "autoattack [on|off]", desc: "Toggle autoattacking the training dummy." },
+  { cmd: "autofire [on|off|toggle]", desc: "Toggle automatic ranged attacks at your engaged target." },
   { cmd: "shoot / fire / throw <target?>", desc: "Ranged attack (uses engaged target if omitted).", },
   { cmd: "ranged <target?>", desc: "Alias for shoot.", },
   { cmd: "abilities", desc: "List your known abilities." },
