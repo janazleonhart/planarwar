@@ -948,6 +948,32 @@
         "StatusEffect storage under char.progression.statusEffects.active"
       ]
     },
+    "status.runtime": {
+      "class": null,
+      "ctorArgs": [],
+      "dependsOn": [
+        "characters.types",
+        "combat.statusEffects",
+        "core.sessions",
+        "core.entities"
+      ],
+      "functions": [
+        "ensureCharacterStatusState(char)",
+        "pruneCharacterExpiredStatusEffects(char, nowMs)",
+        "isCharacterStealthed(char, nowMs)",
+        "pruneAllConnectedPlayerStatuses(entities, sessions, nowMs)"
+      ],
+      "kind": "utility",
+      "notes": [
+        "Tiny wrapper around StatusEffects to support out-of-combat status reads/ticks without importing from /combat everywhere.",
+        "TickEngine uses pruneAllConnectedPlayerStatuses() to prune expirations in the canonical heartbeat.",
+        "Stealth checks are tag-based: any active status with tag 'stealth' counts as stealthed."
+      ],
+      "path": "worldcore/status/StatusRuntime.ts",
+      "provides": [
+        "Out-of-combat status spine maintenance helpers"
+      ]
+    },
     "combat.statusStackingPolicy": {
       "class": null,
       "ctorArgs": [],
@@ -6856,6 +6882,27 @@
       "path": "worldcore/test/contract_dotTickEngineRoutesThroughNpcManagerDeathPipeline.test.ts",
       "provides": [
         "contract:dotTickEngineDeathPipeline"
+      ]
+    },
+    "test.contractTickEnginePlayerStatusPrunes": {
+      "class": "(test) contract_tickEngine_playerStatusPrunes",
+      "ctorArgs": [],
+      "dependsOn": [
+        "worldcore/core/TickEngine.ts",
+        "worldcore/status/StatusRuntime.ts",
+        "worldcore/combat/StatusEffects.ts"
+      ],
+      "kind": "test",
+      "lifecycle": "test",
+      "notes": [
+        "Ensures TickEngine prunes expired player status effects in the canonical heartbeat, even out of combat (no HOT/DOT payload required)."
+      ],
+      "owns": [
+        "test:tickEnginePlayerStatusPrunes"
+      ],
+      "path": "worldcore/test/contract_tickEngine_playerStatusPrunes.test.ts",
+      "provides": [
+        "contract:tickEnginePlayerStatusPrunes"
       ]
     },
     "test.contractFaceCommandRangedFov": {

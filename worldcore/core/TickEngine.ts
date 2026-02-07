@@ -9,6 +9,7 @@ import { NpcManager } from "../npc/NpcManager";
 import { tickEntityStatusEffectsAndApplyDots } from "../combat/StatusEffects";
 import { formatWorldSpellDotTickLine } from "../combat/CombatLog";
 import { tickAllPlayerHots } from "../combat/PlayerHotTicker";
+import { pruneAllConnectedPlayerStatuses } from "../status/StatusRuntime";
 
 export interface TickEngineConfig {
   intervalMs: number; // tick interval (e.g. 50ms for 20 TPS)
@@ -111,6 +112,16 @@ export class TickEngine {
       this.tickNpcStatusDots(now);
     } catch (err: any) {
       this.log.warn("Error during NPC status DOT tick", { error: String(err) });
+    }
+
+    // Player status spine maintenance (prune expirations, clamp stacks).
+    // This ensures out-of-combat buffs/debuffs expire even when no periodic payload exists.
+    try {
+      if (process.env.PW_TICK_PLAYER_STATUS !== "0") {
+        pruneAllConnectedPlayerStatuses(this.entities, this.sessions, now);
+      }
+    } catch (err: any) {
+      this.log.warn("Error during player status prune tick", { error: String(err) });
     }
 
     // Player HOTs (periodic healing) should tick in the canonical heartbeat.
