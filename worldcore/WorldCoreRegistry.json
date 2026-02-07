@@ -8053,6 +8053,28 @@
       "path": "worldcore/test/contract_schemaAppliedMissingMigrations.test.ts",
       "provides": []
     },
+    "test.contractRangedVerbsTargeting": {
+      "dependsOn": [
+        "mud.actions.combat",
+        "mud.trainingDummy"
+      ],
+      "kind": "test",
+      "notes": [
+        "[contract] ranged verbs: range + forward-cone LoS deny paths and success path against training dummy."
+      ],
+      "path": "worldcore/test/contract_ranged_verbs_targeting.test.ts"
+    },
+    "test.contractRangedVerbsEngagedTarget": {
+      "dependsOn": [
+        "mud.actions.combat",
+        "mud.trainingDummy"
+      ],
+      "kind": "test",
+      "notes": [
+        "[contract] ranged verbs: no-arg uses engaged target (autofire intent foundation) and denies when not engaged."
+      ],
+      "path": "worldcore/test/contract_ranged_verbs_engaged_target.test.ts"
+    },
     "test.utils": {
       "dependsOn": [],
       "functions": [

@@ -522,7 +522,6 @@ export async function handleRangedAttackAction(
   targetNameRaw: string,
 ): Promise<string> {
   const targetName = (targetNameRaw ?? "").trim();
-  if (!targetName) return "[combat] Usage: shoot <target>";
 
   if (!ctx.entities) return "Combat is not available here (no entity manager).";
 
@@ -531,22 +530,40 @@ export async function handleRangedAttackAction(
 
   const roomId = (selfEntity as any).roomId ?? char.shardId;
 
-  // Resolve NPC target (v1: same-room only).
-  const npcTarget = resolveTargetInRoom(ctx.entities as any, roomId, targetNameRaw, {
-    selfId: selfEntity.id,
-    filter: (e: any) => e?.type === "npc" || e?.type === "mob",
-    radius: getRangedMaxRange(),
-  });
+  // If no explicit target, use the currently engaged target (deny-by-default).
+  // This is the “autofire intent” foundation: ranged can be invoked without args,
+  // but only when you are already engaged with something in the room.
+  let engaged: any | null = null;
+  if (!targetName) {
+    engaged = getEngagedTargetInRoom(ctx, selfEntity);
+    if (!engaged) {
+      const hadId = String((selfEntity as any)?.engagedTargetId ?? "").trim();
+      if (hadId) clearEngagedTarget(selfEntity);
+      return "[combat] You are not engaged with a target.";
+    }
+  }
+
+  // Resolve target.
+  // v1: same-room only.
+  const npcTarget = engaged
+    ? (engaged.type === "npc" || engaged.type === "mob" ? engaged : null)
+    : resolveTargetInRoom(ctx.entities as any, roomId, targetNameRaw, {
+        selfId: selfEntity.id,
+        filter: (e: any) => e?.type === "npc" || e?.type === "mob",
+        radius: getRangedMaxRange(),
+      });
 
   // Resolve player target (duel-gated PvP) if no NPC matched.
   const playerTarget: any =
     npcTarget
       ? null
-      : (() => {
-          const found = findTargetPlayerEntityByName(ctx, roomId, targetNameRaw);
-          const ent = found ? (found as any).entity ?? found : null;
-          return ent;
-        })();
+      : engaged
+        ? (engaged.type === "player" ? engaged : null)
+        : (() => {
+            const found = findTargetPlayerEntityByName(ctx, roomId, targetNameRaw);
+            const ent = found ? (found as any).entity ?? found : null;
+            return ent;
+          })();
 
   const targetEntity: any = npcTarget ?? playerTarget;
   if (!targetEntity) return `[world] No such target: '${targetNameRaw}'.`;
