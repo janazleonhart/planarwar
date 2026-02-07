@@ -48,6 +48,7 @@ import { handleAbilityMudCommand } from "./combat/abilityCommand";
 import { handleAbilitiesCommand } from "./player/abilitiesCommand";
 import { handleSpellsCommand } from "./player/spellsCommand";
 import { handleAttackCommand } from "./combat/attackCommand";
+import { handleShootCommand } from "./combat/shootCommand";
 import { handleAutoAttackCommand } from "./combat/autoAttackCommand";
 import { handleTauntCommand } from "./combat/tauntCommand";
 
@@ -214,6 +215,12 @@ export const COMMANDS: Record<string, MudCommandHandlerFn> = {
   spell: async (ctx, char) => handleSpellsCommand(ctx),
   spells: async (ctx, char) => handleSpellsCommand(ctx),
   attack: handleAttackCommand,
+  // Ranged verbs (v1): explicit ranged attack with range + forward-cone LoS.
+  // Ammo, projectile travel, and cover rules come later.
+  shoot: handleShootCommand,
+  fire: handleShootCommand,
+  throw: handleShootCommand,
+  ranged: handleShootCommand,
   taunt: handleTauntCommand,
   autoattack: handleAutoAttackCommand,
 

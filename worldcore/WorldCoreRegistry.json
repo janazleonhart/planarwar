@@ -3270,6 +3270,24 @@
       ],
       "path": "worldcore/mud/commands/combat/castCommand.ts"
     },
+    "mud.commands.combat.shoot": {
+      "dependsOn": [
+        "mud.context",
+        "mud.actions",
+        "mud.actions.combat",
+        "targeting.resolver"
+      ],
+      "function": "handleShootCommand",
+      "invokedBy": [
+        "mud.handler"
+      ],
+      "kind": "mud_command",
+      "notes": [
+        "Implements ranged verbs: shoot/fire/throw/ranged <target>.",
+        "Enforces max range + forward-cone line-of-sight (v1)."
+      ],
+      "path": "worldcore/mud/commands/combat/shootCommand.ts"
+    },
     "mud.commands.combat.taunt": {
       "dependsOn": [
         "mud.context",

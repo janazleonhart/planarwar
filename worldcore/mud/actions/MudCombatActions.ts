@@ -444,6 +444,228 @@ export async function handleAttackAction(
   return `[world] No such target: '${targetNameRaw}'.`;
 }
 
+// ---------------------------------------------------------------------------
+// Ranged attack handler (v1)
+// ---------------------------------------------------------------------------
+//
+// Philosophy:
+// - Ranged is an explicit verb (shoot/throw/fire) so we don't accidentally
+//   change existing melee semantics.
+// - We enforce simple constraints that make “ranger” viable without turning
+//   combat into a geometry exploit-fest:
+//   * max range
+//   * simple line-of-sight: target must be within a forward cone
+// - Ammo, projectile travel time, and cover are later.
+
+function distanceXZ(a: any, b: any): number {
+  const ax = Number((a as any)?.x ?? 0);
+  const az = Number((a as any)?.z ?? 0);
+  const bx = Number((b as any)?.x ?? 0);
+  const bz = Number((b as any)?.z ?? 0);
+  const dx = ax - bx;
+  const dz = az - bz;
+  return Math.sqrt(dx * dx + dz * dz);
+}
+
+function normalizeAngleRad(r: number): number {
+  let x = r;
+  while (x <= -Math.PI) x += Math.PI * 2;
+  while (x > Math.PI) x -= Math.PI * 2;
+  return x;
+}
+
+function getRotYRadSafe(e: any): number {
+  const v = Number((e as any)?.rotY ?? 0);
+  return Number.isFinite(v) ? v : 0;
+}
+
+function canSeeTargetForwardCone(selfEntity: any, targetEntity: any, fovDeg: number): boolean {
+  const fov = Math.max(1, Math.min(360, Number(fovDeg ?? 120)));
+  const half = (fov * Math.PI) / 360;
+
+  const sx = Number((selfEntity as any)?.x ?? 0);
+  const sz = Number((selfEntity as any)?.z ?? 0);
+  const tx = Number((targetEntity as any)?.x ?? 0);
+  const tz = Number((targetEntity as any)?.z ?? 0);
+
+  const dx = tx - sx;
+  const dz = tz - sz;
+
+  // Degenerate: same point -> "visible".
+  if (Math.abs(dx) < 1e-6 && Math.abs(dz) < 1e-6) return true;
+
+  // In this coordinate system, we treat +Z as "forward" when rotY = 0.
+  const toTargetYaw = Math.atan2(dx, dz);
+  const selfYaw = getRotYRadSafe(selfEntity);
+  const delta = normalizeAngleRad(toTargetYaw - selfYaw);
+
+  return Math.abs(delta) <= half;
+}
+
+function envRange(name: string, fallback: number): number {
+  const raw = String((process.env as any)?.[name] ?? "").trim();
+  const n = Number(raw);
+  return Number.isFinite(n) ? n : fallback;
+}
+
+function getRangedMaxRange(): number {
+  return clampNumber(envRange("PW_RANGED_MAX_RANGE", 14), 4, 60);
+}
+
+function getRangedFovDeg(): number {
+  return clampNumber(envRange("PW_RANGED_FOV_DEG", 140), 30, 360);
+}
+
+export async function handleRangedAttackAction(
+  ctx: MudContext,
+  char: CharacterState,
+  targetNameRaw: string,
+): Promise<string> {
+  const targetName = (targetNameRaw ?? "").trim();
+  if (!targetName) return "[combat] Usage: shoot <target>";
+
+  if (!ctx.entities) return "Combat is not available here (no entity manager).";
+
+  const selfEntity = ctx.entities.getEntityByOwner(ctx.session.id);
+  if (!selfEntity) return "You have no body here.";
+
+  const roomId = (selfEntity as any).roomId ?? char.shardId;
+
+  // Resolve NPC target (v1: same-room only).
+  const npcTarget = resolveTargetInRoom(ctx.entities as any, roomId, targetNameRaw, {
+    selfId: selfEntity.id,
+    filter: (e: any) => e?.type === "npc" || e?.type === "mob",
+    radius: getRangedMaxRange(),
+  });
+
+  // Resolve player target (duel-gated PvP) if no NPC matched.
+  const playerTarget: any =
+    npcTarget
+      ? null
+      : (() => {
+          const found = findTargetPlayerEntityByName(ctx, roomId, targetNameRaw);
+          const ent = found ? (found as any).entity ?? found : null;
+          return ent;
+        })();
+
+  const targetEntity: any = npcTarget ?? playerTarget;
+  if (!targetEntity) return `[world] No such target: '${targetNameRaw}'.`;
+
+  if (isDeadEntity(targetEntity) || (targetEntity as any).alive === false) {
+    return "[combat] That target is already dead.";
+  }
+
+  // Range check (2D XZ)
+  const dist = distanceXZ(selfEntity, targetEntity);
+  if (dist > getRangedMaxRange() + 1e-6) {
+    return `[combat] ${targetEntity.name} is out of range.`;
+  }
+
+  // Line-of-sight (v1): forward cone
+  if (!canSeeTargetForwardCone(selfEntity, targetEntity, getRangedFovDeg())) {
+    return `[combat] You don't have line of sight to ${targetEntity.name}.`;
+  }
+
+  // Break stealth on hostile commit.
+  const wasStealthed = isStealthedForCombat(char);
+  if (wasStealthed) breakStealthForCombat(char);
+
+  // Engage for subsequent melee swings (quality-of-life)
+  setEngagedTarget(selfEntity, targetEntity);
+
+  // NPCs: route through the same authoritative-ish pipeline.
+  if (npcTarget) {
+    // Training dummy ranged uses the dummy HP pool too.
+    const npcState = ctx.npcs?.getNpcStateByEntityId((npcTarget as any).id);
+    const protoId = npcState?.protoId;
+
+    if (protoId === "training_dummy_big") {
+      const dummyInstance = getTrainingDummyForRoom(roomId);
+
+      markInCombat(selfEntity);
+      markInCombat(dummyInstance as any);
+      startTrainingDummyAi(ctx, ctx.session.id, roomId);
+
+      const effective = computeEffectiveAttributes(char, ctx.items);
+      const baseDmg = computeTrainingDummyDamage(effective);
+      const dmg = Math.max(1, Math.round(baseDmg));
+
+      dummyInstance.hp = Math.max(0, dummyInstance.hp - dmg);
+
+      if (dummyInstance.hp > 0) {
+        return (
+          `[combat] You shoot the Training Dummy for ${dmg} damage. ` +
+          `(${dummyInstance.hp}/${dummyInstance.maxHp} HP)`
+        );
+      }
+
+      const line =
+        `[combat] You shoot the Training Dummy for ${dmg} damage! ` +
+        `(0/${dummyInstance.maxHp} HP – it quickly knits itself back together.)`;
+      dummyInstance.hp = dummyInstance.maxHp;
+      return line;
+    }
+
+    return await performNpcAttack(ctx, char, selfEntity as any, npcTarget as any, {
+      // v1: ranged uses same damage model; later: weapon/ranged skill, ammo, falloff.
+    });
+  }
+
+  // Players: duel-gated PvP with additional DamagePolicy backstop.
+  if (playerTarget) {
+    const gateRes = await gatePlayerDamageFromPlayerEntity(ctx, char, roomId, playerTarget);
+    if (!gateRes.allowed) return gateRes.reason;
+
+    const { now, label, mode: ctxMode, targetChar, targetSession } = gateRes;
+
+    try {
+      const policy = await canDamage(
+        { entity: selfEntity as any, char },
+        { entity: playerTarget as any, char: targetChar as any },
+        { shardId: char.shardId, regionId: roomId, inDuel: ctxMode === "duel" },
+      );
+      if (policy && policy.allowed === false) return policy.reason ?? "You cannot attack here.";
+    } catch {
+      // ignore
+    }
+
+    const effective = computeEffectiveAttributes(char, ctx.items);
+    const baseDmg = computeTrainingDummyDamage(effective);
+    const dmg = Math.max(1, Math.round(baseDmg));
+
+    const { newHp, maxHp, killed } = applySimpleDamageToPlayer(
+      playerTarget as any,
+      dmg,
+      targetChar as any,
+      "physical",
+      { mode: ctxMode },
+    );
+
+    markInCombat(selfEntity);
+    markInCombat(playerTarget as any);
+
+    if (targetSession && ctx.sessions) {
+      ctx.sessions.send(targetSession as any, "chat", {
+        from: "[world]",
+        sessionId: "system",
+        text: killed
+          ? `[${label}] ${selfEntity.name} shoots you for ${dmg} damage. You fall. (0/${maxHp} HP)`
+          : `[${label}] ${selfEntity.name} shoots you for ${dmg} damage. (${newHp}/${maxHp} HP)`,
+        t: now,
+      });
+    }
+
+    if (killed) {
+      if (ctxMode === "duel") DUEL_SERVICE.endDuelFor(char.id, "death", now);
+      return `[${label}] You shoot ${playerTarget.name} for ${dmg} damage. You defeat them. (0/${maxHp} HP)`;
+    }
+
+    return `[${label}] You shoot ${playerTarget.name} for ${dmg} damage. (${newHp}/${maxHp} HP)`;
+  }
+
+  return "[world] No such target.";
+}
+
 
 // ---------------------------------------------------------------------------
 // Taunt handler (threat override).
