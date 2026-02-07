@@ -124,6 +124,27 @@ function isStealthedForCombat(char: CharacterState): boolean {
   } catch {
     return false;
   }
+
+}
+
+function getCharacterForPlayerEntity(ctx: MudContext, ent: any): CharacterState | null {
+  try {
+    const sid = String((ent as any)?.ownerSessionId ?? "").trim();
+    if (!sid) return null;
+    const s: any = (ctx as any)?.sessions?.get?.(sid) ?? null;
+    const c: any = s?.character ?? s?.char ?? null;
+    return c && c.id ? (c as any) : null;
+  } catch {
+    return null;
+  }
+}
+
+function isStealthedPlayerEntityForViewer(ctx: MudContext, ent: any): boolean {
+  const t = String((ent as any)?.type ?? "").toLowerCase();
+  if (t !== "player") return false;
+  const c = getCharacterForPlayerEntity(ctx, ent);
+  if (!c) return false;
+  return isStealthedForCombat(c as any);
 }
 
 function clamp(n: number, lo: number, hi: number): number {
@@ -328,6 +349,12 @@ export async function handleAttackAction(
   if (!targetName) {
     engagedTarget = getEngagedTargetInRoom(ctx, selfEntity);
 
+    // If the engaged target is a stealthed player, treat it as non-existent (no free "track").
+    if (engagedTarget && isStealthedPlayerEntityForViewer(ctx, engagedTarget)) {
+      clearEngagedTarget(selfEntity);
+      return "[combat] You cannot see that target.";
+    }
+
     if (!engagedTarget) {
       // If we had an engagedTargetId but it no longer exists, clear it.
       const hadId = String((selfEntity as any)?.engagedTargetId ?? "").trim();
@@ -420,6 +447,12 @@ export async function handleAttackAction(
     const gateRes = await gatePlayerDamageFromPlayerEntity(ctx, char, roomId, playerTarget);
     if (!gateRes.allowed) {
       return gateRes.reason;
+    }
+
+    // Stealth: you can't directly target a stealthed player (deny before damage/cooldowns).
+    if (isStealthedForCombat(gateRes.targetChar as any)) {
+      clearEngagedTarget(selfEntity);
+      return "[combat] You cannot see that target.";
     }
 
     const { now, label, mode: ctxMode, targetChar, targetSession } = gateRes;
@@ -762,6 +795,13 @@ export async function handleRangedAttackAction(
   let engaged: any | null = null;
   if (!targetName) {
     engaged = getEngagedTargetInRoom(ctx, selfEntity);
+
+    // If the engaged target is a stealthed player, treat it as non-existent (no free tracking).
+    if (engaged && isStealthedPlayerEntityForViewer(ctx, engaged)) {
+      clearEngagedTarget(selfEntity);
+      return "[combat] You cannot see that target.";
+    }
+
     if (!engaged) {
       const hadId = String((selfEntity as any)?.engagedTargetId ?? "").trim();
       if (hadId) clearEngagedTarget(selfEntity);
@@ -863,6 +903,12 @@ export async function handleRangedAttackAction(
   if (playerTarget) {
     const gateRes = await gatePlayerDamageFromPlayerEntity(ctx, char, roomId, playerTarget);
     if (!gateRes.allowed) return gateRes.reason;
+
+    // Stealth: deny targeting stealthed players.
+    if (isStealthedForCombat(gateRes.targetChar as any)) {
+      clearEngagedTarget(selfEntity);
+      return "[combat] You cannot see that target.";
+    }
 
     const { now, label, mode: ctxMode, targetChar, targetSession } = gateRes;
 
@@ -967,11 +1013,17 @@ export async function handleTauntAction(
   // Engage for subsequent `attack` with no args
   setEngagedTarget(selfEntity, npcTarget);
 
+  // Taunting is a hostile commit: break stealth to avoid threat/assist leakage.
+  const wasStealthed = isStealthedForCombat(char);
+  if (wasStealthed) breakStealthForCombat(char);
+
   if (!ctx.npcs || typeof ctx.npcs.taunt !== "function") {
     return "Taunt is not available (NPC manager not wired).";
   }
 
-  const ok = ctx.npcs.taunt(npcTarget.id, selfEntity.id, { durationMs: 4000, threatBoost: 10 });
+  const durationMs = Math.max(500, Math.floor(envNumber("PW_TAUNT_DURATION_MS", 4000)));
+  const threatBoost = Math.max(1, Math.floor(envNumber("PW_TAUNT_THREAT_BOOST", 10)));
+  const ok = ctx.npcs.taunt(npcTarget.id, selfEntity.id, { durationMs, threatBoost });
   if (!ok) {
     return "[combat] That target cannot be taunted.";
   }

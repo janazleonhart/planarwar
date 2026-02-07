@@ -1642,6 +1642,16 @@ function computeAssistSeedThreat(baseSeedThreat: number, proto: any, ent: any): 
   return Math.max(1, Number.isFinite(scaled) ? scaled : Math.max(1, Math.round(baseSeedThreat)));
 }
 
+function isStealthedPlayerEntity(entity: any, now: number): boolean {
+  try {
+    if (!entity || entity.type !== "player") return false;
+    const active = getActiveStatusEffectsForEntity(entity as any, now);
+    return active.some((e: any) => Array.isArray(e?.tags) && e.tags.includes("stealth"));
+  } catch {
+    return false;
+  }
+}
+
 // Assist gating knobs (wired to env; defaults match NpcThreat.getAssistTargetForAlly defaults)
 const PW_ASSIST_AGGRO_WINDOW_MS = Math.max(0, envInt("PW_ASSIST_AGGRO_WINDOW_MS", 5000));
 const PW_ASSIST_MIN_TOP_THREAT = Math.max(0, envInt("PW_ASSIST_MIN_TOP_THREAT", 1));
@@ -1675,6 +1685,11 @@ export function tryAssistNearbyNpcs(
 
   const allyEnt: any = ctx.entities.get(allyNpcEntityId);
   if ((allyEnt as any)?.type === "node") return 0;
+
+  // Stealth: never assist onto a stealthed player (no free tracking / assist leakage).
+  const attackerEnt: any = ctx.entities.get(attackerEntityId);
+  if (isStealthedPlayerEntity(attackerEnt, now)) return 0;
+
 
   // --- Gate-for-help ("trains") ---
   // Some NPCs can "gate" to call allies from a much larger radius.

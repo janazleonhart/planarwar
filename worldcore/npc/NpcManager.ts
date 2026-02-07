@@ -32,6 +32,7 @@ import {
   getTopThreatTarget,
   getThreatValue,
   applyTauntToThreat,
+  decayThreat,
   type NpcThreatState,
   updateThreatFromDamage,
 } from "./NpcThreat";
@@ -909,8 +910,15 @@ export class NpcManager {
           behavior === "guard" ||
           behavior === "coward");
 
-      const threat = this.npcThreat.get(entityId);
+      const threat0 = this.npcThreat.get(entityId);
       const now = Date.now();
+
+      // v1.4: deterministic threat decay in tick loop (so old grudges fade even without new hits).
+      const threat = decayThreat(threat0, { now });
+      if (threat && threat !== threat0) {
+        this.npcThreat.set(entityId, threat);
+      }
+
       const topThreatId = getTopThreatTarget(threat, now);
 
       // Build perception

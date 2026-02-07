@@ -8248,6 +8248,52 @@
       "path": "worldcore/test/statusEffects.contract.test.ts",
       "provides": []
     },
+    "test.contractStealthTargetingEngagedHidden": {
+      "kind": "test",
+      "service": "worldcore",
+      "path": "worldcore/test/contract_stealth_targeting_engagedHidden.test.ts",
+      "class": null,
+      "lifecycle": "stable",
+      "ctorArgs": null,
+      "dependsOn": [
+        "mud.actions.combat",
+        "combat.statusEffects",
+        "targeting.resolver",
+        "targeting.finders",
+        "mud.combatGates"
+      ],
+      "provides": [],
+      "owns": []
+    },
+    "test.contractTauntBreaksStealth": {
+      "kind": "test",
+      "service": "worldcore",
+      "path": "worldcore/test/contract_taunt_breaks_stealth.test.ts",
+      "class": null,
+      "lifecycle": "stable",
+      "ctorArgs": null,
+      "dependsOn": [
+        "mud.actions.combat",
+        "combat.statusEffects",
+        "targeting.resolver",
+        "targeting.finders",
+        "mud.combatGates"
+      ],
+      "provides": [],
+      "owns": []
+    },
+    "test.contract_threatDecay_assist_stealth": {
+      "kind": "service_contract",
+      "service": "test.contract",
+      "path": "worldcore/test/contract_threatDecay_assist_stealth.test.ts",
+      "lifecycle": "prod",
+      "dependsOn": [],
+      "provides": [],
+      "owns": [],
+      "notes": [
+        "[contract] threat decay is deterministic; assist respects aggro window; assist does not acquire stealthed targets"
+      ]
+    },
     "test.utils": {
       "dependsOn": [],
       "functions": [

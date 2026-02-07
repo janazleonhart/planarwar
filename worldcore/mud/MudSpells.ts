@@ -32,11 +32,40 @@ import {
   gainSongSchoolSkill,
 } from "../skills/SkillProgression";
 import type { SongSchoolId } from "../skills/SkillProgression";
-import { applyStatusEffect, applyStatusEffectToEntity, clearStatusEffectsByTags } from "../combat/StatusEffects";
+import { applyStatusEffect, applyStatusEffectToEntity, clearStatusEffectsByTags, getActiveStatusEffects } from "../combat/StatusEffects";
 import { applyActionCostAndCooldownGates } from "../combat/CastingGates";
 import { computeSongScalar } from "../songs/SongScaling";
 import { isCombatEnabledForRegion } from "../world/RegionFlags";
 const log = Logger.scope("MUD_SPELLS");
+
+function ensureStatusEffectsSpineForCombat(char: CharacterState): void {
+  const anyChar: any = char as any;
+  if (!anyChar.progression || typeof anyChar.progression !== "object") anyChar.progression = {};
+  const prog: any = anyChar.progression;
+  if (!prog.statusEffects || typeof prog.statusEffects !== "object") prog.statusEffects = {};
+  const se: any = prog.statusEffects;
+  if (!se.active || typeof se.active !== "object") se.active = {};
+}
+
+function isStealthedForCombat(char: CharacterState): boolean {
+  try {
+    const active = getActiveStatusEffects(char as any);
+    return active.some((e: any) => Array.isArray(e?.tags) && e.tags.includes("stealth"));
+  } catch {
+    return false;
+  }
+}
+
+function breakStealthForCombat(char: CharacterState): void {
+  ensureStatusEffectsSpineForCombat(char);
+  try {
+    // StatusEffects.clearStatusEffectsByTags expects a numeric maxToRemove.
+    clearStatusEffectsByTags(char as any, ["stealth"], Number.MAX_SAFE_INTEGER);
+  } catch {
+    // best-effort
+  }
+}
+
 
 function getItemStatsForScaling(itemId: string, itemService: any): Record<string, any> | undefined {
   // 1) DB-backed item service (preferred)
@@ -632,6 +661,11 @@ case "damage_single_npc": {
           targetSession: gateRes.targetSession,
         };
 
+        // Stealth: you can't directly target a stealthed player.
+        if (isStealthedForCombat(gateRes.targetChar as any)) {
+          return "[combat] You cannot see that target.";
+        }
+
         // Lane D: async DamagePolicy backstop for player-vs-player damage.
         // gatePlayerDamageFromPlayerEntity enforces duel consent; this enforces region combat/PvP flags + service protection.
         try {
@@ -653,6 +687,12 @@ case "damage_single_npc": {
 
 
       if (gateErr) return gateErr;
+
+      // Hostile commit breaks stealth to prevent threat/assist leakage.
+      if ((npc || playerTarget) && isStealthedForCombat(char)) {
+        breakStealthForCombat(char);
+      }
+
 // Execute
       if (npc) {
         const result = await performNpcAttack(ctx, char, selfEntity, npc, {
