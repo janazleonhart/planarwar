@@ -20,7 +20,7 @@ test("[contract] npcThreat: invalid forced target is cleared and selector falls 
     forcedUntil: now + 4000,
   };
 
-  const sel = selectThreatTarget(threat, now, (id) => id !== "stealthy");
+  const sel = selectThreatTarget(threat, now, (id) => ({ ok: id !== "stealthy", reason: id === "stealthy" ? "stealth" : undefined }));
   assert.equal(sel.targetId, "visible", "selector should skip invalid forced target and choose next best");
   assert.ok(sel.nextThreat, "selector should return nextThreat");
   assert.ok(!sel.nextThreat?.forcedTargetEntityId, "forced target should be cleared when invalid");

@@ -3221,7 +3221,7 @@
         "utils.logger"
       ],
       "functions": [
-        "getAutoFireIntervalMsForCharacter",
+        "getAutoFireIntervalMs",
         "startAutoFire",
         "stopAutoFire",
         "isAutoFireEnabledForSession"
@@ -3229,7 +3229,6 @@
       "kind": "service",
       "notes": [
         "Manages per-session autofire timers for ranged attacks (engaged-target fallback).",
-        "Cadence is weapon-speed based when ranged weapon speed is available (equipment meta or placeholder stats), otherwise falls back to PW_AUTOFIRE_MS.",
         "Uses the existing ranged verb pipeline for range/LoS gates; suppresses denial spam."
       ],
       "path": "worldcore/mud/commands/combat/autofire/autofire.ts"
@@ -3436,18 +3435,22 @@
     "mud.commands.debug.debugThreatCommand": {
       "dependsOn": [
         "mud.context",
-        "mud.handles.nearbyHandles",
+        "npc.service",
         "npc.threat",
-        "npc.manager"
+        "mud.handles.nearbyHandles"
       ],
-      "function": "handleDebugThreat",
+      "functions": [
+        "handleDebugThreat",
+        "formatThreatReport"
+      ],
       "invokedBy": [
-        "mud.commands.registry"
+        "mud.commands.debug.debug_threat (via mud/commands/registry.ts)"
       ],
-      "kind": "mud_command",
+      "kind": "mud_command_group",
       "notes": [
-        "Debug: 'debug_threat' lists NPCs in the room and can dump an NPC threat table with forced target state.",
-        "Supports NearbyHandles (e.g. rat.1) and '--json' output."
+        "Debug QoL: inspect NPC threat tables and taunt/assist state for the current room or a specific NPC.",
+        "Supports --watch streaming (per-session) and --set edits for testing (gated behind withDebugGate).",
+        "Watch output surfaces forced-target windows and prints a one-shot breadcrumb when forced targets are cleared early due to visibility/validity rules."
       ],
       "path": "worldcore/mud/commands/debug/debugThreatCommand.ts"
     },
@@ -4860,6 +4863,7 @@
         "updateThreatFromDamage",
         "applyTauntToThreat",
         "getTopThreatTarget",
+        "selectThreatTarget",
         "getThreatValue",
         "getLastAttackerFromThreat"
       ],
@@ -4867,7 +4871,9 @@
       "notes": [
         "Threat bookkeeping for NPC AI targeting.",
         "Back-compat fields: lastAttackerEntityId + lastAggroAt.",
-        "v2 adds a lightweight threat table (threatByEntityId) plus a taunt/forced-target window."
+        "v2 adds a lightweight threat table (threatByEntityId) plus a taunt/forced-target window.",
+        "selectThreatTarget accepts a validity callback (with optional reason) so brains can respect stealth/dead/out-of-room targets without baking those concepts into threat bookkeeping.",
+        "When an active forced target becomes invalid, the forced override is cleared and a small breadcrumb (forcedCleared*) is stored for debug tooling."
       ],
       "path": "worldcore/npc/NpcThreat.ts"
     },
@@ -6122,40 +6128,6 @@
       "provides": [],
       "service": "test.contract"
     },
-    "test.contract_debugThreatCommand": {
-      "class": "(test)",
-      "ctorArgs": [],
-      "dependsOn": [
-        "mud.commands.debug.debug_threat",
-        "npc.manager"
-      ],
-      "kind": "test",
-      "lifecycle": "static",
-      "notes": [
-        "Contract: debug_threat prints an NPC threat table deterministically."
-      ],
-      "owns": [],
-      "path": "worldcore/test/contract_debugThreatCommand.test.ts",
-      "provides": [],
-      "service": "test.contract"
-    },
-    "test.contract_debugThreatWatchSet": {
-      "class": "(test)",
-      "ctorArgs": [],
-      "dependsOn": [
-        "mud.commands.debug.debug_threat",
-        "npc.manager"
-      ],
-      "kind": "test",
-      "lifecycle": "static",
-      "notes": [
-        "Contract: debug_threat --watch and --set/--clear/--force operate deterministically without throwing."
-      ],
-      "owns": [],
-      "path": "worldcore/test/contract_debugThreat_watch_set.test.ts",
-      "provides": [],
-      "service": "test.contract"
-    },
     "test.contract_npcDebuffsAndDots": {
       "class": null,
       "ctorArgs": [],
@@ -6657,56 +6629,6 @@
         "Verifies no damage/spam when no engaged target, and no further shots after off."
       ],
       "path": "worldcore/test/contract_autofire_basic.test.ts",
-      "provides": [],
-      "service": "test.contract"
-    },
-    "test.contractAutofireWeaponSpeedCadence": {
-      "class": null,
-      "ctorArgs": [],
-      "dependsOn": [
-        "mud.autofire"
-      ],
-      "kind": "test",
-      "lifecycle": "test",
-      "notes": [
-        "Contract: autofire cadence prefers equipped ranged weapon speed (equipment meta) when present.",
-        "Contract: when no weapon speed is available, cadence falls back to PW_AUTOFIRE_MS."
-      ],
-      "path": "worldcore/test/contract_autofire_weaponSpeedCadence.test.ts",
-      "provides": [],
-      "service": "test.contract"
-    },
-    "test.contractDuelMeleeParryBlockRiposteMath": {
-      "class": null,
-      "ctorArgs": [],
-      "dependsOn": [
-        "mud.actions.combat",
-        "combat.physicalHitResolver"
-      ],
-      "kind": "test",
-      "lifecycle": "test",
-      "notes": [
-        "Contract: duel melee math respects PhysicalHitResolver outcomes (hit/block/parry) and computes parry->riposte damage using env knobs.",
-        "This is a pure contract around the exported helper used by MudCombatActions so duel wiring stays testable without a full DuelService harness."
-      ],
-      "path": "worldcore/test/contract_duelMelee_parryBlockRiposte_math.test.ts",
-      "provides": [],
-      "service": "test.contract"
-    },
-    "test.contractRangedWeaponSpeedDamageScale": {
-      "class": null,
-      "ctorArgs": [],
-      "dependsOn": [
-        "mud.actions.combat",
-        "mud.trainingDummy"
-      ],
-      "kind": "test",
-      "lifecycle": "test",
-      "notes": [
-        "Contract: ranged per-shot damage is normalized by weapon cadence (fast weapons hit lighter; slow weapons hit harder).",
-        "Uses the training dummy HP pool to compare a fast vs slow weapon shot under the same baseline cadence."
-      ],
-      "path": "worldcore/test/contract_ranged_weaponSpeed_damageScale.test.ts",
       "provides": [],
       "service": "test.contract"
     },
@@ -7309,25 +7231,6 @@
         "contract:npcThreatDecayIntegration"
       ]
     },
-    "test.contractNpcThreatSelectTargetFiltersInvalidForced": {
-      "class": "(test) contract_npcThreat_selectTarget_filtersInvalidForced",
-      "ctorArgs": [],
-      "dependsOn": [
-        "worldcore/npc/NpcThreat.ts"
-      ],
-      "kind": "test",
-      "lifecycle": "active",
-      "notes": [
-        "Contract: threat selector clears an invalid forced target (e.g., stealth/out-of-room) and falls back to the best valid threat."
-      ],
-      "owns": [
-        "test:contract_npcThreat_selectTarget_filtersInvalidForced"
-      ],
-      "path": "worldcore/test/contract_npcThreat_selectTarget_filtersInvalidForced.test.ts",
-      "provides": [
-        "contract:npcThreatSelectTargetFiltersInvalidForced"
-      ]
-    },
     "test.contractNpcThreatTauntOverridesTopThreat": {
       "kind": "test",
       "notes": [
@@ -7481,20 +7384,6 @@
       ],
       "owns": [],
       "path": "worldcore/test/contract_physicalHitResolver_crit_multi_riposte.test.ts",
-      "provides": []
-    },
-    "test.contractCombatEngineCritGlance": {
-      "class": "(test)",
-      "dependsOn": [
-        "combat.engine"
-      ],
-      "kind": "test",
-      "lifecycle": "test",
-      "notes": [
-        "Contract: CombatEngine crit/glancing are deterministic with seeded RNG; glancing overrides crit; glancing does not apply to spell channel."
-      ],
-      "owns": [],
-      "path": "worldcore/test/contract_combatEngine_crit_glance.test.ts",
       "provides": []
     },
     "test.contractPhysicalHitResolverDefenseSkillInfluence": {
@@ -8318,85 +8207,6 @@
       "owns": [],
       "path": "worldcore/test/statusEffects.contract.test.ts",
       "provides": []
-    },
-    "test.contractStealthTargetingEngagedHidden": {
-      "kind": "test",
-      "service": "worldcore",
-      "path": "worldcore/test/contract_stealth_targeting_engagedHidden.test.ts",
-      "class": null,
-      "lifecycle": "stable",
-      "ctorArgs": null,
-      "dependsOn": [
-        "mud.actions.combat",
-        "combat.statusEffects",
-        "targeting.resolver",
-        "targeting.finders",
-        "mud.combatGates"
-      ],
-      "provides": [],
-      "owns": []
-    },
-    "test.contractTauntBreaksStealth": {
-      "kind": "test",
-      "service": "worldcore",
-      "path": "worldcore/test/contract_taunt_breaks_stealth.test.ts",
-      "class": null,
-      "lifecycle": "stable",
-      "ctorArgs": null,
-      "dependsOn": [
-        "mud.actions.combat",
-        "combat.statusEffects",
-        "targeting.resolver",
-        "targeting.finders",
-        "mud.combatGates"
-      ],
-      "provides": [],
-      "owns": []
-    },
-    "test.contract_threatDecay_assist_stealth": {
-      "kind": "service_contract",
-      "service": "test.contract",
-      "path": "worldcore/test/contract_threatDecay_assist_stealth.test.ts",
-      "lifecycle": "prod",
-      "dependsOn": [],
-      "provides": [],
-      "owns": [],
-      "notes": [
-        "[contract] threat decay is deterministic; assist respects aggro window; assist does not acquire stealthed targets"
-      ]
-    },
-    "test.contractNpcThreatThreatTransferRedirects": {
-      "kind": "test",
-      "notes": [
-        "Contract: threat transfer redirects generated NPC threat to another entity (misdirect / redirect)."
-      ],
-      "path": "worldcore/test/contract_npcThreat_threatTransfer_redirects.test.ts",
-      "service": "npc.threat"
-    },
-    "test.contractNpcThreatTauntForceTakeover": {
-      "kind": "test",
-      "notes": [
-        "Contract: taunt in forceTakeover mode makes the taunter become actual top threat after expiry."
-      ],
-      "path": "worldcore/test/contract_npcThreat_tauntForce_takeover.test.ts",
-      "service": "npc.threat"
-    },
-    "test.contract_npcCombat_assist_threatShare": {
-      "kind": "test",
-      "service": "combat.npc",
-      "path": "worldcore/test/contract_npcCombat_assist_threatShare.test.ts",
-      "class": "(test) contract_npcCombat_assist_threatShare",
-      "lifecycle": "active",
-      "provides": [
-        "test:contract_npcCombat_assist_threatShare"
-      ],
-      "dependsOn": [
-        "combat.npcCombat",
-        "npc.npcThreat"
-      ],
-      "notes": [
-        "Contract: when enabled, assist seeds additional threat buckets from the ally's threat table (train-friendly group behavior)."
-      ]
     },
     "test.utils": {
       "dependsOn": [],

@@ -29,6 +29,13 @@ export interface NpcThreatState {
   // Optional: last taunt application timestamp (used for taunt immunity windows).
   lastTauntAt?: number;
 
+  // Debug-only breadcrumb: when a forced target is cleared early because it
+  // became invalid (stealth/out-of-room/dead/etc), we keep a small note so
+  // debug tooling can explain why the NPC suddenly swapped targets.
+  forcedClearedAt?: number;
+  forcedClearedReason?: string;
+  forcedClearedTargetEntityId?: string;
+
   // New (v1.1.6): optional decay bookkeeping.
   // If present, callers may pass this state back in and decayThreat() can use it.
   lastDecayAt?: number;
@@ -208,7 +215,7 @@ export function getTopThreatTarget(
   threat?: NpcThreatState,
   now: number = nowMs(),
 ): string | undefined {
-  return selectThreatTarget(threat, now, () => true).targetId;
+  return selectThreatTarget(threat, now, () => ({ ok: true })).targetId;
 }
 
 /**
@@ -228,7 +235,7 @@ export function getTopThreatTarget(
 export function selectThreatTarget(
   threat: NpcThreatState | undefined,
   now: number = nowMs(),
-  isValidTarget: (entityId: string) => boolean,
+  validateTarget: (entityId: string) => { ok: boolean; reason?: string },
 ): { targetId?: string; nextThreat?: NpcThreatState } {
   if (!threat) return { targetId: undefined, nextThreat: threat };
 
@@ -239,7 +246,8 @@ export function selectThreatTarget(
   const forcedActive = !!forcedId && typeof forcedUntil === "number" && now < forcedUntil;
 
   if (forcedActive && forcedId) {
-    if (isValidTarget(forcedId)) {
+    const v = validateTarget(forcedId);
+    if (v.ok) {
       return { targetId: forcedId, nextThreat: threat };
     }
 
@@ -247,6 +255,11 @@ export function selectThreatTarget(
     next = { ...threat };
     delete (next as any).forcedTargetEntityId;
     delete (next as any).forcedUntil;
+
+    // Breadcrumb for debugging: explain why the forced window ended early.
+    (next as any).forcedClearedAt = now;
+    (next as any).forcedClearedReason = String(v.reason ?? "invalid");
+    (next as any).forcedClearedTargetEntityId = forcedId;
   }
 
   const table = (next?.threatByEntityId ?? {}) as Record<string, number>;
@@ -256,10 +269,10 @@ export function selectThreatTarget(
     .sort((a, b) => b.v - a.v);
 
   for (const e of entries) {
-    if (isValidTarget(e.id)) return { targetId: e.id, nextThreat: next };
+    if (validateTarget(e.id).ok) return { targetId: e.id, nextThreat: next };
   }
 
-  if (next?.lastAttackerEntityId && isValidTarget(next.lastAttackerEntityId)) {
+  if (next?.lastAttackerEntityId && validateTarget(next.lastAttackerEntityId).ok) {
     return { targetId: next.lastAttackerEntityId, nextThreat: next };
   }
 

@@ -26,6 +26,9 @@ type WatchEntry = {
   roomId: string;
   npcEntityId?: string; // if omitted, watch all NPCs in the room
   intervalMs: number;
+
+  // Per-watch de-dupe so we only print forced-clear breadcrumbs once.
+  lastForcedClearedAtByNpc?: Record<string, number>;
 };
 
 // One watcher per session.
@@ -114,6 +117,8 @@ function startWatchForSession(ctx: any, sessionId: string, roomId: string, npcEn
 
   const safeMs = Math.max(50, Math.min(5000, Math.floor(intervalMs)));
 
+  const lastForcedClearedAtByNpc: Record<string, number> = {};
+
   const timer = setInterval(() => {
     try {
       const session = (ctx?.sessions as any)?.get?.(sessionId) ?? ctx?.session;
@@ -157,7 +162,18 @@ function startWatchForSession(ctx: any, sessionId: string, roomId: string, npcEn
             ? Math.max(0, Math.floor(threat.forcedUntil - now))
             : 0;
         const forcedTxt = forcedRem > 0 ? ` forced=${String(threat!.forcedTargetEntityId).slice(0, 8)}(${forcedRem}ms)` : "";
-        send(`[debug][threat][watch] ${entityLabel(npc)} top=${top ? String(top).slice(0, 8) : "(none)"}${forcedTxt}`);
+
+        let clearedTxt = "";
+        const clearedAt = typeof (threat as any)?.forcedClearedAt === "number" ? (threat as any).forcedClearedAt : 0;
+        const lastSeen = lastForcedClearedAtByNpc[String(npc.id)] ?? 0;
+        if (clearedAt > 0 && clearedAt !== lastSeen) {
+          lastForcedClearedAtByNpc[String(npc.id)] = clearedAt;
+          const why = String((threat as any)?.forcedClearedReason ?? "invalid");
+          const who = String((threat as any)?.forcedClearedTargetEntityId ?? "").slice(0, 8);
+          clearedTxt = ` cleared=${who || "?"}(${why})`;
+        }
+
+        send(`[debug][threat][watch] ${entityLabel(npc)} top=${top ? String(top).slice(0, 8) : "(none)"}${forcedTxt}${clearedTxt}`);
         return;
       }
 
@@ -170,7 +186,12 @@ function startWatchForSession(ctx: any, sessionId: string, roomId: string, npcEn
           !!threat?.forcedTargetEntityId &&
           typeof threat?.forcedUntil === "number" &&
           now < (threat?.forcedUntil ?? 0);
-        parts.push(`${String(npc.name ?? "NPC")}:${top ? String(top).slice(0, 8) : "-"}${forcedActive ? "!" : ""}`);
+        const clearedAt = typeof (threat as any)?.forcedClearedAt === "number" ? (threat as any).forcedClearedAt : 0;
+        const lastSeen = lastForcedClearedAtByNpc[String(npc.id)] ?? 0;
+        const hasNewCleared = clearedAt > 0 && clearedAt !== lastSeen;
+        if (hasNewCleared) lastForcedClearedAtByNpc[String(npc.id)] = clearedAt;
+
+        parts.push(`${String(npc.name ?? "NPC")}:${top ? String(top).slice(0, 8) : "-"}${forcedActive ? "!" : ""}${hasNewCleared ? "~" : ""}`);
       }
       send(`[debug][threat][watch] ${parts.join(" ")}`);
     } catch {
@@ -178,7 +199,7 @@ function startWatchForSession(ctx: any, sessionId: string, roomId: string, npcEn
     }
   }, safeMs);
 
-  WATCHERS.set(sessionId, { timer, roomId, npcEntityId, intervalMs: safeMs });
+  WATCHERS.set(sessionId, { timer, roomId, npcEntityId, intervalMs: safeMs, lastForcedClearedAtByNpc });
   if (npcEntityId) return `[debug][threat] Watch started for ${String(npcEntityId).slice(0, 8)} every ${safeMs}ms.`;
   return `[debug][threat] Watch started for room NPCs every ${safeMs}ms.`;
 }
@@ -272,6 +293,9 @@ function formatThreatTable(threat: NpcThreatState | undefined, entitiesById: Map
     lastAttackerEntityId: threat?.lastAttackerEntityId ?? null,
     lastAggroAt: threat?.lastAggroAt ?? null,
     forced,
+    forcedClearedAt: (threat as any)?.forcedClearedAt ?? null,
+    forcedClearedReason: (threat as any)?.forcedClearedReason ?? null,
+    forcedClearedTargetEntityId: (threat as any)?.forcedClearedTargetEntityId ?? null,
     topTarget: getTopThreatTarget(threat, now) ?? null,
     rows,
   };
@@ -290,6 +314,11 @@ export function formatThreatReport(ctx: any, npcEntity: any, threat: NpcThreatSt
     lines.push(`forced: ${String(snap.forced.entityId).slice(0, 8)} until=${snap.forced.until}`);
   } else {
     lines.push(`forced: (none)`);
+  }
+  if (snap.forcedClearedAt && snap.forcedClearedTargetEntityId) {
+    lines.push(
+      `forcedCleared: ${String(snap.forcedClearedTargetEntityId).slice(0, 8)} at=${snap.forcedClearedAt} why=${String(snap.forcedClearedReason ?? "invalid")}`,
+    );
   }
   lines.push(`top: ${snap.topTarget ? String(snap.topTarget).slice(0, 8) : "(none)"}`);
   lines.push(`lastAttacker: ${snap.lastAttackerEntityId ? String(snap.lastAttackerEntityId).slice(0, 8) : "(none)"}`);

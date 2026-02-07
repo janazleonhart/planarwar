@@ -983,16 +983,18 @@ export class NpcManager {
 
         const sel = selectThreatTarget(threat, now, (id) => {
           const e = byId.get(String(id));
-          if (!e) return false;
-          if (e.alive === false) return false;
-          if (typeof e.hp === "number" && e.hp <= 0) return false;
+          if (!e) return { ok: false, reason: "missing" };
+          if (e.alive === false) return { ok: false, reason: "dead" };
+          if (typeof e.hp === "number" && e.hp <= 0) return { ok: false, reason: "dead" };
 
           const t = String(e.type ?? "");
           if (t === "player" || t === "character") {
             const active = getActiveStatusEffectsForEntity(e as any, now);
-            if (active.some((se: any) => Array.isArray(se?.tags) && se.tags.includes("stealth"))) return false;
+            if (active.some((se: any) => Array.isArray(se?.tags) && se.tags.includes("stealth"))) {
+              return { ok: false, reason: "stealth" };
+            }
           }
-          return true;
+          return { ok: true };
         });
 
         topThreatId = sel.targetId;
