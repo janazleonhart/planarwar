@@ -1644,7 +1644,7 @@ function computeAssistSeedThreat(baseSeedThreat: number, proto: any, ent: any): 
 
 function isStealthedPlayerEntity(entity: any, now: number): boolean {
   try {
-    if (!entity || entity.type !== "player") return false;
+    if (!entity || (entity.type !== "player" && entity.type !== "character")) return false;
     const active = getActiveStatusEffectsForEntity(entity as any, now);
     return active.some((e: any) => Array.isArray(e?.tags) && e.tags.includes("stealth"));
   } catch {
@@ -2113,6 +2113,16 @@ function doAssistScan(
           })
           .slice(0, maxShared);
         for (const [tid, v] of entries) {
+          // Shared-target visibility/stealth gating:
+          // - don't seed dead/out-of-room entities
+          // - don't seed stealthed player targets (prevents social-ESP)
+          const targetEnt = (ctx as any)?.entities?.get ? (ctx as any).entities.get(tid) : null;
+          if (!targetEnt) continue;
+          if (isDeadEntity(targetEnt as any)) continue;
+          const targetRoomId = (targetEnt as any).roomId;
+          if (targetRoomId && targetRoomId !== roomId) continue;
+          if (isStealthedPlayerEntity(targetEnt as any, now)) continue;
+
           const amt = Math.max(1, Math.floor((v as number) * sharePct));
           ctx.npcs.recordDamage(id, tid, amt);
         }

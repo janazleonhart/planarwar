@@ -4,6 +4,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { tryAssistNearbyNpcs } from "../combat/NpcCombat";
+import { applyStatusEffectToEntity } from "../combat/StatusEffects";
 
 type FakeNpcState = {
   protoId: string;
@@ -43,14 +44,15 @@ test("[contract] NpcCombat: assist seeds weighted threat share from ally threat 
 
       const roomId = "room:1";
       const room: any = {
-        entityIds: ["npc.a", "npc.guard", "char.1", "char.2"],
+        entityIds: ["npc.a", "npc.guard", "char.1", "char.2", "char.3"],
         broadcast() {},
       };
       const rooms = new Map<string, any>([[roomId, room]]);
 
       // players
-      entities.set("char.1", { id: "char.1", type: "character", alive: true });
-      entities.set("char.2", { id: "char.2", type: "character", alive: true });
+      entities.set("char.1", { id: "char.1", type: "player", alive: true });
+      entities.set("char.2", { id: "char.2", type: "player", alive: true });
+      entities.set("char.3", { id: "char.3", type: "player", alive: true });
 
       // ally being attacked
       entities.set("npc.a", { id: "npc.a", type: "npc", alive: true, name: "Goblin" });
@@ -60,7 +62,7 @@ test("[contract] NpcCombat: assist seeds weighted threat share from ally threat 
         roomId,
         threat: {
           lastAggroAt: Date.now(),
-          threatByEntityId: { "char.1": 10, "char.2": 6 },
+          threatByEntityId: { "char.1": 10, "char.3": 9, "char.2": 6 },
         },
       });
 
@@ -94,6 +96,16 @@ test("[contract] NpcCombat: assist seeds weighted threat share from ally threat 
       };
 
       const now = Date.now();
+
+      // Make char.3 stealthed so shared-threat seeding must skip it.
+      applyStatusEffectToEntity(entities.get("char.3"), {
+        id: "test_stealth",
+        name: "Stealth",
+        tags: ["stealth"],
+        durationMs: 60_000,
+        stacks: 1,
+        modifiers: {},
+      }, now);
 
       // base seedThreat=4 -> guard scaling 2x => 8 (top target)
       // plus share: char.2 threat 6 * 0.25 => floor 1 => min 1
