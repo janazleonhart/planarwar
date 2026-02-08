@@ -8743,6 +8743,24 @@
       "path": "worldcore/test/statusEffects.contract.test.ts",
       "provides": []
     },
+    "test.contractCastSpellEngageStateLawDeniesNoCostCooldown": {
+      "kind": "test",
+      "service": "worldcore",
+      "path": "worldcore/test/contract_castSpell_engageStateLawDenies_noCostCooldown.test.ts",
+      "lifecycle": "active",
+      "dependsOn": [
+        "mud.spells",
+        "combat.targeting",
+        "combat.serviceProtection"
+      ],
+      "provides": [
+        "contract.test"
+      ],
+      "owns": [],
+      "notes": [
+        "Engage State Law v1: out-of-room/protected/dead denies occur before cost/cooldowns."
+      ]
+    },
     "test.utils": {
       "dependsOn": [],
       "functions": [
