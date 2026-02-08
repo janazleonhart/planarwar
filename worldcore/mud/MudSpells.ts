@@ -1160,6 +1160,7 @@ applyStatusEffect(res.char, {
     }
 
     case "debuff_single_npc":
+    case "dot_single_npc":
     case "damage_dot_single_npc": {
       const targetName = targetRaw || "rat";
       const npc = resolveTargetInRoom(ctx.entities as any, roomId, targetName, {

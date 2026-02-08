@@ -2387,15 +2387,15 @@
       ]
     },
     "infra.schema.066_server_events_v1": {
-      "kind": "schema_migration",
-      "path": "worldcore/infra/schema/066_server_events_v1.sql",
       "dependsOn": [],
-      "provides": [
-        "DB tables: server_events, server_event_effects."
-      ],
+      "kind": "schema_migration",
       "notes": [
         "Creates persisted server events (server_events) and their effects (server_event_effects).",
         "ServerEvents runtime syncs active events into server_buffs (currently only effect_kind=grant_server_buff)."
+      ],
+      "path": "worldcore/infra/schema/066_server_events_v1.sql",
+      "provides": [
+        "DB tables: server_events, server_event_effects."
       ]
     },
     "infra.schemaIgnoreJson": {
@@ -3622,8 +3622,6 @@
       "path": "worldcore/mud/commands/debug/serverBuffCommand.ts"
     },
     "mud.commands.debug.serverEventCommand": {
-      "kind": "mud_command_group",
-      "path": "worldcore/mud/commands/debug/serverEventCommand.ts",
       "dependsOn": [
         "mud.context",
         "status.serverEvents"
@@ -3634,12 +3632,14 @@
       "invokedBy": [
         "mud.commands.debug.serverevent (via mud/commands/registry.ts)"
       ],
-      "provides": [
-        "Admin/debug command to manage persisted server events and their effects."
-      ],
+      "kind": "mud_command_group",
       "notes": [
         "Subcommands: list/add/enable/disable/effect_add_buff/effect_del/delete/reload.",
         "reload clears runtime cache so next tick will re-sync events."
+      ],
+      "path": "worldcore/mud/commands/debug/serverEventCommand.ts",
+      "provides": [
+        "Admin/debug command to manage persisted server events and their effects."
       ]
     },
     "mud.commands.debug.vulnerability": {
@@ -5962,6 +5962,50 @@
         "CRUD for persisted server buffs used by status.serverBuffs."
       ]
     },
+    "status.serverEvents": {
+      "dependsOn": [
+        "core.entities",
+        "core.sessions",
+        "status.serverBuffs",
+        "status.serverEvents.db"
+      ],
+      "functions": [
+        "syncServerEventsToRuntime",
+        "resetServerEventsRuntimeCache"
+      ],
+      "kind": "service",
+      "notes": [
+        "A lightweight programmable 'server events' layer (weekend buffs, donation perks, scheduled boosts).",
+        "v0 supports effect_kind=grant_server_buff only; future can add set_server_kv and recurrence rules."
+      ],
+      "path": "worldcore/status/ServerEvents.ts",
+      "provides": [
+        "Heartbeat-driven synchronization of active server events into persisted server_buffs."
+      ]
+    },
+    "status.serverEvents.db": {
+      "class": "PostgresServerEventService",
+      "dependsOn": [
+        "db.main"
+      ],
+      "functions": [
+        "listActive",
+        "upsertEvent",
+        "setEnabled",
+        "deleteEvent",
+        "addEffect",
+        "deleteEffect"
+      ],
+      "kind": "service",
+      "notes": [
+        "Postgres-backed server event store (server_events + server_event_effects).",
+        "Designed to be safe under `node --test` by lazy-loading DB module similar to other Postgres* services."
+      ],
+      "path": "worldcore/status/PostgresServerEventService.ts",
+      "provides": [
+        "CRUD + active-window query for persisted server events and effects."
+      ]
+    },
     "status.serverKv.db": {
       "class": "PostgresServerKvService",
       "dependsOn": [
@@ -5981,50 +6025,6 @@
       "path": "worldcore/status/PostgresServerKvService.ts",
       "provides": [
         "Server-level JSONB KV store (server_state_kv)."
-      ]
-    },
-    "status.serverEvents.db": {
-      "kind": "service",
-      "class": "PostgresServerEventService",
-      "path": "worldcore/status/PostgresServerEventService.ts",
-      "dependsOn": [
-        "db.main"
-      ],
-      "functions": [
-        "listActive",
-        "upsertEvent",
-        "setEnabled",
-        "deleteEvent",
-        "addEffect",
-        "deleteEffect"
-      ],
-      "provides": [
-        "CRUD + active-window query for persisted server events and effects."
-      ],
-      "notes": [
-        "Postgres-backed server event store (server_events + server_event_effects).",
-        "Designed to be safe under `node --test` by lazy-loading DB module similar to other Postgres* services."
-      ]
-    },
-    "status.serverEvents": {
-      "kind": "service",
-      "path": "worldcore/status/ServerEvents.ts",
-      "dependsOn": [
-        "core.entities",
-        "core.sessions",
-        "status.serverBuffs",
-        "status.serverEvents.db"
-      ],
-      "functions": [
-        "syncServerEventsToRuntime",
-        "resetServerEventsRuntimeCache"
-      ],
-      "provides": [
-        "Heartbeat-driven synchronization of active server events into persisted server_buffs."
-      ],
-      "notes": [
-        "A lightweight programmable 'server events' layer (weekend buffs, donation perks, scheduled boosts).",
-        "v0 supports effect_kind=grant_server_buff only; future can add set_server_kv and recurrence rules."
       ]
     },
     "strategy.regionService": {
@@ -8038,6 +8038,24 @@
       "path": "worldcore/test/contract_debugThreat_watch_set.test.ts",
       "provides": []
     },
+    "test.contract_dotSingleNpcAlias": {
+      "class": null,
+      "ctorArgs": [],
+      "dependsOn": [
+        "test.utils",
+        "mud.spells",
+        "combat.statusEffects"
+      ],
+      "kind": "test",
+      "lifecycle": "test",
+      "notes": [
+        "Contract: legacy spell kind dot_single_npc behaves as alias of damage_dot_single_npc (NPC DOT installs + ticks)."
+      ],
+      "owns": [],
+      "path": "worldcore/test/contract_dotSingleNpcAlias.test.ts",
+      "provides": [],
+      "service": "test.contract"
+    },
     "test.contract_nearbyHandles_resolution": {
       "class": null,
       "ctorArgs": [],
@@ -8072,6 +8090,26 @@
       "path": "worldcore/test/contract_npcCombat_assist_threatShare.test.ts",
       "provides": []
     },
+    "test.contract_npcDebuffDotAbilities": {
+      "class": null,
+      "ctorArgs": [],
+      "dependsOn": [
+        "mud.abilities",
+        "abilities.types",
+        "combat.statusEffects",
+        "core.tickEngine"
+      ],
+      "kind": "test",
+      "lifecycle": "test",
+      "notes": [
+        "Contract: ability-kind debuffs and DOTs can apply StatusEffects to NPC entities and tick via tickEntityStatusEffectsAndApplyDots.",
+        "Locks in the shared seam so future ability work doesn't regress NPC debuff/DOT behavior."
+      ],
+      "owns": [],
+      "path": "worldcore/test/contract_npcDebuffDotAbilities.test.ts",
+      "provides": [],
+      "service": "test.contract"
+    },
     "test.contract_npcDebuffsAndDots": {
       "class": null,
       "ctorArgs": [],
@@ -8091,26 +8129,6 @@
       ],
       "owns": [],
       "path": "worldcore/test/contract_npcDebuffsAndDots.test.ts",
-      "provides": [],
-      "service": "test.contract"
-    },
-    "test.contract_npcDebuffDotAbilities": {
-      "class": null,
-      "ctorArgs": [],
-      "dependsOn": [
-        "mud.abilities",
-        "abilities.types",
-        "combat.statusEffects",
-        "core.tickEngine"
-      ],
-      "kind": "test",
-      "lifecycle": "test",
-      "notes": [
-        "Contract: ability-kind debuffs and DOTs can apply StatusEffects to NPC entities and tick via tickEntityStatusEffectsAndApplyDots.",
-        "Locks in the shared seam so future ability work doesn't regress NPC debuff/DOT behavior." 
-      ],
-      "owns": [],
-      "path": "worldcore/test/contract_npcDebuffDotAbilities.test.ts",
       "provides": [],
       "service": "test.contract"
     },
@@ -8373,6 +8391,23 @@
       ],
       "service": "test"
     },
+    "test.contract_trainSystem_softLeash": {
+      "class": "contract",
+      "ctorArgs": [],
+      "dependsOn": [
+        "worldcore/core/EntityManager",
+        "worldcore/npc/NpcManager"
+      ],
+      "id": "test.contract_trainSystem_softLeash",
+      "kind": "test",
+      "lifecycle": "stable",
+      "owns": [],
+      "path": "worldcore/test/contract_trainSystem_softLeash.test.ts",
+      "provides": [
+        "trainSystem.v0.contracts"
+      ],
+      "service": "worldcore"
+    },
     "test.contract_trainingDummySafety": {
       "class": "(test) contract_trainingDummySafety",
       "ctorArgs": [],
@@ -8604,23 +8639,6 @@
       "owns": [],
       "path": "worldcore/test/statusEffects.contract.test.ts",
       "provides": []
-    },
-    "test.contract_trainSystem_softLeash": {
-      "class": "contract",
-      "ctorArgs": [],
-      "dependsOn": [
-        "worldcore/core/EntityManager",
-        "worldcore/npc/NpcManager"
-      ],
-      "id": "test.contract_trainSystem_softLeash",
-      "kind": "test",
-      "lifecycle": "stable",
-      "owns": [],
-      "path": "worldcore/test/contract_trainSystem_softLeash.test.ts",
-      "provides": [
-        "trainSystem.v0.contracts"
-      ],
-      "service": "worldcore"
     },
     "test.utils": {
       "dependsOn": [],
