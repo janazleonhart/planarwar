@@ -41,6 +41,7 @@ import {
 
 import { recordNpcCrimeAgainst, isProtectedNpc } from "./NpcCrime";
 import { isServiceProtectedNpcProto } from "../combat/ServiceProtection";
+import { isValidCombatTarget } from "../combat/CombatTargeting";
 import { clearAllStatusEffectsFromEntity, getActiveStatusEffectsForEntity } from "../combat/StatusEffects";
 import { handleNpcDeath } from "../combat/NpcDeathPipeline";
 
@@ -1056,17 +1057,17 @@ export class NpcManager {
           if (!e && trainCfg.enabled && trainCfg.roomsEnabled) {
             e = this.entities.get(String(id));
           }
-          if (!e) return { ok: false, reason: "missing" };
-          if (e.alive === false) return { ok: false, reason: "dead" };
-          if (typeof e.hp === "number" && e.hp <= 0) return { ok: false, reason: "dead" };
 
-          const t = String(e.type ?? "");
-          if (t === "player" || t === "character") {
-            const active = getActiveStatusEffectsForEntity(e as any, now);
-            if (active.some((se: any) => Array.isArray(se?.tags) && se.tags.includes("stealth"))) {
-              return { ok: false, reason: "stealth" };
-            }
-          }
+          const allowCrossRoom = trainCfg.enabled && trainCfg.roomsEnabled;
+          const v = isValidCombatTarget({
+            now,
+            attacker: npcEntity as any,
+            target: e as any,
+            attackerRoomId: roomId,
+            allowCrossRoom,
+          });
+          if (!v.ok) return { ok: false, reason: v.reason };
+
           return { ok: true };
         });
 
@@ -1380,6 +1381,27 @@ export class NpcManager {
     const sessionManager = sessions ?? this.sessions;
     const target = this.entities.get(targetEntityId) as any;
     if (!target || target.type !== "player") {
+      return;
+    }
+
+    // Engage State Law v1: central target validity (stealth/protected/out-of-room).
+    const now = this._tickNow || Date.now();
+    const trainCfg = readTrainConfig();
+    const allowCrossRoom = trainCfg.enabled && trainCfg.roomsEnabled;
+
+    const v = isValidCombatTarget({
+      now,
+      attacker: npcEntity as any,
+      target: target as any,
+      attackerRoomId: roomId,
+      allowCrossRoom,
+    });
+    if (!v.ok) {
+      return;
+    }
+
+    // Even when room pursuit is enabled, melee swings still require same-room presence.
+    if (String(target.roomId ?? "") !== String(roomId ?? "")) {
       return;
     }
 

@@ -970,6 +970,23 @@
       "provides": [],
       "service": "combat"
     },
+    "combat.targeting": {
+      "dependsOn": [
+        "combat.statusEffects",
+        "combat.serviceProtection",
+        "shared.entities"
+      ],
+      "functions": [
+        "isValidCombatTarget"
+      ],
+      "kind": "utility",
+      "lifecycle": "active",
+      "notes": [
+        "Engage State Law v1: shared combat target validity rules (stealth/protected/out-of-room).",
+        "Used by npc.manager and future command/combat glue to prevent drift."
+      ],
+      "path": "worldcore/combat/CombatTargeting.ts"
+    },
     "combat.vulnerability": {
       "dependsOn": [
         "characters.types",
@@ -4893,7 +4910,8 @@
         "combat.entityCombat",
         "classes.definitions",
         "utils.logger",
-        "combat.damagePolicy"
+        "combat.damagePolicy",
+        "combat.targeting"
       ],
       "kind": "service",
       "notes": [
@@ -6679,6 +6697,19 @@
         "Locks CombatLog direct spell damage formatting to match DOT/HOT tick style and canonical prefix."
       ],
       "path": "worldcore/test/contract_combatLog_directSpellDamage_consistent.test.ts"
+    },
+    "test.contractCombatTargetingEngageStateLawV1": {
+      "dependsOn": [
+        "combat.targeting",
+        "combat.statusEffects",
+        "core.entities"
+      ],
+      "kind": "test",
+      "lifecycle": "active",
+      "notes": [
+        "Contracts for Engage State Law v1 validity helper."
+      ],
+      "path": "worldcore/test/contract_combatTargeting_engageStateLaw_v1.test.ts"
     },
     "test.contractCommonClassKitsL1_10": {
       "dependsOn": [
