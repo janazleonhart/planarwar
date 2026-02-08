@@ -59,6 +59,33 @@ function envNumber(name: string, fallback: number): number {
   return Number.isFinite(n) ? n : fallback;
 }
 
+function envBool(name: string, fallback: boolean): boolean {
+  const raw = String((process.env as any)?.[name] ?? "").trim().toLowerCase();
+  if (!raw) return fallback;
+  if (raw === "1" || raw === "true" || raw === "yes" || raw === "on") return true;
+  if (raw === "0" || raw === "false" || raw === "no" || raw === "off") return false;
+  return fallback;
+}
+
+type TrainConfig = {
+  enabled: boolean;
+  step: number;
+  softLeash: number;
+  hardLeash: number;
+  pursueTimeoutMs: number;
+};
+
+function readTrainConfig(): TrainConfig {
+  return {
+    enabled: envBool("PW_TRAIN_ENABLED", false),
+    step: Math.max(0, envNumber("PW_TRAIN_STEP", 1.5)),
+    softLeash: Math.max(0, envNumber("PW_TRAIN_SOFT_LEASH", 25)),
+    hardLeash: Math.max(0, envNumber("PW_TRAIN_HARD_LEASH", 40)),
+    pursueTimeoutMs: Math.max(0, Math.floor(envNumber("PW_TRAIN_PURSUE_TIMEOUT_MS", 20000))),
+  };
+}
+
+
 // Prevent taunt spam-lock; during this window, new taunts from OTHER entities are ignored.
 const PW_TAUNT_IMMUNITY_MS = Math.max(0, Math.floor(envNumber("PW_TAUNT_IMMUNITY_MS", 0)));
 
@@ -603,7 +630,7 @@ export class NpcManager {
         threat,
         attackerEntityId,
         amt,
-        now,
+        now
       );
     }
     this.npcThreat.set(targetEntityId, threat);
@@ -1063,6 +1090,52 @@ export class NpcManager {
         lastAttackerId: threat?.lastAttackerEntityId,
       };
 
+      // ---------------------------------------------------------------------
+      // Train System v0 (same-room pursuit) – proactive chase before brain decisions.
+      //
+      // Rationale: many NPC brains (e.g. passive critters) will not choose "attack_entity"
+      // even when they have threat, but the Train system should still allow pursuit
+      // when enabled (contracts rely on this for deterministic movement).
+      // ---------------------------------------------------------------------
+      try {
+        const cfg = readTrainConfig();
+        if (cfg.enabled && topThreatId) {
+          const targetEnt = this.entities.get(topThreatId) as any;
+          if (targetEnt && (targetEnt.type === "player" || targetEnt.type === "character")) {
+            const npcX = typeof npcEntity.x === "number" ? npcEntity.x : 0;
+            const npcZ = typeof npcEntity.z === "number" ? npcEntity.z : 0;
+            const tgtX = typeof targetEnt.x === "number" ? targetEnt.x : 0;
+            const tgtZ = typeof targetEnt.z === "number" ? targetEnt.z : 0;
+
+            const dx = npcX - tgtX;
+            const dz = npcZ - tgtZ;
+            const distSq = dx * dx + dz * dz;
+
+            const MELEE_RANGE = 4;
+            if (distSq > MELEE_RANGE * MELEE_RANGE) {
+              const didChase = this.maybeTrainChase({
+                npcId: entityId,
+                st,
+                npcEntity,
+                targetEntity: targetEnt,
+                roomId,
+                now,
+                cfg,
+                sessions: activeSessions,
+              });
+
+              if (didChase) {
+                // If chase logic ran (move or disengage), skip brain decision this tick.
+                continue;
+              }
+            }
+          }
+        }
+      } catch {
+        // Train is best-effort; never break NPC updates because of it.
+      }
+
+
       // --- HARD OVERRIDE for cowards: flee when hurt, no debate ---
       if (
         behavior === "coward" &&
@@ -1283,6 +1356,7 @@ export class NpcManager {
     if (!target || target.type !== "player") {
       return;
     }
+    const now = Date.now();
 
     const isGuard = behavior === "guard";
     const isCoward =
@@ -1361,18 +1435,40 @@ export class NpcManager {
     }
 
     // AIv2 melee range gate: prevent global-room sniping.
-    // If the target is outside melee range, skip this tick (future: chase/train).
-    const npcX = typeof npcEntity.x === "number" ? npcEntity.x : 0;
-    const npcZ = typeof npcEntity.z === "number" ? npcEntity.z : 0;
-    const tgtX = typeof target.x === "number" ? target.x : 0;
-    const tgtZ = typeof target.z === "number" ? target.z : 0;
-    const dx = npcX - tgtX;
-    const dz = npcZ - tgtZ;
-    const distSq = dx * dx + dz * dz;
-    const MELEE_RANGE = 4;
-    if (distSq > MELEE_RANGE * MELEE_RANGE) {
-      return;
-    }
+// If the target is outside melee range, we either chase (Train System v0)
+// or skip this tick (classic behavior).
+const npcX = typeof npcEntity.x === "number" ? npcEntity.x : 0;
+const npcY = typeof npcEntity.y === "number" ? npcEntity.y : 0;
+const npcZ = typeof npcEntity.z === "number" ? npcEntity.z : 0;
+const tgtX = typeof target.x === "number" ? target.x : 0;
+const tgtY = typeof target.y === "number" ? target.y : 0;
+const tgtZ = typeof target.z === "number" ? target.z : 0;
+const dx = npcX - tgtX;
+const dz = npcZ - tgtZ;
+const distSq = dx * dx + dz * dz;
+const MELEE_RANGE = 4;
+
+if (distSq > MELEE_RANGE * MELEE_RANGE) {
+  const cfg = readTrainConfig();
+  if (cfg.enabled) {
+    const didChase = this.maybeTrainChase({
+      npcId,
+      st,
+      npcEntity,
+      targetEntity: target,
+      roomId,
+      now,
+      cfg,
+      sessions: sessionManager,
+    });
+
+    // If chase logic ran (move or disengage), do not continue into melee attack.
+    if (didChase) return;
+  }
+
+  // Classic behavior: no chasing.
+  return;
+}
 
     if (isGuard) {
       this.maybeCallGuardHelp(
@@ -1431,7 +1527,117 @@ export class NpcManager {
     }
   }
 
-  /**
+  
+  // -------------------------------------------------------------------------
+  // Train System v0 (same-room pursuit + soft/hard leash)
+  // -------------------------------------------------------------------------
+
+  private maybeTrainChase(args: {
+    npcId: string;
+    st: NpcRuntimeState;
+    npcEntity: any;
+    targetEntity: any;
+    roomId: string;
+    now: number;
+    cfg: TrainConfig;
+    sessions?: SessionManager;
+  }): boolean {
+    const { npcId, st, npcEntity, targetEntity: target, roomId, now, cfg, sessions } = args;
+
+    // Same-room only for v0.
+    const targetRoom = String((target as any).roomId ?? (target as any).roomKey ?? "");
+    if (targetRoom && targetRoom !== roomId) return false;
+
+    const npcX = typeof npcEntity.x === "number" ? npcEntity.x : 0;
+    const npcY = typeof npcEntity.y === "number" ? npcEntity.y : 0;
+    const npcZ = typeof npcEntity.z === "number" ? npcEntity.z : 0;
+
+    const tgtX = typeof target.x === "number" ? target.x : 0;
+    const tgtY = typeof target.y === "number" ? target.y : 0;
+    const tgtZ = typeof target.z === "number" ? target.z : 0;
+
+    const dx = tgtX - npcX;
+    const dz = tgtZ - npcZ;
+    const dist = Math.sqrt(dx * dx + dz * dz);
+
+    // If we're already close enough, nothing to do.
+    const MELEE_RANGE = 4;
+    if (dist <= MELEE_RANGE) return false;
+
+    const spawnX = typeof (npcEntity as any).spawnX === "number" ? (npcEntity as any).spawnX : npcX;
+    const spawnY = typeof (npcEntity as any).spawnY === "number" ? (npcEntity as any).spawnY : npcY;
+    const spawnZ = typeof (npcEntity as any).spawnZ === "number" ? (npcEntity as any).spawnZ : npcZ;
+
+    const sdx = npcX - spawnX;
+    const sdz = npcZ - spawnZ;
+    const distFromSpawn = Math.sqrt(sdx * sdx + sdz * sdz);
+
+    // Optional pursue timeout: if the NPC has been chasing too long, disengage.
+    const chaseStart = typeof (npcEntity as any).trainPursueStartAt === "number"
+      ? Number((npcEntity as any).trainPursueStartAt)
+      : 0;
+
+    if (!chaseStart) (npcEntity as any).trainPursueStartAt = now;
+
+    if (cfg.pursueTimeoutMs > 0) {
+      const started = chaseStart || now;
+      if (now - started > cfg.pursueTimeoutMs) {
+        return this.trainDisengageAndSnapback(npcId, st, npcEntity, roomId, spawnX, spawnY, spawnZ);
+      }
+    }
+
+    // Hard leash: disengage if too far from spawn.
+    if (cfg.hardLeash > 0 && distFromSpawn > cfg.hardLeash) {
+      return this.trainDisengageAndSnapback(npcId, st, npcEntity, roomId, spawnX, spawnY, spawnZ);
+    }
+
+    // Soft leash factor: slow down as we approach hard leash.
+    let factor = 1;
+    if (cfg.softLeash > 0 && cfg.hardLeash > cfg.softLeash && distFromSpawn > cfg.softLeash) {
+      const t = (distFromSpawn - cfg.softLeash) / (cfg.hardLeash - cfg.softLeash);
+      factor = Math.max(0.15, 1 - t);
+    }
+
+    const step = cfg.step * factor;
+    if (step <= 0) return false;
+
+    // Move toward target (XZ plane). Keep Y stable for now.
+    const inv = dist > 0 ? 1 / dist : 0;
+    const nx = npcX + dx * inv * step;
+    const nz = npcZ + dz * inv * step;
+
+    this.entities.setPosition(npcId, nx, npcY, nz);
+
+    // Mark that train chase ran for debugging/tests.
+    (npcEntity as any).trainChasing = true;
+    return true;
+  }
+
+  private trainDisengageAndSnapback(
+    npcId: string,
+    st: NpcRuntimeState,
+    npcEntity: any,
+    roomId: string,
+    spawnX: number,
+    spawnY: number,
+    spawnZ: number,
+  ): boolean {
+    // Clear threat + combat flags
+    this.npcThreat.set(npcId, {});
+    (npcEntity as any).inCombat = false;
+    (npcEntity as any).trainChasing = false;
+    (npcEntity as any).trainPursueStartAt = 0;
+
+    // Snap back to spawn coords
+    this.entities.setPosition(npcId, spawnX, spawnY, spawnZ);
+
+    // Keep runtime state in sync
+    st.roomId = roomId;
+
+    return true;
+  }
+
+/**
    * Debug helper: return the raw threat state for an NPC entity id.
    *
    * Intentionally read-only; callers must not mutate the returned object.

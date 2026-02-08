@@ -8605,6 +8605,23 @@
       "path": "worldcore/test/statusEffects.contract.test.ts",
       "provides": []
     },
+    "test.contract_trainSystem_softLeash": {
+      "class": "contract",
+      "ctorArgs": [],
+      "dependsOn": [
+        "worldcore/core/EntityManager",
+        "worldcore/npc/NpcManager"
+      ],
+      "id": "test.contract_trainSystem_softLeash",
+      "kind": "test",
+      "lifecycle": "stable",
+      "owns": [],
+      "path": "worldcore/test/contract_trainSystem_softLeash.test.ts",
+      "provides": [
+        "trainSystem.v0.contracts"
+      ],
+      "service": "worldcore"
+    },
     "test.utils": {
       "dependsOn": [],
       "functions": [
