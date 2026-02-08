@@ -48,6 +48,7 @@ import {
   isServiceProtectedNpcProto,
   serviceProtectedCombatLine,
 } from "../combat/ServiceProtection";
+import { isValidCombatTarget } from "../combat/CombatTargeting";
 import { getNpcPrototype } from "../npc/NpcTypes";
 
 const log = Logger.scope("MUD_ABILITIES");
@@ -250,6 +251,22 @@ export async function handleAbilityCommand(
       });
 
       if (!npc) return `[world] No such target: '${targetRaw}'.`;
+
+      // Engage State Law v1: central target validity (protected/out-of-room/dead).
+      const now = Number((ctx as any).nowMs ?? Date.now());
+      const v = isValidCombatTarget({
+        now,
+        attacker: selfEntity as any,
+        target: npc as any,
+        attackerRoomId: roomId,
+        allowCrossRoom: false,
+      });
+      if (!v.ok) {
+        if (v.reason === "protected") return serviceProtectedCombatLine(npc.name);
+        if (v.reason === "out_of_room") return `[world] Target '${npc.name}' is not in this room.`;
+        if (v.reason === "dead") return `[world] Target '${npc.name}' is already dead.`;
+        return `[world] Invalid target: '${npc.name}'.`;
+      }
 
       // Service protection: deny BEFORE consuming cooldown/resources.
       if (isServiceProtectedNpcTarget(ctx, npc)) {

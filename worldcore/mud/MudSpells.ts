@@ -21,6 +21,7 @@ import {
 import { computeEffectiveAttributes } from "../characters/Stats";
 import { getItemTemplate } from "../items/ItemCatalog";
 import { computeDamage, type CombatSource, type CombatTarget } from "../combat/CombatEngine";
+import { isValidCombatTarget } from "../combat/CombatTargeting";
 import { applyCombatResultToPlayer, isDeadEntity, resurrectEntity, markInCombat } from "../combat/entityCombat";
 import { gatePlayerDamageFromPlayerEntity } from "./MudCombatGates";
 import { DUEL_SERVICE } from "../pvp/DuelService";
@@ -219,6 +220,7 @@ function resolvePlayerTargetInRoom(
   | { err: string } {
   if (!ctx.sessions) return { err: "[world] Sessions not available." };
   if (!ctx.entities) return { err: "[world] Entities not available." };
+  const now = Number((ctx as any).nowMs ?? Date.now());
 
   const token = String(targetTokenRaw ?? "").trim();
   if (!token) return { err: "[world] Usage: cast <spell> <target>" };
@@ -299,6 +301,24 @@ function resolvePlayerTargetInRoom(
 
     const targetChar = s?.character as CharacterState | undefined;
     if (!targetChar) return { err: `[world] Target '${displayName}' has no character state loaded.` };
+
+  // Engage State Law v1 validation (stealth/protected/out-of-room).
+  {
+    const v = isValidCombatTarget({
+      now,
+      attacker: selfEntity,
+      target: picked,
+      attackerRoomId: String(selfEntity?.roomId ?? roomId ?? ""),
+      allowCrossRoom: false,
+    });
+    if (!v.ok) {
+      if (v.reason === "stealth") return { err: "[world] You cannot see that target." };
+      if (v.reason === "protected") return { err: serviceProtectedCombatLine(displayName) };
+      if (v.reason === "out_of_room") return { err: "[world] That target is not here." };
+      if (v.reason === "dead") return { err: "[world] That target is dead." };
+      return { err: "[world] Invalid target." };
+    }
+  }
 
     return { sessionId: String(s.id ?? ""), displayName, char: targetChar, entity: picked };
   }
@@ -633,6 +653,25 @@ case "damage_single_npc": {
           }
         } catch {
           // Best-effort: never let policy lookup crash spell casting.
+        }
+      }
+
+      // Player path: Engage State Law v1 (stealth/protected/out-of-room) denies MUST be side-effect free.
+      if (playerTarget) {
+        const now = Number((ctx as any).nowMs ?? Date.now());
+        const v = isValidCombatTarget({
+          now,
+          attacker: selfEntity,
+          target: playerTarget,
+          attackerRoomId: String((selfEntity as any)?.roomId ?? ""),
+          allowCrossRoom: false,
+        });
+        if (!v.ok) {
+          if (v.reason === "stealth") return "[world] You cannot see that target.";
+          if (v.reason === "protected") return serviceProtectedCombatLine(playerTargetName);
+          if (v.reason === "out_of_room") return "[world] That target is not here.";
+          if (v.reason === "dead") return "[world] That target is dead.";
+          return "[world] Invalid target.";
         }
       }
 

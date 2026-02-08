@@ -3124,7 +3124,8 @@
         "targeting.resolver",
         "npc.types",
         "items.inventoryHelpers",
-        "mud.actions.combat"
+        "mud.actions.combat",
+        "combat.targeting"
       ],
       "kind": "service",
       "lifecycle": "stateless",
@@ -4842,7 +4843,8 @@
         "combat.damagePolicy",
         "characters.stats",
         "songs.songScaling",
-        "items.catalog"
+        "items.catalog",
+        "combat.targeting"
       ],
       "kind": "service",
       "lifecycle": "stateless",
@@ -6635,6 +6637,19 @@
       "path": "worldcore/test/contract_castSpell_preGates_noLeak.test.ts",
       "provides": [],
       "service": "test.contract"
+    },
+    "test.contractCastSpellStealthDeniesTargetNoCostCooldown": {
+      "dependsOn": [
+        "mud.spells",
+        "combat.targeting",
+        "combat.statusEffects"
+      ],
+      "kind": "test",
+      "lifecycle": "active",
+      "notes": [
+        "Engage State Law v1: spells cannot target stealthed players; denial is side-effect free."
+      ],
+      "path": "worldcore/test/contract_castSpell_stealthDeniesTarget_noCostCooldown.test.ts"
     },
     "test.contractCastingDeniedDoesNotConsumeCostOrCooldown": {
       "class": null,
