@@ -1711,6 +1711,43 @@ export function tryAssistNearbyNpcs(
   const allyThreat: any = (allySt as any).threat;
   const assistTarget = getAssistTargetForAlly(allyThreat, now, { windowMs: PW_ASSIST_AGGRO_WINDOW_MS, minTopThreat: PW_ASSIST_MIN_TOP_THREAT });
 
+  // Assist group throttle (Combat Glue v1.2):
+  // Prevent multi-ally cascades where several pack members all trigger assist scans in the same
+  // damage event and effectively multiply ally joins.
+  //
+  // Scope: throttles per *ally group* per tick ("tick" here is the `now` passed by the caller).
+  // This keeps behavior deterministic in tests (single `now`) and avoids time-window flakiness.
+  const groupThrottleEnabled = envBool("PW_ASSIST_GROUP_THROTTLE_ENABLED", true);
+  if (groupThrottleEnabled && assistTarget && assistTarget === attackerEntityId) {
+    try {
+      const allyProtoForGroup = getNpcPrototype(allySt.templateId) ?? getNpcPrototype(allySt.protoId);
+      const groupId = String(
+        (allyProtoForGroup as any)?.groupId ??
+          (allySt as any)?.groupId ??
+          (allyEnt as any)?.groupId ??
+          ""
+      ).trim();
+
+      if (groupId) {
+        const cacheKey = "_pwAssistGroupThrottle";
+        const anyCtx = ctx as any;
+        let m: Map<string, number> = anyCtx[cacheKey];
+        if (!m || !(m instanceof Map)) {
+          m = new Map<string, number>();
+          anyCtx[cacheKey] = m;
+        }
+
+        const prev = m.get(groupId);
+        if (typeof prev === "number" && prev === now) {
+          return 0;
+        }
+        m.set(groupId, now);
+      }
+    } catch {
+      // If something is weird about proto/state, fail open (assist still works).
+    }
+  }
+
   const ASSIST_COOLDOWN_MS = envInt("PW_ASSIST_COOLDOWN_MS", 4000);
   let radiusTiles = envInt("PW_ASSIST_RADIUS_TILES", 2);
   const enableCallsLine = envBool("PW_ASSIST_CALLS_LINE", true);
