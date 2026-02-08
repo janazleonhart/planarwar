@@ -795,7 +795,10 @@ export class NpcManager {
     const attacker = this.entities.get(attackerEntityId);
     const targetRoomId = opts.forceRoomId ?? attacker?.roomId ?? st.roomId;
 
-    const tickNow = (opts as any).tickNow ?? this._tickNow ?? 0;
+    const tickNow =
+      typeof (opts as any).tickNow === "number"
+        ? (opts as any).tickNow
+        : (this._tickNow || this._simNow || Date.now());
 
     const considerRooms = new Set<string>([st.roomId, targetRoomId]);
 
@@ -817,6 +820,8 @@ export class NpcManager {
         const threat = updateThreatFromDamage(
           this.npcThreat.get(ally.entityId),
           attackerEntityId,
+          1,
+          tickNow,
         );
         this.npcThreat.set(ally.entityId, threat);
 
@@ -944,9 +949,12 @@ export class NpcManager {
     );
     if (!spawned) return true;
 
+    const tickNow = this._tickNow || Date.now();
     const threatState = updateThreatFromDamage(
       this.npcThreat.get(spawned.entityId),
       attackerEntityId,
+      1,
+      tickNow,
     );
     this.npcThreat.set(spawned.entityId, threatState);
     spawned.lastAggroAt = threatState.lastAggroAt;
@@ -956,6 +964,7 @@ export class NpcManager {
       snapAllies: true,
       forceRoomId: attackerRoomId,
       sessions,
+      tickNow,
     });
 
     if (attackerRoomId !== spawnRoomId) {
