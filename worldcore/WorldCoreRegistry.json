@@ -778,14 +778,16 @@
         "performNpcAttack",
         "applySimpleNpcCounterAttack",
         "announceSpawnToRoom",
-        "scheduleNpcCorpseAndRespawn"
+        "scheduleNpcCorpseAndRespawn",
+        "tryAssistNearbyNpcs"
       ],
       "kind": "service",
       "notes": [
         "High-level NPC attack executor and death handling used by v1 brains.",
         "Uses CombatEngine for damage, updates skill and fury progression, applies counter-attacks, grants XP, and schedules corpse/respawn with resource-node special-casing.",
         "Now delegate overflow behavior to the helper",
-        "Corpse/despawn/respawn flow assumes combat status effects are cleared on death and do not tick on corpses."
+        "Corpse/despawn/respawn flow assumes combat status effects are cleared on death and do not tick on corpses.",
+        "Assist group throttle: prevents multi-ally cascades in the same tick (env: PW_ASSIST_GROUP_THROTTLE_ENABLED)."
       ],
       "path": "worldcore/combat/NpcCombat.ts"
     },
@@ -8656,6 +8658,19 @@
       ],
       "owns": [],
       "path": "worldcore/test/statusEffects.contract.test.ts",
+      "provides": []
+    },
+    "test.contract_npcCombat_assist_groupThrottle": {
+      "class": "(test)",
+      "ctorArgs": [],
+      "dependsOn": ["combat.npc"],
+      "kind": "test",
+      "lifecycle": "test",
+      "notes": [
+        "Contract: assist group throttle prevents multi-ally cascades in one tick."
+      ],
+      "owns": [],
+      "path": "worldcore/test/contract_npcCombat_assist_groupThrottle.test.ts",
       "provides": []
     },
     "test.utils": {
