@@ -4897,7 +4897,8 @@
       "notes": [
         "Owns runtime NPC state, per-room maps, threat tables, and bridges EntityManager \u2194 AI brain \u2194 sessions/chat.",
         "Spawns/Despawns NPCs, applies damage, records threat, coordinates guard/pack help, coward fleeing, gating, and drives AI decisions each tick.",
-        "On lethal damage and before despawn, clears combat status effects so corpses don't keep ticking DOTs or carry modifiers."
+        "On lethal damage and before despawn, clears combat status effects so corpses don't keep ticking DOTs or carry modifiers.",
+        "Train System v0/v0.1: pre-brain pursuit hook reads threat and can move/disengage before in-room target selection (supports room transitions + trains)."
       ],
       "path": "worldcore/npc/NpcManager.ts"
     },
@@ -8390,6 +8391,23 @@
         "[contract] generated quest ids are unique and town-prefixed"
       ],
       "service": "test"
+    },
+    "test.contract_trainSystem_roomTransitionsAssist": {
+      "class": "contract",
+      "ctorArgs": [],
+      "dependsOn": [
+        "worldcore/core/EntityManager",
+        "worldcore/npc/NpcManager"
+      ],
+      "id": "test.contract_trainSystem_roomTransitionsAssist",
+      "kind": "test",
+      "lifecycle": "stable",
+      "owns": [],
+      "path": "worldcore/test/contract_trainSystem_roomTransitionsAssist.test.ts",
+      "provides": [
+        "trainSystem.v0_1.contracts"
+      ],
+      "service": "worldcore"
     },
     "test.contract_trainSystem_softLeash": {
       "class": "contract",

@@ -73,6 +73,13 @@ type TrainConfig = {
   softLeash: number;
   hardLeash: number;
   pursueTimeoutMs: number;
+  // v0.1: room pursuit + assist snap
+  roomsEnabled: boolean;
+  maxRoomsFromSpawn: number;
+  assistEnabled: boolean;
+  assistSnapAllies: boolean;
+  assistSnapMaxAllies: number;
+  assistRange: number;
 };
 
 function readTrainConfig(): TrainConfig {
@@ -82,6 +89,13 @@ function readTrainConfig(): TrainConfig {
     softLeash: Math.max(0, envNumber("PW_TRAIN_SOFT_LEASH", 25)),
     hardLeash: Math.max(0, envNumber("PW_TRAIN_HARD_LEASH", 40)),
     pursueTimeoutMs: Math.max(0, Math.floor(envNumber("PW_TRAIN_PURSUE_TIMEOUT_MS", 20000))),
+    // v0.1
+    roomsEnabled: envBool("PW_TRAIN_ROOMS_ENABLED", false),
+    maxRoomsFromSpawn: Math.max(0, Math.floor(envNumber("PW_TRAIN_MAX_ROOMS_FROM_SPAWN", 6))),
+    assistEnabled: envBool("PW_TRAIN_ASSIST_ENABLED", false),
+    assistSnapAllies: envBool("PW_TRAIN_ASSIST_SNAP_ALLIES", false),
+    assistSnapMaxAllies: Math.max(0, Math.floor(envNumber("PW_TRAIN_ASSIST_SNAP_MAX_ALLIES", 6))),
+    assistRange: Math.max(0, envNumber("PW_TRAIN_ASSIST_RANGE", 10)),
   };
 }
 
@@ -99,6 +113,10 @@ const log = Logger.scope("NPC");
  * - Bridges EntityManager ↔ AI brain ↔ sessions/chat.
  */
 export class NpcManager {
+  // Stable tick timestamp used to prevent double-move when Train chase is invoked from multiple gates in one updateAll().
+  private _tickNow: number = 0;
+  // Simulated monotonic time (ms). Initialized from Date.now() then advanced by deltaMs in updateAll().
+  private _simNow: number = 0;
   private npcsByEntityId = new Map<string, NpcRuntimeState>();
   private npcsByRoom = new Map<string, Set<string>>();
   private npcThreat = new Map<string, NpcThreatState>();
@@ -195,6 +213,9 @@ export class NpcManager {
     (e as any).spawnY = y;
     (e as any).spawnZ = z;
 
+    // Mirror spawn coords onto runtime state as well (tests may rely on snapback even if entity spawn fields are missing later).
+    // These are intentionally attached dynamically to avoid type-shape churn.
+
     const state: NpcRuntimeState = {
       entityId: e.id,
       protoId: proto.id,
@@ -207,6 +228,11 @@ export class NpcManager {
       alive: true,
       fleeing: false,
     };
+
+    (state as any).spawnX = x;
+    (state as any).spawnY = y;
+    (state as any).spawnZ = z;
+
 
     this.npcsByEntityId.set(e.id, state);
     this.npcThreat.set(e.id, {});
@@ -580,7 +606,7 @@ export class NpcManager {
       return;
     }
 
-    const now = Date.now();
+    const now = this._tickNow || Date.now();
     const amt = typeof threatAmount === "number" ? threatAmount : 1;
 
     // Threat transfer: if the attacker is under a "threat redirect" effect,
@@ -630,7 +656,7 @@ export class NpcManager {
         threat,
         attackerEntityId,
         amt,
-        now
+        now,
       );
     }
     this.npcThreat.set(targetEntityId, threat);
@@ -758,12 +784,14 @@ export class NpcManager {
     attackerEntityId: string,
     st: NpcRuntimeState,
     proto: NpcPrototype,
-    opts: { snapAllies: boolean; forceRoomId?: string; sessions?: SessionManager },
+    opts: { snapAllies: boolean; forceRoomId?: string; sessions?: SessionManager; tickNow?: number },
   ): void {
     if (!proto.groupId || !proto.canCallHelp) return;
 
     const attacker = this.entities.get(attackerEntityId);
     const targetRoomId = opts.forceRoomId ?? attacker?.roomId ?? st.roomId;
+
+    const tickNow = (opts as any).tickNow ?? this._tickNow ?? 0;
 
     const considerRooms = new Set<string>([st.roomId, targetRoomId]);
 
@@ -794,7 +822,12 @@ export class NpcManager {
         this.markPackHelp(ally.entityId, attackerEntityId);
 
         if (opts.snapAllies && targetRoomId) {
+          // Do not move an NPC twice in the same tick (prevents leader getting shoved forward by ally-assist).
+          if (tickNow && (ally as any).trainMovedAt === tickNow) {
+            continue;
+          }
           this.moveNpcToRoom(ally, ally.entityId, targetRoomId);
+          (ally as any).trainMovedAt = tickNow;
         }
       }
     }
@@ -918,7 +951,7 @@ export class NpcManager {
     this.notifyPackAllies(attackerEntityId, spawned, proto, {
       snapAllies: true,
       forceRoomId: attackerRoomId,
-      sessions: sessionManager,
+      sessions,
     });
 
     if (attackerRoomId !== spawnRoomId) {
@@ -937,6 +970,11 @@ export class NpcManager {
   // -------------------------------------------------------------------------
 
   updateAll(deltaMs: number, sessions?: SessionManager): void {
+    // Single tick timestamp shared across all NPC decisions this update.
+    // Use a simulated monotonic clock so tight-loop tests advance time deterministically.
+    if (!this._simNow) this._simNow = Date.now();
+    else this._simNow += deltaMs;
+    this._tickNow = this._simNow;
     const activeSessions = sessions ?? this.sessions;
 
     for (const [entityId, st] of this.npcsByEntityId.entries()) {
@@ -988,7 +1026,7 @@ export class NpcManager {
           behavior === "coward");
 
       const threat0 = this.npcThreat.get(entityId);
-      const now = Date.now();
+      const now = this._tickNow || Date.now();
 
       // v1.4: deterministic threat decay in tick loop (so old grudges fade even without new hits).
       const threat = decayThreat(threat0, { now });
@@ -1004,12 +1042,17 @@ export class NpcManager {
 
         // Resolve current target with visibility rules (stealth/out-of-room/dead).
         const byId = new Map<string, any>();
+
+        const trainCfg = readTrainConfig();
         for (const e of ents) {
           if (e?.id) byId.set(String(e.id), e);
         }
 
         const sel = selectThreatTarget(threat, now, (id) => {
-          const e = byId.get(String(id));
+          let e = byId.get(String(id));
+          if (!e && trainCfg.enabled && trainCfg.roomsEnabled) {
+            e = this.entities.get(String(id));
+          }
           if (!e) return { ok: false, reason: "missing" };
           if (e.alive === false) return { ok: false, reason: "dead" };
           if (typeof e.hp === "number" && e.hp <= 0) return { ok: false, reason: "dead" };
@@ -1090,51 +1133,29 @@ export class NpcManager {
         lastAttackerId: threat?.lastAttackerEntityId,
       };
 
-      // ---------------------------------------------------------------------
-      // Train System v0 (same-room pursuit) – proactive chase before brain decisions.
-      //
-      // Rationale: many NPC brains (e.g. passive critters) will not choose "attack_entity"
-      // even when they have threat, but the Train system should still allow pursuit
-      // when enabled (contracts rely on this for deterministic movement).
-      // ---------------------------------------------------------------------
-      try {
-        const cfg = readTrainConfig();
-        if (cfg.enabled && topThreatId) {
-          const targetEnt = this.entities.get(topThreatId) as any;
-          if (targetEnt && (targetEnt.type === "player" || targetEnt.type === "character")) {
-            const npcX = typeof npcEntity.x === "number" ? npcEntity.x : 0;
-            const npcZ = typeof npcEntity.z === "number" ? npcEntity.z : 0;
-            const tgtX = typeof targetEnt.x === "number" ? targetEnt.x : 0;
-            const tgtZ = typeof targetEnt.z === "number" ? targetEnt.z : 0;
 
-            const dx = npcX - tgtX;
-            const dz = npcZ - tgtZ;
-            const distSq = dx * dx + dz * dz;
-
-            const MELEE_RANGE = 4;
-            if (distSq > MELEE_RANGE * MELEE_RANGE) {
-              const didChase = this.maybeTrainChase({
-                npcId: entityId,
-                st,
-                npcEntity,
-                targetEntity: targetEnt,
-                roomId,
-                now,
-                cfg,
-                sessions: activeSessions,
-              });
-
-              if (didChase) {
-                // If chase logic ran (move or disengage), skip brain decision this tick.
-                continue;
-              }
-            }
+      // Train System pre-hook: chase even when the target is not in playersInRoom (cross-room),
+      // and before any brain decision. This is required for room-tile pursuit.
+      const cfg = readTrainConfig();
+      if (cfg.enabled && topThreatId) {
+        const targetEntity = this.entities.get(String(topThreatId));
+        if (targetEntity && targetEntity.alive !== false && !(typeof targetEntity.hp === "number" && targetEntity.hp <= 0)) {
+          const didChase = this.maybeTrainChase({
+            npcId: entityId,
+            st,
+            npcEntity,
+            targetEntity,
+            roomId,
+            now: this._tickNow,
+            cfg,
+            sessions,
+          });
+          if (didChase) {
+            // We moved (or disengaged) this tick; skip standard AI decisions.
+            continue;
           }
         }
-      } catch {
-        // Train is best-effort; never break NPC updates because of it.
       }
-
 
       // --- HARD OVERRIDE for cowards: flee when hurt, no debate ---
       if (
@@ -1206,6 +1227,8 @@ export class NpcManager {
           break;
       }
     }
+    // Clear tick stamp after update completes.
+    this._tickNow = 0;
   }
 
   // -------------------------------------------------------------------------
@@ -1233,7 +1256,7 @@ export class NpcManager {
     const kind = currentDecision?.kind;
     if (kind === "attack_entity" || kind === "flee" || kind === "gate_home") return null;
 
-    const now = Date.now();
+    const now = this._tickNow || Date.now();
 
     // Prevent rapid-fire fallback swings (brain may be in a think/cooldown window).
     const last = (st as any).lastFallbackAttackAt ?? 0;
@@ -1356,7 +1379,6 @@ export class NpcManager {
     if (!target || target.type !== "player") {
       return;
     }
-    const now = Date.now();
 
     const isGuard = behavior === "guard";
     const isCoward =
@@ -1434,41 +1456,30 @@ export class NpcManager {
       return;
     }
 
+
     // AIv2 melee range gate: prevent global-room sniping.
-// If the target is outside melee range, we either chase (Train System v0)
-// or skip this tick (classic behavior).
-const npcX = typeof npcEntity.x === "number" ? npcEntity.x : 0;
-const npcY = typeof npcEntity.y === "number" ? npcEntity.y : 0;
-const npcZ = typeof npcEntity.z === "number" ? npcEntity.z : 0;
-const tgtX = typeof target.x === "number" ? target.x : 0;
-const tgtY = typeof target.y === "number" ? target.y : 0;
-const tgtZ = typeof target.z === "number" ? target.z : 0;
-const dx = npcX - tgtX;
-const dz = npcZ - tgtZ;
-const distSq = dx * dx + dz * dz;
-const MELEE_RANGE = 4;
+    // If the target is outside melee range OR in a different room, we either chase (Train System)
+    // or skip this tick (classic behavior).
+    const npcX = typeof npcEntity.x === "number" ? npcEntity.x : 0;
+    const npcY = typeof npcEntity.y === "number" ? npcEntity.y : 0;
+    const npcZ = typeof npcEntity.z === "number" ? npcEntity.z : 0;
+    const tgtX = typeof target.x === "number" ? target.x : 0;
+    const tgtY = typeof target.y === "number" ? target.y : 0;
+    const tgtZ = typeof target.z === "number" ? target.z : 0;
+    const MELEE_RANGE = 4;
 
-if (distSq > MELEE_RANGE * MELEE_RANGE) {
-  const cfg = readTrainConfig();
-  if (cfg.enabled) {
-    const didChase = this.maybeTrainChase({
-      npcId,
-      st,
-      npcEntity,
-      targetEntity: target,
-      roomId,
-      now,
-      cfg,
-      sessions: sessionManager,
-    });
+    const targetRoomId = String((target as any).roomId ?? (target as any).roomKey ?? "");
+    const roomsDiffer = !!targetRoomId && targetRoomId !== roomId;
 
-    // If chase logic ran (move or disengage), do not continue into melee attack.
-    if (didChase) return;
-  }
+    const dx = npcX - tgtX;
+    const dz = npcZ - tgtZ;
+    const distSq = dx * dx + dz * dz;
 
-  // Classic behavior: no chasing.
-  return;
-}
+    if (roomsDiffer || distSq > MELEE_RANGE * MELEE_RANGE) {
+      // Train chase (soft leash / room pursuit) is handled by the Train pre-hook earlier in this tick.
+      // If we are out of melee range (or in a different room), we do not melee here.
+      return;
+    }
 
     if (isGuard) {
       this.maybeCallGuardHelp(
@@ -1532,6 +1543,41 @@ if (distSq > MELEE_RANGE * MELEE_RANGE) {
   // Train System v0 (same-room pursuit + soft/hard leash)
   // -------------------------------------------------------------------------
 
+  private parseRoomCoord(roomId: string): { shard: string; x: number; z: number } | null {
+    // Expected: "shard:x,z" (e.g. prime_shard:0,0)
+    const raw = String(roomId || "");
+    const idx = raw.indexOf(":");
+    if (idx <= 0) return null;
+    const shard = raw.slice(0, idx);
+    const rest = raw.slice(idx + 1);
+    const parts = rest.split(",");
+    if (parts.length !== 2) return null;
+    const x = Number(parts[0]);
+    const z = Number(parts[1]);
+    if (!Number.isFinite(x) || !Number.isFinite(z)) return null;
+    return { shard, x, z };
+  }
+
+  private formatRoomCoord(coord: { shard: string; x: number; z: number }): string {
+    return `${coord.shard}:${coord.x},${coord.z}`;
+  }
+
+  private stepRoomToward(currentRoomId: string, targetRoomId: string): string | null {
+    const cur = this.parseRoomCoord(currentRoomId);
+    const tgt = this.parseRoomCoord(targetRoomId);
+    if (!cur || !tgt) return null;
+    if (cur.shard !== tgt.shard) return null;
+    const dx = tgt.x - cur.x;
+    const dz = tgt.z - cur.z;
+    if (dx === 0 && dz === 0) return currentRoomId;
+    // Move exactly one tile per tick; prefer X movement, then Z.
+    let nx = cur.x;
+    let nz = cur.z;
+    if (dx !== 0) nx += Math.sign(dx);
+    else nz += Math.sign(dz);
+    return this.formatRoomCoord({ shard: cur.shard, x: nx, z: nz });
+  }
+
   private maybeTrainChase(args: {
     npcId: string;
     st: NpcRuntimeState;
@@ -1544,9 +1590,73 @@ if (distSq > MELEE_RANGE * MELEE_RANGE) {
   }): boolean {
     const { npcId, st, npcEntity, targetEntity: target, roomId, now, cfg, sessions } = args;
 
-    // Same-room only for v0.
+    // Use a stable tick timestamp if updateAll() provided one; this prevents double-moves when Train is invoked from multiple gates.
+    const tickNow = this._tickNow || now;
+    if ((st as any).trainMovedAt === tickNow) return true;
+// v0.1 optionally allows cross-room pursuit.
     const targetRoom = String((target as any).roomId ?? (target as any).roomKey ?? "");
-    if (targetRoom && targetRoom !== roomId) return false;
+    if (targetRoom && targetRoom !== roomId) {
+      if (!cfg.roomsEnabled) return false;
+
+      const nextRoomId = this.stepRoomToward(roomId, targetRoom);
+      if (!nextRoomId) return false;
+
+      // Bound pursuit by max rooms away from spawn.
+      const spawnRoomId = (st as any).spawnRoomId as string | undefined;
+      const spawnC = spawnRoomId ? this.parseRoomCoord(spawnRoomId) : null;
+      const nextC = this.parseRoomCoord(nextRoomId);
+      if (spawnC && nextC) {
+        const max = Math.max(0, Math.floor(cfg.maxRoomsFromSpawn));
+        if (max > 0) {
+          const dxRooms = Math.abs(nextC.x - spawnC.x);
+          const dzRooms = Math.abs(nextC.z - spawnC.z);
+          if (dxRooms > max || dzRooms > max) {
+            // Past the allowed pursuit box: disengage + snapback.
+            try {
+              this.clearThreat(npcId);
+              (st as any).inCombat = false;
+              if (spawnRoomId && spawnRoomId !== roomId) {
+                this.moveNpcToRoom(st, npcId, spawnRoomId);
+              }
+            } catch {
+              // best-effort
+            }
+            return true;
+          }
+        }
+      }
+
+      const oldRoomId = roomId;
+
+      // Assist snap: use existing pack-help semantics (groupId + canCallHelp) and SNAP allies into the pursuit room.
+      // We do this BEFORE moving the leader, so allies can be found in the origin room and moved into nextRoomId.
+      // Reserve this NPC's move for this tick so pack-assist cannot "boost" the leader into a second room.
+      (st as any).trainMovedAt = tickNow;
+      if (cfg.assistEnabled && cfg.assistSnapAllies) {
+        const proto =
+          getNpcPrototype(st.templateId) ??
+          getNpcPrototype(st.protoId) ??
+          DEFAULT_NPC_PROTOTYPES[st.templateId] ??
+          DEFAULT_NPC_PROTOTYPES[st.protoId];
+
+        if (proto) {
+          this.notifyPackAllies(String((target as any).id), st, proto, {
+            snapAllies: true,
+            forceRoomId: nextRoomId,
+            sessions,
+            tickNow,
+          });
+        }
+      }
+
+      // Move the leader exactly one room step.
+      this.moveNpcToRoom(st, npcId, nextRoomId);
+      (st as any).trainMovedAt = tickNow;
+
+      // Mark pursuit as active.
+      if (typeof (st as any).trainChaseStartTs !== "number") (st as any).trainChaseStartTs = tickNow;
+      return true;
+    }
 
     const npcX = typeof npcEntity.x === "number" ? npcEntity.x : 0;
     const npcY = typeof npcEntity.y === "number" ? npcEntity.y : 0;
@@ -1564,9 +1674,17 @@ if (distSq > MELEE_RANGE * MELEE_RANGE) {
     const MELEE_RANGE = 4;
     if (dist <= MELEE_RANGE) return false;
 
-    const spawnX = typeof (npcEntity as any).spawnX === "number" ? (npcEntity as any).spawnX : npcX;
-    const spawnY = typeof (npcEntity as any).spawnY === "number" ? (npcEntity as any).spawnY : npcY;
-    const spawnZ = typeof (npcEntity as any).spawnZ === "number" ? (npcEntity as any).spawnZ : npcZ;
+    const spawnX = typeof (npcEntity as any).spawnX === "number" ? (npcEntity as any).spawnX : (typeof (st as any).spawnX === "number" ? (st as any).spawnX : npcX);
+    const spawnY = typeof (npcEntity as any).spawnY === "number" ? (npcEntity as any).spawnY : (typeof (st as any).spawnY === "number" ? (st as any).spawnY : npcY);
+    const spawnZ = typeof (npcEntity as any).spawnZ === "number" ? (npcEntity as any).spawnZ : (typeof (st as any).spawnZ === "number" ? (st as any).spawnZ : npcZ);
+
+    // Ensure entity + runtime state share the same spawn coords (some test harnesses inspect one or the other).
+    if (typeof (npcEntity as any).spawnX !== "number" && typeof (st as any).spawnX === "number") (npcEntity as any).spawnX = (st as any).spawnX;
+    if (typeof (npcEntity as any).spawnY !== "number" && typeof (st as any).spawnY === "number") (npcEntity as any).spawnY = (st as any).spawnY;
+    if (typeof (npcEntity as any).spawnZ !== "number" && typeof (st as any).spawnZ === "number") (npcEntity as any).spawnZ = (st as any).spawnZ;
+    if (typeof (st as any).spawnX !== "number" && typeof (npcEntity as any).spawnX === "number") (st as any).spawnX = (npcEntity as any).spawnX;
+    if (typeof (st as any).spawnY !== "number" && typeof (npcEntity as any).spawnY === "number") (st as any).spawnY = (npcEntity as any).spawnY;
+    if (typeof (st as any).spawnZ !== "number" && typeof (npcEntity as any).spawnZ === "number") (st as any).spawnZ = (npcEntity as any).spawnZ;
 
     const sdx = npcX - spawnX;
     const sdz = npcZ - spawnZ;
@@ -1577,17 +1695,20 @@ if (distSq > MELEE_RANGE * MELEE_RANGE) {
       ? Number((npcEntity as any).trainPursueStartAt)
       : 0;
 
-    if (!chaseStart) (npcEntity as any).trainPursueStartAt = now;
+    if (!chaseStart) (npcEntity as any).trainPursueStartAt = tickNow;
 
     if (cfg.pursueTimeoutMs > 0) {
-      const started = chaseStart || now;
-      if (now - started > cfg.pursueTimeoutMs) {
+      const started = chaseStart || tickNow;
+      if (tickNow - started > cfg.pursueTimeoutMs) {
+        (st as any).trainMovedAt = tickNow;
         return this.trainDisengageAndSnapback(npcId, st, npcEntity, roomId, spawnX, spawnY, spawnZ);
       }
     }
 
     // Hard leash: disengage if too far from spawn.
-    if (cfg.hardLeash > 0 && distFromSpawn > cfg.hardLeash) {
+    // Use >= to avoid "sticking" exactly on the leash boundary if coordinates are quantized.
+    if (cfg.hardLeash > 0 && distFromSpawn >= cfg.hardLeash) {
+      (st as any).trainMovedAt = tickNow;
       return this.trainDisengageAndSnapback(npcId, st, npcEntity, roomId, spawnX, spawnY, spawnZ);
     }
 
@@ -1607,6 +1728,7 @@ if (distSq > MELEE_RANGE * MELEE_RANGE) {
     const nz = npcZ + dz * inv * step;
 
     this.entities.setPosition(npcId, nx, npcY, nz);
+    (st as any).trainMovedAt = tickNow;
 
     // Mark that train chase ran for debugging/tests.
     (npcEntity as any).trainChasing = true;
@@ -1623,18 +1745,42 @@ if (distSq > MELEE_RANGE * MELEE_RANGE) {
     spawnZ: number,
   ): boolean {
     // Clear threat + combat flags
-    this.npcThreat.set(npcId, {});
+    this.clearThreat(npcId);
+    (st as any).inCombat = false;
     (npcEntity as any).inCombat = false;
     (npcEntity as any).trainChasing = false;
     (npcEntity as any).trainPursueStartAt = 0;
 
     // Snap back to spawn coords
     this.entities.setPosition(npcId, spawnX, spawnY, spawnZ);
+    // Also update the passed entity reference and the canonical entity object,
+    // since some harnesses/tests keep direct references.
+    (npcEntity as any).x = spawnX;
+    (npcEntity as any).y = spawnY;
+    (npcEntity as any).z = spawnZ;
+    const canonical = this.entities.get(npcId) as any;
+    if (canonical) { canonical.x = spawnX; canonical.y = spawnY; canonical.z = spawnZ; }
+    (st as any).x = spawnX;
+    (st as any).y = spawnY;
+    (st as any).z = spawnZ;
+    (st as any).trainMovedAt = this._tickNow || (st as any).trainMovedAt || 0;
 
     // Keep runtime state in sync
     st.roomId = roomId;
 
     return true;
+  }
+
+  // Threat state is versioned/typed; never blast it to `{}`.
+  private clearThreat(npcId: string): void {
+    this.npcThreat.set(npcId, {
+      lastAttackerEntityId: undefined,
+      lastAggroAt: 0,
+      threatByEntityId: {},
+      forcedTargetEntityId: undefined,
+      forcedUntil: 0,
+      lastTauntAt: 0,
+    });
   }
 
 /**
