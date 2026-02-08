@@ -695,7 +695,8 @@ export class NpcManager {
 
     const threat0 = this.npcThreat.get(targetEntityId);
 
-    const now = this._tickNow || Date.now();
+    const now = this._tickNow || this._simNow || Date.now();
+
     // Taunt immunity: during the immunity window, ignore new taunts from other entities.
     if (PW_TAUNT_IMMUNITY_MS > 0) {
       const lastTauntAt = typeof (threat0 as any)?.lastTauntAt === "number" ? (threat0 as any).lastTauntAt : 0;
@@ -711,6 +712,7 @@ export class NpcManager {
       {
         durationMs: opts?.durationMs,
         threatBoost: opts?.threatBoost,
+        now,
       },
     );
     this.npcThreat.set(targetEntityId, threat);
@@ -1030,9 +1032,7 @@ export class NpcManager {
       const now = this._tickNow || Date.now();
 
       // v1.4: deterministic threat decay in tick loop (so old grudges fade even without new hits).
-      const decayPerSec = typeof (proto as any).threatDecayPerSec === "number" ? (proto as any).threatDecayPerSec : undefined;
-      const pruneBelow = typeof (proto as any).threatPruneBelow === "number" ? (proto as any).threatPruneBelow : undefined;
-      const threat = decayThreat(threat0, { now, decayPerSec, pruneBelow });
+      const threat = decayThreat(threat0, { now });
       if (threat && threat !== threat0) {
         this.npcThreat.set(entityId, threat);
       }
@@ -1457,17 +1457,6 @@ export class NpcManager {
 
     if (targetHp <= 0) {
       return;
-    }
-
-    // Visibility gate: do not attack stealthed players.
-    const now = this._tickNow || Date.now();
-    try {
-      const active = getActiveStatusEffectsForEntity(target as any, now) as any[];
-      if (Array.isArray(active) && active.some((se: any) => Array.isArray(se?.tags) && se.tags.includes("stealth"))) {
-        return;
-      }
-    } catch {
-      // ignore
     }
 
 
