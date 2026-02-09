@@ -45,6 +45,35 @@ export interface NpcThreatState {
   lastSelectedAt?: number;
 }
 
+export type CombatRole = "tank" | "healer" | "dps" | "unknown";
+
+export interface ThreatValidity {
+  ok: boolean;
+  reason?: string;
+}
+
+export interface DecayThreatOpts {
+  now?: number;
+  // How many threat points to subtract per second.
+  decayPerSec?: number;
+  // Optional lower bound. If the remaining threat <= pruneBelow, remove the bucket.
+  pruneBelow?: number;
+  // If provided, uses (now - lastDecayAt) as dt; otherwise uses (now - (lastDecayAt ?? lastAggroAt ?? now)).
+  lastDecayAt?: number;
+
+  /**
+   * Optional: returns the combat role for an entityId.
+   * Used for role-aware decay policy (tanks hold threat longer, DPS decays faster).
+   */
+  getRoleForEntityId?: (entityId: string) => CombatRole | undefined;
+
+  /**
+   * Optional: validity predicate used to apply out-of-sight decay multipliers and
+   * optionally prune invalid buckets.
+   */
+  validateTarget?: (entityId: string) => ThreatValidity;
+}
+
 function envNumber(name: string, fallback: number): number {
   const raw = String((process.env as any)?.[name] ?? "").trim();
   if (!raw) return fallback;
@@ -403,20 +432,15 @@ export function getThreatValue(
  */
 export function decayThreat(
   current: NpcThreatState | undefined,
-  opts?: {
-    now?: number;
-    // How many threat points to subtract per second.
-    decayPerSec?: number;
-    // Optional lower bound. If the remaining threat <= pruneBelow, remove the bucket.
-    pruneBelow?: number;
-    // If provided, uses (now - lastDecayAt) as dt; otherwise uses (now - (lastDecayAt ?? lastAggroAt ?? now)).
-    lastDecayAt?: number;
-  },
+  opts?: DecayThreatOpts,
 ): NpcThreatState | undefined {
   if (!current) return current;
 
   const now = opts?.now ?? nowMs();
-  const decayPerSec = typeof opts?.decayPerSec === "number" && opts.decayPerSec > 0 ? opts.decayPerSec : PW_THREAT_DECAY_PER_SEC_DEFAULT;
+  const decayPerSec =
+    typeof opts?.decayPerSec === "number" && opts.decayPerSec > 0
+      ? opts.decayPerSec
+      : PW_THREAT_DECAY_PER_SEC_DEFAULT;
   const pruneBelow = typeof opts?.pruneBelow === "number" ? opts.pruneBelow : PW_THREAT_PRUNE_BELOW_DEFAULT;
 
   const baseLast =
@@ -436,18 +460,63 @@ export function decayThreat(
     return current;
   }
 
-  const dec = decayPerSec * wholeSec;
+  // Policy knobs (read at call time so tests can set env after import).
+  const roleTankMult = Math.max(0, envNumber("PW_THREAT_DECAY_ROLE_TANK_MULT", 0.6));
+  const roleHealerMult = Math.max(0, envNumber("PW_THREAT_DECAY_ROLE_HEALER_MULT", 1.0));
+  const roleDpsMult = Math.max(0, envNumber("PW_THREAT_DECAY_ROLE_DPS_MULT", 1.2));
+  const roleUnknownMult = Math.max(0, envNumber("PW_THREAT_DECAY_ROLE_UNKNOWN_MULT", 1.0));
+
+  const oosMult = Math.max(0, envNumber("PW_THREAT_DECAY_OUT_OF_SIGHT_MULT", 2.5));
+  const pruneInvalid = envBool("PW_THREAT_PRUNE_INVALID_BUCKETS", true);
+
+  const decBase = decayPerSec * wholeSec;
 
   const table = shallowCopyThreat(current.threatByEntityId);
   let any = false;
 
+  const getRole = opts?.getRoleForEntityId;
+  const validate = opts?.validateTarget;
+
   for (const [id, v] of Object.entries(table)) {
     const n = typeof v === "number" ? v : 0;
-    const next = clampNonNeg(n - dec);
-    if (next <= pruneBelow) {
+    if (n <= 0) {
+      delete table[id];
+      continue;
+    }
+
+    let mult = 1;
+
+    // Role-aware decay.
+    if (getRole) {
+      const role = getRole(String(id)) ?? "unknown";
+      if (role === "tank") mult *= roleTankMult;
+      else if (role === "healer") mult *= roleHealerMult;
+      else if (role === "dps") mult *= roleDpsMult;
+      else mult *= roleUnknownMult;
+    }
+
+    // Out-of-sight (or otherwise invalid) targets decay harder, and may be pruned.
+    if (validate) {
+      const vv = validate(String(id));
+      if (!vv.ok) {
+        const reason = String(vv.reason ?? "");
+        if (reason === "out_of_room" || reason === "missing") {
+          mult *= oosMult;
+        }
+
+        if (pruneInvalid && (reason === "dead" || reason === "protected" || reason === "missing")) {
+          delete table[id];
+          continue;
+        }
+      }
+    }
+
+    const dec = decBase * mult;
+    const nextV = clampNonNeg(n - dec);
+    if (nextV <= pruneBelow) {
       delete table[id];
     } else {
-      table[id] = next;
+      table[id] = nextV;
       any = true;
     }
   }

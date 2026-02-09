@@ -8936,6 +8936,29 @@
         "contract"
       ]
     },
+    "test.contractNpcThreatDecayRoleOosPolicy": {
+      "class": "(test) contract_npcThreat_decay_role_oos_policy",
+      "ctorArgs": [],
+      "dependsOn": [
+        "npc.threat"
+      ],
+      "kind": "test",
+      "lifecycle": "test",
+      "notes": [
+        "Locks role-aware + out-of-room threat decay policy: tanks hold longer, DPS decays faster, and out_of_room targets decay harder."
+      ],
+      "owns": [],
+      "path": "worldcore/test/contract_npcThreat_decay_role_oos_policy.test.ts",
+      "provides": [
+        "test:contract_npcThreat_decay_role_oos_policy",
+        "contract:npcThreatDecayRoleOosPolicy"
+      ],
+      "tags": [
+        "combat:threat",
+        "decay",
+        "contract"
+      ]
+    },
     "test.utils": {
       "dependsOn": [],
       "functions": [

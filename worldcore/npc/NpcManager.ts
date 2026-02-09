@@ -1063,11 +1063,9 @@ export class NpcManager {
       const threat0 = this.npcThreat.get(entityId);
       const now = this._tickNow || Date.now();
 
-      // v1.4: deterministic threat decay in tick loop (so old grudges fade even without new hits).
-      const threat = decayThreat(threat0, { now });
-      if (threat && threat !== threat0) {
-        this.npcThreat.set(entityId, threat);
-      }
+      // NOTE: threat decay is applied after we build room perception so we can
+      // apply role-aware + out-of-sight policy (tank holds longer, out_of_room decays harder).
+      let threat = threat0;
 
       // Build perception
       const playersInRoom: PerceivedPlayer[] = [];
@@ -1081,6 +1079,42 @@ export class NpcManager {
         const trainCfg = readTrainConfig();
         for (const e of ents) {
           if (e?.id) byId.set(String(e.id), e);
+        }
+
+        // Apply deterministic threat decay with policy inputs derived from current perception.
+        const decayed = decayThreat(threat, {
+          now,
+          getRoleForEntityId: (id: string) => {
+            const e = byId.get(String(id)) ?? this.entities.get(String(id));
+            const session =
+              e?.ownerSessionId && activeSessions
+                ? activeSessions.get(e.ownerSessionId)
+                : undefined;
+            const char = session?.character;
+            return char ? getCombatRoleForClass(char.classId) : undefined;
+          },
+          validateTarget: (id: string) => {
+            let e = byId.get(String(id));
+            if (!e && trainCfg.enabled && trainCfg.roomsEnabled) {
+              e = this.entities.get(String(id));
+            }
+
+            const allowCrossRoom = trainCfg.enabled && trainCfg.roomsEnabled;
+            const v = isValidCombatTarget({
+              now,
+              attacker: npcEntity as any,
+              target: e as any,
+              attackerRoomId: roomId,
+              allowCrossRoom,
+            });
+            if (!v.ok) return { ok: false, reason: v.reason };
+            return { ok: true };
+          },
+        });
+
+        if (decayed && decayed !== threat) {
+          threat = decayed;
+          this.npcThreat.set(entityId, threat);
         }
 
         const sel = selectThreatTarget(threat, now, (id) => {
