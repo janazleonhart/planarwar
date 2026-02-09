@@ -9062,6 +9062,20 @@
         "contract:npcManagerPackAssistOffenderWindowThrottles"
       ]
     },
+    "test.contractNpcManagerPackAssistOffenderWindowScopedByCallerWhenNoGroup": {
+      "kind": "test",
+      "dependsOn": [
+        "core.entities",
+        "npc.manager",
+        "npc.types",
+        "npc.threat"
+      ],
+      "notes": [
+        "Contract: PW_ASSIST_OFFENDER_WINDOW_MS throttles by pack groupId when present.",
+        "When a prototype has no groupId, throttling is scoped per-caller to avoid \"undefined:<offender>\" global suppression."
+      ],
+      "path": "worldcore/test/contract_npcManager_packAssist_offenderWindow_scopedByCallerWhenNoGroup.test.ts"
+    },
     "test.utils": {
       "dependsOn": [],
       "functions": [

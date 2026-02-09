@@ -801,7 +801,7 @@ export class NpcManager {
     proto: NpcPrototype,
     opts: { snapAllies: boolean; forceRoomId?: string; sessions?: SessionManager; tickNow?: number },
   ): void {
-    if (!proto.groupId || !proto.canCallHelp) return;
+    if (!proto.canCallHelp) return;
 
     const attackerRaw = this.entities.get(attackerEntityId);
     const targetRoomId = opts.forceRoomId ?? attackerRaw?.roomId ?? st.roomId;
@@ -840,7 +840,14 @@ export class NpcManager {
     // same offender within a short window (reduces cascade dogpiles). This is bypassed for
     // explicit forceRoomId calls (gate-home / supernatural calls for help).
     const offenderWindowMs = Math.max(0, Math.floor(envNumber("PW_ASSIST_OFFENDER_WINDOW_MS", 0)));
-    const offenderKey = `${proto.groupId}:${attackerEntityId}`;
+    // If a prototype has no groupId, scope offender throttling per-caller.
+    // Otherwise, missing/undefined groupId would collapse unrelated NPCs into the same
+    // "pack" throttle bucket ("undefined:<offender>") and suppress assists in surprising ways.
+    const groupKey =
+      typeof (proto as any)?.groupId === "string" && String((proto as any).groupId).trim()
+        ? String((proto as any).groupId).trim()
+        : String(st.entityId);
+    const offenderKey = `${groupKey}:${attackerEntityId}`;
     if (offenderWindowMs > 0 && typeof opts.forceRoomId !== "string") {
       const last = this.packHelpOffenderAt.get(offenderKey);
       if (typeof last === "number" && tickNow - last < offenderWindowMs) {
@@ -898,7 +905,7 @@ export class NpcManager {
           DEFAULT_NPC_PROTOTYPES[ally.templateId] ??
           DEFAULT_NPC_PROTOTYPES[ally.protoId];
 
-        return allyProto?.groupId === proto.groupId;
+        return proto.groupId ? (allyProto?.groupId === proto.groupId) : (ally.templateId === proto.id);
       });
 
       // Prioritize allies already engaged with the offender.
