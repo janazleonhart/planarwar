@@ -9040,6 +9040,28 @@
       ],
       "path": "worldcore/test/contract_npcManager_packAssist_noCrossRoomWithoutTrain.test.ts"
     },
+    "test.contract_npcManager_packAssist_offenderWindowThrottles": {
+      "class": "(test) contract_npcManager_packAssist_offenderWindowThrottles",
+      "ctorArgs": [],
+      "dependsOn": [
+        "worldcore/npc/NpcManager.ts",
+        "worldcore/npc/NpcThreat.ts",
+        "worldcore/npc/NpcTypes.ts",
+        "worldcore/core/EntityManager.ts"
+      ],
+      "kind": "test",
+      "lifecycle": "test",
+      "notes": [
+        "Contract: PW_ASSIST_OFFENDER_WINDOW_MS throttles pack assist waves across callers (per group/offender), preventing cascade dogpiles."
+      ],
+      "owns": [
+        "test:npcManagerPackAssistOffenderWindowThrottles"
+      ],
+      "path": "worldcore/test/contract_npcManager_packAssist_offenderWindow_throttles.test.ts",
+      "provides": [
+        "contract:npcManagerPackAssistOffenderWindowThrottles"
+      ]
+    },
     "test.utils": {
       "dependsOn": [],
       "functions": [

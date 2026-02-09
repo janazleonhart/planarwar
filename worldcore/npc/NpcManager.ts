@@ -130,6 +130,10 @@ export class NpcManager {
   // Per-caller throttling for repeated pack-assist calls against the same offender.
   // Key: callerNpcId -> (offenderEntityId -> lastCallAtTickMs)
   private packHelpCallAt = new Map<string, Map<string, number>>();
+  // Global throttling: prevent multiple pack members from calling help against the same offender
+  // within a short window (reduces cascade dogpiles).
+  // Key: `${groupId}:${offenderEntityId}` -> lastCallAtTickMs
+  private packHelpOffenderAt = new Map<string, number>();
 
   private readonly brain = new LocalSimpleAggroBrain();
 
@@ -799,8 +803,22 @@ export class NpcManager {
   ): void {
     if (!proto.groupId || !proto.canCallHelp) return;
 
-    const attacker = this.entities.get(attackerEntityId);
-    const targetRoomId = opts.forceRoomId ?? attacker?.roomId ?? st.roomId;
+    const attackerRaw = this.entities.get(attackerEntityId);
+    const targetRoomId = opts.forceRoomId ?? attackerRaw?.roomId ?? st.roomId;
+    // Pack assist can be invoked with an offender id that isn't currently present as an Entity
+    // (e.g. lightweight tests or when an offender despawns between ticks). We still want pack
+    // assist seeding/snap behavior to function for legacy tests and gate calls, while relying on
+    // Engage State Law only for hard visibility stops (stealth) and optional cross-room gating.
+    const attacker =
+      attackerRaw ??
+      ({
+        id: attackerEntityId,
+        type: "player",
+        roomId: targetRoomId,
+        hp: 1,
+        maxHp: 1,
+        alive: true,
+      } as any);
 
     const tickNow =
       typeof (opts as any).tickNow === "number"
@@ -816,6 +834,19 @@ export class NpcManager {
     const considerRooms = new Set<string>(
       allowCrossRoomAssist || st.roomId === targetRoomId ? [st.roomId, targetRoomId] : [st.roomId],
     );
+
+
+    // Optional offender throttling: prevent multiple pack members from calling help against the
+    // same offender within a short window (reduces cascade dogpiles). This is bypassed for
+    // explicit forceRoomId calls (gate-home / supernatural calls for help).
+    const offenderWindowMs = Math.max(0, Math.floor(envNumber("PW_ASSIST_OFFENDER_WINDOW_MS", 0)));
+    const offenderKey = `${proto.groupId}:${attackerEntityId}`;
+    if (offenderWindowMs > 0 && typeof opts.forceRoomId !== "string") {
+      const last = this.packHelpOffenderAt.get(offenderKey);
+      if (typeof last === "number" && tickNow - last < offenderWindowMs) {
+        return;
+      }
+    }
 
     // Optional throttling: prevent repeated pack assist waves from the same caller
     // against the same offender within a short window.
@@ -938,6 +969,10 @@ export class NpcManager {
         this.packHelpCallAt.set(st.entityId, offenderMap);
       }
       offenderMap.set(attackerEntityId, tickNow);
+    }
+
+    if (offenderWindowMs > 0 && typeof opts.forceRoomId !== "string" && assisted > 0) {
+      this.packHelpOffenderAt.set(offenderKey, tickNow);
     }
   }
 
