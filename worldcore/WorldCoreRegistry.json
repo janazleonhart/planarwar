@@ -8889,6 +8889,29 @@
         "contract"
       ]
     },
+    "test.contractNpcThreatForgetOnStealthPrunesBucket": {
+      "class": "(test) contract_npcThreat_forgetOnStealth_prunesBucket",
+      "ctorArgs": [],
+      "dependsOn": [
+        "npc.threat"
+      ],
+      "kind": "test",
+      "lifecycle": "test",
+      "notes": [
+        "Ensures stealthed targets can be immediately forgotten (threat bucket pruned) to prevent free tracking / snap-back when stealth ends."
+      ],
+      "owns": [],
+      "path": "worldcore/test/contract_npcThreat_forgetOnStealth_prunesBucket.test.ts",
+      "provides": [
+        "test:contract_npcThreat_forgetOnStealth_prunesBucket",
+        "contract:npcThreatForgetOnStealth"
+      ],
+      "tags": [
+        "combat:threat",
+        "stealth",
+        "contract"
+      ]
+    },
     "test.utils": {
       "dependsOn": [],
       "functions": [

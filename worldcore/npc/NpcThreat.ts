@@ -70,6 +70,9 @@ const PW_THREAT_SWITCH_MARGIN_FLAT_DEFAULT = Math.max(0, envNumber("PW_THREAT_SW
 const PW_ASSIST_AGGRO_WINDOW_MS_DEFAULT = Math.max(0, Math.floor(envNumber("PW_ASSIST_AGGRO_WINDOW_MS", 5000)));
 const PW_ASSIST_MIN_TOP_THREAT_DEFAULT = envNumber("PW_ASSIST_MIN_TOP_THREAT", 1);
 
+// If true, a stealthed player is immediately forgotten (threat bucket pruned) to prevent free tracking.
+const PW_THREAT_FORGET_ON_STEALTH_DEFAULT = envBool("PW_THREAT_FORGET_ON_STEALTH", true);
+
 // If true, taunt also forces the taunter to *take over* top threat (so expiry keeps target).
 // If false (default), taunt is only a temporary forced-target override and will resume to prior top threat.
 const PW_TAUNT_FORCE_TAKEOVER_DEFAULT = envBool("PW_TAUNT_FORCE_TAKEOVER", false);
@@ -280,13 +283,42 @@ export function selectThreatTarget(
     });
 
   // Determine best valid candidate by threat.
+  // If a candidate is invalid specifically due to stealth, we optionally forget it immediately
+  // to prevent 'free tracking' where the NPC snaps back the instant stealth ends.
+  const forgetOnStealth = PW_THREAT_FORGET_ON_STEALTH_DEFAULT;
+  let tableMut: Record<string, number> | undefined = undefined;
+  let tableChanged = false;
+
   let best: { id: string; v: number } | undefined;
   for (const e of entries) {
-    if (validateTarget(e.id).ok) {
+    const v = validateTarget(e.id);
+    if (v.ok) {
       best = e;
       break;
     }
+
+    if (forgetOnStealth && String(v.reason ?? "") === "stealth") {
+      // Lazily clone the table only if we actually need to mutate it.
+      if (!tableMut) tableMut = shallowCopyThreat((next as any)?.threatByEntityId);
+      if (tableMut && e.id in tableMut) {
+        delete tableMut[e.id];
+        tableChanged = true;
+      }
+
+      // Also clear back-compat pointers if they refer to this hidden target.
+      if ((next as any)?.lastAttackerEntityId === e.id) {
+        next = { ...(next as any), lastAttackerEntityId: undefined } as any;
+      }
+      if ((next as any)?.lastSelectedTargetEntityId === e.id) {
+        next = { ...(next as any), lastSelectedTargetEntityId: undefined, lastSelectedAt: undefined } as any;
+      }
+    }
   }
+
+  if (tableChanged) {
+    next = { ...(next as any), threatByEntityId: tableMut ?? {} };
+  }
+
 
   // Back-compat fallback if table empty or all invalid.
   if (!best && next?.lastAttackerEntityId && validateTarget(next.lastAttackerEntityId).ok) {
@@ -379,10 +411,6 @@ export function decayThreat(
     pruneBelow?: number;
     // If provided, uses (now - lastDecayAt) as dt; otherwise uses (now - (lastDecayAt ?? lastAggroAt ?? now)).
     lastDecayAt?: number;
-
-  // New (v1.1.8): target stickiness to avoid coin-flip aggro swaps.
-  lastSelectedTargetEntityId?: string;
-  lastSelectedAt?: number;
   },
 ): NpcThreatState | undefined {
   if (!current) return current;
