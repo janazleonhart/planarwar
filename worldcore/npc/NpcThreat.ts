@@ -39,6 +39,10 @@ export interface NpcThreatState {
   // New (v1.1.6): optional decay bookkeeping.
   // If present, callers may pass this state back in and decayThreat() can use it.
   lastDecayAt?: number;
+
+  // New (v1.1.8): target stickiness to avoid coin-flip aggro swaps.
+  lastSelectedTargetEntityId?: string;
+  lastSelectedAt?: number;
 }
 
 function envNumber(name: string, fallback: number): number {
@@ -58,6 +62,10 @@ function envBool(name: string, fallback: boolean): boolean {
 
 const PW_THREAT_DECAY_PER_SEC_DEFAULT = envNumber("PW_THREAT_DECAY_PER_SEC", 1);
 const PW_THREAT_PRUNE_BELOW_DEFAULT = envNumber("PW_THREAT_PRUNE_BELOW", 0);
+
+const PW_THREAT_STICKY_MS_DEFAULT = Math.max(0, Math.floor(envNumber("PW_THREAT_STICKY_MS", 4000)));
+const PW_THREAT_SWITCH_MARGIN_PCT_DEFAULT = Math.max(0, envNumber("PW_THREAT_SWITCH_MARGIN_PCT", 0.15));
+const PW_THREAT_SWITCH_MARGIN_FLAT_DEFAULT = Math.max(0, envNumber("PW_THREAT_SWITCH_MARGIN_FLAT", 1));
 
 const PW_ASSIST_AGGRO_WINDOW_MS_DEFAULT = Math.max(0, Math.floor(envNumber("PW_ASSIST_AGGRO_WINDOW_MS", 5000)));
 const PW_ASSIST_MIN_TOP_THREAT_DEFAULT = envNumber("PW_ASSIST_MIN_TOP_THREAT", 1);
@@ -266,17 +274,74 @@ export function selectThreatTarget(
   const entries = Object.entries(table)
     .map(([id, v]) => ({ id, v: typeof v === "number" ? v : 0 }))
     .filter((e) => e.v > 0)
-    .sort((a, b) => b.v - a.v);
+    .sort((a, b) => {
+      const dv = b.v - a.v;
+      return dv !== 0 ? dv : String(a.id).localeCompare(String(b.id));
+    });
 
+  // Determine best valid candidate by threat.
+  let best: { id: string; v: number } | undefined;
   for (const e of entries) {
-    if (validateTarget(e.id).ok) return { targetId: e.id, nextThreat: next };
+    if (validateTarget(e.id).ok) {
+      best = e;
+      break;
+    }
   }
 
-  if (next?.lastAttackerEntityId && validateTarget(next.lastAttackerEntityId).ok) {
-    return { targetId: next.lastAttackerEntityId, nextThreat: next };
+  // Back-compat fallback if table empty or all invalid.
+  if (!best && next?.lastAttackerEntityId && validateTarget(next.lastAttackerEntityId).ok) {
+    best = { id: next.lastAttackerEntityId, v: getThreatValue(next, next.lastAttackerEntityId) };
   }
 
-  return { targetId: undefined, nextThreat: next };
+  // Stickiness: prefer the previously selected target for a short window unless a challenger
+  // clearly exceeds it by a configurable margin. This prevents "coin flip" aggro when two
+  // entities are trading tiny threat deltas each tick.
+  const stickyMs = PW_THREAT_STICKY_MS_DEFAULT;
+  const prevId = String((next as any)?.lastSelectedTargetEntityId ?? "").trim();
+  const prevAt = typeof (next as any)?.lastSelectedAt === "number" ? (next as any).lastSelectedAt as number : 0;
+
+  if (stickyMs > 0 && prevId && prevAt > 0 && now - prevAt <= stickyMs) {
+    const prevValid = validateTarget(prevId).ok;
+    if (prevValid) {
+      const prevV = getThreatValue(next, prevId);
+
+      // If we don't have a better candidate, keep prev.
+      if (!best) {
+        const chosen = prevId;
+        const out: NpcThreatState = { ...(next as any), lastSelectedTargetEntityId: chosen, lastSelectedAt: now };
+        return { targetId: chosen, nextThreat: out };
+      }
+
+      // If best is already prev, keep it.
+      if (best.id === prevId) {
+        const out: NpcThreatState = { ...(next as any), lastSelectedTargetEntityId: best.id, lastSelectedAt: now };
+        return { targetId: best.id, nextThreat: out };
+      }
+
+      const pct = PW_THREAT_SWITCH_MARGIN_PCT_DEFAULT;
+      const flat = PW_THREAT_SWITCH_MARGIN_FLAT_DEFAULT;
+
+      const needFlat = prevV + flat;
+      const needPct = prevV * (1 + pct);
+      const threshold = Math.max(needFlat, needPct);
+
+      // Only switch if the challenger clears the threshold. Otherwise keep prev.
+      if (best.v < threshold) {
+        const chosen = prevId;
+        const out: NpcThreatState = { ...(next as any), lastSelectedTargetEntityId: chosen, lastSelectedAt: now };
+        return { targetId: chosen, nextThreat: out };
+      }
+    }
+  }
+
+  if (best) {
+    const out: NpcThreatState = { ...(next as any), lastSelectedTargetEntityId: best.id, lastSelectedAt: now };
+    return { targetId: best.id, nextThreat: out };
+  }
+
+  // Nothing valid.
+  const out: NpcThreatState = { ...(next as any), lastSelectedTargetEntityId: undefined, lastSelectedAt: now } as any;
+  return { targetId: undefined, nextThreat: out };
 }
 
 /**
@@ -314,6 +379,10 @@ export function decayThreat(
     pruneBelow?: number;
     // If provided, uses (now - lastDecayAt) as dt; otherwise uses (now - (lastDecayAt ?? lastAggroAt ?? now)).
     lastDecayAt?: number;
+
+  // New (v1.1.8): target stickiness to avoid coin-flip aggro swaps.
+  lastSelectedTargetEntityId?: string;
+  lastSelectedAt?: number;
   },
 ): NpcThreatState | undefined {
   if (!current) return current;

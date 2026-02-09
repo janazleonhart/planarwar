@@ -8867,6 +8867,28 @@
       "path": "worldcore/test/statusEffects.contract.test.ts",
       "provides": []
     },
+    "test.contractNpcThreatStickySwitchMargin": {
+      "class": "(test) contract_npcThreat_stickySwitch_margin",
+      "ctorArgs": [],
+      "dependsOn": [
+        "npc.threat"
+      ],
+      "kind": "test",
+      "lifecycle": "test",
+      "notes": [
+        "Locks threat target stickiness (hysteresis) so NPC target selection doesn't coin-flip on tiny threat deltas."
+      ],
+      "owns": [],
+      "path": "worldcore/test/contract_npcThreat_stickySwitch_margin.test.ts",
+      "provides": [
+        "test:contract_npcThreat_stickySwitch_margin",
+        "contract:npcThreatStickySwitch"
+      ],
+      "tags": [
+        "combat:threat",
+        "contract"
+      ]
+    },
     "test.utils": {
       "dependsOn": [],
       "functions": [
