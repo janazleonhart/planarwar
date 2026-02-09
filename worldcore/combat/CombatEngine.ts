@@ -19,6 +19,14 @@ function envNumber(name: string, fallback: number): number {
   return Number.isFinite(n) ? n : fallback;
 }
 
+function envBool(name: string, fallback: boolean): boolean {
+  const raw = String((process.env as any)?.[name] ?? "").trim().toLowerCase();
+  if (!raw) return fallback;
+  if (["1", "true", "yes", "y", "on"].includes(raw)) return true;
+  if (["0", "false", "no", "n", "off"].includes(raw)) return false;
+  return fallback;
+}
+
 function clamp01(n: number): number {
   if (!Number.isFinite(n)) return 0;
   if (n < 0) return 0;
@@ -112,6 +120,19 @@ export interface CombatAttackParams {
   disableCrit?: boolean;
   disableGlancing?: boolean;
 
+  // Optional override chances (0..1). If omitted, env defaults are used when enabled.
+  parryChance?: number;
+  blockChance?: number;
+
+  // Optional hard switches / forcing for physical channels
+  forceParry?: boolean;
+  disableParry?: boolean;
+  forceBlock?: boolean;
+  disableBlock?: boolean;
+
+  // Optional override for block reduction multiplier (0..1). If omitted, env default used.
+  blockMultiplier?: number;
+
   /**
    * Optional: apply defender status-based *incoming* damage modifiers
    * (damageTakenPct + damageTakenPctBySchool[school]) inside computeDamage.
@@ -129,6 +150,8 @@ export interface CombatResult {
   school: DamageSchool;
   wasCrit: boolean;
   wasGlancing: boolean;
+  wasParried: boolean;
+  wasBlocked: boolean;
 
   /**
    * True when computeDamage() already applied defender incoming multipliers
@@ -290,6 +313,44 @@ export function computeDamage(
 // - PW_CRIT_MULTIPLIER  (default 1.5)
 // - PW_GLANCE_CHANCE_BASE (default 0.10)
 // - PW_GLANCE_MULTIPLIER  (default 0.70)
+// --- Parry / Block (physical channels only) ---
+// These are opt-in toggles so existing combat math & test RNG remain stable unless enabled.
+// - PW_PARRY_ENABLED (default false)
+// - PW_PARRY_CHANCE_BASE (default 0.00)
+// - PW_BLOCK_ENABLED (default false)
+// - PW_BLOCK_CHANCE_BASE (default 0.00)
+// - PW_BLOCK_MULTIPLIER (default 0.70)
+const parryEnabled = (!!params.forceParry) || (envBool("PW_PARRY_ENABLED", false) && !params.disableParry);
+const blockEnabled = (!!params.forceBlock) || (envBool("PW_BLOCK_ENABLED", false) && !params.disableBlock);
+let wasParried = false;
+let wasBlocked = false;
+const forceBlock = !!params.forceBlock;
+
+// Parry happens BEFORE crit/glancing and consumes RNG only when enabled (or forceParry).
+if ((source.channel === "weapon" || source.channel === "ability") && !params.disableParry && (parryEnabled || params.forceParry)) {
+  const parryChance =
+    typeof params.parryChance === "number"
+      ? clamp01(params.parryChance)
+      : clamp01(envNumber("PW_PARRY_CHANCE_BASE", 0.0));
+
+  if (params.forceParry || rand() < parryChance) {
+    wasParried = true;
+  }
+}
+
+if (wasParried) {
+  // Parry is a full negate. We return early to avoid consuming crit/glance RNG.
+  return {
+    damage: 0,
+    school,
+    wasCrit: false,
+    wasGlancing: false,
+    wasParried: true,
+    wasBlocked: false,
+    includesDefenderTakenMods: false,
+  };
+}
+
 const defaultCritChance = clamp01(envNumber("PW_CRIT_CHANCE_BASE", 0.05));
 const critChance =
   typeof params.critChance === "number" ? clamp01(params.critChance) : defaultCritChance;
@@ -308,6 +369,8 @@ if (!params.disableCrit && (params.forceCrit || critRoll < critChance)) {
 }
 
 // Glancing check (weapon only)
+// IMPORTANT: always consume RNG for the glancing roll (even when glancing can't apply)
+// so deterministic test RNG streams stay stable.
 const glanceRoll = rand();
 if (source.channel === "weapon" && !params.disableGlancing && glanceRoll < glancingChance) {
   wasGlancing = true;
@@ -319,12 +382,41 @@ if (wasGlancing) {
 }
 
 // Apply multipliers after resolving precedence.
+// Block roll (physical channels only) happens after hit outcome (crit/glance) is known.
+// It reduces incoming damage, and is only evaluated when enabled (or forceBlock).
+if (
+  (source.channel === "weapon" || source.channel === "ability") &&
+  !params.disableBlock &&
+  (blockEnabled || forceBlock)
+) {
+  const blockChance =
+    typeof params.blockChance === "number"
+      ? clamp01(params.blockChance)
+      : clamp01(envNumber("PW_BLOCK_CHANCE_BASE", 0.0));
+
+  // NOTE: consume RNG for the block roll even when forceBlock is set,
+  // to keep deterministic RNG streams stable for contract tests.
+  const blockRoll = rand();
+  if (forceBlock || blockRoll < blockChance) {
+    wasBlocked = true;
+  }
+}
+
+// forceBlock should always reflect in the result, even if other gates prevented evaluation.
+wasBlocked = wasBlocked || forceBlock;
+
 if (wasCrit) {
   const mult = clamp(envNumber("PW_CRIT_MULTIPLIER", 1.5), 1.0, 5.0);
   dmg *= mult;
 }
 if (wasGlancing) {
   const mult = clamp(envNumber("PW_GLANCE_MULTIPLIER", 0.7), 0.05, 1.0);
+  dmg *= mult;
+}
+
+// Apply block multiplier after offense multipliers.
+if (wasBlocked) {
+  const mult = typeof params.blockMultiplier === "number" ? clamp(params.blockMultiplier, 0.05, 1.0) : clamp(envNumber("PW_BLOCK_MULTIPLIER", 0.7), 0.05, 1.0);
   dmg *= mult;
 }
   // --- Mitigation (armor/resists) ---
@@ -397,5 +489,5 @@ if (wasGlancing) {
     });
   }
 
-  return { damage: final, school, wasCrit, wasGlancing, includesDefenderTakenMods };
+  return { damage: final, school, wasCrit, wasGlancing, wasParried, wasBlocked, includesDefenderTakenMods };
 }

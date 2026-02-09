@@ -6617,22 +6617,22 @@
       "service": "test.contract"
     },
     "test.contractCastSpellEngageStateLawDeniesNoCostCooldown": {
-      "kind": "test",
-      "service": "worldcore",
-      "path": "worldcore/test/contract_castSpell_engageStateLawDenies_noCostCooldown.test.ts",
-      "lifecycle": "active",
       "dependsOn": [
         "mud.spells",
         "combat.targeting",
         "combat.serviceProtection"
       ],
+      "kind": "test",
+      "lifecycle": "active",
+      "notes": [
+        "Engage State Law v1: out-of-room/protected/dead denies occur before cost/cooldowns."
+      ],
+      "owns": [],
+      "path": "worldcore/test/contract_castSpell_engageStateLawDenies_noCostCooldown.test.ts",
       "provides": [
         "contract.test"
       ],
-      "owns": [],
-      "notes": [
-        "Engage State Law v1: out-of-room/protected/dead denies occur before cost/cooldowns."
-      ]
+      "service": "worldcore"
     },
     "test.contractCastSpellPreGatesNoLeak": {
       "class": null,
@@ -6719,6 +6719,24 @@
       ],
       "owns": [],
       "path": "worldcore/test/contract_combatEngine.test.ts",
+      "provides": []
+    },
+    "test.contractCombatEngineCritGlance": {
+      "dependsOn": [],
+      "kind": "test",
+      "lifecycle": "test",
+      "notes": "",
+      "owner": "worldcore",
+      "path": "worldcore/test/contract_combatEngine_crit_glance.test.ts",
+      "provides": []
+    },
+    "test.contractCombatEngineParryBlock": {
+      "dependsOn": [],
+      "kind": "test",
+      "lifecycle": "test",
+      "notes": "",
+      "owner": "worldcore",
+      "path": "worldcore/test/contract_combatEngine_parry_block.test.ts",
       "provides": []
     },
     "test.contractCombatLogDirectSpellDamageConsistent": {
