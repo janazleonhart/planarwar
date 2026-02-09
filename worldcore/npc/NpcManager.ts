@@ -105,6 +105,10 @@ function readTrainConfig(): TrainConfig {
 const PW_TAUNT_IMMUNITY_MS = Math.max(0, Math.floor(envNumber("PW_TAUNT_IMMUNITY_MS", 0)));
 
 
+
+// Assist threat sharing: when an NPC calls for pack help, seed allies with a share of the caller's current threat
+// against the offender. This makes pack assist focus feel stable and reduces coin-flip target swaps.
+
 const log = Logger.scope("NPC");
 
 /**
@@ -802,6 +806,24 @@ export class NpcManager {
 
     const considerRooms = new Set<string>([st.roomId, targetRoomId]);
 
+
+    // Threat share amount: scale with the caller's current threat against the offender.
+    // Threat share config is read from env at call-time so tests can override it safely.
+    const sharePct = Math.max(0, Math.min(1, envNumber("PW_ASSIST_THREAT_SHARE_PCT", 0.5)));
+    const shareMin = Math.max(0, envNumber("PW_ASSIST_THREAT_SHARE_MIN", 1));
+    const shareMax = Math.max(0, envNumber("PW_ASSIST_THREAT_SHARE_MAX", 50));
+
+    const callerThreat = this.npcThreat.get(st.entityId);
+    const baseThreat = Math.max(0, getThreatValue(callerThreat, attackerEntityId));
+    let sharedThreat = shareMin;
+    if (baseThreat > 0 && sharePct > 0) {
+      sharedThreat = Math.ceil(baseThreat * sharePct);
+      sharedThreat = Math.max(shareMin, sharedThreat);
+    }
+    if (shareMax > 0) {
+      sharedThreat = Math.min(shareMax, sharedThreat);
+    }
+
     for (const room of considerRooms) {
       const allies = this.listNpcsInRoom(room).filter((ally) => {
         if (ally.entityId === st.entityId) return false;
@@ -820,7 +842,7 @@ export class NpcManager {
         const threat = updateThreatFromDamage(
           this.npcThreat.get(ally.entityId),
           attackerEntityId,
-          1,
+          sharedThreat,
           tickNow,
         );
         this.npcThreat.set(ally.entityId, threat);

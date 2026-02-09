@@ -8320,6 +8320,30 @@
         "contract:npcManagerPackAssistUsesTickNow"
       ]
     },
+    "test.contract_npcManager_packAssist_sharesThreatMagnitude": {
+      "class": "(test) contract_npcManager_packAssist_sharesThreatMagnitude",
+      "ctorArgs": [],
+      "dependsOn": [
+        "worldcore/npc/NpcManager.ts",
+        "worldcore/npc/NpcThreat.ts",
+        "worldcore/npc/NpcTypes.ts",
+        "worldcore/core/EntityManager.ts"
+      ],
+      "kind": "test",
+      "lifecycle": "test",
+      "notes": [
+        "Contract: pack assist seeds allies with a share of the caller's threat magnitude (not a fixed +1), preserving deterministic focus.",
+        "Also verifies timestamps use tick clock (updateAll simulated time)."
+      ],
+      "owns": [
+        "test:npcManagerPackAssistSharesThreatMagnitude"
+      ],
+      "path": "worldcore/test/contract_npcManager_packAssist_sharesThreatMagnitude.test.ts",
+      "provides": [
+        "contract:npcManagerPackAssistSharesThreatMagnitude"
+      ]
+    },
+
     "test.contract_npcManager_taunt_usesTickNow": {
       "class": "(test) contract_npcManager_taunt_usesTickNow",
       "ctorArgs": [],
