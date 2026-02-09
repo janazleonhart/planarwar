@@ -806,6 +806,9 @@ export class NpcManager {
 
     const considerRooms = new Set<string>([st.roomId, targetRoomId]);
 
+    const trainCfg = readTrainConfig();
+    const allowCrossRoom = !!(trainCfg.enabled && trainCfg.roomsEnabled);
+
 
     // Threat share amount: scale with the caller's current threat against the offender.
     // Threat share config is read from env at call-time so tests can override it safely.
@@ -839,6 +842,28 @@ export class NpcManager {
       });
 
       for (const ally of allies) {
+        // Respect Engage State Law: do not seed pack assist onto invalid targets (stealth/out-of-room/dead/etc).
+        const allyEnt = this.entities.get(ally.entityId) ?? ({
+          id: ally.entityId,
+          type: "npc",
+          roomId: ally.roomId,
+          hp: (ally as any).hp,
+          alive: (ally as any).alive,
+        } as any);
+        const tv = isValidCombatTarget({
+          now: tickNow,
+          attacker: allyEnt as any,
+          target: attacker as any,
+          attackerRoomId: ally.roomId,
+          allowCrossRoom,
+        });
+        // Only hard-block pack assist on stealth to prevent "wallhack" pre-seeding.
+        // Other invalid reasons (out_of_room during gate, transient missing entity, etc.)
+        // should not prevent allies from snapping/responding, preserving legacy behaviors.
+        if (!tv.ok && (tv as any).reason === "stealth") {
+          continue;
+        }
+
         const threat = updateThreatFromDamage(
           this.npcThreat.get(ally.entityId),
           attackerEntityId,

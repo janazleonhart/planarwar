@@ -711,21 +711,6 @@
       ],
       "path": "worldcore/combat/CombatEngine.ts"
     },
-    "combat.tuning": {
-      "dependsOn": [],
-      "functions": [
-        "getCombatTuningFromEnv",
-        "clamp",
-        "clamp01"
-      ],
-      "kind": "utility",
-      "notes": [
-        "Centralized env-driven tuning knobs for combat math (crit/glance/parry/block).",
-        "Provides safe env parsing + clamping so CombatEngine can stay focused on combat math.",
-        "Defaults mirror historical CombatEngine defaults to avoid behavioral drift."
-      ],
-      "path": "worldcore/combat/CombatTuning.ts"
-    },
     "combat.entityCombat": {
       "dependsOn": [
         "characters.types",
@@ -1001,6 +986,21 @@
         "Used by npc.manager and future command/combat glue to prevent drift."
       ],
       "path": "worldcore/combat/CombatTargeting.ts"
+    },
+    "combat.tuning": {
+      "dependsOn": [],
+      "functions": [
+        "getCombatTuningFromEnv",
+        "clamp",
+        "clamp01"
+      ],
+      "kind": "utility",
+      "notes": [
+        "Centralized env-driven tuning knobs for combat math (crit/glance/parry/block).",
+        "Provides safe env parsing + clamping so CombatEngine can stay focused on combat math.",
+        "Defaults mirror historical CombatEngine defaults to avoid behavioral drift."
+      ],
+      "path": "worldcore/combat/CombatTuning.ts"
     },
     "combat.vulnerability": {
       "dependsOn": [
@@ -6612,31 +6612,6 @@
       "provides": [],
       "service": "test.contract"
     },
-    "test.contractMudCombatPvpRiposteOnParry": {
-      "class": "(test) contract_mudCombat_pvpRiposte_onParry",
-      "ctorArgs": [],
-      "dependsOn": [
-        "worldcore/mud/actions/MudCombatActions.ts",
-        "worldcore/mud/MudCombatGates.ts",
-        "worldcore/pvp/DuelService.ts",
-        "worldcore/combat/PhysicalHitResolver.ts",
-        "worldcore/mud/MudTrainingDummy.ts"
-      ],
-      "kind": "test",
-      "lifecycle": "active",
-      "notes": [
-        "Contract: duel parry can trigger deterministic riposte damage in MudCombatActions.handleAttackAction via injectable ctx.combatRng.",
-        "Guards PvP riposte determinism + messaging for clients/tests."
-      ],
-      "owns": [
-        "test:contract_mudCombat_pvpRiposte_onParry"
-      ],
-      "path": "worldcore/test/contract_mudCombat_pvpRiposte_onParry.test.ts",
-      "provides": [
-        "contract:mudCombatPvpRiposteOnParry"
-      ],
-      "service": "test.contract"
-    },
     "test.contractAutofireBasic": {
       "class": null,
       "ctorArgs": [],
@@ -7086,6 +7061,31 @@
       "provides": [],
       "service": "test.contract"
     },
+    "test.contractMudCombatPvpRiposteOnParry": {
+      "class": "(test) contract_mudCombat_pvpRiposte_onParry",
+      "ctorArgs": [],
+      "dependsOn": [
+        "worldcore/mud/actions/MudCombatActions.ts",
+        "worldcore/mud/MudCombatGates.ts",
+        "worldcore/pvp/DuelService.ts",
+        "worldcore/combat/PhysicalHitResolver.ts",
+        "worldcore/mud/MudTrainingDummy.ts"
+      ],
+      "kind": "test",
+      "lifecycle": "active",
+      "notes": [
+        "Contract: duel parry can trigger deterministic riposte damage in MudCombatActions.handleAttackAction via injectable ctx.combatRng.",
+        "Guards PvP riposte determinism + messaging for clients/tests."
+      ],
+      "owns": [
+        "test:contract_mudCombat_pvpRiposte_onParry"
+      ],
+      "path": "worldcore/test/contract_mudCombat_pvpRiposte_onParry.test.ts",
+      "provides": [
+        "contract:mudCombatPvpRiposteOnParry"
+      ],
+      "service": "test.contract"
+    },
     "test.contractNpcCombatAssistRadiusPolicy": {
       "class": "(test) contract_npcCombat_assist_radiusPolicy",
       "ctorArgs": [],
@@ -7329,6 +7329,74 @@
       "path": "worldcore/test/contract_npcThreat_decay_integration.test.ts",
       "provides": [
         "contract:npcThreatDecayIntegration"
+      ]
+    },
+    "test.contractNpcThreatDecayRoleOosPolicy": {
+      "class": "(test) contract_npcThreat_decay_role_oos_policy",
+      "ctorArgs": [],
+      "dependsOn": [
+        "npc.threat"
+      ],
+      "kind": "test",
+      "lifecycle": "test",
+      "notes": [
+        "Locks role-aware + out-of-room threat decay policy: tanks hold longer, DPS decays faster, and out_of_room targets decay harder."
+      ],
+      "owns": [],
+      "path": "worldcore/test/contract_npcThreat_decay_role_oos_policy.test.ts",
+      "provides": [
+        "test:contract_npcThreat_decay_role_oos_policy",
+        "contract:npcThreatDecayRoleOosPolicy"
+      ],
+      "tags": [
+        "combat:threat",
+        "decay",
+        "contract"
+      ]
+    },
+    "test.contractNpcThreatForgetOnStealthPrunesBucket": {
+      "class": "(test) contract_npcThreat_forgetOnStealth_prunesBucket",
+      "ctorArgs": [],
+      "dependsOn": [
+        "npc.threat"
+      ],
+      "kind": "test",
+      "lifecycle": "test",
+      "notes": [
+        "Ensures stealthed targets can be immediately forgotten (threat bucket pruned) to prevent free tracking / snap-back when stealth ends."
+      ],
+      "owns": [],
+      "path": "worldcore/test/contract_npcThreat_forgetOnStealth_prunesBucket.test.ts",
+      "provides": [
+        "test:contract_npcThreat_forgetOnStealth_prunesBucket",
+        "contract:npcThreatForgetOnStealth"
+      ],
+      "tags": [
+        "combat:threat",
+        "stealth",
+        "contract"
+      ]
+    },
+    "test.contractNpcThreatStickySwitchMargin": {
+      "class": "(test) contract_npcThreat_stickySwitch_margin",
+      "ctorArgs": [],
+      "dependsOn": [
+        "npc.threat"
+      ],
+      "kind": "test",
+      "lifecycle": "test",
+      "notes": [
+        "Locks threat target stickiness (hysteresis) so NPC target selection doesn't coin-flip on tiny threat deltas."
+      ],
+      "owns": [],
+      "path": "worldcore/test/contract_npcThreat_stickySwitch_margin.test.ts",
+      "provides": [
+        "test:contract_npcThreat_stickySwitch_margin",
+        "contract:npcThreatStickySwitch"
+      ],
+      "tags": [
+        "combat:threat",
+        "contract"
       ]
     },
     "test.contractNpcThreatTauntOverridesTopThreat": {
@@ -8298,11 +8366,13 @@
       "provides": [],
       "service": "test.contract"
     },
-    "test.contract_npcManager_packAssist_usesTickNow": {
-      "class": "(test) contract_npcManager_packAssist_usesTickNow",
+    "test.contract_npcManager_packAssist_respectsStealth": {
+      "class": "(test) contract_npcManager_packAssist_respectsStealth",
       "ctorArgs": [],
       "dependsOn": [
         "worldcore/npc/NpcManager.ts",
+        "worldcore/combat/CombatTargeting.ts",
+        "worldcore/combat/StatusEffects.ts",
         "worldcore/npc/NpcThreat.ts",
         "worldcore/npc/NpcTypes.ts",
         "worldcore/core/EntityManager.ts"
@@ -8310,14 +8380,14 @@
       "kind": "test",
       "lifecycle": "test",
       "notes": [
-        "Contract: pack assist stamps threat timestamps using tick clock (updateAll simulated time), not Date.now."
+        "Contract: pack assist must respect Engage State Law visibility; stealthed offenders do not receive seeded ally threat or snap-movement."
       ],
       "owns": [
-        "test:npcManagerPackAssistUsesTickNow"
+        "test:npcManagerPackAssistRespectsStealth"
       ],
-      "path": "worldcore/test/contract_npcManager_packAssist_usesTickNow.test.ts",
+      "path": "worldcore/test/contract_npcManager_packAssist_respectsStealth.test.ts",
       "provides": [
-        "contract:npcManagerPackAssistUsesTickNow"
+        "contract:npcManagerPackAssistRespectsStealth"
       ]
     },
     "test.contract_npcManager_packAssist_sharesThreatMagnitude": {
@@ -8343,7 +8413,28 @@
         "contract:npcManagerPackAssistSharesThreatMagnitude"
       ]
     },
-
+    "test.contract_npcManager_packAssist_usesTickNow": {
+      "class": "(test) contract_npcManager_packAssist_usesTickNow",
+      "ctorArgs": [],
+      "dependsOn": [
+        "worldcore/npc/NpcManager.ts",
+        "worldcore/npc/NpcThreat.ts",
+        "worldcore/npc/NpcTypes.ts",
+        "worldcore/core/EntityManager.ts"
+      ],
+      "kind": "test",
+      "lifecycle": "test",
+      "notes": [
+        "Contract: pack assist stamps threat timestamps using tick clock (updateAll simulated time), not Date.now."
+      ],
+      "owns": [
+        "test:npcManagerPackAssistUsesTickNow"
+      ],
+      "path": "worldcore/test/contract_npcManager_packAssist_usesTickNow.test.ts",
+      "provides": [
+        "contract:npcManagerPackAssistUsesTickNow"
+      ]
+    },
     "test.contract_npcManager_taunt_usesTickNow": {
       "class": "(test) contract_npcManager_taunt_usesTickNow",
       "ctorArgs": [],
@@ -8890,74 +8981,6 @@
       "owns": [],
       "path": "worldcore/test/statusEffects.contract.test.ts",
       "provides": []
-    },
-    "test.contractNpcThreatStickySwitchMargin": {
-      "class": "(test) contract_npcThreat_stickySwitch_margin",
-      "ctorArgs": [],
-      "dependsOn": [
-        "npc.threat"
-      ],
-      "kind": "test",
-      "lifecycle": "test",
-      "notes": [
-        "Locks threat target stickiness (hysteresis) so NPC target selection doesn't coin-flip on tiny threat deltas."
-      ],
-      "owns": [],
-      "path": "worldcore/test/contract_npcThreat_stickySwitch_margin.test.ts",
-      "provides": [
-        "test:contract_npcThreat_stickySwitch_margin",
-        "contract:npcThreatStickySwitch"
-      ],
-      "tags": [
-        "combat:threat",
-        "contract"
-      ]
-    },
-    "test.contractNpcThreatForgetOnStealthPrunesBucket": {
-      "class": "(test) contract_npcThreat_forgetOnStealth_prunesBucket",
-      "ctorArgs": [],
-      "dependsOn": [
-        "npc.threat"
-      ],
-      "kind": "test",
-      "lifecycle": "test",
-      "notes": [
-        "Ensures stealthed targets can be immediately forgotten (threat bucket pruned) to prevent free tracking / snap-back when stealth ends."
-      ],
-      "owns": [],
-      "path": "worldcore/test/contract_npcThreat_forgetOnStealth_prunesBucket.test.ts",
-      "provides": [
-        "test:contract_npcThreat_forgetOnStealth_prunesBucket",
-        "contract:npcThreatForgetOnStealth"
-      ],
-      "tags": [
-        "combat:threat",
-        "stealth",
-        "contract"
-      ]
-    },
-    "test.contractNpcThreatDecayRoleOosPolicy": {
-      "class": "(test) contract_npcThreat_decay_role_oos_policy",
-      "ctorArgs": [],
-      "dependsOn": [
-        "npc.threat"
-      ],
-      "kind": "test",
-      "lifecycle": "test",
-      "notes": [
-        "Locks role-aware + out-of-room threat decay policy: tanks hold longer, DPS decays faster, and out_of_room targets decay harder."
-      ],
-      "owns": [],
-      "path": "worldcore/test/contract_npcThreat_decay_role_oos_policy.test.ts",
-      "provides": [
-        "test:contract_npcThreat_decay_role_oos_policy",
-        "contract:npcThreatDecayRoleOosPolicy"
-      ],
-      "tags": [
-        "combat:threat",
-        "decay",
-        "contract"
-      ]
     },
     "test.utils": {
       "dependsOn": [],
