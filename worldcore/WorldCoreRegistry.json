@@ -6612,6 +6612,31 @@
       "provides": [],
       "service": "test.contract"
     },
+    "test.contractMudCombatPvpRiposteOnParry": {
+      "class": "(test) contract_mudCombat_pvpRiposte_onParry",
+      "ctorArgs": [],
+      "dependsOn": [
+        "worldcore/mud/actions/MudCombatActions.ts",
+        "worldcore/mud/MudCombatGates.ts",
+        "worldcore/pvp/DuelService.ts",
+        "worldcore/combat/PhysicalHitResolver.ts",
+        "worldcore/mud/MudTrainingDummy.ts"
+      ],
+      "kind": "test",
+      "lifecycle": "active",
+      "notes": [
+        "Contract: duel parry can trigger deterministic riposte damage in MudCombatActions.handleAttackAction via injectable ctx.combatRng.",
+        "Guards PvP riposte determinism + messaging for clients/tests."
+      ],
+      "owns": [
+        "test:contract_mudCombat_pvpRiposte_onParry"
+      ],
+      "path": "worldcore/test/contract_mudCombat_pvpRiposte_onParry.test.ts",
+      "provides": [
+        "contract:mudCombatPvpRiposteOnParry"
+      ],
+      "service": "test.contract"
+    },
     "test.contractAutofireBasic": {
       "class": null,
       "ctorArgs": [],

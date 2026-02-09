@@ -498,6 +498,8 @@ export async function handleAttackAction(
     const effective = computeEffectiveAttributes(char, ctx.items);
     const baseDmg = computeTrainingDummyDamage(effective);
 
+    const rng = typeof (ctx as any).combatRng === "function" ? ((ctx as any).combatRng as any) : combatRng();
+
     const phys = resolvePhysicalHit({
       attackerLevel: Number((char as any).level) || 1,
       defenderLevel: Number((targetChar as any).level) || 1,
@@ -509,6 +511,7 @@ export async function handleAttackAction(
       allowCrit: true,
       allowMultiStrike: false,
       allowRiposte: true,
+      rng,
     });
 
     const targetEffective = computeEffectiveAttributes(targetChar as any, ctx.items);
@@ -523,7 +526,6 @@ export async function handleAttackAction(
     if (outcome === "miss" || outcome === "dodge" || outcome === "parry") {
       if (outcome === "parry" && phys.riposte) {
         const riposteChance = clamp01(envNumber("PW_RIPOSTE_CHANCE_ON_PARRY", 0.3));
-        const rng = combatRng();
         if (rng() < riposteChance) {
           const ripMult = clamp(envNumber("PW_RIPOSTE_DAMAGE_MULTIPLIER", 0.5), 0, 5);
           // Use defender's baseline as the riposte base (keeps symmetry with earlier v1 behavior).
@@ -538,7 +540,7 @@ export async function handleAttackAction(
           basePower: baseDmg,
           damageMultiplier: openerMult,
           damageSchool: "physical",
-          rng: combatRng(),
+          rng,
           critChance: phys.critChance,
           glancingChance: phys.glancingChance,
         },
