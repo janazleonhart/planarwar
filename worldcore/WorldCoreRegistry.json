@@ -711,6 +711,21 @@
       ],
       "path": "worldcore/combat/CombatEngine.ts"
     },
+    "combat.tuning": {
+      "dependsOn": [],
+      "functions": [
+        "getCombatTuningFromEnv",
+        "clamp",
+        "clamp01"
+      ],
+      "kind": "utility",
+      "notes": [
+        "Centralized env-driven tuning knobs for combat math (crit/glance/parry/block).",
+        "Provides safe env parsing + clamping so CombatEngine can stay focused on combat math.",
+        "Defaults mirror historical CombatEngine defaults to avoid behavioral drift."
+      ],
+      "path": "worldcore/combat/CombatTuning.ts"
+    },
     "combat.entityCombat": {
       "dependsOn": [
         "characters.types",
@@ -6728,6 +6743,20 @@
       "notes": "",
       "owner": "worldcore",
       "path": "worldcore/test/contract_combatEngine_crit_glance.test.ts",
+      "provides": []
+    },
+    "test.contractCombatEngineCritGlanceCalibration": {
+      "dependsOn": [
+        "combat.engine"
+      ],
+      "kind": "test",
+      "lifecycle": "test",
+      "notes": [
+        "Contract: crit/glance RNG stream consumption is stable across many swings (roll -> crit -> glance), and glancing overrides crit.",
+        "Guards determinism: fails if combat math starts consuming extra RNG draws in the crit/glance pipeline."
+      ],
+      "owner": "worldcore",
+      "path": "worldcore/test/contract_combatEngine_crit_glance_calibration.test.ts",
       "provides": []
     },
     "test.contractCombatEngineParryBlock": {

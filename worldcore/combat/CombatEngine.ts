@@ -10,36 +10,9 @@ import { computeCombatStatusSnapshot } from "./StatusEffects";
 import type { CombatStatusSnapshot } from "./StatusEffects";
 import { armorMultiplier } from "./Mitigation";
 import { resistMultiplier } from "./Resists";
+import { clamp, clamp01, getCombatTuningFromEnv } from "./CombatTuning";
 
 const log = Logger.scope("COMBAT");
-
-function envNumber(name: string, fallback: number): number {
-  const raw = String((process.env as any)?.[name] ?? "").trim();
-  const n = Number(raw);
-  return Number.isFinite(n) ? n : fallback;
-}
-
-function envBool(name: string, fallback: boolean): boolean {
-  const raw = String((process.env as any)?.[name] ?? "").trim().toLowerCase();
-  if (!raw) return fallback;
-  if (["1", "true", "yes", "y", "on"].includes(raw)) return true;
-  if (["0", "false", "no", "n", "off"].includes(raw)) return false;
-  return fallback;
-}
-
-function clamp01(n: number): number {
-  if (!Number.isFinite(n)) return 0;
-  if (n < 0) return 0;
-  if (n > 1) return 1;
-  return n;
-}
-
-function clamp(n: number, lo: number, hi: number): number {
-  if (!Number.isFinite(n)) return lo;
-  if (n < lo) return lo;
-  if (n > hi) return hi;
-  return n;
-}
 
 // v1 enums: we keep these very small and expand later.
 export type WeaponSkillId = "unarmed" | "one_handed" | "two_handed" | "ranged" | "dagger";
@@ -303,122 +276,126 @@ export function computeDamage(
     dmg *= 1 + damageDealtPct;
   }
 
-// --- Crit / Glancing (RNG) ---
-// Ordering notes:
-// - We always consume RNG for crit and glancing checks to keep deterministic RNG streams stable.
-// - Glancing hits cannot crit (common physical-system convention). If both rolls succeed, glancing wins.
-//
-// Tuning knobs:
-// - PW_CRIT_CHANCE_BASE (default 0.05)
-// - PW_CRIT_MULTIPLIER  (default 1.5)
-// - PW_GLANCE_CHANCE_BASE (default 0.10)
-// - PW_GLANCE_MULTIPLIER  (default 0.70)
-// --- Parry / Block (physical channels only) ---
-// These are opt-in toggles so existing combat math & test RNG remain stable unless enabled.
-// - PW_PARRY_ENABLED (default false)
-// - PW_PARRY_CHANCE_BASE (default 0.00)
-// - PW_BLOCK_ENABLED (default false)
-// - PW_BLOCK_CHANCE_BASE (default 0.00)
-// - PW_BLOCK_MULTIPLIER (default 0.70)
-const parryEnabled = (!!params.forceParry) || (envBool("PW_PARRY_ENABLED", false) && !params.disableParry);
-const blockEnabled = (!!params.forceBlock) || (envBool("PW_BLOCK_ENABLED", false) && !params.disableBlock);
-let wasParried = false;
-let wasBlocked = false;
-const forceBlock = !!params.forceBlock;
+  // --- Crit / Glancing (RNG) ---
+  // Ordering notes:
+  // - We always consume RNG for crit and glancing checks to keep deterministic RNG streams stable.
+  // - Glancing hits cannot crit (common physical-system convention). If both rolls succeed, glancing wins.
+  //
+  // Tuning knobs:
+  // - PW_CRIT_CHANCE_BASE (default 0.05)
+  // - PW_CRIT_MULTIPLIER  (default 1.5)
+  // - PW_GLANCE_CHANCE_BASE (default 0.10)
+  // - PW_GLANCE_MULTIPLIER  (default 0.70)
+  // --- Parry / Block (physical channels only) ---
+  // These are opt-in toggles so existing combat math & test RNG remain stable unless enabled.
+  // - PW_PARRY_ENABLED (default false)
+  // - PW_PARRY_CHANCE_BASE (default 0.00)
+  // - PW_BLOCK_ENABLED (default false)
+  // - PW_BLOCK_CHANCE_BASE (default 0.00)
+  // - PW_BLOCK_MULTIPLIER (default 0.70)
+  const tuning = getCombatTuningFromEnv();
 
-// Parry happens BEFORE crit/glancing and consumes RNG only when enabled (or forceParry).
-if ((source.channel === "weapon" || source.channel === "ability") && !params.disableParry && (parryEnabled || params.forceParry)) {
-  const parryChance =
-    typeof params.parryChance === "number"
-      ? clamp01(params.parryChance)
-      : clamp01(envNumber("PW_PARRY_CHANCE_BASE", 0.0));
+  const parryEnabled = !!params.forceParry || (tuning.parryEnabled && !params.disableParry);
+  const blockEnabled = !!params.forceBlock || (tuning.blockEnabled && !params.disableBlock);
 
-  if (params.forceParry || rand() < parryChance) {
-    wasParried = true;
+  let wasParried = false;
+  let wasBlocked = false;
+  const forceBlock = !!params.forceBlock;
+
+  // Parry happens BEFORE crit/glancing and consumes RNG only when enabled (or forceParry).
+  if (
+    (source.channel === "weapon" || source.channel === "ability") &&
+    !params.disableParry &&
+    (parryEnabled || params.forceParry)
+  ) {
+    const parryChance =
+      typeof params.parryChance === "number" ? clamp01(params.parryChance) : tuning.parryChanceBase;
+
+    if (params.forceParry || rand() < parryChance) {
+      wasParried = true;
+    }
   }
-}
 
-if (wasParried) {
-  // Parry is a full negate. We return early to avoid consuming crit/glance RNG.
-  return {
-    damage: 0,
-    school,
-    wasCrit: false,
-    wasGlancing: false,
-    wasParried: true,
-    wasBlocked: false,
-    includesDefenderTakenMods: false,
-  };
-}
-
-const defaultCritChance = clamp01(envNumber("PW_CRIT_CHANCE_BASE", 0.05));
-const critChance =
-  typeof params.critChance === "number" ? clamp01(params.critChance) : defaultCritChance;
-
-const defaultGlancingChance = clamp01(envNumber("PW_GLANCE_CHANCE_BASE", 0.1));
-const glancingChance =
-  typeof params.glancingChance === "number" ? clamp01(params.glancingChance) : defaultGlancingChance;
-
-let wasCrit = false;
-let wasGlancing = false;
-
-// Crit check
-const critRoll = rand();
-if (!params.disableCrit && (params.forceCrit || critRoll < critChance)) {
-  wasCrit = true;
-}
-
-// Glancing check (weapon only)
-// IMPORTANT: always consume RNG for the glancing roll (even when glancing can't apply)
-// so deterministic test RNG streams stay stable.
-const glanceRoll = rand();
-if (source.channel === "weapon" && !params.disableGlancing && glanceRoll < glancingChance) {
-  wasGlancing = true;
-}
-
-// Resolve precedence: glancing hits cannot crit.
-if (wasGlancing) {
-  wasCrit = false;
-}
-
-// Apply multipliers after resolving precedence.
-// Block roll (physical channels only) happens after hit outcome (crit/glance) is known.
-// It reduces incoming damage, and is only evaluated when enabled (or forceBlock).
-if (
-  (source.channel === "weapon" || source.channel === "ability") &&
-  !params.disableBlock &&
-  (blockEnabled || forceBlock)
-) {
-  const blockChance =
-    typeof params.blockChance === "number"
-      ? clamp01(params.blockChance)
-      : clamp01(envNumber("PW_BLOCK_CHANCE_BASE", 0.0));
-
-  // NOTE: consume RNG for the block roll even when forceBlock is set,
-  // to keep deterministic RNG streams stable for contract tests.
-  const blockRoll = rand();
-  if (forceBlock || blockRoll < blockChance) {
-    wasBlocked = true;
+  if (wasParried) {
+    // Parry is a full negate. We return early to avoid consuming crit/glance RNG.
+    return {
+      damage: 0,
+      school,
+      wasCrit: false,
+      wasGlancing: false,
+      wasParried: true,
+      wasBlocked: false,
+      includesDefenderTakenMods: false,
+    };
   }
-}
 
-// forceBlock should always reflect in the result, even if other gates prevented evaluation.
-wasBlocked = wasBlocked || forceBlock;
+  const defaultCritChance = tuning.critChanceBase;
+  const critChance =
+    typeof params.critChance === "number" ? clamp01(params.critChance) : defaultCritChance;
 
-if (wasCrit) {
-  const mult = clamp(envNumber("PW_CRIT_MULTIPLIER", 1.5), 1.0, 5.0);
-  dmg *= mult;
-}
-if (wasGlancing) {
-  const mult = clamp(envNumber("PW_GLANCE_MULTIPLIER", 0.7), 0.05, 1.0);
-  dmg *= mult;
-}
+  const defaultGlancingChance = tuning.glancingChanceBase;
+  const glancingChance =
+    typeof params.glancingChance === "number" ? clamp01(params.glancingChance) : defaultGlancingChance;
 
-// Apply block multiplier after offense multipliers.
-if (wasBlocked) {
-  const mult = typeof params.blockMultiplier === "number" ? clamp(params.blockMultiplier, 0.05, 1.0) : clamp(envNumber("PW_BLOCK_MULTIPLIER", 0.7), 0.05, 1.0);
-  dmg *= mult;
-}
+  let wasCrit = false;
+  let wasGlancing = false;
+
+  // Crit check
+  const critRoll = rand();
+  if (!params.disableCrit && (params.forceCrit || critRoll < critChance)) {
+    wasCrit = true;
+  }
+
+  // Glancing check (weapon only)
+  // IMPORTANT: always consume RNG for the glancing roll (even when glancing can't apply)
+  // so deterministic test RNG streams stay stable.
+  const glanceRoll = rand();
+  if (source.channel === "weapon" && !params.disableGlancing && glanceRoll < glancingChance) {
+    wasGlancing = true;
+  }
+
+  // Resolve precedence: glancing hits cannot crit.
+  if (wasGlancing) {
+    wasCrit = false;
+  }
+
+  // Apply multipliers after resolving precedence.
+  // Block roll (physical channels only) happens after hit outcome (crit/glance) is known.
+  // It reduces incoming damage, and is only evaluated when enabled (or forceBlock).
+  if (
+    (source.channel === "weapon" || source.channel === "ability") &&
+    !params.disableBlock &&
+    (blockEnabled || forceBlock)
+  ) {
+    const blockChance =
+      typeof params.blockChance === "number" ? clamp01(params.blockChance) : tuning.blockChanceBase;
+
+    // NOTE: consume RNG for the block roll even when forceBlock is set,
+    // to keep deterministic RNG streams stable for contract tests.
+    const blockRoll = rand();
+    if (forceBlock || blockRoll < blockChance) {
+      wasBlocked = true;
+    }
+  }
+
+  // forceBlock should always reflect in the result, even if other gates prevented evaluation.
+  wasBlocked = wasBlocked || forceBlock;
+
+  if (wasCrit) {
+    dmg *= tuning.critMultiplier;
+  }
+  if (wasGlancing) {
+    dmg *= tuning.glancingMultiplier;
+  }
+
+  // Apply block multiplier after offense multipliers.
+  if (wasBlocked) {
+    const mult =
+      typeof params.blockMultiplier === "number"
+        ? clamp(params.blockMultiplier, 0.05, 1.0)
+        : tuning.blockMultiplier;
+    dmg *= mult;
+  }
   // --- Mitigation (armor/resists) ---
   // Defender snapshot (optional) lets armor/resist buffs modify mitigation.
   const defenderStatus = target.defenderStatus;
