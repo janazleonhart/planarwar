@@ -807,10 +807,15 @@ export class NpcManager {
         ? (opts as any).tickNow
         : (this._tickNow || this._simNow || Date.now());
 
-    const considerRooms = new Set<string>([st.roomId, targetRoomId]);
-
     const trainCfg = readTrainConfig();
     const allowCrossRoom = !!(trainCfg.enabled && trainCfg.roomsEnabled);
+    // Cross-room assist is only allowed when Train rooms are enabled, OR when the caller provides
+    // an explicit forceRoomId (used by gate-home / supernatural calls for help).
+    const allowCrossRoomAssist = allowCrossRoom || typeof opts.forceRoomId === "string";
+
+    const considerRooms = new Set<string>(
+      allowCrossRoomAssist || st.roomId === targetRoomId ? [st.roomId, targetRoomId] : [st.roomId],
+    );
 
     // Optional throttling: prevent repeated pack assist waves from the same caller
     // against the same offender within a short window.
@@ -890,14 +895,14 @@ export class NpcManager {
           attacker: allyEnt as any,
           target: attacker as any,
           attackerRoomId: ally.roomId,
-          allowCrossRoom,
+          allowCrossRoom: allowCrossRoomAssist,
         });
-        // Only hard-block pack assist on stealth to prevent "wallhack" pre-seeding.
-        // Other invalid reasons (out_of_room during gate, transient missing entity, etc.)
-        // should not prevent allies from snapping/responding, preserving legacy behaviors.
-        if (!tv.ok && (tv as any).reason === "stealth") {
-          continue;
-        }
+        // Stealth is a hard stop: never seed threat or snap on an invisible offender.
+        if (!tv.ok && (tv as any).reason === "stealth") continue;
+        // If cross-room assist is NOT enabled, then any other invalid reason (most
+        // commonly out_of_room) must block assist seeding, otherwise NPCs get
+        // free radar through walls.
+        if (!tv.ok && !allowCrossRoomAssist) continue;
 
         const threat = updateThreatFromDamage(
           this.npcThreat.get(ally.entityId),

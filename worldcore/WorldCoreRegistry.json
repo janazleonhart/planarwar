@@ -9026,6 +9026,20 @@
       "path": "worldcore/test/statusEffects.contract.test.ts",
       "provides": []
     },
+    "test.contract_npcManager_packAssist_noCrossRoomWithoutTrain": {
+      "class": "(test) contract_npcManager_packAssist_noCrossRoomWithoutTrain",
+      "dependsOn": [
+        "npc.manager",
+        "npc.threat",
+        "npc.types"
+      ],
+      "kind": "test",
+      "lifecycle": "static",
+      "notes": [
+        "Contract: pack assist must not seed threat across rooms unless Train rooms are enabled or caller forceRoomId is provided (gate-home help)."
+      ],
+      "path": "worldcore/test/contract_npcManager_packAssist_noCrossRoomWithoutTrain.test.ts"
+    },
     "test.utils": {
       "dependsOn": [],
       "functions": [
