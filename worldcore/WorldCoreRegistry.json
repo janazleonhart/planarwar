@@ -7299,6 +7299,20 @@
       "path": "worldcore/test/contract_npcCombat_playerRiposte_onParry.test.ts",
       "provides": []
     },
+    "test.contractNpcManagerPackAssistOffenderWindowScopedByCallerWhenNoGroup": {
+      "dependsOn": [
+        "core.entities",
+        "npc.manager",
+        "npc.types",
+        "npc.threat"
+      ],
+      "kind": "test",
+      "notes": [
+        "Contract: PW_ASSIST_OFFENDER_WINDOW_MS throttles by pack groupId when present.",
+        "When a prototype has no groupId, throttling is scoped per-caller to avoid \"undefined:<offender>\" global suppression."
+      ],
+      "path": "worldcore/test/contract_npcManager_packAssist_offenderWindow_scopedByCallerWhenNoGroup.test.ts"
+    },
     "test.contractNpcThreatDecayAssist": {
       "class": "(test) contract_npcThreat_decay_assist",
       "ctorArgs": [],
@@ -8366,13 +8380,11 @@
       "provides": [],
       "service": "test.contract"
     },
-    "test.contract_npcManager_packAssist_respectsStealth": {
-      "class": "(test) contract_npcManager_packAssist_respectsStealth",
+    "test.contract_npcManager_packAssist_cooldownThrottles": {
+      "class": "(test) contract_npcManager_packAssist_cooldownThrottles",
       "ctorArgs": [],
       "dependsOn": [
         "worldcore/npc/NpcManager.ts",
-        "worldcore/combat/CombatTargeting.ts",
-        "worldcore/combat/StatusEffects.ts",
         "worldcore/npc/NpcThreat.ts",
         "worldcore/npc/NpcTypes.ts",
         "worldcore/core/EntityManager.ts"
@@ -8380,15 +8392,38 @@
       "kind": "test",
       "lifecycle": "test",
       "notes": [
-        "Contract: pack assist must respect Engage State Law visibility; stealthed offenders do not receive seeded ally threat or snap-movement."
+        "Contract: PW_ASSIST_CALL_COOLDOWN_MS throttles repeated pack assist calls from the same caller against the same offender, preventing rapid full-pack recruitment."
       ],
       "owns": [
-        "test:npcManagerPackAssistRespectsStealth"
+        "test:npcManagerPackAssistCooldownThrottles"
       ],
-      "path": "worldcore/test/contract_npcManager_packAssist_respectsStealth.test.ts",
+      "path": "worldcore/test/contract_npcManager_packAssist_cooldown_throttles.test.ts",
       "provides": [
-        "contract:npcManagerPackAssistRespectsStealth"
+        "contract:npcManagerPackAssistCooldownThrottles"
       ]
+    },
+    "test.contract_npcManager_packAssist_markTtlExpires": {
+      "class": "(test) contract_npcManager_packAssist_markTtlExpires",
+      "ctorArgs": [],
+      "dependsOn": [
+        "worldcore/npc/NpcManager.ts",
+        "worldcore/npc/NpcThreat.ts",
+        "worldcore/npc/NpcTypes.ts",
+        "worldcore/core/EntityManager.ts"
+      ],
+      "kind": "test",
+      "lifecycle": "test",
+      "notes": [
+        "Contract: PW_ASSIST_MARK_TTL_MS expires pack-help marks so long fights can re-assist after the mark window."
+      ],
+      "owns": [
+        "test:npcManagerPackAssistMarkTtlExpires"
+      ],
+      "path": "worldcore/test/contract_npcManager_packAssist_markTtl_expires.test.ts",
+      "provides": [
+        "contract:npcManagerPackAssistMarkTtlExpires"
+      ],
+      "service": "worldcore"
     },
     "test.contract_npcManager_packAssist_maxAlliesPrioritizesEngaged": {
       "class": "(test) contract_npcManager_packAssist_maxAlliesPrioritizesEngaged",
@@ -8412,8 +8447,22 @@
         "contract:npcManagerPackAssistMaxAlliesPrioritizesEngaged"
       ]
     },
-    "test.contract_npcManager_packAssist_cooldownThrottles": {
-      "class": "(test) contract_npcManager_packAssist_cooldownThrottles",
+    "test.contract_npcManager_packAssist_noCrossRoomWithoutTrain": {
+      "class": "(test) contract_npcManager_packAssist_noCrossRoomWithoutTrain",
+      "dependsOn": [
+        "npc.manager",
+        "npc.threat",
+        "npc.types"
+      ],
+      "kind": "test",
+      "lifecycle": "static",
+      "notes": [
+        "Contract: pack assist must not seed threat across rooms unless Train rooms are enabled or caller forceRoomId is provided (gate-home help)."
+      ],
+      "path": "worldcore/test/contract_npcManager_packAssist_noCrossRoomWithoutTrain.test.ts"
+    },
+    "test.contract_npcManager_packAssist_offenderWindowThrottles": {
+      "class": "(test) contract_npcManager_packAssist_offenderWindowThrottles",
       "ctorArgs": [],
       "dependsOn": [
         "worldcore/npc/NpcManager.ts",
@@ -8424,14 +8473,38 @@
       "kind": "test",
       "lifecycle": "test",
       "notes": [
-        "Contract: PW_ASSIST_CALL_COOLDOWN_MS throttles repeated pack assist calls from the same caller against the same offender, preventing rapid full-pack recruitment."
+        "Contract: PW_ASSIST_OFFENDER_WINDOW_MS throttles pack assist waves across callers (per group/offender), preventing cascade dogpiles."
       ],
       "owns": [
-        "test:npcManagerPackAssistCooldownThrottles"
+        "test:npcManagerPackAssistOffenderWindowThrottles"
       ],
-      "path": "worldcore/test/contract_npcManager_packAssist_cooldown_throttles.test.ts",
+      "path": "worldcore/test/contract_npcManager_packAssist_offenderWindow_throttles.test.ts",
       "provides": [
-        "contract:npcManagerPackAssistCooldownThrottles"
+        "contract:npcManagerPackAssistOffenderWindowThrottles"
+      ]
+    },
+    "test.contract_npcManager_packAssist_respectsStealth": {
+      "class": "(test) contract_npcManager_packAssist_respectsStealth",
+      "ctorArgs": [],
+      "dependsOn": [
+        "worldcore/npc/NpcManager.ts",
+        "worldcore/combat/CombatTargeting.ts",
+        "worldcore/combat/StatusEffects.ts",
+        "worldcore/npc/NpcThreat.ts",
+        "worldcore/npc/NpcTypes.ts",
+        "worldcore/core/EntityManager.ts"
+      ],
+      "kind": "test",
+      "lifecycle": "test",
+      "notes": [
+        "Contract: pack assist must respect Engage State Law visibility; stealthed offenders do not receive seeded ally threat or snap-movement."
+      ],
+      "owns": [
+        "test:npcManagerPackAssistRespectsStealth"
+      ],
+      "path": "worldcore/test/contract_npcManager_packAssist_respectsStealth.test.ts",
+      "provides": [
+        "contract:npcManagerPackAssistRespectsStealth"
       ]
     },
     "test.contract_npcManager_packAssist_sharesThreatMagnitude": {
@@ -9025,56 +9098,6 @@
       "owns": [],
       "path": "worldcore/test/statusEffects.contract.test.ts",
       "provides": []
-    },
-    "test.contract_npcManager_packAssist_noCrossRoomWithoutTrain": {
-      "class": "(test) contract_npcManager_packAssist_noCrossRoomWithoutTrain",
-      "dependsOn": [
-        "npc.manager",
-        "npc.threat",
-        "npc.types"
-      ],
-      "kind": "test",
-      "lifecycle": "static",
-      "notes": [
-        "Contract: pack assist must not seed threat across rooms unless Train rooms are enabled or caller forceRoomId is provided (gate-home help)."
-      ],
-      "path": "worldcore/test/contract_npcManager_packAssist_noCrossRoomWithoutTrain.test.ts"
-    },
-    "test.contract_npcManager_packAssist_offenderWindowThrottles": {
-      "class": "(test) contract_npcManager_packAssist_offenderWindowThrottles",
-      "ctorArgs": [],
-      "dependsOn": [
-        "worldcore/npc/NpcManager.ts",
-        "worldcore/npc/NpcThreat.ts",
-        "worldcore/npc/NpcTypes.ts",
-        "worldcore/core/EntityManager.ts"
-      ],
-      "kind": "test",
-      "lifecycle": "test",
-      "notes": [
-        "Contract: PW_ASSIST_OFFENDER_WINDOW_MS throttles pack assist waves across callers (per group/offender), preventing cascade dogpiles."
-      ],
-      "owns": [
-        "test:npcManagerPackAssistOffenderWindowThrottles"
-      ],
-      "path": "worldcore/test/contract_npcManager_packAssist_offenderWindow_throttles.test.ts",
-      "provides": [
-        "contract:npcManagerPackAssistOffenderWindowThrottles"
-      ]
-    },
-    "test.contractNpcManagerPackAssistOffenderWindowScopedByCallerWhenNoGroup": {
-      "kind": "test",
-      "dependsOn": [
-        "core.entities",
-        "npc.manager",
-        "npc.types",
-        "npc.threat"
-      ],
-      "notes": [
-        "Contract: PW_ASSIST_OFFENDER_WINDOW_MS throttles by pack groupId when present.",
-        "When a prototype has no groupId, throttling is scoped per-caller to avoid \"undefined:<offender>\" global suppression."
-      ],
-      "path": "worldcore/test/contract_npcManager_packAssist_offenderWindow_scopedByCallerWhenNoGroup.test.ts"
     },
     "test.utils": {
       "dependsOn": [],

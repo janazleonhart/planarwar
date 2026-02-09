@@ -127,6 +127,7 @@ export class NpcManager {
   private npcThreat = new Map<string, NpcThreatState>();
   private guardHelpCalled = new Map<string, Set<string>>();
   private packHelpCalled = new Map<string, Set<string>>();
+  private packHelpCalledAt = new Map<string, Map<string, number>>();
   // Per-caller throttling for repeated pack-assist calls against the same offender.
   // Key: callerNpcId -> (offenderEntityId -> lastCallAtTickMs)
   private packHelpCallAt = new Map<string, Map<string, number>>();
@@ -754,17 +755,44 @@ export class NpcManager {
     set.add(offenderId);
   }
 
-  private markPackHelp(npcId: string, offenderId: string): void {
+  private markPackHelp(npcId: string, offenderId: string, now: number): void {
     let set = this.packHelpCalled.get(npcId);
     if (!set) {
       set = new Set();
       this.packHelpCalled.set(npcId, set);
     }
     set.add(offenderId);
+
+    // Optional TTL for pack-help marks (prevents "never assist again" behavior).
+    const ttlMs = Math.max(0, Math.floor(envNumber("PW_ASSIST_MARK_TTL_MS", 0)));
+    if (ttlMs > 0) {
+      let byOffender = this.packHelpCalledAt.get(npcId);
+      if (!byOffender) {
+        byOffender = new Map();
+        this.packHelpCalledAt.set(npcId, byOffender);
+      }
+      byOffender.set(offenderId, now);
+    }
   }
 
-  private hasMarkedPackHelp(npcId: string, offenderId: string): boolean {
-    return this.packHelpCalled.get(npcId)?.has(offenderId) ?? false;
+  private hasMarkedPackHelp(npcId: string, offenderId: string, now: number): boolean {
+    const ttlMs = Math.max(0, Math.floor(envNumber("PW_ASSIST_MARK_TTL_MS", 0)));
+    if (ttlMs <= 0) return this.packHelpCalled.get(npcId)?.has(offenderId) ?? false;
+
+    const byOffender = this.packHelpCalledAt.get(npcId);
+    const last = byOffender?.get(offenderId);
+    if (typeof last !== "number") return false;
+
+    if (now - last >= ttlMs) {
+      // Expired: clear marks so pack help can happen again.
+      byOffender?.delete(offenderId);
+      const set = this.packHelpCalled.get(npcId);
+      set?.delete(offenderId);
+      if (set && set.size === 0) this.packHelpCalled.delete(npcId);
+      if (byOffender && byOffender.size === 0) this.packHelpCalledAt.delete(npcId);
+      return false;
+    }
+    return true;
   }
 
   private moveNpcToRoom(
@@ -897,7 +925,7 @@ export class NpcManager {
     for (const room of considerRooms) {
       const allies = this.listNpcsInRoom(room).filter((ally) => {
         if (ally.entityId === st.entityId) return false;
-        if (this.hasMarkedPackHelp(ally.entityId, attackerEntityId)) return false;
+        if (this.hasMarkedPackHelp(ally.entityId, attackerEntityId, tickNow)) return false;
 
         const allyProto =
           getNpcPrototype(ally.templateId) ??
@@ -953,7 +981,7 @@ export class NpcManager {
         ally.lastAggroAt = threat.lastAggroAt;
         ally.lastAttackerEntityId = threat.lastAttackerEntityId;
 
-        this.markPackHelp(ally.entityId, attackerEntityId);
+        this.markPackHelp(ally.entityId, attackerEntityId, tickNow);
 
         assisted += 1;
 
