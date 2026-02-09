@@ -7474,6 +7474,18 @@
       "path": "worldcore/test/contract_physicalHitResolver_block_and_riposteFlags.test.ts",
       "provides": []
     },
+    "test.contractPhysicalHitResolverBlockMultiplierDefenseScaling": {
+      "class": "(test)",
+      "dependsOn": [],
+      "kind": "test",
+      "lifecycle": "test",
+      "notes": [
+        "Contract: blockMultiplier becomes stronger (lower) as defenderDefenseSkillPoints increases; keeps block mitigation from being a fixed random nerf."
+      ],
+      "owns": [],
+      "path": "worldcore/test/contract_physicalHitResolver_blockMultiplier_defenseScaling.test.ts",
+      "provides": []
+    },
     "test.contractPhysicalHitResolverCritMultiRiposte": {
       "class": "(test)",
       "dependsOn": [],

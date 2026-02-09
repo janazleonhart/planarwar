@@ -64,6 +64,29 @@ export interface PhysicalHitResult {
   hitChance: number;
 }
 
+function computeBlockMultiplier(
+  attackerLevel: number,
+  defenderLevel: number,
+  defenseFamiliarity: number,
+): number {
+  // v0 mitigation semantics for block:
+  // - Blocks should "feel" like the defender's shield/skill mattered, not a fixed nerf.
+  // - Higher defender defense skill => stronger blocks (lower multiplier).
+  // - Higher defender level relative to attacker => stronger blocks.
+  //
+  // The multiplier is clamped to keep damage non-trivial and avoid weird extremes.
+  const lvlDeltaDefender = defenderLevel - attackerLevel; // positive when defender is higher
+  const levelAdj = clamp(lvlDeltaDefender * 0.01, -0.05, 0.12);
+
+  const base = 0.85;
+  const skillReduction = clamp(defenseFamiliarity * 0.30, 0, 0.30);
+  const levelReduction = clamp(levelAdj, 0, 0.12);
+  const levelPenalty = clamp(-levelAdj, 0, 0.05);
+
+  const mult = base - skillReduction - levelReduction + levelPenalty;
+  return clamp(mult, 0.35, 0.90);
+}
+
 function isTestEnv(): boolean {
   // WorldCore uses Node's test runner; keep this simple and dependency-free.
   return (
@@ -181,13 +204,14 @@ export function resolvePhysicalHit(req: PhysicalHitRequest): PhysicalHitResult {
   }
 
   if (canBlock && rAvoid < blockEdge) {
+    const blockMultiplier = computeBlockMultiplier(attackerLevel, defenderLevel, defenseFamiliarity);
     return {
       outcome: "block",
       strikes: 1,
       critChance: 0,
       glancingChance: 0,
       riposte: false,
-      blockMultiplier: 0.7,
+      blockMultiplier,
       hitChance,
     };
   }

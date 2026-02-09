@@ -11,6 +11,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { applySimpleNpcCounterAttack } from "../combat/NpcCombat";
+import { resolvePhysicalHit } from "../combat/PhysicalHitResolver";
 
 function rngSeq(values: number[]): () => number {
   let i = 0;
@@ -48,9 +49,26 @@ test("[contract] NpcCombat: counter-attack block reduces damage deterministicall
     assert.match(line, /block/i);
 
     // base = attackPower(10), roll=0.8 => 8
-    // blockMultiplier defaults to 0.7 => floor(8 * 0.7) = 5
-    assert.equal(player.hp, 95);
-    assert.match(line, /take 5 damage/i);
+    // Expected block damage is derived from the resolver's computed multiplier.
+    const expectedPhys = resolvePhysicalHit({
+      attackerLevel: 1,
+      defenderLevel: 10,
+      weaponSkillPoints: 5,
+      defenderDefenseSkillPoints: 0,
+      defenderCanDodge: true,
+      defenderCanParry: true,
+      defenderCanBlock: true,
+      allowCrit: false,
+      allowMultiStrike: false,
+      allowRiposte: true,
+      rng: rngSeq([0.01, 0.08]),
+    });
+
+    assert.equal(expectedPhys.outcome, "block");
+    const expectedDmg = Math.max(1, Math.floor(8 * expectedPhys.blockMultiplier));
+
+    assert.equal(player.hp, 100 - expectedDmg);
+    assert.match(line, new RegExp(`take ${expectedDmg} damage`, "i"));
   } finally {
     Math.random = oldRandom;
   }
