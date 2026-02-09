@@ -8390,6 +8390,50 @@
         "contract:npcManagerPackAssistRespectsStealth"
       ]
     },
+    "test.contract_npcManager_packAssist_maxAlliesPrioritizesEngaged": {
+      "class": "(test) contract_npcManager_packAssist_maxAlliesPrioritizesEngaged",
+      "ctorArgs": [],
+      "dependsOn": [
+        "worldcore/npc/NpcManager.ts",
+        "worldcore/npc/NpcThreat.ts",
+        "worldcore/npc/NpcTypes.ts",
+        "worldcore/core/EntityManager.ts"
+      ],
+      "kind": "test",
+      "lifecycle": "test",
+      "notes": [
+        "Contract: pack assist respects PW_ASSIST_MAX_ALLIES_PER_CALL and prioritizes allies already engaged with the offender (existing threat > 0)."
+      ],
+      "owns": [
+        "test:npcManagerPackAssistMaxAlliesPrioritizesEngaged"
+      ],
+      "path": "worldcore/test/contract_npcManager_packAssist_maxAllies_prioritizesEngaged.test.ts",
+      "provides": [
+        "contract:npcManagerPackAssistMaxAlliesPrioritizesEngaged"
+      ]
+    },
+    "test.contract_npcManager_packAssist_cooldownThrottles": {
+      "class": "(test) contract_npcManager_packAssist_cooldownThrottles",
+      "ctorArgs": [],
+      "dependsOn": [
+        "worldcore/npc/NpcManager.ts",
+        "worldcore/npc/NpcThreat.ts",
+        "worldcore/npc/NpcTypes.ts",
+        "worldcore/core/EntityManager.ts"
+      ],
+      "kind": "test",
+      "lifecycle": "test",
+      "notes": [
+        "Contract: PW_ASSIST_CALL_COOLDOWN_MS throttles repeated pack assist calls from the same caller against the same offender, preventing rapid full-pack recruitment."
+      ],
+      "owns": [
+        "test:npcManagerPackAssistCooldownThrottles"
+      ],
+      "path": "worldcore/test/contract_npcManager_packAssist_cooldown_throttles.test.ts",
+      "provides": [
+        "contract:npcManagerPackAssistCooldownThrottles"
+      ]
+    },
     "test.contract_npcManager_packAssist_sharesThreatMagnitude": {
       "class": "(test) contract_npcManager_packAssist_sharesThreatMagnitude",
       "ctorArgs": [],

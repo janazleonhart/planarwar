@@ -127,6 +127,9 @@ export class NpcManager {
   private npcThreat = new Map<string, NpcThreatState>();
   private guardHelpCalled = new Map<string, Set<string>>();
   private packHelpCalled = new Map<string, Set<string>>();
+  // Per-caller throttling for repeated pack-assist calls against the same offender.
+  // Key: callerNpcId -> (offenderEntityId -> lastCallAtTickMs)
+  private packHelpCallAt = new Map<string, Map<string, number>>();
 
   private readonly brain = new LocalSimpleAggroBrain();
 
@@ -809,6 +812,25 @@ export class NpcManager {
     const trainCfg = readTrainConfig();
     const allowCrossRoom = !!(trainCfg.enabled && trainCfg.roomsEnabled);
 
+    // Optional throttling: prevent repeated pack assist waves from the same caller
+    // against the same offender within a short window.
+    const assistCooldownMs = Math.max(0, Math.floor(envNumber("PW_ASSIST_CALL_COOLDOWN_MS", 0)));
+    if (assistCooldownMs > 0) {
+      let offenderMap = this.packHelpCallAt.get(st.entityId);
+      if (!offenderMap) {
+        offenderMap = new Map();
+        this.packHelpCallAt.set(st.entityId, offenderMap);
+      }
+      const last = offenderMap.get(attackerEntityId);
+      if (typeof last === "number" && tickNow - last < assistCooldownMs) {
+        return;
+      }
+    }
+
+    // Optional cap: limit how many allies can be assisted per call (threat + snap).
+    // 0 means unlimited.
+    const maxAlliesPerCall = Math.max(0, Math.floor(envNumber("PW_ASSIST_MAX_ALLIES_PER_CALL", 0)));
+
 
     // Threat share amount: scale with the caller's current threat against the offender.
     // Threat share config is read from env at call-time so tests can override it safely.
@@ -827,6 +849,8 @@ export class NpcManager {
       sharedThreat = Math.min(shareMax, sharedThreat);
     }
 
+    let assisted = 0;
+
     for (const room of considerRooms) {
       const allies = this.listNpcsInRoom(room).filter((ally) => {
         if (ally.entityId === st.entityId) return false;
@@ -841,7 +865,18 @@ export class NpcManager {
         return allyProto?.groupId === proto.groupId;
       });
 
-      for (const ally of allies) {
+      // Prioritize allies already engaged with the offender.
+      const sortedAllies = [...allies].sort((a, b) => {
+        const ta = getThreatValue(this.npcThreat.get(a.entityId), attackerEntityId);
+        const tb = getThreatValue(this.npcThreat.get(b.entityId), attackerEntityId);
+        if (tb !== ta) return tb - ta;
+        return String(a.entityId).localeCompare(String(b.entityId));
+      });
+
+      for (const ally of sortedAllies) {
+        if (maxAlliesPerCall > 0 && assisted >= maxAlliesPerCall) {
+          break;
+        }
         // Respect Engage State Law: do not seed pack assist onto invalid targets (stealth/out-of-room/dead/etc).
         const allyEnt = this.entities.get(ally.entityId) ?? ({
           id: ally.entityId,
@@ -877,6 +912,8 @@ export class NpcManager {
 
         this.markPackHelp(ally.entityId, attackerEntityId);
 
+        assisted += 1;
+
         if (opts.snapAllies && targetRoomId) {
           // Do not move an NPC twice in the same tick (prevents leader getting shoved forward by ally-assist).
           if (tickNow && (ally as any).trainMovedAt === tickNow) {
@@ -886,6 +923,16 @@ export class NpcManager {
           (ally as any).trainMovedAt = tickNow;
         }
       }
+    }
+
+    // Record call timestamp only if we actually assisted at least one ally.
+    if (assistCooldownMs > 0 && assisted > 0) {
+      let offenderMap = this.packHelpCallAt.get(st.entityId);
+      if (!offenderMap) {
+        offenderMap = new Map();
+        this.packHelpCallAt.set(st.entityId, offenderMap);
+      }
+      offenderMap.set(attackerEntityId, tickNow);
     }
   }
 
