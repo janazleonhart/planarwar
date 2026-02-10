@@ -8911,6 +8911,26 @@
       ],
       "service": "worldcore"
     },
+    "test.contract_trainSystem_returnHomeDrift": {
+      "class": "(test) contract_trainSystem_returnHomeDrift",
+      "ctorArgs": [],
+      "dependsOn": [
+        "npcManager.trainSystem.v0"
+      ],
+      "id": "test.contract_trainSystem_returnHomeDrift",
+      "kind": "test",
+      "lifecycle": "active",
+      "notes": [
+        "Contract: when PW_TRAIN_RETURN_MODE=drift, hard leash disengage clears threat and the NPC drifts home over time instead of instant snapback."
+      ],
+      "owns": [],
+      "path": "worldcore/test/contract_trainSystem_returnHomeDrift.test.ts",
+      "provides": [
+        "contract:trainSystem:returnHomeDrift"
+      ],
+      "service": "worldcore"
+    },
+
     "test.contract_trainingDummySafety": {
       "class": "(test) contract_trainingDummySafety",
       "ctorArgs": [],

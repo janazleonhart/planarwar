@@ -62,11 +62,17 @@ function envNumber(name: string, fallback: number): number {
 }
 
 function envBool(name: string, fallback: boolean): boolean {
+
   const raw = String((process.env as any)?.[name] ?? "").trim().toLowerCase();
   if (!raw) return fallback;
   if (raw === "1" || raw === "true" || raw === "yes" || raw === "on") return true;
   if (raw === "0" || raw === "false" || raw === "no" || raw === "off") return false;
   return fallback;
+}
+
+function envString(name: string, fallback: string): string {
+  const raw = String((process.env as any)?.[name] ?? "").trim();
+  return raw ? raw : fallback;
 }
 
 type RoomXY = { shard: string; x: number; y: number };
@@ -109,6 +115,7 @@ type TrainConfig = {
   assistSnapAllies: boolean;
   assistSnapMaxAllies: number;
   assistRange: number;
+  returnMode: "snap" | "drift";
 };
 
 function readTrainConfig(): TrainConfig {
@@ -125,6 +132,7 @@ function readTrainConfig(): TrainConfig {
     assistSnapAllies: envBool("PW_TRAIN_ASSIST_SNAP_ALLIES", false),
     assistSnapMaxAllies: Math.max(0, Math.floor(envNumber("PW_TRAIN_ASSIST_SNAP_MAX_ALLIES", 6))),
     assistRange: Math.max(0, envNumber("PW_TRAIN_ASSIST_RANGE", 10)),
+    returnMode: (envString("PW_TRAIN_RETURN_MODE", "snap").toLowerCase() === "drift" ? "drift" : "snap"),
   };
 }
 
@@ -1290,6 +1298,85 @@ export class NpcManager {
         ? { ...trainCfgBase, enabled: false, roomsEnabled: false, assistEnabled: false }
         : trainCfgBase;
 
+      // Train return-home drift: when enabled and the NPC is marked as returning, walk back toward spawn.
+      // This runs before perception/attack decisions so returning NPCs don't fight while disengaging.
+      if (trainCfg.enabled && trainCfg.returnMode === "drift") {
+        const returning = !!((st as any).trainReturning || (npcEntity as any).trainReturning);
+        if (returning) {
+          const threatState = this.npcThreat.get(entityId);
+          const hasThreat = !!threatState && Object.keys((threatState as any).threatByEntityId ?? {}).length > 0;
+          if (!hasThreat) {
+            const spawnRoomId = (st as any).spawnRoomId ?? roomId;
+            const curRoomId = String(st.roomId ?? roomId);
+            const tickNow = this._tickNow || Date.now();
+
+            // Room drift: if room pursuit is enabled and we're not at our spawn room, step one tile toward spawn.
+            if (trainCfg.roomsEnabled && spawnRoomId && curRoomId && spawnRoomId !== curRoomId) {
+              const next = this.stepRoomToward(curRoomId, spawnRoomId);
+              if (next && next !== curRoomId) {
+                this.moveNpcToRoom(st, entityId, next);
+                (st as any).trainMovedAt = tickNow;
+                (npcEntity as any).trainMovedAt = tickNow;
+              } else {
+                // Can't path: stop returning.
+                (st as any).trainReturning = false;
+                (npcEntity as any).trainReturning = false;
+              }
+              continue;
+            }
+
+            // Same-room drift: walk toward spawn coords.
+            const npcX = typeof npcEntity.x === "number" ? npcEntity.x : 0;
+            const npcY = typeof npcEntity.y === "number" ? npcEntity.y : 0;
+            const npcZ = typeof npcEntity.z === "number" ? npcEntity.z : 0;
+
+            const sx = typeof (npcEntity as any).spawnX === "number" ? (npcEntity as any).spawnX : (typeof (st as any).spawnX === "number" ? (st as any).spawnX : npcX);
+            const sy = typeof (npcEntity as any).spawnY === "number" ? (npcEntity as any).spawnY : (typeof (st as any).spawnY === "number" ? (st as any).spawnY : npcY);
+            const sz = typeof (npcEntity as any).spawnZ === "number" ? (npcEntity as any).spawnZ : (typeof (st as any).spawnZ === "number" ? (st as any).spawnZ : npcZ);
+
+            const dx = sx - npcX;
+            const dz = sz - npcZ;
+            const dist = Math.sqrt(dx * dx + dz * dz);
+            const eps = 0.25;
+
+            if (dist <= eps) {
+              // Arrived: snap final epsilon and clear return flag.
+              this.entities.setPosition(entityId, sx, sy, sz);
+              (npcEntity as any).x = sx; (npcEntity as any).y = sy; (npcEntity as any).z = sz;
+              (st as any).x = sx; (st as any).y = sy; (st as any).z = sz;
+
+              (st as any).trainReturning = false;
+              (npcEntity as any).trainReturning = false;
+              (npcEntity as any).trainReturnTargetRoomId = undefined;
+              (npcEntity as any).trainPursueStartAt = 0;
+              (npcEntity as any).trainChasing = false;
+              continue;
+            }
+
+            const step = Math.max(0, Number(trainCfg.step) || 0);
+            if (step <= 0) {
+              // No movement configured: stop returning to avoid an infinite stuck state.
+              (st as any).trainReturning = false;
+              (npcEntity as any).trainReturning = false;
+              continue;
+            }
+
+            const inv = dist > 0 ? 1 / dist : 0;
+            const nx = npcX + dx * inv * step;
+            const nz = npcZ + dz * inv * step;
+            this.entities.setPosition(entityId, nx, npcY, nz);
+            (st as any).trainMovedAt = tickNow;
+            (npcEntity as any).trainMovedAt = tickNow;
+            continue;
+          } else {
+            // Threat reacquired: cancel return state.
+            (st as any).trainReturning = false;
+            (npcEntity as any).trainReturning = false;
+          }
+        }
+      }
+
+
       const behavior = proto.behavior ?? "aggressive";
       const guardProfile = proto.guardProfile;
       const guardCallRadius =
@@ -2051,7 +2138,7 @@ export class NpcManager {
       const started = chaseStart || tickNow;
       if (tickNow - started > cfg.pursueTimeoutMs) {
         (st as any).trainMovedAt = tickNow;
-        return this.trainDisengageAndSnapback(npcId, st, npcEntity, roomId, spawnX, spawnY, spawnZ);
+        return this.trainDisengage(npcId, st, npcEntity, roomId, spawnX, spawnY, spawnZ, cfg);
       }
     }
 
@@ -2059,7 +2146,7 @@ export class NpcManager {
     // Use >= to avoid "sticking" exactly on the leash boundary if coordinates are quantized.
     if (cfg.hardLeash > 0 && distFromSpawn >= cfg.hardLeash) {
       (st as any).trainMovedAt = tickNow;
-      return this.trainDisengageAndSnapback(npcId, st, npcEntity, roomId, spawnX, spawnY, spawnZ);
+      return this.trainDisengage(npcId, st, npcEntity, roomId, spawnX, spawnY, spawnZ, cfg);
     }
 
     // Soft leash factor: slow down as we approach hard leash.
@@ -2085,7 +2172,7 @@ export class NpcManager {
     return true;
   }
 
-  private trainDisengageAndSnapback(
+  private trainDisengage(
     npcId: string,
     st: NpcRuntimeState,
     npcEntity: any,
@@ -2093,6 +2180,7 @@ export class NpcManager {
     spawnX: number,
     spawnY: number,
     spawnZ: number,
+    cfg: TrainConfig,
   ): boolean {
     // Clear threat + combat flags
     this.clearThreat(npcId);
@@ -2101,7 +2189,18 @@ export class NpcManager {
     (npcEntity as any).trainChasing = false;
     (npcEntity as any).trainPursueStartAt = 0;
 
-    // Snap back to spawn coords
+    
+    // If configured, drift home instead of instant snapback. This preserves classic train feel
+    // while still clearing threat and removing the NPC from active combat.
+    if (cfg.returnMode === "drift") {
+      (st as any).trainReturning = true;
+      (npcEntity as any).trainReturning = true;
+      (npcEntity as any).trainReturnTargetRoomId = (st as any).spawnRoomId ?? roomId;
+      // Keep current position; return movement is handled by the Train pre-hook in updateAll().
+      return true;
+    }
+
+// Snap back to spawn coords
     this.entities.setPosition(npcId, spawnX, spawnY, spawnZ);
     // Also update the passed entity reference and the canonical entity object,
     // since some harnesses/tests keep direct references.
