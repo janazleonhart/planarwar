@@ -9160,6 +9160,20 @@
         "Verifies aggressive NPCs remain calm until attacked, enabling tutorial-safe belts without disabling combat globally."
       ]
     },
+    "test.contractRegionFlagsNpcAggroRetaliateOnlyAssistClamp": {
+      "kind": "test.contract",
+      "path": "worldcore/test/contract_regionFlags_npcAggro_retaliateOnly_assistClamp.test.ts",
+      "dependsOn": [
+        "world.RegionFlags",
+        "combat.NpcCombat"
+      ],
+      "provides": [
+        "Starter-safe belts clamp cross-room assist even when PW_ASSIST_RADIUS_TILES would allow it"
+      ],
+      "notes": [
+        "Locks the tutorial belt: retaliate_only regions still allow same-room pack help after a player attacks first, but do not recruit from adjacent rooms."
+      ]
+    },
     "test.utils": {
       "dependsOn": [],
       "functions": [

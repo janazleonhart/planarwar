@@ -5,6 +5,7 @@ import type { Entity } from "../shared/Entity";
 import { Logger } from "../utils/logger";
 import { getNpcPrototype } from "../npc/NpcTypes";
 import { getAssistTargetForAlly } from "../npc/NpcThreat";
+import { getNpcAggroModeForRegionSync } from "../world/RegionFlags";
 import {
   isServiceProtectedNpcProto,
   serviceProtectedCombatLine,
@@ -1694,11 +1695,21 @@ export function tryAssistNearbyNpcs(
   const attackerEnt: any = ctx.entities.get(attackerEntityId);
   if (isStealthedPlayerEntity(attackerEnt, now)) return 0;
 
+  // Region AI policy: starter-safe belts clamp cross-room assist and disable gate-for-help.
+  // If this room is in npcAggro=retaliate_only mode, we still allow same-room pack help after a player
+  // attacks first, but we prevent cross-room assist/trains from spilling through the tutorial belt.
+  let _pwNpcAggroMode: "default" | "retaliate_only" = "default";
+  try {
+    const parsed = parseGridRoomId(roomId);
+    if (parsed) _pwNpcAggroMode = getNpcAggroModeForRegionSync(parsed.shard, roomId);
+  } catch {
+    // ignore
+  }
 
   // --- Gate-for-help ("trains") ---
   // Some NPCs can "gate" to call allies from a much larger radius.
   // This is *event-driven* (piggybacks on tryAssist calls) to keep it simple.
-  const gateEnabled = envBool("PW_GATE_FOR_HELP_ENABLED", true);
+  let gateEnabled = envBool("PW_GATE_FOR_HELP_ENABLED", true);
   const gateTag = String(process.env.PW_GATE_FOR_HELP_TAG ?? "gater");
   const gateCastMs = envInt("PW_GATE_FOR_HELP_CAST_MS", 9000);
   const gateCooldownMs = envInt("PW_GATE_FOR_HELP_COOLDOWN_MS", 20000);
@@ -1751,6 +1762,12 @@ export function tryAssistNearbyNpcs(
   const ASSIST_COOLDOWN_MS = envInt("PW_ASSIST_COOLDOWN_MS", 4000);
   let radiusTiles = envInt("PW_ASSIST_RADIUS_TILES", 2);
   const enableCallsLine = envBool("PW_ASSIST_CALLS_LINE", true);
+
+  // Starter-safe belt: clamp cross-room assist and disable gate-for-help in retaliate_only regions.
+  if (_pwNpcAggroMode === "retaliate_only") {
+    radiusTiles = 0;
+    gateEnabled = false;
+  }
 
   // Resolve ally proto/tags for gate logic.
   const allyProto = getNpcPrototype(allySt.templateId) ?? getNpcPrototype(allySt.protoId);
