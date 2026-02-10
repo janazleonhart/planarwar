@@ -68,6 +68,18 @@ function ensureStatusEffectsSpine(char: CharacterState): void {
   }
 }
 
+function denyAbilityUseByCrowdControl(char: CharacterState, nowMs: number): string | null {
+  try {
+    const active = getActiveStatusEffects(char as any, nowMs);
+    const stunned = active.some((e: any) => Array.isArray(e?.tags) && e.tags.map((t: any) => String(t).toLowerCase()).includes('stun'));
+    if (stunned) return 'You are stunned.';
+  } catch {
+    // fail-open
+  }
+  return null;
+}
+
+
 function dropStatusTagFromActive(char: CharacterState, tag: string): void {
   const anyChar: any = char as any;
   const active: any = anyChar?.progression?.statusEffects?.active;
@@ -170,6 +182,8 @@ export async function handleAbilityCommand(
   const selfEntity = entities.getEntityByOwner?.(ownerId);
   if (!selfEntity) return "[world] You are not currently present in the world.";
 
+  const now = Number((ctx as any).nowMs ?? Date.now());
+
   switch ((ability as any).kind) {
     case "self_buff": {
       // Cutthroat Stealth: a simple tag-based buff.
@@ -184,6 +198,10 @@ export async function handleAbilityCommand(
         }
 
         // Gate (cost/cd) after denial checks.
+        const ccErr = denyAbilityUseByCrowdControl(char, now);
+
+        if (ccErr) return ccErr;
+
         const gateErr = applyActionCostAndCooldownGates({
           char: char as any,
           bucket: "abilities",
@@ -273,6 +291,12 @@ export async function handleAbilityCommand(
         return serviceProtectedCombatLine(npc.name);
       }
 
+      const ccErr = denyAbilityUseByCrowdControl(char, now);
+
+
+      if (ccErr) return ccErr;
+
+
       const gateErr = applyActionCostAndCooldownGates({
         char: char as any,
         bucket: "abilities",
@@ -338,6 +362,12 @@ export async function handleAbilityCommand(
       const resourceType =
         (ability as any).resourceType ?? getPrimaryPowerResourceForClass((char as any).classId);
       const resourceCost = (ability as any).resourceCost ?? 0;
+
+      const ccErr = denyAbilityUseByCrowdControl(char, now);
+
+
+      if (ccErr) return ccErr;
+
 
       const gateErr = applyActionCostAndCooldownGates({
         char: char as any,
@@ -432,6 +462,12 @@ case "damage_dot_single_npc": {
     (ability as any).resourceType ?? getPrimaryPowerResourceForClass((char as any).classId);
   const resourceCost = (ability as any).resourceCost ?? 0;
 
+  const ccErr = denyAbilityUseByCrowdControl(char, now);
+
+
+  if (ccErr) return ccErr;
+
+
   const gateErr = applyActionCostAndCooldownGates({
     char: char as any,
     bucket: "abilities",
@@ -446,7 +482,6 @@ case "damage_dot_single_npc": {
   // Ensure status spines exist.
   ensureStatusEffectsSpine(char);
 
-  const now = Date.now();
   const statusDef: any = (ability as any).statusEffect;
 
   if (!statusDef || typeof statusDef !== "object") {

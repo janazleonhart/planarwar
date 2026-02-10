@@ -8038,6 +8038,31 @@
       "path": "worldcore/test/contract_spellCleanseSingleAllyRemovesDebuffNotBuff.test.ts",
       "provides": []
     },
+
+    "test.contractSpellSilenceBlocksCastNoCostNoCooldown": {
+      "class": "(test)",
+      "dependsOn": [],
+      "kind": "test",
+      "lifecycle": "test",
+      "notes": [
+        "Contract: silence denies casting before cost/cooldown"
+      ],
+      "owns": [],
+      "path": "worldcore/test/contract_spellSilenceBlocksCast_noCostNoCooldown.test.ts",
+      "provides": []
+    },
+    "test.contractSpellDispelSingleNpcRemovesBuffNotDebuff": {
+      "class": "(test)",
+      "dependsOn": [],
+      "kind": "test",
+      "lifecycle": "test",
+      "notes": [
+        "Contract: dispel_single_npc removes tagged buffs but not unrelated debuffs"
+      ],
+      "owns": [],
+      "path": "worldcore/test/contract_spellDispelSingleNpcRemovesBuffNotDebuff.test.ts",
+      "provides": []
+    },
     "test.contractSpellHotDoesNotTickPastExpiry": {
       "class": "(test)",
       "ctorArgs": [],

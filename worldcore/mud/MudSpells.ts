@@ -33,7 +33,7 @@ import {
   gainSongSchoolSkill,
 } from "../skills/SkillProgression";
 import type { SongSchoolId } from "../skills/SkillProgression";
-import { applyStatusEffect, applyStatusEffectToEntity, clearStatusEffectsByTags, getActiveStatusEffects } from "../combat/StatusEffects";
+import { applyStatusEffect, applyStatusEffectToEntity, clearStatusEffectsByTags, clearEntityStatusEffectsByTags, getActiveStatusEffects } from "../combat/StatusEffects";
 import { applyActionCostAndCooldownGates } from "../combat/CastingGates";
 import { computeSongScalar } from "../songs/SongScaling";
 import { isCombatEnabledForRegion } from "../world/RegionFlags";
@@ -47,6 +47,27 @@ function ensureStatusEffectsSpineForCombat(char: CharacterState): void {
   const se: any = prog.statusEffects;
   if (!se.active || typeof se.active !== "object") se.active = {};
 }
+
+
+function denySpellcastingByCrowdControl(char: CharacterState, spell: SpellDefinition, nowMs: number): string | null {
+  try {
+    const active = getActiveStatusEffects(char as any, nowMs);
+    const hasTag = (tag: string) =>
+      active.some((e: any) => Array.isArray(e?.tags) && e.tags.map((t: any) => String(t).toLowerCase()).includes(tag));
+
+    // "stun" is a hard stop for basically everything.
+    if (hasTag("stun")) return "You are stunned.";
+
+    // "silence" blocks spell/song casting.
+    // (We intentionally do NOT block physical melee verbs here.)
+    if (hasTag("silence")) return "You are silenced.";
+  } catch {
+    // fail-open: if status spine is missing, don't crash casting
+  }
+  return null;
+}
+
+
 
 function isStealthedForCombat(char: CharacterState): boolean {
   try {
@@ -391,6 +412,12 @@ export async function castSpellForCharacter(
     return "You have no physical form here to channel magic.";
   }
 
+  // Crowd-control hard gates must run BEFORE any spell-kind specific validation,
+  // so silence/stun deny even if the spell would otherwise early-return.
+  // (Example: heal_self can bail out early if HP metadata is missing.)
+  const ccPreErr = denySpellcastingByCrowdControl(char, spell, now);
+  if (ccPreErr) return ccPreErr;
+
   const roomId = ctx.session.roomId ?? char.shardId;
   const targetRaw = (targetNameRaw ?? "").trim();
 
@@ -416,6 +443,9 @@ export async function castSpellForCharacter(
   };
 
   const applyGates = (): string | null => {
+    const ccErr = denySpellcastingByCrowdControl(char, spell, now);
+    if (ccErr) return ccErr;
+
     // Legacy spellbook cooldown gate.
     const spellbookRemainingMs = getSpellCooldownRemainingMs(char, spell.id, now);
     if (spellbookRemainingMs > 0) {
@@ -826,7 +856,7 @@ case "damage_single_npc": {
       return `[${gate.label}] You hit ${playerTargetName} for ${dmgFinal} damage. (${newHp}/${maxHp} HP)`;
     }
 
-case "heal_self": {
+  case "heal_self": {
       const hp = (selfEntity as any).hp ?? 0;
       const maxHp = (selfEntity as any).maxHp ?? 0;
 
@@ -1125,6 +1155,67 @@ const removed = clearStatusEffectsByTags(res.char, cleanse.tags, cleanse.maxToRe
       }
       return `[world] [spell:${spell.name}] You cleanse ${removed} effect(s) from ${res.displayName}.`;
     }
+
+
+
+case "dispel_single_npc": {
+  const targetName = targetRaw || "rat";
+  const npc = resolveTargetInRoom(ctx.entities as any, roomId, targetName, {
+    selfId: selfEntity.id,
+    filter: (e: any) => e?.type === "npc" || e?.type === "mob",
+    radius: 30,
+  });
+
+  if (!npc) {
+    const denyToken = targetRaw || targetName;
+    return `[world] No such target: '${denyToken}'.`;
+  }
+
+  // Protected NPCs (vendors/bankers/etc) are never valid combat targets.
+  if (isServiceProtectedNpcTarget(ctx, npc)) {
+    return serviceProtectedCombatLine(npc.name);
+  }
+
+  const gateErr = applyGates();
+  if (gateErr) return gateErr;
+
+  const dispel = (spell as any).cleanse;
+  if (!dispel || !Array.isArray(dispel.tags) || dispel.tags.length <= 0) {
+    return `[world] [spell:${spell.name}] That spell has no dispel definition.`;
+  }
+
+  const removed = clearEntityStatusEffectsByTags(npc as any, dispel.tags, dispel.maxToRemove, now);
+  applySchoolGains();
+
+  if (removed <= 0) {
+    return `[world] [spell:${spell.name}] Nothing to dispel.`;
+  }
+  return `[world] [spell:${spell.name}] You dispel ${removed} effect(s) from ${npc.name}.`;
+}
+
+case "dispel_single_ally": {
+  if (!ctx.entities) return "[world] Entities not available.";
+  if (!ctx.sessions) return "[world] Sessions not available.";
+
+  const res = resolvePlayerTargetInRoom(ctx, roomId, targetRaw);
+  if ("err" in res) return res.err;
+
+  const gateErr = applyGates();
+  if (gateErr) return gateErr;
+
+  const dispel = (spell as any).cleanse;
+  if (!dispel || !Array.isArray(dispel.tags) || dispel.tags.length <= 0) {
+    return `[world] [spell:${spell.name}] That spell has no dispel definition.`;
+  }
+
+  const removed = clearStatusEffectsByTags(res.char, dispel.tags, dispel.maxToRemove, now);
+  applySchoolGains();
+
+  if (removed <= 0) {
+    return `[world] [spell:${spell.name}] ${res.displayName} has nothing to dispel.`;
+  }
+  return `[world] [spell:${spell.name}] You dispel ${removed} effect(s) from ${res.displayName}.`;
+}
 
 
     case "buff_self": {

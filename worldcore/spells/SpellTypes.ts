@@ -22,6 +22,8 @@ export type SpellKind =
   | "shield_single_ally"
   | "cleanse_self"
   | "cleanse_single_ally"
+  | "dispel_single_npc"
+  | "dispel_single_ally"
   | "buff_self"
   | "buff_single_ally"
   | "debuff_single_npc"
