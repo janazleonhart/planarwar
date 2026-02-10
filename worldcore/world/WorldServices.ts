@@ -288,6 +288,13 @@ export async function createWorldServices(
   } catch {
     // best-effort
   }
+
+  // Wire optional siege state into NPC runtime for siege-aware behaviors.
+  try {
+    npcs.attachTownSiegeService(townSiege);
+  } catch {
+    // best-effort
+  }
   const npcSpawns = new NpcSpawnController({
     spawnPoints,
     npcs,

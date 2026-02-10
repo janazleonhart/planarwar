@@ -9290,6 +9290,24 @@
       ]
     },
 
+    "test.contractTownSiegeGuardSortieBonusRange": {
+      "kind": "test.contract",
+      "path": "worldcore/test/contract_townSiege_guardSortie_bonusRange.test.ts",
+      "dependsOn": [
+        "world.WorldEventBus",
+        "world.TownSiegeService",
+        "npc.NpcManager",
+        "world.RegionFlags"
+      ],
+      "provides": [
+        "Siege mood: guards gain extra sortie range while town is under siege"
+      ],
+      "notes": [
+        "When TownSiegeService marks a sanctuary room under siege, guard sortie range is increased by PW_TOWN_SIEGE_GUARD_SORTIE_RANGE_BONUS_TILES.",
+        "Contract uses base range=0 to prove the bonus is the deciding factor."
+      ]
+    },
+
     "test.utils": {
       "dependsOn": [],
       "functions": [

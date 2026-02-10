@@ -20,6 +20,7 @@ import {
 } from "../world/RegionFlags";
 import type { Entity } from "../shared/Entity";
 import { WorldEventBus } from "../world/WorldEventBus";
+import type { TownSiegeService } from "../world/TownSiegeService";
 
 import {
   NpcRuntimeState,
@@ -228,6 +229,9 @@ export class NpcManager {
   // Optional event bus (used for world event hooks such as town siege pressure).
   private events?: WorldEventBus;
 
+  // Optional town siege state (used for "siege mood" modifiers).
+  private townSiege?: TownSiegeService;
+
   // Town sanctuary pressure tracker (in-memory, per server runtime).
   // Key: sanctuaryRoomId -> rolling window of pressure timestamps.
   private townSanctuaryPressure = new Map<
@@ -264,6 +268,14 @@ export class NpcManager {
     this.events = events;
   }
 
+  /**
+   * Attach optional TownSiegeService for siege-aware behaviors.
+   * Kept optional so lightweight tests can construct NpcManager without full WorldServices.
+   */
+  attachTownSiegeService(townSiege: TownSiegeService): void {
+    this.townSiege = townSiege;
+  }
+
 
 
   private isGuardProtectedRoom(proto?: NpcPrototype | null): boolean {
@@ -293,6 +305,13 @@ export class NpcManager {
     );
 
     return { windowMs, threshold, cooldownMs };
+  }
+
+  private readTownSiegeGuardSortieBonusTiles(): number {
+    const raw = String(process.env.PW_TOWN_SIEGE_GUARD_SORTIE_RANGE_BONUS_TILES ?? "1").trim();
+    const n = Number(raw);
+    if (!Number.isFinite(n)) return 1;
+    return Math.max(0, Math.floor(n));
   }
 
   private recordTownSanctuaryPressure(sanctuaryRoomId: string, nowMs: number): void {
@@ -1700,22 +1719,21 @@ export class NpcManager {
         if (!curC) {
           // Cannot evaluate sanctuary/sortie rules without a coord.
         } else {
-        const curIsSanctuary = curC
-          ? isTownSanctuaryForRegionSync(curC.shard, roomId)
-          : false;
-        const sortieEnabled = curC
-          ? isTownSanctuaryGuardSortieForRegionSync(curC.shard, roomId)
-          : false;
+        const curIsSanctuary = isTownSanctuaryForRegionSync(curC.shard, roomId);
+        const sortieEnabled = isTownSanctuaryGuardSortieForRegionSync(curC.shard, roomId);
 
         if (curIsSanctuary && sortieEnabled) {
-          const rangeTiles = curC
-            ? getTownSanctuaryGuardSortieRangeTilesForRegionSync(curC.shard, roomId)
-            : 1;
-          const maxRange = Math.max(0, Math.floor(rangeTiles));
+          const tickNow = this._tickNow || Date.now();
+
+          const baseRangeTiles = getTownSanctuaryGuardSortieRangeTilesForRegionSync(curC.shard, roomId);
+          const siegeBonus = (this.townSiege && this.townSiege.isUnderSiege(roomId, tickNow))
+            ? this.readTownSiegeGuardSortieBonusTiles()
+            : 0;
+
+          const maxRange = Math.max(0, Math.floor(baseRangeTiles) + siegeBonus);
 
           // Only meaningful with room movement enabled.
           if (maxRange > 0 && trainCfg.enabled && trainCfg.roomsEnabled) {
-            const tickNow = this._tickNow || Date.now();
 
             // Scan nearby rooms for a hostile NPC with player-target threat.
             let foundHostileNpc: { roomId: string; npcId: string } | null = null;
