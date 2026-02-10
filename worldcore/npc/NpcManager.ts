@@ -1465,6 +1465,57 @@ export class NpcManager {
         ? { ...trainCfgBase, enabled: false, roomsEnabled: false, assistEnabled: false }
         : trainCfgBase;
 
+      // Town sanctuary recapture (v0): if a hostile (non-guard) is inside a sanctuary tile while NO breach is active,
+      // gently push it back toward its spawn room (one tile per tick) and clear combat/threat.
+      // This prevents "stuck invaders" after a breach ends without requiring a full event/town defense system.
+      {
+        const tags = (proto.tags ?? []) as string[];
+        const behavior = (proto.behavior ?? "aggressive") as string;
+        const isResource =
+          tags.includes("resource") ||
+          tags.some((t) => String(t).startsWith("resource_"));
+        const nonHostile = tags.includes("non_hostile") || isResource;
+        const hostile =
+          !nonHostile &&
+          (behavior === "aggressive" || behavior === "guard" || behavior === "coward");
+        const isGuard = tags.includes("guard");
+
+        const curC = this.parseRoomCoord(roomId);
+        const inSanctuary = curC ? isTownSanctuaryForRegionSync(curC.shard, roomId) : false;
+
+        if (inSanctuary && hostile && !isGuard) {
+          const allowBreach = curC ? allowSiegeBreachForRegionSync(curC.shard, roomId) : false;
+          const breachActive =
+            !!allowBreach &&
+            !!this.townSiege &&
+            this.townSiege.isBreachActive(roomId, this._tickNow || Date.now());
+
+          if (!breachActive) {
+            const tickNow = this._tickNow || Date.now();
+            try {
+              this.clearThreat(entityId);
+              (st as any).inCombat = false;
+              (npcEntity as any).inCombat = false;
+              (npcEntity as any).trainChasing = false;
+              (npcEntity as any).trainPursueStartAt = 0;
+            } catch {
+              // best-effort
+            }
+
+            const spawnRoomId = String((st as any).spawnRoomId ?? roomId);
+            if (trainCfg.roomsEnabled && spawnRoomId && spawnRoomId !== roomId) {
+              const next = this.stepRoomToward(roomId, spawnRoomId);
+              if (next && next !== roomId) {
+                this.moveNpcToRoom(st, entityId, next);
+                (st as any).trainMovedAt = tickNow;
+                (npcEntity as any).trainMovedAt = tickNow;
+                continue;
+              }
+            }
+          }
+        }
+      }
+
       // Train return-home drift: when enabled and the NPC is marked as returning, walk back toward spawn.
       // This runs before perception/attack decisions so returning NPCs don't fight while disengaging.
       if (trainCfg.enabled && trainCfg.returnMode === "drift") {

@@ -9242,6 +9242,22 @@
         "Starter towns stay safe by leaving allowSiegeBreach unset/false."
       ]
     },
+    "test.contractRegionFlagsTownSanctuaryRecapturePushout": {
+      "kind": "test.contract",
+      "path": "worldcore/test/contract_regionFlags_townSanctuary_recapturePushout.test.ts",
+      "dependsOn": [
+        "world.RegionFlags",
+        "npc.NpcManager",
+        "core.EntityManager"
+      ],
+      "provides": [
+        "Town sanctuary recapture: hostiles inside sanctuary are pushed back out when no breach is active"
+      ],
+      "notes": [
+        "Prevents stuck invaders after a breach ends: non-guards inside sanctuary are de-aggroed and nudged one tile per tick toward their spawn room.",
+        "Does not affect guards; does not run during an active breach."
+      ]
+    },
     "test.contractRegionFlagsTownSanctuaryGuardSortie": {
       "kind": "test.contract",
       "path": "worldcore/test/contract_regionFlags_townSanctuary_guardSortie.test.ts",
