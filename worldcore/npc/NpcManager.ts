@@ -68,6 +68,33 @@ function envBool(name: string, fallback: boolean): boolean {
   return fallback;
 }
 
+type RoomXY = { shard: string; x: number; y: number };
+
+function parseRoomXY(roomId: string): RoomXY | null {
+  // Expected canonical form: "shardName:x,y" (e.g. "prime_shard:12,-4").
+  const s = String(roomId ?? "");
+  const idx = s.lastIndexOf(":");
+  if (idx <= 0) return null;
+  const shard = s.slice(0, idx);
+  const rest = s.slice(idx + 1);
+  const parts = rest.split(",");
+  if (parts.length !== 2) return null;
+  const x = Number(parts[0]);
+  const y = Number(parts[1]);
+  if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+  return { shard, x, y };
+}
+
+function roomGridDistance(aRoomId: string, bRoomId: string): number {
+  const a = parseRoomXY(aRoomId);
+  const b = parseRoomXY(bRoomId);
+  if (!a || !b) return Number.POSITIVE_INFINITY;
+  if (a.shard !== b.shard) return Number.POSITIVE_INFINITY;
+  // Chebyshev distance on the room grid: diagonal adjacency counts as 1.
+  // This matches the way Train room pursuit/assist is intended to feel.
+  return Math.max(Math.abs(a.x - b.x), Math.abs(a.y - b.y));
+}
+
 type TrainConfig = {
   enabled: boolean;
   step: number;
@@ -859,8 +886,24 @@ export class NpcManager {
     // an explicit forceRoomId (used by gate-home / supernatural calls for help).
     const allowCrossRoomAssist = allowCrossRoom || typeof opts.forceRoomId === "string";
 
+    // Train nuance: even when cross-room assist is enabled, only consider the offender's room if
+    // it's within a small grid distance. This prevents "psychic" assists across huge spans.
+    // Gate-home calls (forceRoomId) bypass this check on purpose.
+    const crossRoomRange = Math.max(0, Math.floor(trainCfg.assistRange));
+    const withinCrossRoomRange =
+      typeof opts.forceRoomId === "string" ||
+      st.roomId === targetRoomId ||
+      roomGridDistance(st.roomId, targetRoomId) <= crossRoomRange;
+
+    // Effective cross-room assist flag: Train rooms + within range, or explicit forceRoomId.
+    // If the offender's room is out of range, we must behave like cross-room assist is OFF:
+    // - don't validate targets cross-room
+    // - don't seed threat cross-room
+    // - don't snap allies across rooms
+    const allowCrossRoomAssistEffective = allowCrossRoomAssist && withinCrossRoomRange;
+
     const considerRooms = new Set<string>(
-      allowCrossRoomAssist || st.roomId === targetRoomId ? [st.roomId, targetRoomId] : [st.roomId],
+      allowCrossRoomAssistEffective ? [st.roomId, targetRoomId] : [st.roomId],
     );
 
 
@@ -908,6 +951,7 @@ export class NpcManager {
     const sharePct = Math.max(0, Math.min(1, envNumber("PW_ASSIST_THREAT_SHARE_PCT", 0.5)));
     const shareMin = Math.max(0, envNumber("PW_ASSIST_THREAT_SHARE_MIN", 1));
     const shareMax = Math.max(0, envNumber("PW_ASSIST_THREAT_SHARE_MAX", 50));
+    const minThreatDeltaToBump = Math.max(0, envNumber("PW_ASSIST_MIN_THREAT_DELTA_TO_BUMP", 0));
 
     const callerThreat = this.npcThreat.get(st.entityId);
     const baseThreat = Math.max(0, getThreatValue(callerThreat, attackerEntityId));
@@ -961,37 +1005,59 @@ export class NpcManager {
           attacker: allyEnt as any,
           target: attacker as any,
           attackerRoomId: ally.roomId,
-          allowCrossRoom: allowCrossRoomAssist,
+          allowCrossRoom: allowCrossRoomAssistEffective,
         });
         // Stealth is a hard stop: never seed threat or snap on an invisible offender.
         if (!tv.ok && (tv as any).reason === "stealth") continue;
         // If cross-room assist is NOT enabled, then any other invalid reason (most
         // commonly out_of_room) must block assist seeding, otherwise NPCs get
         // free radar through walls.
-        if (!tv.ok && !allowCrossRoomAssist) continue;
+        if (!tv.ok && !allowCrossRoomAssistEffective) continue;
 
-        const threat = updateThreatFromDamage(
-          this.npcThreat.get(ally.entityId),
-          attackerEntityId,
-          sharedThreat,
-          tickNow,
-        );
-        this.npcThreat.set(ally.entityId, threat);
+        // Optional anti-jitter: if the ally already has strong threat on the offender, don't
+        // bump it again by a small assist seed. This reduces target churn when multiple helpers
+        // are already engaged.
+        const prevThreat = this.npcThreat.get(ally.entityId);
+        const existing = Math.max(0, getThreatValue(prevThreat, attackerEntityId));
 
-        ally.lastAggroAt = threat.lastAggroAt;
-        ally.lastAttackerEntityId = threat.lastAttackerEntityId;
+        // If the ally already has strong threat on the offender, don't bump it again by a small
+        // assist seed. This reduces target churn when multiple helpers are already engaged.
+        //
+        // IMPORTANT: even if we skip the bump, pack assist must still guarantee a threat bucket
+        // exists for the offender (older tests assert that allies "track the attacker").
+        let nextThreat = prevThreat;
+        const shouldBump = existing === 0 || sharedThreat >= existing + minThreatDeltaToBump;
+        if (shouldBump) {
+          nextThreat = updateThreatFromDamage(prevThreat, attackerEntityId, sharedThreat, tickNow);
+        }
+
+        // Guarantee a seeded bucket for this offender (and lastAttackerEntityId), even when
+        // anti-jitter prevents a numerical bump.
+        if (getThreatValue(nextThreat, attackerEntityId) <= 0) {
+          nextThreat = updateThreatFromDamage(prevThreat, attackerEntityId, Math.max(1, shareMin), tickNow);
+        }
+
+        if (nextThreat && nextThreat !== prevThreat) {
+          this.npcThreat.set(ally.entityId, nextThreat);
+          ally.lastAggroAt = nextThreat.lastAggroAt;
+          ally.lastAttackerEntityId = nextThreat.lastAttackerEntityId;
+        }
 
         this.markPackHelp(ally.entityId, attackerEntityId, tickNow);
 
         assisted += 1;
 
-        if (opts.snapAllies && targetRoomId) {
+        if (opts.snapAllies && targetRoomId && (targetRoomId === ally.roomId || allowCrossRoomAssistEffective)) {
           // Do not move an NPC twice in the same tick (prevents leader getting shoved forward by ally-assist).
           if (tickNow && (ally as any).trainMovedAt === tickNow) {
             continue;
           }
-          this.moveNpcToRoom(ally, ally.entityId, targetRoomId);
-          (ally as any).trainMovedAt = tickNow;
+          // Only snap across rooms when cross-room assist is effectively enabled.
+          // When out of range, allies must remain in their current room.
+          if (targetRoomId === ally.roomId || allowCrossRoomAssistEffective) {
+            this.moveNpcToRoom(ally, ally.entityId, targetRoomId);
+            (ally as any).trainMovedAt = tickNow;
+          }
         }
       }
     }

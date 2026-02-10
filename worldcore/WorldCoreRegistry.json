@@ -8447,6 +8447,50 @@
         "contract:npcManagerPackAssistMaxAlliesPrioritizesEngaged"
       ]
     },
+    "test.contract_npcManager_packAssist_noBumpWhenAlreadyHighThreat": {
+      "class": "(test) contract_npcManager_packAssist_noBumpWhenAlreadyHighThreat",
+      "ctorArgs": [],
+      "dependsOn": [
+        "worldcore/npc/NpcManager.ts",
+        "worldcore/npc/NpcThreat.ts",
+        "worldcore/npc/NpcTypes.ts",
+        "worldcore/core/EntityManager.ts"
+      ],
+      "kind": "test",
+      "lifecycle": "test",
+      "notes": [
+        "Contract: PW_ASSIST_MIN_THREAT_DELTA_TO_BUMP prevents repeatedly inflating ally threat when the ally is already heavily engaged with the offender."
+      ],
+      "owns": [
+        "test:npcManagerPackAssistNoBumpWhenAlreadyHighThreat"
+      ],
+      "path": "worldcore/test/contract_npcManager_packAssist_noBumpWhenAlreadyHighThreat.test.ts",
+      "provides": [
+        "contract:npcManagerPackAssistNoBumpWhenAlreadyHighThreat"
+      ]
+    },
+    "test.contract_npcManager_packAssist_trainAssistRangeClamp": {
+      "class": "(test) contract_npcManager_packAssist_trainAssistRangeClamp",
+      "ctorArgs": [],
+      "dependsOn": [
+        "worldcore/npc/NpcManager.ts",
+        "worldcore/npc/NpcThreat.ts",
+        "worldcore/npc/NpcTypes.ts",
+        "worldcore/core/EntityManager.ts"
+      ],
+      "kind": "test",
+      "lifecycle": "test",
+      "notes": [
+        "Contract: Train rooms cross-room pack assist is clamped by PW_TRAIN_ASSIST_RANGE for canonical shard:x,y room ids."
+      ],
+      "owns": [
+        "test:npcManagerPackAssistTrainAssistRangeClamp"
+      ],
+      "path": "worldcore/test/contract_npcManager_packAssist_trainAssistRangeClamp.test.ts",
+      "provides": [
+        "contract:npcManagerPackAssistTrainAssistRangeClamp"
+      ]
+    },
     "test.contract_npcManager_packAssist_noCrossRoomWithoutTrain": {
       "class": "(test) contract_npcManager_packAssist_noCrossRoomWithoutTrain",
       "dependsOn": [
