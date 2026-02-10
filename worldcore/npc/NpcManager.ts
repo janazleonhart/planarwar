@@ -19,6 +19,7 @@ import {
   getRegionFlags,
 } from "../world/RegionFlags";
 import type { Entity } from "../shared/Entity";
+import { WorldEventBus } from "../world/WorldEventBus";
 
 import {
   NpcRuntimeState,
@@ -224,6 +225,17 @@ export class NpcManager {
     mail?: any;
   };
 
+  // Optional event bus (used for world event hooks such as town siege pressure).
+  private events?: WorldEventBus;
+
+  // Town sanctuary pressure tracker (in-memory, per server runtime).
+  // Key: sanctuaryRoomId -> rolling window of pressure timestamps.
+  private townSanctuaryPressure = new Map<
+    string,
+    { timestampsMs: number[]; lastEmitMs: number }
+  >();
+
+
   constructor(
     private readonly entities: EntityManager,
     private readonly sessions?: SessionManager,
@@ -244,6 +256,15 @@ export class NpcManager {
   }
 
 
+  /**
+   * Attach optional WorldEventBus for emitting world-level signals.
+   * Kept optional so lightweight tests can construct NpcManager without wiring full WorldServices.
+   */
+  attachEventBus(events: WorldEventBus): void {
+    this.events = events;
+  }
+
+
 
   private isGuardProtectedRoom(proto?: NpcPrototype | null): boolean {
     const tags = proto?.tags ?? [];
@@ -254,6 +275,58 @@ export class NpcManager {
       tags.includes("guard") ||
       proto?.guardProfile !== undefined
     );
+  }
+
+
+  private readTownSanctuaryPressureConfig() {
+    const windowMs = Math.max(
+      1000,
+      Number(process.env.PW_TOWN_SANCTUARY_PRESSURE_WINDOW_MS ?? 15000),
+    );
+    const threshold = Math.max(
+      1,
+      Number(process.env.PW_TOWN_SANCTUARY_PRESSURE_THRESHOLD ?? 12),
+    );
+    const cooldownMs = Math.max(
+      0,
+      Number(process.env.PW_TOWN_SANCTUARY_PRESSURE_COOLDOWN_MS ?? windowMs),
+    );
+
+    return { windowMs, threshold, cooldownMs };
+  }
+
+  private recordTownSanctuaryPressure(sanctuaryRoomId: string, nowMs: number): void {
+    const { windowMs, threshold, cooldownMs } = this.readTownSanctuaryPressureConfig();
+    const cur =
+      this.townSanctuaryPressure.get(sanctuaryRoomId) ??
+      ({ timestampsMs: [], lastEmitMs: 0 } as { timestampsMs: number[]; lastEmitMs: number });
+
+    // Purge old samples.
+    const keepAfter = nowMs - windowMs;
+    cur.timestampsMs = cur.timestampsMs.filter((t) => t >= keepAfter);
+    cur.timestampsMs.push(nowMs);
+
+    const count = cur.timestampsMs.length;
+    const canEmit = nowMs - cur.lastEmitMs >= cooldownMs;
+
+    if (count >= threshold && canEmit) {
+      cur.lastEmitMs = nowMs;
+      // Reset samples so we don't spam emit on every subsequent block.
+      cur.timestampsMs = [];
+
+      try {
+        this.events?.emit("town.sanctuary.siege", {
+          shardId: String(sanctuaryRoomId.split(":")[0] ?? ""),
+          roomId: sanctuaryRoomId,
+          pressureCount: count,
+          windowMs,
+        });
+      } catch {
+        // best-effort
+      }
+    }
+
+    this.townSanctuaryPressure.set(sanctuaryRoomId, cur);
   }
 
   // -------------------------------------------------------------------------
@@ -2231,6 +2304,8 @@ export class NpcManager {
         const isGuard = tags.includes("guard");
 
         if (!isGuard) {
+          // Sanctuary pressure: blocked trains contribute to a rolling pressure window which can trigger a siege event.
+          this.recordTownSanctuaryPressure(nextRoomId, tickNow);
           try {
             this.clearThreat(npcId);
             (st as any).inCombat = false;

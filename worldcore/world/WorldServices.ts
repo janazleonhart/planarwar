@@ -271,6 +271,13 @@ export async function createWorldServices(
 
   // NPC runtime
   const npcs = new NpcManager(entities, sessions);
+  
+  // Wire optional WorldEventBus into NPC runtime for siege/pressure signals.
+  try {
+    npcs.attachEventBus(events);
+  } catch {
+    // best-effort
+  }
   const npcSpawns = new NpcSpawnController({
     spawnPoints,
     npcs,

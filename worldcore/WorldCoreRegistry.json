@@ -9240,6 +9240,24 @@
         "Explicitly opt-in per-region (no global behavior change)."
       ]
     },
+    "test.contractRegionFlagsTownSanctuaryPressureSiegeEvent": {
+      "kind": "test.contract",
+      "path": "worldcore/test/contract_regionFlags_townSanctuary_pressureSiegeEvent.test.ts",
+      "dependsOn": [
+        "world.RegionFlags",
+        "npc.NpcManager",
+        "world.WorldEventBus",
+        "core.EntityManager"
+      ],
+      "provides": [
+        "Town sanctuary pressure: repeated blocked Train entries emit town.sanctuary.siege at threshold"
+      ],
+      "notes": [
+        "Records a rolling pressure window when hostile NPC trains are blocked at a sanctuary boundary, emitting an event for future invasion/siege systems.",
+        "Deterministic contract: re-seeds threat multiple times; each blocked attempt contributes one pressure sample."
+      ]
+    },
+
     "test.utils": {
       "dependsOn": [],
       "functions": [
