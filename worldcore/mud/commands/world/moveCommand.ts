@@ -1,10 +1,14 @@
 // worldcore/mud/commands/world/moveCommand.ts
 
 import { moveCharacterAndSync } from "../../../movement/moveOps";
-import { DIR_LABELS, parseMoveDir } from "../../../movement/MovementCommands";
+import { DIR_LABELS, parseMoveDir, tryMoveCharacter } from "../../../movement/MovementCommands";
 import type { CharacterState } from "../../../characters/CharacterTypes";
 import type { ServerWorldManager } from "../../../world/ServerWorldManager";
 import { isGMOrHigher } from "../../../shared/AuthTypes";
+import {
+  isTownSanctuaryForRegionSync,
+  isTravelLockdownOnSiegeForRegionSync,
+} from "../../../world/RegionFlags";
 
 function parseStepsToken(raw: string | undefined): number | undefined {
   if (!raw) return undefined;
@@ -72,6 +76,39 @@ export async function handleMoveCommand(
     const flags = ctx?.session?.identity?.flags;
     if (!isGMOrHigher(flags)) {
       return "You can only move 1 step at a time.";
+    }
+  }
+
+  // Optional travel lockdown: if the destination region is a town sanctuary that is
+  // currently under siege, regions may choose to deny entry.
+  //
+  // Convention:
+  // - regions.flags.rules.travel.lockdownOnSiege = true
+  //
+  // This is evaluated BEFORE applying movement so we never “step in” and then undo.
+  if (steps === 1) {
+    try {
+      const sim = { ...(char as any) } as CharacterState;
+      const simRes = tryMoveCharacter(sim, dir, world, 1);
+      if (simRes.ok) {
+        const destRegionId = (sim as any).lastRegionId as string | null;
+        if (destRegionId) {
+          const shardId = (char as any).shardId ?? getShardId(world);
+          const destRoomId = `${shardId}:${destRegionId}`;
+
+          const townSiege = ctx?.townSiege;
+          const underSiege = !!townSiege?.isUnderSiege?.(destRoomId, Date.now());
+
+          if (underSiege && isTownSanctuaryForRegionSync(shardId, destRegionId)) {
+            const lockdown = isTravelLockdownOnSiegeForRegionSync(shardId, destRegionId);
+            if (lockdown) {
+              return "The gates are sealed — the town is under siege.";
+            }
+          }
+        }
+      }
+    } catch {
+      // Fail-open: movement must not crash because travel rules couldn't be evaluated.
     }
   }
 

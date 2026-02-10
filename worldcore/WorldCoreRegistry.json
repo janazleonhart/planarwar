@@ -9326,6 +9326,39 @@
       ]
     },
 
+    "test.contractTownSiegeTravelLockdownBlocksSanctuaryEntry": {
+      "kind": "test.contract",
+      "path": "worldcore/test/contract_townSiege_travelLockdownOnSiege_blocksSanctuaryEntry.test.ts",
+      "dependsOn": [
+        "world.RegionFlags",
+        "mud.commands.world.moveCommand"
+      ],
+      "provides": [
+        "Siege travel: regions can opt in to travel lockdown that blocks entering sanctuary regions while under siege"
+      ],
+      "notes": [
+        "Uses regions.flags.rules.travel.lockdownOnSiege with rules.ai.townSanctuary.",
+        "Evaluated pre-move so characters do not step into the town and then snap back."
+      ]
+    },
+
+    "test.contractTownSiegeGuardMoraleProactiveSortie": {
+      "kind": "test.contract",
+      "path": "worldcore/test/contract_townSiege_guardMorale_proactiveSortie.test.ts",
+      "dependsOn": [
+        "npc.NpcManager",
+        "core.EntityManager",
+        "world.RegionFlags"
+      ],
+      "provides": [
+        "Siege morale: guards can proactively sortie to recently-aggressive hostiles during siege (even without player threat table)"
+      ],
+      "notes": [
+        "Controlled by PW_TOWN_SIEGE_GUARD_MORALE_PROACTIVE and PW_TOWN_SIEGE_GUARD_MORALE_RECENT_AGGRO_WINDOW_MS.",
+        "Keeps default conservative behavior unless siege morale is explicitly enabled."
+      ]
+    },
+
     "test.utils": {
       "dependsOn": [],
       "functions": [

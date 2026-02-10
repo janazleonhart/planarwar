@@ -483,3 +483,32 @@ export function isEconomyLockdownOnSiegeForRegionSync(shardId: string, regionId:
   return isEconomyLockdownOnSiegeFromFlags(getRegionFlagsSync(shardId, regionId));
 }
 
+/**
+ * Travel lockdown during a siege.
+ *
+ * Convention:
+ * - Stored under flags.rules.travel.lockdownOnSiege
+ * - Values:
+ *    - true: deny player movement into this region while it is under siege
+ *    - missing/false: default
+ */
+export function isTravelLockdownOnSiegeFromFlags(flags: RegionFlags): boolean {
+  const v = (flags as any)?.rules?.travel?.lockdownOnSiege;
+  return v === true;
+}
+
+export async function isTravelLockdownOnSiegeForRegion(
+  shardId: string,
+  regionId: string,
+): Promise<boolean> {
+  const flags = await getRegionFlags(shardId, regionId);
+  return isTravelLockdownOnSiegeFromFlags(flags);
+}
+
+export function isTravelLockdownOnSiegeForRegionSync(
+  shardId: string,
+  regionId: string,
+): boolean {
+  return isTravelLockdownOnSiegeFromFlags(getRegionFlagsSync(shardId, regionId));
+}
+

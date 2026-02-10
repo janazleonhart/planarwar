@@ -314,6 +314,17 @@ export class NpcManager {
     return Math.max(0, Math.floor(n));
   }
 
+  private readTownSiegeGuardMoraleProactive(): { enabled: boolean; recentAggroWindowMs: number } {
+    const v = String(process.env.PW_TOWN_SIEGE_GUARD_MORALE_PROACTIVE ?? "0").trim().toLowerCase();
+    const enabled = v === "1" || v === "true" || v === "yes" || v === "on";
+
+    const raw = String(process.env.PW_TOWN_SIEGE_GUARD_MORALE_RECENT_AGGRO_WINDOW_MS ?? "10000").trim();
+    const n = Number(raw);
+    const recentAggroWindowMs = Number.isFinite(n) ? Math.max(0, Math.floor(n)) : 10_000;
+
+    return { enabled, recentAggroWindowMs };
+  }
+
   private recordTownSanctuaryPressure(sanctuaryRoomId: string, nowMs: number): void {
     const { windowMs, threshold, cooldownMs } = this.readTownSanctuaryPressureConfig();
     const cur =
@@ -1726,9 +1737,9 @@ export class NpcManager {
           const tickNow = this._tickNow || Date.now();
 
           const baseRangeTiles = getTownSanctuaryGuardSortieRangeTilesForRegionSync(curC.shard, roomId);
-          const siegeBonus = (this.townSiege && this.townSiege.isUnderSiege(roomId, tickNow))
-            ? this.readTownSiegeGuardSortieBonusTiles()
-            : 0;
+          const siegeActive = !!(this.townSiege && this.townSiege.isUnderSiege(roomId, tickNow));
+          const siegeBonus = siegeActive ? this.readTownSiegeGuardSortieBonusTiles() : 0;
+          const moraleCfg = this.readTownSiegeGuardMoraleProactive();
 
           const maxRange = Math.max(0, Math.floor(baseRangeTiles) + siegeBonus);
 
@@ -1775,14 +1786,43 @@ export class NpcManager {
                   const otherThreat = this.npcThreat.get(other.entityId) as any;
                   const table = otherThreat?.threatByEntityId ?? {};
                   const keys = Object.keys(table);
-                  if (keys.length === 0) continue;
+                  if (keys.length === 0) {
+                    const proactive = moraleCfg.enabled && siegeActive;
+                    if (!proactive) continue;
 
-                  // Require that the hostile has at least one player-target in its threat table.
+                    const otherEnt = this.entities.get(String(other.entityId)) as any;
+                    const inCombat = !!(otherEnt && (otherEnt.inCombat === true || (otherEnt as any).inCombat === true));
+
+                    const lastAggroAt = Number(otherThreat?.lastAggroAt ?? 0);
+                    const recentlyAggro = Number.isFinite(lastAggroAt)
+                      ? tickNow - lastAggroAt <= moraleCfg.recentAggroWindowMs
+                      : false;
+
+                    if (!inCombat && !recentlyAggro) continue;
+                  }
+
+                  // Default: only sortie to hostiles that are actively fighting a player.
+                  // Under siege, guard morale can be configured to allow proactive engagement of
+                  // recently-aggressive hostiles even if they are not currently targeting a player.
                   const hasPlayerTarget = keys.some((tid) => {
                     const te = this.entities.get(String(tid));
                     return te?.type === "player";
                   });
-                  if (!hasPlayerTarget) continue;
+
+                  if (!hasPlayerTarget) {
+                    const proactive = moraleCfg.enabled && siegeActive;
+                    if (!proactive) continue;
+
+                    const otherEnt = this.entities.get(String(other.entityId)) as any;
+                    const inCombat = !!(otherEnt && (otherEnt.inCombat === true || (otherEnt as any).inCombat === true));
+
+                    const lastAggroAt = Number(otherThreat?.lastAggroAt ?? 0);
+                    const recentlyAggro = Number.isFinite(lastAggroAt)
+                      ? tickNow - lastAggroAt <= moraleCfg.recentAggroWindowMs
+                      : false;
+
+                    if (!inCombat && !recentlyAggro) continue;
+                  }
 
                   foundHostileNpc = { roomId: candidateRoomId, npcId: String(other.entityId) };
                   break;
