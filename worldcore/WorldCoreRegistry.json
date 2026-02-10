@@ -9258,6 +9258,38 @@
       ]
     },
 
+    "test.contractTownSiegeServiceState": {
+      "kind": "test.contract",
+      "path": "worldcore/test/contract_townSiegeService_state.test.ts",
+      "dependsOn": [
+        "world.WorldEventBus",
+        "world.TownSiegeService"
+      ],
+      "provides": [
+        "TownSiegeService: town.sanctuary.siege marks room under siege until TTL expires"
+      ],
+      "notes": [
+        "Lightweight in-memory siege state driven by WorldEventBus.",
+        "Contract locks TTL expiry semantics so future invasion systems can rely on stable behavior."
+      ]
+    },
+
+    "test.contractTownSiegeAlarmServiceBroadcast": {
+      "kind": "test.contract",
+      "path": "worldcore/test/contract_townSiegeAlarmService_broadcast.test.ts",
+      "dependsOn": [
+        "world.WorldEventBus",
+        "world.TownSiegeAlarmService"
+      ],
+      "provides": [
+        "TownSiegeAlarmService: town.sanctuary.siege broadcasts alarm chat into town room (and optional neighbors)"
+      ],
+      "notes": [
+        "Locks MUD-facing alarm behavior for siege events.",
+        "Also locks cooldown semantics to prevent spam."
+      ]
+    },
+
     "test.utils": {
       "dependsOn": [],
       "functions": [
@@ -9922,13 +9954,14 @@
         "player.connected",
         "player.disconnected",
         "law.crime",
-        "weather.changed"
+        "weather.changed",
+        "town.sanctuary.siege"
       ],
       "kind": "service",
       "lifecycle": "singleton",
       "notes": [
         "Typed pub/sub bus for world-layer events.",
-        "Goal: future systems (AI, law, weather, crime) hang off this instead of directly calling each other."
+        "Goal: future systems (AI, law, weather, crime, siege) hang off this instead of directly calling each other."
       ],
       "path": "worldcore/world/WorldEventBus.ts",
       "provides": [
@@ -9937,6 +9970,50 @@
         "emit(event, payload)",
         "emitAsync(event, payload)",
         "clear()"
+      ]
+    },
+    "world.townSiege": {
+      "class": "TownSiegeService",
+      "ctorArgs": [
+        "world.events"
+      ],
+      "dependsOn": [
+        "world.events"
+      ],
+      "kind": "service",
+      "lifecycle": "singleton",
+      "notes": [
+        "Listens to town.sanctuary.siege events and maintains short-lived in-memory 'under siege' state keyed by town roomId.",
+        "Acts as a stable bridge for future invasion systems (Mother Brain, town states, reinforcement spawns).",
+        "TTL is configurable via PW_TOWN_SANCTUARY_SIEGE_TTL_MS."
+      ],
+      "path": "worldcore/world/TownSiegeService.ts",
+      "provides": [
+        "getSiegeState(roomId, nowMs?)",
+        "isUnderSiege(roomId, nowMs?)",
+        "clear()"
+      ]
+    },
+    "world.townSiegeAlarm": {
+      "class": "TownSiegeAlarmService",
+      "ctorArgs": [
+        "world.events",
+        "world.rooms"
+      ],
+      "dependsOn": [
+        "world.events",
+        "world.rooms"
+      ],
+      "kind": "service",
+      "lifecycle": "singleton",
+      "notes": [
+        "Listens to town.sanctuary.siege events and broadcasts a diegetic alarm message into the town room (and optionally neighbor rooms).",
+        "Config via PW_TOWN_SIEGE_ALARM_RANGE_TILES and PW_TOWN_SIEGE_ALARM_COOLDOWN_MS.",
+        "This is a UX/story hook; invasion gameplay remains the responsibility of future systems."
+      ],
+      "path": "worldcore/world/TownSiegeAlarmService.ts",
+      "provides": [
+        "(auto) event handler: town.sanctuary.siege -> room.chat broadcast"
       ]
     },
     "world.manager": {
@@ -10638,3 +10715,4 @@
     }
   }
 }
+  

@@ -38,6 +38,7 @@ import { applyProfileToPetVitals } from "../pets/PetProfiles";
 import { applyPetGearToVitals } from "../pets/PetGear";
 import { WorldEventBus } from "./WorldEventBus";
 import { TownSiegeService } from "./TownSiegeService";
+import { TownSiegeAlarmService } from "./TownSiegeAlarmService";
 import { NpcManager } from "../npc/NpcManager";
 import { NpcSpawnController } from "../npc/NpcSpawnController";
 import { loadPersistedServerBuffs } from "../status/ServerBuffs";
@@ -59,6 +60,7 @@ export interface WorldServices {
 
   // Short-lived world state
   townSiege: TownSiegeService;
+  townSiegeAlarm: TownSiegeAlarmService;
 
   // Core runtime
   sessions: SessionManager;
@@ -245,6 +247,9 @@ export async function createWorldServices(
     },
   });
 
+  // Siege alarm broadcasts (MUD UX hook)
+  const townSiegeAlarm = new TownSiegeAlarmService(events, rooms);
+
   // Respawns / regions
   const characters = new PostgresCharacterService();
   const respawns = new RespawnService(world, spawnPoints, characters, entities);
@@ -378,6 +383,7 @@ export async function createWorldServices(
     shardId,
     events,
     townSiege,
+    townSiegeAlarm,
     sessions,
     entities,
     rooms,
