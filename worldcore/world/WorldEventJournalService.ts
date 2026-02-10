@@ -59,6 +59,7 @@ export class WorldEventJournalService {
     "weather.changed",
     "town.sanctuary.siege",
     "town.sanctuary.breach",
+    "town.invasion.intent",
   ];
 
   constructor(events: WorldEventBus) {

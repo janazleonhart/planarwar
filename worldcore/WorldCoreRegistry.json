@@ -9459,6 +9459,21 @@
       ],
       "path": "worldcore/test/contract_worldEventJournal_recordsTownEvents.test.ts"
     },
+    "test.contractInvasionDirectorEmitsIntent": {
+      "kind": "test.contract",
+      "service": "worldcore",
+      "path": "worldcore/test/contract_invasionDirector_emitsIntent.test.ts",
+      "dependsOn": [
+        "world.events",
+        "world.eventJournal",
+        "world.townSiege",
+        "world.invasionDirector"
+      ],
+      "provides": [],
+      "notes": [
+        "Contract: breach emits town.invasion.intent once per cooldown; journal records it."
+      ]
+    },
     "test.utils": {
       "dependsOn": [],
       "functions": [
@@ -10152,6 +10167,30 @@
       ],
       "path": "worldcore/world/WorldEventJournalService.ts",
       "provides": ["peekRecent(query?)", "clear()"]
+    },
+    "world.invasionDirector": {
+      "kind": "service",
+      "service": "worldcore",
+      "path": "worldcore/world/InvasionDirectorService.ts",
+      "class": "InvasionDirectorService",
+      "lifecycle": "singleton",
+      "ctorArgs": [
+        "world.events",
+        "world.townSiege"
+      ],
+      "dependsOn": [
+        "world.events",
+        "world.townSiege"
+      ],
+      "provides": [
+        "emit town.invasion.intent on breach"
+      ],
+      "owns": [
+        "town.invasion.intent"
+      ],
+      "notes": [
+        "Converts siege/breach signals into a typed intent event for future Mother Brain/invasion systems. No spawns; intent only."
+      ]
     },
     "world.manager": {
       "class": "ServerWorldManager",

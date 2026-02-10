@@ -32,7 +32,8 @@ export type WorldEvent =
   | "law.crime"
   | "weather.changed"
   | "town.sanctuary.siege"
-  | "town.sanctuary.breach";
+  | "town.sanctuary.breach"
+  | "town.invasion.intent";
 
 export type WorldEventPayloads = {
   "entity.spawned": { entityId: string; roomId: string; regionId?: string };
@@ -49,6 +50,7 @@ export type WorldEventPayloads = {
   "weather.changed": { regionId: string; weather: string };
   "town.sanctuary.siege": { shardId: string; roomId: string; pressureCount: number; windowMs: number };
   "town.sanctuary.breach": { shardId: string; roomId: string; breachUntilTs: number };
+  "town.invasion.intent": { shardId: string; roomId: string; reason: "breach" | "siege"; tier: "warning" | "siege" | "breach" | "recovery"; ts: number };
 };
 
 type EventHandler<K extends WorldEvent> = (

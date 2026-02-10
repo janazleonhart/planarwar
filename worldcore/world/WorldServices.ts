@@ -40,6 +40,7 @@ import { WorldEventBus } from "./WorldEventBus";
 import { WorldEventJournalService } from "./WorldEventJournalService";
 import { TownSiegeService } from "./TownSiegeService";
 import { TownSiegeAlarmService } from "./TownSiegeAlarmService";
+import { InvasionDirectorService } from "./InvasionDirectorService";
 import { NpcManager } from "../npc/NpcManager";
 import { NpcSpawnController } from "../npc/NpcSpawnController";
 import { loadPersistedServerBuffs } from "../status/ServerBuffs";
@@ -63,6 +64,7 @@ export interface WorldServices {
   // Short-lived world state
   townSiege: TownSiegeService;
   townSiegeAlarm: TownSiegeAlarmService;
+  invasionDirector: InvasionDirectorService;
 
   // Core runtime
   sessions: SessionManager;
@@ -253,6 +255,9 @@ export async function createWorldServices(
   // Siege alarm broadcasts (MUD UX hook)
   const townSiegeAlarm = new TownSiegeAlarmService(events, rooms);
 
+  // Invasion director converts breach signals into typed intent events (handoff surface for Mother Brain).
+  const invasionDirector = new InvasionDirectorService(events, townSiege);
+
   // Respawns / regions
   const characters = new PostgresCharacterService();
   const respawns = new RespawnService(world, spawnPoints, characters, entities);
@@ -396,6 +401,7 @@ export async function createWorldServices(
     eventJournal,
     townSiege,
     townSiegeAlarm,
+    invasionDirector,
     sessions,
     entities,
     rooms,
