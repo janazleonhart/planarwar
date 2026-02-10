@@ -25,35 +25,47 @@ function withEnv(vars: Record<string, string | undefined>, fn: () => void): void
 }
 
 test("[contract] TownSiegeService: town.sanctuary.siege marks room under siege until TTL expires", () => {
-  withEnv({ PW_TOWN_SANCTUARY_SIEGE_TTL_MS: "1000" }, () => {
-    const bus = new WorldEventBus();
-    const siege = new TownSiegeService(bus);
+  // With tiering, state may persist into recovery after the active siege TTL.
+  // Keep recovery short here so the contract stays deterministic.
+  withEnv(
+    {
+      PW_TOWN_SANCTUARY_SIEGE_TTL_MS: "1000",
+      PW_TOWN_SIEGE_RECOVERY_MS: "200",
+      PW_TOWN_SIEGE_WARNING_MS: "0",
+    },
+    () => {
+      const bus = new WorldEventBus();
+      const siege = new TownSiegeService(bus);
 
-    const roomId = "prime_shard:0,0";
+      const roomId = "prime_shard:0,0";
 
-    // Emit a siege event (normally fired by sanctuary pressure threshold).
-    bus.emit("town.sanctuary.siege", {
-      shardId: "prime_shard",
-      roomId,
-      pressureCount: 12,
-      windowMs: 15000,
-    });
+      // Emit a siege event (normally fired by sanctuary pressure threshold).
+      bus.emit("town.sanctuary.siege", {
+        shardId: "prime_shard",
+        roomId,
+        pressureCount: 12,
+        windowMs: 15000,
+      });
 
-    const now = Date.now();
+      const now = Date.now();
 
-    assert.equal(siege.isUnderSiege(roomId, now), true, "room should be under siege immediately after event");
+      assert.equal(siege.isUnderSiege(roomId, now), true, "room should be under siege immediately after event");
 
-    const st = siege.getSiegeState(roomId, now);
-    assert.ok(st, "state should exist");
-    assert.equal(st.roomId, roomId);
-    assert.equal(st.lastPressureCount, 12);
+      const st = siege.getSiegeState(roomId, now);
+      assert.ok(st, "state should exist");
+      assert.equal(st.roomId, roomId);
+      assert.equal(st.lastPressureCount, 12);
 
-    // After TTL, siege should expire and state should be cleared.
-    assert.equal(
-      siege.isUnderSiege(roomId, now + 1000 + 5),
-      false,
-      "room should no longer be under siege after TTL",
-    );
-    assert.equal(siege.getSiegeState(roomId, now + 1000 + 5), null);
-  });
+      // After the active siege TTL, it should no longer count as "under siege"...
+      const afterSiege = now + 1000 + 5;
+      assert.equal(siege.isUnderSiege(roomId, afterSiege), false, "room should not be under siege after TTL");
+
+      // ...but state may persist briefly into recovery.
+      assert.ok(siege.getSiegeState(roomId, afterSiege), "state should persist into recovery");
+
+      // After recovery, the state should be cleared.
+      const afterRecovery = now + 1000 + 200 + 10;
+      assert.equal(siege.getSiegeState(roomId, afterRecovery), null);
+    },
+  );
 });

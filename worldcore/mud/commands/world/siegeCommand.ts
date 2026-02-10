@@ -66,27 +66,33 @@ export async function handleSiegeCommand(
 
   const now = Date.now();
   const townSiege = (ctx as any).townSiege;
-  const st = townSiege?.getSiegeState?.(roomId, now) ?? null;
-  const underSiege = !!st;
-  const breachActive = !!townSiege?.isBreachActive?.(roomId, now);
 
-  const siegeLeftMs = st ? Math.max(0, Number(st.untilTs ?? 0) - now) : 0;
-  const breachLeftMs = st ? Math.max(0, Number(st.breachUntilTs ?? 0) - now) : 0;
+  const debug = townSiege?.getDebugState?.(roomId, now) ?? null;
+  const tier = debug?.tier ?? "none";
+
+  const underSiege = tier === "warning" || tier === "siege" || tier === "breach";
+  const breachActive = tier === "breach";
+  const recovery = tier === "recovery";
 
   const lines: string[] = [];
   lines.push(`Siege status for ${roomId}`);
   lines.push(`Sanctuary: ${fmtBool(sanctuary)} (allowSiegeBreach=${fmtBool(allowBreach)})`);
-  lines.push(`Under siege: ${fmtBool(underSiege)} (ttl=${fmtMs(siegeLeftMs)})`);
-  lines.push(`Breach active: ${fmtBool(breachActive)} (ttl=${fmtMs(breachLeftMs)})`);
+  lines.push(`Tier: ${tier}`);
+  lines.push(`Under siege: ${fmtBool(underSiege)} (ttl=${fmtMs(debug?.siegeLeftMs ?? 0)})`);
+  lines.push(`Breach active: ${fmtBool(breachActive)} (ttl=${fmtMs(debug?.breachLeftMs ?? 0)})`);
+  lines.push(`Recovery: ${fmtBool(recovery)} (ttl=${fmtMs(debug?.recoveryLeftMs ?? 0)})`);
   lines.push(`Economy lockdown on siege: ${fmtBool(economyLockdown)}`);
   lines.push(`Travel lockdown on siege: ${fmtBool(travelLockdown)}`);
 
   if (!townSiege) {
     lines.push(`Note: TownSiegeService is not wired into this server instance.`);
-  } else if (st) {
-    // Extra debug context, but keep it compact.
+  } else if (debug) {
+    lines.push(`Warning ttl: ${fmtMs(debug.warningLeftMs)}`);
     lines.push(
-      `Last siege: pressure=${st.lastPressureCount} windowMs=${st.lastWindowMs} lastEvent=${fmtMs(now - st.lastEventTs)} ago`,
+      `Breach counter: ${debug.breachCountInWindow}/${debug.breachHitsRequired} (window=${fmtMs(debug.breachWindowMs)})`,
+    );
+    lines.push(
+      `Last siege: pressure=${debug.lastPressureCount} windowMs=${debug.lastWindowMs} lastEvent=${fmtMs(debug.lastEventAgeMs)} ago`,
     );
   }
 

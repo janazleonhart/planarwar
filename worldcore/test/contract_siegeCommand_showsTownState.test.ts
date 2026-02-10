@@ -25,8 +25,7 @@ function makeChar(args: { id: string; name: string; shardId?: string; lastRegion
   };
 }
 
-test("[contract] siege: reports sanctuary + siege + breach + lockdown flags", async () => {
-  // Mark the room as a sanctuary and opt-in to breach rules.
+test("[contract] siege: reports sanctuary + siege tier + breach counters + lockdown flags", async () => {
   setRegionFlagsTestOverrides({
     prime_shard: {
       "1,0": {
@@ -40,8 +39,9 @@ test("[contract] siege: reports sanctuary + siege + breach + lockdown flags", as
   });
 
   try {
-    // Make breach easy to trigger in this contract.
     process.env.PW_TOWN_SANCTUARY_SIEGE_TTL_MS = "60000";
+    process.env.PW_TOWN_SIEGE_WARNING_MS = "60000"; // keep 'warning' visible deterministically
+    process.env.PW_TOWN_SIEGE_RECOVERY_MS = "60000";
     process.env.PW_TOWN_SIEGE_BREACH_TTL_MS = "60000";
     process.env.PW_TOWN_SIEGE_BREACH_HITS = "1";
     process.env.PW_TOWN_SIEGE_BREACH_WINDOW_MS = "60000";
@@ -67,9 +67,16 @@ test("[contract] siege: reports sanctuary + siege + breach + lockdown flags", as
     const low = out.toLowerCase();
 
     assert.ok(low.includes("sanctuary: true"), `Expected sanctuary=true, got:\n${out}`);
-    assert.ok(low.includes("allowSiegebreach=true".toLowerCase()), `Expected allowSiegeBreach=true, got:\n${out}`);
+    assert.ok(low.includes("allowsiegebreach=true"), `Expected allowSiegeBreach=true, got:\n${out}`);
+
+    assert.ok(low.includes("tier:"), `Expected tier line, got:\n${out}`);
+    // With breachHits=1, breach becomes active immediately; tier should be 'breach'.
+    assert.ok(low.includes("tier: breach") || low.includes("tier: warning"), `Expected tier includes breach, got:\n${out}`);
+
     assert.ok(low.includes("under siege: true"), `Expected underSiege=true, got:\n${out}`);
     assert.ok(low.includes("breach active: true"), `Expected breachActive=true, got:\n${out}`);
+    assert.ok(low.includes("breach counter:"), `Expected breach counter, got:\n${out}`);
+
     assert.ok(low.includes("economy lockdown on siege: true"), `Expected economyLockdown=true, got:\n${out}`);
     assert.ok(low.includes("travel lockdown on siege: true"), `Expected travelLockdown=true, got:\n${out}`);
   } finally {

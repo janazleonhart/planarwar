@@ -9433,6 +9433,24 @@
       "path": "worldcore/test/statusEffects.contract.test.ts",
       "provides": []
     },
+    "test.contractTownSiegeServiceTiers": {
+      "kind": "test",
+      "service": "worldcore",
+      "path": "worldcore/test/contract_townSiegeService_tiers.test.ts",
+      "class": "(contract) townSiege tiers",
+      "lifecycle": "static",
+      "ctorArgs": [],
+      "dependsOn": [
+        "world.events",
+        "world.townSiege"
+      ],
+      "provides": [
+        "contracts TownSiegeService tier transitions warning->siege->recovery"
+      ],
+      "notes": [
+        "Locks TownSiegeService tiering behavior so future refactors don't break MUD/UI expectations."
+      ]
+    },
     "test.utils": {
       "dependsOn": [],
       "functions": [
