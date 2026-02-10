@@ -12,6 +12,7 @@ import { Logger } from "../utils/logger";
 import {
   getNpcAggroModeForRegionSync,
   getNpcPursuitProfileForRegionSync,
+  isTownSanctuaryForRegionSync,
   peekRegionFlagsCache,
   getRegionFlags,
 } from "../world/RegionFlags";
@@ -2098,6 +2099,37 @@ export class NpcManager {
       const nextRoomId = this.stepRoomToward(roomId, targetRoom);
       if (!nextRoomId) return false;
 
+      // Town sanctuary boundary: hostile NPCs (non-guards) must not enter sanctuary regions via Train pursuit.
+      const nextC_forSanctuary = this.parseRoomCoord(nextRoomId);
+      const isSanctuary = nextC_forSanctuary
+        ? isTownSanctuaryForRegionSync(nextC_forSanctuary.shard, nextRoomId)
+        : false;
+
+      if (isSanctuary) {
+        const protoForTags =
+          getNpcPrototype(st.templateId) ??
+          getNpcPrototype(st.protoId) ??
+          DEFAULT_NPC_PROTOTYPES[st.templateId] ??
+          DEFAULT_NPC_PROTOTYPES[st.protoId];
+
+        const tags = Array.isArray((protoForTags as any)?.tags) ? (protoForTags as any).tags : [];
+        const isGuard = tags.includes("guard");
+
+        if (!isGuard) {
+          try {
+            this.clearThreat(npcId);
+            (st as any).inCombat = false;
+            (npcEntity as any).inCombat = false;
+            (npcEntity as any).trainChasing = false;
+            (npcEntity as any).trainPursueStartAt = 0;
+            (st as any).trainMovedAt = tickNow;
+          } catch {
+            // best-effort
+          }
+          return true;
+        }
+      }
+
       // Bound pursuit by max rooms away from spawn.
       const spawnRoomId = (st as any).spawnRoomId as string | undefined;
       const spawnC = spawnRoomId ? this.parseRoomCoord(spawnRoomId) : null;
@@ -2129,7 +2161,7 @@ export class NpcManager {
       // We do this BEFORE moving the leader, so allies can be found in the origin room and moved into nextRoomId.
       // Reserve this NPC's move for this tick so pack-assist cannot "boost" the leader into a second room.
       (st as any).trainMovedAt = tickNow;
-      if (cfg.assistEnabled && cfg.assistSnapAllies) {
+      if (!isSanctuary && cfg.assistEnabled && cfg.assistSnapAllies) {
         const proto =
           getNpcPrototype(st.templateId) ??
           getNpcPrototype(st.protoId) ??

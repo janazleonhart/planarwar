@@ -321,6 +321,25 @@ export function getNpcPursuitProfileFromFlags(flags: RegionFlags): RegionNpcPurs
   return "default";
 }
 
+/**
+ * Read whether the region is a town sanctuary.
+ *
+ * Convention:
+ * - Stored under flags.rules.ai.townSanctuary
+ * - Values:
+ *    - true: hostile NPCs (non-guards) must not enter via Train pursuit/assist snap
+ *    - missing/false: default
+ */
+export function isTownSanctuaryFromFlags(flags: RegionFlags): boolean {
+  const v = (flags as any)?.rules?.ai?.townSanctuary;
+  return v === true;
+}
+
+export async function isTownSanctuaryForRegion(shardId: string, regionId: string): Promise<boolean> {
+  const flags = await getRegionFlags(shardId, regionId);
+  return isTownSanctuaryFromFlags(flags);
+}
+
 export async function getNpcAggroModeForRegion(shardId: string, regionId: string): Promise<RegionNpcAggroMode> {
   const flags = await getRegionFlags(shardId, regionId);
   return getNpcAggroModeFromFlags(flags);
@@ -382,3 +401,8 @@ export function getNpcPursuitProfileForRegionSync(
 ): RegionNpcPursuitProfile {
   return getNpcPursuitProfileFromFlags(getRegionFlagsSync(shardId, regionId));
 }
+
+export function isTownSanctuaryForRegionSync(shardId: string, regionId: string): boolean {
+  return isTownSanctuaryFromFlags(getRegionFlagsSync(shardId, regionId));
+}
+

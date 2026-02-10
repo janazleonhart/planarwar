@@ -9193,8 +9193,7 @@
       "notes": [
         "Locks the tutorial belt: retaliate_only regions still allow same-room pack help after a player attacks first, but do not recruit from adjacent rooms."
       ]
-    },
-    "test.contractRegionFlagsTrainPursuitProfileShort": {
+    },    "test.contractRegionFlagsTrainPursuitProfileShort": {
       "kind": "test.contract",
       "path": "worldcore/test/contract_regionFlags_trainPursuitProfileShort.test.ts",
       "dependsOn": [
@@ -9207,6 +9206,22 @@
       "notes": [
         "Defines the 'green belt' ramp: Train can remain globally enabled, but pursuit can be clamped per-region so semi-safe zones don't become accidental train factories.",
         "Conservative by design: never forces Train on; only clamps distance/time and disables train assist snapping in short zones."
+      ]
+    },
+    "test.contractRegionFlagsTownSanctuaryBlocksTrainEntry": {
+      "kind": "test.contract",
+      "path": "worldcore/test/contract_regionFlags_townSanctuary_blocksTrainEntry.test.ts",
+      "dependsOn": [
+        "world.RegionFlags",
+        "npc.NpcManager",
+        "core.EntityManager"
+      ],
+      "provides": [
+        "Town sanctuary: rules.ai.townSanctuary prevents Train pursuit from entering protected town tiles"
+      ],
+      "notes": [
+        "This is the newbie-town safety valve: combat stays enabled, but hostile NPC trains cannot cross into sanctuary regions.",
+        "Guards are exempt (tag=guard) so they can still respond inside the sanctuary if needed."
       ]
     },
     "test.utils": {
