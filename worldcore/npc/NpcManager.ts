@@ -9,7 +9,12 @@
 import { EntityManager } from "../core/EntityManager";
 import { SessionManager } from "../core/SessionManager";
 import { Logger } from "../utils/logger";
-import { getNpcAggroModeForRegionSync, peekRegionFlagsCache, getRegionFlags } from "../world/RegionFlags";
+import {
+  getNpcAggroModeForRegionSync,
+  getNpcPursuitProfileForRegionSync,
+  peekRegionFlagsCache,
+  getRegionFlags,
+} from "../world/RegionFlags";
 import type { Entity } from "../shared/Entity";
 
 import {
@@ -117,6 +122,35 @@ type TrainConfig = {
   assistRange: number;
   returnMode: "snap" | "drift";
 };
+
+/**
+ * Apply a region-level pursuit profile to TrainConfig.
+ *
+ * This is deliberately conservative:
+ * - It NEVER forces Train on (if trainCfgBase.enabled is false, result stays off).
+ * - It clamps values downward for "short" so semi-safe zones can't accidentally become train factories.
+ */
+export function applyTrainProfileForRegion(
+  trainCfgBase: TrainConfig,
+  profile: "default" | "short" | "train",
+): TrainConfig {
+  if (profile === "default" || profile === "train") return trainCfgBase;
+  if (!trainCfgBase.enabled) return trainCfgBase;
+
+  // "short" pursuit: keep things local and predictable.
+  return {
+    ...trainCfgBase,
+    // clamp chase distance/time
+    softLeash: Math.min(trainCfgBase.softLeash, 12),
+    hardLeash: Math.min(trainCfgBase.hardLeash, 20),
+    pursueTimeoutMs: Math.min(trainCfgBase.pursueTimeoutMs, 6_000),
+    // if rooms are enabled globally, only allow 1 room from spawn in short zones
+    maxRoomsFromSpawn: Math.min(trainCfgBase.maxRoomsFromSpawn, 1),
+    // do not allow train assist snapping in semi-safe zones
+    assistEnabled: false,
+    assistSnapAllies: false,
+  };
+}
 
 function readTrainConfig(): TrainConfig {
   return {
@@ -1261,6 +1295,30 @@ export class NpcManager {
     return mode;
   }
 
+  private getNpcPursuitProfileForRoomId(roomId: string): "default" | "short" | "train" {
+    const shardId = this.getShardIdForRoomId(roomId);
+
+    const profile = getNpcPursuitProfileForRegionSync(shardId, roomId);
+
+    // Same best-effort prefetch strategy as aggroMode so runtime converges without making AI ticks async.
+    try {
+      const cached = peekRegionFlagsCache(shardId, roomId);
+      if (!cached && process.env.WORLDCORE_TEST !== "1") {
+        const k = `${shardId}:${roomId}`;
+        const now = this._tickNow || this._simNow || Date.now();
+        const last = this.regionFlagsPrefetchAt.get(k) ?? 0;
+        if (now - last > 5_000) {
+          this.regionFlagsPrefetchAt.set(k, now);
+          void getRegionFlags(shardId, roomId).then(() => {}).catch(() => {});
+        }
+      }
+    } catch {
+      // ignore
+    }
+
+    return profile;
+  }
+
   updateAll(deltaMs: number, sessions?: SessionManager): void {
     // Single tick timestamp shared across all NPC decisions this update.
     // Use a simulated monotonic clock so tight-loop tests advance time deterministically.
@@ -1293,7 +1351,9 @@ export class NpcManager {
       if (!proto) continue;
 
       const npcAggroMode = this.getNpcAggroModeForRoomId(roomId);
-      const trainCfgBase = readTrainConfig();
+      const pursuitProfile = this.getNpcPursuitProfileForRoomId(roomId);
+      const trainCfgBase = applyTrainProfileForRegion(readTrainConfig(), pursuitProfile);
+
       const trainCfg = (npcAggroMode === "retaliate_only")
         ? { ...trainCfgBase, enabled: false, roomsEnabled: false, assistEnabled: false }
         : trainCfgBase;

@@ -287,6 +287,9 @@ export async function getDangerScalarForRegion(shardId: string, regionId: string
 
 export type RegionNpcAggroMode = "default" | "retaliate_only";
 
+// Train/pursuit tuning by region. Keep this small and stringly-typed so the DB jsonb flags remain flexible.
+export type RegionNpcPursuitProfile = "default" | "short" | "train";
+
 /**
  * Read the NPC aggro mode from RegionFlags.
  *
@@ -301,9 +304,34 @@ export function getNpcAggroModeFromFlags(flags: RegionFlags): RegionNpcAggroMode
   return mode === "retaliate_only" ? "retaliate_only" : "default";
 }
 
+/**
+ * Read the NPC pursuit profile from RegionFlags.
+ *
+ * Convention:
+ * - Stored under flags.rules.ai.pursuit
+ * - Values:
+ *    - "short": clamp Train chase distance/time (starter belt / semi-safe zones)
+ *    - "train": reserved for future (explicitly train-heavy zones)
+ *    - missing/other: default
+ */
+export function getNpcPursuitProfileFromFlags(flags: RegionFlags): RegionNpcPursuitProfile {
+  const raw = String((flags as any)?.rules?.ai?.pursuit ?? "").trim().toLowerCase();
+  if (raw === "short") return "short";
+  if (raw === "train") return "train";
+  return "default";
+}
+
 export async function getNpcAggroModeForRegion(shardId: string, regionId: string): Promise<RegionNpcAggroMode> {
   const flags = await getRegionFlags(shardId, regionId);
   return getNpcAggroModeFromFlags(flags);
+}
+
+export async function getNpcPursuitProfileForRegion(
+  shardId: string,
+  regionId: string,
+): Promise<RegionNpcPursuitProfile> {
+  const flags = await getRegionFlags(shardId, regionId);
+  return getNpcPursuitProfileFromFlags(flags);
 }
 
 /**
@@ -346,4 +374,11 @@ export function getRegionFlagsSync(shardId: string, regionId: string): RegionFla
 
 export function getNpcAggroModeForRegionSync(shardId: string, regionId: string): RegionNpcAggroMode {
   return getNpcAggroModeFromFlags(getRegionFlagsSync(shardId, regionId));
+}
+
+export function getNpcPursuitProfileForRegionSync(
+  shardId: string,
+  regionId: string,
+): RegionNpcPursuitProfile {
+  return getNpcPursuitProfileFromFlags(getRegionFlagsSync(shardId, regionId));
 }

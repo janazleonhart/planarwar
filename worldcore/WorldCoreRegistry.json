@@ -9194,6 +9194,21 @@
         "Locks the tutorial belt: retaliate_only regions still allow same-room pack help after a player attacks first, but do not recruit from adjacent rooms."
       ]
     },
+    "test.contractRegionFlagsTrainPursuitProfileShort": {
+      "kind": "test.contract",
+      "path": "worldcore/test/contract_regionFlags_trainPursuitProfileShort.test.ts",
+      "dependsOn": [
+        "npc.NpcManager",
+        "world.RegionFlags"
+      ],
+      "provides": [
+        "Region pursuit profile: rules.ai.pursuit=short clamps Train chase tuning (does not force enable)"
+      ],
+      "notes": [
+        "Defines the 'green belt' ramp: Train can remain globally enabled, but pursuit can be clamped per-region so semi-safe zones don't become accidental train factories.",
+        "Conservative by design: never forces Train on; only clamps distance/time and disables train assist snapping in short zones."
+      ]
+    },
     "test.utils": {
       "dependsOn": [],
       "functions": [
