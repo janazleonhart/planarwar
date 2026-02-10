@@ -9,6 +9,7 @@
 import { EntityManager } from "../core/EntityManager";
 import { SessionManager } from "../core/SessionManager";
 import { Logger } from "../utils/logger";
+import { getNpcAggroModeForRegionSync, peekRegionFlagsCache, getRegionFlags } from "../world/RegionFlags";
 import type { Entity } from "../shared/Entity";
 
 import {
@@ -162,6 +163,10 @@ export class NpcManager {
   // within a short window (reduces cascade dogpiles).
   // Key: `${groupId}:${offenderEntityId}` -> lastCallAtTickMs
   private packHelpOffenderAt = new Map<string, number>();
+
+  // Region flag prefetch throttle for DB-backed regions.flags (used by NPC AI).
+  // Key: `${shardId}:${roomOrRegionId}` -> lastPrefetchAtMs
+  private regionFlagsPrefetchAt = new Map<string, number>();
 
   private readonly brain = new LocalSimpleAggroBrain();
 
@@ -1217,6 +1222,37 @@ export class NpcManager {
   // Tick update
   // -------------------------------------------------------------------------
 
+  private getShardIdForRoomId(roomId: string): string {
+    return parseRoomXY(roomId)?.shard ?? "prime_shard";
+  }
+
+  private getNpcAggroModeForRoomId(roomId: string): "default" | "retaliate_only" {
+    const shardId = this.getShardIdForRoomId(roomId);
+
+    // Fast path: use cache/overrides synchronously.
+    const mode = getNpcAggroModeForRegionSync(shardId, roomId);
+
+    // Runtime: if we have no cached entry yet, kick a best-effort async prefetch
+    // so hot loops can remain synchronous while policies still converge quickly.
+    try {
+      const cached = peekRegionFlagsCache(shardId, roomId);
+      if (!cached && process.env.WORLDCORE_TEST !== "1") {
+        const k = `${shardId}:${roomId}`;
+        const now = this._tickNow || this._simNow || Date.now();
+        const last = this.regionFlagsPrefetchAt.get(k) ?? 0;
+        // throttle to avoid DB stampedes if many NPCs tick in the same room
+        if (now - last > 5_000) {
+          this.regionFlagsPrefetchAt.set(k, now);
+          void getRegionFlags(shardId, roomId).then(() => {}).catch(() => {});
+        }
+      }
+    } catch {
+      // ignore
+    }
+
+    return mode;
+  }
+
   updateAll(deltaMs: number, sessions?: SessionManager): void {
     // Single tick timestamp shared across all NPC decisions this update.
     // Use a simulated monotonic clock so tight-loop tests advance time deterministically.
@@ -1248,6 +1284,12 @@ export class NpcManager {
 
       if (!proto) continue;
 
+      const npcAggroMode = this.getNpcAggroModeForRoomId(roomId);
+      const trainCfgBase = readTrainConfig();
+      const trainCfg = (npcAggroMode === "retaliate_only")
+        ? { ...trainCfgBase, enabled: false, roomsEnabled: false, assistEnabled: false }
+        : trainCfgBase;
+
       const behavior = proto.behavior ?? "aggressive";
       const guardProfile = proto.guardProfile;
       const guardCallRadius =
@@ -1273,6 +1315,12 @@ export class NpcManager {
           behavior === "guard" ||
           behavior === "coward");
 
+      let effectiveHostile = hostile;
+      if (npcAggroMode === "retaliate_only" && behavior === "aggressive") {
+        // Starter-safe belt: no proactive aggro. Retaliation still works via threat/lastAttacker.
+        effectiveHostile = false;
+      }
+
       const threat0 = this.npcThreat.get(entityId);
       const now = this._tickNow || Date.now();
 
@@ -1289,7 +1337,6 @@ export class NpcManager {
         // Resolve current target with visibility rules (stealth/out-of-room/dead).
         const byId = new Map<string, any>();
 
-        const trainCfg = readTrainConfig();
         for (const e of ents) {
           if (e?.id) byId.set(String(e.id), e);
         }
@@ -1407,7 +1454,7 @@ export class NpcManager {
         guardCallRadius,
         roomIsSafeHub,
         npcName,
-        hostile,
+        hostile: effectiveHostile,
         currentTargetId: topThreatId,
         playersInRoom,
         sinceLastDecisionMs: deltaMs,
@@ -1418,8 +1465,7 @@ export class NpcManager {
 
       // Train System pre-hook: chase even when the target is not in playersInRoom (cross-room),
       // and before any brain decision. This is required for room-tile pursuit.
-      const cfg = readTrainConfig();
-      if (cfg.enabled && topThreatId) {
+      if (trainCfg.enabled && topThreatId) {
         const targetEntity = this.entities.get(String(topThreatId));
         if (targetEntity && targetEntity.alive !== false && !(typeof targetEntity.hp === "number" && targetEntity.hp <= 0)) {
           const didChase = this.maybeTrainChase({
@@ -1429,7 +1475,7 @@ export class NpcManager {
             targetEntity,
             roomId,
             now: this._tickNow,
-            cfg,
+            cfg: trainCfg,
             sessions,
           });
           if (didChase) {
@@ -1458,6 +1504,7 @@ export class NpcManager {
       }
 
       if (
+        npcAggroMode !== "retaliate_only" &&
         this.maybeGateAndCallHelp(
           st,
           proto,

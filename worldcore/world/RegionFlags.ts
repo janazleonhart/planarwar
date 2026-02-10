@@ -280,3 +280,70 @@ export async function getDangerScalarForRegion(shardId: string, regionId: string
   const s = flags.dangerScalar;
   return typeof s === "number" && Number.isFinite(s) && s > 0 ? s : 1;
 }
+
+// ---------------------------------------------------------------------------
+// NPC AI policy helpers (Train / aggro gradients)
+// ---------------------------------------------------------------------------
+
+export type RegionNpcAggroMode = "default" | "retaliate_only";
+
+/**
+ * Read the NPC aggro mode from RegionFlags.
+ *
+ * Convention:
+ * - Stored under flags.rules.ai.npcAggro
+ * - Values:
+ *    - "retaliate_only": NPCs do not initiate combat; they only fight after being attacked.
+ *    - any other / missing: default behavior.
+ */
+export function getNpcAggroModeFromFlags(flags: RegionFlags): RegionNpcAggroMode {
+  const mode = (flags as any)?.rules?.ai?.npcAggro;
+  return mode === "retaliate_only" ? "retaliate_only" : "default";
+}
+
+export async function getNpcAggroModeForRegion(shardId: string, regionId: string): Promise<RegionNpcAggroMode> {
+  const flags = await getRegionFlags(shardId, regionId);
+  return getNpcAggroModeFromFlags(flags);
+}
+
+/**
+ * Peek the in-memory cache for region flags. Returns null if the cache has no entry.
+ *
+ * This is intentionally synchronous so hot loops (NPC AI tick) can query policy
+ * without forcing async DB reads.
+ */
+export function peekRegionFlagsCache(shardId: string, regionId: string): RegionFlags | null {
+  const dbRegionId = normalizeRegionIdForDb(regionId);
+  const cached = CACHE.get(key(shardId, dbRegionId));
+  return cached ? cached.flags : null;
+}
+
+/**
+ * Synchronous best-effort lookup for region flags.
+ *
+ * - In unit tests (WORLDCORE_TEST / node --test), this reads TEST_OVERRIDES directly.
+ * - In runtime, this reads the in-memory CACHE only (no DB).
+ *
+ * If nothing is known, returns {}.
+ */
+export function getRegionFlagsSync(shardId: string, regionId: string): RegionFlags {
+  const dbRegionId = normalizeRegionIdForDb(regionId);
+
+  // Unit tests should be deterministic and DB-free.
+  if (isNodeTestRuntime()) {
+    if (!TEST_OVERRIDES) return {};
+    const byShard = TEST_OVERRIDES[shardId];
+    if (!byShard) return {};
+
+    const direct = byShard[dbRegionId] ?? byShard[`${shardId}:${dbRegionId}`];
+    return normalizeFlags(direct);
+  }
+
+  // Runtime: cache only.
+  const cached = CACHE.get(key(shardId, dbRegionId));
+  return cached ? cached.flags : {};
+}
+
+export function getNpcAggroModeForRegionSync(shardId: string, regionId: string): RegionNpcAggroMode {
+  return getNpcAggroModeFromFlags(getRegionFlagsSync(shardId, regionId));
+}

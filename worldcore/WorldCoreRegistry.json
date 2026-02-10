@@ -9143,6 +9143,23 @@
       "path": "worldcore/test/statusEffects.contract.test.ts",
       "provides": []
     },
+    "test.contractRegionFlagsNpcAggroRetaliateOnly": {
+      "kind": "test.contract",
+      "path": "worldcore/test/contract_regionFlags_npcAggro_retaliateOnly.test.ts",
+      "dependsOn": [
+        "world.RegionFlags",
+        "npc.NpcManager",
+        "core.EntityManager"
+      ],
+      "provides": [
+        "Guards starter-safe regions: NPCs do not proactively aggro when rules.ai.npcAggro=retaliate_only",
+        "Guards retaliation contract: NPCs still attack after player damage/threat"
+      ],
+      "notes": [
+        "Uses RegionFlags test overrides (DB-free) to model regions.flags jsonb.",
+        "Verifies aggressive NPCs remain calm until attacked, enabling tutorial-safe belts without disabling combat globally."
+      ]
+    },
     "test.utils": {
       "dependsOn": [],
       "functions": [
