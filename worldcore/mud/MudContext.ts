@@ -20,6 +20,7 @@ import type { NpcSpawnController } from "../npc/NpcSpawnController";
 import type { ServerWorldManager } from "../world/ServerWorldManager";
 import type { RespawnService } from "../world/RespawnService";
 import type { SpawnHydrator } from "../world/SpawnHydrator";
+import type { TownSiegeService } from "../world/TownSiegeService";
 import type { TradeService } from "../trade/TradeService";
 import type { VendorService } from "../vendors/VendorService";
 import type { Session } from "../shared/Session";
@@ -47,6 +48,9 @@ export interface MudContextServices {
   respawns?: RespawnService;
   // Dev harness: rehydrate POI placeholders from spawn_points
   spawnHydrator?: SpawnHydrator;
+
+  // Short-lived world state
+  townSiege?: TownSiegeService;
 }
 
 export interface MudContext extends MudContextServices {
@@ -74,6 +78,7 @@ export function buildMudContext(
         | "auctions"
         | "respawns"
         | "spawnHydrator"
+        | "townSiege"
       >,
   session: Session
 ): MudContext {

@@ -9308,6 +9308,24 @@
       ]
     },
 
+    "test.contractTownSiegeVendorLockdown": {
+      "kind": "test.contract",
+      "path": "worldcore/test/contract_townSiege_vendorLockdown.test.ts",
+      "dependsOn": [
+        "world.WorldEventBus",
+        "world.TownSiegeService",
+        "world.RegionFlags",
+        "mud.commands.world.serviceGates"
+      ],
+      "provides": [
+        "Siege economy: regions can opt in to vendor lockdown while under siege"
+      ],
+      "notes": [
+        "Locks behavior that towns may close vendors during a siege via regions.flags.rules.economy.lockdownOnSiege.",
+        "Contract is scoped to vendor only; bank/auction/mail can be extended later."
+      ]
+    },
+
     "test.utils": {
       "dependsOn": [],
       "functions": [

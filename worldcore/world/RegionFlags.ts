@@ -457,3 +457,29 @@ export function getTownSanctuaryGuardSortieRangeTilesForRegionSync(
   return getTownSanctuaryGuardSortieRangeTilesFromFlags(getRegionFlagsSync(shardId, regionId));
 }
 
+/**
+ * Economy lockdown during a siege.
+ *
+ * Convention:
+ * - Stored under flags.rules.economy.lockdownOnSiege
+ * - Values:
+ *    - true: town services like vendor/bank/etc may deny access while under siege
+ *    - missing/false: default
+ */
+export function isEconomyLockdownOnSiegeFromFlags(flags: RegionFlags): boolean {
+  const v = (flags as any)?.rules?.economy?.lockdownOnSiege;
+  return v === true;
+}
+
+export async function isEconomyLockdownOnSiegeForRegion(
+  shardId: string,
+  regionId: string,
+): Promise<boolean> {
+  const flags = await getRegionFlags(shardId, regionId);
+  return isEconomyLockdownOnSiegeFromFlags(flags);
+}
+
+export function isEconomyLockdownOnSiegeForRegionSync(shardId: string, regionId: string): boolean {
+  return isEconomyLockdownOnSiegeFromFlags(getRegionFlagsSync(shardId, regionId));
+}
+

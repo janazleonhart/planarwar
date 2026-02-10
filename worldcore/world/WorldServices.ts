@@ -381,6 +381,7 @@ export async function createWorldServices(
     npcSpawns,
     spawnHydrator,
     respawns,
+    townSiege,
   );
 
   log.success(`✅ World runtime services initialized for shard ${shardId}`);

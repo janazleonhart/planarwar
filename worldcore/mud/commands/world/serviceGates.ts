@@ -16,6 +16,8 @@
 import type { MudContext } from "../../MudContext";
 import type { CharacterState } from "../../../characters/CharacterTypes";
 
+import { getRegionFlags, isEconomyLockdownOnSiegeFromFlags } from "../../../world/RegionFlags";
+
 type ServiceName = "bank" | "guildbank" | "vendor" | "auction" | "mail";
 
 // Forge/station interactions generally use ~2.5 in the walk-to loop.
@@ -37,6 +39,18 @@ function getRoomId(session: any): string | null {
     session?.room?.roomId ??
     session?.world?.roomId;
   return rid ? String(rid) : null;
+}
+
+function parseRoomCoord(roomId: string): { shard: string; regionId: string } | null {
+  // Expected: "shardId:x,z" (x,z integers). RegionFlags stores "x,z" in DB.
+  const s = String(roomId ?? "");
+  const i = s.indexOf(":");
+  if (i <= 0) return null;
+  const shard = s.slice(0, i);
+  const rest = s.slice(i + 1);
+  if (!rest) return null;
+  // Keep as "x,z" (RegionFlags normalizes later).
+  return { shard, regionId: rest };
 }
 
 function getPlayerPos(char: any): { x: number; z: number } | null {
@@ -220,6 +234,11 @@ function denyOutOfRange(service: ServiceName, dist: number): string {
   )})`;
 }
 
+function denySiegeLockdown(service: ServiceName): string {
+  if (service === "vendor") return "[vendor] The shop is closed. The town is under siege.";
+  return `[service] ${service} is unavailable. The town is under siege.`;
+}
+
 /**
  * Gate a town service call.
  *
@@ -243,6 +262,26 @@ export async function requireTownService<T>(
 
   if (!shouldGate) return run();
   if (shouldBypass(ctx)) return run();
+
+  // Siege lockdown: when enabled for the region, deny certain services while the town is under siege.
+  // This must remain test-friendly and fail-open if we lack context.
+  if (service === "vendor") {
+    try {
+      const roomId = getRoomId((ctx as any)?.session);
+      const siege: any = (ctx as any)?.townSiege;
+      if (roomId && siege?.isUnderSiege && siege.isUnderSiege(roomId) === true) {
+        const c = parseRoomCoord(roomId);
+        if (c) {
+          const flags = await getRegionFlags(c.shard, c.regionId);
+          if (isEconomyLockdownOnSiegeFromFlags(flags)) {
+            return denySiegeLockdown(service);
+          }
+        }
+      }
+    } catch {
+      // fail-open
+    }
+  }
 
   const vendorIds = isVendor ? await maybeLoadVendorIdSet(ctx) : null;
   const anchor = findNearestAnchor(ctx, char, service, { vendorIds: vendorIds ?? undefined });

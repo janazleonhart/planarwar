@@ -26,6 +26,7 @@ import { PostgresBankService } from "../bank/PostgresBankService";
 import { PostgresAuctionService } from "../auction/PostgresAuctionService";
 import { RespawnService } from "../world/RespawnService";
 import type { SpawnHydrator } from "../world/SpawnHydrator";
+import type { TownSiegeService } from "../world/TownSiegeService";
 
 import type { ActionRequest } from "../actions/ActionTypes";
 import type { WhereAmIResultPayload } from "../shared/messages";
@@ -117,6 +118,8 @@ export class MessageRouter {
     private readonly spawnHydrator?: SpawnHydrator,
     // NEW: shard-aware respawn service (graveyards / hubs)
     private readonly respawns?: RespawnService,
+    // Short-lived world state: used by MUD service gating (vendor lockdown)
+    private readonly townSiege?: TownSiegeService,
   ) {}
 
   async handleRawMessage(session: Session, data: any): Promise<any> {
@@ -566,6 +569,7 @@ export class MessageRouter {
             // NEW: wire RespawnService into the MUD context
             respawns: this.respawns,
             spawnHydrator: this.spawnHydrator,
+            townSiege: this.townSiege,
           },
           session
         );
