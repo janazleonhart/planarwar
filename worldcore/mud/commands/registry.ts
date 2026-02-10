@@ -11,6 +11,7 @@ import { handleLookCommand } from "./world/lookCommand";
 import { handleFaceCommand } from "./world/faceCommand";
 import { handleExamineCommand } from "./world/examineCommand";
 import { handleInspectRegionCommand } from "./world/inspectRegionCommand";
+import { handleSiegeCommand } from "./world/siegeCommand";
 import { handleNearbyCommand } from "./world/nearbyCommand";
 import { handleMapCommand } from "./world/mapCommand";
 import { handleSaveCommand } from "./world/saveCommand";
@@ -166,6 +167,7 @@ export const COMMANDS: Record<string, MudCommandHandlerFn> = {
   face: handleFaceCommand,
   examine: handleExamineCommand,
   inspect_region: handleInspectRegionCommand,
+  siege: handleSiegeCommand,
   nearby: handleNearbyCommand,
   map: handleMapCommand,
   save: handleSaveCommand,

@@ -191,7 +191,7 @@
       ],
       "kind": "service",
       "notes": [
-        "Builds a one-line MUD description for a listing like '#12 Hematite Iron Ore [common] x20 \u2013 3g each (total 60g) by Testing [active]'.",
+        "Builds a one-line MUD description for a listing like '#12 Hematite Iron Ore [common] x20 – 3g each (total 60g) by Testing [active]'.",
         "Looks up item definitions via ctx.items?.get to resolve item name and rarity."
       ],
       "path": "worldcore/auction/AuctionFormat.ts"
@@ -451,7 +451,7 @@
       ],
       "kind": "service",
       "notes": [
-        "Postgres-backed character service using the characters table and CharacterRow \u2192 CharacterState mapping.",
+        "Postgres-backed character service using the characters table and CharacterRow → CharacterState mapping.",
         "Supports partial JSONB patching, XP/level gains with per-class attribute growth, and spell/equipment updates."
       ],
       "path": "worldcore/characters/PostgresCharacterService.ts"
@@ -609,8 +609,8 @@
       "notes": [
         "Centralized gates for action resource costs + cooldowns (spells/songs/abilities).",
         "Guarantees: cooldowns do not start and resources are not consumed if the action fails.",
-        "Order: check cooldown remaining \u2192 spend resource \u2192 start cooldown.",
-        "Also supports post-success power builders (e.g., Rune Strike \u2192 Runic Power, Jab \u2192 Chi)."
+        "Order: check cooldown remaining → spend resource → start cooldown.",
+        "Also supports post-success power builders (e.g., Rune Strike → Runic Power, Jab → Chi)."
       ],
       "path": "worldcore/combat/CastingGates.ts"
     },
@@ -2229,7 +2229,7 @@
       ],
       "path": "worldcore/infra/schema/056_seed_crusader_class_kit_L1_10.sql",
       "provides": [
-        "Crusader L1\u201310 spell kit (spells + unlocks)"
+        "Crusader L1–10 spell kit (spells + unlocks)"
       ],
       "service": "worldcore"
     },
@@ -2248,7 +2248,7 @@
       ],
       "path": "worldcore/infra/schema/057_seed_hunter_spellkit_L1_10.sql",
       "provides": [
-        "Hunter L1\u201310 spell kit (spells + unlocks)"
+        "Hunter L1–10 spell kit (spells + unlocks)"
       ]
     },
     "infra.schema.058_cleanup_hunter_spellkit_L1_10": {
@@ -2266,7 +2266,7 @@
       ],
       "path": "worldcore/infra/schema/058_cleanup_hunter_spellkit_L1_10.sql",
       "provides": [
-        "Hunter L1\u201310 spell kit cleanup (canonical ids + no duplicates)"
+        "Hunter L1–10 spell kit cleanup (canonical ids + no duplicates)"
       ]
     },
     "infra.schema.059_seed_illusionist_spellkit_L1_10": {
@@ -2285,7 +2285,7 @@
       ],
       "path": "worldcore/infra/schema/059_seed_illusionist_spellkit_L1_10.sql",
       "provides": [
-        "Illusionist L1\u201310 spell kit (spells + unlocks)"
+        "Illusionist L1–10 spell kit (spells + unlocks)"
       ]
     },
     "infra.schema.059_seed_runic_knight_spellkit_L1_10": {
@@ -2303,7 +2303,7 @@
       ],
       "path": "worldcore/infra/schema/059_seed_runic_knight_spellkit_L1_10.sql",
       "provides": [
-        "Runic Knight L1\u201310 spell kit (spells + unlocks)"
+        "Runic Knight L1–10 spell kit (spells + unlocks)"
       ]
     },
     "infra.schema.060_seed_ascetic_spellkit_L1_10": {
@@ -2322,7 +2322,7 @@
       ],
       "path": "worldcore/infra/schema/060_seed_ascetic_spellkit_L1_10.sql",
       "provides": [
-        "Ascetic L1\u201310 spell kit (spells + unlocks)",
+        "Ascetic L1–10 spell kit (spells + unlocks)",
         "Introduces Chi (primary resource) for Ascetic"
       ]
     },
@@ -2342,7 +2342,7 @@
       ],
       "path": "worldcore/infra/schema/061_seed_prophet_spellkit_L1_10.sql",
       "provides": [
-        "Prophet L1\u201310 spell kit (spells + unlocks)",
+        "Prophet L1–10 spell kit (spells + unlocks)",
         "Wave1 shaman-ish DOT/shield/buff/heal baseline"
       ]
     },
@@ -2362,7 +2362,7 @@
       ],
       "path": "worldcore/infra/schema/062_seed_hierophant_spellkit_L1_10.sql",
       "provides": [
-        "Hierophant L1\u201310 spell kit (spells + unlocks)",
+        "Hierophant L1–10 spell kit (spells + unlocks)",
         "Wave1 nature HOT/DOT/buff baseline"
       ]
     },
@@ -2383,7 +2383,7 @@
       ],
       "path": "worldcore/infra/schema/063_seed_revenant_spellkit_L1_10.sql",
       "provides": [
-        "Revenant L1\u201310 spell kit (spells + unlocks)",
+        "Revenant L1–10 spell kit (spells + unlocks)",
         "Wave1 shadow knight DOT/shield/debuff baseline"
       ]
     },
@@ -2404,7 +2404,7 @@
       ],
       "path": "worldcore/infra/schema/064_seed_outrider_spellkit_L1_10.sql",
       "provides": [
-        "Outrider L1\u201310 spell kit (spells + unlocks)",
+        "Outrider L1–10 spell kit (spells + unlocks)",
         "Wave1 ranger DOT/mark/defensive utility baseline"
       ]
     },
@@ -2640,7 +2640,7 @@
       "kind": "service",
       "lifecycle": "singleton",
       "notes": [
-        "Seeds Reference Class Kits L1\u201310 (MVP) used by deterministic progression tests."
+        "Seeds Reference Class Kits L1–10 (MVP) used by deterministic progression tests."
       ],
       "owns": [],
       "path": "worldcore/infra/schema/050_seed_reference_class_kits_L1_10.sql",
@@ -2666,7 +2666,7 @@
       "kind": "service",
       "lifecycle": "singleton",
       "notes": [
-        "Seeds spells catalog entries referenced by the L1\u201310 class kits."
+        "Seeds spells catalog entries referenced by the L1–10 class kits."
       ],
       "owns": [],
       "path": "worldcore/infra/schema/050_seed_spells_reference_kits_l1_10.sql",
@@ -2679,7 +2679,7 @@
       "kind": "service",
       "lifecycle": "singleton",
       "notes": [
-        "Seeds spell_unlocks for L1\u201310 reference kits; enables deterministic autogrant tests."
+        "Seeds spell_unlocks for L1–10 reference kits; enables deterministic autogrant tests."
       ],
       "owns": [],
       "path": "worldcore/infra/schema/051_seed_spell_unlocks_reference_kits_l1_10.sql",
@@ -2742,7 +2742,7 @@
       "kind": "service",
       "lifecycle": "singleton",
       "notes": [
-        "Seeds a minimal common L1\u201310 spell kit (damage + dot + debuff + shield + hot) for classes that do not yet have bespoke kits.",
+        "Seeds a minimal common L1–10 spell kit (damage + dot + debuff + shield + hot) for classes that do not yet have bespoke kits.",
         "Designed to keep every class playable while per-class kits are authored later."
       ],
       "owns": [],
@@ -4560,7 +4560,7 @@
         "Refreshes personal nodes, then lists nearby entities within radius with short handles like rat.1.",
         "filter/group/sort flags",
         "--limit / --max",
-        "safe caps + \u201cUI-friendly output shaping"
+        "safe caps + “UI-friendly output shaping"
       ],
       "path": "worldcore/mud/commands/world/nearbyCommand.ts"
     },
@@ -4602,6 +4602,21 @@
         "Env: PW_SERVICE_GATES (enable non-vendor gates), PW_SERVICE_RADIUS (default 2.5), PW_SERVICE_GATES_STRICT (deny if no anchor exists)."
       ],
       "path": "worldcore/mud/commands/world/serviceGates.ts"
+    },
+    "mud.commands.world.siege": {
+      "dependsOn": [
+        "world.RegionFlags",
+        "world.TownSiegeService"
+      ],
+      "kind": "mud.command",
+      "notes": [
+        "Reports RegionFlags toggles (townSanctuary, allowSiegeBreach, economy/travel lockdownOnSiege) for the current room.",
+        "If TownSiegeService is not wired in the running server, the command reports that instead of failing."
+      ],
+      "path": "worldcore/mud/commands/world/siegeCommand.ts",
+      "provides": [
+        "MUD command: siege — shows town sanctuary/siege/breach state for the current room"
+      ]
     },
     "mud.commands.world.talk": {
       "dependsOn": [
@@ -4911,7 +4926,7 @@
         "Determines which NPCs are 'protected' (civilian, vendor, questgiver, protected_town, etc.) and records crimes against them on the attacker.",
         "Sets recentCrimeUntil and recentCrimeSeverity (minor|severe) on characters to drive guard response.",
         "law_exempt > law_protected > legacy tags precedence",
-        "guards/resources are never \u201cprotected\u201d for crime purposes"
+        "guards/resources are never “protected” for crime purposes"
       ],
       "path": "worldcore/npc/NpcCrime.ts"
     },
@@ -4932,7 +4947,7 @@
       ],
       "kind": "service",
       "notes": [
-        "Owns runtime NPC state, per-room maps, threat tables, and bridges EntityManager \u2194 AI brain \u2194 sessions/chat.",
+        "Owns runtime NPC state, per-room maps, threat tables, and bridges EntityManager ↔ AI brain ↔ sessions/chat.",
         "Spawns/Despawns NPCs, applies damage, records threat, coordinates guard/pack help, coward fleeing, gating, and drives AI decisions each tick.",
         "On lethal damage and before despawn, clears combat status effects so corpses don't keep ticking DOTs or carry modifiers.",
         "Train System v0/v0.1: pre-brain pursuit hook reads threat and can move/disengage before in-room target selection (supports room transitions + trains)."
@@ -5505,7 +5520,7 @@
       "kind": "service",
       "notes": [
         "Manages Mana/Fury/Runic Power/Chi pools stored under char.progression.powerResources.",
-        "Provides class\u2192primary resource mapping and helpers to spend/gain power (including post-success builders)."
+        "Provides class→primary resource mapping and helpers to spend/gain power (including post-success builders)."
       ],
       "path": "worldcore/resources/PowerResources.ts"
     },
@@ -5594,7 +5609,7 @@
     "sim.brainActions": {
       "kind": "types",
       "notes": [
-        "Types for Mother-Brain style planning outputs (audit \u2192 plan actions \u2192 apply).",
+        "Types for Mother-Brain style planning outputs (audit → plan actions → apply).",
         "Includes PlaceSpawnAction used by SettlementPlanner + simBrain apply."
       ],
       "path": "worldcore/sim/BrainActions.ts"
@@ -5879,7 +5894,7 @@
       "kind": "module",
       "lifecycle": "static",
       "notes": [
-        "Reference class kits L1\u201310 (MVP) used for deterministic starter spell/ability unlock expectations and tests.",
+        "Reference class kits L1–10 (MVP) used for deterministic starter spell/ability unlock expectations and tests.",
         "Seeded into DB via 050/051 migrations and used by SpellLearning/AbilityLearning contract tests."
       ],
       "owns": [],
@@ -6209,7 +6224,7 @@
       "kind": "utility",
       "notes": [
         "Computes difficulty tier by radial distance from world center.",
-        "Uses max world radius \u2248 2048 units for current prime shard."
+        "Uses max world radius ≈ 2048 units for current prime shard."
       ],
       "path": "worldcore/terrain/regions/RegionDifficulty.ts",
       "provides": [
@@ -6797,12 +6812,12 @@
       ],
       "kind": "test.contract",
       "notes": [
-        "Contract: ensures the repo always contains an idempotent seed granting a minimal L1\u201310 kit to classes without bespoke kits yet.",
+        "Contract: ensures the repo always contains an idempotent seed granting a minimal L1–10 kit to classes without bespoke kits yet.",
         "Regex/text assertions only (intentionally not DB-coupled)."
       ],
       "path": "worldcore/test/contract_commonClassKits_L1_10.test.ts",
       "provides": [
-        "Guards existence of common L1\u201310 kit seed file",
+        "Guards existence of common L1–10 kit seed file",
         "Guards that missing classes remain covered by basic unlocks"
       ]
     },
@@ -7594,7 +7609,7 @@
       "kind": "test",
       "lifecycle": "test",
       "notes": [
-        "Contract: weapon skill + level influence hit outcomes; low-level familiarity floor allows L1 to hit L1\u2013L3 with untrained weapons; high-level untrained misses more."
+        "Contract: weapon skill + level influence hit outcomes; low-level familiarity floor allows L1 to hit L1–L3 with untrained weapons; high-level untrained misses more."
       ],
       "owns": [],
       "path": "worldcore/test/contract_physicalHitResolver_weaponSkillScaling.test.ts",
@@ -7638,6 +7653,135 @@
         "[contract] ranged verbs: range + forward-cone LoS deny paths and success path against training dummy."
       ],
       "path": "worldcore/test/contract_ranged_verbs_targeting.test.ts"
+    },
+    "test.contractRegionFlagsNpcAggroRetaliateOnly": {
+      "dependsOn": [
+        "world.RegionFlags",
+        "npc.NpcManager",
+        "core.EntityManager"
+      ],
+      "kind": "test.contract",
+      "notes": [
+        "Uses RegionFlags test overrides (DB-free) to model regions.flags jsonb.",
+        "Verifies aggressive NPCs remain calm until attacked, enabling tutorial-safe belts without disabling combat globally."
+      ],
+      "path": "worldcore/test/contract_regionFlags_npcAggro_retaliateOnly.test.ts",
+      "provides": [
+        "Guards starter-safe regions: NPCs do not proactively aggro when rules.ai.npcAggro=retaliate_only",
+        "Guards retaliation contract: NPCs still attack after player damage/threat"
+      ]
+    },
+    "test.contractRegionFlagsNpcAggroRetaliateOnlyAssistClamp": {
+      "dependsOn": [
+        "world.RegionFlags",
+        "combat.NpcCombat"
+      ],
+      "kind": "test.contract",
+      "notes": [
+        "Locks the tutorial belt: retaliate_only regions still allow same-room pack help after a player attacks first, but do not recruit from adjacent rooms."
+      ],
+      "path": "worldcore/test/contract_regionFlags_npcAggro_retaliateOnly_assistClamp.test.ts",
+      "provides": [
+        "Starter-safe belts clamp cross-room assist even when PW_ASSIST_RADIUS_TILES would allow it"
+      ]
+    },
+    "test.contractRegionFlagsTownSanctuaryBlocksTrainEntry": {
+      "dependsOn": [
+        "world.RegionFlags",
+        "npc.NpcManager",
+        "core.EntityManager"
+      ],
+      "kind": "test.contract",
+      "notes": [
+        "This is the newbie-town safety valve: combat stays enabled, but hostile NPC trains cannot cross into sanctuary regions.",
+        "Guards are exempt (tag=guard) so they can still respond inside the sanctuary if needed."
+      ],
+      "path": "worldcore/test/contract_regionFlags_townSanctuary_blocksTrainEntry.test.ts",
+      "provides": [
+        "Town sanctuary: rules.ai.townSanctuary prevents Train pursuit from entering protected town tiles"
+      ]
+    },
+    "test.contractRegionFlagsTownSanctuaryBreachAllowsEntry": {
+      "dependsOn": [
+        "world.RegionFlags",
+        "world.WorldEventBus",
+        "world.TownSiegeService",
+        "npc.NpcManager",
+        "core.EntityManager"
+      ],
+      "kind": "test.contract",
+      "notes": [
+        "Opt-in per region to allow the classic EQ-style chaos: a pressured town can be breached and trains can spill in.",
+        "Starter towns stay safe by leaving allowSiegeBreach unset/false."
+      ],
+      "path": "worldcore/test/contract_regionFlags_townSanctuary_breachAllowsEntry.test.ts",
+      "provides": [
+        "Town sanctuary breach: rules.ai.allowSiegeBreach can lift sanctuary Train block while breach is active"
+      ]
+    },
+    "test.contractRegionFlagsTownSanctuaryGuardSortie": {
+      "dependsOn": [
+        "world.RegionFlags",
+        "npc.NpcManager",
+        "core.EntityManager"
+      ],
+      "kind": "test.contract",
+      "notes": [
+        "Adds a controlled 'town defense' behavior: guards inside a sanctuary tile can step out one tile (or configured range) to engage hostiles fighting players just outside town.",
+        "Explicitly opt-in per-region (no global behavior change)."
+      ],
+      "path": "worldcore/test/contract_regionFlags_townSanctuary_guardSortie.test.ts",
+      "provides": [
+        "Town sanctuary guard sortie: rules.ai.townSanctuaryGuardSortie lets guards step out to engage nearby hostile threats"
+      ]
+    },
+    "test.contractRegionFlagsTownSanctuaryPressureSiegeEvent": {
+      "dependsOn": [
+        "world.RegionFlags",
+        "npc.NpcManager",
+        "world.WorldEventBus",
+        "core.EntityManager"
+      ],
+      "kind": "test.contract",
+      "notes": [
+        "Records a rolling pressure window when hostile NPC trains are blocked at a sanctuary boundary, emitting an event for future invasion/siege systems.",
+        "Deterministic contract: re-seeds threat multiple times; each blocked attempt contributes one pressure sample."
+      ],
+      "path": "worldcore/test/contract_regionFlags_townSanctuary_pressureSiegeEvent.test.ts",
+      "provides": [
+        "Town sanctuary pressure: repeated blocked Train entries emit town.sanctuary.siege at threshold"
+      ]
+    },
+    "test.contractRegionFlagsTownSanctuaryRecapturePushout": {
+      "dependsOn": [
+        "world.RegionFlags",
+        "npc.NpcManager",
+        "core.EntityManager"
+      ],
+      "kind": "test.contract",
+      "notes": [
+        "Prevents stuck invaders after a breach ends: non-guards inside sanctuary are de-aggroed and nudged one tile per tick toward their spawn room.",
+        "Does not affect guards; does not run during an active breach."
+      ],
+      "path": "worldcore/test/contract_regionFlags_townSanctuary_recapturePushout.test.ts",
+      "provides": [
+        "Town sanctuary recapture: hostiles inside sanctuary are pushed back out when no breach is active"
+      ]
+    },
+    "test.contractRegionFlagsTrainPursuitProfileShort": {
+      "dependsOn": [
+        "npc.NpcManager",
+        "world.RegionFlags"
+      ],
+      "kind": "test.contract",
+      "notes": [
+        "Defines the 'green belt' ramp: Train can remain globally enabled, but pursuit can be clamped per-region so semi-safe zones don't become accidental train factories.",
+        "Conservative by design: never forces Train on; only clamps distance/time and disables train assist snapping in short zones."
+      ],
+      "path": "worldcore/test/contract_regionFlags_trainPursuitProfileShort.test.ts",
+      "provides": [
+        "Region pursuit profile: rules.ai.pursuit=short clamps Train chase tuning (does not force enable)"
+      ]
     },
     "test.contractReloadSpawnsForcesHydration": {
       "dependsOn": [
@@ -7713,7 +7857,7 @@
       "kind": "test",
       "lifecycle": "static",
       "notes": [
-        "Contract: seed integrity \u2014 any spell_id referenced in seed spell_unlocks must exist in seeded spells."
+        "Contract: seed integrity — any spell_id referenced in seed spell_unlocks must exist in seeded spells."
       ],
       "owns": [],
       "path": "worldcore/test/contract_seedSpellUnlocksReferToSeededSpells.test.ts",
@@ -7759,6 +7903,23 @@
         "Model A: global last-write-wins per shield id."
       ],
       "path": "worldcore/test/contract_shieldRefresh_sameCaster_replaces.test.ts"
+    },
+    "test.contractSiegeCommandShowsTownState": {
+      "dependsOn": [
+        "mud.commands.world.siege",
+        "world.TownSiegeService",
+        "world.RegionFlags",
+        "world.WorldEventBus"
+      ],
+      "kind": "test.contract",
+      "notes": [
+        "Sets RegionFlags test overrides to mark a sanctuary region with breach + lockdown toggles.",
+        "Emits town.sanctuary.siege and asserts the command reports underSiege and breachActive."
+      ],
+      "path": "worldcore/test/contract_siegeCommand_showsTownState.test.ts",
+      "provides": [
+        "siege command output is stable and reflects sanctuary/siege/breach/lockdown rules"
+      ]
     },
     "test.contractSongEngineMelodyThrowAdvance": {
       "dependsOn": [
@@ -8060,6 +8221,116 @@
       "path": "worldcore/test/contract_townBaselineOpsPreviewExposed.test.ts",
       "provides": [],
       "service": "test.contract"
+    },
+    "test.contractTownSiegeAlarmServiceBroadcast": {
+      "dependsOn": [
+        "world.WorldEventBus",
+        "world.TownSiegeAlarmService"
+      ],
+      "kind": "test.contract",
+      "notes": [
+        "Locks MUD-facing alarm behavior for siege events.",
+        "Also locks cooldown semantics to prevent spam."
+      ],
+      "path": "worldcore/test/contract_townSiegeAlarmService_broadcast.test.ts",
+      "provides": [
+        "TownSiegeAlarmService: town.sanctuary.siege broadcasts alarm chat into town room (and optional neighbors)"
+      ]
+    },
+    "test.contractTownSiegeGuardMoraleProactiveSortie": {
+      "dependsOn": [
+        "npc.NpcManager",
+        "core.EntityManager",
+        "world.RegionFlags"
+      ],
+      "kind": "test.contract",
+      "notes": [
+        "Controlled by PW_TOWN_SIEGE_GUARD_MORALE_PROACTIVE and PW_TOWN_SIEGE_GUARD_MORALE_RECENT_AGGRO_WINDOW_MS.",
+        "Keeps default conservative behavior unless siege morale is explicitly enabled."
+      ],
+      "path": "worldcore/test/contract_townSiege_guardMorale_proactiveSortie.test.ts",
+      "provides": [
+        "Siege morale: guards can proactively sortie to recently-aggressive hostiles during siege (even without player threat table)"
+      ]
+    },
+    "test.contractTownSiegeGuardSortieBonusRange": {
+      "dependsOn": [
+        "world.WorldEventBus",
+        "world.TownSiegeService",
+        "npc.NpcManager",
+        "world.RegionFlags"
+      ],
+      "kind": "test.contract",
+      "notes": [
+        "When TownSiegeService marks a sanctuary room under siege, guard sortie range is increased by PW_TOWN_SIEGE_GUARD_SORTIE_RANGE_BONUS_TILES.",
+        "Contract uses base range=0 to prove the bonus is the deciding factor."
+      ],
+      "path": "worldcore/test/contract_townSiege_guardSortie_bonusRange.test.ts",
+      "provides": [
+        "Siege mood: guards gain extra sortie range while town is under siege"
+      ]
+    },
+    "test.contractTownSiegeServiceBreachEscalation": {
+      "dependsOn": [
+        "world.WorldEventBus",
+        "world.TownSiegeService"
+      ],
+      "kind": "test.contract",
+      "notes": [
+        "Breach is an opt-in overlay: TownSiegeService emits town.sanctuary.breach when PW_TOWN_SIEGE_BREACH_HITS is reached within PW_TOWN_SIEGE_BREACH_WINDOW_MS.",
+        "The breach self-heals after PW_TOWN_SIEGE_BREACH_TTL_MS and does not change behavior unless regions enable allowSiegeBreach."
+      ],
+      "path": "worldcore/test/contract_townSiegeService_breachEscalation.test.ts",
+      "provides": [
+        "TownSiegeService: repeated siege triggers can escalate into a temporary breach window"
+      ]
+    },
+    "test.contractTownSiegeServiceState": {
+      "dependsOn": [
+        "world.WorldEventBus",
+        "world.TownSiegeService"
+      ],
+      "kind": "test.contract",
+      "notes": [
+        "Lightweight in-memory siege state driven by WorldEventBus.",
+        "Contract locks TTL expiry semantics so future invasion systems can rely on stable behavior."
+      ],
+      "path": "worldcore/test/contract_townSiegeService_state.test.ts",
+      "provides": [
+        "TownSiegeService: town.sanctuary.siege marks room under siege until TTL expires"
+      ]
+    },
+    "test.contractTownSiegeTravelLockdownBlocksSanctuaryEntry": {
+      "dependsOn": [
+        "world.RegionFlags",
+        "mud.commands.world.moveCommand"
+      ],
+      "kind": "test.contract",
+      "notes": [
+        "Uses regions.flags.rules.travel.lockdownOnSiege with rules.ai.townSanctuary.",
+        "Evaluated pre-move so characters do not step into the town and then snap back."
+      ],
+      "path": "worldcore/test/contract_townSiege_travelLockdownOnSiege_blocksSanctuaryEntry.test.ts",
+      "provides": [
+        "Siege travel: regions can opt in to travel lockdown that blocks entering sanctuary regions while under siege"
+      ]
+    },
+    "test.contractTownSiegeVendorLockdown": {
+      "dependsOn": [
+        "world.WorldEventBus",
+        "world.TownSiegeService",
+        "world.RegionFlags",
+        "mud.commands.world.serviceGates"
+      ],
+      "kind": "test.contract",
+      "notes": [
+        "Locks behavior that towns may close vendors during a siege via regions.flags.rules.economy.lockdownOnSiege.",
+        "Contract is scoped to vendor only; bank/auction/mail can be extended later."
+      ],
+      "path": "worldcore/test/contract_townSiege_vendorLockdown.test.ts",
+      "provides": [
+        "Siege economy: regions can opt in to vendor lockdown while under siege"
+      ]
     },
     "test.contractTurnInQuestWarfrontFriendly": {
       "class": null,
@@ -8372,7 +8643,7 @@
       "kind": "test",
       "lifecycle": "test",
       "notes": [
-        "Contract: NPC debuffs + DOT vertical slice works end-to-end (cast \u2192 status apply \u2192 tick \u2192 damage).",
+        "Contract: NPC debuffs + DOT vertical slice works end-to-end (cast → status apply → tick → damage).",
         "Guards the DOT tick + defender snapshot seam so damageTakenPct modifiers influence both direct hits and DOT ticks."
       ],
       "owns": [],
@@ -8469,28 +8740,6 @@
         "contract:npcManagerPackAssistNoBumpWhenAlreadyHighThreat"
       ]
     },
-    "test.contract_npcManager_packAssist_trainAssistRangeClamp": {
-      "class": "(test) contract_npcManager_packAssist_trainAssistRangeClamp",
-      "ctorArgs": [],
-      "dependsOn": [
-        "worldcore/npc/NpcManager.ts",
-        "worldcore/npc/NpcThreat.ts",
-        "worldcore/npc/NpcTypes.ts",
-        "worldcore/core/EntityManager.ts"
-      ],
-      "kind": "test",
-      "lifecycle": "test",
-      "notes": [
-        "Contract: Train rooms cross-room pack assist is clamped by PW_TRAIN_ASSIST_RANGE for canonical shard:x,y room ids."
-      ],
-      "owns": [
-        "test:npcManagerPackAssistTrainAssistRangeClamp"
-      ],
-      "path": "worldcore/test/contract_npcManager_packAssist_trainAssistRangeClamp.test.ts",
-      "provides": [
-        "contract:npcManagerPackAssistTrainAssistRangeClamp"
-      ]
-    },
     "test.contract_npcManager_packAssist_noCrossRoomWithoutTrain": {
       "class": "(test) contract_npcManager_packAssist_noCrossRoomWithoutTrain",
       "dependsOn": [
@@ -8572,6 +8821,28 @@
       "path": "worldcore/test/contract_npcManager_packAssist_sharesThreatMagnitude.test.ts",
       "provides": [
         "contract:npcManagerPackAssistSharesThreatMagnitude"
+      ]
+    },
+    "test.contract_npcManager_packAssist_trainAssistRangeClamp": {
+      "class": "(test) contract_npcManager_packAssist_trainAssistRangeClamp",
+      "ctorArgs": [],
+      "dependsOn": [
+        "worldcore/npc/NpcManager.ts",
+        "worldcore/npc/NpcThreat.ts",
+        "worldcore/npc/NpcTypes.ts",
+        "worldcore/core/EntityManager.ts"
+      ],
+      "kind": "test",
+      "lifecycle": "test",
+      "notes": [
+        "Contract: Train rooms cross-room pack assist is clamped by PW_TRAIN_ASSIST_RANGE for canonical shard:x,y room ids."
+      ],
+      "owns": [
+        "test:npcManagerPackAssistTrainAssistRangeClamp"
+      ],
+      "path": "worldcore/test/contract_npcManager_packAssist_trainAssistRangeClamp.test.ts",
+      "provides": [
+        "contract:npcManagerPackAssistTrainAssistRangeClamp"
       ]
     },
     "test.contract_npcManager_packAssist_usesTickNow": {
@@ -8657,7 +8928,7 @@
       "kind": "test",
       "lifecycle": "static",
       "notes": [
-        "Contract: reference kits L1\u201310 are consistent and autogrant works in test mode."
+        "Contract: reference kits L1–10 are consistent and autogrant works in test mode."
       ],
       "owns": [],
       "path": "worldcore/test/contract_referenceKits_L1_10.test.ts",
@@ -8789,7 +9060,7 @@
       "kind": "test",
       "lifecycle": "static",
       "notes": [
-        "Contract: templar L1\u201310 reference kit is playable in WORLDCORE_TEST mode; spells exist in SPELLS and have non-placeholder flavor; autogrant by level 10."
+        "Contract: templar L1–10 reference kit is playable in WORLDCORE_TEST mode; spells exist in SPELLS and have non-placeholder flavor; autogrant by level 10."
       ],
       "owns": [],
       "path": "worldcore/test/contract_templar_L1_10_kit_spellFlavor.test.ts",
@@ -8877,6 +9148,25 @@
       ],
       "service": "test"
     },
+    "test.contract_trainSystem_returnHomeDrift": {
+      "class": "(test) contract_trainSystem_returnHomeDrift",
+      "ctorArgs": [],
+      "dependsOn": [
+        "npcManager.trainSystem.v0"
+      ],
+      "id": "test.contract_trainSystem_returnHomeDrift",
+      "kind": "test",
+      "lifecycle": "active",
+      "notes": [
+        "Contract: when PW_TRAIN_RETURN_MODE=drift, hard leash disengage clears threat and the NPC drifts home over time instead of instant snapback."
+      ],
+      "owns": [],
+      "path": "worldcore/test/contract_trainSystem_returnHomeDrift.test.ts",
+      "provides": [
+        "contract:trainSystem:returnHomeDrift"
+      ],
+      "service": "worldcore"
+    },
     "test.contract_trainSystem_roomTransitionsAssist": {
       "class": "contract",
       "ctorArgs": [],
@@ -8911,26 +9201,6 @@
       ],
       "service": "worldcore"
     },
-    "test.contract_trainSystem_returnHomeDrift": {
-      "class": "(test) contract_trainSystem_returnHomeDrift",
-      "ctorArgs": [],
-      "dependsOn": [
-        "npcManager.trainSystem.v0"
-      ],
-      "id": "test.contract_trainSystem_returnHomeDrift",
-      "kind": "test",
-      "lifecycle": "active",
-      "notes": [
-        "Contract: when PW_TRAIN_RETURN_MODE=drift, hard leash disengage clears threat and the NPC drifts home over time instead of instant snapback."
-      ],
-      "owns": [],
-      "path": "worldcore/test/contract_trainSystem_returnHomeDrift.test.ts",
-      "provides": [
-        "contract:trainSystem:returnHomeDrift"
-      ],
-      "service": "worldcore"
-    },
-
     "test.contract_trainingDummySafety": {
       "class": "(test) contract_trainingDummySafety",
       "ctorArgs": [],
@@ -9163,252 +9433,6 @@
       "path": "worldcore/test/statusEffects.contract.test.ts",
       "provides": []
     },
-    "test.contractRegionFlagsNpcAggroRetaliateOnly": {
-      "kind": "test.contract",
-      "path": "worldcore/test/contract_regionFlags_npcAggro_retaliateOnly.test.ts",
-      "dependsOn": [
-        "world.RegionFlags",
-        "npc.NpcManager",
-        "core.EntityManager"
-      ],
-      "provides": [
-        "Guards starter-safe regions: NPCs do not proactively aggro when rules.ai.npcAggro=retaliate_only",
-        "Guards retaliation contract: NPCs still attack after player damage/threat"
-      ],
-      "notes": [
-        "Uses RegionFlags test overrides (DB-free) to model regions.flags jsonb.",
-        "Verifies aggressive NPCs remain calm until attacked, enabling tutorial-safe belts without disabling combat globally."
-      ]
-    },
-    "test.contractRegionFlagsNpcAggroRetaliateOnlyAssistClamp": {
-      "kind": "test.contract",
-      "path": "worldcore/test/contract_regionFlags_npcAggro_retaliateOnly_assistClamp.test.ts",
-      "dependsOn": [
-        "world.RegionFlags",
-        "combat.NpcCombat"
-      ],
-      "provides": [
-        "Starter-safe belts clamp cross-room assist even when PW_ASSIST_RADIUS_TILES would allow it"
-      ],
-      "notes": [
-        "Locks the tutorial belt: retaliate_only regions still allow same-room pack help after a player attacks first, but do not recruit from adjacent rooms."
-      ]
-    },    "test.contractRegionFlagsTrainPursuitProfileShort": {
-      "kind": "test.contract",
-      "path": "worldcore/test/contract_regionFlags_trainPursuitProfileShort.test.ts",
-      "dependsOn": [
-        "npc.NpcManager",
-        "world.RegionFlags"
-      ],
-      "provides": [
-        "Region pursuit profile: rules.ai.pursuit=short clamps Train chase tuning (does not force enable)"
-      ],
-      "notes": [
-        "Defines the 'green belt' ramp: Train can remain globally enabled, but pursuit can be clamped per-region so semi-safe zones don't become accidental train factories.",
-        "Conservative by design: never forces Train on; only clamps distance/time and disables train assist snapping in short zones."
-      ]
-    },
-    "test.contractRegionFlagsTownSanctuaryBlocksTrainEntry": {
-      "kind": "test.contract",
-      "path": "worldcore/test/contract_regionFlags_townSanctuary_blocksTrainEntry.test.ts",
-      "dependsOn": [
-        "world.RegionFlags",
-        "npc.NpcManager",
-        "core.EntityManager"
-      ],
-      "provides": [
-        "Town sanctuary: rules.ai.townSanctuary prevents Train pursuit from entering protected town tiles"
-      ],
-      "notes": [
-        "This is the newbie-town safety valve: combat stays enabled, but hostile NPC trains cannot cross into sanctuary regions.",
-        "Guards are exempt (tag=guard) so they can still respond inside the sanctuary if needed."
-      ]
-    },
-    "test.contractRegionFlagsTownSanctuaryBreachAllowsEntry": {
-      "kind": "test.contract",
-      "path": "worldcore/test/contract_regionFlags_townSanctuary_breachAllowsEntry.test.ts",
-      "dependsOn": [
-        "world.RegionFlags",
-        "world.WorldEventBus",
-        "world.TownSiegeService",
-        "npc.NpcManager",
-        "core.EntityManager"
-      ],
-      "provides": [
-        "Town sanctuary breach: rules.ai.allowSiegeBreach can lift sanctuary Train block while breach is active"
-      ],
-      "notes": [
-        "Opt-in per region to allow the classic EQ-style chaos: a pressured town can be breached and trains can spill in.",
-        "Starter towns stay safe by leaving allowSiegeBreach unset/false."
-      ]
-    },
-    "test.contractRegionFlagsTownSanctuaryRecapturePushout": {
-      "kind": "test.contract",
-      "path": "worldcore/test/contract_regionFlags_townSanctuary_recapturePushout.test.ts",
-      "dependsOn": [
-        "world.RegionFlags",
-        "npc.NpcManager",
-        "core.EntityManager"
-      ],
-      "provides": [
-        "Town sanctuary recapture: hostiles inside sanctuary are pushed back out when no breach is active"
-      ],
-      "notes": [
-        "Prevents stuck invaders after a breach ends: non-guards inside sanctuary are de-aggroed and nudged one tile per tick toward their spawn room.",
-        "Does not affect guards; does not run during an active breach."
-      ]
-    },
-    "test.contractRegionFlagsTownSanctuaryGuardSortie": {
-      "kind": "test.contract",
-      "path": "worldcore/test/contract_regionFlags_townSanctuary_guardSortie.test.ts",
-      "dependsOn": [
-        "world.RegionFlags",
-        "npc.NpcManager",
-        "core.EntityManager"
-      ],
-      "provides": [
-        "Town sanctuary guard sortie: rules.ai.townSanctuaryGuardSortie lets guards step out to engage nearby hostile threats"
-      ],
-      "notes": [
-        "Adds a controlled 'town defense' behavior: guards inside a sanctuary tile can step out one tile (or configured range) to engage hostiles fighting players just outside town.",
-        "Explicitly opt-in per-region (no global behavior change)."
-      ]
-    },
-    "test.contractRegionFlagsTownSanctuaryPressureSiegeEvent": {
-      "kind": "test.contract",
-      "path": "worldcore/test/contract_regionFlags_townSanctuary_pressureSiegeEvent.test.ts",
-      "dependsOn": [
-        "world.RegionFlags",
-        "npc.NpcManager",
-        "world.WorldEventBus",
-        "core.EntityManager"
-      ],
-      "provides": [
-        "Town sanctuary pressure: repeated blocked Train entries emit town.sanctuary.siege at threshold"
-      ],
-      "notes": [
-        "Records a rolling pressure window when hostile NPC trains are blocked at a sanctuary boundary, emitting an event for future invasion/siege systems.",
-        "Deterministic contract: re-seeds threat multiple times; each blocked attempt contributes one pressure sample."
-      ]
-    },
-
-    "test.contractTownSiegeServiceState": {
-      "kind": "test.contract",
-      "path": "worldcore/test/contract_townSiegeService_state.test.ts",
-      "dependsOn": [
-        "world.WorldEventBus",
-        "world.TownSiegeService"
-      ],
-      "provides": [
-        "TownSiegeService: town.sanctuary.siege marks room under siege until TTL expires"
-      ],
-      "notes": [
-        "Lightweight in-memory siege state driven by WorldEventBus.",
-        "Contract locks TTL expiry semantics so future invasion systems can rely on stable behavior."
-      ]
-    },
-
-    "test.contractTownSiegeServiceBreachEscalation": {
-      "kind": "test.contract",
-      "path": "worldcore/test/contract_townSiegeService_breachEscalation.test.ts",
-      "dependsOn": [
-        "world.WorldEventBus",
-        "world.TownSiegeService"
-      ],
-      "provides": [
-        "TownSiegeService: repeated siege triggers can escalate into a temporary breach window"
-      ],
-      "notes": [
-        "Breach is an opt-in overlay: TownSiegeService emits town.sanctuary.breach when PW_TOWN_SIEGE_BREACH_HITS is reached within PW_TOWN_SIEGE_BREACH_WINDOW_MS.",
-        "The breach self-heals after PW_TOWN_SIEGE_BREACH_TTL_MS and does not change behavior unless regions enable allowSiegeBreach."
-      ]
-    },
-
-    "test.contractTownSiegeAlarmServiceBroadcast": {
-      "kind": "test.contract",
-      "path": "worldcore/test/contract_townSiegeAlarmService_broadcast.test.ts",
-      "dependsOn": [
-        "world.WorldEventBus",
-        "world.TownSiegeAlarmService"
-      ],
-      "provides": [
-        "TownSiegeAlarmService: town.sanctuary.siege broadcasts alarm chat into town room (and optional neighbors)"
-      ],
-      "notes": [
-        "Locks MUD-facing alarm behavior for siege events.",
-        "Also locks cooldown semantics to prevent spam."
-      ]
-    },
-
-    "test.contractTownSiegeGuardSortieBonusRange": {
-      "kind": "test.contract",
-      "path": "worldcore/test/contract_townSiege_guardSortie_bonusRange.test.ts",
-      "dependsOn": [
-        "world.WorldEventBus",
-        "world.TownSiegeService",
-        "npc.NpcManager",
-        "world.RegionFlags"
-      ],
-      "provides": [
-        "Siege mood: guards gain extra sortie range while town is under siege"
-      ],
-      "notes": [
-        "When TownSiegeService marks a sanctuary room under siege, guard sortie range is increased by PW_TOWN_SIEGE_GUARD_SORTIE_RANGE_BONUS_TILES.",
-        "Contract uses base range=0 to prove the bonus is the deciding factor."
-      ]
-    },
-
-    "test.contractTownSiegeVendorLockdown": {
-      "kind": "test.contract",
-      "path": "worldcore/test/contract_townSiege_vendorLockdown.test.ts",
-      "dependsOn": [
-        "world.WorldEventBus",
-        "world.TownSiegeService",
-        "world.RegionFlags",
-        "mud.commands.world.serviceGates"
-      ],
-      "provides": [
-        "Siege economy: regions can opt in to vendor lockdown while under siege"
-      ],
-      "notes": [
-        "Locks behavior that towns may close vendors during a siege via regions.flags.rules.economy.lockdownOnSiege.",
-        "Contract is scoped to vendor only; bank/auction/mail can be extended later."
-      ]
-    },
-
-    "test.contractTownSiegeTravelLockdownBlocksSanctuaryEntry": {
-      "kind": "test.contract",
-      "path": "worldcore/test/contract_townSiege_travelLockdownOnSiege_blocksSanctuaryEntry.test.ts",
-      "dependsOn": [
-        "world.RegionFlags",
-        "mud.commands.world.moveCommand"
-      ],
-      "provides": [
-        "Siege travel: regions can opt in to travel lockdown that blocks entering sanctuary regions while under siege"
-      ],
-      "notes": [
-        "Uses regions.flags.rules.travel.lockdownOnSiege with rules.ai.townSanctuary.",
-        "Evaluated pre-move so characters do not step into the town and then snap back."
-      ]
-    },
-
-    "test.contractTownSiegeGuardMoraleProactiveSortie": {
-      "kind": "test.contract",
-      "path": "worldcore/test/contract_townSiege_guardMorale_proactiveSortie.test.ts",
-      "dependsOn": [
-        "npc.NpcManager",
-        "core.EntityManager",
-        "world.RegionFlags"
-      ],
-      "provides": [
-        "Siege morale: guards can proactively sortie to recently-aggressive hostiles during siege (even without player threat table)"
-      ],
-      "notes": [
-        "Controlled by PW_TOWN_SIEGE_GUARD_MORALE_PROACTIVE and PW_TOWN_SIEGE_GUARD_MORALE_RECENT_AGGRO_WINDOW_MS.",
-        "Keeps default conservative behavior unless siege morale is explicitly enabled."
-      ]
-    },
-
     "test.utils": {
       "dependsOn": [],
       "functions": [
@@ -9741,7 +9765,7 @@
       "notes": [
         "Dev Simulation Harness CLI entrypoint.",
         "Includes Mother Brain wave planning commands (mother-wave/mother-status) for brain-owned spawn_points pipelines.",
-        "Follows audit \u2192 plan \u2192 apply pattern with safe default rollback unless --commit.",
+        "Follows audit → plan → apply pattern with safe default rollback unless --commit.",
         "Safety rails: refuses literal '...' arg; refuses --commit without explicit --bounds (unless --allowDefaultBounds).",
         "Artifacts are dev-only outputs; keep them gitignored.",
         "Town vendor wiring: by default, `simBrain era` AND `simBrain mother-wave` seed vendor anchors for town-like spawns (disable with --noTownVendors)."
@@ -10091,50 +10115,6 @@
         "clear()"
       ]
     },
-    "world.townSiege": {
-      "class": "TownSiegeService",
-      "ctorArgs": [
-        "world.events"
-      ],
-      "dependsOn": [
-        "world.events"
-      ],
-      "kind": "service",
-      "lifecycle": "singleton",
-      "notes": [
-        "Listens to town.sanctuary.siege events and maintains short-lived in-memory 'under siege' state keyed by town roomId.",
-        "Acts as a stable bridge for future invasion systems (Mother Brain, town states, reinforcement spawns).",
-        "TTL is configurable via PW_TOWN_SANCTUARY_SIEGE_TTL_MS."
-      ],
-      "path": "worldcore/world/TownSiegeService.ts",
-      "provides": [
-        "getSiegeState(roomId, nowMs?)",
-        "isUnderSiege(roomId, nowMs?)",
-        "clear()"
-      ]
-    },
-    "world.townSiegeAlarm": {
-      "class": "TownSiegeAlarmService",
-      "ctorArgs": [
-        "world.events",
-        "world.rooms"
-      ],
-      "dependsOn": [
-        "world.events",
-        "world.rooms"
-      ],
-      "kind": "service",
-      "lifecycle": "singleton",
-      "notes": [
-        "Listens to town.sanctuary.siege events and broadcasts a diegetic alarm message into the town room (and optionally neighbor rooms).",
-        "Config via PW_TOWN_SIEGE_ALARM_RANGE_TILES and PW_TOWN_SIEGE_ALARM_COOLDOWN_MS.",
-        "This is a UX/story hook; invasion gameplay remains the responsibility of future systems."
-      ],
-      "path": "worldcore/world/TownSiegeAlarmService.ts",
-      "provides": [
-        "(auto) event handler: town.sanctuary.siege -> room.chat broadcast"
-      ]
-    },
     "world.manager": {
       "class": "ServerWorldManager",
       "ctorArgs": [
@@ -10211,7 +10191,7 @@
       ],
       "kind": "utility",
       "notes": [
-        "Tracks per-region dynamic danger score and effective tier (1\u20135) based on base distance ring + recent activity.",
+        "Tracks per-region dynamic danger score and effective tier (1–5) based on base distance ring + recent activity.",
         "Applies exponential-style decay over time so regions cool down naturally.",
         "Used by cowardice, Region Peril aura, debug_region_danger, and debug_bump_region_danger."
       ],
@@ -10479,6 +10459,50 @@
       ],
       "service": "world"
     },
+    "world.townSiege": {
+      "class": "TownSiegeService",
+      "ctorArgs": [
+        "world.events"
+      ],
+      "dependsOn": [
+        "world.events"
+      ],
+      "kind": "service",
+      "lifecycle": "singleton",
+      "notes": [
+        "Listens to town.sanctuary.siege events and maintains short-lived in-memory 'under siege' state keyed by town roomId.",
+        "Acts as a stable bridge for future invasion systems (Mother Brain, town states, reinforcement spawns).",
+        "TTL is configurable via PW_TOWN_SANCTUARY_SIEGE_TTL_MS."
+      ],
+      "path": "worldcore/world/TownSiegeService.ts",
+      "provides": [
+        "getSiegeState(roomId, nowMs?)",
+        "isUnderSiege(roomId, nowMs?)",
+        "clear()"
+      ]
+    },
+    "world.townSiegeAlarm": {
+      "class": "TownSiegeAlarmService",
+      "ctorArgs": [
+        "world.events",
+        "world.rooms"
+      ],
+      "dependsOn": [
+        "world.events",
+        "world.rooms"
+      ],
+      "kind": "service",
+      "lifecycle": "singleton",
+      "notes": [
+        "Listens to town.sanctuary.siege events and broadcasts a diegetic alarm message into the town room (and optionally neighbor rooms).",
+        "Config via PW_TOWN_SIEGE_ALARM_RANGE_TILES and PW_TOWN_SIEGE_ALARM_COOLDOWN_MS.",
+        "This is a UX/story hook; invasion gameplay remains the responsibility of future systems."
+      ],
+      "path": "worldcore/world/TownSiegeAlarmService.ts",
+      "provides": [
+        "(auto) event handler: town.sanctuary.siege -> room.chat broadcast"
+      ]
+    },
     "world.townTierRules": {
       "class": "(functions)",
       "ctorArgs": [],
@@ -10738,7 +10762,7 @@
       "kind": "worldgen_stage",
       "lifecycle": "stateless",
       "notes": [
-        "Stage 2.3.4 \u2013 biome assignment per cell + connected biome clusters.",
+        "Stage 2.3.4 – biome assignment per cell + connected biome clusters.",
         "Outputs biomeMap + cluster IDs + counts per biome."
       ],
       "path": "worldcore/terrain/worldgen/WGEv2Biomes.ts",
@@ -10757,7 +10781,7 @@
       "kind": "worldgen_stage",
       "lifecycle": "stateless",
       "notes": [
-        "Stage 2.3.5 \u2013 settlements, roads, and POIs.",
+        "Stage 2.3.5 – settlements, roads, and POIs.",
         "Scores candidate cells, picks settlements with spacing, builds a road graph, scatters points of interest."
       ],
       "path": "worldcore/terrain/worldgen/WGEv2Civilization.ts",
@@ -10774,7 +10798,7 @@
       "kind": "worldgen_stage",
       "lifecycle": "stateless",
       "notes": [
-        "Stage 2.3.3 \u2013 temperature, moisture, and compact climate zones.",
+        "Stage 2.3.3 – temperature, moisture, and compact climate zones.",
         "Can optionally use erosion outputs to bias humidity near rivers/lakes."
       ],
       "path": "worldcore/terrain/worldgen/WGEv2Climate.ts",
@@ -10790,7 +10814,7 @@
       "kind": "worldgen_stage",
       "lifecycle": "stateless",
       "notes": [
-        "Stage 2.3.2 \u2013 hydrology, erosion, rivers, lakes.",
+        "Stage 2.3.2 – hydrology, erosion, rivers, lakes.",
         "Outputs updated elevation, water, sediment, flow dirs, river/lake masks."
       ],
       "path": "worldcore/terrain/worldgen/WGEv2Erosion.ts",
@@ -10804,7 +10828,7 @@
       "kind": "worldgen_stage",
       "lifecycle": "stateless",
       "notes": [
-        "Stage 2.3.1 \u2013 base landforms: tectonics, continents, uplift, macro elevation.",
+        "Stage 2.3.1 – base landforms: tectonics, continents, uplift, macro elevation.",
         "First stage in the WGEv2 pipeline; everything else builds on its LandformResult."
       ],
       "path": "worldcore/terrain/worldgen/WGEv2Landforms.ts",
@@ -10824,7 +10848,7 @@
       "kind": "worldgen_stage",
       "lifecycle": "stateless",
       "notes": [
-        "Stage 2.3.6 \u2013 resource node placement (ore/herb/wood/fish/rare) plus per-kind masks.",
+        "Stage 2.3.6 – resource node placement (ore/herb/wood/fish/rare) plus per-kind masks.",
         "Respects biome, elevation, climate, hydrology, and avoids city centers while tagging 'near settlement' nodes."
       ],
       "path": "worldcore/terrain/worldgen/WGEv2Resources.ts",
@@ -10834,4 +10858,3 @@
     }
   }
 }
-  
