@@ -13,6 +13,8 @@ import {
   getNpcAggroModeForRegionSync,
   getNpcPursuitProfileForRegionSync,
   isTownSanctuaryForRegionSync,
+  isTownSanctuaryGuardSortieForRegionSync,
+  getTownSanctuaryGuardSortieRangeTilesForRegionSync,
   peekRegionFlagsCache,
   getRegionFlags,
 } from "../world/RegionFlags";
@@ -1609,6 +1611,119 @@ export class NpcManager {
         lastAggroAt: threat?.lastAggroAt,
         lastAttackerId: threat?.lastAttackerEntityId,
       };
+
+      // Town sanctuary guard sortie: when enabled, guards inside a sanctuary tile may step out
+      // to engage nearby active threats (typically hostiles fighting players just outside town).
+      //
+      // This is intentionally conservative:
+      // - only guards (behavior="guard")
+      // - only when the guard's current tile is a sanctuary
+      // - only when flags explicitly allow sortie
+      // - only looks a small number of adjacent tiles
+      //
+      // If a threat is found, the guard seeds threat onto the hostile NPC and moves to its room.
+      if (behavior === "guard") {
+        const curC = this.parseRoomCoord(roomId);
+        if (!curC) {
+          // Cannot evaluate sanctuary/sortie rules without a coord.
+        } else {
+        const curIsSanctuary = curC
+          ? isTownSanctuaryForRegionSync(curC.shard, roomId)
+          : false;
+        const sortieEnabled = curC
+          ? isTownSanctuaryGuardSortieForRegionSync(curC.shard, roomId)
+          : false;
+
+        if (curIsSanctuary && sortieEnabled) {
+          const rangeTiles = curC
+            ? getTownSanctuaryGuardSortieRangeTilesForRegionSync(curC.shard, roomId)
+            : 1;
+          const maxRange = Math.max(0, Math.floor(rangeTiles));
+
+          // Only meaningful with room movement enabled.
+          if (maxRange > 0 && trainCfg.enabled && trainCfg.roomsEnabled) {
+            const tickNow = this._tickNow || Date.now();
+
+            // Scan nearby rooms for a hostile NPC with player-target threat.
+            let foundHostileNpc: { roomId: string; npcId: string } | null = null;
+
+            for (let dx = -maxRange; dx <= maxRange && !foundHostileNpc; dx++) {
+              for (let dz = -maxRange; dz <= maxRange && !foundHostileNpc; dz++) {
+                if (dx === 0 && dz === 0) continue;
+
+                const candidateRoomId = this.formatRoomCoord({
+                  shard: curC.shard,
+                  x: curC.x + dx,
+                  z: curC.z + dz,
+                });
+
+                // Do not sortie *into* sanctuary tiles (guards can still operate there normally).
+                const candIsSanctuary = isTownSanctuaryForRegionSync(curC.shard, candidateRoomId);
+                if (candIsSanctuary) continue;
+
+                const npcsThere = this.listNpcsInRoom(candidateRoomId);
+                for (const other of npcsThere) {
+                  if (!other?.entityId) continue;
+                  if (String(other.entityId) === String(entityId)) continue;
+
+                  const otherProto =
+                    getNpcPrototype(other.templateId) ??
+                    getNpcPrototype(other.protoId) ??
+                    DEFAULT_NPC_PROTOTYPES[other.templateId] ??
+                    DEFAULT_NPC_PROTOTYPES[other.protoId];
+
+                  const otherBehavior = (otherProto as any)?.behavior;
+                  const otherTags = Array.isArray((otherProto as any)?.tags) ? (otherProto as any).tags : [];
+                  const otherIsGuard = otherBehavior === "guard" || otherTags.includes("guard");
+                  if (otherIsGuard) continue;
+
+                  // Only react to clearly hostile behaviors.
+                  const otherHostile = otherBehavior === "aggressive" || otherBehavior === "coward" || otherTags.includes("hostile");
+                  if (!otherHostile) continue;
+
+                  const otherThreat = this.npcThreat.get(other.entityId) as any;
+                  const table = otherThreat?.threatByEntityId ?? {};
+                  const keys = Object.keys(table);
+                  if (keys.length === 0) continue;
+
+                  // Require that the hostile has at least one player-target in its threat table.
+                  const hasPlayerTarget = keys.some((tid) => {
+                    const te = this.entities.get(String(tid));
+                    return te?.type === "player";
+                  });
+                  if (!hasPlayerTarget) continue;
+
+                  foundHostileNpc = { roomId: candidateRoomId, npcId: String(other.entityId) };
+                  break;
+                }
+              }
+            }
+
+            if (foundHostileNpc) {
+              // Seed threat onto the hostile NPC so guard brains can swing.
+              this.npcThreat.set(entityId, {
+                lastAttackerEntityId: foundHostileNpc.npcId,
+                lastAggroAt: tickNow,
+                threatByEntityId: { [foundHostileNpc.npcId]: 100 },
+              } as any);
+
+              (st as any).inCombat = true;
+              (npcEntity as any).inCombat = true;
+
+              // Move guard to the hostile's room.
+              if (foundHostileNpc.roomId && foundHostileNpc.roomId !== roomId) {
+                if ((st as any).trainMovedAt !== tickNow) {
+                  this.moveNpcToRoom(st, entityId, foundHostileNpc.roomId);
+                  (st as any).trainMovedAt = tickNow;
+                  (npcEntity as any).trainMovedAt = tickNow;
+                }
+              }
+              continue;
+            }
+          }
+        }
+        }
+      }
 
 
       // Train System pre-hook: chase even when the target is not in playersInRoom (cross-room),

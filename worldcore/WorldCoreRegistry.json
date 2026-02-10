@@ -9224,6 +9224,22 @@
         "Guards are exempt (tag=guard) so they can still respond inside the sanctuary if needed."
       ]
     },
+    "test.contractRegionFlagsTownSanctuaryGuardSortie": {
+      "kind": "test.contract",
+      "path": "worldcore/test/contract_regionFlags_townSanctuary_guardSortie.test.ts",
+      "dependsOn": [
+        "world.RegionFlags",
+        "npc.NpcManager",
+        "core.EntityManager"
+      ],
+      "provides": [
+        "Town sanctuary guard sortie: rules.ai.townSanctuaryGuardSortie lets guards step out to engage nearby hostile threats"
+      ],
+      "notes": [
+        "Adds a controlled 'town defense' behavior: guards inside a sanctuary tile can step out one tile (or configured range) to engage hostiles fighting players just outside town.",
+        "Explicitly opt-in per-region (no global behavior change)."
+      ]
+    },
     "test.utils": {
       "dependsOn": [],
       "functions": [

@@ -335,9 +335,49 @@ export function isTownSanctuaryFromFlags(flags: RegionFlags): boolean {
   return v === true;
 }
 
+/**
+ * Read whether guards may sortie out of a town sanctuary to engage nearby threats.
+ *
+ * Convention:
+ * - Stored under flags.rules.ai.townSanctuaryGuardSortie
+ * - Values:
+ *    - true: guards may step out of sanctuary tiles to engage threats nearby.
+ *    - missing/false: default (no automatic sortie)
+ */
+export function isTownSanctuaryGuardSortieFromFlags(flags: RegionFlags): boolean {
+  const v = (flags as any)?.rules?.ai?.townSanctuaryGuardSortie;
+  return v === true;
+}
+
+/**
+ * Optional range (in room tiles) for guard sortie scanning.
+ *
+ * Convention:
+ * - Stored under flags.rules.ai.townSanctuaryGuardSortieRangeTiles
+ * - Missing/invalid => default 1
+ */
+export function getTownSanctuaryGuardSortieRangeTilesFromFlags(flags: RegionFlags): number {
+  const raw = Number((flags as any)?.rules?.ai?.townSanctuaryGuardSortieRangeTiles);
+  if (!Number.isFinite(raw)) return 1;
+  return Math.max(0, Math.floor(raw));
+}
+
 export async function isTownSanctuaryForRegion(shardId: string, regionId: string): Promise<boolean> {
   const flags = await getRegionFlags(shardId, regionId);
   return isTownSanctuaryFromFlags(flags);
+}
+
+export async function isTownSanctuaryGuardSortieForRegion(shardId: string, regionId: string): Promise<boolean> {
+  const flags = await getRegionFlags(shardId, regionId);
+  return isTownSanctuaryGuardSortieFromFlags(flags);
+}
+
+export async function getTownSanctuaryGuardSortieRangeTilesForRegion(
+  shardId: string,
+  regionId: string,
+): Promise<number> {
+  const flags = await getRegionFlags(shardId, regionId);
+  return getTownSanctuaryGuardSortieRangeTilesFromFlags(flags);
 }
 
 export async function getNpcAggroModeForRegion(shardId: string, regionId: string): Promise<RegionNpcAggroMode> {
@@ -404,5 +444,16 @@ export function getNpcPursuitProfileForRegionSync(
 
 export function isTownSanctuaryForRegionSync(shardId: string, regionId: string): boolean {
   return isTownSanctuaryFromFlags(getRegionFlagsSync(shardId, regionId));
+}
+
+export function isTownSanctuaryGuardSortieForRegionSync(shardId: string, regionId: string): boolean {
+  return isTownSanctuaryGuardSortieFromFlags(getRegionFlagsSync(shardId, regionId));
+}
+
+export function getTownSanctuaryGuardSortieRangeTilesForRegionSync(
+  shardId: string,
+  regionId: string,
+): number {
+  return getTownSanctuaryGuardSortieRangeTilesFromFlags(getRegionFlagsSync(shardId, regionId));
 }
 
