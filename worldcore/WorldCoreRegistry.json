@@ -9224,6 +9224,24 @@
         "Guards are exempt (tag=guard) so they can still respond inside the sanctuary if needed."
       ]
     },
+    "test.contractRegionFlagsTownSanctuaryBreachAllowsEntry": {
+      "kind": "test.contract",
+      "path": "worldcore/test/contract_regionFlags_townSanctuary_breachAllowsEntry.test.ts",
+      "dependsOn": [
+        "world.RegionFlags",
+        "world.WorldEventBus",
+        "world.TownSiegeService",
+        "npc.NpcManager",
+        "core.EntityManager"
+      ],
+      "provides": [
+        "Town sanctuary breach: rules.ai.allowSiegeBreach can lift sanctuary Train block while breach is active"
+      ],
+      "notes": [
+        "Opt-in per region to allow the classic EQ-style chaos: a pressured town can be breached and trains can spill in.",
+        "Starter towns stay safe by leaving allowSiegeBreach unset/false."
+      ]
+    },
     "test.contractRegionFlagsTownSanctuaryGuardSortie": {
       "kind": "test.contract",
       "path": "worldcore/test/contract_regionFlags_townSanctuary_guardSortie.test.ts",
@@ -9271,6 +9289,22 @@
       "notes": [
         "Lightweight in-memory siege state driven by WorldEventBus.",
         "Contract locks TTL expiry semantics so future invasion systems can rely on stable behavior."
+      ]
+    },
+
+    "test.contractTownSiegeServiceBreachEscalation": {
+      "kind": "test.contract",
+      "path": "worldcore/test/contract_townSiegeService_breachEscalation.test.ts",
+      "dependsOn": [
+        "world.WorldEventBus",
+        "world.TownSiegeService"
+      ],
+      "provides": [
+        "TownSiegeService: repeated siege triggers can escalate into a temporary breach window"
+      ],
+      "notes": [
+        "Breach is an opt-in overlay: TownSiegeService emits town.sanctuary.breach when PW_TOWN_SIEGE_BREACH_HITS is reached within PW_TOWN_SIEGE_BREACH_WINDOW_MS.",
+        "The breach self-heals after PW_TOWN_SIEGE_BREACH_TTL_MS and does not change behavior unless regions enable allowSiegeBreach."
       ]
     },
 

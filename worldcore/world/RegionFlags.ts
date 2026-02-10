@@ -336,6 +336,20 @@ export function isTownSanctuaryFromFlags(flags: RegionFlags): boolean {
 }
 
 /**
+ * Read whether a town sanctuary may be breached during a siege.
+ *
+ * Convention:
+ * - Stored under flags.rules.ai.allowSiegeBreach
+ * - Values:
+ *    - true: when TownSiegeService declares a breach, hostile NPCs may enter sanctuary via Train.
+ *    - missing/false: sanctuary boundary remains absolute.
+ */
+export function allowSiegeBreachFromFlags(flags: RegionFlags): boolean {
+  const v = (flags as any)?.rules?.ai?.allowSiegeBreach;
+  return v === true;
+}
+
+/**
  * Read whether guards may sortie out of a town sanctuary to engage nearby threats.
  *
  * Convention:
@@ -365,6 +379,11 @@ export function getTownSanctuaryGuardSortieRangeTilesFromFlags(flags: RegionFlag
 export async function isTownSanctuaryForRegion(shardId: string, regionId: string): Promise<boolean> {
   const flags = await getRegionFlags(shardId, regionId);
   return isTownSanctuaryFromFlags(flags);
+}
+
+export async function allowSiegeBreachForRegion(shardId: string, regionId: string): Promise<boolean> {
+  const flags = await getRegionFlags(shardId, regionId);
+  return allowSiegeBreachFromFlags(flags);
 }
 
 export async function isTownSanctuaryGuardSortieForRegion(shardId: string, regionId: string): Promise<boolean> {
@@ -444,6 +463,10 @@ export function getNpcPursuitProfileForRegionSync(
 
 export function isTownSanctuaryForRegionSync(shardId: string, regionId: string): boolean {
   return isTownSanctuaryFromFlags(getRegionFlagsSync(shardId, regionId));
+}
+
+export function allowSiegeBreachForRegionSync(shardId: string, regionId: string): boolean {
+  return allowSiegeBreachFromFlags(getRegionFlagsSync(shardId, regionId));
 }
 
 export function isTownSanctuaryGuardSortieForRegionSync(shardId: string, regionId: string): boolean {

@@ -13,6 +13,7 @@ import {
   getNpcAggroModeForRegionSync,
   getNpcPursuitProfileForRegionSync,
   isTownSanctuaryForRegionSync,
+  allowSiegeBreachForRegionSync,
   isTownSanctuaryGuardSortieForRegionSync,
   getTownSanctuaryGuardSortieRangeTilesForRegionSync,
   peekRegionFlagsCache,
@@ -2361,7 +2362,11 @@ export class NpcManager {
         const tags = Array.isArray((protoForTags as any)?.tags) ? (protoForTags as any).tags : [];
         const isGuard = tags.includes("guard");
 
-        if (!isGuard) {
+        const allowBreach = nextC_forSanctuary
+          ? allowSiegeBreachForRegionSync(nextC_forSanctuary.shard, nextRoomId)
+          : false;
+
+        if (!isGuard && !(allowBreach && this.townSiege && this.townSiege.isBreachActive(nextRoomId, tickNow))) {
           // Sanctuary pressure: blocked trains contribute to a rolling pressure window which can trigger a siege event.
           this.recordTownSanctuaryPressure(nextRoomId, tickNow);
           try {

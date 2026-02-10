@@ -31,7 +31,8 @@ export type WorldEvent =
   | "player.disconnected"
   | "law.crime"
   | "weather.changed"
-  | "town.sanctuary.siege";
+  | "town.sanctuary.siege"
+  | "town.sanctuary.breach";
 
 export type WorldEventPayloads = {
   "entity.spawned": { entityId: string; roomId: string; regionId?: string };
@@ -47,6 +48,7 @@ export type WorldEventPayloads = {
   "law.crime": { actorId: string; crimeType: string; regionId: string };
   "weather.changed": { regionId: string; weather: string };
   "town.sanctuary.siege": { shardId: string; roomId: string; pressureCount: number; windowMs: number };
+  "town.sanctuary.breach": { shardId: string; roomId: string; breachUntilTs: number };
 };
 
 type EventHandler<K extends WorldEvent> = (
