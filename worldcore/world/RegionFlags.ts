@@ -364,6 +364,21 @@ export function isTownSanctuaryGuardSortieFromFlags(flags: RegionFlags): boolean
 }
 
 /**
+ * Read whether guards may perform an active recapture sweep in a town sanctuary
+ * after a breach ends (or when no breach is active).
+ *
+ * Convention:
+ * - Stored under flags.rules.ai.guardRecaptureSweep
+ * - Values:
+ *    - true: guards may actively engage and push remaining hostiles away from sanctuary tiles
+ *    - missing/false: default (no sweep)
+ */
+export function isGuardRecaptureSweepFromFlags(flags: RegionFlags): boolean {
+  const v = (flags as any)?.rules?.ai?.guardRecaptureSweep;
+  return v === true;
+}
+
+/**
  * Optional range (in room tiles) for guard sortie scanning.
  *
  * Convention:
@@ -389,6 +404,11 @@ export async function allowSiegeBreachForRegion(shardId: string, regionId: strin
 export async function isTownSanctuaryGuardSortieForRegion(shardId: string, regionId: string): Promise<boolean> {
   const flags = await getRegionFlags(shardId, regionId);
   return isTownSanctuaryGuardSortieFromFlags(flags);
+}
+
+export async function isGuardRecaptureSweepForRegion(shardId: string, regionId: string): Promise<boolean> {
+  const flags = await getRegionFlags(shardId, regionId);
+  return isGuardRecaptureSweepFromFlags(flags);
 }
 
 export async function getTownSanctuaryGuardSortieRangeTilesForRegion(
@@ -471,6 +491,10 @@ export function allowSiegeBreachForRegionSync(shardId: string, regionId: string)
 
 export function isTownSanctuaryGuardSortieForRegionSync(shardId: string, regionId: string): boolean {
   return isTownSanctuaryGuardSortieFromFlags(getRegionFlagsSync(shardId, regionId));
+}
+
+export function isGuardRecaptureSweepForRegionSync(shardId: string, regionId: string): boolean {
+  return isGuardRecaptureSweepFromFlags(getRegionFlagsSync(shardId, regionId));
 }
 
 export function getTownSanctuaryGuardSortieRangeTilesForRegionSync(

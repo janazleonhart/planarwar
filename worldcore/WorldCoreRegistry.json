@@ -9167,6 +9167,45 @@
       ],
       "service": "worldcore"
     },
+    "test.contract_trainSystem_driftReaggro": {
+      "class": "(test) contract_trainSystem_driftReaggro",
+      "ctorArgs": [],
+      "dependsOn": [
+        "npcManager.trainSystem.v0"
+      ],
+      "id": "test.contract_trainSystem_driftReaggro",
+      "kind": "test",
+      "lifecycle": "active",
+      "notes": [
+        "Contract: when PW_TRAIN_RETURN_MODE=drift and PW_TRAIN_DRIFT_REAGGRO_ENABLED=1, returning NPCs may reacquire targets near the drift path, bounded by PW_TRAIN_DRIFT_REAGGRO_MAX_HOPS."
+      ],
+      "owns": [],
+      "path": "worldcore/test/contract_trainSystem_driftReaggro.test.ts",
+      "provides": [
+        "contract:trainSystem:driftReaggro"
+      ],
+      "service": "worldcore"
+    },
+    "test.contract_townSanctuary_guardRecaptureSweep": {
+      "class": "(test) contract_townSanctuary_guardRecaptureSweep",
+      "ctorArgs": [],
+      "dependsOn": [
+        "npcManager.trainSystem.v0",
+        "world.regionFlags"
+      ],
+      "id": "test.contract_townSanctuary_guardRecaptureSweep",
+      "kind": "test",
+      "lifecycle": "active",
+      "notes": [
+        "Contract: when regions.flags.rules.ai.guardRecaptureSweep is enabled for a town sanctuary tile and no breach is active, guards step toward nearby hostiles (sweep/recapture behavior)."
+      ],
+      "owns": [],
+      "path": "worldcore/test/contract_townSanctuary_guardRecaptureSweep.test.ts",
+      "provides": [
+        "contract:townSanctuary:guardRecaptureSweep"
+      ],
+      "service": "worldcore"
+    },
     "test.contract_trainSystem_roomTransitionsAssist": {
       "class": "contract",
       "ctorArgs": [],

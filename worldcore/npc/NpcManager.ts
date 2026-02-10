@@ -15,6 +15,7 @@ import {
   isTownSanctuaryForRegionSync,
   allowSiegeBreachForRegionSync,
   isTownSanctuaryGuardSortieForRegionSync,
+  isGuardRecaptureSweepForRegionSync,
   getTownSanctuaryGuardSortieRangeTilesForRegionSync,
   peekRegionFlagsCache,
   getRegionFlags,
@@ -1528,6 +1529,37 @@ export class NpcManager {
             const curRoomId = String(st.roomId ?? roomId);
             const tickNow = this._tickNow || Date.now();
 
+            // Optional "drift re-aggro" spice: while drifting home, an NPC may pick up new aggro if a player is nearby.
+            // This recreates the EverQuest-style "train keeps growing" vibe, but is strictly capped.
+            const driftReaggroEnabled = String(process.env.PW_TRAIN_DRIFT_REAGGRO_ENABLED ?? "0") === "1";
+            const driftReaggroRange = Math.max(0, Math.floor(Number(process.env.PW_TRAIN_DRIFT_REAGGRO_RANGE_TILES ?? "1")));
+            const driftReaggroMaxHops = Math.max(0, Math.floor(Number(process.env.PW_TRAIN_DRIFT_REAGGRO_MAX_HOPS ?? "3")));
+
+            const curHops = Math.max(
+              0,
+              Math.floor(Number((st as any).trainDriftReaggroHops ?? (npcEntity as any).trainDriftReaggroHops ?? 0)),
+            );
+
+            if (driftReaggroEnabled && driftReaggroRange > 0 && driftReaggroMaxHops > 0 && curHops < driftReaggroMaxHops) {
+              const player = this.findAnyPlayerWithinRoomRange(curRoomId, driftReaggroRange);
+              if (player?.id) {
+                // Seed threat and cancel return state; normal perception/Train will resume pursuit.
+                this.debugSetThreatValue(entityId, String(player.id), 50, { add: true, now: tickNow });
+                (st as any).trainReturning = false;
+                (npcEntity as any).trainReturning = false;
+                const nextHops = curHops + 1;
+                (st as any).trainDriftReaggroHops = nextHops;
+                (npcEntity as any).trainDriftReaggroHops = nextHops;
+              }
+            }
+
+            // If we reacquired threat above, abort the drift hook so normal AI can run.
+            const threatState2 = this.npcThreat.get(entityId);
+            const hasThreat2 = !!threatState2 && Object.keys((threatState2 as any).threatByEntityId ?? {}).length > 0;
+            if (hasThreat2) {
+              continue;
+            }
+
             // Room drift: if room pursuit is enabled and we're not at our spawn room, step one tile toward spawn.
             if (trainCfg.roomsEnabled && spawnRoomId && curRoomId && spawnRoomId !== curRoomId) {
               const next = this.stepRoomToward(curRoomId, spawnRoomId);
@@ -1624,6 +1656,47 @@ export class NpcManager {
       if (npcAggroMode === "retaliate_only" && behavior === "aggressive") {
         // Starter-safe belt: no proactive aggro. Retaliation still works via threat/lastAttacker.
         effectiveHostile = false;
+      }
+
+      // Guard recapture sweep (opt-in): when a room is a town sanctuary and no breach is active,
+      // guards may actively step out to engage nearby hostiles and help "reclaim" the sanctuary.
+      // This is intentionally simple: it only runs when guardRecaptureSweep flag is enabled,
+      // and uses the existing room-tile chase mechanics.
+      {
+        const isGuard = (tags as any[]).includes("guard");
+        const curC = this.parseRoomCoord(roomId);
+        const inSanctuary = curC ? isTownSanctuaryForRegionSync(curC.shard, roomId) : false;
+
+        if (isGuard && inSanctuary && curC && isGuardRecaptureSweepForRegionSync(curC.shard, roomId)) {
+          const allowBreach = allowSiegeBreachForRegionSync(curC.shard, roomId);
+          const breachActive =
+            !!allowBreach &&
+            !!this.townSiege &&
+            this.townSiege.isBreachActive(roomId, this._tickNow || Date.now());
+
+          if (!breachActive) {
+            const rangeTiles = getTownSanctuaryGuardSortieRangeTilesForRegionSync(curC.shard, roomId);
+            if (rangeTiles > 0) {
+              const targetNpc = this.findAnyHostileNpcWithinRoomRange(roomId, rangeTiles);
+              if (targetNpc?.id) {
+                // Seed threat on the hostile NPC so the guard will engage.
+                const now2 = this._tickNow || Date.now();
+                this.debugSetThreatValue(entityId, String(targetNpc.id), 100, { add: true, now: now2 });
+
+                // Step toward the hostile's room if cross-room pursuit is enabled.
+                const trgRoom = String((targetNpc as any).roomId ?? "");
+                if (trainCfg.roomsEnabled && trgRoom && trgRoom !== roomId) {
+                  const next = this.stepRoomToward(roomId, trgRoom);
+                  if (next && next !== roomId) {
+                    this.moveNpcToRoom(st, entityId, next);
+                    (st as any).trainMovedAt = now2;
+                    (npcEntity as any).trainMovedAt = now2;
+                  }
+                }
+              }
+            }
+          }
+        }
       }
 
       const threat0 = this.npcThreat.get(entityId);
@@ -2372,6 +2445,84 @@ export class NpcManager {
     if (dx !== 0) nx += Math.sign(dx);
     else nz += Math.sign(dz);
     return this.formatRoomCoord({ shard: cur.shard, x: nx, z: nz });
+  }
+
+  private findAnyPlayerWithinRoomRange(centerRoomId: string, rangeTiles: number): any | null {
+    const c = this.parseRoomCoord(centerRoomId);
+    if (!c) return null;
+    const r = Math.max(0, Math.floor(rangeTiles));
+    if (r <= 0) return null;
+
+    for (let dx = -r; dx <= r; dx++) {
+      for (let dz = -r; dz <= r; dz++) {
+        // Manhattan-ish circle: keep it cheap and deterministic.
+        if (Math.abs(dx) + Math.abs(dz) > r) continue;
+        const roomId = this.formatRoomCoord({ shard: c.shard, x: c.x + dx, z: c.z + dz });
+        let ents: any[] = [];
+        try {
+          ents = (this.entities.getEntitiesInRoom(roomId) as any[]) ?? [];
+        } catch {
+          ents = [];
+        }
+        for (const e of ents) {
+          if (!e) continue;
+          const kind = String((e as any).kind ?? (e as any).type ?? "");
+          const ownerSessionId = (e as any).ownerSessionId;
+          const isPlayer = kind === "player" || kind === "character" || !!ownerSessionId;
+          if (isPlayer) return e;
+        }
+      }
+    }
+    return null;
+  }
+
+  private findAnyHostileNpcWithinRoomRange(centerRoomId: string, rangeTiles: number): any | null {
+    const c = this.parseRoomCoord(centerRoomId);
+    if (!c) return null;
+    const r = Math.max(0, Math.floor(rangeTiles));
+    if (r <= 0) return null;
+
+    for (let dx = -r; dx <= r; dx++) {
+      for (let dz = -r; dz <= r; dz++) {
+        if (Math.abs(dx) + Math.abs(dz) > r) continue;
+        const roomId = this.formatRoomCoord({ shard: c.shard, x: c.x + dx, z: c.z + dz });
+        let ents: any[] = [];
+        try {
+          ents = (this.entities.getEntitiesInRoom(roomId) as any[]) ?? [];
+        } catch {
+          ents = [];
+        }
+        for (const e of ents) {
+          if (!e || !e.id) continue;
+          const id = String(e.id);
+          // Only consider NPCs tracked by NpcManager runtime state.
+          if (!this.npcsByEntityId.has(id)) continue;
+
+          const st = this.npcsByEntityId.get(id) as any;
+          const proto =
+            getNpcPrototype(st?.templateId) ??
+            getNpcPrototype(st?.protoId) ??
+            DEFAULT_NPC_PROTOTYPES[st?.templateId] ??
+            DEFAULT_NPC_PROTOTYPES[st?.protoId];
+          if (!proto) continue;
+
+          const tags = (proto.tags ?? []) as string[];
+          if (tags.includes("guard")) continue;
+
+          const behavior = String(proto.behavior ?? "aggressive");
+          const isResource =
+            tags.includes("resource") || tags.some((t) => String(t).startsWith("resource_"));
+          const nonHostile = tags.includes("non_hostile") || isResource;
+          const hostile =
+            !nonHostile && (behavior === "aggressive" || behavior === "guard" || behavior === "coward");
+          if (!hostile) continue;
+
+          return e;
+        }
+      }
+    }
+
+    return null;
   }
 
   private maybeTrainChase(args: {
