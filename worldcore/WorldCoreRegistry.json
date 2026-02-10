@@ -9451,6 +9451,14 @@
         "Locks TownSiegeService tiering behavior so future refactors don't break MUD/UI expectations."
       ]
     },
+    "test.contractWorldEventJournalRecordsTownEvents": {
+      "dependsOn": ["world.WorldEventBus", "world.WorldEventJournalService"],
+      "kind": "test.contract",
+      "notes": [
+        "Contract: world event journal records town.* events and enforces ring buffer cap."
+      ],
+      "path": "worldcore/test/contract_worldEventJournal_recordsTownEvents.test.ts"
+    },
     "test.utils": {
       "dependsOn": [],
       "functions": [
@@ -10132,6 +10140,18 @@
         "emitAsync(event, payload)",
         "clear()"
       ]
+    },
+    "world.eventJournal": {
+      "class": "WorldEventJournalService",
+      "ctorArgs": ["world.events"],
+      "dependsOn": ["world.events"],
+      "kind": "service",
+      "lifecycle": "singleton",
+      "notes": [
+        "In-memory ring-buffer journal for WorldEventBus events (debug + future world-sim hooks)."
+      ],
+      "path": "worldcore/world/WorldEventJournalService.ts",
+      "provides": ["peekRecent(query?)", "clear()"]
     },
     "world.manager": {
       "class": "ServerWorldManager",

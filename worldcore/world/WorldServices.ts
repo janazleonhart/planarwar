@@ -37,6 +37,7 @@ import { SpawnHydrator } from "./SpawnHydrator";
 import { applyProfileToPetVitals } from "../pets/PetProfiles";
 import { applyPetGearToVitals } from "../pets/PetGear";
 import { WorldEventBus } from "./WorldEventBus";
+import { WorldEventJournalService } from "./WorldEventJournalService";
 import { TownSiegeService } from "./TownSiegeService";
 import { TownSiegeAlarmService } from "./TownSiegeAlarmService";
 import { NpcManager } from "../npc/NpcManager";
@@ -55,8 +56,9 @@ export interface WorldServices {
   seed: number;
   shardId: string;
 
-  // Event bus (future use)
+  // Event bus
   events: WorldEventBus;
+  eventJournal: WorldEventJournalService;
 
   // Short-lived world state
   townSiege: TownSiegeService;
@@ -143,6 +145,7 @@ export async function createWorldServices(
 
   // Event bus (kept minimal for now)
   const events = new WorldEventBus();
+  const eventJournal = new WorldEventJournalService(events);
   const townSiege = new TownSiegeService(events);
 
   // Core managers
@@ -390,6 +393,7 @@ export async function createWorldServices(
     seed,
     shardId,
     events,
+    eventJournal,
     townSiege,
     townSiegeAlarm,
     sessions,
