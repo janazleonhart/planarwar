@@ -33,7 +33,7 @@ import {
   gainSongSchoolSkill,
 } from "../skills/SkillProgression";
 import type { SongSchoolId } from "../skills/SkillProgression";
-import { applyStatusEffect, applyStatusEffectToEntity, wouldCcDiminishingReturnsBlockForEntity, clearStatusEffectsByTags,
+import { applyStatusEffect, applyStatusEffectToEntity, wouldCcDiminishingReturnsBlockForEntity, wouldCcDiminishingReturnsBlock, clearStatusEffectsByTags,
   clearStatusEffectsByTagsEx, clearEntityStatusEffectsByTags,
   clearEntityStatusEffectsByTagsEx, getActiveStatusEffects } from "../combat/StatusEffects";
 import { applyActionCostAndCooldownGates } from "../combat/CastingGates";
@@ -1033,6 +1033,13 @@ applyStatusEffect(char, {
 
 
 
+      const now = Number((ctx as any).nowMs ?? Date.now());
+
+      // CC DR immunity stage should deny BEFORE cost/cooldown gates.
+      if (wouldCcDiminishingReturnsBlock(res.char as any, (seRes.se as any).tags ?? [], now)) {
+        return `[world] [spell:${spell.name}] Target is immune.`;
+      }
+
       const gateErr = applyGates();
 
 
@@ -1044,7 +1051,8 @@ applyStatusEffect(char, {
 
       const tickIntervalMs = Math.max(1, Math.floor(Number(hot.tickIntervalMs ?? 2000)));
       const perTickHeal = Math.max(1, Math.floor(Number(hot.perTickHeal ?? 1)));
-applyStatusEffect(res.char, {
+
+      const applied = applyStatusEffect(res.char as any, {
         id: seRes.se.id,
         sourceKind: spell.isSong ? "song" : "spell",
         sourceId: spell.id,
@@ -1059,7 +1067,11 @@ applyStatusEffect(res.char, {
         modifiers: seRes.se.modifiers ?? {},
         tags: seRes.se.tags,
         hot: { tickIntervalMs, perTickHeal },
-      });
+      }, now);
+
+      if ((applied as any)?.wasApplied === false) {
+        return `[world] [spell:${spell.name}] Target is immune.`;
+      }
 
       applySchoolGains();
       return `[world] [spell:${spell.name}] You weave regeneration onto ${res.displayName}.`;
@@ -1116,6 +1128,13 @@ applyStatusEffect(char, {
 
 
 
+      const now = Number((ctx as any).nowMs ?? Date.now());
+
+      // CC DR immunity stage should deny BEFORE cost/cooldown gates.
+      if (wouldCcDiminishingReturnsBlock(res.char as any, (seRes.se as any).tags ?? [], now)) {
+        return `[world] [spell:${spell.name}] Target is immune.`;
+      }
+
       const gateErr = applyGates();
 
 
@@ -1127,7 +1146,8 @@ applyStatusEffect(char, {
 
       const amount = Math.max(0, Math.floor(Number(absorb.amount ?? 0)));
       if (amount <= 0) return `[world] [spell:${spell.name}] That shield has no strength.`;
-applyStatusEffect(res.char, {
+
+      const applied = applyStatusEffect(res.char as any, {
         id: seRes.se.id,
         sourceKind: spell.isSong ? "song" : "spell",
         sourceId: spell.id,
@@ -1142,7 +1162,11 @@ applyStatusEffect(res.char, {
         modifiers: seRes.se.modifiers ?? {},
         tags: seRes.se.tags,
         absorb: { amount, schools: Array.isArray(absorb.schools) ? absorb.schools : undefined },
-      });
+      }, now);
+
+      if ((applied as any)?.wasApplied === false) {
+        return `[world] [spell:${spell.name}] Target is immune.`;
+      }
 
       applySchoolGains();
       return `[world] [spell:${spell.name}] A ward settles over ${res.displayName}.`;
@@ -1320,11 +1344,20 @@ applyStatusEffect(char, {
 
 
 
+      const now = Number((ctx as any).nowMs ?? Date.now());
+
+      // CC DR immunity stage should deny BEFORE cost/cooldown gates.
+      if (wouldCcDiminishingReturnsBlock(res.char as any, (seRes.se as any).tags ?? [], now)) {
+        return `[world] [spell:${spell.name}] Target is immune.`;
+      }
+
+
       const gateErr = applyGates();
 
 
       if (gateErr) return gateErr;
-applyStatusEffect(res.char, {
+
+      const applied = applyStatusEffect(res.char as any, {
         id: seRes.se.id,
         sourceKind: spell.isSong ? "song" : "spell",
         sourceId: spell.id,
@@ -1337,7 +1370,11 @@ applyStatusEffect(res.char, {
         stacks: seRes.se.stacks ?? 1,
         modifiers: seRes.se.modifiers,
         tags: seRes.se.tags,
-      });
+      }, now);
+
+      if ((applied as any)?.wasApplied === false) {
+        return `[world] [spell:${spell.name}] Target is immune.`;
+      }
 
       if (spell.isSong && spell.songSchool) {
         gainSongSchoolSkill(char, spell.songSchool, 1);
