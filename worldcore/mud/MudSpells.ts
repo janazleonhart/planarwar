@@ -33,7 +33,7 @@ import {
   gainSongSchoolSkill,
 } from "../skills/SkillProgression";
 import type { SongSchoolId } from "../skills/SkillProgression";
-import { applyStatusEffect, applyStatusEffectToEntity, clearStatusEffectsByTags,
+import { applyStatusEffect, applyStatusEffectToEntity, wouldCcDiminishingReturnsBlockForEntity, clearStatusEffectsByTags,
   clearStatusEffectsByTagsEx, clearEntityStatusEffectsByTags,
   clearEntityStatusEffectsByTagsEx, getActiveStatusEffects } from "../combat/StatusEffects";
 import { applyActionCostAndCooldownGates } from "../combat/CastingGates";
@@ -1380,16 +1380,21 @@ applyStatusEffect(res.char, {
         // Best-effort: never let policy lookup crash spell casting.
       }
 
-      const gateErr = applyGates();
-
-
-      if (gateErr) return gateErr;
-const se = spell.statusEffect;
+      const se = spell.statusEffect;
       if (!se) {
         return `[world] [spell:${spell.name}] That spell has no status effect definition.`;
       }
 
-      const now = Date.now();
+      const now = Number((ctx as any).nowMs ?? Date.now());
+
+      // CC DR immunity stage should deny BEFORE cost/cooldown gates.
+      if (wouldCcDiminishingReturnsBlockForEntity(npc as any, se.tags ?? [], now)) {
+        return `[world] [spell:${spell.name}] Target is immune.`;
+      }
+
+      const gateErr = applyGates();
+      if (gateErr) return gateErr;
+
 
       if (spell.kind === "debuff_single_npc") {
         // Apply a pure modifier-only effect to the NPC.

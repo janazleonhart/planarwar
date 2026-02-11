@@ -36,6 +36,7 @@ import { canDamage } from "../combat/DamagePolicy";
 import {
   applyStatusEffect,
   applyStatusEffectToEntity,
+  wouldCcDiminishingReturnsBlockForEntity,
   tickEntityStatusEffectsAndApplyDots,
   clearStatusEffectsByTags,
   getActiveStatusEffects,
@@ -483,16 +484,26 @@ case "damage_dot_single_npc": {
     // Best-effort: never let policy lookup crash ability usage.
   }
 
+  // Extract status effect definition early so immunity checks can be side-effect free.
+  const statusDef: any = (ability as any).statusEffect;
+
+  if (!statusDef || typeof statusDef !== "object") {
+    return `[world] '${(ability as any).name}' has no statusEffect definition.`;
+  }
+
+  // CC DR immunity stage must deny BEFORE cost/cooldown gates.
+  const statusTags: string[] = Array.isArray(statusDef.tags) ? statusDef.tags : [];
+  if (wouldCcDiminishingReturnsBlockForEntity(npc as any, statusTags, now)) {
+    return `[world] Target is immune.`;
+  }
+
   // Cost/cooldown gates (must remain side-effect safe on denial).
   const resourceType =
     (ability as any).resourceType ?? getPrimaryPowerResourceForClass((char as any).classId);
   const resourceCost = (ability as any).resourceCost ?? 0;
 
   const ccErr = denyAbilityUseByCrowdControl(char, ability as any, now);
-
-
   if (ccErr) return ccErr;
-
 
   const gateErr = applyActionCostAndCooldownGates({
     char: char as any,
@@ -502,17 +513,13 @@ case "damage_dot_single_npc": {
     cooldownMs: (ability as any).cooldownMs ?? 0,
     resourceType: resourceType as any,
     resourceCost,
+    now,
   });
   if (gateErr) return gateErr;
 
   // Ensure status spines exist.
   ensureStatusEffectsSpine(char);
 
-  const statusDef: any = (ability as any).statusEffect;
-
-  if (!statusDef || typeof statusDef !== "object") {
-    return `[world] '${(ability as any).name}' has no statusEffect definition.`;
-  }
 
   // Build StatusEffects input.
   // NOTE: We intentionally apply to ENTITY so NPCs can hold debuffs/DOTs.

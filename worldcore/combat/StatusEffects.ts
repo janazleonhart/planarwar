@@ -466,6 +466,100 @@ export function applyStatusEffectToEntity(
 }
 
 /**
+ * CC diminishing returns precheck for denial paths.
+ *
+ * Purpose: allow callers (MudSpells/MudAbilities) to short-circuit BEFORE spending
+ * resources or starting cooldowns when the DR stage has reached an immunity (mult=0).
+ *
+ * IMPORTANT: this ONLY records/extends the DR window when the target is already immune.
+ * For non-immune applications, the DR window/stage is recorded by applyStatusEffect*().
+ */
+export function wouldCcDiminishingReturnsBlockForEntity(
+  entity: Entity,
+  tags: string[] | undefined | null,
+  now: number = Date.now(),
+): boolean {
+  return wouldCcDiminishingReturnsBlockInternal(ensureEntityStatusState(entity), tags, now);
+}
+
+export function wouldCcDiminishingReturnsBlock(
+  char: CharacterState,
+  tags: string[] | undefined | null,
+  now: number = Date.now(),
+): boolean {
+  return wouldCcDiminishingReturnsBlockInternal(ensureStatusState(char), tags, now);
+}
+
+function wouldCcDiminishingReturnsBlockInternal(
+  state: InternalStatusState,
+  tags: string[] | undefined | null,
+  now: number,
+): boolean {
+  const inputTags = Array.isArray(tags) ? tags.map((t) => String(t).toLowerCase()) : [];
+  if (inputTags.length === 0) return false;
+
+  try {
+    const enabledRaw = process.env.PW_CC_DR_ENABLED;
+    const enabled = enabledRaw == null ? true : String(enabledRaw).toLowerCase() !== "false";
+    if (!enabled) return false;
+
+    const windowMs = Math.max(0, Math.floor(Number(process.env.PW_CC_DR_WINDOW_MS ?? 18000)));
+    const tagList = String(process.env.PW_CC_DR_TAGS ?? "stun,mez,sleep,fear,root,knockdown,incapacitate")
+      .split(",")
+      .map((s) => s.trim().toLowerCase())
+      .filter(Boolean);
+
+    const bucketMap: Record<string, string> = {};
+    try {
+      const raw = process.env.PW_CC_DR_BUCKETS;
+      if (raw) {
+        for (const part of String(raw).split(";")) {
+          const p = part.trim();
+          if (!p) continue;
+          const [bucket, tagsRaw] = p.split("=").map((x) => (x ?? "").trim());
+          if (!bucket || !tagsRaw) continue;
+          for (const t of tagsRaw.split(",").map((x) => x.trim().toLowerCase()).filter(Boolean)) {
+            bucketMap[t] = bucket.toLowerCase();
+          }
+        }
+      }
+    } catch {
+      // ignore
+    }
+
+    const matchTag = tagList.find((t) => inputTags.includes(t));
+    if (!matchTag) return false;
+
+    const bucketKey = bucketMap[matchTag] ?? matchTag;
+
+    const mults = String(process.env.PW_CC_DR_MULTS ?? "1,0.5,0.25")
+      .split(",")
+      .map((s) => Number(s.trim()))
+      .filter((n) => Number.isFinite(n) && n >= 0);
+    const stages = mults.length > 0 ? mults : [1, 0.5, 0.25];
+
+    const meta: any = (state as any).meta ?? ((state as any).meta = {});
+    const key = "_pwCcDr";
+    const dr: Record<string, { stage: number; untilMs: number }> = meta[key] ?? (meta[key] = {});
+
+    const prev = dr[bucketKey];
+    const expired = !prev || !(typeof prev.untilMs === "number") || prev.untilMs <= now;
+    const stagePrev = expired ? 0 : Math.max(0, Math.floor(Number(prev.stage ?? 0)));
+
+    const mult = stages[Math.min(stagePrev, stages.length - 1)] ?? stages[0];
+    if (mult > 0) return false;
+
+    // Immune stage: record/extend the window so repeated immune attempts keep the
+    // DR window "hot" (prevents spam from instantly resetting).
+    const stageNext = Math.min(stages.length - 1, stagePrev + 1);
+    dr[bucketKey] = { stage: stageNext, untilMs: now + windowMs };
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Internal apply logic (supports legacy + policy-based stacking).
  */
 function applyStatusEffectInternal(
