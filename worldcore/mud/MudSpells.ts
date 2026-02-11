@@ -74,9 +74,21 @@ function denySpellcastingByCrowdControl(char: CharacterState, spell: SpellDefini
     // "stun" is a hard stop for basically everything.
     if (hasTag("stun")) return "You are stunned.";
 
+    // "sleep" is a hard stop for basically everything.
+    if (hasTag("sleep")) return "You are asleep.";
+
+    // "knockdown" acts like a hard stop for spellcasting.
+    if (hasTag("knockdown")) return "You are knocked down.";
+
+    // "incapacitate" blocks spellcasting.
+    if (hasTag("incapacitate")) return "You are incapacitated.";
+
     // "silence" blocks spell/song casting.
     // (We intentionally do NOT block physical melee verbs here.)
     if (hasTag("silence")) return "You are silenced.";
+
+    // "fear" blocks hostile spellcasting but allows self/ally support.
+    if (hasTag("fear") && isHostileSpellKindForMez(spell)) return "You are feared.";
 
     // "mez" blocks hostile actions but still allows self/ally support.
     if (hasTag("mez") && isHostileSpellKindForMez(spell)) return "You are mesmerized.";

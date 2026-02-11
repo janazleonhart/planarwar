@@ -85,6 +85,18 @@ function denyAbilityUseByCrowdControl(char: CharacterState, ability: AbilityDefi
 
     if (hasTag("stun")) return "You are stunned.";
 
+    // Sleep is a hard stop for basically everything.
+    if (hasTag("sleep")) return "You are asleep.";
+
+    // Knockdown is a hard stop for ability usage.
+    if (hasTag("knockdown")) return "You are knocked down.";
+
+    // Incapacitate blocks hostile actions but still allows self/utility.
+    if (hasTag("incapacitate") && isHostileAbilityForMez(ability)) return "You are incapacitated.";
+
+    // Fear blocks hostile actions but still allows self/utility.
+    if (hasTag("fear") && isHostileAbilityForMez(ability)) return "You are feared.";
+
     // Mez blocks hostile actions but still allows self/utility.
     if (hasTag("mez") && isHostileAbilityForMez(ability)) return "You are mesmerized.";
   } catch {

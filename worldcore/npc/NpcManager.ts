@@ -566,10 +566,11 @@ export class NpcManager {
     e.hp = newHp;
     e.alive = newHp > 0;
 
-    // Mez v0.2: any damage breaks mesmerize on NPCs.
+    // CC v0.3: any damage breaks "breakable" mind-control style CC on NPCs.
+    // Mez/Sleep/Incapacitate are intentionally fragile (EverQuest vibes).
     try {
       if (amount > 0 && wasAlive && newHp > 0) {
-        clearEntityStatusEffectsByTags(e as any, ["mez"], Number.MAX_SAFE_INTEGER, Date.now());
+        clearEntityStatusEffectsByTags(e as any, ["mez", "sleep", "incapacitate"], Number.MAX_SAFE_INTEGER, Date.now());
       }
     } catch {
       // ignore
