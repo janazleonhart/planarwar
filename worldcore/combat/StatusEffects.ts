@@ -465,6 +465,63 @@ function applyStatusEffectInternal(
   input: NewStatusEffectInput,
   now: number,
 ): StatusEffectInstance {
+  // ────────────────────────────────────────────────────────────────────────────
+  // CC diminishing returns (v0): repeated CC applications within a window shorten
+  // duration deterministically.
+  //
+  // Design goals:
+  // - Purely server-side (no schema churn); stored in state.meta.
+  // - Deterministic in tests: caller controls `now`.
+  // - Safe default: only affects finite-duration effects (>0 durationMs).
+  //
+  // Env knobs:
+  // - PW_CC_DR_ENABLED (default true)
+  // - PW_CC_DR_WINDOW_MS (default 18000)
+  // - PW_CC_DR_TAGS (default "stun,mez,sleep,fear,root,knockdown,incapacitate")
+  // - PW_CC_DR_MULTS (default "1,0.5,0.25")
+  //
+  // NOTE: v0 does NOT implement full immunity stage; it floors at the last mult.
+  const inputTags = Array.isArray(input.tags) ? input.tags.map((t) => String(t).toLowerCase()) : [];
+  let durationMs = Number(input.durationMs ?? 0);
+  try {
+    const enabledRaw = process.env.PW_CC_DR_ENABLED;
+    const enabled = enabledRaw == null ? true : String(enabledRaw).toLowerCase() !== "false";
+
+    if (enabled && durationMs > 0 && inputTags.length > 0) {
+      const windowMs = Math.max(0, Math.floor(Number(process.env.PW_CC_DR_WINDOW_MS ?? 18000)));
+      const tagList = String(process.env.PW_CC_DR_TAGS ?? "stun,mez,sleep,fear,root,knockdown,incapacitate")
+        .split(",")
+        .map((s) => s.trim().toLowerCase())
+        .filter(Boolean);
+
+      const matchTag = tagList.find((t) => inputTags.includes(t));
+      if (matchTag) {
+        const mults = String(process.env.PW_CC_DR_MULTS ?? "1,0.5,0.25")
+          .split(",")
+          .map((s) => Number(s.trim()))
+          .filter((n) => Number.isFinite(n) && n > 0);
+        const stages = mults.length > 0 ? mults : [1, 0.5, 0.25];
+
+        const meta: any = (state as any).meta ?? ((state as any).meta = {});
+        const key = "_pwCcDr";
+        const dr: Record<string, { stage: number; untilMs: number }> = meta[key] ?? (meta[key] = {});
+
+        const prev = dr[matchTag];
+        const expired = !prev || !(typeof prev.untilMs === "number") || prev.untilMs <= now;
+        const stagePrev = expired ? 0 : Math.max(0, Math.floor(Number(prev.stage ?? 0)));
+        const mult = stages[Math.min(stagePrev, stages.length - 1)] ?? stages[0];
+        const stageNext = Math.min(stages.length - 1, stagePrev + 1);
+
+        // Apply multiplier and clamp to a small minimum to avoid 0/negative durations.
+        durationMs = Math.max(250, Math.floor(durationMs * mult));
+
+        dr[matchTag] = { stage: stageNext, untilMs: now + windowMs };
+      }
+    }
+  } catch {
+    // fail open
+  }
+
   const sourceKind: StatusEffectSourceKind = input.sourceKind ?? "environment";
   const sourceId = input.sourceId ?? "unknown";
 
@@ -474,7 +531,7 @@ function applyStatusEffectInternal(
 
   const policy = resolvePolicy(input);
 
-  const expiresAtMs = resolveExpiresAt(now, input.durationMs);
+  const expiresAtMs = resolveExpiresAt(now, durationMs);
   const existingBucket = state.active[bucketKey];
   const existingList = normalizeBucket(existingBucket);
 
