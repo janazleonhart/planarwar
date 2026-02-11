@@ -11,7 +11,7 @@
 // - AbilityDefinition.id/name are treated as aliases for lookups.
 
 import type { MudContext } from "./MudContext";
-import { formatTargetImmuneLine } from "./MudLines";
+import { formatBlockedReasonLine } from "./MudBlockReasons";
 import type { CharacterState } from "../characters/CharacterTypes";
 
 import { Logger } from "../utils/logger";
@@ -495,7 +495,7 @@ case "damage_dot_single_npc": {
   // CC DR immunity stage must deny BEFORE cost/cooldown gates.
   const statusTags: string[] = Array.isArray(statusDef.tags) ? statusDef.tags : [];
   if (wouldCcDiminishingReturnsBlockForEntity(npc as any, statusTags, now)) {
-    return formatTargetImmuneLine();
+    return formatBlockedReasonLine({ reason: "cc_dr_immune", kind: "ability" });
   }
 
   // Cost/cooldown gates (must remain side-effect safe on denial).
@@ -555,7 +555,7 @@ case "damage_dot_single_npc": {
       (selfEntity as any).inCombat = true;
       (npc as any).inCombat = true;
     } catch {}
-    return formatTargetImmuneLine();
+    return formatBlockedReasonLine({ reason: (applied as any)?.blockedReason, kind: "ability" });
   }
 
   // Optional immediate tick for deterministic test harnesses.

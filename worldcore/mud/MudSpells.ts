@@ -1,7 +1,7 @@
 // worldcore/mud/MudSpells.ts
 
 import type { MudContext } from "./MudContext";
-import { formatTargetImmuneLine } from "./MudLines";
+import { formatBlockedReasonLine } from "./MudBlockReasons";
 import type { CharacterState, SpellbookState } from "../characters/CharacterTypes";
 
 import { Logger } from "../utils/logger";
@@ -1038,7 +1038,7 @@ applyStatusEffect(char, {
 
       // CC DR immunity stage should deny BEFORE cost/cooldown gates.
       if (wouldCcDiminishingReturnsBlock(res.char as any, (seRes.se as any).tags ?? [], now)) {
-        return formatTargetImmuneLine({ kind: "spell", name: spell.name });
+        return formatBlockedReasonLine({ reason: "cc_dr_immune", kind: "spell", name: spell.name });
       }
 
       const gateErr = applyGates();
@@ -1071,7 +1071,7 @@ applyStatusEffect(char, {
       }, now);
 
       if ((applied as any)?.wasApplied === false) {
-        return formatTargetImmuneLine({ kind: "spell", name: spell.name });
+        return formatBlockedReasonLine({ reason: (applied as any)?.blockedReason, kind: "spell", name: spell.name });
       }
 
       applySchoolGains();
@@ -1133,7 +1133,7 @@ applyStatusEffect(char, {
 
       // CC DR immunity stage should deny BEFORE cost/cooldown gates.
       if (wouldCcDiminishingReturnsBlock(res.char as any, (seRes.se as any).tags ?? [], now)) {
-        return formatTargetImmuneLine({ kind: "spell", name: spell.name });
+        return formatBlockedReasonLine({ reason: "cc_dr_immune", kind: "spell", name: spell.name });
       }
 
       const gateErr = applyGates();
@@ -1166,7 +1166,7 @@ applyStatusEffect(char, {
       }, now);
 
       if ((applied as any)?.wasApplied === false) {
-        return formatTargetImmuneLine({ kind: "spell", name: spell.name });
+        return formatBlockedReasonLine({ reason: (applied as any)?.blockedReason, kind: "spell", name: spell.name });
       }
 
       applySchoolGains();
@@ -1349,7 +1349,7 @@ applyStatusEffect(char, {
 
       // CC DR immunity stage should deny BEFORE cost/cooldown gates.
       if (wouldCcDiminishingReturnsBlock(res.char as any, (seRes.se as any).tags ?? [], now)) {
-        return formatTargetImmuneLine({ kind: "spell", name: spell.name });
+        return formatBlockedReasonLine({ reason: "cc_dr_immune", kind: "spell", name: spell.name });
       }
 
 
@@ -1374,7 +1374,7 @@ applyStatusEffect(char, {
       }, now);
 
       if ((applied as any)?.wasApplied === false) {
-        return formatTargetImmuneLine({ kind: "spell", name: spell.name });
+        return formatBlockedReasonLine({ reason: (applied as any)?.blockedReason, kind: "spell", name: spell.name });
       }
 
       if (spell.isSong && spell.songSchool) {
@@ -1427,7 +1427,7 @@ applyStatusEffect(char, {
 
       // CC DR immunity stage should deny BEFORE cost/cooldown gates.
       if (wouldCcDiminishingReturnsBlockForEntity(npc as any, se.tags ?? [], now)) {
-        return formatTargetImmuneLine({ kind: "spell", name: spell.name });
+        return formatBlockedReasonLine({ reason: "cc_dr_immune", kind: "spell", name: spell.name });
       }
 
       const gateErr = applyGates();
@@ -1455,7 +1455,7 @@ applyStatusEffect(char, {
           markInCombat(selfEntity);
           markInCombat(npc as any);
           applySchoolGains();
-          return formatTargetImmuneLine({ kind: "spell", name: spell.name });
+          return formatBlockedReasonLine({ reason: (applied as any)?.blockedReason, kind: "spell", name: spell.name });
         }
 
         markInCombat(selfEntity);
@@ -1520,7 +1520,7 @@ applyStatusEffect(char, {
         markInCombat(selfEntity);
         markInCombat(npc as any);
         applySchoolGains();
-        return formatTargetImmuneLine({ kind: "spell", name: spell.name });
+        return formatBlockedReasonLine({ reason: "cc_dr_immune", kind: "spell", name: spell.name });
       }
 
       markInCombat(selfEntity);
