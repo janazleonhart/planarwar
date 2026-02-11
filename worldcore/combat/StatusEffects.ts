@@ -490,33 +490,55 @@ function applyStatusEffectInternal(
     if (enabled && durationMs > 0 && inputTags.length > 0) {
       const windowMs = Math.max(0, Math.floor(Number(process.env.PW_CC_DR_WINDOW_MS ?? 18000)));
       const tagList = String(process.env.PW_CC_DR_TAGS ?? "stun,mez,sleep,fear,root,knockdown,incapacitate")
-        .split(",")
-        .map((s) => s.trim().toLowerCase())
-        .filter(Boolean);
+  .split(",")
+  .map((s) => s.trim().toLowerCase())
+  .filter(Boolean);
 
-      const matchTag = tagList.find((t) => inputTags.includes(t));
-      if (matchTag) {
-        const mults = String(process.env.PW_CC_DR_MULTS ?? "1,0.5,0.25")
-          .split(",")
-          .map((s) => Number(s.trim()))
-          .filter((n) => Number.isFinite(n) && n > 0);
-        const stages = mults.length > 0 ? mults : [1, 0.5, 0.25];
-
-        const meta: any = (state as any).meta ?? ((state as any).meta = {});
-        const key = "_pwCcDr";
-        const dr: Record<string, { stage: number; untilMs: number }> = meta[key] ?? (meta[key] = {});
-
-        const prev = dr[matchTag];
-        const expired = !prev || !(typeof prev.untilMs === "number") || prev.untilMs <= now;
-        const stagePrev = expired ? 0 : Math.max(0, Math.floor(Number(prev.stage ?? 0)));
-        const mult = stages[Math.min(stagePrev, stages.length - 1)] ?? stages[0];
-        const stageNext = Math.min(stages.length - 1, stagePrev + 1);
-
-        // Apply multiplier and clamp to a small minimum to avoid 0/negative durations.
-        durationMs = Math.max(250, Math.floor(durationMs * mult));
-
-        dr[matchTag] = { stage: stageNext, untilMs: now + windowMs };
+// Optional: shared DR buckets so multiple CC tags share the same stage window.
+// Format: "bucketA=mez,sleep;bucketB=stun,knockdown" (semicolon-separated buckets).
+const bucketMap: Record<string, string> = {};
+try {
+  const raw = process.env.PW_CC_DR_BUCKETS;
+  if (raw) {
+    for (const part of String(raw).split(";")) {
+      const p = part.trim();
+      if (!p) continue;
+      const [bucket, tags] = p.split("=").map((x) => (x ?? "").trim());
+      if (!bucket || !tags) continue;
+      for (const t of tags.split(",").map((x) => x.trim().toLowerCase()).filter(Boolean)) {
+        bucketMap[t] = bucket.toLowerCase();
       }
+    }
+  }
+} catch {
+  // ignore
+}
+
+const matchTag = tagList.find((t) => inputTags.includes(t));
+if (matchTag) {
+  const bucketKey = bucketMap[matchTag] ?? matchTag;
+
+  const mults = String(process.env.PW_CC_DR_MULTS ?? "1,0.5,0.25")
+    .split(",")
+    .map((s) => Number(s.trim()))
+    .filter((n) => Number.isFinite(n) && n > 0);
+  const stages = mults.length > 0 ? mults : [1, 0.5, 0.25];
+
+  const meta: any = (state as any).meta ?? ((state as any).meta = {});
+  const key = "_pwCcDr";
+  const dr: Record<string, { stage: number; untilMs: number }> = meta[key] ?? (meta[key] = {});
+
+  const prev = dr[bucketKey];
+  const expired = !prev || !(typeof prev.untilMs === "number") || prev.untilMs <= now;
+  const stagePrev = expired ? 0 : Math.max(0, Math.floor(Number(prev.stage ?? 0)));
+  const mult = stages[Math.min(stagePrev, stages.length - 1)] ?? stages[0];
+  const stageNext = Math.min(stages.length - 1, stagePrev + 1);
+
+  // Apply multiplier and clamp to a small minimum to avoid 0/negative durations.
+  durationMs = Math.max(250, Math.floor(durationMs * mult));
+
+  dr[bucketKey] = { stage: stageNext, untilMs: now + windowMs };
+}
     }
   } catch {
     // fail open
