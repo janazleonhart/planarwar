@@ -55,7 +55,7 @@ import {
 import { recordNpcCrimeAgainst, isProtectedNpc } from "./NpcCrime";
 import { isServiceProtectedNpcProto } from "../combat/ServiceProtection";
 import { isValidCombatTarget } from "../combat/CombatTargeting";
-import { clearAllStatusEffectsFromEntity, getActiveStatusEffectsForEntity } from "../combat/StatusEffects";
+import { clearAllStatusEffectsFromEntity, getActiveStatusEffectsForEntity, clearEntityStatusEffectsByTags } from "../combat/StatusEffects";
 import { handleNpcDeath } from "../combat/NpcDeathPipeline";
 
 import {
@@ -565,6 +565,15 @@ export class NpcManager {
     st.alive = newHp > 0;
     e.hp = newHp;
     e.alive = newHp > 0;
+
+    // Mez v0.2: any damage breaks mesmerize on NPCs.
+    try {
+      if (amount > 0 && wasAlive && newHp > 0) {
+        clearEntityStatusEffectsByTags(e as any, ["mez"], Number.MAX_SAFE_INTEGER, Date.now());
+      }
+    } catch {
+      // ignore
+    }
 
     // Death implies all combat status effects should be cleared (DOTs, debuffs, etc.)
     // so corpses don't keep ticking or carry modifiers into any respawn path.

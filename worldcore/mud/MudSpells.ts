@@ -49,6 +49,22 @@ function ensureStatusEffectsSpineForCombat(char: CharacterState): void {
 }
 
 
+
+function isHostileSpellKindForMez(spell: SpellDefinition): boolean {
+  const kind = String((spell as any)?.kind ?? "").toLowerCase();
+  if (!kind) return false;
+
+  // Friendly/support kinds should still be castable while mezzed.
+  if (kind.includes("self") || kind.includes("_ally") || kind.includes("cleanse") || kind.includes("heal") || kind.includes("buff") || kind.includes("summon") || kind.includes("resurrect")) {
+    return false;
+  }
+
+  // Most hostile spells target NPCs or apply harmful effects.
+  if (kind.includes("_npc")) return true;
+  if (kind.includes("damage") || kind.includes("dot") || kind.includes("debuff") || kind.includes("dispel")) return true;
+
+  return false;
+}
 function denySpellcastingByCrowdControl(char: CharacterState, spell: SpellDefinition, nowMs: number): string | null {
   try {
     const active = getActiveStatusEffects(char as any, nowMs);
@@ -61,6 +77,9 @@ function denySpellcastingByCrowdControl(char: CharacterState, spell: SpellDefini
     // "silence" blocks spell/song casting.
     // (We intentionally do NOT block physical melee verbs here.)
     if (hasTag("silence")) return "You are silenced.";
+
+    // "mez" blocks hostile actions but still allows self/ally support.
+    if (hasTag("mez") && isHostileSpellKindForMez(spell)) return "You are mesmerized.";
   } catch {
     // fail-open: if status spine is missing, don't crash casting
   }

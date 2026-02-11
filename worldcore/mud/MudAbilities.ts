@@ -68,11 +68,25 @@ function ensureStatusEffectsSpine(char: CharacterState): void {
   }
 }
 
-function denyAbilityUseByCrowdControl(char: CharacterState, nowMs: number): string | null {
+function isHostileAbilityForMez(ability: AbilityDefinition): boolean {
+  const kind = String((ability as any)?.kind ?? "").toLowerCase();
+  if (!kind) return false;
+  if (kind.includes("self") || kind.includes("utility")) return false;
+  if (kind.includes("_npc")) return true;
+  if (kind.includes("melee") || kind.includes("damage") || kind.includes("debuff")) return true;
+  return false;
+}
+
+function denyAbilityUseByCrowdControl(char: CharacterState, ability: AbilityDefinition, nowMs: number): string | null {
   try {
     const active = getActiveStatusEffects(char as any, nowMs);
-    const stunned = active.some((e: any) => Array.isArray(e?.tags) && e.tags.map((t: any) => String(t).toLowerCase()).includes('stun'));
-    if (stunned) return 'You are stunned.';
+    const hasTag = (tag: string) =>
+      active.some((e: any) => Array.isArray(e?.tags) && e.tags.map((t: any) => String(t).toLowerCase()).includes(tag));
+
+    if (hasTag("stun")) return "You are stunned.";
+
+    // Mez blocks hostile actions but still allows self/utility.
+    if (hasTag("mez") && isHostileAbilityForMez(ability)) return "You are mesmerized.";
   } catch {
     // fail-open
   }
@@ -198,7 +212,7 @@ export async function handleAbilityCommand(
         }
 
         // Gate (cost/cd) after denial checks.
-        const ccErr = denyAbilityUseByCrowdControl(char, now);
+        const ccErr = denyAbilityUseByCrowdControl(char, ability as any, now);
 
         if (ccErr) return ccErr;
 
@@ -291,7 +305,7 @@ export async function handleAbilityCommand(
         return serviceProtectedCombatLine(npc.name);
       }
 
-      const ccErr = denyAbilityUseByCrowdControl(char, now);
+      const ccErr = denyAbilityUseByCrowdControl(char, ability as any, now);
 
 
       if (ccErr) return ccErr;
@@ -363,7 +377,7 @@ export async function handleAbilityCommand(
         (ability as any).resourceType ?? getPrimaryPowerResourceForClass((char as any).classId);
       const resourceCost = (ability as any).resourceCost ?? 0;
 
-      const ccErr = denyAbilityUseByCrowdControl(char, now);
+      const ccErr = denyAbilityUseByCrowdControl(char, ability as any, now);
 
 
       if (ccErr) return ccErr;
@@ -462,7 +476,7 @@ case "damage_dot_single_npc": {
     (ability as any).resourceType ?? getPrimaryPowerResourceForClass((char as any).classId);
   const resourceCost = (ability as any).resourceCost ?? 0;
 
-  const ccErr = denyAbilityUseByCrowdControl(char, now);
+  const ccErr = denyAbilityUseByCrowdControl(char, ability as any, now);
 
 
   if (ccErr) return ccErr;

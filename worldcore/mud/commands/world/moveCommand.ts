@@ -5,6 +5,7 @@ import { DIR_LABELS, parseMoveDir, tryMoveCharacter } from "../../../movement/Mo
 import type { CharacterState } from "../../../characters/CharacterTypes";
 import type { ServerWorldManager } from "../../../world/ServerWorldManager";
 import { isGMOrHigher } from "../../../shared/AuthTypes";
+import { getActiveStatusEffects } from "../../../combat/StatusEffects";
 import {
   isTownSanctuaryForRegionSync,
   isTravelLockdownOnSiegeForRegionSync,
@@ -44,6 +45,33 @@ function envInt(name: string, defaultValue: number): number {
   return Math.trunc(n);
 }
 
+
+function denyMovementByCrowdControl(char: CharacterState, nowMs: number): { denyMsg: string } | { denyMsg: null; snared: boolean } {
+  let active: any[] = [];
+  try {
+    active = getActiveStatusEffects(char as any, nowMs) as any[];
+  } catch {
+    active = [];
+  }
+
+  const hasTag = (tag: string) =>
+    active.some((e: any) => Array.isArray(e?.tags) && e.tags.some((t: any) => String(t).toLowerCase() === tag));
+
+  if (hasTag("stun")) return { denyMsg: "You are stunned." };
+  if (hasTag("root")) return { denyMsg: "You are rooted." };
+
+  const snared = hasTag("snare");
+  if (!snared) return { denyMsg: null, snared: false };
+
+  const cdMs = envInt("MUD_SNARE_MOVE_COOLDOWN_MS", 800);
+  const nextAt = Number((char as any).__pw_nextMoveAtMs ?? 0);
+  if (Number.isFinite(nextAt) && nextAt > 0 && nowMs < nextAt) {
+    return { denyMsg: "You are snared and cannot move yet." };
+  }
+
+  return { denyMsg: null, snared: true };
+}
+
 function getShardId(world: ServerWorldManager): string {
   const bp: any = (world as any).getWorldBlueprint?.() ?? {};
   return bp.shardId ?? bp.id ?? "prime_shard";
@@ -68,6 +96,7 @@ export async function handleMoveCommand(
   }
 
   const requestedSteps = parseStepsToken(input.args[1]) ?? 1;
+  const nowMs = Number((ctx as any).nowMs ?? Date.now());
   const steps = clampSteps(requestedSteps, 1, 256);
 
   // Staff-only: multi-step movement is a dev/GM tool.
@@ -78,6 +107,9 @@ export async function handleMoveCommand(
       return "You can only move 1 step at a time.";
     }
   }
+
+  const cc = denyMovementByCrowdControl(char, nowMs);
+  if ((cc as any).denyMsg) return (cc as any).denyMsg as string;
 
   // Optional travel lockdown: if the destination region is a town sanctuary that is
   // currently under siege, regions may choose to deny entry.
@@ -116,6 +148,18 @@ export async function handleMoveCommand(
 
   const res = await moveCharacterAndSync(ctx, char, dir, world, steps);
   if (!res.ok) return res.reason;
+
+  // Snare v0.2: impose a simple movement cooldown while snared.
+  // Stored on the in-memory CharacterState (best-effort; not persisted).
+  try {
+    if ((cc as any)?.snared === true) {
+      const cdMs = envInt("MUD_SNARE_MOVE_COOLDOWN_MS", 800);
+      (char as any).__pw_nextMoveAtMs = nowMs + Math.max(0, cdMs);
+    }
+  } catch {
+    // ignore
+  }
+
 
   // --- Region-crossing hooks (dev-safe) ---
   try {
