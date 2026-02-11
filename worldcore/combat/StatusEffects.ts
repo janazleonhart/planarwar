@@ -525,6 +525,10 @@ function getCcDrBucketMap(): Record<string, string> {
   if (preset === "classic") {
     // Classic-ish grouping: mez and sleep share, stuns share, roots share.
     parseInto("cc=mez,sleep;stunline=stun,knockdown;rootline=root,snare");
+  } else if (preset === "pvp") {
+    // PvP-ish grouping: most hard CC shares a single bucket (prevents CC chain lock).
+    // Roots/snares share a separate bucket.
+    parseInto("hardcc=mez,sleep,stun,knockdown,fear,incapacitate;rootline=root,snare");
   }
 
   return map;
