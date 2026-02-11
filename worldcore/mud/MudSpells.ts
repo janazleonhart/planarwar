@@ -35,8 +35,8 @@ import {
 } from "../skills/SkillProgression";
 import type { SongSchoolId } from "../skills/SkillProgression";
 import { applyStatusEffect, applyStatusEffectToEntity, wouldCcDiminishingReturnsBlockForEntity, wouldCcDiminishingReturnsBlock, clearStatusEffectsByTags,
-  clearStatusEffectsByTagsEx, clearEntityStatusEffectsByTags,
-  clearEntityStatusEffectsByTagsEx, getActiveStatusEffects } from "../combat/StatusEffects";
+  clearStatusEffectsByTagsEx, clearStatusEffectsByTagsExDetailed, clearEntityStatusEffectsByTags,
+  clearEntityStatusEffectsByTagsEx, clearEntityStatusEffectsByTagsExDetailed, getActiveStatusEffects } from "../combat/StatusEffects";
 import { applyActionCostAndCooldownGates } from "../combat/CastingGates";
 import { computeSongScalar } from "../songs/SongScaling";
 import { isCombatEnabledForRegion } from "../world/RegionFlags";
@@ -1181,7 +1181,7 @@ applyStatusEffect(char, {
       if (!cleanse || !Array.isArray(cleanse.tags) || cleanse.tags.length <= 0) {
         return `[world] [spell:${spell.name}] That spell has no cleanse definition.`;
       }
-      const removed = clearStatusEffectsByTagsEx(
+      const result = clearStatusEffectsByTagsExDetailed(
         char,
         cleanse.tags,
         { protectedTags: cleanse.protectedTags ?? ["no_cleanse", "unstrippable"], priorityTags: cleanse.priorityTags, requireTags: cleanse.requireTags, excludeTags: cleanse.excludeTags },
@@ -1190,10 +1190,15 @@ applyStatusEffect(char, {
       );
       applySchoolGains();
 
-      if (removed <= 0) {
-        return `[world] [spell:${spell.name}] Nothing clings to you.`;
+      if (result.removed <= 0) {
+        const reason = result.matched <= 0
+          ? "cleanse_none"
+          : (result.matched === result.blockedByProtected && result.blockedByRequire <= 0 && result.blockedByExclude <= 0)
+            ? "cleanse_protected"
+            : "cleanse_filtered";
+        return formatBlockedReasonLine({ reason, kind: "spell", name: spell.name, verb: "cleanse", targetIsSelf: true });
       }
-      return `[world] [spell:${spell.name}] You cleanse ${removed} effect(s).`;
+      return `[world] [spell:${spell.name}] You cleanse ${result.removed} effect(s).`;
     }
 
     case "cleanse_single_ally": {
@@ -1211,7 +1216,7 @@ applyStatusEffect(char, {
       if (!cleanse || !Array.isArray(cleanse.tags) || cleanse.tags.length <= 0) {
         return `[world] [spell:${spell.name}] That spell has no cleanse definition.`;
       }
-      const removed = clearStatusEffectsByTagsEx(
+      const result = clearStatusEffectsByTagsExDetailed(
         res.char,
         cleanse.tags,
         { protectedTags: cleanse.protectedTags ?? ["no_cleanse", "unstrippable"], priorityTags: cleanse.priorityTags, requireTags: cleanse.requireTags, excludeTags: cleanse.excludeTags },
@@ -1220,10 +1225,15 @@ applyStatusEffect(char, {
       );
       applySchoolGains();
 
-      if (removed <= 0) {
-        return `[world] [spell:${spell.name}] ${res.displayName} has nothing to cleanse.`;
+      if (result.removed <= 0) {
+        const reason = result.matched <= 0
+          ? "cleanse_none"
+          : (result.matched === result.blockedByProtected && result.blockedByRequire <= 0 && result.blockedByExclude <= 0)
+            ? "cleanse_protected"
+            : "cleanse_filtered";
+        return formatBlockedReasonLine({ reason, kind: "spell", name: spell.name, verb: "cleanse", targetDisplayName: res.displayName, targetIsSelf: false });
       }
-      return `[world] [spell:${spell.name}] You cleanse ${removed} effect(s) from ${res.displayName}.`;
+      return `[world] [spell:${spell.name}] You cleanse ${result.removed} effect(s) from ${res.displayName}.`;
     }
 
 
@@ -1254,7 +1264,7 @@ case "dispel_single_npc": {
     return `[world] [spell:${spell.name}] That spell has no dispel definition.`;
   }
 
-  const removed = clearEntityStatusEffectsByTagsEx(
+  const result = clearEntityStatusEffectsByTagsExDetailed(
     npc as any,
     dispel.tags,
     { protectedTags: dispel.protectedTags ?? ["no_dispel", "unstrippable"], priorityTags: dispel.priorityTags, requireTags: dispel.requireTags, excludeTags: dispel.excludeTags },
@@ -1263,10 +1273,15 @@ case "dispel_single_npc": {
   );
   applySchoolGains();
 
-  if (removed <= 0) {
-    return `[world] [spell:${spell.name}] Nothing to dispel.`;
+  if (result.removed <= 0) {
+    const reason = result.matched <= 0
+      ? "dispel_none"
+      : (result.matched === result.blockedByProtected && result.blockedByRequire <= 0 && result.blockedByExclude <= 0)
+        ? "dispel_protected"
+        : "dispel_filtered";
+    return formatBlockedReasonLine({ reason, kind: "spell", name: spell.name, verb: "dispel", targetDisplayName: npc.name });
   }
-  return `[world] [spell:${spell.name}] You dispel ${removed} effect(s) from ${npc.name}.`;
+  return `[world] [spell:${spell.name}] You dispel ${result.removed} effect(s) from ${npc.name}.`;
 }
 
 case "dispel_single_ally": {
@@ -1284,7 +1299,7 @@ case "dispel_single_ally": {
     return `[world] [spell:${spell.name}] That spell has no dispel definition.`;
   }
 
-  const removed = clearStatusEffectsByTagsEx(
+  const result = clearStatusEffectsByTagsExDetailed(
     res.char,
     dispel.tags,
     { protectedTags: dispel.protectedTags ?? ["no_dispel", "unstrippable"], priorityTags: dispel.priorityTags, requireTags: dispel.requireTags, excludeTags: dispel.excludeTags },
@@ -1293,10 +1308,15 @@ case "dispel_single_ally": {
   );
   applySchoolGains();
 
-  if (removed <= 0) {
-    return `[world] [spell:${spell.name}] ${res.displayName} has nothing to dispel.`;
+  if (result.removed <= 0) {
+    const reason = result.matched <= 0
+      ? "dispel_none"
+      : (result.matched === result.blockedByProtected && result.blockedByRequire <= 0 && result.blockedByExclude <= 0)
+        ? "dispel_protected"
+        : "dispel_filtered";
+    return formatBlockedReasonLine({ reason, kind: "spell", name: spell.name, verb: "dispel", targetDisplayName: res.displayName });
   }
-  return `[world] [spell:${spell.name}] You dispel ${removed} effect(s) from ${res.displayName}.`;
+  return `[world] [spell:${spell.name}] You dispel ${result.removed} effect(s) from ${res.displayName}.`;
 }
 
 

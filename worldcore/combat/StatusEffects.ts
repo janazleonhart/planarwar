@@ -1217,6 +1217,16 @@ export interface ClearStatusEffectsOptions {
   excludeTags?: string[];
 }
 
+
+export interface ClearStatusEffectsResult {
+  removed: number;
+  /** Number of effects whose tags intersected the requested tags (before filters). */
+  matched: number;
+  blockedByProtected: number;
+  blockedByRequire: number;
+  blockedByExclude: number;
+}
+
 /**
  * Remove active status effects whose tags match any of the provided tags.
  * Returns number removed.
@@ -1264,6 +1274,29 @@ export function clearEntityStatusEffectsByTagsEx(
 ): number {
   const state = ensureEntityStatusState(entity);
   return clearStatusEffectsByTagsInternal(state, tags, maxToRemove, now, options);
+}
+
+
+export function clearStatusEffectsByTagsExDetailed(
+  char: CharacterState,
+  tags: string[],
+  options?: ClearStatusEffectsOptions,
+  maxToRemove?: number,
+  now: number = Date.now(),
+): ClearStatusEffectsResult {
+  const state = ensureStatusState(char);
+  return clearStatusEffectsByTagsDetailedInternal(state, tags, maxToRemove, now, options);
+}
+
+export function clearEntityStatusEffectsByTagsExDetailed(
+  entity: Entity,
+  tags: string[],
+  options?: ClearStatusEffectsOptions,
+  maxToRemove?: number,
+  now: number = Date.now(),
+): ClearStatusEffectsResult {
+  const state = ensureEntityStatusState(entity);
+  return clearStatusEffectsByTagsDetailedInternal(state, tags, maxToRemove, now, options);
 }
 
 function clearStatusEffectsByTagsInternal(
@@ -1346,6 +1379,103 @@ function clearStatusEffectsByTagsInternal(
 
   return removed;
 }
+
+function clearStatusEffectsByTagsDetailedInternal(
+  state: InternalStatusState,
+  tags: string[],
+  maxToRemove?: number,
+  now: number = Date.now(),
+  options?: ClearStatusEffectsOptions,
+): ClearStatusEffectsResult {
+  tickStatusEffectsInternal(state, now);
+
+  const lim = typeof maxToRemove === "number" && maxToRemove > 0 ? Math.floor(maxToRemove) : Number.MAX_SAFE_INTEGER;
+
+  const protectedSet = new Set((options?.protectedTags ?? []).map((t) => String(t).toLowerCase()));
+  const requireAll = (options?.requireTags ?? []).map((t) => String(t).toLowerCase());
+  const excludeAny = new Set((options?.excludeTags ?? []).map((t) => String(t).toLowerCase()));
+
+  type Ref = { bucketKey: string; inst: StatusEffectInstance; priority: number };
+  const matches: Ref[] = [];
+
+  let matched = 0;
+  let blockedByProtected = 0;
+  let blockedByRequire = 0;
+  let blockedByExclude = 0;
+
+  for (const [bucketKey, bucket] of Object.entries(state.active)) {
+    for (const inst of normalizeBucket(bucket)) {
+      if (!inst) continue;
+      if (!tagsIntersect(inst.tags, tags)) continue;
+
+      matched++;
+
+      const instTags = (inst.tags ?? []).map((t) => String(t).toLowerCase());
+
+      if (instTags.some((t) => protectedSet.has(t))) {
+        blockedByProtected++;
+        continue;
+      }
+
+      if (requireAll.length > 0 && !requireAll.every((t) => instTags.includes(t))) {
+        blockedByRequire++;
+        continue;
+      }
+
+      if (excludeAny.size > 0 && instTags.some((t) => excludeAny.has(t))) {
+        blockedByExclude++;
+        continue;
+      }
+
+      let priority = 9999;
+      const prio = options?.priorityTags ?? [];
+      if (prio.length > 0) {
+        for (let i = 0; i < prio.length; i++) {
+          const pt = String(prio[i]).toLowerCase();
+          if (instTags.includes(pt)) {
+            priority = i;
+            break;
+          }
+        }
+      }
+
+      matches.push({ bucketKey, inst, priority });
+    }
+  }
+
+  matches.sort((a, b) => {
+    if (a.priority != b.priority) return a.priority - b.priority;
+    const ta = a.inst.appliedAtMs ?? 0;
+    const tb = b.inst.appliedAtMs ?? 0;
+    if (ta !== tb) return tb - ta;
+    const ida = a.inst.id ?? "";
+    const idb = b.inst.id ?? "";
+    return ida.localeCompare(idb);
+  });
+
+  const toRemove = new Set<StatusEffectInstance>();
+  for (const m of matches) {
+    if (toRemove.size >= lim) break;
+    toRemove.add(m.inst);
+  }
+
+  let removed = 0;
+  for (const [bucketKey, bucket] of Object.entries(state.active)) {
+    const items = normalizeBucket(bucket);
+    const kept = items.filter((inst) => {
+      if (toRemove.has(inst)) {
+        removed++;
+        return false;
+      }
+      return true;
+    });
+
+    writeBucket(state, bucketKey, kept);
+  }
+
+  return { removed, matched, blockedByProtected, blockedByRequire, blockedByExclude };
+}
+
 
 /**
  * Consume absorb shields on the character and return remaining damage.
