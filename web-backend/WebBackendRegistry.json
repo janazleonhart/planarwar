@@ -568,7 +568,7 @@
         "maybeRequireAdmin(req,res,next)"
       ],
       "service": "http.middleware"
-    },    
+    },
     "web-backend.routes.abilities": {
       "class": "(router)",
       "ctorArgs": [],
@@ -596,7 +596,11 @@
     "web-backend.routes.adminAbilities": {
       "class": null,
       "ctorArgs": [],
-      "dependsOn": ["npm:express", "npm:pg", "worldcore:db/Database"],
+      "dependsOn": [
+        "npm:express",
+        "npm:pg",
+        "worldcore:db/Database"
+      ],
       "kind": "module",
       "lifecycle": "singleton",
       "notes": [
@@ -605,13 +609,20 @@
       ],
       "owns": [],
       "path": "web-backend/routes/adminAbilities.ts",
-      "provides": ["GET /api/admin/abilities", "POST /api/admin/abilities"],
+      "provides": [
+        "GET /api/admin/abilities",
+        "POST /api/admin/abilities"
+      ],
       "service": "http.adminRoutes"
     },
     "web-backend.routes.adminAbilityUnlocks": {
       "class": null,
       "ctorArgs": [],
-      "dependsOn": ["npm:express", "npm:pg", "worldcore:db/Database"],
+      "dependsOn": [
+        "npm:express",
+        "npm:pg",
+        "worldcore:db/Database"
+      ],
       "kind": "module",
       "lifecycle": "singleton",
       "notes": [
@@ -620,7 +631,10 @@
       ],
       "owns": [],
       "path": "web-backend/routes/adminAbilityUnlocks.ts",
-      "provides": ["GET /api/admin/ability_unlocks", "POST /api/admin/ability_unlocks"],
+      "provides": [
+        "GET /api/admin/ability_unlocks",
+        "POST /api/admin/ability_unlocks"
+      ],
       "service": "http.adminRoutes"
     },
     "web-backend.routes.adminItems": {
@@ -756,9 +770,15 @@
     "web-backend.routes.adminSpells": {
       "path": "web-backend/routes/adminSpells.ts",
       "class": "(router) adminSpellsRouter",
-      "tags": ["web-backend", "admin", "spells", "editor"],
-      "notes": "Admin Spell Editor (v1) routes: list/search, get by id, upsert"
-    },    
+      "tags": [
+        "web-backend",
+        "admin",
+        "spells",
+        "editor"
+      ],
+      "notes": "Admin Spell Editor (v1) routes: list/search, get by id, upsert",
+      "kind": "module"
+    },
     "web-backend.routes.adminVendorAudit": {
       "class": null,
       "ctorArgs": [],
@@ -1140,6 +1160,6 @@
         "POST /api/workshop/collect"
       ],
       "service": "http.routes"
-    }    
+    }
   }
 }

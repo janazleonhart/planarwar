@@ -167,9 +167,13 @@
         "Admin UI shell/components for consistent styling across admin editors.",
         "Includes light theme + overrides for legacy inline dark styles."
       ],
-      "owns": ["admin UI styling primitives"],
+      "owns": [
+        "admin UI styling primitives"
+      ],
       "path": "web-frontend/components/admin/AdminUI.tsx",
-      "provides": ["AdminShell/AdminPanel/AdminTwoCol/AdminNotice/AdminListItem"],
+      "provides": [
+        "AdminShell/AdminPanel/AdminTwoCol/AdminNotice/AdminListItem"
+      ],
       "service": "ui.component"
     },
     "web-frontend.components.itemPicker": {
@@ -194,8 +198,14 @@
     "web-frontend.pages.AdminAbilitiesPage": {
       "path": "web-frontend/pages/AdminAbilitiesPage.tsx",
       "class": "(page) AdminAbilitiesPage",
-      "tags": ["web-frontend", "admin", "abilities", "editor"],
-      "notes": "Admin Abilities Editor UI (v1): ability catalog + unlock rules, list/search + edit + upsert."
+      "tags": [
+        "web-frontend",
+        "admin",
+        "abilities",
+        "editor"
+      ],
+      "notes": "Admin Abilities Editor UI (v1): ability catalog + unlock rules, list/search + edit + upsert.",
+      "kind": "ui"
     },
     "web-frontend.pages.adminHub": {
       "class": null,
@@ -398,7 +408,7 @@
         "/admin/vendor_economy"
       ],
       "service": "web.adminPages"
-    },    
+    },
     "web-frontend.pages.me": {
       "class": null,
       "ctorArgs": [],
@@ -508,6 +518,6 @@
         "Mode selector hub (launcher UI)"
       ],
       "service": "ui.modeHub"
-    }    
+    }
   }
 }

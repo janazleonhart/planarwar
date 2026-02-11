@@ -91,6 +91,18 @@ export interface AbilityDefinition {
   // Optional: cleanse/dispel payloads (for cleanse_self / dispel_single_npc)
   cleanse?: AbilityCleanseDef;
   dispel?: AbilityCleanseDef;
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // Rank system v0
+  //
+  // Like spells, an ability rank can be represented as a separate id.
+  // Mechanics are still code-defined, so higher ranks should typically be
+  // separate entries here when you start authoring them.
+  //
+  // The DB catalog can also carry these fields for UI/trainer flows.
+  rankGroupId?: string;
+  rank?: number;
+  learnRequiresTrainer?: boolean;
 }
 
 export const ABILITIES: Record<string, AbilityDefinition> = {

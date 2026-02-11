@@ -23,6 +23,11 @@ export type DbSpellRow = {
   is_song: boolean;
   song_school: string | null;
 
+  // Rank v0
+  rank_group_id?: string | null;
+  rank?: number | null;
+  learn_requires_trainer?: boolean | null;
+
   resource_type: string | null;
   resource_cost: number | null;
   cooldown_ms: number | null;
@@ -125,6 +130,9 @@ export async function loadSpellCatalogFromDb<SpellDefinition extends Record<stri
       school,
       is_song,
       song_school,
+      rank_group_id,
+      rank,
+      learn_requires_trainer,
       resource_type,
       resource_cost,
       cooldown_ms,
@@ -133,7 +141,14 @@ export async function loadSpellCatalogFromDb<SpellDefinition extends Record<stri
       heal_amount,
       is_debug,
       is_dev_only,
-      is_enabled
+      is_enabled,
+      flags,
+      tags,
+      created_at,
+      updated_at,
+      grant_min_role,
+      status_effect,
+      cleanse
     FROM public.spells
     WHERE is_enabled = true
   `);
@@ -151,6 +166,11 @@ export async function loadSpellCatalogFromDb<SpellDefinition extends Record<stri
 
       is_song: asBool(r?.is_song),
       song_school: r?.song_school ?? null,
+
+      // Rank v0
+      rank_group_id: asStr(r?.rank_group_id, "").trim(),
+      rank: asNum(r?.rank, 1),
+      learn_requires_trainer: asBool(r?.learn_requires_trainer),
 
       resource_type: r?.resource_type ?? null,
       resource_cost: asNum(r?.resource_cost, 0),

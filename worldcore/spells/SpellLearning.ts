@@ -86,6 +86,30 @@ export function learnSpellInState(
   const sb = ensureSpellbookAutogrants(char as any) as any;
 
   const known = { ...(sb.known ?? {}) };
+
+  // Rank v0: keep only the highest known rank per rankGroupId.
+  // If the learned spell belongs to a group, drop lower-rank siblings.
+  {
+    const def: any = (SPELLS as any)[canonicalId];
+    const gid = String(def?.rankGroupId ?? canonicalId).trim().toLowerCase();
+    const learnedRank = Number(def?.rank ?? 1);
+    if (gid) {
+      for (const existingId of Object.keys(known)) {
+        if (existingId === canonicalId) continue;
+        const eDef: any = (SPELLS as any)[existingId];
+        const eGid = String(eDef?.rankGroupId ?? existingId).trim().toLowerCase();
+        if (!eGid || eGid !== gid) continue;
+        const eRank = Number(eDef?.rank ?? 1);
+        // If an equal or higher rank is already known, learning this is a no-op.
+        if (eRank >= learnedRank) {
+          // ensure we don't insert the lower rank
+          return { ok: true, next: char, spell: check.spell, canonicalId: existingId };
+        }
+        // Otherwise, remove lower rank sibling.
+        delete (known as any)[existingId];
+      }
+    }
+  }
   if (!known[canonicalId]) {
     known[canonicalId] = {
       rank,
