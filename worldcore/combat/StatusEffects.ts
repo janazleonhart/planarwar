@@ -490,6 +490,46 @@ export function wouldCcDiminishingReturnsBlock(
   return wouldCcDiminishingReturnsBlockInternal(ensureStatusState(char), tags, now);
 }
 
+function getCcDrBucketMap(): Record<string, string> {
+  const map: Record<string, string> = {};
+
+  const parseInto = (raw: string) => {
+    for (const part of String(raw).split(";")) {
+      const p = part.trim();
+      if (!p) continue;
+      const [bucket, tagsRaw] = p.split("=").map((x) => (x ?? "").trim());
+      if (!bucket || !tagsRaw) continue;
+      for (const t of tagsRaw
+        .split(",")
+        .map((x) => x.trim().toLowerCase())
+        .filter(Boolean)) {
+        map[t] = bucket.toLowerCase();
+      }
+    }
+  };
+
+  // 1) Explicit mapping always wins.
+  try {
+    const raw = process.env.PW_CC_DR_BUCKETS;
+    if (raw) {
+      parseInto(raw);
+      return map;
+    }
+  } catch {
+    // ignore
+  }
+
+  // 2) Optional preset mapping (only used when PW_CC_DR_BUCKETS is not set).
+  const presetRaw = process.env.PW_CC_DR_BUCKET_PRESET;
+  const preset = presetRaw ? String(presetRaw).trim().toLowerCase() : "";
+  if (preset === "classic") {
+    // Classic-ish grouping: mez and sleep share, stuns share, roots share.
+    parseInto("cc=mez,sleep;stunline=stun,knockdown;rootline=root,snare");
+  }
+
+  return map;
+}
+
 function wouldCcDiminishingReturnsBlockInternal(
   state: InternalStatusState,
   tags: string[] | undefined | null,
@@ -509,23 +549,7 @@ function wouldCcDiminishingReturnsBlockInternal(
       .map((s) => s.trim().toLowerCase())
       .filter(Boolean);
 
-    const bucketMap: Record<string, string> = {};
-    try {
-      const raw = process.env.PW_CC_DR_BUCKETS;
-      if (raw) {
-        for (const part of String(raw).split(";")) {
-          const p = part.trim();
-          if (!p) continue;
-          const [bucket, tagsRaw] = p.split("=").map((x) => (x ?? "").trim());
-          if (!bucket || !tagsRaw) continue;
-          for (const t of tagsRaw.split(",").map((x) => x.trim().toLowerCase()).filter(Boolean)) {
-            bucketMap[t] = bucket.toLowerCase();
-          }
-        }
-      }
-    } catch {
-      // ignore
-    }
+    const bucketMap = getCcDrBucketMap();
 
     const matchTag = tagList.find((t) => inputTags.includes(t));
     if (!matchTag) return false;
@@ -598,27 +622,9 @@ function applyStatusEffectInternal(
   .map((s) => s.trim().toLowerCase())
   .filter(Boolean);
 
-// Optional: shared DR buckets so multiple CC tags share the same stage window.
-// Format: "bucketA=mez,sleep;bucketB=stun,knockdown" (semicolon-separated buckets).
-const bucketMap: Record<string, string> = {};
-try {
-  const raw = process.env.PW_CC_DR_BUCKETS;
-  if (raw) {
-    for (const part of String(raw).split(";")) {
-      const p = part.trim();
-      if (!p) continue;
-      const [bucket, tags] = p.split("=").map((x) => (x ?? "").trim());
-      if (!bucket || !tags) continue;
-      for (const t of tags.split(",").map((x) => x.trim().toLowerCase()).filter(Boolean)) {
-        bucketMap[t] = bucket.toLowerCase();
-      }
-    }
-  }
-} catch {
-  // ignore
-}
+      const bucketMap = getCcDrBucketMap();
 
-const matchTag = tagList.find((t) => inputTags.includes(t));
+      const matchTag = tagList.find((t) => inputTags.includes(t));
 if (matchTag) {
   const bucketKey = bucketMap[matchTag] ?? matchTag;
 
