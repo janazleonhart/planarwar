@@ -454,6 +454,7 @@ export class PostgresCharacterService {
     characterId: string,
     spellId: string,
     rank = 1,
+    opts?: { viaTrainer?: boolean; bypassGrant?: boolean },
   ): Promise<
     | { ok: true; character: CharacterState }
     | { ok: false; error: string; requiredRule?: any }
@@ -461,7 +462,7 @@ export class PostgresCharacterService {
     const existing = await this.loadCharacterForUser(userId, characterId);
     if (!existing) return { ok: false, error: "not_found" };
 
-    const res = learnSpellInState(existing as any, spellId, rank);
+    const res = learnSpellInState(existing as any, spellId, rank, undefined, opts as any);
     if (res.ok === false) {
       return { ok: false, error: res.error, requiredRule: (res as any).requiredRule };
     }
@@ -481,6 +482,7 @@ export class PostgresCharacterService {
     characterId: string,
     abilityId: string,
     rank = 1,
+    opts?: { viaTrainer?: boolean; bypassGrant?: boolean },
   ): Promise<
     | { ok: true; character: CharacterState }
     | { ok: false; error: string; requiredRule?: any }
@@ -488,7 +490,7 @@ export class PostgresCharacterService {
     const existing = await this.loadCharacterForUser(userId, characterId);
     if (!existing) return { ok: false, error: "not_found" };
 
-    const res = learnAbilityInState(existing as any, abilityId, rank);
+    const res = learnAbilityInState(existing as any, abilityId, rank, undefined, opts as any);
     if (res.ok === false) {
       return { ok: false, error: res.error, requiredRule: (res as any).requiredRule };
     }

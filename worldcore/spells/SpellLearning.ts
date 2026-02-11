@@ -33,7 +33,65 @@ function getSafeClassId(char: any): string {
 
 export type LearnSpellResult =
   | { ok: true; next: CharacterState; spell: SpellDefinition; canonicalId: string }
-  | { ok: false; error: "unknown_spell" | "not_learnable" | "level_too_low"; requiredRule?: SpellUnlockRule };
+  | {
+      ok: false;
+      error:
+        | "unknown_spell"
+        | "not_learnable"
+        | "level_too_low"
+        | "requires_trainer"
+        | "requires_grant";
+      requiredRule?: SpellUnlockRule;
+    };
+
+export type LearnSpellOpts = {
+  /** If true, bypass trainer requirement (used by explicit trainer flow). */
+  viaTrainer?: boolean;
+  /** Debug/dev bypass for content-grant requirements. */
+  bypassGrant?: boolean;
+};
+
+function ensureSpellbookPending(sb: any): void {
+  if (!sb) return;
+  if (!sb.pending || typeof sb.pending !== "object") sb.pending = {};
+}
+
+export function listPendingSpellsForChar(char: CharacterState): string[] {
+  const sb = ensureSpellbookAutogrants(char as any) as any;
+  ensureSpellbookPending(sb);
+  return Object.keys(sb.pending ?? {}).sort();
+}
+
+export function grantSpellInState(
+  char: CharacterState,
+  spellIdRaw: string,
+  source?: string,
+  nowMs?: number,
+): { ok: true; next: CharacterState } | { ok: false; error: "unknown_spell" } {
+  const canonicalId = resolveSpellId(String(spellIdRaw ?? "").trim());
+  if (!canonicalId) return { ok: false, error: "unknown_spell" };
+
+  const def = getSpellByIdOrAlias(canonicalId) as SpellDefinition | undefined;
+  if (!def) return { ok: false, error: "unknown_spell" };
+
+  const sb = ensureSpellbookAutogrants(char as any) as any;
+  ensureSpellbookPending(sb);
+
+  const pending = { ...(sb.pending ?? {}) };
+  if (!pending[canonicalId]) {
+    pending[canonicalId] = { grantedAt: safeNow(nowMs), source };
+  }
+
+  const next: CharacterState = {
+    ...char,
+    spellbook: {
+      ...(sb as any),
+      pending,
+    },
+  } as any;
+
+  return { ok: true, next };
+}
 
 function findEnabledRuleForSpell(canonicalId: string, classId: string): SpellUnlockRule | null {
   const cid = (classId || "").toLowerCase().trim();
@@ -44,12 +102,28 @@ function findEnabledRuleForSpell(canonicalId: string, classId: string): SpellUnl
   );
 }
 
-export function canLearnSpellForChar(char: CharacterState, spellIdRaw: string): LearnSpellResult {
+export function canLearnSpellForChar(
+  char: CharacterState,
+  spellIdRaw: string,
+  opts?: LearnSpellOpts,
+): LearnSpellResult {
   const canonicalId = resolveSpellId(String(spellIdRaw ?? "").trim());
   if (!canonicalId) return { ok: false, error: "unknown_spell" };
 
   const def = getSpellByIdOrAlias(canonicalId) as SpellDefinition | undefined;
   if (!def) return { ok: false, error: "unknown_spell" };
+
+  const requiresTrainer = !!(def as any).learnRequiresTrainer || Number((def as any).rank ?? 1) > 1;
+  if (requiresTrainer && !opts?.viaTrainer) return { ok: false, error: "requires_trainer" };
+
+  const requiresGrant = Number((def as any).rank ?? 1) > 1;
+  if (requiresGrant && !opts?.bypassGrant) {
+    const sb = ensureSpellbookAutogrants(char as any) as any;
+    ensureSpellbookPending(sb);
+    if (!(sb.pending && (sb.pending as any)[canonicalId])) {
+      return { ok: false, error: "requires_grant" };
+    }
+  }
 
   // Already known (including auto-grants) => ok/idempotent.
   if (isSpellKnownForChar(char as any, canonicalId)) {
@@ -76,14 +150,16 @@ export function learnSpellInState(
   spellIdRaw: string,
   rank = 1,
   nowMs?: number,
+  opts?: LearnSpellOpts,
 ): LearnSpellResult {
-  const check = canLearnSpellForChar(char, spellIdRaw);
+  const check = canLearnSpellForChar(char, spellIdRaw, opts);
   if (!check.ok) return check;
 
   const canonicalId = check.canonicalId;
 
   // Ensure spellbook exists & auto-grants applied (so we don't accidentally "unlearn" via overwrite).
   const sb = ensureSpellbookAutogrants(char as any) as any;
+  ensureSpellbookPending(sb);
 
   const known = { ...(sb.known ?? {}) };
 
@@ -120,7 +196,17 @@ export function learnSpellInState(
   const nextSpellbook: SpellbookState = {
     ...(sb as any),
     known,
+    pending: {
+      ...(sb.pending ?? {}),
+    },
   } as any;
+
+  // Consume grant if present.
+  if ((nextSpellbook as any).pending && (nextSpellbook as any).pending[canonicalId]) {
+    const p = { ...(nextSpellbook as any).pending };
+    delete p[canonicalId];
+    (nextSpellbook as any).pending = p;
+  }
 
   const next: CharacterState = {
     ...char,

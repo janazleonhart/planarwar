@@ -29,6 +29,9 @@ import {
 } from "../../../npc/NpcTypes";
 export { handleDebugHydrateHere } from "./hydrateHere";
 
+import { grantSpellInState } from "../../../spells/SpellLearning";
+import { grantAbilityInState } from "../../../abilities/AbilityLearning";
+
 
 
 const DAMAGE_SCHOOLS: DamageSchool[] = [
@@ -177,6 +180,40 @@ export async function handleDebugXp(
   }
 
   return "XP grant is not supported by the character service.";
+}
+
+export async function handleDebugGrantSpell(
+  ctx: any,
+  char: any,
+  input: MudInput,
+): Promise<string> {
+  const spellRaw = input.args.join(" ").trim();
+  if (!spellRaw) return "Usage: debug_grant_spell <spellId|spellName>";
+  if (!ctx.characters) return "Character service unavailable.";
+
+  const res = grantSpellInState(char as any, spellRaw, "debug", Date.now());
+  if (!res.ok) return "Unknown spell.";
+
+  await ctx.characters.saveCharacter(res.next);
+  ctx.session.character = res.next;
+  return `[debug] Granted spell (pending training): ${spellRaw}`;
+}
+
+export async function handleDebugGrantAbility(
+  ctx: any,
+  char: any,
+  input: MudInput,
+): Promise<string> {
+  const abilityRaw = input.args.join(" ").trim();
+  if (!abilityRaw) return "Usage: debug_grant_ability <abilityId|abilityName>";
+  if (!ctx.characters) return "Character service unavailable.";
+
+  const res = grantAbilityInState(char as any, abilityRaw, "debug", Date.now());
+  if (!res.ok) return "Unknown ability.";
+
+  await ctx.characters.saveCharacter(res.next);
+  ctx.session.character = res.next;
+  return `[debug] Granted ability (pending training): ${abilityRaw}`;
 }
 
 // ---------------------------------------------------------------------------

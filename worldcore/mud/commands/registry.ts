@@ -49,6 +49,7 @@ import { handleCastMudCommand } from "./combat/castCommand";
 import { handleAbilityMudCommand } from "./combat/abilityCommand";
 import { handleAbilitiesCommand } from "./player/abilitiesCommand";
 import { handleSpellsCommand } from "./player/spellsCommand";
+import { handleTrainCommand } from "./player/trainCommand";
 import { handleAttackCommand } from "./combat/attackCommand";
 import { handleShootCommand } from "./combat/shootCommand";
 import { handleAutoAttackCommand } from "./combat/autoAttackCommand";
@@ -79,6 +80,8 @@ import { withDebugGate } from "./debug/withDebugGate";
 import {
   handleDebugGive,
   handleDebugXp,
+  handleDebugGrantSpell,
+  handleDebugGrantAbility,
   handleDebugSpawnNpc,
   handleEventGiveAny,
   handleEventMailReward,
@@ -222,6 +225,8 @@ export const COMMANDS: Record<string, MudCommandHandlerFn> = {
   abilities: async (ctx, char) => handleAbilitiesCommand(ctx, char),
   spell: async (ctx, char) => handleSpellsCommand(ctx),
   spells: async (ctx, char) => handleSpellsCommand(ctx),
+  train: async (ctx, char, input) =>
+    requireTownService(ctx, char, "trainer", () => handleTrainCommand(ctx, (input as any).args ?? [])),
   attack: handleAttackCommand,
   // Ranged verbs (v1): explicit ranged attack with range + forward-cone LoS.
   // Ammo, projectile travel, and cover rules come later.
@@ -273,6 +278,8 @@ export const COMMANDS: Record<string, MudCommandHandlerFn> = {
   // Debug (gated)
   debug_give: withDebugGate(handleDebugGive, "dev"),
   debug_xp: withDebugGate(handleDebugXp, "dev"),
+  debug_grant_spell: withDebugGate(handleDebugGrantSpell, "dev"),
+  debug_grant_ability: withDebugGate(handleDebugGrantAbility, "dev"),
   debug_spawn_npc: withDebugGate(handleDebugSpawnNpc, "gm"),
   debug_give_mat: withDebugGate(handleDebugGiveMat, "dev"),
   debug_reset_level: withDebugGate(handleDebugResetLevel, "dev"),

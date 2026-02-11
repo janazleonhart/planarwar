@@ -28,6 +28,11 @@ export type AbilityKnownEntry = {
 
 export type AbilityBookState = {
   learned?: Record<string, AbilityKnownEntry>;
+  /**
+   * Rank system v0.1: "granted but not trained" ability ids.
+   * Higher ranks can be granted via content, but require a trainer flow to learn.
+   */
+  pending?: Record<string, { grantedAt: number; source?: string }>;
   [k: string]: any;
 };
 
@@ -55,7 +60,42 @@ function ensureAbilityBook(char: CharacterState): AbilityBookState {
   const ab = ((char as any).abilities ?? {}) as AbilityBookState;
   (char as any).abilities = ab;
   if (!ab.learned || typeof ab.learned !== "object") ab.learned = {};
+  if (!ab.pending || typeof ab.pending !== "object") ab.pending = {};
   return ab;
+}
+
+export function listPendingAbilitiesForChar(char: CharacterState): string[] {
+  const ab = ensureAbilityBook(char);
+  return Object.keys(ab.pending ?? {}).sort();
+}
+
+export function grantAbilityInState(char: CharacterState, abilityIdRaw: string, source?: string, nowMs?: number): { ok: true; next: CharacterState } | { ok: false; error: "unknown_ability" } {
+  const raw = String(abilityIdRaw ?? "").trim();
+  const abilityId = normalizeAbilityKey(raw);
+  if (!abilityId) return { ok: false, error: "unknown_ability" };
+
+  // Only grant real definitions.
+  const def = (ABILITIES as any)[abilityId] as AbilityDefinition | undefined;
+  if (!def) return { ok: false, error: "unknown_ability" };
+
+  const ab = ensureAbilityBook(char);
+  const pending = { ...(ab.pending ?? {}) } as any;
+  pending[abilityId] = { grantedAt: safeNow(nowMs), source: source ? String(source) : undefined };
+
+  const next: CharacterState = {
+    ...char,
+    abilities: {
+      ...(char as any).abilities,
+      pending,
+    },
+  } as any;
+
+  return { ok: true, next };
+}
+
+function hasPendingAbilityGrant(char: CharacterState, abilityId: string): boolean {
+  const ab = ensureAbilityBook(char);
+  return !!(ab.pending as any)?.[abilityId];
 }
 
 export function isAbilityKnownForChar(char: CharacterState, abilityIdRaw: string): boolean {
@@ -130,15 +170,47 @@ export function listKnownAbilitiesForChar(char: CharacterState): AbilityDefiniti
 
 export type LearnAbilityResult =
   | { ok: true; next: CharacterState }
-  | { ok: false; error: "unknown_ability" | "not_learnable" | "level_too_low" | "class_mismatch"; requiredRule?: AbilityUnlockRule };
+  | {
+      ok: false;
+      error:
+        | "unknown_ability"
+        | "not_learnable"
+        | "level_too_low"
+        | "class_mismatch"
+        | "requires_trainer"
+        | "requires_grant";
+      requiredRule?: AbilityUnlockRule;
+    };
 
-export function canLearnAbilityForChar(char: CharacterState, abilityIdRaw: string): LearnAbilityResult {
+export type LearnAbilityOpts = {
+  /** Set true when invoked via an in-town trainer flow. */
+  viaTrainer?: boolean;
+  /** Debug/dev bypass for content-grant requirements. */
+  bypassGrant?: boolean;
+};
+
+export function canLearnAbilityForChar(
+  char: CharacterState,
+  abilityIdRaw: string,
+  opts?: LearnAbilityOpts,
+): LearnAbilityResult {
   const raw = String(abilityIdRaw ?? "").trim();
   const abilityKey = normalizeAbilityKey(raw);
   if (!abilityKey) return { ok: false, error: "unknown_ability" };
 
   const def = (ABILITIES as any)[abilityKey] as AbilityDefinition | undefined;
   if (!def) return { ok: false, error: "unknown_ability" };
+
+  const requiresTrainer = !!(def as any).learnRequiresTrainer || Number((def as any).rank ?? 1) > 1;
+  if (requiresTrainer && !opts?.viaTrainer) return { ok: false, error: "requires_trainer" };
+
+  const requiresGrant = Number((def as any).rank ?? 1) > 1;
+  if (requiresGrant && !opts?.bypassGrant) {
+    const ab = ensureAbilityBook(char);
+    if (!(ab.pending && (ab.pending as any)[abilityKey])) {
+      return { ok: false, error: "requires_grant" };
+    }
+  }
 
   const cls = getSafeClassId(char);
   const lvl = getSafeLevel(char);
@@ -178,14 +250,36 @@ export function learnAbilityInState(
   abilityIdRaw: string,
   rank = 1,
   nowMs?: number,
+  opts?: LearnAbilityOpts,
 ): LearnAbilityResult {
-  const check = canLearnAbilityForChar(char, abilityIdRaw);
+  const check = canLearnAbilityForChar(char, abilityIdRaw, opts);
   if (!check.ok) return check;
 
   const raw = String(abilityIdRaw ?? "").trim();
   const abilityId = normalizeAbilityKey(raw);
   const ab = ensureAbilityBook(char);
   const learned = { ...(ab.learned ?? {}) };
+
+  // Rank v0: keep only the highest learned rank per rankGroupId.
+  {
+    const def: any = (ABILITIES as any)[abilityId];
+    const gid = String(def?.rankGroupId ?? abilityId).trim().toLowerCase();
+    const learnedRank = Number(def?.rank ?? rank ?? 1);
+    if (gid) {
+      for (const existingId of Object.keys(learned)) {
+        if (existingId === abilityId) continue;
+        const eDef: any = (ABILITIES as any)[existingId];
+        const eGid = String(eDef?.rankGroupId ?? existingId).trim().toLowerCase();
+        if (!eGid || eGid !== gid) continue;
+        const eRank = Number(eDef?.rank ?? 1);
+        if (eRank >= learnedRank) {
+          // Equal/higher already learned -> no-op
+          return { ok: true, next: char };
+        }
+        delete (learned as any)[existingId];
+      }
+    }
+  }
 
   if (!learned[abilityId]) {
     learned[abilityId] = {
@@ -199,8 +293,18 @@ export function learnAbilityInState(
     abilities: {
       ...(char as any).abilities,
       learned,
+      pending: {
+        ...(ab.pending ?? {}),
+      },
     },
   } as any;
+
+  // Consume grant if present.
+  if ((next as any).abilities?.pending && (next as any).abilities.pending[abilityId]) {
+    const p = { ...(next as any).abilities.pending };
+    delete p[abilityId];
+    (next as any).abilities.pending = p;
+  }
 
   return { ok: true, next };
 }

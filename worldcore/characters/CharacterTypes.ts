@@ -55,7 +55,14 @@ export interface SpellKnown {
 export interface SpellbookState {
   known: Record<string, SpellKnown>;
   cooldowns?: Record<string, { readyAt: number }>;
-[k: string]: any;
+  /**
+   * Rank system v0.1: "granted but not trained" spell ids.
+   *
+   * Higher-rank spells (Rank II/III, etc.) can be granted by content (quests/kills)
+   * but require a trainer interaction to convert into a learned spell.
+   */
+  pending?: Record<string, { grantedAt: number; source?: string }>;
+  [k: string]: any;
 }
 
 // -----------------------------
@@ -288,6 +295,7 @@ export function defaultSpellbook(): SpellbookState {
   return {
     known: {},
     cooldowns: {},
+    pending: {},
   };
 }
 
@@ -350,12 +358,26 @@ function normalizeSpellbook(raw: any): SpellbookState {
         }
       }
     }
-
-    return { known, cooldowns: cooldownsOut };
+    const pendingOut: Record<string, { grantedAt: number; source?: string }> = {};
+    const pendingRaw = raw.pending && typeof raw.pending === "object" ? (raw.pending as any) : null;
+    if (pendingRaw) {
+      for (const [k, v] of Object.entries(pendingRaw)) {
+        const id = String(k ?? "").trim();
+        if (!id) continue;
+        if (v && typeof v === "object" && typeof (v as any).grantedAt === "number") {
+          pendingOut[id] = { grantedAt: Number((v as any).grantedAt) || 0, source: (v as any).source };
+        } else if (typeof v === "number") {
+          pendingOut[id] = { grantedAt: Number(v) || 0 };
+        } else {
+          pendingOut[id] = { grantedAt: 0 };
+        }
+      }
+    }
+    return { known, cooldowns: cooldownsOut, pending: pendingOut };
   }
 
   // default
-  return { known: {}, cooldowns: {} };
+  return { known: {}, cooldowns: {}, pending: {} };
 }
 
 // -----------------------------

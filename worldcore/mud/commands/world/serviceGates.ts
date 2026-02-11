@@ -18,7 +18,7 @@ import type { CharacterState } from "../../../characters/CharacterTypes";
 
 import { getRegionFlags, isEconomyLockdownOnSiegeFromFlags } from "../../../world/RegionFlags";
 
-type ServiceName = "bank" | "guildbank" | "vendor" | "auction" | "mail";
+type ServiceName = "bank" | "guildbank" | "vendor" | "auction" | "mail" | "trainer";
 
 // Forge/station interactions generally use ~2.5 in the walk-to loop.
 const DEFAULT_SERVICE_RADIUS = 2.5;
@@ -109,6 +109,11 @@ function isServiceAnchorEntity(e: any, service: ServiceName): boolean {
   if (service === "guildbank" && (t === "guildbank" || t === "gbank")) return true;
   if (service === "auction" && (t === "auction" || t === "ah" || t === "auctioneer")) return true;
   if (service === "mail" && (t === "mail" || t === "mailbox")) return true;
+  if (
+    service === "trainer" &&
+    (t === "trainer" || t === "spelltrainer" || t === "abilitytrainer" || t === "class_trainer" || t === "class_trainer_npc")
+  )
+    return true;
 
   // Tag-based anchors.
   const wantTag = `service_${svc}`;
