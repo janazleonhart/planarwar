@@ -147,6 +147,14 @@ export interface StatusEffectInstance {
 
   /** Version key (defaults to sourceId). Only relevant for versioned_by_applier. */
   versionKey?: string;
+
+  // ────────────────────────────────────────────────────────────────────────────
+  // Optional application metadata
+  // ────────────────────────────────────────────────────────────────────────────
+  /** When false, the effect was blocked and NOT stored (e.g., CC DR immunity). */
+  wasApplied?: boolean;
+  /** Machine-readable reason when wasApplied=false. */
+  blockedReason?: string;
 }
 
 export interface NewStatusEffectInput {
@@ -483,6 +491,8 @@ function applyStatusEffectInternal(
   // NOTE: v0 does NOT implement full immunity stage; it floors at the last mult.
   const inputTags = Array.isArray(input.tags) ? input.tags.map((t) => String(t).toLowerCase()) : [];
   let durationMs = Number(input.durationMs ?? 0);
+  let drBlocked = false;
+  let drBlockedReason: string | null = null;
   try {
     const enabledRaw = process.env.PW_CC_DR_ENABLED;
     const enabled = enabledRaw == null ? true : String(enabledRaw).toLowerCase() !== "false";
@@ -521,7 +531,7 @@ if (matchTag) {
   const mults = String(process.env.PW_CC_DR_MULTS ?? "1,0.5,0.25")
     .split(",")
     .map((s) => Number(s.trim()))
-    .filter((n) => Number.isFinite(n) && n > 0);
+    .filter((n) => Number.isFinite(n) && n >= 0);
   const stages = mults.length > 0 ? mults : [1, 0.5, 0.25];
 
   const meta: any = (state as any).meta ?? ((state as any).meta = {});
@@ -534,10 +544,16 @@ if (matchTag) {
   const mult = stages[Math.min(stagePrev, stages.length - 1)] ?? stages[0];
   const stageNext = Math.min(stages.length - 1, stagePrev + 1);
 
-  // Apply multiplier and clamp to a small minimum to avoid 0/negative durations.
-  durationMs = Math.max(250, Math.floor(durationMs * mult));
-
-  dr[bucketKey] = { stage: stageNext, untilMs: now + windowMs };
+  // When mult is 0, we treat it as an immunity stage: block application entirely.
+  if (mult <= 0) {
+    dr[bucketKey] = { stage: stageNext, untilMs: now + windowMs };
+    drBlocked = true;
+    drBlockedReason = "cc_dr_immune";
+  } else {
+    // Apply multiplier and clamp to a small minimum to avoid 0/negative durations.
+    durationMs = Math.max(250, Math.floor(durationMs * mult));
+    dr[bucketKey] = { stage: stageNext, untilMs: now + windowMs };
+  }
 }
     }
   } catch {
@@ -546,6 +562,28 @@ if (matchTag) {
 
   const sourceKind: StatusEffectSourceKind = input.sourceKind ?? "environment";
   const sourceId = input.sourceId ?? "unknown";
+
+  if (drBlocked) {
+    return {
+      id: input.id,
+      sourceKind,
+      sourceId,
+      name: input.name,
+      appliedAtMs: now,
+      expiresAtMs: now,
+      stackCount: 0,
+      maxStacks: 0,
+      modifiers: input.modifiers ?? {},
+      tags: input.tags,
+      stackingPolicy: input.stackingPolicy,
+      stackingGroupId: input.stackingGroupId,
+      appliedByKind: input.appliedByKind,
+      appliedById: input.appliedById,
+      versionKey: input.versionKey,
+      wasApplied: false,
+      blockedReason: drBlockedReason ?? undefined,
+    };
+  }
 
   const bucketKey = (typeof input.stackingGroupId === "string" && input.stackingGroupId.trim())
     ? input.stackingGroupId.trim()

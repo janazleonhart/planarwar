@@ -539,7 +539,16 @@ case "damage_dot_single_npc": {
     input.dot = { ticks, tickMs, perTick, remainingTicks: ticks, lastTickAt: 0 };
   }
 
-  applyStatusEffectToEntity(npc as any, input, now);
+  const applied = applyStatusEffectToEntity(npc as any, input, now);
+
+  if ((applied as any)?.wasApplied === false) {
+    // CC DR immunity stage (or other future blockers)
+    try {
+      (selfEntity as any).inCombat = true;
+      (npc as any).inCombat = true;
+    } catch {}
+    return `[world] Target is immune.`;
+  }
 
   // Optional immediate tick for deterministic test harnesses.
   if ((ability as any).kind === "damage_dot_single_npc" && (statusDef.dot?.tickImmediately ?? false)) {

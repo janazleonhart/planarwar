@@ -1393,7 +1393,7 @@ const se = spell.statusEffect;
 
       if (spell.kind === "debuff_single_npc") {
         // Apply a pure modifier-only effect to the NPC.
-        applyStatusEffectToEntity(npc as any, {
+        const applied = applyStatusEffectToEntity(npc as any, {
           id: se.id,
           sourceKind: isSong ? "song" : "spell",
           sourceId: spell.id,
@@ -1407,6 +1407,13 @@ const se = spell.statusEffect;
           modifiers: se.modifiers ?? {},
           tags: se.tags ?? ["debuff"],
         }, now);
+
+        if ((applied as any)?.wasApplied === false) {
+          markInCombat(selfEntity);
+          markInCombat(npc as any);
+          applySchoolGains();
+          return `[world] [spell:${spell.name}] Target is immune.`;
+        }
 
         markInCombat(selfEntity);
         markInCombat(npc as any);
@@ -1446,7 +1453,7 @@ const se = spell.statusEffect;
       const spread = se.dot?.spreadDamageAcrossTicks !== false;
       const perTick = spread ? Math.max(1, Math.floor(total / ticks)) : total;
 
-      applyStatusEffectToEntity(npc as any, {
+      const appliedDot = applyStatusEffectToEntity(npc as any, {
         id: se.id,
         sourceKind: isSong ? "song" : "spell",
         sourceId: spell.id,
@@ -1465,6 +1472,13 @@ const se = spell.statusEffect;
           damageSchool: (spell.school as any) ?? "pure",
         },
       }, now);
+
+      if ((appliedDot as any)?.wasApplied === false) {
+        markInCombat(selfEntity);
+        markInCombat(npc as any);
+        applySchoolGains();
+        return `[world] [spell:${spell.name}] Target is immune.`;
+      }
 
       markInCombat(selfEntity);
       markInCombat(npc as any);
