@@ -1709,6 +1709,58 @@ export class NpcManager {
         }
       }
 
+
+
+      // Fear: when present, NPC attempts to flee one room tile away from its current threat target.
+      // This runs before perception/attacks so fear cleanly suppresses engagement.
+      {
+        const tickNow = this._tickNow || Date.now();
+        let feared = false;
+        try {
+          const activeFx = getActiveStatusEffectsForEntity(npcEntity as any, tickNow);
+          feared = activeFx.some((fx) => Array.isArray((fx as any).tags) && (fx as any).tags.includes("fear"));
+        } catch {
+          feared = false;
+        }
+
+        if (feared) {
+          if (trainCfg.enabled && trainCfg.roomsEnabled) {
+            // Pick a flee anchor: top threat target if known, otherwise stay deterministic via spawn.
+            const threatState = this.npcThreat.get(entityId) as any;
+            let anchorRoomId = String((st as any).spawnRoomId ?? roomId);
+
+            let bestId: string | null = null;
+            let bestThreat = -Infinity;
+            const tmap = (threatState?.threatByEntityId ?? {}) as Record<string, number>;
+            for (const [tid, val] of Object.entries(tmap)) {
+              const v = Number(val);
+              if (!Number.isFinite(v)) continue;
+              if (v > bestThreat) {
+                bestThreat = v;
+                bestId = String(tid);
+              }
+            }
+            if (bestId) {
+              const te = this.entities.get(bestId);
+              if (te?.roomId) anchorRoomId = String(te.roomId);
+            }
+
+            const next = this.stepRoomAway(String(st.roomId ?? roomId), anchorRoomId);
+            if (next && next !== String(st.roomId ?? roomId)) {
+              this.moveNpcToRoom(st, entityId, next);
+              (st as any).trainMovedAt = tickNow;
+              (npcEntity as any).trainMovedAt = tickNow;
+              // While feared, do nothing else this tick.
+              continue;
+            }
+          }
+
+          // No room movement: still suppress engagement.
+          (st as any).inCombat = false;
+          (npcEntity as any).inCombat = false;
+        }
+      }
+
       const threat0 = this.npcThreat.get(entityId);
       const now = this._tickNow || Date.now();
 
@@ -2454,6 +2506,23 @@ export class NpcManager {
     let nz = cur.z;
     if (dx !== 0) nx += Math.sign(dx);
     else nz += Math.sign(dz);
+    return this.formatRoomCoord({ shard: cur.shard, x: nx, z: nz });
+  }
+
+
+  private stepRoomAway(currentRoomId: string, targetRoomId: string): string | null {
+    const cur = this.parseRoomCoord(currentRoomId);
+    const tgt = this.parseRoomCoord(targetRoomId);
+    if (!cur || !tgt) return null;
+    if (cur.shard !== tgt.shard) return null;
+    const dx = tgt.x - cur.x;
+    const dz = tgt.z - cur.z;
+    if (dx == 0 && dz == 0) return currentRoomId;
+    // Move exactly one tile per tick; prefer X movement, then Z.
+    let nx = cur.x;
+    let nz = cur.z;
+    if (dx !== 0) nx -= Math.sign(dx);
+    else nz -= Math.sign(dz);
     return this.formatRoomCoord({ shard: cur.shard, x: nx, z: nz });
   }
 

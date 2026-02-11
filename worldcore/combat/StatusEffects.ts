@@ -379,6 +379,16 @@ function resolvePolicy(input: NewStatusEffectInput): StatusStackingPolicy {
     return "versioned_by_applier";
   }
 
+  // HOTs should refresh by default (recasts extend duration; no stacking explosion).
+  if (input.hot && input.stackingPolicy == null) {
+    return "refresh";
+  }
+
+  // Absorb shields should overwrite by default (recasts reset remaining value).
+  if (input.absorb && input.stackingPolicy == null) {
+    return "overwrite";
+  }
+
   // Default is the historical behavior.
   return resolveStatusStackingPolicy(input.stackingPolicy, "legacy_add");
 }
@@ -813,8 +823,43 @@ if (matchTag) {
   const hot = resolveHot(input, now, existing?.hot);
   const absorb = resolveAbsorb(input, existing?.absorb);
 
+
   if (existing) {
+    if (policy === "deny_if_present") {
+      return {
+        ...existing,
+        wasApplied: false,
+        blockedReason: "status_already_present",
+      };
+    }
+
     const maxStacks = resolvedMaxStacks;
+
+    // overwrite: replace the entire instance (payload + expiry) with the new application
+    if (policy === "overwrite") {
+      const updated: StatusEffectInstance = {
+        ...existing,
+        sourceKind,
+        sourceId,
+        name: input.name ?? existing.name,
+        modifiers: input.modifiers ?? existing.modifiers,
+        tags: input.tags ?? existing.tags,
+        stackCount: Math.min(maxStacks, Math.max(1, initialStacks)),
+        maxStacks,
+        appliedAtMs: now,
+        expiresAtMs,
+        dot,
+        hot,
+        absorb,
+        stackingPolicy: policy,
+        stackingGroupId: bucketKey,
+        appliedByKind: input.appliedByKind ?? existing.appliedByKind,
+        appliedById: input.appliedById ?? existing.appliedById,
+      };
+
+      writeBucket(state, bucketKey, [updated]);
+      return updated;
+    }
 
     let stackCount = existing.stackCount;
     if (policy !== "refresh") {
@@ -851,6 +896,7 @@ if (matchTag) {
     writeBucket(state, bucketKey, [updated]);
     return updated;
   }
+
 
   const inst: StatusEffectInstance = {
     id: input.id,
