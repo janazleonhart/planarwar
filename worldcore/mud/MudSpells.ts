@@ -1159,7 +1159,7 @@ applyStatusEffect(res.char, {
       const removed = clearStatusEffectsByTagsEx(
         char,
         cleanse.tags,
-        { protectedTags: cleanse.protectedTags ?? ["no_cleanse", "unstrippable"], priorityTags: cleanse.priorityTags },
+        { protectedTags: cleanse.protectedTags ?? ["no_cleanse", "unstrippable"], priorityTags: cleanse.priorityTags, requireTags: cleanse.requireTags, excludeTags: cleanse.excludeTags },
         cleanse.maxToRemove,
         now,
       );
@@ -1189,7 +1189,7 @@ applyStatusEffect(res.char, {
       const removed = clearStatusEffectsByTagsEx(
         res.char,
         cleanse.tags,
-        { protectedTags: cleanse.protectedTags ?? ["no_cleanse", "unstrippable"], priorityTags: cleanse.priorityTags },
+        { protectedTags: cleanse.protectedTags ?? ["no_cleanse", "unstrippable"], priorityTags: cleanse.priorityTags, requireTags: cleanse.requireTags, excludeTags: cleanse.excludeTags },
         cleanse.maxToRemove,
         now,
       );
@@ -1232,7 +1232,7 @@ case "dispel_single_npc": {
   const removed = clearEntityStatusEffectsByTagsEx(
     npc as any,
     dispel.tags,
-    { protectedTags: dispel.protectedTags ?? ["no_dispel", "unstrippable"], priorityTags: dispel.priorityTags },
+    { protectedTags: dispel.protectedTags ?? ["no_dispel", "unstrippable"], priorityTags: dispel.priorityTags, requireTags: dispel.requireTags, excludeTags: dispel.excludeTags },
     dispel.maxToRemove,
     now,
   );
@@ -1262,7 +1262,7 @@ case "dispel_single_ally": {
   const removed = clearStatusEffectsByTagsEx(
     res.char,
     dispel.tags,
-    { protectedTags: dispel.protectedTags ?? ["no_dispel", "unstrippable"], priorityTags: dispel.priorityTags },
+    { protectedTags: dispel.protectedTags ?? ["no_dispel", "unstrippable"], priorityTags: dispel.priorityTags, requireTags: dispel.requireTags, excludeTags: dispel.excludeTags },
     dispel.maxToRemove,
     now,
   );

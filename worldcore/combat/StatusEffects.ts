@@ -990,6 +990,10 @@ export interface ClearStatusEffectsOptions {
   protectedTags?: string[];
   /** Tags that should be removed first (in listed order). */
   priorityTags?: string[];
+  /** If set, an effect must include ALL of these tags to be eligible for removal. */
+  requireTags?: string[];
+  /** If set, effects with ANY of these tags are skipped (even if tags intersect). */
+  excludeTags?: string[];
 }
 
 /**
@@ -1064,6 +1068,12 @@ function clearStatusEffectsByTagsInternal(
         const instTags = (inst.tags ?? []).map((t) => String(t).toLowerCase());
         // Skip protected/unstrippable effects
         if (instTags.some((t) => protectedSet.has(t))) continue;
+
+        const requireAll = (options?.requireTags ?? []).map((t) => String(t).toLowerCase());
+        if (requireAll.length > 0 && !requireAll.every((t) => instTags.includes(t))) continue;
+
+        const excludeAny = new Set((options?.excludeTags ?? []).map((t) => String(t).toLowerCase()));
+        if (excludeAny.size > 0 && instTags.some((t) => excludeAny.has(t))) continue;
 
         let priority = 9999;
         const prio = options?.priorityTags ?? [];

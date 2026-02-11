@@ -103,6 +103,10 @@ export interface SpellCleanse {
   protectedTags?: string[];
   /** Tags that should be removed first (in listed order). */
   priorityTags?: string[];
+  /** If set, an effect must include ALL of these tags to be eligible for removal. */
+  requireTags?: string[];
+  /** If set, effects with ANY of these tags are skipped (even if tags intersect). */
+  excludeTags?: string[];
 }
 
 export interface SpellDefinition {
