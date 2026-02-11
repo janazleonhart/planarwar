@@ -25,34 +25,38 @@ export function formatBlockedReasonLine(opts?: {
   }
 
   const verb = opts?.verb;
-  const spellPrefix = opts?.kind === "spell" && opts?.name
-    ? `[world] [spell:${opts.name}] `
+  const namePrefix = opts?.name
+    ? (opts?.kind === "spell"
+      ? `[world] [spell:${opts.name}] `
+      : opts?.kind === "ability"
+        ? `[world] [ability:${opts.name}] `
+        : "[world] ")
     : "[world] ";
 
   if (verb === "cleanse") {
     if (reason === "cleanse_none") {
-      if (opts?.targetIsSelf) return `${spellPrefix}Nothing clings to you.`;
-      if (opts?.targetDisplayName) return `${spellPrefix}${opts.targetDisplayName} has nothing to cleanse.`;
-      return `${spellPrefix}Nothing to cleanse.`;
+      if (opts?.targetIsSelf) return `${namePrefix}Nothing clings to you.`;
+      if (opts?.targetDisplayName) return `${namePrefix}${opts.targetDisplayName} has nothing to cleanse.`;
+      return `${namePrefix}Nothing to cleanse.`;
     }
     if (reason === "cleanse_protected") {
-      return `${spellPrefix}The effect resists cleansing.`;
+      return `${namePrefix}The effect resists cleansing.`;
     }
     if (reason === "cleanse_filtered") {
-      return `${spellPrefix}Nothing you can cleanse.`;
+      return `${namePrefix}Nothing you can cleanse.`;
     }
   }
 
   if (verb === "dispel") {
     if (reason === "dispel_none") {
-      if (opts?.targetDisplayName) return `${spellPrefix}${opts.targetDisplayName} has nothing to dispel.`;
-      return `${spellPrefix}Nothing to dispel.`;
+      if (opts?.targetDisplayName) return `${namePrefix}${opts.targetDisplayName} has nothing to dispel.`;
+      return `${namePrefix}Nothing to dispel.`;
     }
     if (reason === "dispel_protected") {
-      return `${spellPrefix}The effect resists dispelling.`;
+      return `${namePrefix}The effect resists dispelling.`;
     }
     if (reason === "dispel_filtered") {
-      return `${spellPrefix}Nothing you can dispel.`;
+      return `${namePrefix}Nothing you can dispel.`;
     }
   }
 

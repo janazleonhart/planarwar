@@ -40,6 +40,8 @@ import {
   wouldCcDiminishingReturnsBlockForEntity,
   tickEntityStatusEffectsAndApplyDots,
   clearStatusEffectsByTags,
+  clearStatusEffectsByTagsExDetailed,
+  clearEntityStatusEffectsByTagsExDetailed,
   getActiveStatusEffects,
 } from "../combat/StatusEffects";
 
@@ -356,6 +358,130 @@ export async function handleAbilityCommand(
       addCurrency((char as any).inventory, "gold", amount);
 
       return `[world] You pickpocket ${npc.name} and find ${amount} gold.`;
+    }
+
+    case "cleanse_self": {
+      const now = Number((ctx as any).nowMs ?? Date.now());
+
+      const ccErr = denyAbilityUseByCrowdControl(char, ability as any, now);
+      if (ccErr) return ccErr;
+
+      const gateErr = applyActionCostAndCooldownGates({
+        char: char as any,
+        bucket: "abilities",
+        key: abilityKey || String((ability as any).id ?? ability.name),
+        displayName: (ability as any).name,
+        cooldownMs: (ability as any).cooldownMs ?? 0,
+        resourceType: ((ability as any).resourceType ?? getPrimaryPowerResourceForClass((char as any).classId)) as any,
+        resourceCost: (ability as any).resourceCost ?? 0,
+      });
+      if (gateErr) return gateErr;
+
+      const cleanse = (ability as any).cleanse;
+      if (!cleanse || !Array.isArray(cleanse.tags) || cleanse.tags.length <= 0) {
+        return `[world] [ability:${ability.name}] That ability has no cleanse definition.`;
+      }
+
+      ensureStatusEffectsSpine(char);
+      const result = clearStatusEffectsByTagsExDetailed(
+        char as any,
+        cleanse.tags,
+        {
+          protectedTags: cleanse.protectedTags ?? ["no_cleanse", "unstrippable"],
+          priorityTags: cleanse.priorityTags,
+          requireTags: cleanse.requireTags,
+          excludeTags: cleanse.excludeTags,
+        },
+        cleanse.maxToRemove,
+        now,
+      );
+
+      if (result.removed <= 0) {
+        const reason =
+          result.matched <= 0
+            ? "cleanse_none"
+            : result.matched === result.blockedByProtected && result.blockedByRequire <= 0 && result.blockedByExclude <= 0
+              ? "cleanse_protected"
+              : "cleanse_filtered";
+        return formatBlockedReasonLine({ reason, kind: "ability", name: ability.name, verb: "cleanse", targetIsSelf: true });
+      }
+
+      return `[world] [ability:${ability.name}] You cleanse ${result.removed} effect(s).`;
+    }
+
+    case "dispel_single_npc": {
+      const targetRaw = (targetNameRaw ?? "").trim();
+      if (!targetRaw) return "Usage: ability <name> <target>";
+
+      const npc = resolveTargetInRoom(entities as any, roomId, targetRaw, {
+        selfId: String(selfEntity.id),
+        filter: (e: any) => e?.type === "npc" || e?.type === "mob",
+        radius: 30,
+      });
+      if (!npc) return `[world] No such target: '${targetRaw}'.`;
+
+      const now = Number((ctx as any).nowMs ?? Date.now());
+      const v = isValidCombatTarget({
+        now,
+        attacker: selfEntity as any,
+        target: npc as any,
+        attackerRoomId: roomId,
+        allowCrossRoom: false,
+      });
+      if (!v.ok) {
+        if (v.reason === "protected") return serviceProtectedCombatLine(npc.name);
+        if (v.reason === "out_of_room") return `[world] Target '${npc.name}' is not in this room.`;
+        if (v.reason === "dead") return `[world] Target '${npc.name}' is already dead.`;
+        return `[world] Invalid target: '${npc.name}'.`;
+      }
+
+      if (isServiceProtectedNpcTarget(ctx, npc)) {
+        return serviceProtectedCombatLine(npc.name);
+      }
+
+      const ccErr = denyAbilityUseByCrowdControl(char, ability as any, now);
+      if (ccErr) return ccErr;
+
+      const gateErr = applyActionCostAndCooldownGates({
+        char: char as any,
+        bucket: "abilities",
+        key: abilityKey || String((ability as any).id ?? ability.name),
+        displayName: (ability as any).name,
+        cooldownMs: (ability as any).cooldownMs ?? 0,
+        resourceType: ((ability as any).resourceType ?? getPrimaryPowerResourceForClass((char as any).classId)) as any,
+        resourceCost: (ability as any).resourceCost ?? 0,
+      });
+      if (gateErr) return gateErr;
+
+      const dispel = (ability as any).dispel ?? (ability as any).cleanse;
+      if (!dispel || !Array.isArray(dispel.tags) || dispel.tags.length <= 0) {
+        return `[world] [ability:${ability.name}] That ability has no dispel definition.`;
+      }
+
+      const result = clearEntityStatusEffectsByTagsExDetailed(
+        npc as any,
+        dispel.tags,
+        {
+          protectedTags: dispel.protectedTags ?? ["no_dispel", "unstrippable"],
+          priorityTags: dispel.priorityTags,
+          requireTags: dispel.requireTags,
+          excludeTags: dispel.excludeTags,
+        },
+        dispel.maxToRemove,
+        now,
+      );
+
+      if (result.removed <= 0) {
+        const reason =
+          result.matched <= 0
+            ? "dispel_none"
+            : result.matched === result.blockedByProtected && result.blockedByRequire <= 0 && result.blockedByExclude <= 0
+              ? "dispel_protected"
+              : "dispel_filtered";
+        return formatBlockedReasonLine({ reason, kind: "ability", name: ability.name, verb: "dispel", targetDisplayName: npc.name });
+      }
+
+      return `[world] [ability:${ability.name}] You dispel ${result.removed} effect(s) from ${npc.name}.`;
     }
 
     case "melee_single": {

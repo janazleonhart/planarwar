@@ -9,7 +9,19 @@ export type AbilityKind =
   | "self_buff"
   | "utility_target"
   | "debuff_single_npc"
-  | "damage_dot_single_npc"; // later: melee_aoe, spell_single, spell_aoe, etc.
+  | "damage_dot_single_npc"
+  | "cleanse_self"
+  | "dispel_single_npc"; // later: melee_aoe, spell_single, spell_aoe, etc.
+
+export interface AbilityCleanseDef {
+  tags: string[];
+  maxToRemove?: number;
+
+  protectedTags?: string[];
+  priorityTags?: string[];
+  requireTags?: string[];
+  excludeTags?: string[];
+}
 
 // Lightweight mirror of SpellTypes.statusEffect (kept intentionally small).
 // Abilities are still code-defined; this is only used by MudAbilities handlers.
@@ -73,6 +85,10 @@ export interface AbilityDefinition {
 
   // Optional StatusEffect payload (for debuff/DOT ability kinds)
   statusEffect?: AbilityStatusEffectDef;
+
+  // Optional: cleanse/dispel payloads (for cleanse_self / dispel_single_npc)
+  cleanse?: AbilityCleanseDef;
+  dispel?: AbilityCleanseDef;
 }
 
 export const ABILITIES: Record<string, AbilityDefinition> = {
