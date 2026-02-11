@@ -600,6 +600,68 @@ function wouldCcDiminishingReturnsBlockInternal(
 /**
  * Internal apply logic (supports legacy + policy-based stacking).
  */
+
+function isImmunityTag(tag: string): boolean {
+  const t = String(tag ?? "").toLowerCase();
+  return t === "cc_immune" || t === "immunity" || t.endsWith("_immune");
+}
+
+function wouldStatusBeBlockedByImmunity(
+  state: InternalStatusState,
+  incomingTags: string[],
+  now: number,
+): string | null {
+  if (!incomingTags || incomingTags.length === 0) return null;
+
+  // Determine what we consider "CC-ish" for cc_immune. Reuse DR tag list and add silence.
+  let ccTags: string[] = [];
+  try {
+    ccTags = String(process.env.PW_CC_DR_TAGS ?? "stun,mez,sleep,fear,root,knockdown,incapacitate")
+      .split(",")
+      .map((s) => s.trim().toLowerCase())
+      .filter(Boolean);
+  } catch {
+    ccTags = ["stun", "mez", "sleep", "fear", "root", "knockdown", "incapacitate"];
+  }
+  if (!ccTags.includes("silence")) ccTags.push("silence");
+
+  let hasCcImmune = false;
+  const specificImmuneBases: string[] = [];
+
+  for (const bucket of Object.values(state.active ?? {})) {
+    const list: any[] = Array.isArray(bucket) ? bucket : bucket ? [bucket] : [];
+    for (const inst of list) {
+      if (!inst) continue;
+      const expiresAtMs = Number(inst.expiresAtMs ?? 0);
+      if (expiresAtMs > 0 && expiresAtMs < now) continue;
+
+      const tags = Array.isArray(inst.tags) ? inst.tags : [];
+      for (const raw of tags) {
+        const t = String(raw ?? "").toLowerCase();
+        if (!t) continue;
+        if (t === "cc_immune" || t === "immunity") hasCcImmune = true;
+        if (t.endsWith("_immune")) specificImmuneBases.push(t.slice(0, -"_immune".length));
+      }
+    }
+  }
+
+  const incomingSet = new Set(incomingTags.map((t) => String(t).toLowerCase()));
+
+  // Broad CC immunity blocks any incoming CC-ish status.
+  if (hasCcImmune && ccTags.some((t) => incomingSet.has(t))) {
+    return "cc_immune";
+  }
+
+  // Specific immunities: <tag>_immune blocks that tag. Also treat mez_immune as blocking sleep.
+  for (const base of specificImmuneBases) {
+    if (!base) continue;
+    if (incomingSet.has(base)) return "cc_immune";
+    if (base === "mez" && incomingSet.has("sleep")) return "cc_immune";
+  }
+
+  return null;
+}
+
 function applyStatusEffectInternal(
   state: InternalStatusState,
   input: NewStatusEffectInput,
@@ -623,6 +685,30 @@ function applyStatusEffectInternal(
   // NOTE: v0 does NOT implement full immunity stage; it floors at the last mult.
   const inputTags = Array.isArray(input.tags) ? input.tags.map((t) => String(t).toLowerCase()) : [];
   let durationMs = Number(input.durationMs ?? 0);
+  const immunityReason = wouldStatusBeBlockedByImmunity(state, inputTags, now);
+  if (immunityReason) {
+    const sourceKind: StatusEffectSourceKind = input.sourceKind ?? "environment";
+    const sourceId = input.sourceId ?? "unknown";
+    return {
+      id: input.id,
+      sourceKind,
+      sourceId,
+      name: input.name,
+      appliedAtMs: now,
+      expiresAtMs: now,
+      stackCount: 0,
+      maxStacks: 0,
+      modifiers: input.modifiers ?? {},
+      tags: input.tags,
+      stackingPolicy: input.stackingPolicy,
+      stackingGroupId: input.stackingGroupId,
+      appliedByKind: input.appliedByKind,
+      appliedById: input.appliedById,
+      versionKey: input.versionKey,
+      wasApplied: false,
+      blockedReason: immunityReason,
+    };
+  }
   let drBlocked = false;
   let drBlockedReason: string | null = null;
   try {
@@ -1261,6 +1347,8 @@ export interface ClearStatusEffectsOptions {
   requireTags?: string[];
   /** If set, effects with ANY of these tags are skipped (even if tags intersect). */
   excludeTags?: string[];
+  /** If true, allow removal of immunity-tagged effects (cc_immune/*_immune). Default false. */
+  allowRemoveImmunity?: boolean;
 }
 
 
@@ -1357,6 +1445,12 @@ function clearStatusEffectsByTagsInternal(
   const lim = typeof maxToRemove === "number" && maxToRemove > 0 ? Math.floor(maxToRemove) : Number.MAX_SAFE_INTEGER;
 
   const protectedSet = new Set((options?.protectedTags ?? []).map((t) => String(t).toLowerCase()));
+  // Implicit protection for immunity-tagged effects unless explicitly allowed.
+  const allowRemoveImmunity = options?.allowRemoveImmunity === true;
+  if (!allowRemoveImmunity) {
+    protectedSet.add("cc_immune");
+    protectedSet.add("immunity");
+  }
 
   type Ref = { bucketKey: string; inst: StatusEffectInstance; priority: number };
   const matches: Ref[] = [];
@@ -1366,8 +1460,8 @@ function clearStatusEffectsByTagsInternal(
       if (!inst) continue;
       if (tagsIntersect(inst.tags, tags)) {
         const instTags = (inst.tags ?? []).map((t) => String(t).toLowerCase());
-        // Skip protected/unstrippable effects
-        if (instTags.some((t) => protectedSet.has(t))) continue;
+        // Skip protected/unstrippable effects (includes implicit immunity protection unless allowed)
+        if (instTags.some((t) => protectedSet.has(t) || (!allowRemoveImmunity && t.endsWith("_immune")))) continue;
 
         const requireAll = (options?.requireTags ?? []).map((t) => String(t).toLowerCase());
         if (requireAll.length > 0 && !requireAll.every((t) => instTags.includes(t))) continue;
@@ -1438,6 +1532,12 @@ function clearStatusEffectsByTagsDetailedInternal(
   const lim = typeof maxToRemove === "number" && maxToRemove > 0 ? Math.floor(maxToRemove) : Number.MAX_SAFE_INTEGER;
 
   const protectedSet = new Set((options?.protectedTags ?? []).map((t) => String(t).toLowerCase()));
+  // Implicit protection for immunity-tagged effects unless explicitly allowed.
+  const allowRemoveImmunity = options?.allowRemoveImmunity === true;
+  if (!allowRemoveImmunity) {
+    protectedSet.add("cc_immune");
+    protectedSet.add("immunity");
+  }
   const requireAll = (options?.requireTags ?? []).map((t) => String(t).toLowerCase());
   const excludeAny = new Set((options?.excludeTags ?? []).map((t) => String(t).toLowerCase()));
 
@@ -1458,7 +1558,7 @@ function clearStatusEffectsByTagsDetailedInternal(
 
       const instTags = (inst.tags ?? []).map((t) => String(t).toLowerCase());
 
-      if (instTags.some((t) => protectedSet.has(t))) {
+      if (instTags.some((t) => protectedSet.has(t) || (!allowRemoveImmunity && t.endsWith("_immune")))) {
         blockedByProtected++;
         continue;
       }

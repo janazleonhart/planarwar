@@ -20,7 +20,7 @@ export function formatBlockedReasonLine(opts?: {
 }): string {
   const reason = (opts?.reason ?? "").trim();
 
-  if (reason === "cc_dr_immune") {
+  if (reason === "cc_dr_immune" || reason === "cc_immune") {
     return formatTargetImmuneLine({ kind: opts?.kind, name: opts?.name });
   }
 
