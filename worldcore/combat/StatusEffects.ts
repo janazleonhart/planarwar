@@ -985,6 +985,13 @@ function tagsIntersect(a?: string[], b?: string[]): boolean {
   return false;
 }
 
+export interface ClearStatusEffectsOptions {
+  /** Tags that make an effect immune to removal. */
+  protectedTags?: string[];
+  /** Tags that should be removed first (in listed order). */
+  priorityTags?: string[];
+}
+
 /**
  * Remove active status effects whose tags match any of the provided tags.
  * Returns number removed.
@@ -1012,29 +1019,71 @@ export function clearEntityStatusEffectsByTags(
   return clearStatusEffectsByTagsInternal(state, tags, maxToRemove, now);
 }
 
+export function clearStatusEffectsByTagsEx(
+  char: CharacterState,
+  tags: string[],
+  options?: ClearStatusEffectsOptions,
+  maxToRemove?: number,
+  now: number = Date.now(),
+): number {
+  const state = ensureStatusState(char);
+  return clearStatusEffectsByTagsInternal(state, tags, maxToRemove, now, options);
+}
+
+export function clearEntityStatusEffectsByTagsEx(
+  entity: Entity,
+  tags: string[],
+  options?: ClearStatusEffectsOptions,
+  maxToRemove?: number,
+  now: number = Date.now(),
+): number {
+  const state = ensureEntityStatusState(entity);
+  return clearStatusEffectsByTagsInternal(state, tags, maxToRemove, now, options);
+}
+
 function clearStatusEffectsByTagsInternal(
   state: InternalStatusState,
   tags: string[],
   maxToRemove?: number,
   now: number = Date.now(),
+  options?: ClearStatusEffectsOptions,
 ): number {
   tickStatusEffectsInternal(state, now);
 
   const lim = typeof maxToRemove === "number" && maxToRemove > 0 ? Math.floor(maxToRemove) : Number.MAX_SAFE_INTEGER;
 
-  type Ref = { bucketKey: string; inst: StatusEffectInstance };
+  const protectedSet = new Set((options?.protectedTags ?? []).map((t) => String(t).toLowerCase()));
+
+  type Ref = { bucketKey: string; inst: StatusEffectInstance; priority: number };
   const matches: Ref[] = [];
 
   for (const [bucketKey, bucket] of Object.entries(state.active)) {
     for (const inst of normalizeBucket(bucket)) {
       if (!inst) continue;
       if (tagsIntersect(inst.tags, tags)) {
-        matches.push({ bucketKey, inst });
+        const instTags = (inst.tags ?? []).map((t) => String(t).toLowerCase());
+        // Skip protected/unstrippable effects
+        if (instTags.some((t) => protectedSet.has(t))) continue;
+
+        let priority = 9999;
+        const prio = options?.priorityTags ?? [];
+        if (prio.length > 0) {
+          for (let i = 0; i < prio.length; i++) {
+            const pt = String(prio[i]).toLowerCase();
+            if (instTags.includes(pt)) {
+              priority = i;
+              break;
+            }
+          }
+        }
+
+        matches.push({ bucketKey, inst, priority });
       }
     }
   }
 
   matches.sort((a, b) => {
+    if (a.priority != b.priority) return a.priority - b.priority;
     const ta = a.inst.appliedAtMs ?? 0;
     const tb = b.inst.appliedAtMs ?? 0;
     if (ta !== tb) return tb - ta; // newest first

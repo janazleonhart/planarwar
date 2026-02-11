@@ -99,6 +99,10 @@ export interface SpellStatusEffect {
 export interface SpellCleanse {
   tags: string[];
   maxToRemove?: number;
+  /** Tags that make an effect immune to removal (e.g. unstrippable). */
+  protectedTags?: string[];
+  /** Tags that should be removed first (in listed order). */
+  priorityTags?: string[];
 }
 
 export interface SpellDefinition {
@@ -146,6 +150,7 @@ summon?: {
 
   // Cleanse/dispel spells
   cleanse?: SpellCleanse;
+  dispel?: SpellCleanse;
 
   // Misc
   isDebug?: boolean;

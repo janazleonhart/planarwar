@@ -33,7 +33,9 @@ import {
   gainSongSchoolSkill,
 } from "../skills/SkillProgression";
 import type { SongSchoolId } from "../skills/SkillProgression";
-import { applyStatusEffect, applyStatusEffectToEntity, clearStatusEffectsByTags, clearEntityStatusEffectsByTags, getActiveStatusEffects } from "../combat/StatusEffects";
+import { applyStatusEffect, applyStatusEffectToEntity, clearStatusEffectsByTags,
+  clearStatusEffectsByTagsEx, clearEntityStatusEffectsByTags,
+  clearEntityStatusEffectsByTagsEx, getActiveStatusEffects } from "../combat/StatusEffects";
 import { applyActionCostAndCooldownGates } from "../combat/CastingGates";
 import { computeSongScalar } from "../songs/SongScaling";
 import { isCombatEnabledForRegion } from "../world/RegionFlags";
@@ -1154,7 +1156,13 @@ applyStatusEffect(res.char, {
       if (!cleanse || !Array.isArray(cleanse.tags) || cleanse.tags.length <= 0) {
         return `[world] [spell:${spell.name}] That spell has no cleanse definition.`;
       }
-const removed = clearStatusEffectsByTags(char, cleanse.tags, cleanse.maxToRemove);
+      const removed = clearStatusEffectsByTagsEx(
+        char,
+        cleanse.tags,
+        { protectedTags: cleanse.protectedTags ?? ["no_cleanse", "unstrippable"], priorityTags: cleanse.priorityTags },
+        cleanse.maxToRemove,
+        now,
+      );
       applySchoolGains();
 
       if (removed <= 0) {
@@ -1178,7 +1186,13 @@ const removed = clearStatusEffectsByTags(char, cleanse.tags, cleanse.maxToRemove
       if (!cleanse || !Array.isArray(cleanse.tags) || cleanse.tags.length <= 0) {
         return `[world] [spell:${spell.name}] That spell has no cleanse definition.`;
       }
-const removed = clearStatusEffectsByTags(res.char, cleanse.tags, cleanse.maxToRemove);
+      const removed = clearStatusEffectsByTagsEx(
+        res.char,
+        cleanse.tags,
+        { protectedTags: cleanse.protectedTags ?? ["no_cleanse", "unstrippable"], priorityTags: cleanse.priorityTags },
+        cleanse.maxToRemove,
+        now,
+      );
       applySchoolGains();
 
       if (removed <= 0) {
@@ -1210,12 +1224,18 @@ case "dispel_single_npc": {
   const gateErr = applyGates();
   if (gateErr) return gateErr;
 
-  const dispel = (spell as any).cleanse;
+  const dispel = (spell as any).dispel ?? (spell as any).cleanse;
   if (!dispel || !Array.isArray(dispel.tags) || dispel.tags.length <= 0) {
     return `[world] [spell:${spell.name}] That spell has no dispel definition.`;
   }
 
-  const removed = clearEntityStatusEffectsByTags(npc as any, dispel.tags, dispel.maxToRemove, now);
+  const removed = clearEntityStatusEffectsByTagsEx(
+    npc as any,
+    dispel.tags,
+    { protectedTags: dispel.protectedTags ?? ["no_dispel", "unstrippable"], priorityTags: dispel.priorityTags },
+    dispel.maxToRemove,
+    now,
+  );
   applySchoolGains();
 
   if (removed <= 0) {
@@ -1234,12 +1254,18 @@ case "dispel_single_ally": {
   const gateErr = applyGates();
   if (gateErr) return gateErr;
 
-  const dispel = (spell as any).cleanse;
+  const dispel = (spell as any).dispel ?? (spell as any).cleanse;
   if (!dispel || !Array.isArray(dispel.tags) || dispel.tags.length <= 0) {
     return `[world] [spell:${spell.name}] That spell has no dispel definition.`;
   }
 
-  const removed = clearStatusEffectsByTags(res.char, dispel.tags, dispel.maxToRemove, now);
+  const removed = clearStatusEffectsByTagsEx(
+    res.char,
+    dispel.tags,
+    { protectedTags: dispel.protectedTags ?? ["no_dispel", "unstrippable"], priorityTags: dispel.priorityTags },
+    dispel.maxToRemove,
+    now,
+  );
   applySchoolGains();
 
   if (removed <= 0) {
