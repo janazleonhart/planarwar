@@ -55,7 +55,7 @@ import {
 import { recordNpcCrimeAgainst, isProtectedNpc } from "./NpcCrime";
 import { isServiceProtectedNpcProto } from "../combat/ServiceProtection";
 import { isValidCombatTarget } from "../combat/CombatTargeting";
-import { clearAllStatusEffectsFromEntity, getActiveStatusEffectsForEntity, clearEntityStatusEffectsByTags } from "../combat/StatusEffects";
+import { clearAllStatusEffectsFromEntity, getActiveStatusEffectsForEntity, clearEntityStatusEffectsByTags, breakCrowdControlOnDamage } from "../combat/StatusEffects";
 import { handleNpcDeath } from "../combat/NpcDeathPipeline";
 
 import {
@@ -566,14 +566,10 @@ export class NpcManager {
     e.hp = newHp;
     e.alive = newHp > 0;
 
-    // CC v0.3: any damage breaks "breakable" mind-control style CC on NPCs.
+    // CC v0.3: any damage breaks "break-on-damage" mind-control style CC on NPCs.
     // Mez/Sleep/Incapacitate are intentionally fragile (EverQuest vibes).
-    try {
-      if (amount > 0 && wasAlive && newHp > 0) {
-        clearEntityStatusEffectsByTags(e as any, ["mez", "sleep", "incapacitate"], Number.MAX_SAFE_INTEGER, Date.now());
-      }
-    } catch {
-      // ignore
+    if (amount > 0 && wasAlive && newHp > 0) {
+      breakCrowdControlOnDamage({ entity: e as any, damage: amount, now: Date.now() });
     }
 
     // Death implies all combat status effects should be cleared (DOTs, debuffs, etc.)

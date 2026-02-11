@@ -1433,6 +1433,51 @@ export function clearEntityStatusEffectsByTagsExDetailed(
   return clearStatusEffectsByTagsDetailedInternal(state, tags, maxToRemove, now, options);
 }
 
+// ────────────────────────────────────────────────────────────────────────────
+// Break-on-damage CC policy (A.21)
+//
+// These crowd-control effects are intentionally fragile (EverQuest vibes).
+// Any meaningful damage should break them.
+//
+// Note: the rest of the CC family (root/snare/stun/etc.) is NOT included here
+// on purpose; those have their own balance knobs.
+// ────────────────────────────────────────────────────────────────────────────
+
+export const BREAK_ON_DAMAGE_CC_TAGS_DEFAULT: string[] = ["mez", "sleep", "incapacitate"];
+
+export function breakCrowdControlOnDamage(
+  opts: {
+    char?: CharacterState;
+    entity?: Entity;
+    damage: number;
+    now?: number;
+    tags?: string[];
+  },
+): void {
+  const dmg = Number.isFinite(opts.damage) ? Math.floor(opts.damage) : 0;
+  if (dmg <= 0) return;
+
+  const now = typeof opts.now === "number" ? opts.now : Date.now();
+  const tags = (opts.tags && opts.tags.length ? opts.tags : BREAK_ON_DAMAGE_CC_TAGS_DEFAULT).map((t) => String(t).toLowerCase());
+
+  // Best-effort: different subsystems attach status effects to different spines.
+  try {
+    if (opts.char) {
+      clearStatusEffectsByTags(opts.char as any, tags, Number.MAX_SAFE_INTEGER, now);
+    }
+  } catch {
+    // ignore
+  }
+
+  try {
+    if (opts.entity) {
+      clearEntityStatusEffectsByTags(opts.entity as any, tags, Number.MAX_SAFE_INTEGER, now);
+    }
+  } catch {
+    // ignore
+  }
+}
+
 function clearStatusEffectsByTagsInternal(
   state: InternalStatusState,
   tags: string[],

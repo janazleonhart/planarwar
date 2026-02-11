@@ -3,7 +3,7 @@
 import type { Entity } from "../shared/Entity";
 import type { CharacterState } from "../characters/CharacterTypes";
 import type { CombatResult, DamageSchool } from "./CombatEngine";
-import { computeCombatStatusSnapshot, absorbIncomingDamageFromStatusEffects, clearStatusEffectsByTags, clearEntityStatusEffectsByTags } from "./StatusEffects";
+import { computeCombatStatusSnapshot, absorbIncomingDamageFromStatusEffects, breakCrowdControlOnDamage } from "./StatusEffects";
 import { computeCowardiceDamageTakenMultiplier } from "./Cowardice";
 import { bumpRegionDanger } from "../world/RegionDanger";
 import { isServiceProtectedEntity } from "./ServiceProtection";
@@ -217,18 +217,10 @@ function applyDamageToPlayerInternal(
   e.maxHp = maxHp;
   e.hp = newHp;
 
-  // Mez v0.2: break mesmerize on any meaningful damage.
-  // We clear both character-backed and entity-backed status stores (best-effort)
-  // because different subsystems attach effects to different spines.
-  try {
-    if (dmg > 0) {
-      const now = Date.now();
-      if (char) clearStatusEffectsByTags(char as any, ["mez"], Number.MAX_SAFE_INTEGER, now);
-      clearEntityStatusEffectsByTags(e as any, ["mez"], Number.MAX_SAFE_INTEGER, now);
-    }
-  } catch {
-    // ignore
-  }
+  // CC v0.3: break "break-on-damage" CC on any meaningful damage.
+  // We clear both character-backed and entity-backed stores because different subsystems
+  // attach effects to different spines.
+  breakCrowdControlOnDamage({ char, entity: e as any, damage: dmg, now: Date.now() });
 
   markInCombat(e);
 
