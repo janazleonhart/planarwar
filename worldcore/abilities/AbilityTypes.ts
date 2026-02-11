@@ -11,7 +11,9 @@ export type AbilityKind =
   | "debuff_single_npc"
   | "damage_dot_single_npc"
   | "cleanse_self"
-  | "dispel_single_npc"; // later: melee_aoe, spell_single, spell_aoe, etc.
+  | "cleanse_single_ally"
+  | "dispel_single_npc"
+  | "dispel_single_ally"; // later: melee_aoe, spell_single, spell_aoe, etc.
 
 export interface AbilityCleanseDef {
   tags: string[];

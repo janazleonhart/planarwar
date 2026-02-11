@@ -72,6 +72,93 @@ function ensureStatusEffectsSpine(char: CharacterState): void {
   }
 }
 
+function resolvePlayerTargetInRoomForAbility(
+  ctx: MudContext,
+  roomId: string,
+  targetTokenRaw: string,
+): { sessionId: string; displayName: string; char: CharacterState; entity: any } | { err: string } {
+  if (!(ctx as any).sessions) return { err: "[world] Sessions not available." };
+  if (!(ctx as any).entities) return { err: "[world] Entities not available." };
+
+  const token = String(targetTokenRaw ?? "").trim();
+  if (!token) return { err: "Usage: ability <name> <target>" };
+
+  const selfSessionId = String((ctx as any)?.session?.id ?? "");
+  const selfEntity = (ctx as any).entities.getEntityByOwner?.(selfSessionId);
+  if (!selfEntity) return { err: "[world] You have no active entity." };
+
+  const sessions: any[] = Array.from((ctx as any).sessions.getAllSessions?.() ?? []);
+  const selfSession =
+    sessions.find((s) => s && String(s.id ?? "") === selfSessionId) ?? (ctx as any).session;
+  const selfChar = (selfSession?.character as CharacterState | undefined) ?? undefined;
+  const selfDisplayName = String(selfChar?.name ?? "you").trim() || "you";
+
+  const isSelfToken = (() => {
+    const n = token.toLowerCase();
+    return n === "me" || n === "self" || n === "myself";
+  })();
+
+  if (isSelfToken) {
+    if (!selfChar) return { err: "[world] Your character state is not loaded." };
+    return { sessionId: selfSessionId, displayName: selfDisplayName, char: selfChar, entity: selfEntity };
+  }
+
+  // Candidates: other player-like entities in this room.
+  const roomRows: Array<{ s: any; ent: any; name: string }> = [];
+  for (const s of sessions) {
+    if (!s || !s.id) continue;
+    const sid = String(s.id);
+    if (sid === selfSessionId) continue;
+
+    const ent = (ctx as any).entities.getEntityByOwner?.(sid);
+    if (!ent) continue;
+
+    const inRoom = String(ent.roomId ?? "") === roomId || String((s as any).roomId ?? "") === roomId;
+    if (!inRoom) continue;
+
+    const t = String(ent.type ?? "").toLowerCase();
+    const hasSpawnPoint = typeof (ent as any).spawnPointId === "number";
+    const isPlayerLike = t === "player" || (!!(ent as any).ownerSessionId && !hasSpawnPoint);
+    if (!isPlayerLike) continue;
+
+    const name = String(s?.character?.name ?? ent?.name ?? "").trim();
+    roomRows.push({ s, ent, name });
+  }
+
+  if (roomRows.length <= 0) return { err: `[world] No such target: '${token}'.` };
+
+  const tokenLower = token.toLowerCase();
+
+  // Prefer entity id exact match.
+  const byId = roomRows.find((r) => String(r.ent?.id ?? "").toLowerCase() === tokenLower);
+  if (byId) {
+    const ch = byId.s?.character as CharacterState | undefined;
+    if (!ch) return { err: "[world] Target character state is not loaded." };
+    const displayName = String(ch?.name ?? byId.name ?? "target").trim() || "target";
+    return { sessionId: String(byId.s.id), displayName, char: ch, entity: byId.ent };
+  }
+
+  // Prefer exact name match.
+  const exact = roomRows.find((r) => String(r.name ?? "").toLowerCase() === tokenLower);
+  if (exact) {
+    const ch = exact.s?.character as CharacterState | undefined;
+    if (!ch) return { err: "[world] Target character state is not loaded." };
+    const displayName = String(ch?.name ?? exact.name ?? "target").trim() || "target";
+    return { sessionId: String(exact.s.id), displayName, char: ch, entity: exact.ent };
+  }
+
+  // Fallback: prefix match.
+  const prefix = roomRows.find((r) => String(r.name ?? "").toLowerCase().startsWith(tokenLower));
+  if (prefix) {
+    const ch = prefix.s?.character as CharacterState | undefined;
+    if (!ch) return { err: "[world] Target character state is not loaded." };
+    const displayName = String(ch?.name ?? prefix.name ?? "target").trim() || "target";
+    return { sessionId: String(prefix.s.id), displayName, char: ch, entity: prefix.ent };
+  }
+
+  return { err: `[world] No such target: '${token}'.` };
+}
+
 function isHostileAbilityForMez(ability: AbilityDefinition): boolean {
   const kind = String((ability as any)?.kind ?? "").toLowerCase();
   if (!kind) return false;
@@ -409,6 +496,62 @@ export async function handleAbilityCommand(
       return `[world] [ability:${ability.name}] You cleanse ${result.removed} effect(s).`;
     }
 
+    case "cleanse_single_ally": {
+      const targetRaw = (targetNameRaw ?? "").trim();
+      if (!targetRaw) return "Usage: ability <name> <target>";
+
+      const now = Number((ctx as any).nowMs ?? Date.now());
+
+      const res = resolvePlayerTargetInRoomForAbility(ctx, roomId, targetRaw);
+      if ("err" in res) return res.err;
+
+      const ccErr = denyAbilityUseByCrowdControl(char, ability as any, now);
+      if (ccErr) return ccErr;
+
+      const gateErr = applyActionCostAndCooldownGates({
+        char: char as any,
+        bucket: "abilities",
+        key: abilityKey || String((ability as any).id ?? ability.name),
+        displayName: (ability as any).name,
+        cooldownMs: (ability as any).cooldownMs ?? 0,
+        resourceType: ((ability as any).resourceType ?? getPrimaryPowerResourceForClass((char as any).classId)) as any,
+        resourceCost: (ability as any).resourceCost ?? 0,
+      });
+      if (gateErr) return gateErr;
+
+      const cleanse = (ability as any).cleanse;
+      if (!cleanse || !Array.isArray(cleanse.tags) || cleanse.tags.length <= 0) {
+        return `[world] [ability:${ability.name}] That ability has no cleanse definition.`;
+      }
+
+      ensureStatusEffectsSpine(res.char);
+      const result = clearStatusEffectsByTagsExDetailed(
+        res.char as any,
+        cleanse.tags,
+        {
+          protectedTags: cleanse.protectedTags ?? ["no_cleanse", "unstrippable"],
+          priorityTags: cleanse.priorityTags,
+          requireTags: cleanse.requireTags,
+          excludeTags: cleanse.excludeTags,
+        },
+        cleanse.maxToRemove,
+        now,
+      );
+
+      if (result.removed <= 0) {
+        const reason =
+          result.matched <= 0
+            ? "cleanse_none"
+            : result.matched === result.blockedByProtected && result.blockedByRequire <= 0 && result.blockedByExclude <= 0
+              ? "cleanse_protected"
+              : "cleanse_filtered";
+        return formatBlockedReasonLine({ reason, kind: "ability", name: ability.name, verb: "cleanse", targetDisplayName: res.displayName, targetIsSelf: false });
+      }
+
+      return `[world] [ability:${ability.name}] You cleanse ${result.removed} effect(s) from ${res.displayName}.`;
+
+    }
+
     case "dispel_single_npc": {
       const targetRaw = (targetNameRaw ?? "").trim();
       if (!targetRaw) return "Usage: ability <name> <target>";
@@ -482,6 +625,62 @@ export async function handleAbilityCommand(
       }
 
       return `[world] [ability:${ability.name}] You dispel ${result.removed} effect(s) from ${npc.name}.`;
+    }
+
+    case "dispel_single_ally": {
+      const targetRaw = (targetNameRaw ?? "").trim();
+      if (!targetRaw) return "Usage: ability <name> <target>";
+
+      const now = Number((ctx as any).nowMs ?? Date.now());
+
+      const res = resolvePlayerTargetInRoomForAbility(ctx, roomId, targetRaw);
+      if ("err" in res) return res.err;
+
+      const ccErr = denyAbilityUseByCrowdControl(char, ability as any, now);
+      if (ccErr) return ccErr;
+
+      const gateErr = applyActionCostAndCooldownGates({
+        char: char as any,
+        bucket: "abilities",
+        key: abilityKey || String((ability as any).id ?? ability.name),
+        displayName: (ability as any).name,
+        cooldownMs: (ability as any).cooldownMs ?? 0,
+        resourceType: ((ability as any).resourceType ?? getPrimaryPowerResourceForClass((char as any).classId)) as any,
+        resourceCost: (ability as any).resourceCost ?? 0,
+      });
+      if (gateErr) return gateErr;
+
+      const dispel = (ability as any).dispel ?? (ability as any).cleanse;
+      if (!dispel || !Array.isArray(dispel.tags) || dispel.tags.length <= 0) {
+        return `[world] [ability:${ability.name}] That ability has no dispel definition.`;
+      }
+
+      ensureStatusEffectsSpine(res.char);
+      const result = clearStatusEffectsByTagsExDetailed(
+        res.char as any,
+        dispel.tags,
+        {
+          protectedTags: dispel.protectedTags ?? ["no_dispel", "unstrippable"],
+          priorityTags: dispel.priorityTags,
+          requireTags: dispel.requireTags,
+          excludeTags: dispel.excludeTags,
+        },
+        dispel.maxToRemove,
+        now,
+      );
+
+      if (result.removed <= 0) {
+        const reason =
+          result.matched <= 0
+            ? "dispel_none"
+            : result.matched === result.blockedByProtected && result.blockedByRequire <= 0 && result.blockedByExclude <= 0
+              ? "dispel_protected"
+              : "dispel_filtered";
+        return formatBlockedReasonLine({ reason, kind: "ability", name: ability.name, verb: "dispel", targetDisplayName: res.displayName });
+      }
+
+      return `[world] [ability:${ability.name}] You dispel ${result.removed} effect(s) from ${res.displayName}.`;
+
     }
 
     case "melee_single": {
