@@ -62,6 +62,8 @@ test("[contract] train preview spells: blocked reasons show (level too low)", as
 
     assert.match(out, /Spells blocked:/);
     assert.match(out, /\(virtuoso_dissonant_battle_chant\): level too low/);
+    // Prefer showing the required level when available.
+    assert.match(out, /requires level\s+5/);
   } finally {
     process.env.WORLDCORE_TEST = old;
   }
@@ -73,6 +75,8 @@ test("[contract] train preview abilities: blocked reasons show (level too low)",
 
   try {
     const abilityId = pickWarriorAbilityMinLevelAtLeast(3);
+    const minLevel = Number((ABILITIES as any)[abilityId]?.minLevel ?? NaN);
+    assert.ok(Number.isFinite(minLevel) && minLevel > 0, "Expected picked warrior ability to have a minLevel.");
 
     const c0 = mkChar("warrior", 1);
     const g = grantAbilityInState(c0 as any, abilityId, "test", 111);
@@ -83,6 +87,7 @@ test("[contract] train preview abilities: blocked reasons show (level too low)",
 
     assert.match(out, /Abilities blocked:/);
     assert.match(out, new RegExp(`\\(${escapeRegex(abilityId)}\\): level too low`));
+    assert.match(out, new RegExp(`requires level\\s+${minLevel}`));
   } finally {
     process.env.WORLDCORE_TEST = old;
   }

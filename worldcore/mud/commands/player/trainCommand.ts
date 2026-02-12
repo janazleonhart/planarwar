@@ -64,6 +64,12 @@ function mapLearnError(err: string): string {
   }
 }
 
+function withRequiredLevelHint(base: string, minLevel: number | undefined): string {
+  const n = Number(minLevel ?? NaN);
+  if (Number.isFinite(n) && n > 0) return `${base} (requires level ${n})`;
+  return base;
+}
+
 function fmtPreview(items: { id: string; ok: boolean; reason?: string }[], label: "Spells" | "Abilities"): string {
   if (!items.length) return `${label} preview: none.`;
 
@@ -121,8 +127,12 @@ function fmtSinglePreview(row: {
 function mapLearnErrorWithRule(res: any, label: "Spell" | "Ability"): string {
   const base = mapLearnError(res?.error);
   if (res?.error === "level_too_low") {
-    const minLevel = Number(res?.requiredRule?.minLevel ?? (label === "Spell" ? (res?.spell as any)?.minLevel : undefined) ?? NaN);
-    if (Number.isFinite(minLevel) && minLevel > 0) return `${base} (requires level ${minLevel})`;
+    const minLevel = Number(
+      res?.requiredRule?.minLevel ??
+        (label === "Spell" ? (res?.spell as any)?.minLevel : (res?.ability as any)?.minLevel) ??
+        NaN,
+    );
+    return withRequiredLevelHint(base, Number.isFinite(minLevel) ? minLevel : undefined);
   }
   return base;
 }
@@ -243,7 +253,11 @@ export async function handleTrainCommand(ctx: MudContext, args: string[]): Promi
       const rows = pSpells.map((id) => {
         const res: any = canLearnSpellForChar(char as any, id, { viaTrainer: true });
         if (res.ok) return { id, ok: true as const };
-        return { id, ok: false as const, reason: mapLearnError(res.error) };
+        const def: any = getSpellByIdOrAlias(id);
+        const reason = res.error === "level_too_low"
+          ? withRequiredLevelHint(mapLearnError(res.error), Number(res?.requiredRule?.minLevel ?? def?.minLevel))
+          : mapLearnError(res.error);
+        return { id, ok: false as const, reason };
       });
       parts.push(fmtPreview(rows as any, "Spells"));
     }
@@ -252,7 +266,11 @@ export async function handleTrainCommand(ctx: MudContext, args: string[]): Promi
       const rows = pAbilities.map((id) => {
         const res: any = canLearnAbilityForChar(char as any, id, { viaTrainer: true });
         if (res.ok) return { id, ok: true as const };
-        return { id, ok: false as const, reason: mapLearnError(res.error) };
+        const def: any = findAbilityByNameOrId(id);
+        const reason = res.error === "level_too_low"
+          ? withRequiredLevelHint(mapLearnError(res.error), Number(res?.requiredRule?.minLevel ?? def?.minLevel))
+          : mapLearnError(res.error);
+        return { id, ok: false as const, reason };
       });
       parts.push(fmtPreview(rows as any, "Abilities"));
     }
@@ -283,7 +301,11 @@ export async function handleTrainCommand(ctx: MudContext, args: string[]): Promi
       for (const id of listPendingSpellsForChar(ctx.session.character as any)) {
         const res = await ctx.characters.learnSpellWithRules(userId, charId, id, 1, { viaTrainer: true });
         if (!res.ok) {
-          untrainedSpells.push({ id, reason: mapLearnError(res.error) });
+          const def: any = getSpellByIdOrAlias(id);
+          const reason = res.error === "level_too_low"
+            ? withRequiredLevelHint(mapLearnError(res.error), Number((res as any)?.requiredRule?.minLevel ?? def?.minLevel))
+            : mapLearnError(res.error);
+          untrainedSpells.push({ id, reason });
           continue;
         }
         ctx.session.character = res.character as any;
@@ -295,7 +317,11 @@ export async function handleTrainCommand(ctx: MudContext, args: string[]): Promi
       for (const id of listPendingAbilitiesForChar(ctx.session.character as any)) {
         const res = await ctx.characters.learnAbilityWithRules(userId, charId, id, 1, { viaTrainer: true });
         if (!res.ok) {
-          untrainedAbilities.push({ id, reason: mapLearnError(res.error) });
+          const def: any = findAbilityByNameOrId(id);
+          const reason = res.error === "level_too_low"
+            ? withRequiredLevelHint(mapLearnError(res.error), Number((res as any)?.requiredRule?.minLevel ?? def?.minLevel))
+            : mapLearnError(res.error);
+          untrainedAbilities.push({ id, reason });
           continue;
         }
         ctx.session.character = res.character as any;
