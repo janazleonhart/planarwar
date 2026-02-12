@@ -28,6 +28,7 @@ import {
 import { applyProgressionForEvent } from "../MudProgressionHooks";
 import { applyProgressionEvent } from "../../progression/ProgressionCore";
 import { applyRankKillGrantsForKill } from "../../ranks/RankKillGrantService";
+import { applyRankBossDropGrantsForKill } from "../../ranks/RankBossDropGrantService";
 
 import { applySimpleDamageToPlayer, markInCombat, isDeadEntity } from "../../combat/entityCombat";
 import { gatePlayerDamageFromPlayerEntity } from "../MudCombatGates";
@@ -95,6 +96,17 @@ export async function performNpcAttack(
       } catch (err) {
         // eslint-disable-next-line no-console
         console.warn("applyRankKillGrantsForKill failed", { err, charId: char.id, protoId: protoIdForProgress });
+      }
+
+      // 4) rank boss-drop grants (Rank system v0.3)
+      try {
+        const r = await applyRankBossDropGrantsForKill(ctx, char, protoIdForProgress);
+        if (r.snippets.length > 0) {
+          result += " " + r.snippets.join(" ");
+        }
+      } catch (err) {
+        // eslint-disable-next-line no-console
+        console.warn("applyRankBossDropGrantsForKill failed", { err, charId: char.id, protoId: protoIdForProgress });
       }
     } catch (err) {
       // Never let progression hooks break combat output.

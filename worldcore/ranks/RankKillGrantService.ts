@@ -136,7 +136,8 @@ export async function applyRankKillGrantsForKill(
 
     const res = grantSpellInState(char, spellId, r.source ?? `kill:${targetProtoId}`);
     if ((res as any)?.ok) {
-      char = (res as any).next;
+      // IMPORTANT: mutate in-place so callers holding references (session.character) see the update.
+      (char as any).spellbook = (res as any).next.spellbook;
       changedSpellbook = true;
       flags[key] = now;
       changedProgression = true;
@@ -162,7 +163,7 @@ export async function applyRankKillGrantsForKill(
 
     const res = grantAbilityInState(char, abilityId, r.source ?? `kill:${targetProtoId}`);
     if ((res as any)?.ok) {
-      char = (res as any).next;
+      (char as any).abilities = (res as any).next.abilities;
       changedAbilities = true;
       flags[key] = now;
       changedProgression = true;
