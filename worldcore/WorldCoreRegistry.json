@@ -6633,6 +6633,17 @@
       ],
       "path": "worldcore/tools/seedNpcLawTagsAudit.ts"
     },
+    "tools.seedQuestRewardGrantIdAudit": {
+      "bin": "dist/worldcore/tools/seedQuestRewardGrantIdAudit.js",
+      "dependsOn": [],
+      "kind": "tool",
+      "notes": [
+        "Audits worldcore/infra/schema seed SQL: quest_rewards spell_grant/ability_grant ids must exist in the seeded spells/abilities catalogs.",
+        "Prevents seed drift where quest rewards reference non-existent spell/ability ids.",
+        "Supports --schemaDir, --json, and --allowMissing spell:<id>,ability:<id>."
+      ],
+      "path": "worldcore/tools/seedQuestRewardGrantIdAudit.ts"
+    },
     "tools.seedNpcLootItemIdAudit": {
       "bin": "dist/worldcore/tools/seedNpcLootItemIdAudit.js",
       "dependsOn": [],

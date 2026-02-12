@@ -235,11 +235,27 @@ export async function turnInQuest(
       for (const g of (reward as any).spellGrants) {
         const spellId = String(g?.spellId ?? '').trim();
         if (!spellId) continue;
+
+        // Hardening: a misconfigured DB-backed quest reward should not poison character state.
+        // If the spell id doesn't exist in the catalog, skip the grant and surface the issue.
+        const spellDef = getSpellByIdOrAlias(spellId);
+        if (!spellDef) {
+          // eslint-disable-next-line no-console
+          console.warn("Quest reward spell_grant references unknown spellId", {
+            questId: quest.id,
+            questName: quest.name,
+            spellId,
+          });
+          rewardMessages.push(
+            `[quest] (Reward misconfigured: unknown spell '${spellId}'. It was not granted.)`
+          );
+          continue;
+        }
+
         const res = grantSpellInState(char, spellId, g?.source ? String(g.source) : `quest:${quest.id}`);
         if (res && (res as any).ok) {
           char = (res as any).next;
-          const def = getSpellByIdOrAlias(spellId);
-          rewardMessages.push(`New spell granted: ${def?.name ?? spellId}. (Visit a trainer to learn higher ranks.)`);
+          rewardMessages.push(`New spell granted: ${spellDef.name}. (Visit a trainer to learn higher ranks.)`);
         }
       }
     }
@@ -248,11 +264,27 @@ export async function turnInQuest(
       for (const g of (reward as any).abilityGrants) {
         const abilityId = String(g?.abilityId ?? '').trim();
         if (!abilityId) continue;
+
+        // Hardening: a misconfigured DB-backed quest reward should not poison character state.
+        // If the ability id doesn't exist in the catalog, skip the grant and surface the issue.
+        const abilityDef = findAbilityByNameOrId(abilityId);
+        if (!abilityDef) {
+          // eslint-disable-next-line no-console
+          console.warn("Quest reward ability_grant references unknown abilityId", {
+            questId: quest.id,
+            questName: quest.name,
+            abilityId,
+          });
+          rewardMessages.push(
+            `[quest] (Reward misconfigured: unknown ability '${abilityId}'. It was not granted.)`
+          );
+          continue;
+        }
+
         const res = grantAbilityInState(char, abilityId, g?.source ? String(g.source) : `quest:${quest.id}`);
         if (res && (res as any).ok) {
           char = (res as any).next;
-          const def = findAbilityByNameOrId(abilityId);
-          rewardMessages.push(`New ability granted: ${def?.name ?? abilityId}. (Visit a trainer to learn higher ranks.)`);
+          rewardMessages.push(`New ability granted: ${abilityDef.name}. (Visit a trainer to learn higher ranks.)`);
         }
       }
     }
