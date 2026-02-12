@@ -164,6 +164,57 @@ async function loadRules(nowMs: number): Promise<void> {
   }
 }
 
+export type RankBossDropSource = {
+  npcProtoId: string;
+  chance: number;
+  source?: string | null;
+};
+
+function normalizeId(id: string): string {
+  return String(id ?? "").trim();
+}
+
+/**
+ * Best-effort read of boss drop sources for a spell.
+ *
+ * - Uses env rules if present (unit-test safe).
+ * - Falls back to DB tables otherwise (best-effort, no-op if missing).
+ */
+export async function listBossDropSourcesForSpellId(
+  spellIdRaw: string,
+  nowMs?: number
+): Promise<{ sources: RankBossDropSource[]; usedEnvRules: boolean }> {
+  const now = safeNow(nowMs);
+  const spellId = normalizeId(spellIdRaw);
+  if (!spellId) return { sources: [], usedEnvRules: false };
+
+  await loadRules(now);
+  const sources = cachedSpells
+    .filter((r) => normalizeId(r.spell_id) === spellId)
+    .map((r) => ({ npcProtoId: normalizeProtoId(r.npc_proto_id), chance: normalizeChance(r.chance, 0), source: r.source }));
+
+  return { sources, usedEnvRules: cachedFromEnv };
+}
+
+/**
+ * Best-effort read of boss drop sources for an ability.
+ */
+export async function listBossDropSourcesForAbilityId(
+  abilityIdRaw: string,
+  nowMs?: number
+): Promise<{ sources: RankBossDropSource[]; usedEnvRules: boolean }> {
+  const now = safeNow(nowMs);
+  const abilityId = normalizeId(abilityIdRaw);
+  if (!abilityId) return { sources: [], usedEnvRules: false };
+
+  await loadRules(now);
+  const sources = cachedAbilities
+    .filter((r) => normalizeId(r.ability_id) === abilityId)
+    .map((r) => ({ npcProtoId: normalizeProtoId(r.npc_proto_id), chance: normalizeChance(r.chance, 0), source: r.source }));
+
+  return { sources, usedEnvRules: cachedFromEnv };
+}
+
 export async function applyRankBossDropGrantsForKill(
   ctx: MudContext,
   char: CharacterState,

@@ -39,6 +39,12 @@ let cachedAbilities: AbilityKillGrantRow[] = [];
 
 const CACHE_TTL_MS = 15_000;
 
+export type RankKillGrantSource = {
+  targetProtoId: string;
+  requiredKills: number;
+  source?: string | null;
+};
+
 function safeNow(nowMs?: number): number {
   const n = Number(nowMs);
   return Number.isFinite(n) ? n : Date.now();
@@ -90,6 +96,58 @@ function normalizeCount(n: any, fallback = 0): number {
 function grantFlagKey(kind: "spell" | "ability", targetProtoId: string, id: string): string {
   // Keep this stable; it becomes persistent player state.
   return `rank_grant:kill:${kind}:${targetProtoId}:${id}`;
+}
+
+function normalizeId(id: string): string {
+  return String(id ?? "").trim();
+}
+
+/**
+ * Best-effort read of kill-milestone sources for a spell.
+ *
+ * In tests (WORLDCORE_TEST=1), DB access is blocked; this returns empty.
+ */
+export async function listKillGrantSourcesForSpellId(
+  spellIdRaw: string,
+  nowMs?: number
+): Promise<RankKillGrantSource[]> {
+  if (process.env.WORLDCORE_TEST === "1") return [];
+
+  const now = safeNow(nowMs);
+  const spellId = normalizeId(spellIdRaw);
+  if (!spellId) return [];
+
+  await loadRulesFromDb(now);
+  return cachedSpells
+    .filter((r) => normalizeId(r.spell_id) === spellId)
+    .map((r) => ({
+      targetProtoId: normalizeProtoId(r.target_proto_id),
+      requiredKills: Math.max(1, normalizeCount(r.required_kills, 1)),
+      source: r.source,
+    }));
+}
+
+/**
+ * Best-effort read of kill-milestone sources for an ability.
+ */
+export async function listKillGrantSourcesForAbilityId(
+  abilityIdRaw: string,
+  nowMs?: number
+): Promise<RankKillGrantSource[]> {
+  if (process.env.WORLDCORE_TEST === "1") return [];
+
+  const now = safeNow(nowMs);
+  const abilityId = normalizeId(abilityIdRaw);
+  if (!abilityId) return [];
+
+  await loadRulesFromDb(now);
+  return cachedAbilities
+    .filter((r) => normalizeId(r.ability_id) === abilityId)
+    .map((r) => ({
+      targetProtoId: normalizeProtoId(r.target_proto_id),
+      requiredKills: Math.max(1, normalizeCount(r.required_kills, 1)),
+      source: r.source,
+    }));
 }
 
 export async function applyRankKillGrantsForKill(

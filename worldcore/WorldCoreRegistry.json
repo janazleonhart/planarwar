@@ -4057,7 +4057,8 @@
       ],
       "notes": [
         "Implements 'ranks'/'rank'.",
-        "Shows pending training and learned higher-rank upgrades."
+        "Shows pending training and learned higher-rank upgrades.",
+        "Detail mode: 'ranks <spellId|abilityId>' shows rank chain, next-rank hint, and best-effort sources (quest rewards / kill milestones / boss drops)."
       ]
     },
     "mud.commands.player.recovery": {
