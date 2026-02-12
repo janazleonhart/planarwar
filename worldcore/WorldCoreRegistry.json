@@ -4045,21 +4045,22 @@
       "path": "worldcore/mud/commands/player/melodyCommand.ts"
     },
     "mud.commands.player.ranks": {
-      "kind": "mud_command",
-      "path": "worldcore/mud/commands/player/ranksCommand.ts",
-      "function": "handleRanksCommand",
       "dependsOn": [
         "spells.learning",
         "abilities.learning"
       ],
+      "function": "handleRanksCommand",
       "invokedBy": [
         "mud.handler"
       ],
+      "kind": "mud_command",
       "notes": [
         "Implements 'ranks'/'rank'.",
         "Shows pending training and learned higher-rank upgrades.",
-        "Detail mode: 'ranks <spellId|abilityId>' shows rank chain, next-rank hint, and best-effort sources (quest rewards / kill milestones / boss drops)."
-      ]
+        "Detail mode: 'ranks <spellId|abilityId>' shows rank chain, next-rank hint, and best-effort sources (quest rewards / kill milestones / boss drops).",
+        "Supports `ranks sources <id>` to list configured sources (boss drops env/DB, kill milestones DB) per rank in the chain."
+      ],
+      "path": "worldcore/mud/commands/player/ranksCommand.ts"
     },
     "mud.commands.player.recovery": {
       "dependsOn": [
@@ -4186,24 +4187,24 @@
       "path": "worldcore/mud/commands/player/statsCommand.ts"
     },
     "mud.commands.player.train": {
-      "kind": "mud_command",
-      "path": "worldcore/mud/commands/player/trainCommand.ts",
-      "function": "handleTrainCommand",
       "dependsOn": [
         "spells.learning",
         "abilities.learning",
         "characters.service"
       ],
+      "function": "handleTrainCommand",
       "invokedBy": [
         "mud.handler"
       ],
+      "kind": "mud_command",
       "notes": [
         "Implements 'train'.",
         "Converts pending spell/ability rank grants into learned entries (trainer-gated at command registry).",
         "Preview blocked reasons include required level hints when available.",
         "Preview supports --why to show error codes + rule/definition hints for blocked entries.",
         "Supports: train [list], train preview [--why] [all|spells|abilities|<id>], train spell <spell>, train ability <ability>, train spells, train abilities, train all."
-      ]
+      ],
+      "path": "worldcore/mud/commands/player/trainCommand.ts"
     },
     "mud.commands.progression.progress": {
       "dependsOn": [
@@ -5543,32 +5544,32 @@
       "path": "worldcore/quests/QuestTypes.ts"
     },
     "ranks.bossDrops": {
-      "kind": "service",
-      "path": "worldcore/ranks/RankBossDropGrantService.ts",
-      "function": "applyRankBossDropGrantsForKill",
       "dependsOn": [
         "spells.learning",
         "abilities.learning"
       ],
+      "function": "applyRankBossDropGrantsForKill",
+      "kind": "service",
       "notes": [
         "Rank system v0.3 boss-drop grants; applies as pending.",
         "Supports PW_RANK_BOSS_DROPS_JSON override for tests."
-      ]
+      ],
+      "path": "worldcore/ranks/RankBossDropGrantService.ts"
     },
     "ranks.killGrants": {
-      "kind": "service",
-      "path": "worldcore/ranks/RankKillGrantService.ts",
-      "function": "applyRankKillGrantsForKill",
       "dependsOn": [
         "db",
         "spells.learning",
         "abilities.learning",
         "progression.core"
       ],
+      "function": "applyRankKillGrantsForKill",
+      "kind": "service",
       "notes": [
         "Rank system v0.2 kill-milestone grants; applies as pending.",
         "DB-backed with safe no-op fallback on missing tables."
-      ]
+      ],
+      "path": "worldcore/ranks/RankKillGrantService.ts"
     },
     "resources.power": {
       "dependsOn": [
@@ -7072,11 +7073,7 @@
       ]
     },
     "world.invasionDirector": {
-      "kind": "service",
-      "service": "worldcore",
-      "path": "worldcore/world/InvasionDirectorService.ts",
       "class": "InvasionDirectorService",
-      "lifecycle": "singleton",
       "ctorArgs": [
         "world.events",
         "world.townSiege"
@@ -7085,15 +7082,19 @@
         "world.events",
         "world.townSiege"
       ],
-      "provides": [
-        "emit town.invasion.intent on breach"
+      "kind": "service",
+      "lifecycle": "singleton",
+      "notes": [
+        "Converts siege/breach signals into a typed intent event for future Mother Brain/invasion systems. No spawns; intent only."
       ],
       "owns": [
         "town.invasion.intent"
       ],
-      "notes": [
-        "Converts siege/breach signals into a typed intent event for future Mother Brain/invasion systems. No spawns; intent only."
-      ]
+      "path": "worldcore/world/InvasionDirectorService.ts",
+      "provides": [
+        "emit town.invasion.intent on breach"
+      ],
+      "service": "worldcore"
     },
     "world.manager": {
       "class": "ServerWorldManager",

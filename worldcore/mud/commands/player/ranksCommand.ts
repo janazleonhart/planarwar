@@ -18,6 +18,7 @@ import { SPELLS, getSpellByIdOrAlias, resolveSpellId } from "../../../spells/Spe
 import { ABILITIES, findAbilityByNameOrId } from "../../../abilities/AbilityTypes";
 
 import { listBossDropSourcesForSpellId, listBossDropSourcesForAbilityId } from "../../../ranks/RankBossDropGrantService";
+import { listKillGrantSourcesForSpellId, listKillGrantSourcesForAbilityId } from "../../../ranks/RankKillGrantService";
 
 type Listed = { id: string; name: string; rank: number; groupId: string };
 
@@ -138,6 +139,83 @@ async function fmtBossDropSources(kind: "spell" | "ability", targetId: string): 
   return `${label}: ${parts.join(", ")}`;
 }
 
+
+async function fmtKillGrantSources(kind: "spell" | "ability", targetId: string): Promise<string | null> {
+  if (!targetId) return null;
+
+  if (kind === "spell") {
+    const sources = await listKillGrantSourcesForSpellId(targetId);
+    if (!sources.length) return null;
+    const parts = sources.map((s) => `${s.targetProtoId} (kills ${s.requiredKills})`);
+    return `Kill milestones: ${parts.join(", ")}`;
+  }
+
+  const sources = await listKillGrantSourcesForAbilityId(targetId);
+  if (!sources.length) return null;
+  const parts = sources.map((s) => `${s.targetProtoId} (kills ${s.requiredKills})`);
+  return `Kill milestones: ${parts.join(", ")}`;
+}
+
+async function handleSources(ctx: MudContext, char: any, rawId: string): Promise<string> {
+  const spellId = resolveSpellId(rawId) || rawId;
+  const spellDef: any = getSpellByIdOrAlias(spellId);
+  const abilityDef: any = !spellDef ? findAbilityByNameOrId(rawId) : null;
+
+  if (!spellDef && !abilityDef) {
+    return `Unknown spell/ability: ${rawId}`;
+  }
+
+  const parts: string[] = [];
+
+  if (spellDef) {
+    const baseGroup = String(spellDef.rankGroupId ?? spellDef.id);
+    const chain = collectSpellChain(baseGroup);
+
+    parts.push(`Sources for spell: ${spellDef.name ?? spellDef.id} [${spellDef.id}]`);
+    for (const c of chain) {
+      const boss = await fmtBossDropSources("spell", c.id);
+      const kill = await fmtKillGrantSources("spell", c.id);
+
+      if (!boss && !kill) continue;
+
+      parts.push(`- Rank ${c.rank}: ${c.name} [${c.id}]`);
+      if (boss) parts.push(`  - ${boss}`);
+      if (kill) parts.push(`  - ${kill}`);
+    }
+
+    if (parts.length === 1) {
+      parts.push("No sources found (not configured / not queryable).");
+    }
+
+    parts.push("");
+    parts.push("Tip: `ranks <id>` shows your chain + next rank; `train` converts pending grants into learned ranks.");
+    return parts.join("\n");
+  }
+
+  const baseGroup = String(abilityDef.rankGroupId ?? abilityDef.id);
+  const chain = collectAbilityChain(baseGroup);
+
+  parts.push(`Sources for ability: ${abilityDef.name ?? abilityDef.id} [${abilityDef.id}]`);
+  for (const c of chain) {
+    const boss = await fmtBossDropSources("ability", c.id);
+    const kill = await fmtKillGrantSources("ability", c.id);
+
+    if (!boss && !kill) continue;
+
+    parts.push(`- Rank ${c.rank}: ${c.name} [${c.id}]`);
+    if (boss) parts.push(`  - ${boss}`);
+    if (kill) parts.push(`  - ${kill}`);
+  }
+
+  if (parts.length === 1) {
+    parts.push("No sources found (not configured / not queryable).");
+  }
+
+  parts.push("");
+  parts.push("Tip: `ranks <id>` shows your chain + next rank; `train` converts pending grants into learned ranks.");
+  return parts.join("\n");
+}
+
 async function handleDetail(ctx: MudContext, char: any, rawId: string): Promise<string> {
   const spellId = resolveSpellId(rawId) || rawId;
   const spellDef: any = getSpellByIdOrAlias(spellId);
@@ -229,7 +307,14 @@ export async function handleRanksCommand(ctx: MudContext, args: string[]): Promi
 
   const first = norm(args?.[0]);
 
-  // Detail mode: ranks <id> where <id> is not a list-mode selector.
+    // Sources mode: ranks sources <id>
+  if (first === "sources" || first === "source") {
+    const raw = String(args?.[1] ?? "").trim();
+    if (!raw) return "Usage: ranks sources <spellId|abilityId|name>";
+    return handleSources(ctx, char, raw);
+  }
+
+// Detail mode: ranks <id> where <id> is not a list-mode selector.
   if (first && first !== "pending" && first !== "p" && first !== "learned" && first !== "known" && first !== "k") {
     return handleDetail(ctx, char, String(args[0]));
   }
