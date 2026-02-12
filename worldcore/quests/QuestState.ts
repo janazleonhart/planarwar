@@ -1,6 +1,7 @@
 // worldcore/quests/QuestState.ts
 
 import type { CharacterState } from "../characters/CharacterTypes";
+import type { QuestDefinition } from "./QuestTypes";
 import { ensureProgression } from "../progression/ProgressionCore";
 
 export type QuestSource =
@@ -9,6 +10,24 @@ export type QuestSource =
       townId: string;
       tier: number;
       epoch: string;
+    }
+  | {
+      kind: "service";
+      /**
+       * Which backing quest provider produced this quest (ex: PostgresQuestService).
+       * Free-form string to keep QuestState stable even if service wiring changes.
+       */
+      service: string;
+      /**
+       * The quest id at the time it was accepted.
+       * (Useful for analytics and future re-resolution if desired.)
+       */
+      questId: string;
+      /**
+       * Snapshot of the quest definition at accept time, so turn-in and questlog
+       * can render without requiring live DB access.
+       */
+      def: QuestDefinition;
     }
   | {
       // default / legacy

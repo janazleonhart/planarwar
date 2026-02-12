@@ -69,7 +69,15 @@ export async function acceptTownQuest(
   if (!idOrIndex) return "Usage: quest accept <#|id>";
 
   const fromOffering = resolveFromOffering(offering.quests, idOrIndex);
-  const quest = fromOffering ?? resolveRegistryQuest(idOrIndex);
+
+  // Resolution order:
+  // 1) Current town offering
+  // 2) Static QuestRegistry
+  // 3) Backing QuestService (ex: PostgresQuestService) via ctx.quests
+  const fromRegistry = fromOffering ? null : resolveRegistryQuest(idOrIndex);
+  const fromService = (!fromOffering && !fromRegistry) ? await resolveServiceQuest(ctx, idOrIndex) : null;
+
+  const quest = fromOffering ?? fromRegistry ?? (fromService ? fromService.quest : null);
   if (!quest) {
     return `[quest] Unknown quest '${idOrIndex}'. (Use 'quest board' to list.)`;
   }
@@ -89,6 +97,13 @@ export async function acceptTownQuest(
         townId: offering.townId,
         tier: offering.tier,
         epoch: offering.epoch,
+      }
+    : fromService
+    ? {
+        kind: "service",
+        service: fromService.service,
+        questId: fromService.quest.id,
+        def: fromService.quest,
       }
     : { kind: "registry" };
 
@@ -155,6 +170,11 @@ export function resolveQuestDefinitionFromStateId(
     return generated.find((q) => q.id === questId) ?? null;
   }
 
+  if (src?.kind === "service") {
+    // Snapshot of a quest fetched from a backing QuestService at accept time.
+    return (src as any).def ?? null;
+  }
+
   return null;
 }
 
@@ -214,6 +234,39 @@ function resolveFromOffering(quests: QuestDefinition[], idOrIndex: string): Ques
     quests.find((q) => q.name.toLowerCase() === lower) ??
     null
   );
+}
+
+
+async function resolveServiceQuest(ctx: any, idOrNameRaw: string): Promise<{ quest: QuestDefinition; service: string } | null> {
+  const raw = String(idOrNameRaw ?? "").trim();
+  if (!raw) return null;
+
+  const svc = ctx?.quests;
+  if (!svc) return null;
+
+  // In tests and certain deployments, quests may be undefined or intentionally disabled.
+  // Treat failures as “not found” so the board still works without a DB.
+  try {
+    // 1) Prefer exact id lookup if available.
+    if (typeof svc.getQuest === "function") {
+      const q = await svc.getQuest(raw);
+      if (q) return { quest: q as QuestDefinition, service: String(svc.kind ?? "quests.service") };
+    }
+
+    // 2) Fallback to scan listQuests by id/name (case-insensitive).
+    if (typeof svc.listQuests === "function") {
+      const all = (await svc.listQuests()) as QuestDefinition[];
+      const lower = raw.toLowerCase();
+      const byId = all.find((q) => q.id.toLowerCase() === lower);
+      if (byId) return { quest: byId, service: String(svc.kind ?? "quests.service") };
+      const byName = all.find((q) => q.name.toLowerCase() === lower);
+      if (byName) return { quest: byName, service: String(svc.kind ?? "quests.service") };
+    }
+  } catch {
+    return null;
+  }
+
+  return null;
 }
 
 function resolveRegistryQuest(idOrNameRaw: string): QuestDefinition | null {

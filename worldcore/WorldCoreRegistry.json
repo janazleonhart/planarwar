@@ -5382,13 +5382,15 @@
       "notes": [
         "Quest Board v0: lists deterministic generated quests for current town context (region/town key + tier + epoch).",
         "Acceptance creates QuestState entries (quests are no longer implicitly active just because they exist in the registry).",
-        "resolveQuestDefinitionFromStateId enables QuestEngine/QuestText/turnInQuest to resolve generated quests without needing live ctx."
+        "Accept supports: (1) town offering, (2) QuestRegistry, and (3) ctx.quests QuestService (e.g. PostgresQuestService).",
+        "QuestService-accepted quests store a snapshot QuestDefinition in QuestSource so questlog/turn-in can resolve without live DB access.",
+        "resolveQuestDefinitionFromStateId enables QuestEngine/QuestText/turnInQuest to resolve generated/service quests without needing live ctx."
       ],
       "path": "worldcore/quests/TownQuestBoard.ts",
       "provides": [
         "Town-scoped deterministic quest board output",
         "Accept/abandon writes QuestState entries",
-        "Quest definition resolution for generated quests via QuestSource metadata"
+        "Quest definition resolution for generated and service quests via QuestSource metadata"
       ]
     },
     "quests.engine": {
