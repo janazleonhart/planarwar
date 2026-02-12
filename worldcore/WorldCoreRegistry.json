@@ -4044,6 +4044,22 @@
       ],
       "path": "worldcore/mud/commands/player/melodyCommand.ts"
     },
+    "mud.commands.player.ranks": {
+      "kind": "mud_command",
+      "path": "worldcore/mud/commands/player/ranksCommand.ts",
+      "function": "handleRanksCommand",
+      "dependsOn": [
+        "spells.learning",
+        "abilities.learning"
+      ],
+      "invokedBy": [
+        "mud.handler"
+      ],
+      "notes": [
+        "Implements 'ranks'/'rank'.",
+        "Shows pending training and learned higher-rank upgrades."
+      ]
+    },
     "mud.commands.player.recovery": {
       "dependsOn": [
         "mud.context",
@@ -4167,6 +4183,23 @@
         "Builds character sheet line including gear and active title using buildCharacterSheetLine."
       ],
       "path": "worldcore/mud/commands/player/statsCommand.ts"
+    },
+    "mud.commands.player.train": {
+      "kind": "mud_command",
+      "path": "worldcore/mud/commands/player/trainCommand.ts",
+      "function": "handleTrainCommand",
+      "dependsOn": [
+        "spells.learning",
+        "abilities.learning",
+        "characters.service"
+      ],
+      "invokedBy": [
+        "mud.handler"
+      ],
+      "notes": [
+        "Implements 'train'.",
+        "Converts pending spell/ability rank grants into learned entries (trainer-gated at command registry)."
+      ]
     },
     "mud.commands.progression.progress": {
       "dependsOn": [
@@ -5504,6 +5537,34 @@
         "Provides QUESTS hardcoded map including rat_culling, ore_sampling, rat_tail_collection, greet_quartermaster."
       ],
       "path": "worldcore/quests/QuestTypes.ts"
+    },
+    "ranks.bossDrops": {
+      "kind": "service",
+      "path": "worldcore/ranks/RankBossDropGrantService.ts",
+      "function": "applyRankBossDropGrantsForKill",
+      "dependsOn": [
+        "spells.learning",
+        "abilities.learning"
+      ],
+      "notes": [
+        "Rank system v0.3 boss-drop grants; applies as pending.",
+        "Supports PW_RANK_BOSS_DROPS_JSON override for tests."
+      ]
+    },
+    "ranks.killGrants": {
+      "kind": "service",
+      "path": "worldcore/ranks/RankKillGrantService.ts",
+      "function": "applyRankKillGrantsForKill",
+      "dependsOn": [
+        "db",
+        "spells.learning",
+        "abilities.learning",
+        "progression.core"
+      ],
+      "notes": [
+        "Rank system v0.2 kill-milestone grants; applies as pending.",
+        "DB-backed with safe no-op fallback on missing tables."
+      ]
     },
     "resources.power": {
       "dependsOn": [
@@ -6952,6 +7013,25 @@
         "fromState(DomeBoundaryState)"
       ]
     },
+    "world.eventJournal": {
+      "class": "WorldEventJournalService",
+      "ctorArgs": [
+        "world.events"
+      ],
+      "dependsOn": [
+        "world.events"
+      ],
+      "kind": "service",
+      "lifecycle": "singleton",
+      "notes": [
+        "In-memory ring-buffer journal for WorldEventBus events (debug + future world-sim hooks)."
+      ],
+      "path": "worldcore/world/WorldEventJournalService.ts",
+      "provides": [
+        "peekRecent(query?)",
+        "clear()"
+      ]
+    },
     "world.events": {
       "class": "WorldEventBus",
       "ctorArgs": [],
@@ -6984,25 +7064,6 @@
         "off(event, handler)",
         "emit(event, payload)",
         "emitAsync(event, payload)",
-        "clear()"
-      ]
-    },
-    "world.eventJournal": {
-      "class": "WorldEventJournalService",
-      "ctorArgs": [
-        "world.events"
-      ],
-      "dependsOn": [
-        "world.events"
-      ],
-      "kind": "service",
-      "lifecycle": "singleton",
-      "notes": [
-        "In-memory ring-buffer journal for WorldEventBus events (debug + future world-sim hooks)."
-      ],
-      "path": "worldcore/world/WorldEventJournalService.ts",
-      "provides": [
-        "peekRecent(query?)",
         "clear()"
       ]
     },

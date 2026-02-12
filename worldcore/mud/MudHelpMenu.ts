@@ -56,6 +56,8 @@ export const HELP_ENTRIES: { cmd: string; desc: string; debug?: boolean }[] = [
   { cmd: "ability <name> [target]", desc: "Use an ability." },
   { cmd: "spells", desc: "List your known spells." },
   { cmd: "cast <spell> [target]", desc: "Cast a spell." },
+  { cmd: "train", desc: "Train pending spell/ability ranks at a trainer in town." },
+  { cmd: "ranks / rank", desc: "Show your pending training and learned rank upgrades." },
   { cmd: "respawn", desc: "If dead, return to life in place." },
   { cmd: "rest / sleep", desc: "Restore health (and resurrect if dead)." },
 

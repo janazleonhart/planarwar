@@ -50,6 +50,7 @@ import { handleAbilityMudCommand } from "./combat/abilityCommand";
 import { handleAbilitiesCommand } from "./player/abilitiesCommand";
 import { handleSpellsCommand } from "./player/spellsCommand";
 import { handleTrainCommand } from "./player/trainCommand";
+import { handleRanksCommand } from "./player/ranksCommand";
 import { handleAttackCommand } from "./combat/attackCommand";
 import { handleShootCommand } from "./combat/shootCommand";
 import { handleAutoAttackCommand } from "./combat/autoAttackCommand";
@@ -227,6 +228,8 @@ export const COMMANDS: Record<string, MudCommandHandlerFn> = {
   spells: async (ctx, char) => handleSpellsCommand(ctx),
   train: async (ctx, char, input) =>
     requireTownService(ctx, char, "trainer", () => handleTrainCommand(ctx, (input as any).args ?? [])),
+  ranks: async (ctx, char, input) => handleRanksCommand(ctx, (input as any).args ?? []),
+  rank: async (ctx, char, input) => handleRanksCommand(ctx, (input as any).args ?? []),
   attack: handleAttackCommand,
   // Ranged verbs (v1): explicit ranged attack with range + forward-cone LoS.
   // Ammo, projectile travel, and cover rules come later.
