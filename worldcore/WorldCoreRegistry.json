@@ -4198,7 +4198,8 @@
       ],
       "notes": [
         "Implements 'train'.",
-        "Converts pending spell/ability rank grants into learned entries (trainer-gated at command registry)."
+        "Converts pending spell/ability rank grants into learned entries (trainer-gated at command registry).",
+        "Supports: train [list], train spell <spell>, train ability <ability>, train spells, train abilities, train all."
       ]
     },
     "mud.commands.progression.progress": {

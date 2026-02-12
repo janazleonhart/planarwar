@@ -20,6 +20,24 @@ function fmtList(items: string[], label: string): string {
   return `${label} pending training:\n${lines.join("\n")}`;
 }
 
+function fmtTrained(items: string[], label: string): string {
+  if (!items.length) return `${label} trained: none.`;
+  const lines = items.map((id) => {
+    const name = label === "Spells" ? (getSpellByIdOrAlias(id) as any)?.name : (findAbilityByNameOrId(id) as any)?.name;
+    return `- ${name ? `${name} ` : ""}(${id})`;
+  });
+  return `${label} trained:\n${lines.join("\n")}`;
+}
+
+function fmtUntrained(items: { id: string; reason: string }[], label: string): string {
+  if (!items.length) return `${label} untrained: none.`;
+  const lines = items.map((x) => {
+    const name = label === "Spells" ? (getSpellByIdOrAlias(x.id) as any)?.name : (findAbilityByNameOrId(x.id) as any)?.name;
+    return `- ${name ? `${name} ` : ""}(${x.id}): ${x.reason}`;
+  });
+  return `${label} untrained:\n${lines.join("\n")}`;
+}
+
 export async function handleTrainCommand(ctx: MudContext, args: string[]): Promise<string> {
   const char = ctx.session.character;
   if (!char) return "You do not have an active character.";
@@ -37,6 +55,83 @@ export async function handleTrainCommand(ctx: MudContext, args: string[]): Promi
     const parts: string[] = [];
     if (pSpells.length) parts.push(fmtList(pSpells, "Spells"));
     if (pAbilities.length) parts.push(fmtList(pAbilities, "Abilities"));
+    return parts.join("\n\n");
+  }
+
+  // Bulk training:
+  // train all
+  // train spells
+  // train abilities
+  if (sub === "all" || sub === "spells" || sub === "abilities") {
+    const doSpells = sub === "all" || sub === "spells";
+    const doAbilities = sub === "all" || sub === "abilities";
+
+    const startChar: any = ctx.session.character;
+    const userId = (startChar as any).userId;
+    const charId = (startChar as any).id;
+
+    const trainedSpells: string[] = [];
+    const trainedAbilities: string[] = [];
+    const untrainedSpells: { id: string; reason: string }[] = [];
+    const untrainedAbilities: { id: string; reason: string }[] = [];
+
+    if (doSpells) {
+      for (const id of listPendingSpellsForChar(ctx.session.character as any)) {
+        const res = await ctx.characters.learnSpellWithRules(userId, charId, id, 1, { viaTrainer: true });
+        if (!res.ok) {
+          const reason =
+            res.error === "requires_trainer"
+              ? "requires trainer"
+              : res.error === "level_too_low"
+                ? "level too low"
+                : res.error === "not_learnable"
+                  ? "not learnable"
+                  : res.error === "requires_grant"
+                    ? "requires grant"
+                    : String(res.error);
+          untrainedSpells.push({ id, reason });
+          continue;
+        }
+        ctx.session.character = res.character as any;
+        trainedSpells.push(id);
+      }
+    }
+
+    if (doAbilities) {
+      for (const id of listPendingAbilitiesForChar(ctx.session.character as any)) {
+        const res = await ctx.characters.learnAbilityWithRules(userId, charId, id, 1, { viaTrainer: true });
+        if (!res.ok) {
+          const reason =
+            res.error === "requires_trainer"
+              ? "requires trainer"
+              : res.error === "level_too_low"
+                ? "level too low"
+                : res.error === "not_learnable"
+                  ? "not learnable"
+                  : res.error === "requires_grant"
+                    ? "requires grant"
+                    : String(res.error);
+          untrainedAbilities.push({ id, reason });
+          continue;
+        }
+        ctx.session.character = res.character as any;
+        trainedAbilities.push(id);
+      }
+    }
+
+    if (!trainedSpells.length && !trainedAbilities.length && !untrainedSpells.length && !untrainedAbilities.length) {
+      return "You have nothing waiting to be trained.";
+    }
+
+    const parts: string[] = [];
+    if (doSpells) {
+      parts.push(fmtTrained(trainedSpells, "Spells"));
+      parts.push(fmtUntrained(untrainedSpells, "Spells"));
+    }
+    if (doAbilities) {
+      parts.push(fmtTrained(trainedAbilities, "Abilities"));
+      parts.push(fmtUntrained(untrainedAbilities, "Abilities"));
+    }
     return parts.join("\n\n");
   }
 
@@ -107,5 +202,5 @@ export async function handleTrainCommand(ctx: MudContext, args: string[]): Promi
     return `You train ${def.name}.`;
   }
 
-  return "Usage: train [list] | train spell <spell> | train ability <ability>";
+  return "Usage: train [list] | train all | train spells | train abilities | train spell <spell> | train ability <ability>";
 }
