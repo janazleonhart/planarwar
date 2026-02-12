@@ -6,12 +6,13 @@
 //
 // v0.4+: bulk modes (train all / spells / abilities)
 // v0.6+: preview mode (train preview [all|spells|abilities])
+// v0.7+: single-target preview (train preview <spellId|abilityId|name>)
 
 import type { MudContext } from "../../MudContext";
 
 import { canLearnSpellForChar, listPendingSpellsForChar } from "../../../spells/SpellLearning";
-import { canLearnAbilityForChar, listPendingAbilitiesForChar } from "../../../abilities/AbilityLearning";
-import { getSpellByIdOrAlias } from "../../../spells/SpellTypes";
+import { canLearnAbilityForChar, isAbilityKnownForChar, listPendingAbilitiesForChar } from "../../../abilities/AbilityLearning";
+import { getSpellByIdOrAlias, isSpellKnownForChar, resolveSpellId } from "../../../spells/SpellTypes";
 import { findAbilityByNameOrId } from "../../../abilities/AbilityTypes";
 
 function nameFor(label: "Spells" | "Abilities", id: string): string | null {
@@ -100,6 +101,48 @@ function fmtPreview(items: { id: string; ok: boolean; reason?: string }[], label
   return parts.join("\n\n");
 }
 
+function fmtSinglePreview(row: {
+  label: "Spell" | "Ability";
+  id: string;
+  name: string;
+  status: "learned" | "pending" | "not_granted";
+  ok: boolean;
+  reason?: string;
+}): string {
+  const parts: string[] = [];
+  parts.push(`${row.label} preview: ${row.name} [${row.id}]`);
+  parts.push(`Status: ${row.status === "not_granted" ? "not granted" : row.status}.`);
+  parts.push(`Trainable now: ${row.ok ? "yes" : "no"}.`);
+  if (!row.ok) parts.push(`Blocked: ${row.reason ?? "blocked"}.`);
+  parts.push("Tip: use `train` in town near a trainer to convert pending grants into learned ranks.");
+  return parts.join("\n");
+}
+
+function mapLearnErrorWithRule(res: any, label: "Spell" | "Ability"): string {
+  const base = mapLearnError(res?.error);
+  if (res?.error === "level_too_low") {
+    const minLevel = Number(res?.requiredRule?.minLevel ?? (label === "Spell" ? (res?.spell as any)?.minLevel : undefined) ?? NaN);
+    if (Number.isFinite(minLevel) && minLevel > 0) return `${base} (requires level ${minLevel})`;
+  }
+  return base;
+}
+
+function resolvePendingStatus(
+  char: any,
+  kind: "spell" | "ability",
+  canonicalId: string,
+): "learned" | "pending" | "not_granted" {
+  if (kind === "spell") {
+    if (isSpellKnownForChar(char as any, canonicalId)) return "learned";
+    const pending = new Set(listPendingSpellsForChar(char as any));
+    return pending.has(canonicalId) ? "pending" : "not_granted";
+  }
+
+  if (isAbilityKnownForChar(char as any, canonicalId)) return "learned";
+  const pending = new Set(listPendingAbilitiesForChar(char as any));
+  return pending.has(canonicalId) ? "pending" : "not_granted";
+}
+
 export async function handleTrainCommand(ctx: MudContext, args: string[]): Promise<string> {
   const char = ctx.session.character;
   if (!char) return "You do not have an active character.";
@@ -126,7 +169,64 @@ export async function handleTrainCommand(ctx: MudContext, args: string[]): Promi
   // train preview spells
   // train preview abilities
   if (sub === "preview" || sub === "pv") {
-    const mode = String(args[1] ?? "all").trim().toLowerCase() || "all";
+    const first = String(args[1] ?? "").trim();
+    const mode = first.toLowerCase() || "all";
+
+    const isMode = mode === "all" || mode === "spells" || mode === "spell" || mode === "abilities" || mode === "ability";
+    if (!isMode && first) {
+      // Single-target preview: train preview <id|name>
+      const raw = args.slice(1).join(" ").trim();
+      if (!raw) return "Usage: train preview [all|spells|abilities] | train preview <spellId|abilityId|name>";
+
+      // Try spell first.
+      const sDef: any = getSpellByIdOrAlias(raw);
+      const sId = sDef ? resolveSpellId(String(sDef.id ?? raw)) : resolveSpellId(raw);
+
+      // Then ability.
+      const aDef: any = findAbilityByNameOrId(raw);
+      const aId = aDef ? String(aDef.id ?? "") : "";
+
+      const pendingSpells = new Set(listPendingSpellsForChar(char as any));
+      const pendingAbilities = new Set(listPendingAbilitiesForChar(char as any));
+
+      const spellCandidate = !!(sDef && sId);
+      const abilityCandidate = !!(aDef && aId);
+
+      // If both match, prefer whatever is pending. Otherwise, prefer spell.
+      const chooseSpell =
+        spellCandidate &&
+        (!abilityCandidate || pendingSpells.has(String(sId)) || !pendingAbilities.has(String(aId)));
+
+      if (chooseSpell && sDef && sId) {
+        const status = resolvePendingStatus(char as any, "spell", String(sId));
+        const res: any = canLearnSpellForChar(char as any, String(sId), { viaTrainer: true });
+        return fmtSinglePreview({
+          label: "Spell",
+          id: String(sId),
+          name: String(sDef.name ?? sId),
+          status,
+          ok: !!res.ok,
+          reason: res.ok ? undefined : mapLearnErrorWithRule(res, "Spell"),
+        });
+      }
+
+      if (abilityCandidate && aDef && aId) {
+        const id = String(aId).toLowerCase().trim();
+        const status = resolvePendingStatus(char as any, "ability", id);
+        const res: any = canLearnAbilityForChar(char as any, id, { viaTrainer: true });
+        return fmtSinglePreview({
+          label: "Ability",
+          id,
+          name: String(aDef.name ?? id),
+          status,
+          ok: !!res.ok,
+          reason: res.ok ? undefined : mapLearnErrorWithRule(res, "Ability"),
+        });
+      }
+
+      return "Unknown spell or ability.";
+    }
+
     const doSpells = mode === "all" || mode === "spells" || mode === "spell";
     const doAbilities = mode === "all" || mode === "abilities" || mode === "ability";
 
@@ -274,5 +374,5 @@ export async function handleTrainCommand(ctx: MudContext, args: string[]): Promi
     return `You train ${def.name}.`;
   }
 
-  return "Usage: train [list] | train preview [all|spells|abilities] | train all | train spells | train abilities | train spell <spell> | train ability <ability>";
+  return "Usage: train [list] | train preview [all|spells|abilities|<id>] | train all | train spells | train abilities | train spell <spell> | train ability <ability>";
 }
