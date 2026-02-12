@@ -156,6 +156,27 @@ export const QUESTS: Record<string, QuestDefinition> = {
       xp: 50,
     },
   },
+
+  // Rank system v0.2 example: quest reward grants pending spell + ability.
+  // Used by contract tests and as a reference kit for content authors.
+  trainer_spell_grant_test: {
+    id: "trainer_spell_grant_test",
+    name: "Trainer's Lesson",
+    description: "A trainer offers you a lesson — but you must first speak to them.",
+    objectives: [
+      {
+        kind: "talk_to",
+        npcId: "trainer_aria",
+        required: 1,
+      },
+    ],
+    reward: {
+      xp: 10,
+      spellGrants: [{ spellId: "magician_summon_wolf_ii", source: "quest:trainer_spell_grant_test" }],
+      abilityGrants: [{ abilityId: "warrior_cleave", source: "quest:trainer_spell_grant_test" }],
+    },
+  },
+
 };
 
 export function listAllQuests(): QuestDefinition[] {

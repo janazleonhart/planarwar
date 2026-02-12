@@ -9,7 +9,7 @@ import type { CharacterState } from "../characters/CharacterTypes";
 import { ensureQuestState, type QuestSource } from "./QuestState";
 import type { QuestDefinition } from "./QuestTypes";
 import { generateTownQuests } from "./QuestGenerator";
-import { getQuestById } from "./QuestRegistry";
+import { getQuestById, getAllQuests } from "./QuestRegistry";
 
 // ----------------------------
 // Public API
@@ -68,7 +68,8 @@ export async function acceptTownQuest(
   const idOrIndex = String(idOrIndexRaw ?? "").trim();
   if (!idOrIndex) return "Usage: quest accept <#|id>";
 
-  const quest = resolveFromOffering(offering.quests, idOrIndex);
+  const fromOffering = resolveFromOffering(offering.quests, idOrIndex);
+  const quest = fromOffering ?? resolveRegistryQuest(idOrIndex);
   if (!quest) {
     return `[quest] Unknown quest '${idOrIndex}'. (Use 'quest board' to list.)`;
   }
@@ -82,12 +83,14 @@ export async function acceptTownQuest(
     return `[quest] '${quest.name}' is already turned in.`;
   }
 
-  const source: QuestSource = {
-    kind: "generated_town",
-    townId: offering.townId,
-    tier: offering.tier,
-    epoch: offering.epoch,
-  };
+  const source: QuestSource = fromOffering
+    ? {
+        kind: "generated_town",
+        townId: offering.townId,
+        tier: offering.tier,
+        epoch: offering.epoch,
+      }
+    : { kind: "registry" };
 
   state[quest.id] = {
     state: "active",
@@ -209,6 +212,24 @@ function resolveFromOffering(quests: QuestDefinition[], idOrIndex: string): Ques
   return (
     quests.find((q) => q.id.toLowerCase() === lower) ??
     quests.find((q) => q.name.toLowerCase() === lower) ??
+    null
+  );
+}
+
+function resolveRegistryQuest(idOrNameRaw: string): QuestDefinition | null {
+  const raw = String(idOrNameRaw ?? '').trim();
+  if (!raw || /^\d+$/.test(raw)) return null;
+
+  // Exact id match first
+  const byId = getQuestById(raw);
+  if (byId) return byId;
+
+  // Case-insensitive id or name match in registry
+  const lower = raw.toLowerCase();
+  const all = getAllQuests();
+  return (
+    all.find((q) => q.id.toLowerCase() === lower) ??
+    all.find((q) => q.name.toLowerCase() === lower) ??
     null
   );
 }
