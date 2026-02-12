@@ -1,41 +1,103 @@
 // worldcore/mud/commands/player/trainCommand.ts
 //
-// Spell + Ability Rank System v0.1
+// Spell + Ability Rank System v0.x
 //
 // "train" converts granted (pending) spell/ability ranks into learned entries.
+//
+// v0.4+: bulk modes (train all / spells / abilities)
+// v0.6+: preview mode (train preview [all|spells|abilities])
 
 import type { MudContext } from "../../MudContext";
 
-import { listPendingSpellsForChar } from "../../../spells/SpellLearning";
-import { listPendingAbilitiesForChar } from "../../../abilities/AbilityLearning";
+import { canLearnSpellForChar, listPendingSpellsForChar } from "../../../spells/SpellLearning";
+import { canLearnAbilityForChar, listPendingAbilitiesForChar } from "../../../abilities/AbilityLearning";
 import { getSpellByIdOrAlias } from "../../../spells/SpellTypes";
 import { findAbilityByNameOrId } from "../../../abilities/AbilityTypes";
 
-function fmtList(items: string[], label: string): string {
+function nameFor(label: "Spells" | "Abilities", id: string): string | null {
+  if (label === "Spells") return (getSpellByIdOrAlias(id) as any)?.name ?? null;
+  return (findAbilityByNameOrId(id) as any)?.name ?? null;
+}
+
+function fmtList(items: string[], label: "Spells" | "Abilities"): string {
   if (!items.length) return `${label}: none.`;
   const lines = items.map((id) => {
-    const name = label === "Spells" ? (getSpellByIdOrAlias(id) as any)?.name : (findAbilityByNameOrId(id) as any)?.name;
+    const name = nameFor(label, id);
     return `- ${name ? `${name} ` : ""}(${id})`;
   });
   return `${label} pending training:\n${lines.join("\n")}`;
 }
 
-function fmtTrained(items: string[], label: string): string {
+function fmtTrained(items: string[], label: "Spells" | "Abilities"): string {
   if (!items.length) return `${label} trained: none.`;
   const lines = items.map((id) => {
-    const name = label === "Spells" ? (getSpellByIdOrAlias(id) as any)?.name : (findAbilityByNameOrId(id) as any)?.name;
+    const name = nameFor(label, id);
     return `- ${name ? `${name} ` : ""}(${id})`;
   });
   return `${label} trained:\n${lines.join("\n")}`;
 }
 
-function fmtUntrained(items: { id: string; reason: string }[], label: string): string {
+function fmtUntrained(items: { id: string; reason: string }[], label: "Spells" | "Abilities"): string {
   if (!items.length) return `${label} untrained: none.`;
   const lines = items.map((x) => {
-    const name = label === "Spells" ? (getSpellByIdOrAlias(x.id) as any)?.name : (findAbilityByNameOrId(x.id) as any)?.name;
+    const name = nameFor(label, x.id);
     return `- ${name ? `${name} ` : ""}(${x.id}): ${x.reason}`;
   });
   return `${label} untrained:\n${lines.join("\n")}`;
+}
+
+function mapLearnError(err: string): string {
+  switch (String(err)) {
+    case "requires_trainer":
+      return "requires trainer";
+    case "level_too_low":
+      return "level too low";
+    case "not_learnable":
+      return "not learnable";
+    case "class_mismatch":
+      return "class mismatch";
+    case "requires_grant":
+      return "requires grant";
+    default:
+      return String(err);
+  }
+}
+
+function fmtPreview(items: { id: string; ok: boolean; reason?: string }[], label: "Spells" | "Abilities"): string {
+  if (!items.length) return `${label} preview: none.`;
+
+  const trainable = items.filter((x) => x.ok);
+  const blocked = items.filter((x) => !x.ok);
+
+  const parts: string[] = [];
+
+  if (trainable.length) {
+    parts.push(
+      `${label} trainable now:\n${trainable
+        .map((x) => {
+          const name = nameFor(label, x.id);
+          return `- ${name ? `${name} ` : ""}(${x.id})`;
+        })
+        .join("\n")}`,
+    );
+  } else {
+    parts.push(`${label} trainable now: none.`);
+  }
+
+  if (blocked.length) {
+    parts.push(
+      `${label} blocked:\n${blocked
+        .map((x) => {
+          const name = nameFor(label, x.id);
+          return `- ${name ? `${name} ` : ""}(${x.id}): ${x.reason ?? "blocked"}`;
+        })
+        .join("\n")}`,
+    );
+  } else {
+    parts.push(`${label} blocked: none.`);
+  }
+
+  return parts.join("\n\n");
 }
 
 export async function handleTrainCommand(ctx: MudContext, args: string[]): Promise<string> {
@@ -55,6 +117,48 @@ export async function handleTrainCommand(ctx: MudContext, args: string[]): Promi
     const parts: string[] = [];
     if (pSpells.length) parts.push(fmtList(pSpells, "Spells"));
     if (pAbilities.length) parts.push(fmtList(pAbilities, "Abilities"));
+    return parts.join("\n\n");
+  }
+
+  // Preview mode:
+  // train preview
+  // train preview all
+  // train preview spells
+  // train preview abilities
+  if (sub === "preview" || sub === "pv") {
+    const mode = String(args[1] ?? "all").trim().toLowerCase() || "all";
+    const doSpells = mode === "all" || mode === "spells" || mode === "spell";
+    const doAbilities = mode === "all" || mode === "abilities" || mode === "ability";
+
+    const pSpells = doSpells ? listPendingSpellsForChar(char as any) : [];
+    const pAbilities = doAbilities ? listPendingAbilitiesForChar(char as any) : [];
+
+    if (!pSpells.length && !pAbilities.length) {
+      return "You have nothing waiting to be trained.";
+    }
+
+    const parts: string[] = [];
+
+    if (doSpells) {
+      const rows = pSpells.map((id) => {
+        const res: any = canLearnSpellForChar(char as any, id, { viaTrainer: true });
+        if (res.ok) return { id, ok: true as const };
+        return { id, ok: false as const, reason: mapLearnError(res.error) };
+      });
+      parts.push(fmtPreview(rows as any, "Spells"));
+    }
+
+    if (doAbilities) {
+      const rows = pAbilities.map((id) => {
+        const res: any = canLearnAbilityForChar(char as any, id, { viaTrainer: true });
+        if (res.ok) return { id, ok: true as const };
+        return { id, ok: false as const, reason: mapLearnError(res.error) };
+      });
+      parts.push(fmtPreview(rows as any, "Abilities"));
+    }
+
+    parts.push("Tip: use `train all` (or `train spells` / `train abilities`) to perform training at a trainer.");
+
     return parts.join("\n\n");
   }
 
@@ -79,17 +183,7 @@ export async function handleTrainCommand(ctx: MudContext, args: string[]): Promi
       for (const id of listPendingSpellsForChar(ctx.session.character as any)) {
         const res = await ctx.characters.learnSpellWithRules(userId, charId, id, 1, { viaTrainer: true });
         if (!res.ok) {
-          const reason =
-            res.error === "requires_trainer"
-              ? "requires trainer"
-              : res.error === "level_too_low"
-                ? "level too low"
-                : res.error === "not_learnable"
-                  ? "not learnable"
-                  : res.error === "requires_grant"
-                    ? "requires grant"
-                    : String(res.error);
-          untrainedSpells.push({ id, reason });
+          untrainedSpells.push({ id, reason: mapLearnError(res.error) });
           continue;
         }
         ctx.session.character = res.character as any;
@@ -101,17 +195,7 @@ export async function handleTrainCommand(ctx: MudContext, args: string[]): Promi
       for (const id of listPendingAbilitiesForChar(ctx.session.character as any)) {
         const res = await ctx.characters.learnAbilityWithRules(userId, charId, id, 1, { viaTrainer: true });
         if (!res.ok) {
-          const reason =
-            res.error === "requires_trainer"
-              ? "requires trainer"
-              : res.error === "level_too_low"
-                ? "level too low"
-                : res.error === "not_learnable"
-                  ? "not learnable"
-                  : res.error === "requires_grant"
-                    ? "requires grant"
-                    : String(res.error);
-          untrainedAbilities.push({ id, reason });
+          untrainedAbilities.push({ id, reason: mapLearnError(res.error) });
           continue;
         }
         ctx.session.character = res.character as any;
@@ -149,13 +233,7 @@ export async function handleTrainCommand(ctx: MudContext, args: string[]): Promi
       return `You do not have ${def.name} granted (pending training).`;
     }
 
-    const res = await ctx.characters.learnSpellWithRules(
-      (char as any).userId,
-      (char as any).id,
-      def.id,
-      1,
-      { viaTrainer: true },
-    );
+    const res = await ctx.characters.learnSpellWithRules((char as any).userId, (char as any).id, def.id, 1, { viaTrainer: true });
 
     if (!res.ok) {
       if (res.error === "requires_grant") return `You do not have ${def.name} granted (pending training).`;
@@ -182,13 +260,7 @@ export async function handleTrainCommand(ctx: MudContext, args: string[]): Promi
       return `You do not have ${def.name} granted (pending training).`;
     }
 
-    const res = await ctx.characters.learnAbilityWithRules(
-      (char as any).userId,
-      (char as any).id,
-      def.id,
-      1,
-      { viaTrainer: true },
-    );
+    const res = await ctx.characters.learnAbilityWithRules((char as any).userId, (char as any).id, def.id, 1, { viaTrainer: true });
 
     if (!res.ok) {
       if (res.error === "requires_grant") return `You do not have ${def.name} granted (pending training).`;
@@ -202,5 +274,5 @@ export async function handleTrainCommand(ctx: MudContext, args: string[]): Promi
     return `You train ${def.name}.`;
   }
 
-  return "Usage: train [list] | train all | train spells | train abilities | train spell <spell> | train ability <ability>";
+  return "Usage: train [list] | train preview [all|spells|abilities] | train all | train spells | train abilities | train spell <spell> | train ability <ability>";
 }
