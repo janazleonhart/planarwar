@@ -7,6 +7,7 @@
 // v0.4+: bulk modes (train all / spells / abilities)
 // v0.6+: preview mode (train preview [all|spells|abilities])
 // v0.7+: single-target preview (train preview <spellId|abilityId|name>)
+// v0.9+: preview "why" flag (train preview --why ...)
 
 import type { MudContext } from "../../MudContext";
 
@@ -68,6 +69,24 @@ function withRequiredLevelHint(base: string, minLevel: number | undefined): stri
   const n = Number(minLevel ?? NaN);
   if (Number.isFinite(n) && n > 0) return `${base} (requires level ${n})`;
   return base;
+}
+
+function fmtWhySuffix(res: any, label: "Spell" | "Ability"): string {
+  const err = String(res?.error ?? "").trim();
+  if (!err) return "";
+
+  const parts: string[] = [`error=${err}`];
+  const rule: any = res?.requiredRule;
+  if (rule) {
+    if (rule.classId != null) parts.push(`rule.classId=${String(rule.classId)}`);
+    if (rule.minLevel != null) parts.push(`rule.minLevel=${String(rule.minLevel)}`);
+  } else {
+    const def: any = label === "Spell" ? res?.spell : res?.ability;
+    if (def?.classId != null) parts.push(`def.classId=${String(def.classId)}`);
+    if (def?.minLevel != null) parts.push(`def.minLevel=${String(def.minLevel)}`);
+  }
+
+  return ` [why: ${parts.join(", ")}]`;
 }
 
 function fmtPreview(items: { id: string; ok: boolean; reason?: string }[], label: "Spells" | "Abilities"): string {
@@ -179,14 +198,18 @@ export async function handleTrainCommand(ctx: MudContext, args: string[]): Promi
   // train preview spells
   // train preview abilities
   if (sub === "preview" || sub === "pv") {
-    const first = String(args[1] ?? "").trim();
+    const rest = args.slice(1).map((x) => String(x ?? "").trim()).filter(Boolean);
+    const why = rest.some((x) => x === "--why" || x === "why");
+    const restNoFlags = rest.filter((x) => x !== "--why" && x !== "why");
+
+    const first = String(restNoFlags[0] ?? "").trim();
     const mode = first.toLowerCase() || "all";
 
     const isMode = mode === "all" || mode === "spells" || mode === "spell" || mode === "abilities" || mode === "ability";
     if (!isMode && first) {
       // Single-target preview: train preview <id|name>
-      const raw = args.slice(1).join(" ").trim();
-      if (!raw) return "Usage: train preview [all|spells|abilities] | train preview <spellId|abilityId|name>";
+      const raw = restNoFlags.join(" ").trim();
+      if (!raw) return "Usage: train preview [--why] [all|spells|abilities] | train preview [--why] <spellId|abilityId|name>";
 
       // Try spell first.
       const sDef: any = getSpellByIdOrAlias(raw);
@@ -210,13 +233,15 @@ export async function handleTrainCommand(ctx: MudContext, args: string[]): Promi
       if (chooseSpell && sDef && sId) {
         const status = resolvePendingStatus(char as any, "spell", String(sId));
         const res: any = canLearnSpellForChar(char as any, String(sId), { viaTrainer: true });
+        const def: any = getSpellByIdOrAlias(String(sId));
+        if (!res.ok) (res as any).spell = def;
         return fmtSinglePreview({
           label: "Spell",
           id: String(sId),
           name: String(sDef.name ?? sId),
           status,
           ok: !!res.ok,
-          reason: res.ok ? undefined : mapLearnErrorWithRule(res, "Spell"),
+          reason: res.ok ? undefined : `${mapLearnErrorWithRule(res, "Spell")}${why ? fmtWhySuffix(res, "Spell") : ""}`,
         });
       }
 
@@ -224,13 +249,15 @@ export async function handleTrainCommand(ctx: MudContext, args: string[]): Promi
         const id = String(aId).toLowerCase().trim();
         const status = resolvePendingStatus(char as any, "ability", id);
         const res: any = canLearnAbilityForChar(char as any, id, { viaTrainer: true });
+        const def: any = findAbilityByNameOrId(id);
+        if (!res.ok) (res as any).ability = def;
         return fmtSinglePreview({
           label: "Ability",
           id,
           name: String(aDef.name ?? id),
           status,
           ok: !!res.ok,
-          reason: res.ok ? undefined : mapLearnErrorWithRule(res, "Ability"),
+          reason: res.ok ? undefined : `${mapLearnErrorWithRule(res, "Ability")}${why ? fmtWhySuffix(res, "Ability") : ""}`,
         });
       }
 
@@ -254,9 +281,11 @@ export async function handleTrainCommand(ctx: MudContext, args: string[]): Promi
         const res: any = canLearnSpellForChar(char as any, id, { viaTrainer: true });
         if (res.ok) return { id, ok: true as const };
         const def: any = getSpellByIdOrAlias(id);
-        const reason = res.error === "level_too_low"
+        if (!res.ok) (res as any).spell = def;
+        const reasonBase = res.error === "level_too_low"
           ? withRequiredLevelHint(mapLearnError(res.error), Number(res?.requiredRule?.minLevel ?? def?.minLevel))
           : mapLearnError(res.error);
+        const reason = `${reasonBase}${why ? fmtWhySuffix(res, "Spell") : ""}`;
         return { id, ok: false as const, reason };
       });
       parts.push(fmtPreview(rows as any, "Spells"));
@@ -267,9 +296,11 @@ export async function handleTrainCommand(ctx: MudContext, args: string[]): Promi
         const res: any = canLearnAbilityForChar(char as any, id, { viaTrainer: true });
         if (res.ok) return { id, ok: true as const };
         const def: any = findAbilityByNameOrId(id);
-        const reason = res.error === "level_too_low"
+        if (!res.ok) (res as any).ability = def;
+        const reasonBase = res.error === "level_too_low"
           ? withRequiredLevelHint(mapLearnError(res.error), Number(res?.requiredRule?.minLevel ?? def?.minLevel))
           : mapLearnError(res.error);
+        const reason = `${reasonBase}${why ? fmtWhySuffix(res, "Ability") : ""}`;
         return { id, ok: false as const, reason };
       });
       parts.push(fmtPreview(rows as any, "Abilities"));
@@ -400,5 +431,5 @@ export async function handleTrainCommand(ctx: MudContext, args: string[]): Promi
     return `You train ${def.name}.`;
   }
 
-  return "Usage: train [list] | train preview [all|spells|abilities|<id>] | train all | train spells | train abilities | train spell <spell> | train ability <ability>";
+  return "Usage: train [list] | train preview [--why] [all|spells|abilities|<id>] | train all | train spells | train abilities | train spell <spell> | train ability <ability>";
 }

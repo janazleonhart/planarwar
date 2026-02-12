@@ -4201,7 +4201,8 @@
         "Implements 'train'.",
         "Converts pending spell/ability rank grants into learned entries (trainer-gated at command registry).",
         "Preview blocked reasons include required level hints when available.",
-        "Supports: train [list], train preview [all|spells|abilities|<id>], train spell <spell>, train ability <ability>, train spells, train abilities, train all."
+        "Preview supports --why to show error codes + rule/definition hints for blocked entries.",
+        "Supports: train [list], train preview [--why] [all|spells|abilities|<id>], train spell <spell>, train ability <ability>, train spells, train abilities, train all."
       ]
     },
     "mud.commands.progression.progress": {
