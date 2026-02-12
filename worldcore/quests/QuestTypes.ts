@@ -59,6 +59,9 @@ export interface QuestReward {
   gold?: number;
   items?: { itemId: string; count: number }[];
   titles?: string[];
+  /** Rank system v0.2: rewards that GRANT (pending) spells/abilities (not auto-learn). */
+  spellGrants?: { spellId: string; source?: string }[];
+  abilityGrants?: { abilityId: string; source?: string }[];
   // later: city-favor, reputation, currencies, etc.
 }
 

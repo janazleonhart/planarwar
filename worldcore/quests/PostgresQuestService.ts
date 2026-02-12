@@ -29,7 +29,7 @@ interface ObjectiveRow {
 interface RewardRow {
   id: number;
   quest_id: string;
-  kind: string; // 'xp' | 'gold' | 'item' | 'title'
+  kind: string; // 'xp' | 'gold' | 'item' | 'title' | 'spell_grant' | 'ability_grant'
   amount: number | null;
   item_id: string | null;
   item_qty: number | null;
@@ -89,6 +89,8 @@ export class PostgresQuestService implements QuestService {
           gold: 0,
           items: [],
           titles: [],
+          spellGrants: [],
+          abilityGrants: [],
         } as QuestReward);
 
       switch (row.kind) {
@@ -117,6 +119,24 @@ export class PostgresQuestService implements QuestService {
           }
           break;
 
+        case "spell_grant": {
+          const spellId = row.extra_json && (row.extra_json as any).spellId ? String((row.extra_json as any).spellId) : null;
+          if (spellId) {
+            if (!existing.spellGrants) existing.spellGrants = [];
+            existing.spellGrants.push({ spellId, source: row.extra_json && (row.extra_json as any).source ? String((row.extra_json as any).source) : undefined });
+          }
+          break;
+        }
+
+        case "ability_grant": {
+          const abilityId = row.extra_json && (row.extra_json as any).abilityId ? String((row.extra_json as any).abilityId) : null;
+          if (abilityId) {
+            if (!existing.abilityGrants) existing.abilityGrants = [];
+            existing.abilityGrants.push({ abilityId, source: row.extra_json && (row.extra_json as any).source ? String((row.extra_json as any).source) : undefined });
+          }
+          break;
+        }
+
         default:
           log.warn("Unknown quest reward kind from DB", {
             questId: row.quest_id,
@@ -139,7 +159,9 @@ export class PostgresQuestService implements QuestService {
         const hasGold = !!rewardRaw.gold;
         const hasItems = !!rewardRaw.items && rewardRaw.items.length > 0;
         const hasTitles = !!rewardRaw.titles && rewardRaw.titles.length > 0;
-        if (!hasXp && !hasGold && !hasItems && !hasTitles) {
+        const hasSpellGrants = !!rewardRaw.spellGrants && rewardRaw.spellGrants.length > 0;
+        const hasAbilityGrants = !!rewardRaw.abilityGrants && rewardRaw.abilityGrants.length > 0;
+        if (!hasXp && !hasGold && !hasItems && !hasTitles && !hasSpellGrants && !hasAbilityGrants) {
           reward = undefined;
         }
       }
@@ -195,7 +217,7 @@ export class PostgresQuestService implements QuestService {
     let reward: QuestReward | undefined;
 
     if (rewardRows.length > 0) {
-      const bag: QuestReward = { xp: 0, gold: 0, items: [], titles: [] };
+      const bag: QuestReward = { xp: 0, gold: 0, items: [], titles: [], spellGrants: [], abilityGrants: [] };
 
       for (const r of rewardRows) {
         switch (r.kind) {
@@ -222,6 +244,24 @@ export class PostgresQuestService implements QuestService {
             }
             break;
 
+          case "spell_grant": {
+            const spellId = r.extra_json && (r.extra_json as any).spellId ? String((r.extra_json as any).spellId) : null;
+            if (spellId) {
+              bag.spellGrants = (bag.spellGrants ?? []) as any;
+              (bag.spellGrants as any).push({ spellId, source: r.extra_json && (r.extra_json as any).source ? String((r.extra_json as any).source) : undefined });
+            }
+            break;
+          }
+
+          case "ability_grant": {
+            const abilityId = r.extra_json && (r.extra_json as any).abilityId ? String((r.extra_json as any).abilityId) : null;
+            if (abilityId) {
+              bag.abilityGrants = (bag.abilityGrants ?? []) as any;
+              (bag.abilityGrants as any).push({ abilityId, source: r.extra_json && (r.extra_json as any).source ? String((r.extra_json as any).source) : undefined });
+            }
+            break;
+          }
+
           default:
             log.warn("Unknown quest reward kind from DB", {
               questId: r.quest_id,
@@ -234,8 +274,10 @@ export class PostgresQuestService implements QuestService {
       const hasGold = !!bag.gold;
       const hasItems = !!bag.items && bag.items.length > 0;
       const hasTitles = !!bag.titles && bag.titles.length > 0;
+      const hasSpellGrants = !!bag.spellGrants && bag.spellGrants.length > 0;
+      const hasAbilityGrants = !!bag.abilityGrants && bag.abilityGrants.length > 0;
 
-      if (hasXp || hasGold || hasItems || hasTitles) {
+      if (hasXp || hasGold || hasItems || hasTitles || hasSpellGrants || hasAbilityGrants) {
         reward = bag;
       }
     }

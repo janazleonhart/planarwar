@@ -13,6 +13,10 @@ import {
   preflightBagsForRewards,
 } from "../rewards/RewardDelivery";
 import { resolveQuestDefinitionFromStateId } from "./TownQuestBoard";
+import { grantSpellInState } from "../spells/SpellLearning";
+import { grantAbilityInState } from "../abilities/AbilityLearning";
+import { getSpellByIdOrAlias } from "../spells/SpellTypes";
+import { findAbilityByNameOrId } from "../abilities/AbilityTypes";
 
 /**
  * Turn in a quest by id or name.
@@ -225,6 +229,33 @@ export async function turnInQuest(
       const text = reward.titles.join(", ");
       rewardMessages.push(`New titles unlocked: ${text}.`);
     }
+
+    // Spells/Abilities (Rank system v0.2): grant as pending (not auto-learn)
+    if ((reward as any).spellGrants && (reward as any).spellGrants.length > 0) {
+      for (const g of (reward as any).spellGrants) {
+        const spellId = String(g?.spellId ?? '').trim();
+        if (!spellId) continue;
+        const res = grantSpellInState(char, spellId, g?.source ? String(g.source) : `quest:${quest.id}`);
+        if (res && (res as any).ok) {
+          char = (res as any).next;
+          const def = getSpellByIdOrAlias(spellId);
+          rewardMessages.push(`New spell granted: ${def?.name ?? spellId}. (Visit a trainer to learn higher ranks.)`);
+        }
+      }
+    }
+
+    if ((reward as any).abilityGrants && (reward as any).abilityGrants.length > 0) {
+      for (const g of (reward as any).abilityGrants) {
+        const abilityId = String(g?.abilityId ?? '').trim();
+        if (!abilityId) continue;
+        const res = grantAbilityInState(char, abilityId, g?.source ? String(g.source) : `quest:${quest.id}`);
+        if (res && (res as any).ok) {
+          char = (res as any).next;
+          const def = findAbilityByNameOrId(abilityId);
+          rewardMessages.push(`New ability granted: ${def?.name ?? abilityId}. (Visit a trainer to learn higher ranks.)`);
+        }
+      }
+    }
   }
 
   // Update quest state + completions
@@ -243,6 +274,8 @@ export async function turnInQuest(
       await ctx.characters.patchCharacter(char.userId, char.id, {
         progression: char.progression,
         inventory: char.inventory,
+        spellbook: (char as any).spellbook,
+        abilities: (char as any).abilities,
       });
     } catch (err) {
       // eslint-disable-next-line no-console
