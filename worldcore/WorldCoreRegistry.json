@@ -4058,7 +4058,7 @@
         "Implements 'ranks'/'rank'.",
         "Shows pending training and learned higher-rank upgrades.",
         "Detail mode: 'ranks <spellId|abilityId>' shows rank chain, next-rank hint, and best-effort sources (quest rewards / kill milestones / boss drops).",
-        "Supports `ranks sources <id>` to list configured sources (boss drops env/DB, kill milestones DB) per rank in the chain."
+        "Supports `ranks sources <id>` to list configured sources (quest rewards env/DB, boss drops env/DB, kill milestones DB) per rank in the chain."
       ],
       "path": "worldcore/mud/commands/player/ranksCommand.ts"
     },
@@ -5570,6 +5570,23 @@
         "DB-backed with safe no-op fallback on missing tables."
       ],
       "path": "worldcore/ranks/RankKillGrantService.ts"
+    },
+    "ranks.questSources": {
+      "dependsOn": [
+        "db",
+        "quests.service"
+      ],
+      "functions": [
+        "listQuestRewardSourcesForSpellId",
+        "listQuestRewardSourcesForAbilityId"
+      ],
+      "kind": "service",
+      "notes": [
+        "Rank system v1.1: best-effort quest reward source discovery for rank grants.",
+        "DB-backed (quests + quest_rewards) with safe no-op fallback on missing tables.",
+        "Supports PW_RANK_QUEST_GRANTS_JSON override for tests/dev."
+      ],
+      "path": "worldcore/ranks/RankQuestGrantSourceService.ts"
     },
     "resources.power": {
       "dependsOn": [

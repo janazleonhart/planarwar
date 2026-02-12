@@ -19,6 +19,10 @@ import { ABILITIES, findAbilityByNameOrId } from "../../../abilities/AbilityType
 
 import { listBossDropSourcesForSpellId, listBossDropSourcesForAbilityId } from "../../../ranks/RankBossDropGrantService";
 import { listKillGrantSourcesForSpellId, listKillGrantSourcesForAbilityId } from "../../../ranks/RankKillGrantService";
+import {
+  listQuestRewardSourcesForSpellId,
+  listQuestRewardSourcesForAbilityId,
+} from "../../../ranks/RankQuestGrantSourceService";
 
 type Listed = { id: string; name: string; rank: number; groupId: string };
 
@@ -156,6 +160,40 @@ async function fmtKillGrantSources(kind: "spell" | "ability", targetId: string):
   return `Kill milestones: ${parts.join(", ")}`;
 }
 
+async function fmtQuestRewardSources(kind: "spell" | "ability", targetId: string): Promise<string | null> {
+  if (!targetId) return null;
+
+  if (kind === "spell") {
+    const { sources, usedEnvRules } = await listQuestRewardSourcesForSpellId(targetId);
+    if (!sources.length) return null;
+    const label = usedEnvRules ? "Quest rewards (env)" : "Quest rewards";
+    const parts = sources.map((s) => {
+      const base = s.questName ? `${s.questName} (${s.questId})` : s.questId;
+      return s.source ? `${base} [${s.source}]` : base;
+    });
+    return `${label}: ${parts.join(", ")}`;
+  }
+
+  const { sources, usedEnvRules } = await listQuestRewardSourcesForAbilityId(targetId);
+  if (!sources.length) return null;
+  const label = usedEnvRules ? "Quest rewards (env)" : "Quest rewards";
+  const parts = sources.map((s) => {
+    const base = s.questName ? `${s.questName} (${s.questId})` : s.questId;
+    return s.source ? `${base} [${s.source}]` : base;
+  });
+  return `${label}: ${parts.join(", ")}`;
+}
+
+async function fmtAllSources(kind: "spell" | "ability", targetId: string): Promise<string | null> {
+  const boss = await fmtBossDropSources(kind, targetId);
+  const kill = await fmtKillGrantSources(kind, targetId);
+  const quest = await fmtQuestRewardSources(kind, targetId);
+
+  const parts = [boss, kill, quest].filter(Boolean) as string[];
+  if (!parts.length) return null;
+  return parts.join("; ");
+}
+
 async function handleSources(ctx: MudContext, char: any, rawId: string): Promise<string> {
   const spellId = resolveSpellId(rawId) || rawId;
   const spellDef: any = getSpellByIdOrAlias(spellId);
@@ -175,12 +213,14 @@ async function handleSources(ctx: MudContext, char: any, rawId: string): Promise
     for (const c of chain) {
       const boss = await fmtBossDropSources("spell", c.id);
       const kill = await fmtKillGrantSources("spell", c.id);
+      const quest = await fmtQuestRewardSources("spell", c.id);
 
-      if (!boss && !kill) continue;
+      if (!boss && !kill && !quest) continue;
 
       parts.push(`- Rank ${c.rank}: ${c.name} [${c.id}]`);
       if (boss) parts.push(`  - ${boss}`);
       if (kill) parts.push(`  - ${kill}`);
+      if (quest) parts.push(`  - ${quest}`);
     }
 
     if (parts.length === 1) {
@@ -199,12 +239,14 @@ async function handleSources(ctx: MudContext, char: any, rawId: string): Promise
   for (const c of chain) {
     const boss = await fmtBossDropSources("ability", c.id);
     const kill = await fmtKillGrantSources("ability", c.id);
+    const quest = await fmtQuestRewardSources("ability", c.id);
 
-    if (!boss && !kill) continue;
+    if (!boss && !kill && !quest) continue;
 
     parts.push(`- Rank ${c.rank}: ${c.name} [${c.id}]`);
     if (boss) parts.push(`  - ${boss}`);
     if (kill) parts.push(`  - ${kill}`);
+    if (quest) parts.push(`  - ${quest}`);
   }
 
   if (parts.length === 1) {
@@ -255,7 +297,7 @@ async function handleDetail(ctx: MudContext, char: any, rawId: string): Promise<
 
     // Source hint: prefer next rank (what you want), else the highest rank in chain.
     const sourceId = next?.id ?? chain[chain.length - 1]?.id ?? spellDef.id;
-    const src = await fmtBossDropSources("spell", sourceId);
+    const src = await fmtAllSources("spell", sourceId);
     parts.push("");
     parts.push(src ? `Sources: ${src}` : "Sources: unknown (not configured / not queryable)." );
 
@@ -291,7 +333,7 @@ async function handleDetail(ctx: MudContext, char: any, rawId: string): Promise<
   }
 
   const sourceId = next?.id ?? chain[chain.length - 1]?.id ?? abilityDef.id;
-  const src = await fmtBossDropSources("ability", sourceId);
+  const src = await fmtAllSources("ability", sourceId);
   parts.push("");
   parts.push(src ? `Sources: ${src}` : "Sources: unknown (not configured / not queryable)." );
 

@@ -21,6 +21,7 @@ function makeTestCtx(character: any): any {
 
 test("[contract] ranks sources <id>: shows boss drop sources across chain (env)", async () => {
   const oldBossDrops = process.env.PW_RANK_BOSS_DROPS_JSON;
+  const oldQuestGrants = process.env.PW_RANK_QUEST_GRANTS_JSON;
 
   // Inject Rank-II defs for test.
   const oldSpell = (SPELLS as any).arcane_bolt_ii;
@@ -57,6 +58,11 @@ test("[contract] ranks sources <id>: shows boss drop sources across chain (env)"
       abilities: [{ npcProtoId: "boss_dummy_proto", abilityId: "warrior_power_strike_ii", chance: 0.1, source: "test" }],
     });
 
+    process.env.PW_RANK_QUEST_GRANTS_JSON = JSON.stringify({
+      spells: [{ questId: "q_test_arcane", questName: "Test Quest", spellId: "arcane_bolt_ii", source: "test" }],
+      abilities: [],
+    });
+
     const char: any = {
       userId: "u1",
       id: "c1",
@@ -72,6 +78,7 @@ test("[contract] ranks sources <id>: shows boss drop sources across chain (env)"
     assert.match(sOut, /Sources for spell: Arcane Bolt \[arcane_bolt\]/);
     assert.match(sOut, /Rank 2: Arcane Bolt II \[arcane_bolt_ii\]/);
     assert.match(sOut, /Boss drops \(env\): boss_dummy_proto \(25%\)/);
+    assert.match(sOut, /Quest rewards \(env\): Test Quest \(q_test_arcane\) \[test\]/);
 
     const aOut = await handleRanksCommand(ctx, ["sources", "warrior_power_strike"]);
     assert.match(aOut, /Sources for ability: Power Strike \[warrior_power_strike\]/);
@@ -79,6 +86,7 @@ test("[contract] ranks sources <id>: shows boss drop sources across chain (env)"
     assert.match(aOut, /Boss drops \(env\): boss_dummy_proto \(10%\)/);
   } finally {
     process.env.PW_RANK_BOSS_DROPS_JSON = oldBossDrops;
+    process.env.PW_RANK_QUEST_GRANTS_JSON = oldQuestGrants;
 
     if (oldSpell === undefined) delete (SPELLS as any).arcane_bolt_ii;
     else (SPELLS as any).arcane_bolt_ii = oldSpell;
