@@ -340,36 +340,70 @@ async function applyToDb(
       const s = (a as PlaceSpawnAction).spawn;
 
       const existing = await client.query(
-        `SELECT id FROM spawn_points WHERE shard_id = $1 AND spawn_id = $2 LIMIT 1`,
+        `
+        SELECT id, owner_kind, is_locked
+        FROM spawn_points
+        WHERE shard_id = $1 AND spawn_id = $2
+        LIMIT 1
+      `,
         [s.shardId, s.spawnId],
       );
 
       if (existing.rowCount && existing.rows[0]) {
+        const meta = existing.rows[0] as { id: number; owner_kind: string | null; is_locked: boolean | null };
+
+        // Reconciliation rule v0:
+        // - Never overwrite editor-owned placements.
+        // - Never overwrite locked placements.
+        // This allows a future placement editor to "take ownership" safely.
+        if (String(meta.owner_kind ?? "").toLowerCase() === "editor" || meta.is_locked === true) {
+          skipped++;
+          continue;
+        }
+
         if (!opts.updateExisting) {
           skipped++;
           continue;
         }
 
-        const id = (existing.rows[0] as { id: number }).id;
+        const id = meta.id;
 
         await client.query(
           `
           UPDATE spawn_points
           SET type = $2, archetype = $3, proto_id = $4, variant_id = $5,
-              x = $6, y = $7, z = $8, region_id = $9
+              x = $6, y = $7, z = $8, region_id = $9,
+              source_kind = $10,
+              updated_at = NOW()
           WHERE id = $1
         `,
-          [id, s.type, s.archetype, s.protoId, s.variantId, s.x, s.y, s.z, s.regionId],
+          [id, s.type, s.archetype, s.protoId, s.variantId, s.x, s.y, s.z, s.regionId, "simBrain"],
         );
 
         updated++;
       } else {
+        const ownerKind = String(s.spawnId ?? "").startsWith("seed:") ? "baseline" : "brain";
+
         await client.query(
           `
-          INSERT INTO spawn_points (shard_id, spawn_id, type, archetype, proto_id, variant_id, x, y, z, region_id)
-          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+          INSERT INTO spawn_points (
+            shard_id,
+            spawn_id,
+            type,
+            archetype,
+            proto_id,
+            variant_id,
+            x,
+            y,
+            z,
+            region_id,
+            owner_kind,
+            source_kind,
+            updated_at
+          )
+          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,NOW())
         `,
-          [s.shardId, s.spawnId, s.type, s.archetype, s.protoId, s.variantId, s.x, s.y, s.z, s.regionId],
+          [s.shardId, s.spawnId, s.type, s.archetype, s.protoId, s.variantId, s.x, s.y, s.z, s.regionId, ownerKind, "simBrain"],
         );
 
         inserted++;
@@ -1533,14 +1567,22 @@ async function runWipePlacements(args: {
   const minZ = args.bounds.minCz * cellSize - pad;
   const maxZ = (args.bounds.maxCz + 1) * cellSize + pad;
 
-  type Row = { spawn_id: string; type: string; x: number; z: number; region_id: string | null };
+  type Row = {
+    spawn_id: string;
+    type: string;
+    x: number;
+    z: number;
+    region_id: string | null;
+    owner_kind: string | null;
+    is_locked: boolean | null;
+  };
 
   const client = await db.connect();
   let rows: Row[] = [];
   try {
     const res = await client.query(
       `
-      SELECT spawn_id, type, x, z, region_id
+      SELECT spawn_id, type, x, z, region_id, owner_kind, is_locked
       FROM spawn_points
       WHERE shard_id = $1
         AND type = ANY($2::text[])
@@ -1593,7 +1635,24 @@ async function runWipePlacements(args: {
     return;
   }
 
-  const spawnIds = rows.map((r) => r.spawn_id);
+  // Reconciliation rule v0:
+  // - Never delete editor-owned placements.
+  // - Never delete locked placements.
+  const deletable = rows.filter((r) => {
+    const okOwner = String(r.owner_kind ?? "").toLowerCase() !== "editor";
+    const okLock = r.is_locked !== true;
+    return okOwner && okLock;
+  });
+
+  const protectedCount = rows.length - deletable.length;
+  if (protectedCount > 0) console.log(`[wipe] protected=${protectedCount} (editor-owned or locked)`);
+
+  if (deletable.length === 0) {
+    console.log("[wipe] nothing deletable (all matched rows are protected).");
+    return;
+  }
+
+  const spawnIds = deletable.map((r) => r.spawn_id);
 
   const delClient = await db.connect();
   try {

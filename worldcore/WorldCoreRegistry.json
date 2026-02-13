@@ -191,7 +191,7 @@
       ],
       "kind": "service",
       "notes": [
-        "Builds a one-line MUD description for a listing like '#12 Hematite Iron Ore [common] x20 \u2013 3g each (total 60g) by Testing [active]'.",
+        "Builds a one-line MUD description for a listing like '#12 Hematite Iron Ore [common] x20 – 3g each (total 60g) by Testing [active]'.",
         "Looks up item definitions via ctx.items?.get to resolve item name and rarity."
       ],
       "path": "worldcore/auction/AuctionFormat.ts"
@@ -451,7 +451,7 @@
       ],
       "kind": "service",
       "notes": [
-        "Postgres-backed character service using the characters table and CharacterRow \u2192 CharacterState mapping.",
+        "Postgres-backed character service using the characters table and CharacterRow → CharacterState mapping.",
         "Supports partial JSONB patching, XP/level gains with per-class attribute growth, and spell/equipment updates."
       ],
       "path": "worldcore/characters/PostgresCharacterService.ts"
@@ -609,8 +609,8 @@
       "notes": [
         "Centralized gates for action resource costs + cooldowns (spells/songs/abilities).",
         "Guarantees: cooldowns do not start and resources are not consumed if the action fails.",
-        "Order: check cooldown remaining \u2192 spend resource \u2192 start cooldown.",
-        "Also supports post-success power builders (e.g., Rune Strike \u2192 Runic Power, Jab \u2192 Chi)."
+        "Order: check cooldown remaining → spend resource → start cooldown.",
+        "Also supports post-success power builders (e.g., Rune Strike → Runic Power, Jab → Chi)."
       ],
       "path": "worldcore/combat/CastingGates.ts"
     },
@@ -2229,7 +2229,7 @@
       ],
       "path": "worldcore/infra/schema/056_seed_crusader_class_kit_L1_10.sql",
       "provides": [
-        "Crusader L1\u201310 spell kit (spells + unlocks)"
+        "Crusader L1–10 spell kit (spells + unlocks)"
       ],
       "service": "worldcore"
     },
@@ -2248,7 +2248,7 @@
       ],
       "path": "worldcore/infra/schema/057_seed_hunter_spellkit_L1_10.sql",
       "provides": [
-        "Hunter L1\u201310 spell kit (spells + unlocks)"
+        "Hunter L1–10 spell kit (spells + unlocks)"
       ]
     },
     "infra.schema.058_cleanup_hunter_spellkit_L1_10": {
@@ -2266,7 +2266,7 @@
       ],
       "path": "worldcore/infra/schema/058_cleanup_hunter_spellkit_L1_10.sql",
       "provides": [
-        "Hunter L1\u201310 spell kit cleanup (canonical ids + no duplicates)"
+        "Hunter L1–10 spell kit cleanup (canonical ids + no duplicates)"
       ]
     },
     "infra.schema.059_seed_illusionist_spellkit_L1_10": {
@@ -2285,7 +2285,7 @@
       ],
       "path": "worldcore/infra/schema/059_seed_illusionist_spellkit_L1_10.sql",
       "provides": [
-        "Illusionist L1\u201310 spell kit (spells + unlocks)"
+        "Illusionist L1–10 spell kit (spells + unlocks)"
       ]
     },
     "infra.schema.059_seed_runic_knight_spellkit_L1_10": {
@@ -2303,7 +2303,7 @@
       ],
       "path": "worldcore/infra/schema/059_seed_runic_knight_spellkit_L1_10.sql",
       "provides": [
-        "Runic Knight L1\u201310 spell kit (spells + unlocks)"
+        "Runic Knight L1–10 spell kit (spells + unlocks)"
       ]
     },
     "infra.schema.060_seed_ascetic_spellkit_L1_10": {
@@ -2322,7 +2322,7 @@
       ],
       "path": "worldcore/infra/schema/060_seed_ascetic_spellkit_L1_10.sql",
       "provides": [
-        "Ascetic L1\u201310 spell kit (spells + unlocks)",
+        "Ascetic L1–10 spell kit (spells + unlocks)",
         "Introduces Chi (primary resource) for Ascetic"
       ]
     },
@@ -2342,7 +2342,7 @@
       ],
       "path": "worldcore/infra/schema/061_seed_prophet_spellkit_L1_10.sql",
       "provides": [
-        "Prophet L1\u201310 spell kit (spells + unlocks)",
+        "Prophet L1–10 spell kit (spells + unlocks)",
         "Wave1 shaman-ish DOT/shield/buff/heal baseline"
       ]
     },
@@ -2362,7 +2362,7 @@
       ],
       "path": "worldcore/infra/schema/062_seed_hierophant_spellkit_L1_10.sql",
       "provides": [
-        "Hierophant L1\u201310 spell kit (spells + unlocks)",
+        "Hierophant L1–10 spell kit (spells + unlocks)",
         "Wave1 nature HOT/DOT/buff baseline"
       ]
     },
@@ -2383,7 +2383,7 @@
       ],
       "path": "worldcore/infra/schema/063_seed_revenant_spellkit_L1_10.sql",
       "provides": [
-        "Revenant L1\u201310 spell kit (spells + unlocks)",
+        "Revenant L1–10 spell kit (spells + unlocks)",
         "Wave1 shadow knight DOT/shield/debuff baseline"
       ]
     },
@@ -2404,7 +2404,7 @@
       ],
       "path": "worldcore/infra/schema/064_seed_outrider_spellkit_L1_10.sql",
       "provides": [
-        "Outrider L1\u201310 spell kit (spells + unlocks)",
+        "Outrider L1–10 spell kit (spells + unlocks)",
         "Wave1 ranger DOT/mark/defensive utility baseline"
       ]
     },
@@ -2430,6 +2430,138 @@
       "path": "worldcore/infra/schema/066_server_events_v1.sql",
       "provides": [
         "DB tables: server_events, server_event_effects."
+      ]
+    },
+    "infra.schema.067_add_spell_ability_ranks_v0": {
+      "kind": "schema_migration",
+      "path": "worldcore/infra/schema/067_add_spell_ability_ranks_v0.sql",
+      "dependsOn": [],
+      "provides": [
+        "DB columns: spells(rank_group_id, rank, learn_requires_trainer), abilities(rank_group_id, rank, learn_requires_trainer).",
+        "DB indexes: spells_rank_group_id_idx, spells_rank_idx, abilities_rank_group_id_idx, abilities_rank_idx."
+      ],
+      "notes": [
+        "Spell + Ability Rank System v0: add rank_group_id, rank, and learn_requires_trainer to spells and abilities.",
+        "Backfills defaults (Rank I) so existing content remains valid; adds indexes for rank lookups."
+      ]
+    },
+    "infra.schema.068_rank_grants_v0_2": {
+      "kind": "schema_migration",
+      "path": "worldcore/infra/schema/068_rank_grants_v0_2.sql",
+      "dependsOn": [],
+      "provides": [
+        "DB: quest_reward_kind enum values spell_grant, ability_grant.",
+        "DB tables: spell_kill_grants, ability_kill_grants."
+      ],
+      "notes": [
+        "Rank system v0.2: quest rewards can grant spells/abilities (pending) and kill milestones can grant spells/abilities via *_kill_grants tables.",
+        "Extends quest_reward_kind enum with spell_grant and ability_grant (idempotent)."
+      ]
+    },
+    "infra.schema.069_rank_boss_drops_v0_3": {
+      "kind": "schema_migration",
+      "path": "worldcore/infra/schema/069_rank_boss_drops_v0_3.sql",
+      "dependsOn": [],
+      "provides": [
+        "DB tables: spell_boss_drops, ability_boss_drops."
+      ],
+      "notes": [
+        "Rank system v0.3: boss drop grants for Rank IV / Ancient unlocks, configured in DB for admin tooling.",
+        "Runtime rolls chance on NPC slay; success creates a pending grant (not auto-learn)."
+      ]
+    },
+    "infra.schema.070_seed_dummy_quest_reward_grants_v0": {
+      "kind": "schema_migration",
+      "path": "worldcore/infra/schema/070_seed_dummy_quest_reward_grants_v0.sql",
+      "dependsOn": [],
+      "provides": [
+        "DB seed: debug quests + objectives + quest reward grants for pipeline testing."
+      ],
+      "notes": [
+        "Dev seed quests to validate the Rank/Train/Quest Grants pipeline.",
+        "Creates simple kill-1-dummy quests that reward spell_grant / ability_grant via quest_rewards.kind + extra_json."
+      ]
+    },
+    "infra.schema.071_seed_dummy_rank2_grant_tests_v0": {
+      "kind": "schema_migration",
+      "path": "worldcore/infra/schema/071_seed_dummy_rank2_grant_tests_v0.sql",
+      "dependsOn": [],
+      "provides": [
+        "DB seed: Rank II spell/ability rows and updated debug quest rewards for testing."
+      ],
+      "notes": [
+        "Dev seed: creates minimal Rank II spell/ability rows and points debug grant quests at them.",
+        "Exercises pending grant -> trainer learning flow (Rank II+)."
+      ]
+    },
+    "infra.schema.072_fix_dummy_rank2_power_strike_ii_seed_v0": {
+      "kind": "schema_migration",
+      "path": "worldcore/infra/schema/072_fix_dummy_rank2_power_strike_ii_seed_v0.sql",
+      "dependsOn": [],
+      "provides": [
+        "DB seed: upsert power_strike_ii into abilities."
+      ],
+      "notes": [
+        "Dev seed fix: ensure power_strike_ii exists as a Rank II ability row (learn_requires_trainer=TRUE)."
+      ]
+    },
+    "infra.schema.073_seed_dummy_rank2_spell_rows_v0": {
+      "kind": "schema_migration",
+      "path": "worldcore/infra/schema/073_seed_dummy_rank2_spell_rows_v0.sql",
+      "dependsOn": [],
+      "provides": [
+        "DB seed: dev-only Rank II spell rows used by debug quests."
+      ],
+      "notes": [
+        "Dev seed: inserts dev-only Rank II spell rows (lab spells) copied from Rank I bases for pipeline testing."
+      ]
+    },
+    "infra.schema.074_seed_npc_town_trainer_v0": {
+      "kind": "schema_migration",
+      "path": "worldcore/infra/schema/074_seed_npc_town_trainer_v0.sql",
+      "dependsOn": [],
+      "provides": [
+        "DB seed: npcs row town_trainer (service_trainer anchor)."
+      ],
+      "notes": [
+        "Seeds a baseline Town Trainer NPC proto with tag service_trainer.",
+        "Used by serviceGates and the train command for proximity-based trainer access; future-proofed with protected_town/law tags."
+      ]
+    },
+    "infra.schema.075_seed_npc_town_services_v0": {
+      "kind": "schema_migration",
+      "path": "worldcore/infra/schema/075_seed_npc_town_services_v0.sql",
+      "dependsOn": [],
+      "provides": [
+        "DB seed: npcs rows town_banker, town_mail_clerk, town_auctioneer (service_bank/service_mail/service_auction anchors)."
+      ],
+      "notes": [
+        "Seeds baseline town service NPC protos for bank/mail/auction with service_* tags.",
+        "Used as proximity anchors by serviceGates and optionally spawned by TownBaselinePlanner."
+      ]
+    },
+    "infra.schema.076_seed_npc_town_guildbank_v0": {
+      "kind": "schema_migration",
+      "path": "worldcore/infra/schema/076_seed_npc_town_guildbank_v0.sql",
+      "dependsOn": [],
+      "provides": [
+        "DB seed: npcs row town_guildbank_clerk (service_guildbank anchor)."
+      ],
+      "notes": [
+        "Seeds a baseline guild bank service NPC proto with tag service_guildbank.",
+        "Used as a proximity anchor by serviceGates and optionally spawned by TownBaselinePlanner."
+      ]
+    },
+    "infra.schema.077_seed_npc_town_inn_v0": {
+      "kind": "schema_migration",
+      "path": "worldcore/infra/schema/077_seed_npc_town_inn_v0.sql",
+      "dependsOn": [],
+      "provides": [
+        "DB seed: npcs row town_innkeeper (rest_spot / service_rest anchor)."
+      ],
+      "notes": [
+        "Seeds a baseline inn/rest service NPC proto with rest/rest_spot tags (service_rest).",
+        "PW_REST_GATES can require proximity to this anchor for recovery/rest-related commands."
       ]
     },
     "infra.schemaIgnoreJson": {
@@ -2640,7 +2772,7 @@
       "kind": "service",
       "lifecycle": "singleton",
       "notes": [
-        "Seeds Reference Class Kits L1\u201310 (MVP) used by deterministic progression tests."
+        "Seeds Reference Class Kits L1–10 (MVP) used by deterministic progression tests."
       ],
       "owns": [],
       "path": "worldcore/infra/schema/050_seed_reference_class_kits_L1_10.sql",
@@ -2666,7 +2798,7 @@
       "kind": "service",
       "lifecycle": "singleton",
       "notes": [
-        "Seeds spells catalog entries referenced by the L1\u201310 class kits."
+        "Seeds spells catalog entries referenced by the L1–10 class kits."
       ],
       "owns": [],
       "path": "worldcore/infra/schema/050_seed_spells_reference_kits_l1_10.sql",
@@ -2679,7 +2811,7 @@
       "kind": "service",
       "lifecycle": "singleton",
       "notes": [
-        "Seeds spell_unlocks for L1\u201310 reference kits; enables deterministic autogrant tests."
+        "Seeds spell_unlocks for L1–10 reference kits; enables deterministic autogrant tests."
       ],
       "owns": [],
       "path": "worldcore/infra/schema/051_seed_spell_unlocks_reference_kits_l1_10.sql",
@@ -2742,7 +2874,7 @@
       "kind": "service",
       "lifecycle": "singleton",
       "notes": [
-        "Seeds a minimal common L1\u201310 spell kit (damage + dot + debuff + shield + hot) for classes that do not yet have bespoke kits.",
+        "Seeds a minimal common L1–10 spell kit (damage + dot + debuff + shield + hot) for classes that do not yet have bespoke kits.",
         "Designed to keep every class playable while per-class kits are authored later."
       ],
       "owns": [],
@@ -4598,7 +4730,7 @@
         "Refreshes personal nodes, then lists nearby entities within radius with short handles like rat.1.",
         "filter/group/sort flags",
         "--limit / --max",
-        "safe caps + \u201cUI-friendly output shaping"
+        "safe caps + “UI-friendly output shaping"
       ],
       "path": "worldcore/mud/commands/world/nearbyCommand.ts"
     },
@@ -4653,7 +4785,7 @@
       ],
       "path": "worldcore/mud/commands/world/siegeCommand.ts",
       "provides": [
-        "MUD command: siege \u2014 shows town sanctuary/siege/breach state for the current room"
+        "MUD command: siege — shows town sanctuary/siege/breach state for the current room"
       ]
     },
     "mud.commands.world.talk": {
@@ -4964,7 +5096,7 @@
         "Determines which NPCs are 'protected' (civilian, vendor, questgiver, protected_town, etc.) and records crimes against them on the attacker.",
         "Sets recentCrimeUntil and recentCrimeSeverity (minor|severe) on characters to drive guard response.",
         "law_exempt > law_protected > legacy tags precedence",
-        "guards/resources are never \u201cprotected\u201d for crime purposes"
+        "guards/resources are never “protected” for crime purposes"
       ],
       "path": "worldcore/npc/NpcCrime.ts"
     },
@@ -4985,7 +5117,7 @@
       ],
       "kind": "service",
       "notes": [
-        "Owns runtime NPC state, per-room maps, threat tables, and bridges EntityManager \u2194 AI brain \u2194 sessions/chat.",
+        "Owns runtime NPC state, per-room maps, threat tables, and bridges EntityManager ↔ AI brain ↔ sessions/chat.",
         "Spawns/Despawns NPCs, applies damage, records threat, coordinates guard/pack help, coward fleeing, gating, and drives AI decisions each tick.",
         "On lethal damage and before despawn, clears combat status effects so corpses don't keep ticking DOTs or carry modifiers.",
         "Train System v0/v0.1: pre-brain pursuit hook reads threat and can move/disengage before in-room target selection (supports room transitions + trains)."
@@ -5605,7 +5737,7 @@
       "kind": "service",
       "notes": [
         "Manages Mana/Fury/Runic Power/Chi pools stored under char.progression.powerResources.",
-        "Provides class\u2192primary resource mapping and helpers to spend/gain power (including post-success builders)."
+        "Provides class→primary resource mapping and helpers to spend/gain power (including post-success builders)."
       ],
       "path": "worldcore/resources/PowerResources.ts"
     },
@@ -5694,7 +5826,7 @@
     "sim.brainActions": {
       "kind": "types",
       "notes": [
-        "Types for Mother-Brain style planning outputs (audit \u2192 plan actions \u2192 apply).",
+        "Types for Mother-Brain style planning outputs (audit → plan actions → apply).",
         "Includes PlaceSpawnAction used by SettlementPlanner + simBrain apply."
       ],
       "path": "worldcore/sim/BrainActions.ts"
@@ -5981,7 +6113,7 @@
       "kind": "module",
       "lifecycle": "static",
       "notes": [
-        "Reference class kits L1\u201310 (MVP) used for deterministic starter spell/ability unlock expectations and tests.",
+        "Reference class kits L1–10 (MVP) used for deterministic starter spell/ability unlock expectations and tests.",
         "Seeded into DB via 050/051 migrations and used by SpellLearning/AbilityLearning contract tests."
       ],
       "owns": [],
@@ -6311,7 +6443,7 @@
       "kind": "utility",
       "notes": [
         "Computes difficulty tier by radial distance from world center.",
-        "Uses max world radius \u2248 2048 units for current prime shard."
+        "Uses max world radius ≈ 2048 units for current prime shard."
       ],
       "path": "worldcore/terrain/regions/RegionDifficulty.ts",
       "provides": [
@@ -6635,17 +6767,6 @@
       ],
       "path": "worldcore/tools/seedNpcLawTagsAudit.ts"
     },
-    "tools.seedQuestRewardGrantIdAudit": {
-      "bin": "dist/worldcore/tools/seedQuestRewardGrantIdAudit.js",
-      "dependsOn": [],
-      "kind": "tool",
-      "notes": [
-        "Audits worldcore/infra/schema seed SQL: quest_rewards spell_grant/ability_grant ids must exist in the seeded spells/abilities catalogs.",
-        "Prevents seed drift where quest rewards reference non-existent spell/ability ids.",
-        "Supports --schemaDir, --json, and --allowMissing spell:<id>,ability:<id>."
-      ],
-      "path": "worldcore/tools/seedQuestRewardGrantIdAudit.ts"
-    },
     "tools.seedNpcLootItemIdAudit": {
       "bin": "dist/worldcore/tools/seedNpcLootItemIdAudit.js",
       "dependsOn": [],
@@ -6656,6 +6777,17 @@
         "Supports --schemaDir and --json."
       ],
       "path": "worldcore/tools/seedNpcLootItemIdAudit.ts"
+    },
+    "tools.seedQuestRewardGrantIdAudit": {
+      "bin": "dist/worldcore/tools/seedQuestRewardGrantIdAudit.js",
+      "dependsOn": [],
+      "kind": "tool",
+      "notes": [
+        "Audits worldcore/infra/schema seed SQL: quest_rewards spell_grant/ability_grant ids must exist in the seeded spells/abilities catalogs.",
+        "Prevents seed drift where quest rewards reference non-existent spell/ability ids.",
+        "Supports --schemaDir, --json, and --allowMissing spell:<id>,ability:<id>."
+      ],
+      "path": "worldcore/tools/seedQuestRewardGrantIdAudit.ts"
     },
     "tools.seedSkinLootItemIdAudit": {
       "bin": "dist/worldcore/tools/seedSkinLootItemIdAudit.js",
@@ -6735,7 +6867,7 @@
       "notes": [
         "Dev Simulation Harness CLI entrypoint.",
         "Includes Mother Brain wave planning commands (mother-wave/mother-status) for brain-owned spawn_points pipelines.",
-        "Follows audit \u2192 plan \u2192 apply pattern with safe default rollback unless --commit.",
+        "Follows audit → plan → apply pattern with safe default rollback unless --commit.",
         "Safety rails: refuses literal '...' arg; refuses --commit without explicit --bounds (unless --allowDefaultBounds).",
         "Artifacts are dev-only outputs; keep them gitignored.",
         "Town vendor wiring: by default, `simBrain era` AND `simBrain mother-wave` seed vendor+trainer anchors for town-like spawns (disable with --noTownVendors)."
@@ -7204,7 +7336,7 @@
       ],
       "kind": "utility",
       "notes": [
-        "Tracks per-region dynamic danger score and effective tier (1\u20135) based on base distance ring + recent activity.",
+        "Tracks per-region dynamic danger score and effective tier (1–5) based on base distance ring + recent activity.",
         "Applies exponential-style decay over time so regions cool down naturally.",
         "Used by cowardice, Region Peril aura, debug_region_danger, and debug_bump_region_danger."
       ],
@@ -7775,7 +7907,7 @@
       "kind": "worldgen_stage",
       "lifecycle": "stateless",
       "notes": [
-        "Stage 2.3.4 \u2013 biome assignment per cell + connected biome clusters.",
+        "Stage 2.3.4 – biome assignment per cell + connected biome clusters.",
         "Outputs biomeMap + cluster IDs + counts per biome."
       ],
       "path": "worldcore/terrain/worldgen/WGEv2Biomes.ts",
@@ -7794,7 +7926,7 @@
       "kind": "worldgen_stage",
       "lifecycle": "stateless",
       "notes": [
-        "Stage 2.3.5 \u2013 settlements, roads, and POIs.",
+        "Stage 2.3.5 – settlements, roads, and POIs.",
         "Scores candidate cells, picks settlements with spacing, builds a road graph, scatters points of interest."
       ],
       "path": "worldcore/terrain/worldgen/WGEv2Civilization.ts",
@@ -7811,7 +7943,7 @@
       "kind": "worldgen_stage",
       "lifecycle": "stateless",
       "notes": [
-        "Stage 2.3.3 \u2013 temperature, moisture, and compact climate zones.",
+        "Stage 2.3.3 – temperature, moisture, and compact climate zones.",
         "Can optionally use erosion outputs to bias humidity near rivers/lakes."
       ],
       "path": "worldcore/terrain/worldgen/WGEv2Climate.ts",
@@ -7827,7 +7959,7 @@
       "kind": "worldgen_stage",
       "lifecycle": "stateless",
       "notes": [
-        "Stage 2.3.2 \u2013 hydrology, erosion, rivers, lakes.",
+        "Stage 2.3.2 – hydrology, erosion, rivers, lakes.",
         "Outputs updated elevation, water, sediment, flow dirs, river/lake masks."
       ],
       "path": "worldcore/terrain/worldgen/WGEv2Erosion.ts",
@@ -7841,7 +7973,7 @@
       "kind": "worldgen_stage",
       "lifecycle": "stateless",
       "notes": [
-        "Stage 2.3.1 \u2013 base landforms: tectonics, continents, uplift, macro elevation.",
+        "Stage 2.3.1 – base landforms: tectonics, continents, uplift, macro elevation.",
         "First stage in the WGEv2 pipeline; everything else builds on its LandformResult."
       ],
       "path": "worldcore/terrain/worldgen/WGEv2Landforms.ts",
@@ -7861,7 +7993,7 @@
       "kind": "worldgen_stage",
       "lifecycle": "stateless",
       "notes": [
-        "Stage 2.3.6 \u2013 resource node placement (ore/herb/wood/fish/rare) plus per-kind masks.",
+        "Stage 2.3.6 – resource node placement (ore/herb/wood/fish/rare) plus per-kind masks.",
         "Respects biome, elevation, climate, hydrology, and avoids city centers while tagging 'near settlement' nodes."
       ],
       "path": "worldcore/terrain/worldgen/WGEv2Resources.ts",
