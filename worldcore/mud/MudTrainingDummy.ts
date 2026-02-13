@@ -56,11 +56,37 @@ export function getTrainingDummyForRoom(roomId: string): TrainingDummyState {
   if (!dummy) {
     dummy = {
       roomId,
-      hp: 200, // simple baseline; tweak later if needed
+      // Default is intentionally small for tests; callers should synchronize
+      // to the live NPC entity maxHp when available (see ensureTrainingDummyMaxHp).
+      hp: 200,
       maxHp: 200,
     };
     TRAINING_DUMMIES.set(roomId, dummy);
   }
+  return dummy;
+}
+
+/**
+ * Ensure the dummy's max HP matches the backing NPC entity maxHp.
+ *
+ * Important: we do NOT reset hp unless it exceeds the new max.
+ * This preserves “damage taken” across calls and keeps tests deterministic.
+ */
+export function ensureTrainingDummyMaxHp(roomId: string, desiredMaxHp: number): TrainingDummyState {
+  const dummy = getTrainingDummyForRoom(roomId);
+  const maxHp = Number(desiredMaxHp);
+  if (!Number.isFinite(maxHp) || maxHp <= 0) return dummy;
+
+  // Only ever INCREASE the pool here.
+  // Rationale:
+  // - Prevents tests from shrinking a 200 HP dummy down to a 20 HP NPC and
+  //   accidentally triggering a “knit back together” reset during short windows.
+  // - Real gameplay wants to sync UP to the NPC maxHp (e.g. 5000), not down.
+  if (maxHp > dummy.maxHp) {
+    dummy.maxHp = maxHp;
+    if (dummy.hp <= 0) dummy.hp = dummy.maxHp;
+  }
+
   return dummy;
 }
 

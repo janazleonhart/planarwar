@@ -434,7 +434,7 @@ export async function handleAttackAction(
 
     // Training dummy: use the non-lethal dummy HP pool and NEVER route through NpcCombat
     // (so the dummy doesn't fight back via NPC AI).
-    if (protoId === "training_dummy_big") {
+    if (protoId === "training_dummy_big" || protoId === "training_dummy") {
       const dummyInstance = getTrainingDummyForRoom(roomId);
 
       if (wasStealthed) breakStealthForCombat(char);
@@ -461,9 +461,29 @@ export async function handleAttackAction(
         );
       }
 
+      // Training dummy never truly dies; treat 'downed' as a synthetic kill so quests/tasks/titles can progress.
+      const targetProtoIdForProgress = protoId ?? "training_dummy";
+      applyProgressionEvent(char, { kind: "kill", targetProtoId: targetProtoIdForProgress });
+
+      let snippets: string[] = [];
+      try {
+        const r = await applyProgressionForEvent(ctx, char, "kills", targetProtoIdForProgress);
+        snippets = r.snippets ?? [];
+      } catch (err) {
+        // eslint-disable-next-line no-console
+        console.warn("applyProgressionForEvent (training dummy downed) failed", {
+          err,
+          charId: char.id,
+          protoId: targetProtoIdForProgress,
+        });
+      }
+
+      const extra = snippets.length > 0 ? " " + snippets.join(" ") : "";
       const line =
         `[combat] You obliterate the Training Dummy for ${dmg} damage! ` +
-        `(0/${dummyInstance.maxHp} HP – it quickly knits itself back together.)`;
+        `(0/${dummyInstance.maxHp} HP – it quickly knits itself back together.)` +
+        extra;
+
       dummyInstance.hp = dummyInstance.maxHp;
       return line;
     }
@@ -948,7 +968,7 @@ export async function handleRangedAttackAction(
     const npcState = ctx.npcs?.getNpcStateByEntityId((npcTarget as any).id);
     const protoId = npcState?.protoId;
 
-    if (protoId === "training_dummy_big") {
+    if (protoId === "training_dummy_big" || protoId === "training_dummy") {
       const dummyInstance = getTrainingDummyForRoom(roomId);
 
       markInCombat(selfEntity);
@@ -974,9 +994,29 @@ export async function handleRangedAttackAction(
         );
       }
 
+      // Training dummy never truly dies; treat 'downed' as a synthetic kill so quests/tasks/titles can progress.
+      const targetProtoIdForProgress = protoId ?? "training_dummy";
+      applyProgressionEvent(char, { kind: "kill", targetProtoId: targetProtoIdForProgress });
+
+      let snippets: string[] = [];
+      try {
+        const r = await applyProgressionForEvent(ctx, char, "kills", targetProtoIdForProgress);
+        snippets = r.snippets ?? [];
+      } catch (err) {
+        // eslint-disable-next-line no-console
+        console.warn("applyProgressionForEvent (training dummy downed) failed", {
+          err,
+          charId: char.id,
+          protoId: targetProtoIdForProgress,
+        });
+      }
+
+      const extra = snippets.length > 0 ? " " + snippets.join(" ") : "";
       const line =
         `[combat] You shoot the Training Dummy for ${dmg} damage! ` +
-        `(0/${dummyInstance.maxHp} HP – it quickly knits itself back together.)`;
+        `(0/${dummyInstance.maxHp} HP – it quickly knits itself back together.)` +
+        extra;
+
       dummyInstance.hp = dummyInstance.maxHp;
       return line;
     }

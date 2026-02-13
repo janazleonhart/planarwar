@@ -301,14 +301,28 @@ export async function turnInQuest(
   }
 
   // Persist progression + inventory
+  // IMPORTANT: quest turn-in can grant pending spells/abilities. We must refresh the in-memory
+  // session character, otherwise follow-up commands (train preview/train) won't see the grants.
   if (ctx.characters) {
     try {
-      await ctx.characters.patchCharacter(char.userId, char.id, {
+      const updated = await ctx.characters.patchCharacter(char.userId, char.id, {
         progression: char.progression,
         inventory: char.inventory,
         spellbook: (char as any).spellbook,
         abilities: (char as any).abilities,
       });
+
+      if (updated) {
+        char = updated as any;
+        if (ctx.session?.character && String(ctx.session.character.id) === String(char.id)) {
+          ctx.session.character = char;
+        }
+      } else {
+        // Patch API returned null (unexpected). Still update session from our local mutation.
+        if (ctx.session?.character && String(ctx.session.character.id) === String(char.id)) {
+          ctx.session.character = char;
+        }
+      }
     } catch (err) {
       // eslint-disable-next-line no-console
       console.warn("Failed to patch character after quest turn-in", {
@@ -316,6 +330,11 @@ export async function turnInQuest(
         charId: char.id,
         questId: quest.id,
       });
+
+      // Even if persistence fails, keep the in-memory session in sync with the rewards we applied.
+      if (ctx.session?.character && String(ctx.session.character.id) === String(char.id)) {
+        ctx.session.character = char;
+      }
     }
   }
 
