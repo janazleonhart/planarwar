@@ -1806,6 +1806,7 @@ type TownBaselinePlanResponse = {
   wouldUpdate?: number;
   wouldSkip?: number;
   skippedReadOnly?: number;
+  skippedProtected?: number;
 
   opsPreview?: TownBaselineOpsPreview;
 
@@ -2297,6 +2298,7 @@ type MotherBrainListRow = {
   type: string;
   protoId: string | null;
   regionId: string | null;
+  protected?: boolean;
 };
 
 // Diff/preview payload for UI (kept small; lists are truncated server-side).
