@@ -1338,6 +1338,19 @@ function normalizeSeedBase(v: any): string {
   return s;
 }
 
+function getActorIdFromReq(req: any): string | null {
+  const sub = String(req?.auth?.sub ?? "").trim();
+  return sub ? sub : null;
+}
+
+function ownerKindForSeedBase(seedBase: string): SpawnOwnerKind {
+  const lower = String(seedBase || "").trim().toLowerCase();
+  // Editor paint tools should always mark their outputs as editor-owned.
+  // We keep this function in case we later add controlled non-editor seeds.
+  if (lower.startsWith("seed:")) return "editor";
+  return "editor";
+}
+
 function makeSpawnId(seedBase: string, kind: "clone" | "scatter", hint: string): string {
   const safeHint = String(hint ?? "x")
     .trim()
@@ -1440,6 +1453,7 @@ router.post("/clone", async (req, res) => {
 
   try {
     const shardId = strOrNull(body.shardId) ?? "prime_shard";
+    const actorId = getActorIdFromReq(req);
     const ids = Array.isArray(body.ids)
       ? body.ids
           .map((n) => Number(n))
@@ -1459,7 +1473,8 @@ router.post("/clone", async (req, res) => {
     // Load source rows.
     const rows = await db.query(
       `
-      SELECT id, shard_id, spawn_id, type, archetype, proto_id, variant_id, x, y, z, region_id, town_tier
+      SELECT id, shard_id, spawn_id, type, archetype, proto_id, variant_id, x, y, z, region_id, town_tier,
+             owner_kind, owner_id, is_locked
       FROM spawn_points
       WHERE shard_id = $1 AND id = ANY($2::int[])
       `,
@@ -1479,7 +1494,9 @@ router.post("/clone", async (req, res) => {
     const createdSpawnIds: string[] = [];
 
     for (const sp of source) {
-      if (!isSpawnEditable(sp.spawnId)) {
+      // Brain authority spawns are normally read-only. However, if a spawn has been
+      // explicitly adopted (ownerKind=editor), allow editor tools to operate on it.
+      if (!isSpawnEditable(sp.spawnId) && sp.ownerKind !== "editor") {
         skippedBrainOwned += 1;
         continue;
       }
@@ -1525,9 +1542,14 @@ router.post("/clone", async (req, res) => {
         const ins = await db.query(
           `
           INSERT INTO spawn_points
-            (shard_id, spawn_id, type, archetype, proto_id, variant_id, x, y, z, region_id, town_tier)
+            (
+              shard_id, spawn_id, type, archetype, proto_id, variant_id, x, y, z, region_id, town_tier,
+              owner_kind, owner_id, is_locked,
+              source_kind, source_id, source_rev,
+              updated_at
+            )
           VALUES
-            ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+            ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,NOW())
           RETURNING id
           `,
           [
@@ -1542,6 +1564,12 @@ router.post("/clone", async (req, res) => {
             p.z,
             targetRegionId,
             numOrNull(sp.townTier),
+            ownerKindForSeedBase(seedBase),
+            actorId,
+            false,
+            "editor",
+            "paint_tools.clone",
+            null,
           ],
         );
 
@@ -1586,6 +1614,7 @@ router.post("/scatter", async (req, res) => {
 
   try {
     const shardId = strOrNull(body.shardId) ?? "prime_shard";
+    const actorId = getActorIdFromReq(req);
 
     const type = requiredStr(body.type);
     const archetype = requiredStr(body.archetype);
@@ -1653,12 +1682,35 @@ router.post("/scatter", async (req, res) => {
       const ins = await db.query(
         `
         INSERT INTO spawn_points
-          (shard_id, spawn_id, type, archetype, proto_id, variant_id, x, y, z, region_id, town_tier)
+          (
+            shard_id, spawn_id, type, archetype, proto_id, variant_id, x, y, z, region_id, town_tier,
+            owner_kind, owner_id, is_locked,
+            source_kind, source_id, source_rev,
+            updated_at
+          )
         VALUES
-          ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+          ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,NOW())
         RETURNING id
         `,
-        [shardId, spawnId, type, archetype, protoId, variantId, p.x, y, p.z, regionId, townTier],
+        [
+          shardId,
+          spawnId,
+          type,
+          archetype,
+          protoId,
+          variantId,
+          p.x,
+          y,
+          p.z,
+          regionId,
+          townTier,
+          ownerKindForSeedBase(seedBase),
+          actorId,
+          false,
+          "editor",
+          "paint_tools.scatter",
+          null,
+        ],
       );
 
       const newId = Number(ins.rows?.[0]?.id ?? 0);
