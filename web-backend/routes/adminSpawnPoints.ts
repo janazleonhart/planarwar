@@ -23,6 +23,8 @@ const router = Router();
 
 type SpawnAuthority = "anchor" | "seed" | "brain" | "manual";
 
+type SpawnOwnerKind = "brain" | "baseline" | "editor" | "system";
+
 type AdminSpawnPoint = {
   id?: number | null;
 
@@ -41,6 +43,11 @@ type AdminSpawnPoint = {
 
   regionId?: string | null;
   townTier?: number | null;
+
+  // Ownership / reconciliation (v0.2)
+  ownerKind?: SpawnOwnerKind | null;
+  ownerId?: string | null;
+  isLocked?: boolean | null;
 
   // server-provided convenience
   authority?: SpawnAuthority;
@@ -562,6 +569,9 @@ function mapRowToAdmin(r: any): AdminSpawnPoint {
     z: r.z ?? null,
     regionId: r.region_id ?? null,
     townTier: r.town_tier ?? null,
+    ownerKind: (r.owner_kind ?? null) as any,
+    ownerId: r.owner_id ?? null,
+    isLocked: r.is_locked ?? null,
     authority: getSpawnAuthority(spawnId),
   };
 }
@@ -791,7 +801,10 @@ router.get("/", async (req, res) => {
         y,
         z,
         region_id,
-        town_tier
+        town_tier,
+        owner_kind,
+        owner_id,
+        is_locked
       FROM spawn_points
       WHERE ${where.join(" AND ")}
       ORDER BY id ASC
@@ -867,9 +880,9 @@ router.post("/", async (req, res) => {
       const ins = await db.query(
         `
         INSERT INTO spawn_points
-          (shard_id, spawn_id, type, archetype, proto_id, variant_id, x, y, z, region_id, town_tier)
+          (shard_id, spawn_id, type, archetype, proto_id, variant_id, x, y, z, region_id, town_tier, owner_kind, owner_id)
         VALUES
-          ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+          ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'editor',NULL)
         RETURNING id
         `,
         [shardId, spawnId, type, archetype, protoId, variantId, x, y, z, regionId, townTier],
@@ -898,7 +911,7 @@ router.delete("/:id", async (req, res) => {
     }
 
     const row = await db.query(
-      `SELECT id, shard_id, spawn_id FROM spawn_points WHERE id = $1 LIMIT 1`,
+      `SELECT id, shard_id, spawn_id, owner_kind, is_locked FROM spawn_points WHERE id = $1 LIMIT 1`,
       [id],
     );
 
@@ -906,8 +919,16 @@ router.delete("/:id", async (req, res) => {
     if (!found) return res.status(404).json({ ok: false, error: "not_found" });
     if (String(found.shard_id) !== shardId) return res.status(403).json({ ok: false, error: "shard_mismatch" });
 
+    if (Boolean(found.is_locked)) {
+      return res.status(403).json({ ok: false, error: "locked_readonly" });
+    }
+
     const spawnId = String(found.spawn_id ?? "");
-    if (!isSpawnEditable(spawnId)) {
+    // brain:* is normally readonly, but explicit editor ownership can override.
+    const ownerKind = String(found.owner_kind ?? "").trim().toLowerCase();
+    const isEditorOwned = ownerKind === "editor";
+
+    if (!isEditorOwned && !isSpawnEditable(spawnId)) {
       return res.status(403).json({ ok: false, error: "brain_owned_readonly" });
     }
 
@@ -918,6 +939,195 @@ router.delete("/:id", async (req, res) => {
   } catch (err) {
     console.error("[ADMIN/SPAWN_POINTS] delete error", err);
     res.status(500).json({ ok: false, error: "internal_error" });
+  }
+});
+
+// ------------------------------
+// Spawn ownership / reconciliation (v0.2)
+// ------------------------------
+
+type OwnershipUpdateResponse = {
+  ok: boolean;
+  kind: "spawn_points.ownership";
+  spawnPoint?: AdminSpawnPoint;
+  error?: string;
+};
+
+async function readSpawnPointRowById(id: number): Promise<any | null> {
+  const r = await db.query(
+    `
+    SELECT
+      id,
+      shard_id,
+      spawn_id,
+      type,
+      archetype,
+      proto_id,
+      variant_id,
+      x,
+      y,
+      z,
+      region_id,
+      town_tier,
+      owner_kind,
+      owner_id,
+      is_locked
+    FROM spawn_points
+    WHERE id = $1
+    LIMIT 1
+    `,
+    [id],
+  );
+  return r.rows?.[0] ?? null;
+}
+
+function computeDefaultOwnerKindForSpawnId(spawnId: string): SpawnOwnerKind | null {
+  const sid = String(spawnId ?? "").trim().toLowerCase();
+  if (sid.startsWith("seed:")) return "baseline";
+  if (sid.startsWith("brain:")) return "brain";
+  return null;
+}
+
+// POST /api/admin/spawn_points/:id/adopt
+// Body: { ownerId?: string }
+router.post("/:id/adopt", async (req, res) => {
+  try {
+    const id = Number(req.params.id ?? 0);
+    if (!Number.isFinite(id) || id <= 0) {
+      return res.status(400).json({ ok: false, kind: "spawn_points.ownership", error: "invalid_id" } satisfies OwnershipUpdateResponse);
+    }
+
+    const ownerId = strOrNull((req.body ?? {})?.ownerId);
+
+    const found = await readSpawnPointRowById(id);
+    if (!found) {
+      return res.status(404).json({ ok: false, kind: "spawn_points.ownership", error: "not_found" } satisfies OwnershipUpdateResponse);
+    }
+
+    // Locked rows can still be adopted (ownership is metadata), but remain protected by the lock.
+    await db.query(
+      `
+      UPDATE spawn_points
+      SET
+        owner_kind = 'editor',
+        owner_id = $2,
+        updated_at = NOW()
+      WHERE id = $1
+      `,
+      [id, ownerId],
+    );
+
+    const updated = await readSpawnPointRowById(id);
+    clearSpawnPointCache();
+
+    return res.json({ ok: true, kind: "spawn_points.ownership", spawnPoint: mapRowToAdmin(updated) } satisfies OwnershipUpdateResponse);
+  } catch (err: any) {
+    console.error("[ADMIN/SPAWN_POINTS] adopt error", err);
+    return res.status(500).json({ ok: false, kind: "spawn_points.ownership", error: "internal_error" } satisfies OwnershipUpdateResponse);
+  }
+});
+
+// POST /api/admin/spawn_points/:id/release
+router.post("/:id/release", async (req, res) => {
+  try {
+    const id = Number(req.params.id ?? 0);
+    if (!Number.isFinite(id) || id <= 0) {
+      return res.status(400).json({ ok: false, kind: "spawn_points.ownership", error: "invalid_id" } satisfies OwnershipUpdateResponse);
+    }
+
+    const found = await readSpawnPointRowById(id);
+    if (!found) {
+      return res.status(404).json({ ok: false, kind: "spawn_points.ownership", error: "not_found" } satisfies OwnershipUpdateResponse);
+    }
+
+    const spawnId = String(found.spawn_id ?? "");
+    const nextOwner = computeDefaultOwnerKindForSpawnId(spawnId);
+
+    await db.query(
+      `
+      UPDATE spawn_points
+      SET
+        owner_kind = $2,
+        owner_id = NULL,
+        updated_at = NOW()
+      WHERE id = $1
+      `,
+      [id, nextOwner],
+    );
+
+    const updated = await readSpawnPointRowById(id);
+    clearSpawnPointCache();
+
+    return res.json({ ok: true, kind: "spawn_points.ownership", spawnPoint: mapRowToAdmin(updated) } satisfies OwnershipUpdateResponse);
+  } catch (err: any) {
+    console.error("[ADMIN/SPAWN_POINTS] release error", err);
+    return res.status(500).json({ ok: false, kind: "spawn_points.ownership", error: "internal_error" } satisfies OwnershipUpdateResponse);
+  }
+});
+
+// POST /api/admin/spawn_points/:id/lock
+router.post("/:id/lock", async (req, res) => {
+  try {
+    const id = Number(req.params.id ?? 0);
+    if (!Number.isFinite(id) || id <= 0) {
+      return res.status(400).json({ ok: false, kind: "spawn_points.ownership", error: "invalid_id" } satisfies OwnershipUpdateResponse);
+    }
+
+    const found = await readSpawnPointRowById(id);
+    if (!found) {
+      return res.status(404).json({ ok: false, kind: "spawn_points.ownership", error: "not_found" } satisfies OwnershipUpdateResponse);
+    }
+
+    await db.query(
+      `
+      UPDATE spawn_points
+      SET
+        is_locked = TRUE,
+        updated_at = NOW()
+      WHERE id = $1
+      `,
+      [id],
+    );
+
+    const updated = await readSpawnPointRowById(id);
+    clearSpawnPointCache();
+    return res.json({ ok: true, kind: "spawn_points.ownership", spawnPoint: mapRowToAdmin(updated) } satisfies OwnershipUpdateResponse);
+  } catch (err: any) {
+    console.error("[ADMIN/SPAWN_POINTS] lock error", err);
+    return res.status(500).json({ ok: false, kind: "spawn_points.ownership", error: "internal_error" } satisfies OwnershipUpdateResponse);
+  }
+});
+
+// POST /api/admin/spawn_points/:id/unlock
+router.post("/:id/unlock", async (req, res) => {
+  try {
+    const id = Number(req.params.id ?? 0);
+    if (!Number.isFinite(id) || id <= 0) {
+      return res.status(400).json({ ok: false, kind: "spawn_points.ownership", error: "invalid_id" } satisfies OwnershipUpdateResponse);
+    }
+
+    const found = await readSpawnPointRowById(id);
+    if (!found) {
+      return res.status(404).json({ ok: false, kind: "spawn_points.ownership", error: "not_found" } satisfies OwnershipUpdateResponse);
+    }
+
+    await db.query(
+      `
+      UPDATE spawn_points
+      SET
+        is_locked = FALSE,
+        updated_at = NOW()
+      WHERE id = $1
+      `,
+      [id],
+    );
+
+    const updated = await readSpawnPointRowById(id);
+    clearSpawnPointCache();
+    return res.json({ ok: true, kind: "spawn_points.ownership", spawnPoint: mapRowToAdmin(updated) } satisfies OwnershipUpdateResponse);
+  } catch (err: any) {
+    console.error("[ADMIN/SPAWN_POINTS] unlock error", err);
+    return res.status(500).json({ ok: false, kind: "spawn_points.ownership", error: "internal_error" } satisfies OwnershipUpdateResponse);
   }
 });
 
@@ -936,10 +1146,10 @@ router.post("/bulk_delete", async (req, res) => {
       return res.status(400).json({ ok: false, error: "no_ids" });
     }
 
-    // Enforce brain-readonly at server side (don’t trust UI).
+    // Enforce readonly at server side (don’t trust UI).
     const rows = await db.query(
       `
-      SELECT id, spawn_id
+      SELECT id, spawn_id, owner_kind, is_locked
       FROM spawn_points
       WHERE shard_id = $1 AND id = ANY($2::int[])
       `,
@@ -947,7 +1157,13 @@ router.post("/bulk_delete", async (req, res) => {
     );
 
     const deletable = (rows.rows ?? [])
-      .filter((r: any) => isSpawnEditable(String(r.spawn_id ?? "")))
+      .filter((r: any) => {
+        if (Boolean(r.is_locked)) return false;
+        const spawnId = String(r.spawn_id ?? "");
+        const ownerKind = String(r.owner_kind ?? "").trim().toLowerCase();
+        const isEditorOwned = ownerKind === "editor";
+        return isEditorOwned || isSpawnEditable(spawnId);
+      })
       .map((r: any) => Number(r.id))
       .filter((n: number) => Number.isFinite(n) && n > 0);
 
@@ -997,10 +1213,10 @@ router.post("/bulk_move", async (req, res) => {
       return res.status(400).json({ ok: false, error: "no_delta" });
     }
 
-    // Filter out brain-owned ids (server-side enforcement).
+    // Filter out readonly ids (server-side enforcement).
     const rows = await db.query(
       `
-      SELECT id, spawn_id
+      SELECT id, spawn_id, owner_kind, is_locked
       FROM spawn_points
       WHERE shard_id = $1 AND id = ANY($2::int[])
       `,
@@ -1008,7 +1224,13 @@ router.post("/bulk_move", async (req, res) => {
     );
 
     const movable = (rows.rows ?? [])
-      .filter((r: any) => isSpawnEditable(String(r.spawn_id ?? "")))
+      .filter((r: any) => !Boolean(r.is_locked))
+      .filter((r: any) => {
+        const spawnId = String(r.spawn_id ?? "");
+        const ownerKind = String(r.owner_kind ?? "").trim().toLowerCase();
+        const isEditorOwned = ownerKind === "editor";
+        return isEditorOwned || isSpawnEditable(spawnId);
+      })
       .map((r: any) => Number(r.id))
       .filter((n: number) => Number.isFinite(n) && n > 0);
 

@@ -118,6 +118,11 @@ type AdminSpawnPoint = {
   regionId: string | null;
   townTier: number | null;
 
+  // Ownership / reconciliation (v0.2)
+  ownerKind?: "brain" | "baseline" | "editor" | "system" | null;
+  ownerId?: string | null;
+  isLocked?: boolean | null;
+
   authority?: SpawnAuthority;
 };
 
@@ -309,9 +314,11 @@ function getAuthority(spawnId: string): SpawnAuthority {
   return "manual";
 }
 
-function canEditSpawn(spawnId: string): boolean {
+function canEditSpawn(spawnId: string, ownerKind?: string | null, isLocked?: boolean | null): boolean {
   const caps = getAdminCaps();
   if (!caps.canWrite) return false;
+  if (Boolean(isLocked)) return false;
+  if (String(ownerKind ?? "").trim().toLowerCase() === "editor") return true;
   return getAuthority(spawnId) !== "brain";
 }
 
@@ -641,6 +648,7 @@ const restoreSnapshotParseError = restoreParsed.error;
 
 
   const [saving, setSaving] = useState(false);
+  const [ownershipLoading, setOwnershipLoading] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -1080,12 +1088,50 @@ const restoreSnapshotParseError = restoreParsed.error;
       z: 0,
       regionId: loadMode === "region" ? regionId.trim() || null : null,
       townTier: null,
+      ownerKind: "editor",
+      ownerId: null,
+      isLocked: false,
       authority: "manual",
     });
   };
 
   const updateField = <K extends keyof AdminSpawnPoint>(key: K, value: AdminSpawnPoint[K]) => {
     setForm((prev) => (prev ? { ...prev, [key]: value } : prev));
+  };
+
+  const patchSpawnPointInState = (updated: AdminSpawnPoint) => {
+    const norm = { ...updated, authority: updated.authority ?? getAuthority(updated.spawnId) };
+    setSpawnPoints((prev) => prev.map((p) => (p.id === norm.id ? { ...p, ...norm } : p)));
+    setForm((prev) => (prev && prev.id === norm.id ? { ...prev, ...norm } : prev));
+  };
+
+  const runOwnershipAction = async (action: "adopt" | "release" | "lock" | "unlock") => {
+    if (!form || !form.id) return;
+    setOwnershipLoading(true);
+    setError(null);
+    try {
+      const url = `/api/admin/spawn_points/${form.id}/${action}`;
+      const res = await authedFetch(url, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: action === "adopt" ? JSON.stringify({ ownerId: "web-frontend" }) : "{}",
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok || !data?.ok) {
+        throw new Error(data?.error || `Ownership action failed (HTTP ${res.status})`);
+      }
+      if (data.spawnPoint) {
+        patchSpawnPointInState(data.spawnPoint as AdminSpawnPoint);
+      } else if (data.spawnPoints && Array.isArray(data.spawnPoints)) {
+        // Defensive: tolerate other shapes.
+        const sp = (data.spawnPoints as AdminSpawnPoint[]).find((p) => p.id === form.id);
+        if (sp) patchSpawnPointInState(sp);
+      }
+    } catch (err: any) {
+      setError(err.message || String(err));
+    } finally {
+      setOwnershipLoading(false);
+    }
   };
 
   const toggleSelected = (id: number) => {
@@ -1127,7 +1173,7 @@ const restoreSnapshotParseError = restoreParsed.error;
   const handleSave = async () => {
     if (!form) return;
 
-    if (!canEditSpawn(form.spawnId)) {
+    if (!canEditSpawn(form.spawnId, form.ownerKind, form.isLocked)) {
       setError("This spawn point is brain-owned (brain:*) and is read-only here.");
       return;
     }
@@ -1170,7 +1216,7 @@ const restoreSnapshotParseError = restoreParsed.error;
 
   const handleDeleteOne = async () => {
     if (!form || !form.id) return;
-    if (!canEditSpawn(form.spawnId)) {
+    if (!canEditSpawn(form.spawnId, form.ownerKind, form.isLocked)) {
       setError("This spawn point is brain-owned (brain:*) and is read-only here.");
       return;
     }
@@ -1748,7 +1794,7 @@ if (!Array.isArray((snapshot as any).spawns)) throw new Error("Invalid snapshot:
           <div style={{ display: "grid", gap: 12, gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", alignItems: "end" }}>
             <label style={{ display: "grid", gap: 4 }}>
               <span style={{ opacity: 0.8 }}>Shard</span>
-              <input style={{ width: 180 }} value={shardId} onChange={(e) => setShardId(e.target.value)} />
+              <input style={{ width: "100%" }} value={shardId} onChange={(e) => setShardId(e.target.value)} />
             </label>
 
             <label style={{ display: "grid", gap: 4 }}>
@@ -1897,7 +1943,7 @@ Ctrl/⌘-click: filter only`}
             <summary style={{ cursor: "pointer", userSelect: "none", opacity: 0.9 }}>
               Filters ({filterSummary})
             </summary>
-            <div style={{ display: "grid", gap: 12, gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", alignItems: "end", marginTop: 10 }}>
+            <div style={{ display: "grid", gap: 12, gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", alignItems: "start", marginTop: 10 }}>
               <label style={{ display: "grid", gap: 4 }}>
                 <span style={{ opacity: 0.8 }}>Authority</span>
                 <select value={filterAuthority} onChange={(e) => setFilterAuthority(e.target.value)}>
@@ -2554,7 +2600,7 @@ Ctrl/⌘-click: filter only`}
               <span style={{ fontSize: 12, opacity: 0.8 }}>Writes new spawn_points rows (seed:editor...). Brain-owned rows are skipped.</span>
             </div>
 
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: 12 }}>
               {/* Clone selected */}
               <div style={{ border: "1px solid #222", borderRadius: 8, padding: 10 }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
@@ -2562,31 +2608,33 @@ Ctrl/⌘-click: filter only`}
                   <span style={{ fontSize: 12, opacity: 0.8 }}>{selectedIds.length} selected</span>
                 </div>
 
-                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10, alignItems: "flex-end" }}>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px 12px", marginTop: 10, alignItems: "start" }}>
                   <label style={{ display: "grid", gap: 4 }}>
                     <span style={{ opacity: 0.8 }}>Copies each</span>
-                    <input type="number" style={{ width: 100 }} value={cloneCountPerId} onChange={(e) => setCloneCountPerId(Number(e.target.value) || 0)} />
+                    <input type="number" style={{ width: "100%" }} value={cloneCountPerId} onChange={(e) => setCloneCountPerId(Number(e.target.value) || 0)} />
                   </label>
                   <label style={{ display: "grid", gap: 4 }}>
                     <span style={{ opacity: 0.8 }}>Scatter radius</span>
-                    <input type="number" style={{ width: 120 }} value={cloneScatterRadius} onChange={(e) => setCloneScatterRadius(Number(e.target.value) || 0)} />
+                    <input type="number" style={{ width: "100%" }} value={cloneScatterRadius} onChange={(e) => setCloneScatterRadius(Number(e.target.value) || 0)} />
                   </label>
                   <label style={{ display: "grid", gap: 4 }}>
                     <span style={{ opacity: 0.8 }}>Min distance</span>
                     <input type="number" style={{ width: 120 }} value={cloneMinDistance} onChange={(e) => setCloneMinDistance(Number(e.target.value) || 0)} />
                   </label>
-                  <label style={{ display: "grid", gap: 4 }}>
+                  <label style={{ display: "grid", gap: 4, gridColumn: "1 / -1" }}>
                     <span style={{ opacity: 0.8 }}>Seed base</span>
-                    <input style={{ width: 160 }} value={cloneSeedBase} onChange={(e) => setCloneSeedBase(e.target.value)} placeholder="seed:editor" />
+                    <input style={{ width: "100%" }} value={cloneSeedBase} onChange={(e) => setCloneSeedBase(e.target.value)} placeholder="seed:editor" />
                   </label>
-                  <label style={{ display: "grid", gap: 4 }}>
+                  <label style={{ display: "grid", gap: 4, gridColumn: "1 / -1" }}>
                     <span style={{ opacity: 0.8 }}>Region override</span>
                     <input style={{ width: 180 }} value={cloneRegionOverride} onChange={(e) => setCloneRegionOverride(e.target.value)} placeholder="(optional)" />
                   </label>
 
-                  <button disabled={cloneWorking || !canWrite || selectedIds.length === 0} onClick={() => void cloneSelected()}>
-                    {cloneWorking ? "Working..." : "Clone"}
-                  </button>
+                  <div style={{ gridColumn: "1 / -1", display: "flex", justifyContent: "flex-end" }}>
+                    <button disabled={cloneWorking || !canWrite || selectedIds.length === 0} onClick={() => void cloneSelected()}>
+                      {cloneWorking ? "Working..." : "Clone"}
+                    </button>
+                  </div>
                 </div>
 
                 {cloneResult && (
@@ -2598,97 +2646,128 @@ Ctrl/⌘-click: filter only`}
 
               {/* Scatter new */}
               <div style={{ border: "1px solid #222", borderRadius: 8, padding: 10 }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <div style={{ display: "grid", gridTemplateColumns: "auto 1fr", gap: 8, alignItems: "baseline" }}>
                   <strong>Scatter New</strong>
-                  <span style={{ fontSize: 12, opacity: 0.8 }}>Drops a new batch around a center point</span>
+                  <span style={{ fontSize: 12, opacity: 0.8, justifySelf: "end", textAlign: "right", lineHeight: 1.2 }}>
+                    Drops a new batch around a center point
+                  </span>
                 </div>
 
-                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10, alignItems: "flex-end" }}>
+                                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "1fr 1fr",
+                    gap: "10px 12px",
+                    marginTop: 10,
+                    alignItems: "end",
+                  }}
+                >
+                  {/* Row 1 */}
                   <label style={{ display: "grid", gap: 4 }}>
                     <span style={{ opacity: 0.8 }}>Type</span>
-                    <input style={{ width: 120 }} value={scatterType} onChange={(e) => setScatterType(e.target.value)} placeholder="node" />
+                    <input style={{ width: "100%" }} value={scatterType} onChange={(e) => setScatterType(e.target.value)} placeholder="node" />
                   </label>
+
                   <label style={{ display: "grid", gap: 4 }}>
                     <span style={{ opacity: 0.8 }}>Archetype</span>
-                    <input style={{ width: 120 }} value={scatterArchetype} onChange={(e) => setScatterArchetype(e.target.value)} placeholder="node" />
+                    <input style={{ width: "100%" }} value={scatterArchetype} onChange={(e) => setScatterArchetype(e.target.value)} placeholder="node" />
                   </label>
-                  <label style={{ display: "grid", gap: 4 }}>
+
+                  {/* Row 2 */}
+                  <label style={{ display: "grid", gap: 4, gridColumn: "1 / -1" }}>
                     <span style={{ opacity: 0.8 }}>ProtoId</span>
-                    <input style={{ width: 180 }} value={scatterProtoId} onChange={(e) => setScatterProtoId(e.target.value)} placeholder="ore_iron_hematite" />
+                    <input style={{ width: "100%" }} value={scatterProtoId} onChange={(e) => setScatterProtoId(e.target.value)} placeholder="ore_iron_hematite" />
                   </label>
+
+                  {/* Row 3 */}
                   <label style={{ display: "grid", gap: 4 }}>
                     <span style={{ opacity: 0.8 }}>VariantId</span>
-                    <input style={{ width: 140 }} value={scatterVariantId} onChange={(e) => setScatterVariantId(e.target.value)} placeholder="(optional)" />
+                    <input style={{ width: "100%" }} value={scatterVariantId} onChange={(e) => setScatterVariantId(e.target.value)} placeholder="(optional)" />
                   </label>
+
                   <label style={{ display: "grid", gap: 4 }}>
                     <span style={{ opacity: 0.8 }}>Count</span>
-                    <input type="number" style={{ width: 100 }} value={scatterCount} onChange={(e) => setScatterCount(Number(e.target.value) || 0)} />
+                    <input type="number" style={{ width: "100%" }} value={scatterCount} onChange={(e) => setScatterCount(Number(e.target.value) || 0)} />
                   </label>
-                </div>
 
-                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10, alignItems: "flex-end" }}>
+                  {/* Row 4 */}
                   <label style={{ display: "grid", gap: 4 }}>
                     <span style={{ opacity: 0.8 }}>Center X</span>
-                    <input type="number" style={{ width: 120 }} value={scatterCenterX} onChange={(e) => setScatterCenterX(Number(e.target.value) || 0)} />
+                    <input type="number" style={{ width: "100%" }} value={scatterCenterX} onChange={(e) => setScatterCenterX(Number(e.target.value) || 0)} />
                   </label>
+
                   <label style={{ display: "grid", gap: 4 }}>
                     <span style={{ opacity: 0.8 }}>Center Z</span>
-                    <input type="number" style={{ width: 120 }} value={scatterCenterZ} onChange={(e) => setScatterCenterZ(Number(e.target.value) || 0)} />
+                    <input type="number" style={{ width: "100%" }} value={scatterCenterZ} onChange={(e) => setScatterCenterZ(Number(e.target.value) || 0)} />
                   </label>
+
+                  {/* Row 5 */}
                   <label style={{ display: "grid", gap: 4 }}>
                     <span style={{ opacity: 0.8 }}>Y</span>
-                    <input type="number" style={{ width: 100 }} value={scatterY} onChange={(e) => setScatterY(Number(e.target.value) || 0)} />
+                    <input type="number" style={{ width: "100%" }} value={scatterY} onChange={(e) => setScatterY(Number(e.target.value) || 0)} />
                   </label>
 
-                  <button
-                    onClick={() => {
-                      if (loadMode === "radius") {
-                        setScatterCenterX(Number(queryX) || 0);
-                        setScatterCenterZ(Number(queryZ) || 0);
-                      }
-                      if (loadMode === "region") {
-                        setScatterRegionId(regionId.trim());
-                      }
-                    }}
-                  >
-                    Use current query
-                  </button>
-                </div>
+                  <div style={{ display: "flex", justifyContent: "flex-end" }}>
+                    <button
+                      onClick={() => {
+                        if (loadMode === "radius") {
+                          setScatterCenterX(Number(queryX) || 0);
+                          setScatterCenterZ(Number(queryZ) || 0);
+                        }
+                        if (loadMode === "region") {
+                          setScatterRegionId(regionId.trim());
+                        }
+                      }}
+                    >
+                      Use current query
+                    </button>
+                  </div>
 
-                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10, alignItems: "flex-end" }}>
-                  <label style={{ display: "grid", gap: 4, flex: 1, minWidth: 260 }}>
-                    <span style={{ opacity: 0.8 }}>whereami paste</span>
-                    <input value={whereamiPaste} onChange={(e) => setWhereamiPaste(e.target.value)} placeholder='Paste: pos=(22.34, 0.00, 137.27)' />
-                  </label>
-                  <button onClick={applyWhereamiToScatter} disabled={!canWrite}>Apply</button>
-                </div>
+                  {/* Row 6 (full width with Apply) */}
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 8, gridColumn: "1 / -1", alignItems: "end" }}>
+                    <label style={{ display: "grid", gap: 4 }}>
+                      <span style={{ opacity: 0.8 }}>whereami paste</span>
+                      <input value={whereamiPaste} onChange={(e) => setWhereamiPaste(e.target.value)} placeholder='Paste: pos=(22.34, 0.00, 137.27)' />
+                    </label>
+                    <button onClick={applyWhereamiToScatter} disabled={!canWrite}>Apply</button>
+                  </div>
 
-                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10, alignItems: "flex-end" }}>
-                  <label style={{ display: "grid", gap: 4 }}>
+                  {/* Row 7 */}
+                  <label style={{ display: "grid", gap: 4, gridColumn: "1 / -1" }}>
                     <span style={{ opacity: 0.8 }}>RegionId</span>
-                    <input style={{ width: 220 }} value={scatterRegionId} onChange={(e) => setScatterRegionId(e.target.value)} placeholder="(optional)" />
+                    <input style={{ width: "100%" }} value={scatterRegionId} onChange={(e) => setScatterRegionId(e.target.value)} placeholder="(optional)" />
                   </label>
+
+                  {/* Row 8 */}
                   <label style={{ display: "grid", gap: 4 }}>
                     <span style={{ opacity: 0.8 }}>Town tier</span>
-                    <input style={{ width: 100 }} value={scatterTownTier} onChange={(e) => setScatterTownTier(e.target.value)} placeholder="(opt)" />
-                  </label>
-                  <label style={{ display: "grid", gap: 4 }}>
-                    <span style={{ opacity: 0.8 }}>Scatter radius</span>
-                    <input type="number" style={{ width: 120 }} value={scatterRadius} onChange={(e) => setScatterRadius(Number(e.target.value) || 0)} />
-                  </label>
-                  <label style={{ display: "grid", gap: 4 }}>
-                    <span style={{ opacity: 0.8 }}>Min distance</span>
-                    <input type="number" style={{ width: 120 }} value={scatterMinDistance} onChange={(e) => setScatterMinDistance(Number(e.target.value) || 0)} />
-                  </label>
-                  <label style={{ display: "grid", gap: 4 }}>
-                    <span style={{ opacity: 0.8 }}>Seed base</span>
-                    <input style={{ width: 160 }} value={scatterSeedBase} onChange={(e) => setScatterSeedBase(e.target.value)} placeholder="seed:editor" />
+                    <input style={{ width: "100%" }} value={scatterTownTier} onChange={(e) => setScatterTownTier(e.target.value)} placeholder="(opt)" />
                   </label>
 
-                  <button disabled={scatterWorking || !canWrite} onClick={() => void scatterNew()}>
-                    {scatterWorking ? "Working..." : "Scatter"}
-                  </button>
+                  <label style={{ display: "grid", gap: 4 }}>
+                    <span style={{ opacity: 0.8 }}>Scatter radius</span>
+                    <input type="number" style={{ width: "100%" }} value={scatterRadius} onChange={(e) => setScatterRadius(Number(e.target.value) || 0)} />
+                  </label>
+
+                  {/* Row 9 */}
+                  <label style={{ display: "grid", gap: 4 }}>
+                    <span style={{ opacity: 0.8 }}>Min distance</span>
+                    <input type="number" style={{ width: "100%" }} value={scatterMinDistance} onChange={(e) => setScatterMinDistance(Number(e.target.value) || 0)} />
+                  </label>
+
+                  <label style={{ display: "grid", gap: 4 }}>
+                    <span style={{ opacity: 0.8 }}>Seed base</span>
+                    <input style={{ width: "100%" }} value={scatterSeedBase} onChange={(e) => setScatterSeedBase(e.target.value)} placeholder="seed:editor" />
+                  </label>
+
+                  {/* Row 10 */}
+                  <div style={{ gridColumn: "1 / -1", display: "flex", justifyContent: "flex-end" }}>
+                    <button disabled={scatterWorking || !canWrite} onClick={() => void scatterNew()}>
+                      {scatterWorking ? "Working..." : "Scatter"}
+                    </button>
+                  </div>
                 </div>
+
 
                 {scatterResult && (
                   <pre style={{ marginTop: 10, background: "#111", color: "#eee", border: "1px solid #333", padding: 8, borderRadius: 6, overflow: "auto" }}>
@@ -3474,6 +3553,16 @@ Ctrl/⌘-click: filter only`}
                       <div>
                         <strong>{sp.type}</strong>{" "}
                         <span style={{ fontSize: 12, opacity: 0.8 }}>[{auth}]</span>
+                        {sp.isLocked ? (
+                          <span style={{ marginLeft: 8, fontSize: 11, fontWeight: 800, color: "#b71c1c" }} title="Locked (read-only)">
+                            LOCKED
+                          </span>
+                        ) : null}
+                        {sp.ownerKind ? (
+                          <span style={{ marginLeft: 8, fontSize: 11, fontWeight: 700, opacity: 0.85 }} title={`owner_kind=${sp.ownerKind}${sp.ownerId ? ` owner_id=${sp.ownerId}` : ""}`}>
+                            owner:{sp.ownerKind}
+                          </span>
+                        ) : null}
                       </div>
                       <div style={{ fontSize: 12 }}>
                         <code>{sp.spawnId}</code>
@@ -3532,6 +3621,65 @@ Ctrl/⌘-click: filter only`}
                 </label>
               </div>
 
+              <div style={{ marginBottom: 10, padding: 10, borderRadius: 8, border: "1px solid #ddd", background: "#fafafa" }}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
+                  <div style={{ fontSize: 12, opacity: 0.9 }}>
+                    <div>
+                      <b>Owner:</b>{" "}
+                      <code>{String(form.ownerKind ?? "(null)")}</code>
+                      {form.ownerId ? (
+                        <span style={{ marginLeft: 8, opacity: 0.8 }}>
+                          id: <code>{form.ownerId}</code>
+                        </span>
+                      ) : null}
+                    </div>
+                    <div style={{ marginTop: 4 }}>
+                      <b>Lock:</b>{" "}
+                      {form.isLocked ? <span style={{ color: "#b71c1c", fontWeight: 800 }}>LOCKED</span> : <span style={{ color: "#2e7d32", fontWeight: 800 }}>unlocked</span>}
+                    </div>
+                  </div>
+
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                    <button
+                      type="button"
+                      onClick={() => runOwnershipAction("adopt")}
+                      disabled={!canWrite || ownershipLoading || !form.id || String(form.ownerKind ?? "").toLowerCase() === "editor"}
+                      title="Mark this spawn point as editor-owned (protected from planner overwrites)"
+                    >
+                      Adopt
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => runOwnershipAction("release")}
+                      disabled={!canWrite || ownershipLoading || !form.id || String(form.ownerKind ?? "").toLowerCase() !== "editor"}
+                      title="Release editor ownership (revert owner_kind based on spawnId prefix)"
+                    >
+                      Release
+                    </button>
+                    {form.isLocked ? (
+                      <button
+                        type="button"
+                        onClick={() => runOwnershipAction("unlock")}
+                        disabled={!canWrite || ownershipLoading || !form.id}
+                        title="Unlock this spawn point so it can be edited / moved / deleted"
+                      >
+                        Unlock
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => runOwnershipAction("lock")}
+                        disabled={!canWrite || ownershipLoading || !form.id}
+                        title="Lock this spawn point (protect from edits / moves / deletes)"
+                      >
+                        Lock
+                      </button>
+                    )}
+                  </div>
+                </div>
+                {ownershipLoading ? <div style={{ marginTop: 6, fontSize: 12, opacity: 0.8 }}>Applying...</div> : null}
+              </div>
+
               <div style={{ marginBottom: 8 }}>
                 <label>
                   ShardId:
@@ -3539,7 +3687,7 @@ Ctrl/⌘-click: filter only`}
                     style={{ width: "100%" }}
                     value={form.shardId}
                     onChange={(e) => updateField("shardId", e.target.value)}
-                    disabled={!canEditSpawn(form.spawnId)}
+                    disabled={!canEditSpawn(form.spawnId, form.ownerKind, form.isLocked)}
                   />
                 </label>
               </div>
@@ -3551,7 +3699,7 @@ Ctrl/⌘-click: filter only`}
                     style={{ width: "100%" }}
                     value={form.spawnId}
                     onChange={(e) => updateField("spawnId", e.target.value)}
-                    disabled={!canEditSpawn(form.spawnId)}
+                    disabled={!canEditSpawn(form.spawnId, form.ownerKind, form.isLocked)}
                     placeholder="anchor:starter_hub_guard_1   OR   seed:goblin_camp_0"
                   />
                 </label>
@@ -3564,7 +3712,7 @@ Ctrl/⌘-click: filter only`}
                     style={{ width: 140, marginLeft: 6 }}
                     value={form.type}
                     onChange={(e) => updateField("type", e.target.value)}
-                    disabled={!canEditSpawn(form.spawnId)}
+                    disabled={!canEditSpawn(form.spawnId, form.ownerKind, form.isLocked)}
                   />
                 </label>
                 <label>
@@ -3573,7 +3721,7 @@ Ctrl/⌘-click: filter only`}
                     style={{ width: 140, marginLeft: 6 }}
                     value={form.archetype}
                     onChange={(e) => updateField("archetype", e.target.value)}
-                    disabled={!canEditSpawn(form.spawnId)}
+                    disabled={!canEditSpawn(form.spawnId, form.ownerKind, form.isLocked)}
                   />
                 </label>
                 <label>
@@ -3585,7 +3733,7 @@ Ctrl/⌘-click: filter only`}
                     onChange={(e) =>
                       updateField("townTier", e.target.value === "" ? null : Number(e.target.value))
                     }
-                    disabled={!canEditSpawn(form.spawnId)}
+                    disabled={!canEditSpawn(form.spawnId, form.ownerKind, form.isLocked)}
                   />
                 </label>
               </div>
@@ -3597,7 +3745,7 @@ Ctrl/⌘-click: filter only`}
                     style={{ width: "100%" }}
                     value={form.protoId ?? ""}
                     onChange={(e) => updateField("protoId", e.target.value)}
-                    disabled={!canEditSpawn(form.spawnId)}
+                    disabled={!canEditSpawn(form.spawnId, form.ownerKind, form.isLocked)}
                     placeholder="town_rat / ore_vein_small1 / station_forge / etc"
                   />
                 </label>
@@ -3610,7 +3758,7 @@ Ctrl/⌘-click: filter only`}
                     style={{ width: "100%" }}
                     value={form.variantId ?? ""}
                     onChange={(e) => updateField("variantId", e.target.value)}
-                    disabled={!canEditSpawn(form.spawnId)}
+                    disabled={!canEditSpawn(form.spawnId, form.ownerKind, form.isLocked)}
                   />
                 </label>
               </div>
@@ -3622,7 +3770,7 @@ Ctrl/⌘-click: filter only`}
                     style={{ width: "100%" }}
                     value={form.regionId ?? ""}
                     onChange={(e) => updateField("regionId", e.target.value)}
-                    disabled={!canEditSpawn(form.spawnId)}
+                    disabled={!canEditSpawn(form.spawnId, form.ownerKind, form.isLocked)}
                   />
                 </label>
               </div>
@@ -3635,7 +3783,7 @@ Ctrl/⌘-click: filter only`}
                     style={{ width: 120, marginLeft: 6 }}
                     value={form.x ?? ""}
                     onChange={(e) => updateField("x", e.target.value === "" ? null : Number(e.target.value))}
-                    disabled={!canEditSpawn(form.spawnId)}
+                    disabled={!canEditSpawn(form.spawnId, form.ownerKind, form.isLocked)}
                   />
                 </label>
                 <label>
@@ -3645,7 +3793,7 @@ Ctrl/⌘-click: filter only`}
                     style={{ width: 120, marginLeft: 6 }}
                     value={form.y ?? ""}
                     onChange={(e) => updateField("y", e.target.value === "" ? null : Number(e.target.value))}
-                    disabled={!canEditSpawn(form.spawnId)}
+                    disabled={!canEditSpawn(form.spawnId, form.ownerKind, form.isLocked)}
                   />
                 </label>
                 <label>
@@ -3655,13 +3803,13 @@ Ctrl/⌘-click: filter only`}
                     style={{ width: 120, marginLeft: 6 }}
                     value={form.z ?? ""}
                     onChange={(e) => updateField("z", e.target.value === "" ? null : Number(e.target.value))}
-                    disabled={!canEditSpawn(form.spawnId)}
+                    disabled={!canEditSpawn(form.spawnId, form.ownerKind, form.isLocked)}
                   />
                 </label>
               </div>
 
               <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
-                <button onClick={handleSave} disabled={saving || !canEditSpawn(form.spawnId)}>
+                <button onClick={handleSave} disabled={saving || !canEditSpawn(form.spawnId, form.ownerKind, form.isLocked)}>
                   {saving ? "Saving..." : "Save Spawn Point"}
                 </button>
                 <button type="button" onClick={startNew} disabled={saving}>
@@ -3670,7 +3818,7 @@ Ctrl/⌘-click: filter only`}
                 <button
                   type="button"
                   onClick={handleDeleteOne}
-                  disabled={saving || !form.id || !canEditSpawn(form.spawnId)}
+                  disabled={saving || !form.id || !canEditSpawn(form.spawnId, form.ownerKind, form.isLocked)}
                 >
                   Delete
                 </button>
