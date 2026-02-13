@@ -42,14 +42,15 @@ function pickWarriorAbilityId(): string {
   return String(ability.id);
 }
 
-function makeCtx(character: any, opts?: { withTrainer?: boolean }): any {
+function makeCtx(character: any, opts?: { withTrainer?: boolean; trainerTags?: string[] }): any {
   const withTrainer = opts?.withTrainer !== false;
   const roomId = "prime_shard:0,0";
+  const trainerTags = opts?.trainerTags ?? ["trainer", "service_trainer", "protected_service"];
   const trainerEntity = {
     id: "npc_town_trainer",
     name: "Town Trainer",
     type: "npc",
-    tags: ["trainer", "service_trainer", "protected_service"],
+    tags: trainerTags,
     x: 0,
     z: 0,
   };
@@ -107,6 +108,28 @@ test("[contract] train all: trains all pending spells + abilities", async () => 
   assert.equal(!!char.abilities?.pending?.[abilityId], false);
 });
 
+test("[contract] train all: service_trainer tag alone is sufficient", async () => {
+  const c0 = mkWarrior(1);
+  const abilityId = pickWarriorAbilityId();
+
+  const gS = grantSpellInState(c0 as any, "arcane_bolt", "test", 111);
+  assert.equal(gS.ok, true);
+  const c1 = (gS as any).next;
+
+  const gA = grantAbilityInState(c1 as any, abilityId, "test", 111);
+  assert.equal(gA.ok, true);
+  const c2 = (gA as any).next;
+
+  const ctx = makeCtx(c2, { trainerTags: ["service_trainer"] });
+  const out = await handleTrainCommand(ctx as any, ["all"]);
+
+  assert.ok(typeof out === "string" && out.length > 0);
+
+  const char = (ctx as any).session.character;
+  assert.equal(!!char.spellbook?.known?.arcane_bolt, true);
+  assert.equal(!!char.abilities?.learned?.[abilityId], true);
+});
+
 test("[contract] train spells: only trains spells (abilities remain pending)", async () => {
   const c0 = mkWarrior(1);
   const abilityId = pickWarriorAbilityId();
@@ -130,4 +153,26 @@ test("[contract] train spells: only trains spells (abilities remain pending)", a
 
   assert.equal(!!char.abilities?.pending?.[abilityId], true);
   assert.equal(!!char.abilities?.learned?.[abilityId], false);
+});
+
+test("[contract] train all: service_trainer tag alone is sufficient", async () => {
+  const c0 = mkWarrior(1);
+  const abilityId = pickWarriorAbilityId();
+
+  const gS = grantSpellInState(c0 as any, "arcane_bolt", "test", 111);
+  assert.equal(gS.ok, true);
+  const c1 = (gS as any).next;
+
+  const gA = grantAbilityInState(c1 as any, abilityId, "test", 111);
+  assert.equal(gA.ok, true);
+  const c2 = (gA as any).next;
+
+  const ctx = makeCtx(c2, { trainerTags: ["service_trainer"] });
+  const out = await handleTrainCommand(ctx as any, ["all"]);
+
+  assert.ok(typeof out === "string" && out.length > 0);
+
+  const char = (ctx as any).session.character;
+  assert.equal(!!char.spellbook?.known?.arcane_bolt, true);
+  assert.equal(!!char.abilities?.learned?.[abilityId], true);
 });

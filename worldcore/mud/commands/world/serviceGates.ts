@@ -182,6 +182,60 @@ function findNearestAnchor(
   return best;
 }
 
+/**
+ * Best-effort proximity check for a town service anchor.
+ *
+ * This intentionally does NOT consult PW_SERVICE_GATES.
+ * Callers can use it for UX (e.g. previews) without changing gating policy.
+ */
+export function isNearTownService(
+  ctx: MudContext,
+  char: CharacterState,
+  service: ServiceName,
+  opts?: { vendorIds?: Set<string> }
+): boolean {
+  const anchor = findNearestAnchor(ctx, char, service, opts);
+  if (!anchor) return false;
+  return anchor.dist <= serviceRadius();
+}
+
+/**
+ * Like requireTownService, but the caller has decided the service MUST be gated
+ * whenever we have enough runtime context to evaluate proximity.
+ */
+export async function requireMandatoryTownService<T>(
+  ctx: MudContext,
+  char: CharacterState,
+  service: ServiceName,
+  run: () => Promise<T> | T
+): Promise<T | string> {
+  // If we can't reason about proximity (tests/headless contexts), don't block.
+  const canEvaluateProximity =
+    !!(ctx as any)?.session && !!(ctx as any)?.entities && !!getRoomId((ctx as any)?.session);
+
+  if (!canEvaluateProximity) return run();
+  if (shouldBypass(ctx)) return run();
+
+  const vendorIds = service === "vendor" ? await maybeLoadVendorIdSet(ctx) : null;
+  const anchor = findNearestAnchor(ctx, char, service, { vendorIds: vendorIds ?? undefined });
+
+  if (!anchor) return denyNoAnchor(service);
+  if (anchor.dist > serviceRadius()) return denyOutOfRange(service, anchor.dist);
+
+  return run();
+}
+
+/**
+ * Trainers are always proximity-gated (preview is free, training is not).
+ */
+export async function requireTrainerService<T>(
+  ctx: MudContext,
+  char: CharacterState,
+  run: () => Promise<T> | T
+): Promise<T | string> {
+  return requireMandatoryTownService(ctx, char, "trainer", run);
+}
+
 async function maybeLoadVendorIdSet(ctx: MudContext): Promise<Set<string> | null> {
   const vendors: any = (ctx as any)?.vendors;
   if (!vendors?.listVendors) return null;
