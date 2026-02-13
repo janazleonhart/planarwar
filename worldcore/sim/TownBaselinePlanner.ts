@@ -97,6 +97,12 @@ export type TownBaselinePlanOptions = {
   bankProtoId?: string; // default: "town_banker"
   bankRadius?: number; // default: 9
 
+  // Guild bank baseline (service anchors)
+  seedGuildbanks?: boolean; // default: false
+  guildbankCount?: number; // default: 1
+  guildbankProtoId?: string; // default: "town_guildbank_clerk"
+  guildbankRadius?: number; // default: 9
+
   // Mail baseline (service anchors)
   seedMailServices?: boolean; // default: false
   mailServiceCount?: number; // default: 1
@@ -489,6 +495,41 @@ export function planTownBaselines(
             type: "npc",
             archetype: bankProto,
             protoId: bankProto,
+            variantId: null,
+            x,
+            y: baseY,
+            z,
+            regionId,
+          },
+        });
+      }
+    }
+
+    // Guild banks (service anchors)
+    const seedGuildbanks = opts.seedGuildbanks === true;
+    const gbankCount = Math.max(0, Math.floor(opts.guildbankCount ?? 1));
+    if (seedGuildbanks && gbankCount > 0) {
+      const gbankRadius = Math.max(0, Number(opts.guildbankRadius ?? 9) || 9);
+      const gbankProto = norm(opts.guildbankProtoId || "town_guildbank_clerk") || "town_guildbank_clerk";
+
+      for (let i = 0; i < gbankCount; i++) {
+        const off = polarOffset(`${townSpawnId}:guildbank:${i}`, gbankRadius);
+        const x = round2(baseX + off.dx);
+        const z = round2(baseZ + off.dz);
+
+        if (!inWorldBounds(x, z, opts.bounds, opts.cellSize)) continue;
+
+        const legacyPrefix = `svc_guildbank${i + 1}`;
+        const seedKind = `guildbank_${i + 1}`;
+
+        actions.push({
+          kind: "place_spawn",
+          spawn: {
+            shardId,
+            spawnId: makeSpawnId(opts, legacyPrefix, townSpawnId, seedKind),
+            type: "npc",
+            archetype: gbankProto,
+            protoId: gbankProto,
             variantId: null,
             x,
             y: baseY,

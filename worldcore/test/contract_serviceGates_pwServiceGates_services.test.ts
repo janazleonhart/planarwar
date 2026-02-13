@@ -52,6 +52,7 @@ test("[contract] serviceGates: bank/mail/auction are gated by PW_SERVICE_GATES +
 
     const services: Array<{ service: any; tag: string }> = [
       { service: "bank", tag: "service_bank" },
+      { service: "guildbank", tag: "service_guildbank" },
       { service: "mail", tag: "service_mail" },
       { service: "auction", tag: "service_auction" },
     ];
@@ -121,7 +122,7 @@ test("[contract] serviceGates: economy lockdown on siege denies bank/mail/auctio
       const char = makeChar({ id: "char_siege_svc_1", name: "Tester", x: 0, z: 0 });
       const ctx = makeCtx({ roomId, entitiesInRoom: [], siege });
 
-      for (const svc of ["bank", "mail", "auction"] as const) {
+      for (const svc of ["bank", "guildbank", "mail", "auction"] as const) {
         const out = await requireTownService(ctx, char, svc, () => "OK");
         assert.equal(typeof out, "string");
         assert.ok(String(out).toLowerCase().includes("under siege"), `Expected siege denial for ${svc}, got: ${out}`);

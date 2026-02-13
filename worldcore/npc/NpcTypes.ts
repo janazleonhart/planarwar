@@ -213,6 +213,28 @@ export const DEFAULT_NPC_PROTOTYPES: Record<NpcId, NpcPrototype> = {
     loot: [],
   },
 
+  town_guildbank_clerk: {
+    id: "town_guildbank_clerk",
+    name: "Guild Bank Clerk",
+    level: 1,
+    maxHp: 160,
+    baseDamageMin: 0,
+    baseDamageMax: 0,
+    model: "human_commoner",
+    // Service anchor for guild bank storage.
+    tags: [
+      "guildbank",
+      "service_guildbank",
+      "protected_service",
+      "non_hostile",
+      "protected_town",
+      "law_protected",
+    ],
+    behavior: "neutral",
+    xpReward: 0,
+    loot: [],
+  },
+
   town_rat: {
     id: "town_rat",
     name: "Town Rat",
