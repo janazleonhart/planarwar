@@ -12,7 +12,7 @@ import { handleTrainCommand } from "../mud/commands/player/trainCommand";
 
 function makeCtx(character: any): any {
   return {
-    session: { character },
+    session: { character, isAtTrainer: true },
     sessions: {} as any,
     guilds: {} as any,
     characters: {} as any, // preview does not call characters.service methods

@@ -43,7 +43,9 @@ function pickWarriorAbilityId(): string {
 
 function makeCtx(character: any): any {
   return {
-    session: { character },
+    // Training is intended to occur near a trainer.
+    // The train command supports a test override flag.
+    session: { character, isAtTrainer: true },
     sessions: {} as any,
     guilds: {} as any,
     characters: {

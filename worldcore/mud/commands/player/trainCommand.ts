@@ -16,6 +16,15 @@ import { canLearnAbilityForChar, isAbilityKnownForChar, listPendingAbilitiesForC
 import { getSpellByIdOrAlias, isSpellKnownForChar, resolveSpellId } from "../../../spells/SpellTypes";
 import { findAbilityByNameOrId } from "../../../abilities/AbilityTypes";
 
+function isAtTrainer(ctx: MudContext): boolean {
+  const s: any = (ctx as any)?.session;
+  if (!s) return false;
+  // Tests and admin tooling can set this directly.
+  if (s.isAtTrainer === true || s.atTrainer === true) return true;
+  if (s.flags && (s.flags.isAtTrainer === true || s.flags.atTrainer === true)) return true;
+  return false;
+}
+
 function nameFor(label: "Spells" | "Abilities", id: string): string | null {
   if (label === "Spells") return (getSpellByIdOrAlias(id) as any)?.name ?? null;
   return (findAbilityByNameOrId(id) as any)?.name ?? null;
@@ -177,6 +186,8 @@ export async function handleTrainCommand(ctx: MudContext, args: string[]): Promi
   if (!char) return "You do not have an active character.";
   if (!ctx.characters) return "Character service unavailable.";
 
+  const atTrainer = isAtTrainer(ctx);
+
   const sub = String(args[0] ?? "").trim().toLowerCase();
 
   // Default: show what is pending.
@@ -232,7 +243,7 @@ export async function handleTrainCommand(ctx: MudContext, args: string[]): Promi
 
       if (chooseSpell && sDef && sId) {
         const status = resolvePendingStatus(char as any, "spell", String(sId));
-        const res: any = canLearnSpellForChar(char as any, String(sId), { viaTrainer: true });
+        const res: any = canLearnSpellForChar(char as any, String(sId), { viaTrainer: atTrainer });
         const def: any = getSpellByIdOrAlias(String(sId));
         if (!res.ok) (res as any).spell = def;
         return fmtSinglePreview({
@@ -248,7 +259,7 @@ export async function handleTrainCommand(ctx: MudContext, args: string[]): Promi
       if (abilityCandidate && aDef && aId) {
         const id = String(aId).toLowerCase().trim();
         const status = resolvePendingStatus(char as any, "ability", id);
-        const res: any = canLearnAbilityForChar(char as any, id, { viaTrainer: true });
+        const res: any = canLearnAbilityForChar(char as any, id, { viaTrainer: atTrainer });
         const def: any = findAbilityByNameOrId(id);
         if (!res.ok) (res as any).ability = def;
         return fmtSinglePreview({
@@ -278,7 +289,7 @@ export async function handleTrainCommand(ctx: MudContext, args: string[]): Promi
 
     if (doSpells) {
       const rows = pSpells.map((id) => {
-        const res: any = canLearnSpellForChar(char as any, id, { viaTrainer: true });
+        const res: any = canLearnSpellForChar(char as any, id, { viaTrainer: atTrainer });
         if (res.ok) return { id, ok: true as const };
         const def: any = getSpellByIdOrAlias(id);
         if (!res.ok) (res as any).spell = def;
@@ -293,7 +304,7 @@ export async function handleTrainCommand(ctx: MudContext, args: string[]): Promi
 
     if (doAbilities) {
       const rows = pAbilities.map((id) => {
-        const res: any = canLearnAbilityForChar(char as any, id, { viaTrainer: true });
+        const res: any = canLearnAbilityForChar(char as any, id, { viaTrainer: atTrainer });
         if (res.ok) return { id, ok: true as const };
         const def: any = findAbilityByNameOrId(id);
         if (!res.ok) (res as any).ability = def;
@@ -316,6 +327,9 @@ export async function handleTrainCommand(ctx: MudContext, args: string[]): Promi
   // train spells
   // train abilities
   if (sub === "all" || sub === "spells" || sub === "abilities") {
+    if (!atTrainer) {
+      return "You must be at a trainer to train spells or abilities.";
+    }
     const doSpells = sub === "all" || sub === "spells";
     const doAbilities = sub === "all" || sub === "abilities";
 
@@ -330,7 +344,7 @@ export async function handleTrainCommand(ctx: MudContext, args: string[]): Promi
 
     if (doSpells) {
       for (const id of listPendingSpellsForChar(ctx.session.character as any)) {
-        const res = await ctx.characters.learnSpellWithRules(userId, charId, id, 1, { viaTrainer: true });
+        const res = await ctx.characters.learnSpellWithRules(userId, charId, id, 1, { viaTrainer: atTrainer });
         if (!res.ok) {
           const def: any = getSpellByIdOrAlias(id);
           const reason = res.error === "level_too_low"
@@ -346,7 +360,7 @@ export async function handleTrainCommand(ctx: MudContext, args: string[]): Promi
 
     if (doAbilities) {
       for (const id of listPendingAbilitiesForChar(ctx.session.character as any)) {
-        const res = await ctx.characters.learnAbilityWithRules(userId, charId, id, 1, { viaTrainer: true });
+        const res = await ctx.characters.learnAbilityWithRules(userId, charId, id, 1, { viaTrainer: atTrainer });
         if (!res.ok) {
           const def: any = findAbilityByNameOrId(id);
           const reason = res.error === "level_too_low"
@@ -379,6 +393,7 @@ export async function handleTrainCommand(ctx: MudContext, args: string[]): Promi
   // train spell <id|name>
   // train ability <id|name>
   if (sub === "spell" || sub === "sp") {
+    if (!atTrainer) return "You must be at a trainer to learn that.";
     const raw = args.slice(1).join(" ").trim();
     if (!raw) return "Usage: train spell <spellId|spellName>";
 
@@ -390,7 +405,7 @@ export async function handleTrainCommand(ctx: MudContext, args: string[]): Promi
       return `You do not have ${def.name} granted (pending training).`;
     }
 
-    const res = await ctx.characters.learnSpellWithRules((char as any).userId, (char as any).id, def.id, 1, { viaTrainer: true });
+    const res = await ctx.characters.learnSpellWithRules((char as any).userId, (char as any).id, def.id, 1, { viaTrainer: atTrainer });
 
     if (!res.ok) {
       if (res.error === "requires_grant") return `You do not have ${def.name} granted (pending training).`;
@@ -406,6 +421,7 @@ export async function handleTrainCommand(ctx: MudContext, args: string[]): Promi
   }
 
   if (sub === "ability" || sub === "ab") {
+    if (!atTrainer) return "You must be at a trainer to learn that.";
     const raw = args.slice(1).join(" ").trim();
     if (!raw) return "Usage: train ability <abilityId|abilityName>";
 
@@ -417,7 +433,7 @@ export async function handleTrainCommand(ctx: MudContext, args: string[]): Promi
       return `You do not have ${def.name} granted (pending training).`;
     }
 
-    const res = await ctx.characters.learnAbilityWithRules((char as any).userId, (char as any).id, def.id, 1, { viaTrainer: true });
+    const res = await ctx.characters.learnAbilityWithRules((char as any).userId, (char as any).id, def.id, 1, { viaTrainer: atTrainer });
 
     if (!res.ok) {
       if (res.error === "requires_grant") return `You do not have ${def.name} granted (pending training).`;

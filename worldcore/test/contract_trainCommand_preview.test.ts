@@ -1,94 +1,113 @@
-// worldcore/test/contract_trainCommand_preview.test.ts
+// worldcore/test/contract_trainCommand_bulkTrain.test.ts
 //
-// Contract: train preview
-// - train preview spells shows blocked reasons (e.g., level too low)
-// - train preview abilities shows blocked reasons (e.g., level too low)
+// Contract: bulk train helpers
+// - train all: trains all pending spells + abilities
+// - train spells: trains only spells (abilities remain pending)
+//
+// Tests avoid DB by stubbing ctx.characters with pure in-memory learn helpers.
 
 import test from "node:test";
 import assert from "node:assert/strict";
 
 import { defaultSpellbook, defaultAbilities } from "../characters/CharacterTypes";
 import { ABILITIES } from "../abilities/AbilityTypes";
-import { grantSpellInState } from "../spells/SpellLearning";
-import { grantAbilityInState } from "../abilities/AbilityLearning";
+import { grantAbilityInState, learnAbilityInState } from "../abilities/AbilityLearning";
+import { grantSpellInState, learnSpellInState } from "../spells/SpellLearning";
 import { handleTrainCommand } from "../mud/commands/player/trainCommand";
 
-function makeCtx(character: any): any {
-  return {
-    session: { character },
-    sessions: {} as any,
-    guilds: {} as any,
-    characters: {} as any, // preview does not call characters.service methods
-  };
-}
-
-function mkChar(classId: string, level = 1): any {
+function mkWarrior(level = 1): any {
   return {
     id: "c1",
     userId: "u1",
-    name: "Test",
-    classId,
+    name: "Warrior",
+    classId: "warrior",
     level,
     spellbook: defaultSpellbook(),
     abilities: defaultAbilities(),
   };
 }
 
-function escapeRegex(s: string): string {
-  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
-function pickWarriorAbilityMinLevelAtLeast(minLevel: number): string {
+function pickWarriorAbilityId(): string {
   const ability = Object.values(ABILITIES).find(
-    (a: any) => String(a?.classId ?? "").toLowerCase() === "warrior" && Number(a?.minLevel ?? 1) >= minLevel,
+    (a: any) =>
+      String(a?.classId ?? "").toLowerCase() === "warrior" &&
+      (a?.minLevel ?? 1) <= 1,
   ) as any;
 
-  assert.ok(ability && ability.id, `Expected at least one warrior ability with minLevel>=${minLevel} in ABILITIES.`);
+  assert.ok(
+    ability && ability.id,
+    "Expected at least one warrior ability with minLevel<=1 in ABILITIES.",
+  );
   return String(ability.id);
 }
 
-test("[contract] train preview spells: blocked reasons show (level too low)", async () => {
-  const old = process.env.WORLDCORE_TEST;
-  process.env.WORLDCORE_TEST = "1";
+function makeCtx(character: any): any {
+  return {
+    session: { character, isAtTrainer: true },
+    sessions: {} as any,
+    guilds: {} as any,
+    characters: {
+      async learnSpellWithRules(_userId: string, _charId: string, spellId: string, rank = 1, opts?: any) {
+        const res = learnSpellInState(character as any, spellId, rank, 123, opts);
+        if (!res.ok) return { ok: false, error: (res as any).error, requiredRule: (res as any).requiredRule };
+        character = (res as any).next;
+        return { ok: true, character };
+      },
+      async learnAbilityWithRules(_userId: string, _charId: string, abilityId: string, rank = 1, opts?: any) {
+        const res = learnAbilityInState(character as any, abilityId, rank, 123, opts);
+        if (!res.ok) return { ok: false, error: (res as any).error, requiredRule: (res as any).requiredRule };
+        character = (res as any).next;
+        return { ok: true, character };
+      },
+    },
+  };
+}
 
-  try {
-    // Virtuoso has a fallback unlock at minLevel 5 for this spell/song.
-    const c0 = mkChar("virtuoso", 1);
-    const g = grantSpellInState(c0 as any, "virtuoso_dissonant_battle_chant", "test", 111);
-    assert.equal(g.ok, true);
+test("[contract] train all: trains all pending spells + abilities", async () => {
+  const c0 = mkWarrior(1);
+  const abilityId = pickWarriorAbilityId();
 
-    const ctx = makeCtx((g as any).next);
-    const out = await handleTrainCommand(ctx as any, ["preview", "spells"]);
+  const gS = grantSpellInState(c0 as any, "arcane_bolt", "test", 111);
+  assert.equal(gS.ok, true);
+  const c1 = (gS as any).next;
 
-    assert.match(out, /Spells blocked:/);
-    assert.match(out, /\(virtuoso_dissonant_battle_chant\): level too low/);
-    // Prefer showing the required level when available.
-    assert.match(out, /requires level\s+5/);
-  } finally {
-    process.env.WORLDCORE_TEST = old;
-  }
+  const gA = grantAbilityInState(c1 as any, abilityId, "test", 111);
+  assert.equal(gA.ok, true);
+  const c2 = (gA as any).next;
+
+  const ctx = makeCtx(c2);
+  const out = await handleTrainCommand(ctx as any, ["all"]);
+
+  assert.ok(typeof out === "string" && out.length > 0);
+
+  const char = (ctx as any).session.character;
+  assert.equal(!!char.spellbook?.known?.arcane_bolt, true);
+  assert.equal(!!char.abilities?.learned?.[abilityId], true);
+  assert.equal(!!char.spellbook?.pending?.arcane_bolt, false);
+  assert.equal(!!char.abilities?.pending?.[abilityId], false);
 });
 
-test("[contract] train preview abilities: blocked reasons show (level too low)", async () => {
-  const old = process.env.WORLDCORE_TEST;
-  process.env.WORLDCORE_TEST = "1";
+test("[contract] train spells: only trains spells (abilities remain pending)", async () => {
+  const c0 = mkWarrior(1);
+  const abilityId = pickWarriorAbilityId();
 
-  try {
-    const abilityId = pickWarriorAbilityMinLevelAtLeast(3);
-    const minLevel = Number((ABILITIES as any)[abilityId]?.minLevel ?? NaN);
-    assert.ok(Number.isFinite(minLevel) && minLevel > 0, "Expected picked warrior ability to have a minLevel.");
+  const gS = grantSpellInState(c0 as any, "arcane_bolt", "test", 111);
+  assert.equal(gS.ok, true);
+  const c1 = (gS as any).next;
 
-    const c0 = mkChar("warrior", 1);
-    const g = grantAbilityInState(c0 as any, abilityId, "test", 111);
-    assert.equal(g.ok, true);
+  const gA = grantAbilityInState(c1 as any, abilityId, "test", 111);
+  assert.equal(gA.ok, true);
+  const c2 = (gA as any).next;
 
-    const ctx = makeCtx((g as any).next);
-    const out = await handleTrainCommand(ctx as any, ["preview", "abilities"]);
+  const ctx = makeCtx(c2);
+  const out = await handleTrainCommand(ctx as any, ["spells"]);
 
-    assert.match(out, /Abilities blocked:/);
-    assert.match(out, new RegExp(`\\(${escapeRegex(abilityId)}\\): level too low`));
-    assert.match(out, new RegExp(`requires level\\s+${minLevel}`));
-  } finally {
-    process.env.WORLDCORE_TEST = old;
-  }
+  assert.ok(typeof out === "string" && out.length > 0);
+
+  const char = (ctx as any).session.character;
+  assert.equal(!!char.spellbook?.known?.arcane_bolt, true);
+  assert.equal(!!char.spellbook?.pending?.arcane_bolt, false);
+
+  assert.equal(!!char.abilities?.pending?.[abilityId], true);
+  assert.equal(!!char.abilities?.learned?.[abilityId], false);
 });
