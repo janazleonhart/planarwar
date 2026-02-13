@@ -1147,12 +1147,29 @@ async function runEra(args: {
 
       })();
 
+      const spawnIdMode = (() => {
+        const v = process.env.PW_TOWN_BASELINE_SPAWNID_MODE;
+        if (!v) return "legacy" as const;
+        const s = String(v).trim().toLowerCase();
+        return s === "seed" ? ("seed" as const) : ("legacy" as const);
+      })();
+
+      const seedBase = (() => {
+        const v = process.env.PW_TOWN_BASELINE_SEED_BASE;
+        if (!v) return "seed:town_baseline";
+        const s = String(v).trim();
+        return s || "seed:town_baseline";
+      })();
+
 
       const townOpts: TownBaselinePlanOptions = {
         bounds: args.bounds,
         cellSize,
         townTypes: townVendorTypes,
         seedTownServices,
+
+        spawnIdMode,
+        seedBase,
 
         // Only seed vendors here (avoid surprising extra baselines in era).
         seedMailbox: false,
@@ -2364,12 +2381,29 @@ if (seedTownVendors && normTypes.length > 0 && vendorCount > 0) {
 
   })();
 
+  const spawnIdMode = (() => {
+    const v = process.env.PW_TOWN_BASELINE_SPAWNID_MODE;
+    if (!v) return "legacy" as const;
+    const s = String(v).trim().toLowerCase();
+    return s === "seed" ? ("seed" as const) : ("legacy" as const);
+  })();
+
+  const seedBase = (() => {
+    const v = process.env.PW_TOWN_BASELINE_SEED_BASE;
+    if (!v) return "seed:town_baseline";
+    const s = String(v).trim();
+    return s || "seed:town_baseline";
+  })();
+
 
   const townOpts: TownBaselinePlanOptions = {
     bounds,
     cellSize,
     townTypes: normTypes,
     seedTownServices,
+
+    spawnIdMode,
+    seedBase,
 
     // Only seed vendors here (avoid surprising extra baselines).
     seedMailbox: false,
