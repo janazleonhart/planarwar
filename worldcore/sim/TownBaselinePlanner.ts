@@ -91,6 +91,24 @@ export type TownBaselinePlanOptions = {
   trainerProtoId?: string; // default: "town_trainer"
   trainerRadius?: number; // default: 9
 
+  // Bank baseline (service anchors)
+  seedBanks?: boolean; // default: false
+  bankCount?: number; // default: 1
+  bankProtoId?: string; // default: "town_banker"
+  bankRadius?: number; // default: 9
+
+  // Mail baseline (service anchors)
+  seedMailServices?: boolean; // default: false
+  mailServiceCount?: number; // default: 1
+  mailServiceProtoId?: string; // default: "town_mail_clerk"
+  mailServiceRadius?: number; // default: 9
+
+  // Auction baseline (service anchors)
+  seedAuctions?: boolean; // default: false
+  auctionCount?: number; // default: 1
+  auctionProtoId?: string; // default: "town_auctioneer"
+  auctionRadius?: number; // default: 10
+
   // Guard baseline (real NPC spawns)
   guardCount: number; // default: 2
   guardProtoId?: string; // default: "town_guard"
@@ -444,6 +462,112 @@ export function planTownBaselines(
       }
     }
 
+
+
+    // Banks (service anchors)
+    const seedBanks = opts.seedBanks === true;
+    const bankCount = Math.max(0, Math.floor(opts.bankCount ?? 1));
+    if (seedBanks && bankCount > 0) {
+      const bankRadius = Math.max(0, Number(opts.bankRadius ?? 9) || 9);
+      const bankProto = norm(opts.bankProtoId || "town_banker") || "town_banker";
+
+      for (let i = 0; i < bankCount; i++) {
+        const off = polarOffset(`${townSpawnId}:bank:${i}`, bankRadius);
+        const x = round2(baseX + off.dx);
+        const z = round2(baseZ + off.dz);
+
+        if (!inWorldBounds(x, z, opts.bounds, opts.cellSize)) continue;
+
+        const legacyPrefix = `svc_bank${i + 1}`;
+        const seedKind = `bank_${i + 1}`;
+
+        actions.push({
+          kind: "place_spawn",
+          spawn: {
+            shardId,
+            spawnId: makeSpawnId(opts, legacyPrefix, townSpawnId, seedKind),
+            type: "npc",
+            archetype: bankProto,
+            protoId: bankProto,
+            variantId: null,
+            x,
+            y: baseY,
+            z,
+            regionId,
+          },
+        });
+      }
+    }
+
+    // Mail services (service anchors)
+    const seedMailServices = opts.seedMailServices === true;
+    const mailCount = Math.max(0, Math.floor(opts.mailServiceCount ?? 1));
+    if (seedMailServices && mailCount > 0) {
+      const mailRadius = Math.max(0, Number(opts.mailServiceRadius ?? 9) || 9);
+      const mailProto = norm(opts.mailServiceProtoId || "town_mail_clerk") || "town_mail_clerk";
+
+      for (let i = 0; i < mailCount; i++) {
+        const off = polarOffset(`${townSpawnId}:mail:${i}`, mailRadius);
+        const x = round2(baseX + off.dx);
+        const z = round2(baseZ + off.dz);
+
+        if (!inWorldBounds(x, z, opts.bounds, opts.cellSize)) continue;
+
+        const legacyPrefix = `svc_mail${i + 1}`;
+        const seedKind = `mail_${i + 1}`;
+
+        actions.push({
+          kind: "place_spawn",
+          spawn: {
+            shardId,
+            spawnId: makeSpawnId(opts, legacyPrefix, townSpawnId, seedKind),
+            type: "npc",
+            archetype: mailProto,
+            protoId: mailProto,
+            variantId: null,
+            x,
+            y: baseY,
+            z,
+            regionId,
+          },
+        });
+      }
+    }
+
+    // Auctions (service anchors)
+    const seedAuctions = opts.seedAuctions === true;
+    const auctionCount = Math.max(0, Math.floor(opts.auctionCount ?? 1));
+    if (seedAuctions && auctionCount > 0) {
+      const auctionRadius = Math.max(0, Number(opts.auctionRadius ?? 10) || 10);
+      const auctionProto = norm(opts.auctionProtoId || "town_auctioneer") || "town_auctioneer";
+
+      for (let i = 0; i < auctionCount; i++) {
+        const off = polarOffset(`${townSpawnId}:auction:${i}`, auctionRadius);
+        const x = round2(baseX + off.dx);
+        const z = round2(baseZ + off.dz);
+
+        if (!inWorldBounds(x, z, opts.bounds, opts.cellSize)) continue;
+
+        const legacyPrefix = `svc_auction${i + 1}`;
+        const seedKind = `auction_${i + 1}`;
+
+        actions.push({
+          kind: "place_spawn",
+          spawn: {
+            shardId,
+            spawnId: makeSpawnId(opts, legacyPrefix, townSpawnId, seedKind),
+            type: "npc",
+            archetype: auctionProto,
+            protoId: auctionProto,
+            variantId: null,
+            x,
+            y: baseY,
+            z,
+            regionId,
+          },
+        });
+      }
+    }
 // Guards
     const guardCount = Math.max(0, Math.floor(opts.guardCount ?? 0));
     if (guardCount > 0) {

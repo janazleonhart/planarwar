@@ -1170,6 +1170,21 @@ async function runEra(args: {
         trainerProtoId: "town_trainer",
         trainerRadius: 9,
 
+        seedBanks: false,
+        bankCount: 1,
+        bankProtoId: "town_banker",
+        bankRadius: 9,
+
+        seedMailServices: false,
+        mailServiceCount: 1,
+        mailServiceProtoId: "town_mail_clerk",
+        mailServiceRadius: 9,
+
+        seedAuctions: false,
+        auctionCount: 1,
+        auctionProtoId: "town_auctioneer",
+        auctionRadius: 10,
+
         guardCount: 0,
         guardProtoId: "town_guard",
         guardRadius: 12,
@@ -2346,6 +2361,21 @@ if (seedTownVendors && normTypes.length > 0 && vendorCount > 0) {
     trainerCount: 1,
     trainerProtoId: "town_trainer",
     trainerRadius: 9,
+
+    seedBanks: false,
+    bankCount: 1,
+    bankProtoId: "town_banker",
+    bankRadius: 9,
+
+    seedMailServices: false,
+    mailServiceCount: 1,
+    mailServiceProtoId: "town_mail_clerk",
+    mailServiceRadius: 9,
+
+    seedAuctions: false,
+    auctionCount: 1,
+    auctionProtoId: "town_auctioneer",
+    auctionRadius: 10,
 
     guardCount: 0,
     guardProtoId: "town_guard",

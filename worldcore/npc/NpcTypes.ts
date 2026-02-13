@@ -168,6 +168,51 @@ export const DEFAULT_NPC_PROTOTYPES: Record<NpcId, NpcPrototype> = {
     loot: [],
   },
 
+  town_banker: {
+    id: "town_banker",
+    name: "Town Banker",
+    level: 1,
+    maxHp: 140,
+    baseDamageMin: 0,
+    baseDamageMax: 0,
+    model: "human_commoner",
+    // Service anchor for bank and related storage services.
+    tags: ["bank","service_bank","protected_service","non_hostile","protected_town","law_protected"],
+    behavior: "neutral",
+    xpReward: 0,
+    loot: [],
+  },
+
+  town_mail_clerk: {
+    id: "town_mail_clerk",
+    name: "Town Mail Clerk",
+    level: 1,
+    maxHp: 120,
+    baseDamageMin: 0,
+    baseDamageMax: 0,
+    model: "human_commoner",
+    // Service anchor for mail (send/receive).
+    tags: ["mail","service_mail","protected_service","non_hostile","protected_town","law_protected"],
+    behavior: "neutral",
+    xpReward: 0,
+    loot: [],
+  },
+
+  town_auctioneer: {
+    id: "town_auctioneer",
+    name: "Town Auctioneer",
+    level: 1,
+    maxHp: 150,
+    baseDamageMin: 0,
+    baseDamageMax: 0,
+    model: "human_commoner",
+    // Service anchor for auctions.
+    tags: ["auction","service_auction","protected_service","non_hostile","protected_town","law_protected"],
+    behavior: "neutral",
+    xpReward: 0,
+    loot: [],
+  },
+
   town_rat: {
     id: "town_rat",
     name: "Town Rat",
