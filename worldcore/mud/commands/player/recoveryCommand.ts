@@ -5,6 +5,7 @@ import type { RecoveryContext } from "../../../systems/recovery/recoveryOps";
 import { respawnInPlace, restOrSleep } from "../../../systems/recovery/recoveryOps";
 import { stopAutoAttack } from "../combat/autoattack/trainingDummyAutoAttack";
 import { stopTrainingDummyAi } from "../../MudTrainingDummy";
+import { requireRestSpot } from "../world/serviceGates";
 import {
   getPrimaryPowerResourceForClass,
   getOrInitPowerResource,
@@ -131,14 +132,23 @@ export async function handleRestCommand(ctx: MudContext): Promise<string> {
     stopTrainingDummyAi,
   };
 
-  // 1) HP / death handling (existing recoveryOps behavior)
-  const baseMsg = restOrSleep(recoveryCtx);
-
-  // 2) Resource handling (needs character on the session)
+  // Resource handling + optional rest-spot gating require a character on the session.
   const char = ctx.session.character as CharacterState | undefined;
   if (!char) {
-    return baseMsg;
+    // HP / death handling only (existing recoveryOps behavior)
+    return restOrSleep(recoveryCtx);
   }
+
+  // Optional: enforce rest spots/inns (PW_REST_GATES=1).
+  // This keeps the town loop meaningful without forcing it in dev by default.
+  const gated = await requireRestSpot(ctx, char, () => "OK");
+  if (typeof gated === "string" && gated !== "OK") {
+    // requireRestSpot returns a denial string when gated and not near a rest spot.
+    return gated;
+  }
+
+  // 1) HP / death handling (existing recoveryOps behavior)
+  const baseMsg = restOrSleep(recoveryCtx);
 
   const primary = getPrimaryPowerResourceForClass(char.classId);
 

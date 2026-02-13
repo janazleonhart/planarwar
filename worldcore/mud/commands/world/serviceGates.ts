@@ -11,14 +11,20 @@
 //
 // This file must remain test-friendly: if we cannot evaluate proximity (no session/entities),
 // we do NOT block.
-//
 
 import type { MudContext } from "../../MudContext";
 import type { CharacterState } from "../../../characters/CharacterTypes";
 
 import { getRegionFlags, isEconomyLockdownOnSiegeFromFlags } from "../../../world/RegionFlags";
 
-type ServiceName = "bank" | "guildbank" | "vendor" | "auction" | "mail" | "trainer";
+type ServiceName =
+  | "bank"
+  | "guildbank"
+  | "vendor"
+  | "auction"
+  | "mail"
+  | "trainer"
+  | "rest";
 
 // Forge/station interactions generally use ~2.5 in the walk-to loop.
 const DEFAULT_SERVICE_RADIUS = 2.5;
@@ -75,6 +81,15 @@ function serviceGatesEnabled(): boolean {
   return s === "1" || s === "true" || s === "yes" || s === "on";
 }
 
+function restGatesEnabled(): boolean {
+  // Default: off. Rest gating is gameplay-sensitive.
+  // Enable explicitly when you want "town loop" to require a rest spot/inn.
+  const v = process.env.PW_REST_GATES;
+  if (!v) return false;
+  const s = String(v).trim().toLowerCase();
+  return s === "1" || s === "true" || s === "yes" || s === "on";
+}
+
 function serviceRadius(): number {
   const v = process.env.PW_SERVICE_RADIUS;
   const n = Number(v);
@@ -105,19 +120,31 @@ function isServiceAnchorEntity(e: any, service: ServiceName): boolean {
 
   // Type-based anchors.
   if (t === svc) return true;
+  if (service === "rest" && (t === "rest" || t === "inn" || t === "camp" || t === "rest_spot")) return true;
   if (service === "vendor" && (t === "vendor" || t === "merchant" || t === "shop")) return true;
   if (service === "guildbank" && (t === "guildbank" || t === "gbank")) return true;
   if (service === "auction" && (t === "auction" || t === "ah" || t === "auctioneer")) return true;
   if (service === "mail" && (t === "mail" || t === "mailbox")) return true;
   if (
     service === "trainer" &&
-    (t === "trainer" || t === "spelltrainer" || t === "abilitytrainer" || t === "class_trainer" || t === "class_trainer_npc")
+    (t === "trainer" ||
+      t === "spelltrainer" ||
+      t === "abilitytrainer" ||
+      t === "class_trainer" ||
+      t === "class_trainer_npc")
   )
     return true;
 
   // Tag-based anchors.
   const wantTag = `service_${svc}`;
   if (tags.includes(wantTag)) return true;
+
+  // Common rest tags used by baselines/placeables.
+  if (
+    service === "rest" &&
+    (tags.includes("rest") || tags.includes("service_rest") || tags.includes("rest_spot") || tags.includes("inn"))
+  )
+    return true;
 
   // Protected service NPCs (guards/immortal services) can be tagged in two layers.
   // Example: protected_service + role vendor
@@ -163,9 +190,7 @@ function findNearestAnchor(
   for (const e of ents) {
     const isAnchor =
       isServiceAnchorEntity(e, service) ||
-      (service === "vendor" &&
-        !!wantVendorIds &&
-        wantVendorIds.has(norm(getServiceIdFromEntity(e))));
+      (service === "vendor" && !!wantVendorIds && wantVendorIds.has(norm(getServiceIdFromEntity(e))));
 
     if (!isAnchor) continue;
 
@@ -236,6 +261,33 @@ export async function requireTrainerService<T>(
   return requireMandatoryTownService(ctx, char, "trainer", run);
 }
 
+/**
+ * Rest spot gating (optional).
+ *
+ * This is intentionally separated from PW_SERVICE_GATES:
+ * - Some servers want banking/vendor/training gated without forcing "rest at inn".
+ * - Enable explicitly via PW_REST_GATES.
+ */
+export async function requireRestSpot<T>(
+  ctx: MudContext,
+  char: CharacterState,
+  run: () => Promise<T> | T
+): Promise<T | string> {
+  if (!restGatesEnabled()) return run();
+
+  // If we can't reason about proximity (tests/headless contexts), don't block.
+  const canEvaluateProximity =
+    !!(ctx as any)?.session && !!(ctx as any)?.entities && !!getRoomId((ctx as any)?.session);
+
+  if (!canEvaluateProximity) return run();
+  if (shouldBypass(ctx)) return run();
+
+  const anchor = findNearestAnchor(ctx, char, "rest");
+  if (!anchor) return "[rest] You need a safe place to rest (look for an inn or rest spot).";
+  if (anchor.dist > serviceRadius()) return "[rest] You need to be closer to a rest spot to rest.";
+  return run();
+}
+
 async function maybeLoadVendorIdSet(ctx: MudContext): Promise<Set<string> | null> {
   const vendors: any = (ctx as any)?.vendors;
   if (!vendors?.listVendors) return null;
@@ -284,10 +336,15 @@ function shouldBypass(ctx: MudContext): boolean {
 }
 
 function denyNoAnchor(service: ServiceName): string {
+  if (service === "rest") return "[rest] You need a safe place to rest (try an inn or rest spot).";
   return `[service] No ${service} service is available here.`;
 }
 
 function denyOutOfRange(service: ServiceName, dist: number): string {
+  if (service === "rest") {
+    return `[rest] You need to be closer to a rest spot to rest. (dist ${dist.toFixed(1)} > ${serviceRadius().toFixed(1)})`;
+  }
+
   return `[service] You must be closer to use ${service}. (dist ${dist.toFixed(1)} > ${serviceRadius().toFixed(
     1
   )})`;
@@ -325,7 +382,11 @@ export async function requireTownService<T>(
   // Siege lockdown: when enabled for the region, deny certain services while the town is under siege.
   // This must remain test-friendly and fail-open if we lack context.
   const siegeSensitive =
-    service === "vendor" || service === "bank" || service === "guildbank" || service === "mail" || service === "auction";
+    service === "vendor" ||
+    service === "bank" ||
+    service === "guildbank" ||
+    service === "mail" ||
+    service === "auction";
 
   if (siegeSensitive) {
     try {
