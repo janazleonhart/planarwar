@@ -52,6 +52,13 @@ export type TownBaselinePlanOptions = {
   cellSize: number;
   townTypes: string[];
 
+  // Mailbox
+
+  // Seed all optional town services (bank/mail/auction/guildbank/inn).
+  // Default: false.
+  // Individual service flags still win when explicitly set.
+  seedTownServices?: boolean;
+
   // Mailbox baseline (POI placeholder)
   seedMailbox: boolean;
   mailboxType?: string; // default: "mailbox"
@@ -477,7 +484,9 @@ export function planTownBaselines(
 
 
     // Banks (service anchors)
-    const seedBanks = opts.seedBanks === true;
+    const seedTownServices = opts.seedTownServices === true;
+
+    const seedBanks = opts.seedBanks === true || (seedTownServices && opts.seedBanks !== false);
     const bankCount = Math.max(0, Math.floor(opts.bankCount ?? 1));
     if (seedBanks && bankCount > 0) {
       const bankRadius = Math.max(0, Number(opts.bankRadius ?? 9) || 9);
@@ -512,7 +521,7 @@ export function planTownBaselines(
     }
 
     // Guild banks (service anchors)
-    const seedGuildbanks = opts.seedGuildbanks === true;
+    const seedGuildbanks = opts.seedGuildbanks === true || (seedTownServices && opts.seedGuildbanks !== false);
     const gbankCount = Math.max(0, Math.floor(opts.guildbankCount ?? 1));
     if (seedGuildbanks && gbankCount > 0) {
       const gbankRadius = Math.max(0, Number(opts.guildbankRadius ?? 9) || 9);
@@ -547,7 +556,7 @@ export function planTownBaselines(
     }
     // Inns / rest spots (service anchors)
     // NOTE: These are only seeded when explicitly enabled; rest gating itself is also opt-in via PW_REST_GATES.
-    const seedInns = opts.seedInns === true;
+    const seedInns = opts.seedInns === true || (seedTownServices && opts.seedInns !== false);
     const innCount = Math.max(0, Math.floor(opts.innCount ?? 1));
     if (seedInns && innCount > 0) {
       const innRadius = Math.max(0, Number(opts.innRadius ?? 9) || 9);
@@ -584,7 +593,7 @@ export function planTownBaselines(
 
 
     // Mail services (service anchors)
-    const seedMailServices = opts.seedMailServices === true;
+    const seedMailServices = opts.seedMailServices === true || (seedTownServices && opts.seedMailServices !== false);
     const mailCount = Math.max(0, Math.floor(opts.mailServiceCount ?? 1));
     if (seedMailServices && mailCount > 0) {
       const mailRadius = Math.max(0, Number(opts.mailServiceRadius ?? 9) || 9);
@@ -619,7 +628,7 @@ export function planTownBaselines(
     }
 
     // Auctions (service anchors)
-    const seedAuctions = opts.seedAuctions === true;
+    const seedAuctions = opts.seedAuctions === true || (seedTownServices && opts.seedAuctions !== false);
     const auctionCount = Math.max(0, Math.floor(opts.auctionCount ?? 1));
     if (seedAuctions && auctionCount > 0) {
       const auctionRadius = Math.max(0, Number(opts.auctionRadius ?? 10) || 10);

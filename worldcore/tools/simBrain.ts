@@ -1135,10 +1135,24 @@ async function runEra(args: {
         merged.set(String(r.spawnId), r);
       }
 
+      const seedTownServices = (() => {
+
+        const v = process.env.PW_SEED_TOWN_SERVICES;
+
+        if (!v) return false;
+
+        const s = String(v).trim().toLowerCase();
+
+        return s === "1" || s === "true" || s === "yes" || s === "on";
+
+      })();
+
+
       const townOpts: TownBaselinePlanOptions = {
         bounds: args.bounds,
         cellSize,
         townTypes: townVendorTypes,
+        seedTownServices,
 
         // Only seed vendors here (avoid surprising extra baselines in era).
         seedMailbox: false,
@@ -2338,10 +2352,24 @@ if (seedTownVendors && normTypes.length > 0 && vendorCount > 0) {
     townTier: r.town_tier != null ? Number(r.town_tier) : null,
   }));
 
+  const seedTownServices = (() => {
+
+    const v = process.env.PW_SEED_TOWN_SERVICES;
+
+    if (!v) return false;
+
+    const s = String(v).trim().toLowerCase();
+
+    return s === "1" || s === "true" || s === "yes" || s === "on";
+
+  })();
+
+
   const townOpts: TownBaselinePlanOptions = {
     bounds,
     cellSize,
     townTypes: normTypes,
+    seedTownServices,
 
     // Only seed vendors here (avoid surprising extra baselines).
     seedMailbox: false,
