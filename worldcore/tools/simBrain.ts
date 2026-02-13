@@ -1180,6 +1180,11 @@ async function runEra(args: {
         guildbankProtoId: "town_guildbank_clerk",
         guildbankRadius: 9,
 
+        seedInns: false,
+        innCount: 1,
+        innProtoId: "town_innkeeper",
+        innRadius: 9,
+
         seedMailServices: false,
         mailServiceCount: 1,
         mailServiceProtoId: "town_mail_clerk",
@@ -2376,6 +2381,11 @@ if (seedTownVendors && normTypes.length > 0 && vendorCount > 0) {
     guildbankCount: 1,
     guildbankProtoId: "town_guildbank_clerk",
     guildbankRadius: 9,
+
+    seedInns: false,
+    innCount: 1,
+    innProtoId: "town_innkeeper",
+    innRadius: 9,
 
     seedMailServices: false,
     mailServiceCount: 1,

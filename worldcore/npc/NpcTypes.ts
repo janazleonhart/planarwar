@@ -235,6 +235,32 @@ export const DEFAULT_NPC_PROTOTYPES: Record<NpcId, NpcPrototype> = {
     loot: [],
   },
 
+
+  town_innkeeper: {
+    id: "town_innkeeper",
+    name: "Innkeeper",
+    level: 1,
+    maxHp: 140,
+    baseDamageMin: 0,
+    baseDamageMax: 0,
+    model: "human_commoner",
+    // Service anchor for resting (PW_REST_GATES) and a canonical "inn" rest spot.
+    // NOTE: rest gates accept tags like 'inn' / 'rest' / 'rest_spot' (and service_rest for future-proofing).
+    tags: [
+      "inn",
+      "rest",
+      "rest_spot",
+      "service_rest",
+      "protected_service",
+      "non_hostile",
+      "protected_town",
+      "law_protected",
+    ],
+    behavior: "neutral",
+    xpReward: 0,
+    loot: [],
+  },
+
   town_rat: {
     id: "town_rat",
     name: "Town Rat",

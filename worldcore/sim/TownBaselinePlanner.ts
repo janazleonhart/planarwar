@@ -103,6 +103,12 @@ export type TownBaselinePlanOptions = {
   guildbankProtoId?: string; // default: "town_guildbank_clerk"
   guildbankRadius?: number; // default: 9
 
+  // Inn / Rest spot baseline (service anchors for PW_REST_GATES)
+  seedInns?: boolean; // default: false
+  innCount?: number; // default: 1
+  innProtoId?: string; // default: "town_innkeeper"
+  innRadius?: number; // default: 9
+
   // Mail baseline (service anchors)
   seedMailServices?: boolean; // default: false
   mailServiceCount?: number; // default: 1
@@ -539,6 +545,43 @@ export function planTownBaselines(
         });
       }
     }
+    // Inns / rest spots (service anchors)
+    // NOTE: These are only seeded when explicitly enabled; rest gating itself is also opt-in via PW_REST_GATES.
+    const seedInns = opts.seedInns === true;
+    const innCount = Math.max(0, Math.floor(opts.innCount ?? 1));
+    if (seedInns && innCount > 0) {
+      const innRadius = Math.max(0, Number(opts.innRadius ?? 9) || 9);
+      const innProto = norm(opts.innProtoId || "town_innkeeper") || "town_innkeeper";
+
+      for (let i = 0; i < innCount; i++) {
+        const off = polarOffset(`${townSpawnId}:inn:${i}`, innRadius);
+        const x = round2(baseX + off.dx);
+        const z = round2(baseZ + off.dz);
+
+        if (!inWorldBounds(x, z, opts.bounds, opts.cellSize)) continue;
+
+        const legacyPrefix = `svc_inn${i + 1}`;
+        const seedKind = `inn_${i + 1}`;
+
+        actions.push({
+          kind: "place_spawn",
+          spawn: {
+            shardId,
+            spawnId: makeSpawnId(opts, legacyPrefix, townSpawnId, seedKind),
+            type: "npc",
+            archetype: innProto,
+            protoId: innProto,
+            variantId: null,
+            x,
+            y: baseY,
+            z,
+            regionId,
+          },
+        });
+      }
+    }
+
+
 
     // Mail services (service anchors)
     const seedMailServices = opts.seedMailServices === true;
