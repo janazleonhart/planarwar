@@ -324,7 +324,10 @@ export async function requireTownService<T>(
 
   // Siege lockdown: when enabled for the region, deny certain services while the town is under siege.
   // This must remain test-friendly and fail-open if we lack context.
-  if (service === "vendor") {
+  const siegeSensitive =
+    service === "vendor" || service === "bank" || service === "guildbank" || service === "mail" || service === "auction";
+
+  if (siegeSensitive) {
     try {
       const roomId = getRoomId((ctx as any)?.session);
       const siege: any = (ctx as any)?.townSiege;
@@ -346,6 +349,9 @@ export async function requireTownService<T>(
   const anchor = findNearestAnchor(ctx, char, service, { vendorIds: vendorIds ?? undefined });
 
   if (!anchor) {
+    // For non-vendor services when PW_SERVICE_GATES is enabled, "no anchor" is a denial.
+    // For vendor we remain conservative (towns should have vendors, but tests/headless modes may stub them).
+    if (!isVendor) return denyNoAnchor(service);
     if (strictRequiredFor(service)) return denyNoAnchor(service);
     return run();
   }
