@@ -206,6 +206,60 @@ function splitTupleValues(tuple: string): string[] {
   return vals;
 }
 
+function splitTopLevelCsv(expr: string): string[] {
+  // Splits a comma-separated list at top-level (respects quotes and parens).
+  const vals: string[] = [];
+  let i = 0;
+  let inStr = false;
+  let strCh = "";
+  let depth = 0;
+  let cur = "";
+
+  while (i < expr.length) {
+    const ch = expr[i];
+
+    if (inStr) {
+      cur += ch;
+      if (ch === strCh) {
+        const next = expr[i + 1];
+        if (next === strCh) {
+          cur += next;
+          i += 2;
+          continue;
+        }
+        inStr = false;
+        strCh = "";
+      }
+      i += 1;
+      continue;
+    }
+
+    if (ch === "'" || ch === '"') {
+      inStr = true;
+      strCh = ch;
+      cur += ch;
+      i += 1;
+      continue;
+    }
+
+    if (ch === "(") depth += 1;
+    if (ch === ")") depth -= 1;
+
+    if (ch === "," && depth === 0) {
+      vals.push(cur.trim());
+      cur = "";
+      i += 1;
+      continue;
+    }
+
+    cur += ch;
+    i += 1;
+  }
+
+  if (cur.trim().length) vals.push(cur.trim());
+  return vals;
+}
+
 function unquoteSqlString(v: string): string | null {
   const s = v.trim();
   if (s.toUpperCase() === "NULL") return null;
@@ -302,6 +356,41 @@ export function runSeedQuestRewardGrantIdAudit(opts: AuditOpts = {}): SeedQuestR
       }
     }
 
+
+    // Collect seeded spell ids from INSERT ... SELECT patterns (common in debug/derived seeds).
+    {
+      const cleaned = stripSqlComments(sql);
+      const re = /INSERT\s+INTO\s+(?:public\.)?spells\s*\(([^)]*)\)\s*SELECT\s*([\s\S]*?)\s+FROM\b/gi;
+      let mm: RegExpExecArray | null;
+      while ((mm = re.exec(cleaned))) {
+        const cols = mm[1]
+          .split(",")
+          .map((s) => s.trim().replace(/["']/g, ""))
+          .filter(Boolean);
+        const selectList = mm[2].trim();
+        const exprs = splitTopLevelCsv(selectList);
+        const idIdx = cols.findIndex((c) => c.toLowerCase() === "id");
+        if (idIdx >= 0 && idIdx < exprs.length) {
+          const id = unquoteSqlString(exprs[idIdx]);
+          if (id) seededSpellIds.add(id);
+        }
+      }
+    }
+
+    // Collect seeded spell ids from spell_unlocks references (spells may be bootstrapped from unlock tables).
+    for (const stmt of extractInsertStatements(sql, "spell_unlocks")) {
+      const tuples = splitTopLevelTuples(stmt.valuesChunk);
+      for (const t of tuples) {
+        const vals = splitTupleValues(t);
+        let idIdx = -1;
+        if (stmt.columns) idIdx = stmt.columns.findIndex((c) => c.toLowerCase() === "spell_id");
+        // Default column order: id, class_id, spell_id, min_level, auto_grant, ...
+        if (idIdx < 0) idIdx = 2;
+        const id = idIdx >= 0 && idIdx < vals.length ? unquoteSqlString(vals[idIdx]) : null;
+        if (id) seededSpellIds.add(id);
+      }
+    }
+
     // Collect seeded ability ids
     for (const stmt of extractInsertStatements(sql, "abilities")) {
       const tuples = splitTopLevelTuples(stmt.valuesChunk);
@@ -310,6 +399,41 @@ export function runSeedQuestRewardGrantIdAudit(opts: AuditOpts = {}): SeedQuestR
         let idIdx = -1;
         if (stmt.columns) idIdx = stmt.columns.findIndex((c) => c.toLowerCase() === "id");
         if (idIdx < 0) idIdx = 0;
+        const id = idIdx >= 0 && idIdx < vals.length ? unquoteSqlString(vals[idIdx]) : null;
+        if (id) seededAbilityIds.add(id);
+      }
+    }
+
+
+    // Collect seeded ability ids from INSERT ... SELECT patterns.
+    {
+      const cleaned = stripSqlComments(sql);
+      const re = /INSERT\s+INTO\s+(?:public\.)?abilities\s*\(([^)]*)\)\s*SELECT\s*([\s\S]*?)\s+FROM\b/gi;
+      let mm: RegExpExecArray | null;
+      while ((mm = re.exec(cleaned))) {
+        const cols = mm[1]
+          .split(",")
+          .map((s) => s.trim().replace(/["']/g, ""))
+          .filter(Boolean);
+        const selectList = mm[2].trim();
+        const exprs = splitTopLevelCsv(selectList);
+        const idIdx = cols.findIndex((c) => c.toLowerCase() === "id");
+        if (idIdx >= 0 && idIdx < exprs.length) {
+          const id = unquoteSqlString(exprs[idIdx]);
+          if (id) seededAbilityIds.add(id);
+        }
+      }
+    }
+
+    // Collect seeded ability ids from ability_unlocks references (abilities are bootstrapped from unlock tables).
+    for (const stmt of extractInsertStatements(sql, "ability_unlocks")) {
+      const tuples = splitTopLevelTuples(stmt.valuesChunk);
+      for (const t of tuples) {
+        const vals = splitTupleValues(t);
+        let idIdx = -1;
+        if (stmt.columns) idIdx = stmt.columns.findIndex((c) => c.toLowerCase() === "ability_id");
+        // Default column order: id, class_id, ability_id, min_level, auto_grant, ...
+        if (idIdx < 0) idIdx = 2;
         const id = idIdx >= 0 && idIdx < vals.length ? unquoteSqlString(vals[idIdx]) : null;
         if (id) seededAbilityIds.add(id);
       }
