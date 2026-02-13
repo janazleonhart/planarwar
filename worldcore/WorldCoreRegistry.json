@@ -5827,7 +5827,8 @@
       "kind": "module",
       "lifecycle": "static",
       "notes": [
-        "Plans baseline services around towns (mailboxes/rest/guards/dummies/stations/vendors).",
+        "Plans baseline services around towns (mailboxes/rest/guards/dummies/stations/vendors/trainers).",
+        "Adds trainer service anchors (town_trainer) so `train` can be gated by proximity without name matching.",
         "TownLikeSpawnRow now accepts townTier (DB) so station seeding can be tier-gated per town.",
         "Supports spawnIdMode: \"seed\" (seed:* spawnIds suitable for web placement ownership) vs \"legacy\" (svc_* ids for backwards compatibility).",
         "Made bounds typing structural so backend-provided bounds typechecks cleanly",
@@ -5842,7 +5843,8 @@
         "TownLikeSpawnRow",
         "TownBaselineSpawnIdMode",
         "spawnIdMode: legacy | seed",
-        "seedBase namespace (default seed:town_baseline)"
+        "seedBase namespace (default seed:town_baseline)",
+        "trainer baseline options: seedTrainers, trainerCount, trainerProtoId, trainerRadius"
       ],
       "service": "sim"
     },
@@ -6736,7 +6738,7 @@
         "Follows audit \u2192 plan \u2192 apply pattern with safe default rollback unless --commit.",
         "Safety rails: refuses literal '...' arg; refuses --commit without explicit --bounds (unless --allowDefaultBounds).",
         "Artifacts are dev-only outputs; keep them gitignored.",
-        "Town vendor wiring: by default, `simBrain era` AND `simBrain mother-wave` seed vendor anchors for town-like spawns (disable with --noTownVendors)."
+        "Town vendor wiring: by default, `simBrain era` AND `simBrain mother-wave` seed vendor+trainer anchors for town-like spawns (disable with --noTownVendors)."
       ],
       "owns": [
         "artifacts/brain/*"
@@ -6753,7 +6755,7 @@
         "trim-outposts: enforce per-faction cap by deleting extras within bounds",
         "snapshot-spawns/restore-spawns: export + reapply spawn_points slices",
         "wipe-placements: delete spawn_points of selected types within bounds",
-        "town-baseline command: seed town/outpost baseline spawn_points (mailbox/rest/stations/vendors/guards/dummies) into spawn_points table",
+        "town-baseline command: seed town/outpost baseline spawn_points (mailbox/rest/stations/vendors/trainers/guards/dummies) into spawn_points table",
         "CLI: town-baseline",
         "CLI: mother-status",
         "CLI: mother-wave",

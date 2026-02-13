@@ -153,6 +153,21 @@ export const DEFAULT_NPC_PROTOTYPES: Record<NpcId, NpcPrototype> = {
     loot: [],
   },
 
+  town_trainer: {
+    id: "town_trainer",
+    name: "Town Trainer",
+    level: 1,
+    maxHp: 120,
+    baseDamageMin: 0,
+    baseDamageMax: 0,
+    model: "human_commoner",
+    // Acts as a service anchor for training (spell/ability rank conversion).
+    tags: ["trainer","service_trainer","protected_service","non_hostile","protected_town","law_protected"],
+    behavior: "neutral",
+    xpReward: 0,
+    loot: [],
+  },
+
   town_rat: {
     id: "town_rat",
     name: "Town Rat",

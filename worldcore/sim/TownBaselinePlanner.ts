@@ -84,6 +84,13 @@ export type TownBaselinePlanOptions = {
   vendorProtoId?: string; // default: "starter_alchemist"
   vendorRadius?: number; // default: 11
 
+  // Trainer baseline (real NPC spawns)
+  // NOTE: Trainers act as service anchors for serviceGates + the `train` command.
+  seedTrainers?: boolean; // default: true
+  trainerCount?: number; // default: 1
+  trainerProtoId?: string; // default: "town_trainer"
+  trainerRadius?: number; // default: 9
+
   // Guard baseline (real NPC spawns)
   guardCount: number; // default: 2
   guardProtoId?: string; // default: "town_guard"
@@ -402,7 +409,42 @@ export function planTownBaselines(
       }
     }
 
-    // Guards
+    // Trainers (service anchors)
+    const seedTrainers = opts.seedTrainers !== false;
+    const trainerCount = Math.max(0, Math.floor(opts.trainerCount ?? 1));
+    if (seedTrainers && trainerCount > 0) {
+      const trainerRadius = Math.max(0, Number(opts.trainerRadius ?? 9) || 9);
+      const trainerProto = norm(opts.trainerProtoId || "town_trainer") || "town_trainer";
+
+      for (let i = 0; i < trainerCount; i++) {
+        const off = polarOffset(`${townSpawnId}:trainer:${i}`, trainerRadius);
+        const x = round2(baseX + off.dx);
+        const z = round2(baseZ + off.dz);
+
+        if (!inWorldBounds(x, z, opts.bounds, opts.cellSize)) continue;
+
+        const legacyPrefix = `svc_trainer${i + 1}`;
+        const seedKind = `trainer_${i + 1}`;
+
+        actions.push({
+          kind: "place_spawn",
+          spawn: {
+            shardId,
+            spawnId: makeSpawnId(opts, legacyPrefix, townSpawnId, seedKind),
+            type: "npc",
+            archetype: trainerProto,
+            protoId: trainerProto,
+            variantId: null,
+            x,
+            y: baseY,
+            z,
+            regionId,
+          },
+        });
+      }
+    }
+
+// Guards
     const guardCount = Math.max(0, Math.floor(opts.guardCount ?? 0));
     if (guardCount > 0) {
       const guardRadius = Math.max(0, Number(opts.guardRadius ?? 12) || 12);

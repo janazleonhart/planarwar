@@ -1164,6 +1164,12 @@ async function runEra(args: {
         vendorProtoId,
         vendorRadius,
 
+
+        seedTrainers: true,
+        trainerCount: 1,
+        trainerProtoId: "town_trainer",
+        trainerRadius: 9,
+
         guardCount: 0,
         guardProtoId: "town_guard",
         guardRadius: 12,
@@ -2335,6 +2341,11 @@ if (seedTownVendors && normTypes.length > 0 && vendorCount > 0) {
     vendorCount,
     vendorProtoId: vendorProto,
     vendorRadius,
+
+    seedTrainers: true,
+    trainerCount: 1,
+    trainerProtoId: "town_trainer",
+    trainerRadius: 9,
 
     guardCount: 0,
     guardProtoId: "town_guard",

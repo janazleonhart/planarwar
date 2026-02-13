@@ -16,14 +16,69 @@ import { canLearnAbilityForChar, isAbilityKnownForChar, listPendingAbilitiesForC
 import { getSpellByIdOrAlias, isSpellKnownForChar, resolveSpellId } from "../../../spells/SpellTypes";
 import { findAbilityByNameOrId } from "../../../abilities/AbilityTypes";
 
-function isAtTrainer(ctx: MudContext): boolean {
+function isAtTrainer(ctx: MudContext, char: any): boolean {
   const s: any = (ctx as any)?.session;
   if (!s) return false;
+
   // Tests and admin tooling can set this directly.
   if (s.isAtTrainer === true || s.atTrainer === true) return true;
   if (s.flags && (s.flags.isAtTrainer === true || s.flags.atTrainer === true)) return true;
+
+  // Canonical runtime: derive trainer proximity from room entities.
+  // This avoids relying on name matching and makes trainers world-authorable.
+  const roomId =
+    s.roomId ??
+    s.room?.id ??
+    s.room?.roomId ??
+    s.world?.roomId;
+  if (!roomId) return false;
+
+  const em: any = (ctx as any)?.entities;
+  if (!em?.getEntitiesInRoom) return false;
+
+  const cx = Number(char?.pos?.x ?? char?.x ?? char?.posX);
+  const cz = Number(char?.pos?.z ?? char?.z ?? char?.posZ);
+  if (!Number.isFinite(cx) || !Number.isFinite(cz)) return false;
+
+  const radius = (() => {
+    const v = process.env.PW_SERVICE_RADIUS;
+    const n = Number(v);
+    // Match serviceGates default radius (~2.5) unless overridden.
+    return Number.isFinite(n) && n > 0 ? n : 2.5;
+  })();
+
+  const ents = em.getEntitiesInRoom(String(roomId)) ?? [];
+
+  const norm = (x: any) => String(x ?? "").trim().toLowerCase();
+
+  const isTrainerAnchor = (e: any): boolean => {
+    const t = norm(e?.type);
+    const tags = Array.isArray(e?.tags) ? e.tags.map(norm) : [];
+    const roles = Array.isArray(e?.roles) ? e.roles.map(norm) : [];
+
+    if (t === "trainer" || t === "spelltrainer" || t === "abilitytrainer" || t === "class_trainer" || t === "class_trainer_npc") return true;
+    if (tags.includes("service_trainer")) return true;
+    if (tags.includes("protected_service") && (roles.includes("trainer") || tags.includes("trainer"))) return true;
+    if (tags.includes("trainer")) return true;
+    return false;
+  };
+
+  for (const e of ents) {
+    if (!isTrainerAnchor(e)) continue;
+
+    const ex = Number(e?.x ?? e?.pos?.x);
+    const ez = Number(e?.z ?? e?.pos?.z);
+    if (!Number.isFinite(ex) || !Number.isFinite(ez)) continue;
+
+    const dx = cx - ex;
+    const dz = cz - ez;
+    const d = Math.sqrt(dx * dx + dz * dz);
+    if (d <= radius) return true;
+  }
+
   return false;
 }
+
 
 function nameFor(label: "Spells" | "Abilities", id: string): string | null {
   if (label === "Spells") return (getSpellByIdOrAlias(id) as any)?.name ?? null;
@@ -186,7 +241,7 @@ export async function handleTrainCommand(ctx: MudContext, args: string[]): Promi
   if (!char) return "You do not have an active character.";
   if (!ctx.characters) return "Character service unavailable.";
 
-  const atTrainer = isAtTrainer(ctx);
+  const atTrainer = isAtTrainer(ctx, char);
 
   const sub = String(args[0] ?? "").trim().toLowerCase();
 

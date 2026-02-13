@@ -22,6 +22,7 @@ function mkWarrior(level = 1): any {
     name: "Warrior",
     classId: "warrior",
     level,
+    pos: { x: 0, y: 0, z: 0 },
     spellbook: defaultSpellbook(),
     abilities: defaultAbilities(),
   };
@@ -41,11 +42,24 @@ function pickWarriorAbilityId(): string {
   return String(ability.id);
 }
 
-function makeCtx(character: any): any {
+function makeCtx(character: any, opts?: { withTrainer?: boolean }): any {
+  const withTrainer = opts?.withTrainer !== false;
+  const roomId = "prime_shard:0,0";
+  const trainerEntity = {
+    id: "npc_town_trainer",
+    name: "Town Trainer",
+    type: "npc",
+    tags: ["trainer", "service_trainer", "protected_service"],
+    x: 0,
+    z: 0,
+  };
+
   return {
     // Training is intended to occur near a trainer.
-    // The train command supports a test override flag.
-    session: { character, isAtTrainer: true },
+    session: { character, roomId },
+    entities: {
+      getEntitiesInRoom: (rid: string) => (String(rid) === roomId && withTrainer ? [trainerEntity] : []),
+    },
     sessions: {} as any,
     guilds: {} as any,
     characters: {
@@ -76,6 +90,10 @@ test("[contract] train all: trains all pending spells + abilities", async () => 
   const gA = grantAbilityInState(c1 as any, abilityId, "test", 111);
   assert.equal(gA.ok, true);
   const c2 = (gA as any).next;
+
+  const ctxNoTrainer = makeCtx(c2, { withTrainer: false });
+  const outDenied = await handleTrainCommand(ctxNoTrainer as any, ["all"]);
+  assert.equal(outDenied, "You must be at a trainer to train spells or abilities.");
 
   const ctx = makeCtx(c2);
   const out = await handleTrainCommand(ctx as any, ["all"]);

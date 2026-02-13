@@ -22,6 +22,7 @@ function mkWarrior(level = 1): any {
     name: "Warrior",
     classId: "warrior",
     level,
+    pos: { x: 0, y: 0, z: 0 },
     spellbook: defaultSpellbook(),
     abilities: defaultAbilities(),
   };
@@ -41,9 +42,23 @@ function pickWarriorAbilityId(): string {
   return String(ability.id);
 }
 
-function makeCtx(character: any): any {
+function makeCtx(character: any, opts?: { withTrainer?: boolean }): any {
+  const withTrainer = opts?.withTrainer !== false;
+  const roomId = "prime_shard:0,0";
+  const trainerEntity = {
+    id: "npc_town_trainer",
+    name: "Town Trainer",
+    type: "npc",
+    tags: ["trainer", "service_trainer", "protected_service"],
+    x: 0,
+    z: 0,
+  };
+
   return {
-    session: { character, isAtTrainer: true },
+    session: { character, roomId },
+    entities: {
+      getEntitiesInRoom: (rid: string) => (String(rid) === roomId && withTrainer ? [trainerEntity] : []),
+    },
     sessions: {} as any,
     guilds: {} as any,
     characters: {
