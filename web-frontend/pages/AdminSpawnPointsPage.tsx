@@ -2763,11 +2763,71 @@ Ctrl/⌘-click: filter only`}
     </div>
   )}
 
-  {bulkOwnResult && (
-    <pre style={{ marginTop: 10, background: "#111", color: "#eee", border: "1px solid #333", padding: 8, borderRadius: 6, overflow: "auto" }}>
-      {JSON.stringify(bulkOwnResult, null, 2)}
-    </pre>
-  )}
+  
+{bulkOwnResult && (
+  <div style={{ marginTop: 10 }}>
+    <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center", fontSize: 12, opacity: 0.9 }}>
+      <span>
+        <b>Status:</b> {bulkOwnResult.ok ? "OK" : "ERROR"}
+      </span>
+      {bulkOwnResult.action ? (
+        <span>
+          <b>Action:</b> {bulkOwnResult.action}
+        </span>
+      ) : null}
+      {typeof bulkOwnResult.matched === "number" ? (
+        <span>
+          <b>Matched:</b> {bulkOwnResult.matched}
+        </span>
+      ) : null}
+      {typeof bulkOwnResult.wouldChange === "number" ? (
+        <span>
+          <b>Would change:</b> {bulkOwnResult.wouldChange}
+        </span>
+      ) : null}
+      {typeof bulkOwnResult.skippedReadOnly === "number" ? (
+        <span>
+          <b>Skipped read-only:</b> {bulkOwnResult.skippedReadOnly}
+        </span>
+      ) : null}
+      {typeof bulkOwnResult.skippedNoOp === "number" ? (
+        <span>
+          <b>No-op:</b> {bulkOwnResult.skippedNoOp}
+        </span>
+      ) : null}
+      {typeof bulkOwnResult.changed === "number" ? (
+        <span>
+          <b>Changed:</b> {bulkOwnResult.changed}
+        </span>
+      ) : null}
+      {!bulkOwnResult.ok && bulkOwnResult.error ? (
+        <span style={{ color: "#ff8a8a" }}>
+          <b>Error:</b> {bulkOwnResult.error}
+        </span>
+      ) : null}
+
+      <button
+        type="button"
+        onClick={() => downloadJson("bulk_ownership_result.json", bulkOwnResult)}
+        style={{ padding: "6px 10px", borderRadius: 8, border: "1px solid #555", background: "#141414", color: "#eee" }}
+      >
+        Export JSON
+      </button>
+    </div>
+
+    {bulkOwnershipOpsPreviewFromResult(bulkOwnResult) ? (
+      <OpsPreviewPanel
+        title="Bulk Ownership Preview"
+        preview={bulkOwnershipOpsPreviewFromResult(bulkOwnResult) as any}
+        downloadName="bulk_ownership_preview.json"
+      />
+    ) : (
+      <pre style={{ marginTop: 10, background: "#111", color: "#eee", border: "1px solid #333", padding: 8, borderRadius: 6, overflow: "auto" }}>
+        {JSON.stringify(bulkOwnResult, null, 2)}
+      </pre>
+    )}
+  </div>
+)}
 </div>
 
               <div style={{ fontSize: 12, opacity: 0.85 }}>
@@ -4062,6 +4122,27 @@ type AnyOpsPreview =
       protectedDeleteSpawnIds?: string[];
       protectedUpdateSpawnIds?: string[];
     };
+
+
+
+function bulkOwnershipOpsPreviewFromResult(result: any): AnyOpsPreview | null {
+  const p = result?.opsPreview;
+  if (!p) return null;
+
+  const limit = Number(p.limit ?? 50);
+  const truncated = Boolean(p.truncated);
+
+  const changeSpawnIds = Array.isArray(p.changeSpawnIds) ? p.changeSpawnIds.map((s: any) => String(s)) : [];
+  const readOnlySpawnIds = Array.isArray(p.readOnlySpawnIds) ? p.readOnlySpawnIds.map((s: any) => String(s)) : [];
+
+  // Bulk ownership is conceptually an "update metadata" operation.
+  return {
+    limit,
+    truncated,
+    updateSpawnIds: changeSpawnIds,
+    readOnlySpawnIds,
+  };
+}
 
 
 function downloadJson(filename: string, data: unknown) {
