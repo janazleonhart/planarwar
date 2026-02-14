@@ -614,6 +614,11 @@ const [savedSnapshotsLoading, setSavedSnapshotsLoading] = useState(false);
 const [snapshotSaveWorking, setSnapshotSaveWorking] = useState(false);
 const [snapshotLoadWorking, setSnapshotLoadWorking] = useState(false);
 const [snapshotDeleteWorking, setSnapshotDeleteWorking] = useState<string | null>(null);
+const [snapshotEditMetaOpen, setSnapshotEditMetaOpen] = useState(false);
+  const [snapshotEditWorking, setSnapshotEditWorking] = useState(false);
+  const [snapshotEditName, setSnapshotEditName] = useState("");
+  const [snapshotEditTags, setSnapshotEditTags] = useState("");
+  const [snapshotEditNotes, setSnapshotEditNotes] = useState("");
 const [selectedSavedSnapshotId, setSelectedSavedSnapshotId] = useState<string>("");
 
 
@@ -693,6 +698,24 @@ const restoreSnapshotParseError = restoreParsed.error;
   const selectedSavedSnapshotMeta = useMemo(() => {
     return savedSnapshots.find((s) => s.id === selectedSavedSnapshotId) || null;
   }, [savedSnapshots, selectedSavedSnapshotId]);
+
+  useEffect(() => {
+    // Prefill edit fields when selection changes
+    if (!selectedSavedSnapshotMeta) {
+      setSnapshotEditMetaOpen(false);
+      setSnapshotEditName("");
+      setSnapshotEditTags("");
+      setSnapshotEditNotes("");
+      return;
+    }
+    setSnapshotEditName(selectedSavedSnapshotMeta.name || "");
+    setSnapshotEditTags(
+      Array.isArray(selectedSavedSnapshotMeta.tags) && selectedSavedSnapshotMeta.tags.length
+        ? selectedSavedSnapshotMeta.tags.join(", ")
+        : ""
+    );
+    setSnapshotEditNotes(selectedSavedSnapshotMeta.notes ? String(selectedSavedSnapshotMeta.notes) : "");
+  }, [selectedSavedSnapshotMeta]);
 
   const effectiveRestoreTargetShard = (restoreTargetShard.trim() || shardId || "").trim() || "prime_shard";
   const restoreCrossShard =
@@ -1939,6 +1962,42 @@ const runDeleteSavedSnapshot = async (id: string) => {
     setSnapshotDeleteWorking(null);
   }
 };
+
+
+const runUpdateSavedSnapshotMeta = async (id: string) => {
+  setSnapshotEditWorking(true);
+  try {
+    if (!id) throw new Error("Pick a saved snapshot first.");
+
+    const body = {
+      name: snapshotEditName,
+      tags: snapshotEditTags,
+      notes: snapshotEditNotes,
+    };
+
+    const res = await authedFetch(`/api/admin/spawn_points/snapshots/${encodeURIComponent(id)}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+
+    const json = await res.json().catch(() => null);
+    if (!res.ok || !json?.ok) {
+      throw new Error(json?.error || `HTTP ${res.status}`);
+    }
+
+    // refresh list + keep selection
+    await refreshSavedSnapshots();
+    setSelectedSavedSnapshotId(id);
+    setSnapshotEditMetaOpen(false);
+  } catch (e: any) {
+    console.error(e);
+    setError(e.message || String(e));
+  } finally {
+    setSnapshotEditWorking(false);
+  }
+};
+
 
 
 
@@ -3640,6 +3699,61 @@ Ctrl/⌘-click: filter only`}
           ) : null}
         </div>
       ) : null}
+
+      {snapshotEditMetaOpen && selectedSavedSnapshotId ? (
+        <div style={{ marginTop: 8, padding: 10, border: "1px solid #ddd", borderRadius: 8, background: "#fafafa" }}>
+          <div style={{ display: "grid", gap: 8 }}>
+            <label style={{ display: "grid", gap: 4 }}>
+              <span style={{ fontSize: 12, opacity: 0.85 }}>Name</span>
+              <input
+                value={snapshotEditName}
+                onChange={(e) => setSnapshotEditName(e.target.value)}
+                style={{ width: "100%", padding: "6px 8px", borderRadius: 6, border: "1px solid #ccc" }}
+              />
+            </label>
+
+            <label style={{ display: "grid", gap: 4 }}>
+              <span style={{ fontSize: 12, opacity: 0.85 }}>Tags (comma separated)</span>
+              <input
+                value={snapshotEditTags}
+                onChange={(e) => setSnapshotEditTags(e.target.value)}
+                placeholder="e.g. town, baseline, v1"
+                style={{ width: "100%", padding: "6px 8px", borderRadius: 6, border: "1px solid #ccc" }}
+              />
+            </label>
+
+            <label style={{ display: "grid", gap: 4 }}>
+              <span style={{ fontSize: 12, opacity: 0.85 }}>Notes</span>
+              <textarea
+                value={snapshotEditNotes}
+                onChange={(e) => setSnapshotEditNotes(e.target.value)}
+                rows={3}
+                style={{ width: "100%", padding: "6px 8px", borderRadius: 6, border: "1px solid #ccc", resize: "vertical" }}
+              />
+            </label>
+
+            <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+              <button
+                onClick={() => runUpdateSavedSnapshotMeta(selectedSavedSnapshotId)}
+                disabled={snapshotEditWorking}
+                style={{
+                  padding: "8px 12px",
+                  borderRadius: 8,
+                  border: "1px solid #ccc",
+                  background: snapshotEditWorking ? "#f6f6f6" : "white",
+                  cursor: snapshotEditWorking ? "not-allowed" : "pointer",
+                  fontWeight: 800,
+                }}
+              >
+                {snapshotEditWorking ? "Saving..." : "Save meta"}
+              </button>
+              <span style={{ fontSize: 12, opacity: 0.75 }}>
+                Updates the stored snapshot file in <code>data/spawn_snapshots</code>.
+              </span>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </label>
 
     <button
@@ -3691,7 +3805,24 @@ Ctrl/⌘-click: filter only`}
       {restoreWorking ? "Working..." : "Commit restore (saved)"}
     </button>
 
+    
     <button
+      onClick={() => setSnapshotEditMetaOpen((v) => !v)}
+      disabled={!selectedSavedSnapshotId}
+      style={{
+        padding: "8px 12px",
+        borderRadius: 8,
+        border: "1px solid #ccc",
+        background: "white",
+        cursor: !selectedSavedSnapshotId ? "not-allowed" : "pointer",
+        fontWeight: 700,
+      }}
+      title="Edits name/tags/notes for the selected saved snapshot"
+    >
+      {snapshotEditMetaOpen ? "Cancel edit" : "Edit meta"}
+    </button>
+
+<button
       onClick={() => runDeleteSavedSnapshot(selectedSavedSnapshotId)}
       disabled={!selectedSavedSnapshotId || snapshotDeleteWorking === selectedSavedSnapshotId}
       style={{

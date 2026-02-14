@@ -3538,6 +3538,53 @@ router.get("/snapshots/:id", async (req, res) => {
   }
 });
 
+
+// PUT /api/admin/spawn_points/snapshots/:id
+// Body: { name?, tags?, notes? }
+router.put("/snapshots/:id", async (req, res) => {
+  try {
+    const id = strOrNull(req.params?.id);
+    if (!id) return res.status(400).json({ kind: "spawn_points.snapshots.update", ok: false, error: "missing_id" });
+
+    const { doc } = await readStoredSnapshotById(id);
+
+    const nameRaw = strOrNull(req.body?.name);
+    const tagsRaw = req.body?.tags;
+    const notesRaw = req.body?.notes;
+
+    const nextName = nameRaw ? safeSnapshotName(nameRaw) : doc.name;
+    const nextTags = tagsRaw !== undefined ? normalizeSnapshotTags(tagsRaw) : (Array.isArray((doc as any).tags) ? (doc as any).tags : []);
+    const nextNotes =
+      notesRaw === undefined
+        ? ((doc as any).notes ?? null)
+        : notesRaw === null
+          ? null
+          : String(notesRaw).slice(0, 2000);
+
+    const updated: StoredSpawnSnapshotDoc = {
+      ...doc,
+      name: nextName,
+      tags: nextTags,
+      notes: nextNotes,
+    };
+
+    const dir = await ensureSnapshotDir();
+    const file = path.join(dir, `${id}.json`);
+    await fs.writeFile(file, JSON.stringify(updated, null, 2) + "\n", "utf8");
+
+    const raw = await fs.readFile(file, "utf8");
+    const bytes = Buffer.byteLength(raw, "utf8");
+    const meta = metaFromStoredDoc(updated, bytes);
+
+    return res.json({ kind: "spawn_points.snapshots.update", ok: true, snapshot: meta });
+  } catch (err: any) {
+    const msg = err.message || String(err);
+    const status = /no such file/i.test(msg) || /ENOENT/i.test(msg) ? 404 : 500;
+    console.error("[ADMIN/SPAWN_POINTS] snapshots update error", err);
+    return res.status(status).json({ kind: "spawn_points.snapshots.update", ok: false, error: msg });
+  }
+});
+
 // DELETE /api/admin/spawn_points/snapshots/:id
 router.delete("/snapshots/:id", async (req, res) => {
   try {
