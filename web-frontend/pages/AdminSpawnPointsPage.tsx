@@ -1998,6 +1998,34 @@ const runUpdateSavedSnapshotMeta = async (id: string) => {
   }
 };
 
+const runDuplicateSavedSnapshot = async (id: string) => {
+  setSnapshotEditWorking(true);
+  try {
+    if (!id) throw new Error("Pick a saved snapshot first.");
+    const meta = savedSnapshots.find((s) => s.id === id);
+    const suggested = meta?.name ? `${meta.name} copy` : "snapshot copy";
+    const name = window.prompt("Duplicate snapshot: new name", suggested);
+    if (name == null) return; // cancelled
+
+    const res = await authedFetch(`/api/admin/spawn_points/snapshots/${encodeURIComponent(id)}/duplicate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name }),
+    });
+
+    const json = await res.json().catch(() => null);
+    if (!res.ok || !json?.ok) throw new Error(json?.error || `HTTP ${res.status}`);
+
+    await refreshSavedSnapshots();
+    if (json?.snapshot?.id) setSelectedSavedSnapshotId(String(json.snapshot.id));
+  } catch (e: any) {
+    console.error(e);
+    setError(e.message || String(e));
+  } finally {
+    setSnapshotEditWorking(false);
+  }
+};
+
 
 
 
@@ -3770,6 +3798,22 @@ Ctrl/⌘-click: filter only`}
       title="Loads the selected saved snapshot into the restore box below"
     >
       {snapshotLoadWorking ? "Loading..." : "Load into restore"}
+    </button>
+
+    <button
+      onClick={() => runDuplicateSavedSnapshot(selectedSavedSnapshotId)}
+      disabled={!selectedSavedSnapshotId || snapshotEditWorking}
+      style={{
+        padding: "8px 12px",
+        borderRadius: 8,
+        border: "1px solid #ccc",
+        background: !selectedSavedSnapshotId || snapshotEditWorking ? "#f6f6f6" : "white",
+        cursor: !selectedSavedSnapshotId || snapshotEditWorking ? "not-allowed" : "pointer",
+        fontWeight: 700,
+      }}
+      title="Creates a new saved snapshot by copying the selected snapshot."
+    >
+      Duplicate
     </button>
 
 

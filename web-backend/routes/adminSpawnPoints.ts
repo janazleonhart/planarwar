@@ -224,6 +224,10 @@ type StoredSpawnSnapshotDoc = {
   snapshot: SpawnSliceSnapshot;
 };
 
+type DuplicateSnapshotResponse =
+  | { kind: "spawn_points.snapshots.duplicate"; ok: true; snapshot: StoredSpawnSnapshotMeta }
+  | { kind: "spawn_points.snapshots.duplicate"; ok: false; error: string };
+
 type StoredSpawnSnapshotMeta = {
   id: string;
   name: string;
@@ -348,6 +352,31 @@ async function listStoredSnapshots(): Promise<StoredSpawnSnapshotMeta[]> {
   }
   metas.sort((a, b) => String(b.savedAt).localeCompare(String(a.savedAt)));
   return metas;
+}
+
+async function fileExists(p: string): Promise<boolean> {
+  try {
+    await fs.access(p);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function allocateSnapshotIdUnique(name: string, shardId: string, bounds: CellBounds, types: string[]): Promise<string> {
+  // Extremely low contention; keep it simple but deterministic enough.
+  const dir = await ensureSnapshotDir();
+  for (let i = 0; i < 6; i++) {
+    const baseName = i === 0 ? name : `${name} copy ${i + 1}`;
+    const id = makeSnapshotId(baseName, shardId, bounds, types);
+    const file = path.join(dir, `${id}.json`);
+    if (!(await fileExists(file))) return id;
+    // If collision (very unlikely), try again.
+    await new Promise((r) => setTimeout(r, 2));
+  }
+  // Final fallback: add entropy.
+  const id = `snap_${Date.now()}_${Math.random().toString(16).slice(2, 10)}_${hashToken({ name, shardId, bounds, types }).slice(0, 8)}`;
+  return id;
 }
 
 
@@ -3582,6 +3611,64 @@ router.put("/snapshots/:id", async (req, res) => {
     const status = /no such file/i.test(msg) || /ENOENT/i.test(msg) ? 404 : 500;
     console.error("[ADMIN/SPAWN_POINTS] snapshots update error", err);
     return res.status(status).json({ kind: "spawn_points.snapshots.update", ok: false, error: msg });
+  }
+});
+
+// POST /api/admin/spawn_points/snapshots/:id/duplicate
+// Body: { name?, tags?, notes? }
+router.post("/snapshots/:id/duplicate", async (req, res) => {
+  try {
+    const id = strOrNull(req.params?.id);
+    if (!id) {
+      return res
+        .status(400)
+        .json({ kind: "spawn_points.snapshots.duplicate", ok: false, error: "missing_id" } satisfies DuplicateSnapshotResponse);
+    }
+
+    const { doc } = await readStoredSnapshotById(id);
+
+    const nameRaw = strOrNull(req.body?.name);
+    const tagsRaw = req.body?.tags;
+    const notesRaw = req.body?.notes;
+
+    const baseName = safeSnapshotName(nameRaw ? nameRaw : `${doc.name} copy`);
+    const shardId = doc.snapshot.shardId;
+    const bounds = doc.snapshot.bounds;
+    const types = Array.isArray(doc.snapshot.types) ? doc.snapshot.types : [];
+
+    const newId = await allocateSnapshotIdUnique(baseName, shardId, bounds, types);
+    const now = new Date().toISOString();
+
+    const tags = tagsRaw === undefined ? (Array.isArray((doc as any).tags) ? (doc as any).tags : []) : normalizeSnapshotTags(tagsRaw);
+    const notes = notesRaw === undefined ? ((doc as any).notes ?? null) : safeSnapshotNotes(notesRaw);
+
+    const cloned: StoredSpawnSnapshotDoc = {
+      kind: "admin.stored-spawn-snapshot",
+      version: doc.version,
+      id: newId,
+      name: baseName,
+      savedAt: now,
+      tags,
+      notes,
+      snapshot: doc.snapshot,
+    };
+
+    const dir = await ensureSnapshotDir();
+    const file = path.join(dir, `${newId}.json`);
+    const raw = JSON.stringify(cloned, null, 2) + "\n";
+    await fs.writeFile(file, raw, "utf8");
+
+    const bytes = Buffer.byteLength(raw, "utf8");
+    const meta = metaFromStoredDoc(cloned, bytes);
+
+    return res.json({ kind: "spawn_points.snapshots.duplicate", ok: true, snapshot: meta } satisfies DuplicateSnapshotResponse);
+  } catch (err: any) {
+    const msg = err.message || String(err);
+    const status = /no such file/i.test(msg) || /ENOENT/i.test(msg) ? 404 : 500;
+    console.error("[ADMIN/SPAWN_POINTS] snapshots duplicate error", err);
+    return res
+      .status(status)
+      .json({ kind: "spawn_points.snapshots.duplicate", ok: false, error: msg } satisfies DuplicateSnapshotResponse);
   }
 });
 
