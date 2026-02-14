@@ -13,6 +13,18 @@ type RewardItem = {
   itemRarity?: string;
 };
 
+type RewardSpellGrant = {
+  spellId: string;
+  source?: string;
+  spellName?: string;
+};
+
+type RewardAbilityGrant = {
+  abilityId: string;
+  source?: string;
+  abilityName?: string;
+};
+
 type AdminQuest = {
   id: string;
   name: string;
@@ -30,6 +42,9 @@ type AdminQuest = {
   rewardXp: number;
   rewardGold: number;
   rewardItems?: RewardItem[];
+
+  rewardSpellGrants?: RewardSpellGrant[];
+  rewardAbilityGrants?: RewardAbilityGrant[];
 };
 
 function labelForTarget(kind: ObjectiveKind): string {
@@ -164,6 +179,14 @@ function ItemIdPicker(props: {
   );
 }
 
+function formatGrantLabel(kind: "spell" | "ability", id: string, name?: string) {
+  const cleanId = (id || "").trim();
+  const cleanName = (name || "").trim();
+  if (!cleanId) return "";
+  if (!cleanName) return cleanId;
+  return `${cleanName} (${cleanId})`;
+}
+
 export function AdminQuestsPage() {
   const { canWrite } = getAdminCaps();
   const [quests, setQuests] = useState<AdminQuest[]>([]);
@@ -223,6 +246,8 @@ export function AdminQuestsPage() {
       rewardXp: 0,
       rewardGold: 0,
       rewardItems: [],
+      rewardSpellGrants: [],
+      rewardAbilityGrants: [],
     });
   };
 
@@ -270,6 +295,62 @@ export function AdminQuestsPage() {
     });
   };
 
+  const updateRewardSpellGrant = (idx: number, patch: Partial<RewardSpellGrant>) => {
+    setForm((prev) => {
+      if (!prev) return prev;
+      const list = [...(prev.rewardSpellGrants ?? [])];
+      const cur = list[idx] ?? { spellId: "", source: "" };
+      list[idx] = { ...cur, ...patch };
+      return { ...prev, rewardSpellGrants: list };
+    });
+  };
+
+  const addRewardSpellGrant = () => {
+    setForm((prev) => {
+      if (!prev) return prev;
+      const list = [...(prev.rewardSpellGrants ?? [])];
+      list.push({ spellId: "", source: "" });
+      return { ...prev, rewardSpellGrants: list };
+    });
+  };
+
+  const removeRewardSpellGrant = (idx: number) => {
+    setForm((prev) => {
+      if (!prev) return prev;
+      const list = [...(prev.rewardSpellGrants ?? [])];
+      list.splice(idx, 1);
+      return { ...prev, rewardSpellGrants: list };
+    });
+  };
+
+  const updateRewardAbilityGrant = (idx: number, patch: Partial<RewardAbilityGrant>) => {
+    setForm((prev) => {
+      if (!prev) return prev;
+      const list = [...(prev.rewardAbilityGrants ?? [])];
+      const cur = list[idx] ?? { abilityId: "", source: "" };
+      list[idx] = { ...cur, ...patch };
+      return { ...prev, rewardAbilityGrants: list };
+    });
+  };
+
+  const addRewardAbilityGrant = () => {
+    setForm((prev) => {
+      if (!prev) return prev;
+      const list = [...(prev.rewardAbilityGrants ?? [])];
+      list.push({ abilityId: "", source: "" });
+      return { ...prev, rewardAbilityGrants: list };
+    });
+  };
+
+  const removeRewardAbilityGrant = (idx: number) => {
+    setForm((prev) => {
+      if (!prev) return prev;
+      const list = [...(prev.rewardAbilityGrants ?? [])];
+      list.splice(idx, 1);
+      return { ...prev, rewardAbilityGrants: list };
+    });
+  };
+
   const validateCollectItemObjective = (q: AdminQuest) => {
     if (q.objectiveKind !== "collect_item") return;
     const id = (q.objectiveTargetId || "").trim();
@@ -303,12 +384,29 @@ export function AdminQuestsPage() {
     }
   };
 
+  const validateGrantRows = (q: AdminQuest) => {
+    const spells = q.rewardSpellGrants ?? [];
+    for (let i = 0; i < spells.length; i++) {
+      const id = (spells[i]?.spellId || "").trim();
+      if (!id) continue;
+      if (id.length < 2) throw new Error(`Spell grant id looks invalid (row ${i + 1}).`);
+    }
+
+    const abilities = q.rewardAbilityGrants ?? [];
+    for (let i = 0; i < abilities.length; i++) {
+      const id = (abilities[i]?.abilityId || "").trim();
+      if (!id) continue;
+      if (id.length < 2) throw new Error(`Ability grant id looks invalid (row ${i + 1}).`);
+    }
+  };
+
   const handleSave = async () => {
     if (!form) return;
 
     try {
       validateCollectItemObjective(form);
       validateRewardItems(form);
+      validateGrantRows(form);
     } catch (err: any) {
       setError(err.message || String(err));
       return;
@@ -560,22 +658,156 @@ export function AdminQuestsPage() {
                         ))}
                       </div>
                     ) : (
-                      <div style={{ fontSize: 12, opacity: 0.7, marginTop: 6 }}>No item rewards yet.</div>
+                      <div style={{ fontSize: 12, color: "rgba(0,0,0,0.65)", marginTop: 6 }}>
+                        No item rewards.
+                      </div>
                     )}
+                  </div>
+
+                  <div style={{ marginTop: 12 }}>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                      <strong>Spell grants</strong>
+                      <button type="button" onClick={addRewardSpellGrant} disabled={saving || !canWrite}>
+                        + Add spell
+                      </button>
+                    </div>
+
+                    {(form.rewardSpellGrants ?? []).length ? (
+                      <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 6 }}>
+                        {(form.rewardSpellGrants ?? []).map((g, idx) => (
+                          <div
+                            key={`spellGrant-${idx}`}
+                            style={{
+                              display: "flex",
+                              gap: 8,
+                              alignItems: "center",
+                              padding: 6,
+                              border: "1px solid #ddd",
+                              borderRadius: 4,
+                              flexWrap: "wrap",
+                            }}
+                          >
+                            <div style={{ flex: 1, minWidth: 240 }}>
+                              <label style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                                <span style={{ fontSize: 12, opacity: 0.75 }}>spellId</span>
+                                <input
+                                  value={g.spellId}
+                                  disabled={saving || !canWrite}
+                                  placeholder="e.g. magician_summon_wolf_ii"
+                                  onChange={(e) => updateRewardSpellGrant(idx, { spellId: e.target.value })}
+                                />
+                              </label>
+                              {(g.spellName || g.spellId) && (
+                                <div style={{ fontSize: 12, opacity: 0.75, marginTop: 2 }}>
+                                  {formatGrantLabel("spell", g.spellId, g.spellName)}
+                                </div>
+                              )}
+                            </div>
+
+                            <div style={{ flex: 1, minWidth: 220 }}>
+                              <label style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                                <span style={{ fontSize: 12, opacity: 0.75 }}>source (optional)</span>
+                                <input
+                                  value={g.source ?? ""}
+                                  disabled={saving || !canWrite}
+                                  placeholder={`defaults to quest:${form.id || "<id>"}`}
+                                  onChange={(e) => updateRewardSpellGrant(idx, { source: e.target.value })}
+                                />
+                              </label>
+                            </div>
+
+                            <button type="button" onClick={() => removeRewardSpellGrant(idx)} disabled={saving || !canWrite}>
+                              Remove
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div style={{ fontSize: 12, color: "rgba(0,0,0,0.65)", marginTop: 6 }}>
+                        No spell grants.
+                      </div>
+                    )}
+                  </div>
+
+                  <div style={{ marginTop: 12 }}>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                      <strong>Ability grants</strong>
+                      <button type="button" onClick={addRewardAbilityGrant} disabled={saving || !canWrite}>
+                        + Add ability
+                      </button>
+                    </div>
+
+                    {(form.rewardAbilityGrants ?? []).length ? (
+                      <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 6 }}>
+                        {(form.rewardAbilityGrants ?? []).map((g, idx) => (
+                          <div
+                            key={`abilityGrant-${idx}`}
+                            style={{
+                              display: "flex",
+                              gap: 8,
+                              alignItems: "center",
+                              padding: 6,
+                              border: "1px solid #ddd",
+                              borderRadius: 4,
+                              flexWrap: "wrap",
+                            }}
+                          >
+                            <div style={{ flex: 1, minWidth: 240 }}>
+                              <label style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                                <span style={{ fontSize: 12, opacity: 0.75 }}>abilityId</span>
+                                <input
+                                  value={g.abilityId}
+                                  disabled={saving || !canWrite}
+                                  placeholder="e.g. warrior_cleave"
+                                  onChange={(e) => updateRewardAbilityGrant(idx, { abilityId: e.target.value })}
+                                />
+                              </label>
+                              {(g.abilityName || g.abilityId) && (
+                                <div style={{ fontSize: 12, opacity: 0.75, marginTop: 2 }}>
+                                  {formatGrantLabel("ability", g.abilityId, g.abilityName)}
+                                </div>
+                              )}
+                            </div>
+
+                            <div style={{ flex: 1, minWidth: 220 }}>
+                              <label style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                                <span style={{ fontSize: 12, opacity: 0.75 }}>source (optional)</span>
+                                <input
+                                  value={g.source ?? ""}
+                                  disabled={saving || !canWrite}
+                                  placeholder={`defaults to quest:${form.id || "<id>"}`}
+                                  onChange={(e) => updateRewardAbilityGrant(idx, { source: e.target.value })}
+                                />
+                              </label>
+                            </div>
+
+                            <button type="button" onClick={() => removeRewardAbilityGrant(idx)} disabled={saving || !canWrite}>
+                              Remove
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div style={{ fontSize: 12, color: "rgba(0,0,0,0.65)", marginTop: 6 }}>
+                        No ability grants.
+                      </div>
+                    )}
+                  </div>
+
+                  <div style={{ fontSize: 12, color: "rgba(0,0,0,0.65)", marginTop: 10 }}>
+                    Note: spell/ability ids are validated server-side on save.
                   </div>
                 </fieldset>
 
-                <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
-                  <button type="button" data-kind="primary" onClick={handleSave} disabled={saving || !canWrite}>
-                    {saving ? "Saving..." : "Save Quest"}
+                <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                  <button type="button" onClick={handleSave} disabled={saving || !canWrite}>
+                    {saving ? "Saving…" : "Save"}
                   </button>
-                  <button type="button" onClick={startNew} disabled={saving}>
-                    Clear / New
-                  </button>
+                  {!canWrite ? <span style={{ fontSize: 12, opacity: 0.7 }}>You do not have write permissions.</span> : null}
                 </div>
               </div>
             ) : (
-              <div style={{ fontSize: 12, color: "rgba(0,0,0,0.65)" }}>Select a quest or click “New”.</div>
+              <div style={{ fontSize: 12, color: "rgba(0,0,0,0.65)" }}>Select a quest on the left, or click New.</div>
             )}
           </AdminPanel>
         }

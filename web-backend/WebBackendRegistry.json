@@ -763,7 +763,19 @@
         "POST /api/admin/spawn_points/mother_brain/wave",
         "POST /api/admin/spawn_points/mother_brain/wipe",
         "POST /api/admin/spawn_points/town_baseline/plan",
-        "POST /api/admin/spawn_points/town_baseline/apply"
+        "POST /api/admin/spawn_points/town_baseline/apply",
+        "POST /api/admin/spawn_points/snapshot",
+        "POST /api/admin/spawn_points/snapshot_query",
+        "GET /api/admin/spawn_points/snapshots",
+        "GET /api/admin/spawn_points/snapshots/:id",
+        "POST /api/admin/spawn_points/snapshots/save",
+        "POST /api/admin/spawn_points/snapshots/save_query",
+        "PUT /api/admin/spawn_points/snapshots/:id",
+        "POST /api/admin/spawn_points/snapshots/:id/duplicate",
+        "DELETE /api/admin/spawn_points/snapshots/:id (confirm-token gated)",
+        "POST /api/admin/spawn_points/snapshots/bulk_delete (preview+commit confirm-token)",
+        "POST /api/admin/spawn_points/snapshots/purge (preview+commit confirm-token)",
+        "GET /api/admin/spawn_points/snapshots/retention_status"
       ],
       "service": "http.adminRoutes"
     },

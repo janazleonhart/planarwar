@@ -7,7 +7,7 @@ import { PostgresQuestService } from "../../worldcore/quests/PostgresQuestServic
 const router = Router();
 const questService = new PostgresQuestService();
 
-// Shape used by the web editor (v0: one objective + xp/gold + item rewards)
+// Shape used by the web editor (v0: one objective + xp/gold + item rewards + spell/ability grant rewards)
 type ObjectiveKind = "kill" | "harvest" | "collect_item" | "craft" | "talk_to" | "city";
 
 type AdminRewardItem = {
@@ -17,6 +17,22 @@ type AdminRewardItem = {
   // Best-effort display helpers (computed on GET)
   itemName?: string;
   itemRarity?: string;
+};
+
+type AdminRewardSpellGrant = {
+  spellId: string;
+  source?: string;
+
+  // Best-effort display helpers (computed on GET)
+  spellName?: string;
+};
+
+type AdminRewardAbilityGrant = {
+  abilityId: string;
+  source?: string;
+
+  // Best-effort display helpers (computed on GET)
+  abilityName?: string;
 };
 
 type AdminQuestPayload = {
@@ -37,6 +53,10 @@ type AdminQuestPayload = {
   rewardXp?: number;
   rewardGold?: number;
   rewardItems?: AdminRewardItem[];
+
+  // Rank grants / quest reward grants
+  rewardSpellGrants?: AdminRewardSpellGrant[];
+  rewardAbilityGrants?: AdminRewardAbilityGrant[];
 };
 
 // GET /api/admin/quests  -> list quests in DB (simple view)
@@ -68,6 +88,20 @@ router.get("/", async (_req, res) => {
           }))
         : [];
 
+      const rewardSpellGrants: AdminRewardSpellGrant[] = Array.isArray((reward as any).spellGrants)
+        ? ((reward as any).spellGrants as any[]).map((g) => ({
+            spellId: String(g?.spellId ?? ""),
+            source: g?.source ? String(g.source) : undefined,
+          }))
+        : [];
+
+      const rewardAbilityGrants: AdminRewardAbilityGrant[] = Array.isArray((reward as any).abilityGrants)
+        ? ((reward as any).abilityGrants as any[]).map((g) => ({
+            abilityId: String(g?.abilityId ?? ""),
+            source: g?.source ? String(g.source) : undefined,
+          }))
+        : [];
+
       return {
         id: q.id,
         name: q.name,
@@ -80,6 +114,8 @@ router.get("/", async (_req, res) => {
         rewardXp: (reward as any).xp ?? 0,
         rewardGold: (reward as any).gold ?? 0,
         rewardItems,
+        rewardSpellGrants,
+        rewardAbilityGrants,
       };
     });
 
@@ -130,6 +166,63 @@ router.get("/", async (_req, res) => {
       }
     }
 
+    // Best-effort spell/ability label lookup for grant rewards.
+    const spellIds = Array.from(
+      new Set(
+        payload
+          .flatMap((q) => q.rewardSpellGrants ?? [])
+          .map((g) => (g.spellId || "").trim())
+          .filter(Boolean)
+      )
+    );
+
+    const abilityIds = Array.from(
+      new Set(
+        payload
+          .flatMap((q) => q.rewardAbilityGrants ?? [])
+          .map((g) => (g.abilityId || "").trim())
+          .filter(Boolean)
+      )
+    );
+
+    if (spellIds.length) {
+      try {
+        const r = await db.query(`SELECT id, name FROM spells WHERE id = ANY($1::text[])`, [spellIds]);
+        const map = new Map<string, string>();
+        for (const row of r.rows as any[]) {
+          map.set(String(row.id), String(row.name ?? ""));
+        }
+        for (const q of payload) {
+          for (const g of q.rewardSpellGrants ?? []) {
+            const hit = map.get((g.spellId || "").trim());
+            if (hit) g.spellName = hit;
+          }
+        }
+      } catch (err) {
+        // eslint-disable-next-line no-console
+        console.warn("[ADMIN/QUESTS] spell label lookup skipped due to DB error", err);
+      }
+    }
+
+    if (abilityIds.length) {
+      try {
+        const r = await db.query(`SELECT id, name FROM abilities WHERE id = ANY($1::text[])`, [abilityIds]);
+        const map = new Map<string, string>();
+        for (const row of r.rows as any[]) {
+          map.set(String(row.id), String(row.name ?? ""));
+        }
+        for (const q of payload) {
+          for (const g of q.rewardAbilityGrants ?? []) {
+            const hit = map.get((g.abilityId || "").trim());
+            if (hit) g.abilityName = hit;
+          }
+        }
+      } catch (err) {
+        // eslint-disable-next-line no-console
+        console.warn("[ADMIN/QUESTS] ability label lookup skipped due to DB error", err);
+      }
+    }
+
     res.json({ ok: true, quests: payload });
   } catch (err) {
     // eslint-disable-next-line no-console
@@ -163,6 +256,22 @@ router.post("/", async (req, res) => {
       count: Number((it as any)?.count ?? 1),
     }))
     .filter((it) => !!it.itemId);
+
+  const rewardSpellGrantsRaw = Array.isArray(body.rewardSpellGrants) ? body.rewardSpellGrants : [];
+  const rewardSpellGrants: { spellId: string; source?: string }[] = rewardSpellGrantsRaw
+    .map((g) => ({
+      spellId: String((g as any)?.spellId ?? "").trim(),
+      source: (g as any)?.source ? String((g as any).source).trim() : undefined,
+    }))
+    .filter((g) => !!g.spellId);
+
+  const rewardAbilityGrantsRaw = Array.isArray(body.rewardAbilityGrants) ? body.rewardAbilityGrants : [];
+  const rewardAbilityGrants: { abilityId: string; source?: string }[] = rewardAbilityGrantsRaw
+    .map((g) => ({
+      abilityId: String((g as any)?.abilityId ?? "").trim(),
+      source: (g as any)?.source ? String((g as any).source).trim() : undefined,
+    }))
+    .filter((g) => !!g.abilityId);
 
   const kind = body.objectiveKind as ObjectiveKind;
 
@@ -201,6 +310,34 @@ router.post("/", async (req, res) => {
         return res.status(400).json({
           ok: false,
           error: `Reward item(s) do not exist: ${missing.join(", ")}. Create them in the item editor first.`,
+        });
+      }
+    }
+
+    if (rewardSpellGrants.length) {
+      const ids = Array.from(new Set(rewardSpellGrants.map((g) => g.spellId)));
+      const r = await db.query(`SELECT id FROM spells WHERE id = ANY($1::text[])`, [ids]);
+      const have = new Set((r.rows as any[]).map((row) => String(row.id)));
+
+      const missing = ids.filter((id) => !have.has(id));
+      if (missing.length) {
+        return res.status(400).json({
+          ok: false,
+          error: `Spell grant(s) reference unknown spellId: ${missing.join(", ")}. Create/seed them first.`,
+        });
+      }
+    }
+
+    if (rewardAbilityGrants.length) {
+      const ids = Array.from(new Set(rewardAbilityGrants.map((g) => g.abilityId)));
+      const r = await db.query(`SELECT id FROM abilities WHERE id = ANY($1::text[])`, [ids]);
+      const have = new Set((r.rows as any[]).map((row) => String(row.id)));
+
+      const missing = ids.filter((id) => !have.has(id));
+      if (missing.length) {
+        return res.status(400).json({
+          ok: false,
+          error: `Ability grant(s) reference unknown abilityId: ${missing.join(", ")}. Create/seed them first.`,
         });
       }
     }
@@ -270,6 +407,28 @@ router.post("/", async (req, res) => {
         VALUES ($1, 'item', $2, $3, '{}'::jsonb)
         `,
         [body.id, it.itemId, qty]
+      );
+    }
+
+    for (const g of rewardSpellGrants) {
+      const source = (g.source || "").trim() || `quest:${body.id}`;
+      await db.query(
+        `
+        INSERT INTO quest_rewards (quest_id, kind, extra_json)
+        VALUES ($1, 'spell_grant', $2::jsonb)
+        `,
+        [body.id, JSON.stringify({ spellId: g.spellId, source })]
+      );
+    }
+
+    for (const g of rewardAbilityGrants) {
+      const source = (g.source || "").trim() || `quest:${body.id}`;
+      await db.query(
+        `
+        INSERT INTO quest_rewards (quest_id, kind, extra_json)
+        VALUES ($1, 'ability_grant', $2::jsonb)
+        `,
+        [body.id, JSON.stringify({ abilityId: g.abilityId, source })]
       );
     }
 
