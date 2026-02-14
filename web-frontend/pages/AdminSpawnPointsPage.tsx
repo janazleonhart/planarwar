@@ -2113,6 +2113,29 @@ const runCommitSnapshotPurge = async () => {
   }
 };
 
+
+const runQuickUpdateSavedSnapshotMeta = async (id: string, patch: Partial<StoredSpawnSnapshotMeta>) => {
+  setSnapshotEditWorking(true);
+  try {
+    if (!id) throw new Error("Pick a saved snapshot first.");
+    const res = await authedFetch(`/api/admin/spawn_points/snapshots/${encodeURIComponent(id)}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(patch),
+    });
+    const json = await res.json().catch(() => null);
+    if (!res.ok || !json?.ok) throw new Error(json?.error || `HTTP ${res.status}`);
+
+    await refreshSavedSnapshots();
+    setSelectedSavedSnapshotId(id);
+  } catch (e: any) {
+    console.error(e);
+    setError(e.message || String(e));
+  } finally {
+    setSnapshotEditWorking(false);
+  }
+};
+
 const runUpdateSavedSnapshotMeta = async (id: string) => {
   setSnapshotEditWorking(true);
   try {
@@ -3970,6 +3993,112 @@ Ctrl/⌘-click: filter only`}
         </div>
       ) : null}
     </label>
+
+    {selectedSavedSnapshotMeta && selectedSavedSnapshotId ? (
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
+        <button
+          type="button"
+          onClick={() =>
+            runQuickUpdateSavedSnapshotMeta(selectedSavedSnapshotId, {
+              isPinned: !Boolean((selectedSavedSnapshotMeta as any).isPinned),
+            } as any)
+          }
+          disabled={snapshotEditWorking}
+          style={{
+            padding: "6px 10px",
+            borderRadius: 8,
+            border: "1px solid #ccc",
+            background: "white",
+            cursor: snapshotEditWorking ? "not-allowed" : "pointer",
+            fontWeight: 800,
+            fontSize: 12,
+          }}
+          title="Toggle pinned status"
+        >
+          {Boolean((selectedSavedSnapshotMeta as any).isPinned) ? "Unpin" : "Pin"}
+        </button>
+
+        <button
+          type="button"
+          onClick={() =>
+            runQuickUpdateSavedSnapshotMeta(selectedSavedSnapshotId, {
+              isArchived: !Boolean((selectedSavedSnapshotMeta as any).isArchived),
+            } as any)
+          }
+          disabled={snapshotEditWorking}
+          style={{
+            padding: "6px 10px",
+            borderRadius: 8,
+            border: "1px solid #ccc",
+            background: "white",
+            cursor: snapshotEditWorking ? "not-allowed" : "pointer",
+            fontWeight: 800,
+            fontSize: 12,
+          }}
+          title="Toggle archived status"
+        >
+          {Boolean((selectedSavedSnapshotMeta as any).isArchived) ? "Unarchive" : "Archive"}
+        </button>
+
+        <span style={{ fontSize: 12, opacity: 0.75, paddingLeft: 4 }}>Expiry:</span>
+
+        <button
+          type="button"
+          onClick={() => runQuickUpdateSavedSnapshotMeta(selectedSavedSnapshotId, { expiresAt: 7 } as any)}
+          disabled={snapshotEditWorking}
+          style={{
+            padding: "6px 10px",
+            borderRadius: 8,
+            border: "1px solid #ccc",
+            background: "white",
+            cursor: snapshotEditWorking ? "not-allowed" : "pointer",
+            fontWeight: 800,
+            fontSize: 12,
+          }}
+          title="Set expiry to 7 days from now"
+        >
+          +7d
+        </button>
+
+        <button
+          type="button"
+          onClick={() => runQuickUpdateSavedSnapshotMeta(selectedSavedSnapshotId, { expiresAt: 30 } as any)}
+          disabled={snapshotEditWorking}
+          style={{
+            padding: "6px 10px",
+            borderRadius: 8,
+            border: "1px solid #ccc",
+            background: "white",
+            cursor: snapshotEditWorking ? "not-allowed" : "pointer",
+            fontWeight: 800,
+            fontSize: 12,
+          }}
+          title="Set expiry to 30 days from now"
+        >
+          +30d
+        </button>
+
+        <button
+          type="button"
+          onClick={() => runQuickUpdateSavedSnapshotMeta(selectedSavedSnapshotId, { expiresAt: null } as any)}
+          disabled={snapshotEditWorking}
+          style={{
+            padding: "6px 10px",
+            borderRadius: 8,
+            border: "1px solid #ccc",
+            background: "white",
+            cursor: snapshotEditWorking ? "not-allowed" : "pointer",
+            fontWeight: 800,
+            fontSize: 12,
+          }}
+          title="Clear expiry"
+        >
+          Clear
+        </button>
+      </div>
+    ) : null}
+
+
 
     <button
       onClick={() => runLoadSavedSnapshot(selectedSavedSnapshotId)}
