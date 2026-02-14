@@ -120,6 +120,7 @@ function summarizePlannedSpawns(
 function buildTownBaselineOpsPreview(planItems: TownBaselinePlanItem[], limit = 75): TownBaselineOpsPreview {
   const inserts: string[] = [];
   const updates: string[] = [];
+  const protectedUpdates: string[] = [];
   const skips: string[] = [];
   const readOnly: string[] = [];
 
@@ -133,23 +134,28 @@ function buildTownBaselineOpsPreview(planItems: TownBaselinePlanItem[], limit = 
     }
 
     if (item.op === "insert") inserts.push(sid);
-    else if (item.op === "update") updates.push(sid);
-    else skips.push(sid);
+    else if (item.op === "update") {
+      updates.push(sid);
+      const ok = !(item.spawn?.ownerKind === "editor" || Boolean(item.spawn?.isLocked));
+      if (!ok) protectedUpdates.push(sid);
+    } else skips.push(sid);
   }
 
   const sort = (arr: string[]) => arr.sort((a, b) => a.localeCompare(b));
   sort(inserts);
   sort(updates);
+  sort(protectedUpdates);
   sort(skips);
   sort(readOnly);
 
-  const truncated = inserts.length > limit || updates.length > limit || skips.length > limit || readOnly.length > limit;
+  const truncated = inserts.length > limit || updates.length > limit || protectedUpdates.length > limit || skips.length > limit || readOnly.length > limit;
 
   return {
     limit,
     truncated,
     insertSpawnIds: inserts.slice(0, limit),
     updateSpawnIds: updates.slice(0, limit),
+    protectedUpdateSpawnIds: protectedUpdates.length ? protectedUpdates.slice(0, limit) : undefined,
     skipSpawnIds: skips.slice(0, limit),
     readOnlySpawnIds: readOnly.slice(0, limit),
   };
@@ -1909,6 +1915,7 @@ async function computeTownBaselinePlan(body: TownBaselinePlanRequest): Promise<{
   wouldInsert: number;
   wouldUpdate: number;
   wouldSkip: number;
+  skippedProtected: number;
 }> {
   const shardId = strOrNull(body.shardId) ?? "prime_shard";
   const cellSize = Number.isFinite(Number(body.cellSize)) ? Number(body.cellSize) : 64;
@@ -2003,7 +2010,7 @@ async function computeTownBaselinePlan(body: TownBaselinePlanRequest): Promise<{
   const existingRes = spawnIds.length
     ? await db.query(
         `
-        SELECT id, shard_id, spawn_id, type, archetype, proto_id, variant_id, x, y, z, region_id, town_tier
+        SELECT id, shard_id, spawn_id, type, archetype, proto_id, variant_id, x, y, z, region_id, town_tier, owner_kind, owner_id, is_locked
         FROM spawn_points
         WHERE shard_id = $1 AND spawn_id = ANY($2::text[])
         `,
@@ -2019,6 +2026,7 @@ async function computeTownBaselinePlan(body: TownBaselinePlanRequest): Promise<{
   let wouldInsert = 0;
   let wouldUpdate = 0;
   let wouldSkip = 0;
+  let wouldProtected = 0;
 
   const planItems: TownBaselinePlanItem[] = plannedSpawns.map((sp) => {
     const ex = existingBySpawnId.get(sp.spawnId);
@@ -2027,12 +2035,20 @@ async function computeTownBaselinePlan(body: TownBaselinePlanRequest): Promise<{
       return { spawn: sp, op: "insert" };
     }
 
+    // Carry ownership metadata forward for preview/UI logic.
+    sp.ownerKind = (ex.owner_kind ?? null) as any;
+    sp.ownerId = (ex.owner_id ?? null) as any;
+    sp.isLocked = (ex.is_locked ?? null) as any;
+
     if (sameSpawnRow(ex, sp)) {
       wouldSkip += 1;
       return { spawn: sp, op: "skip", existingId: Number(ex.id) || null };
     }
 
     wouldUpdate += 1;
+    if (sp.ownerKind === "editor" || Boolean(sp.isLocked)) {
+      wouldProtected += 1;
+    }
     return { spawn: sp, op: "update", existingId: Number(ex.id) || null };
   });
 
@@ -2049,6 +2065,7 @@ async function computeTownBaselinePlan(body: TownBaselinePlanRequest): Promise<{
     wouldInsert,
     wouldUpdate,
     wouldSkip,
+    skippedProtected: wouldProtected,
   };
 }
 
@@ -2076,6 +2093,7 @@ router.post("/town_baseline/plan", async (req, res) => {
       wouldInsert: plan.wouldInsert,
       wouldUpdate: plan.wouldUpdate,
       wouldSkip: plan.wouldSkip,
+      skippedProtected: (plan).skippedProtected ?? 0,
             opsPreview: buildTownBaselineOpsPreview(plan.planItems),
       plan: plan.planItems,
     };
@@ -2128,6 +2146,7 @@ router.post("/town_baseline/apply", async (req, res) => {
         wouldInsert: plan.wouldInsert,
         wouldUpdate: plan.wouldUpdate,
         wouldSkip: plan.wouldSkip,
+        skippedProtected: (plan).skippedProtected ?? 0,
               opsPreview: buildTownBaselineOpsPreview(plan.planItems),
       plan: plan.planItems,
       };
@@ -2138,6 +2157,7 @@ router.post("/town_baseline/apply", async (req, res) => {
     let updated = 0;
     let skipped = 0;
     let skippedReadOnly = 0;
+    let skippedProtected = 0;
 
     await db.query("BEGIN");
     try {
@@ -2154,7 +2174,7 @@ router.post("/town_baseline/apply", async (req, res) => {
         // Lock existing row by spawnId.
         const lockRes = await db.query(
           `
-          SELECT id, shard_id, spawn_id, type, archetype, proto_id, variant_id, x, y, z, region_id, town_tier
+          SELECT id, shard_id, spawn_id, type, archetype, proto_id, variant_id, x, y, z, region_id, town_tier, owner_kind, owner_id, is_locked
           FROM spawn_points
           WHERE shard_id = $1 AND spawn_id = $2
           LIMIT 1
@@ -2168,9 +2188,9 @@ router.post("/town_baseline/apply", async (req, res) => {
           await db.query(
             `
             INSERT INTO spawn_points
-              (shard_id, spawn_id, type, archetype, proto_id, variant_id, x, y, z, region_id, town_tier)
+              (shard_id, spawn_id, type, archetype, proto_id, variant_id, x, y, z, region_id, town_tier, owner_kind, source_kind, source_id)
             VALUES
-              ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+              ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
             `,
             [
               plan.shardId,
@@ -2184,9 +2204,17 @@ router.post("/town_baseline/apply", async (req, res) => {
               numOrNull(sp.z),
               strOrNull(sp.regionId),
               numOrNull(sp.townTier),
+              "baseline",
+              "town_baseline",
+              "planner",
             ],
           );
           inserted += 1;
+          continue;
+        }
+
+        if (String(ex.owner_kind ?? "") === "editor" || Boolean(ex.is_locked)) {
+          skippedProtected += 1;
           continue;
         }
 
@@ -2251,6 +2279,7 @@ router.post("/town_baseline/apply", async (req, res) => {
       wouldUpdate: updated,
       wouldSkip: skipped,
       skippedReadOnly,
+      skippedProtected,
             opsPreview: buildTownBaselineOpsPreview(plan.planItems),
       plan: plan.planItems,
     };
@@ -2311,6 +2340,8 @@ type MotherBrainOpsPreview = {
   skipSpawnIds?: string[];
   duplicatePlannedSpawnIds?: string[];
   droppedPlannedSpawnIds?: string[];
+  protectedDeleteSpawnIds?: string[];
+  protectedUpdateSpawnIds?: string[];
 };
 
 type TownBaselineOpsPreview = {
@@ -2320,6 +2351,7 @@ type TownBaselineOpsPreview = {
   updateSpawnIds?: string[];
   skipSpawnIds?: string[];
   readOnlySpawnIds?: string[];
+  protectedUpdateSpawnIds?: string[];
 };
 
 
@@ -3474,6 +3506,22 @@ const opsPreview: MotherBrainOpsPreview = {
   duplicatePlannedSpawnIds: duplicatePlannedSpawnIds.length ? trunc(duplicatePlannedSpawnIds) : undefined,
   droppedPlannedSpawnIds: droppedPlannedSpawnIds.length ? trunc(droppedPlannedSpawnIds) : undefined,
 };
+
+    // Compute protected IDs (editor-owned or locked) for preview visibility.
+    const protectIds = Array.from(new Set([...(opsPreview.deleteSpawnIds ?? []), ...(opsPreview.updateSpawnIds ?? [])]));
+    if (protectIds.length) {
+      const pr = await client.query(
+        `SELECT spawn_id FROM spawn_points WHERE shard_id = $1 AND spawn_id = ANY($2::text[]) AND (is_locked = TRUE OR owner_kind = 'editor')`,
+        [shardId, protectIds],
+      );
+      const pset = new Set((pr.rows ?? []).map((r) => String(r.spawn_id)));
+      const pDel = (opsPreview.deleteSpawnIds ?? []).filter((id) => pset.has(String(id)));
+      const pUpd = (opsPreview.updateSpawnIds ?? []).filter((id) => pset.has(String(id)));
+      if (pDel.length) opsPreview.protectedDeleteSpawnIds = trunc(pDel);
+      if (pUpd.length) opsPreview.protectedUpdateSpawnIds = trunc(pUpd);
+      if (pDel.length > PREVIEW_LIMIT || pUpd.length > PREVIEW_LIMIT) opsPreview.truncated = true;
+    }
+
     const wouldDelete = append ? 0 : existingBrainIds.length;
     const out: MotherBrainWaveResponse = commit
       ? {
@@ -3626,6 +3674,26 @@ const opsPreview: MotherBrainOpsPreview = {
   truncated: deleteSpawnIds.length > PREVIEW_LIMIT,
   deleteSpawnIds: deleteSpawnIds.length ? deleteSpawnIds.slice(0, PREVIEW_LIMIT) : undefined,
 };
+
+    // Compute protected IDs (editor-owned or locked) for preview visibility.
+    const protectIds = Array.from(new Set([...(opsPreview.deleteSpawnIds ?? []), ...(opsPreview.updateSpawnIds ?? [])]));
+    if (protectIds.length) {
+      const pr = await db.query(
+        `SELECT spawn_id FROM spawn_points WHERE shard_id = $1 AND spawn_id = ANY($2::text[]) AND (is_locked = TRUE OR owner_kind = 'editor')`,
+        [shardId, protectIds],
+      );
+      const pset = new Set((pr.rows ?? []).map((r: any) => String(r.spawn_id)));
+      const pDel = (opsPreview.deleteSpawnIds ?? []).filter((id: any) => pset.has(String(id)));
+      const pUpd = (opsPreview.updateSpawnIds ?? []).filter((id: any) => pset.has(String(id)));
+      // Keep this inline (vs a helper) so this block can't ever end up
+      // below a const helper definition during future refactors.
+      if (pDel.length)
+        opsPreview.protectedDeleteSpawnIds = (pDel as any).slice(0, PREVIEW_LIMIT);
+      if (pUpd.length)
+        opsPreview.protectedUpdateSpawnIds = (pUpd as any).slice(0, PREVIEW_LIMIT);
+      if (pDel.length > PREVIEW_LIMIT || pUpd.length > PREVIEW_LIMIT) opsPreview.truncated = true;
+    }
+
 
 const expectedConfirmToken =
   commit && wouldDelete > 0

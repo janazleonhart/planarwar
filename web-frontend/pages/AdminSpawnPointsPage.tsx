@@ -3846,6 +3846,8 @@ type AnyOpsPreview =
       duplicates?: OpsPreviewBucket;
       droppedBudget?: OpsPreviewBucket;
       readOnly?: OpsPreviewBucket;
+      protectedDeletes?: OpsPreviewBucket;
+      protectedUpdates?: OpsPreviewBucket;
     }
   | {
       // list-style (server payload)
@@ -3858,6 +3860,8 @@ type AnyOpsPreview =
       duplicatePlannedSpawnIds?: string[];
       droppedPlannedSpawnIds?: string[];
       readOnlySpawnIds?: string[];
+      protectedDeleteSpawnIds?: string[];
+      protectedUpdateSpawnIds?: string[];
     };
 
 
@@ -3896,6 +3900,8 @@ function normalizeOpsPreview(preview: AnyOpsPreview): Exclude<AnyOpsPreview, { l
     duplicates: toBucket(anyPreview?.duplicatePlannedSpawnIds),
     droppedBudget: toBucket(anyPreview?.droppedPlannedSpawnIds),
     readOnly: toBucket(anyPreview?.readOnlySpawnIds),
+    protectedDeletes: toBucket(anyPreview?.protectedDeleteSpawnIds),
+    protectedUpdates: toBucket(anyPreview?.protectedUpdateSpawnIds),
   };
 }
 
@@ -3909,6 +3915,8 @@ function OpsPreviewPanel(props: { title: string; preview: AnyOpsPreview; downloa
     ["update", norm.updates],
     ["skip", norm.skips],
     ["readOnly", norm.readOnly],
+    ["protectedDelete", norm.protectedDeletes],
+    ["protectedUpdate", norm.protectedUpdates],
     ["duplicates", norm.duplicates],
     ["droppedBudget", norm.droppedBudget],
   ];
