@@ -1840,6 +1840,87 @@ const runLoadSavedSnapshot = async (id: string) => {
   }
 };
 
+const runRestoreFromSavedSnapshot = async (id: string, commit: boolean) => {
+  setRestoreWorking(true);
+  setError(null);
+  setRestoreResult(null);
+
+  // reset gates; they'll be re-set if the server asks for them
+  setRestoreConfirmExpected(null);
+  setRestoreConfirmRequired(false);
+  setRestoreConfirmPhraseExpected(null);
+  setRestoreConfirmPhraseRequired(false);
+
+  try {
+    if (!id) throw new Error("Pick a saved snapshot first.");
+
+    const targetShard = effectiveRestoreTargetShard;
+
+    // Load the snapshot doc from the server, then restore directly without relying on textarea state timing.
+    const getRes = await authedFetch(`/api/admin/spawn_points/snapshots/${encodeURIComponent(id)}`, { method: "GET" });
+    const getData: SpawnSnapshotsGetResponse = await getRes.json().catch(() => ({} as any));
+    if (!getRes.ok || !getData.ok) throw new Error(getData.error || `Load snapshot failed (HTTP ${getRes.status})`);
+
+    const snap = (getData.doc as any)?.snapshot;
+    if (!snap) throw new Error("Saved snapshot is missing payload.");
+    if (!Array.isArray((snap as any).spawns)) throw new Error("Invalid snapshot: missing 'spawns' array.");
+
+    // Keep the restore box in sync for visibility (but do not depend on it).
+    setRestoreJsonText(JSON.stringify(snap, null, 2));
+
+    const res = await authedFetch(`/api/admin/spawn_points/restore`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        snapshot: snap,
+        targetShard,
+        updateExisting: !!restoreUpdateExisting,
+        allowBrainOwned: !!restoreAllowBrainOwned,
+        allowProtected: !!restoreAllowProtected,
+        commit: !!commit,
+        confirm: restoreConfirm.trim() || undefined,
+        confirmPhrase: (restoreConfirmPhrase.trim() || undefined),
+      }),
+    });
+
+    const data: SpawnRestoreResponse = await res.json().catch(() => ({} as any));
+
+    // confirm gates: phrase first (more dangerous), then token
+    if ((data as any).error === "confirm_phrase_required") {
+      setRestoreResult(data);
+      setRestoreConfirmPhraseExpected((data as any).expectedConfirmPhrase ?? "RESTORE");
+      setRestoreConfirmPhraseRequired(true);
+      // keep token info too if the server included it
+      if ((data as any).expectedConfirmToken) {
+        setRestoreConfirmExpected((data as any).expectedConfirmToken ?? null);
+        setRestoreConfirmRequired(true);
+      }
+      return;
+    }
+
+    if ((data as any).error === "confirm_required") {
+      setRestoreResult(data);
+      setRestoreConfirmExpected((data as any).expectedConfirmToken ?? null);
+      setRestoreConfirmRequired(true);
+      // server may also include phrase expectation in some cases
+      if ((data as any).expectedConfirmPhrase) {
+        setRestoreConfirmPhraseExpected((data as any).expectedConfirmPhrase ?? "RESTORE");
+        setRestoreConfirmPhraseRequired(true);
+      }
+      return;
+    }
+
+    if (!res.ok || !data.ok) throw new Error(data.error || `Restore failed (HTTP ${res.status})`);
+
+    setRestoreResult(data);
+  } catch (err: any) {
+    setError(String(err?.message || err));
+  } finally {
+    setRestoreWorking(false);
+  }
+};
+
+
 const runDeleteSavedSnapshot = async (id: string) => {
   setSnapshotDeleteWorking(id);
   try {
@@ -3575,6 +3656,39 @@ Ctrl/⌘-click: filter only`}
       title="Loads the selected saved snapshot into the restore box below"
     >
       {snapshotLoadWorking ? "Loading..." : "Load into restore"}
+    </button>
+
+
+    <button
+      onClick={() => runRestoreFromSavedSnapshot(selectedSavedSnapshotId, false)}
+      disabled={!selectedSavedSnapshotId || restoreWorking}
+      style={{
+        padding: "8px 12px",
+        borderRadius: 8,
+        border: "1px solid #ccc",
+        background: restoreWorking ? "#f6f6f6" : "white",
+        cursor: !selectedSavedSnapshotId || restoreWorking ? "not-allowed" : "pointer",
+        fontWeight: 700,
+      }}
+      title="Loads the selected saved snapshot and runs a restore preview (no commit)."
+    >
+      {restoreWorking ? "Working..." : "Preview restore (saved)"}
+    </button>
+
+    <button
+      onClick={() => runRestoreFromSavedSnapshot(selectedSavedSnapshotId, true)}
+      disabled={!selectedSavedSnapshotId || restoreWorking}
+      style={{
+        padding: "8px 12px",
+        borderRadius: 8,
+        border: "1px solid #ccc",
+        background: restoreWorking ? "#f6f6f6" : "white",
+        cursor: !selectedSavedSnapshotId || restoreWorking ? "not-allowed" : "pointer",
+        fontWeight: 700,
+      }}
+      title="Loads the selected saved snapshot and attempts a restore commit. If confirm gates trigger, fill them below and click again."
+    >
+      {restoreWorking ? "Working..." : "Commit restore (saved)"}
     </button>
 
     <button
