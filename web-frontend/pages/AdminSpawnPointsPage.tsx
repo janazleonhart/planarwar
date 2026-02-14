@@ -4645,6 +4645,7 @@ type AnyOpsPreview =
       // Explainability
       reasons?: Record<string, string>;
       reasonCounts?: Record<string, number>;
+      reasonDetails?: Record<string, { reason: string; note?: string; meta?: any }>;
     }
   | {
       // list-style (server payload)
@@ -4663,6 +4664,7 @@ type AnyOpsPreview =
       // Explainability
       reasons?: Record<string, string>;
       reasonCounts?: Record<string, number>;
+      reasonDetails?: Record<string, { reason: string; note?: string; meta?: any }>;
     };
 
 
@@ -4732,6 +4734,7 @@ function normalizeOpsPreview(preview: AnyOpsPreview): Exclude<AnyOpsPreview, { l
     // Explainability
     reasons: (anyPreview?.reasons ?? undefined) as any,
     reasonCounts: (anyPreview?.reasonCounts ?? undefined) as any,
+    reasonDetails: (anyPreview?.reasonDetails ?? undefined) as any,
   };
 }
 
@@ -4753,6 +4756,11 @@ function OpsPreviewPanel(props: { title: string; preview: AnyOpsPreview; downloa
           return acc;
         }, {})
       : null;
+
+const reasonDetails: Record<string, any> = (norm?.reasonDetails ?? {}) as any;
+
+const [selectedId, setSelectedId] = useState<string | null>(null);
+const selectedDetail = selectedId ? (reasonDetails[selectedId] ?? null) : null;
 
   const buckets: Array<[string, OpsPreviewBucket]> = [
     ["delete", norm.deletes],
@@ -4804,20 +4812,70 @@ function OpsPreviewPanel(props: { title: string; preview: AnyOpsPreview; downloa
               </div>
               {b.spawnIds.length ? (
                 <div style={{ maxHeight: 160, overflow: "auto", border: "1px solid #222", borderRadius: 6, padding: 6, background: "#0b0b0b" }}>
-                  {b.spawnIds.map((id) => (
-                    <div key={id} style={{ fontFamily: "monospace", fontSize: 12, opacity: 0.95 }}>
-                      {id}
-                      {reasons[id] ? (
-                        <span style={{ opacity: 0.7 }}>{"  ·  "}{String(reasons[id])}</span>
-                      ) : null}
-                    </div>
-                  ))}
+                  {b.spawnIds.map((id) => {
+                    const isSelected = selectedId === id;
+                    const detail = reasonDetails[id] ?? null;
+                    const label = reasons[id] ? String(reasons[id]) : (detail?.reason ? String(detail.reason) : "");
+                    return (
+                      <div
+                        key={id}
+                        onClick={() => setSelectedId(isSelected ? null : id)}
+                        title={detail?.note ? String(detail.note) : undefined}
+                        style={{
+                          fontFamily: "monospace",
+                          fontSize: 12,
+                          opacity: 0.95,
+                          cursor: detail || label ? "pointer" : "default",
+                          padding: "2px 4px",
+                          borderRadius: 6,
+                          background: isSelected ? "#141414" : "transparent",
+                          border: isSelected ? "1px solid #2a2a2a" : "1px solid transparent",
+                          marginBottom: 2,
+                        }}
+                      >
+                        {id}
+                        {label ? <span style={{ opacity: 0.7 }}>{"  ·  "}{label}</span> : null}
+                      </div>
+                    );
+                  })}
                 </div>
               ) : (
                 <div style={{ fontSize: 12, opacity: 0.6 }}>none</div>
               )}
             </div>
           ))}
+
+      {selectedId && selectedDetail ? (
+        <div style={{ marginTop: 10, border: "1px solid #222", borderRadius: 8, padding: 10, background: "#0f0f0f" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
+            <div style={{ fontWeight: 800, fontFamily: "monospace" }}>
+              explain: {selectedId}
+            </div>
+            <button
+              type="button"
+              onClick={() => setSelectedId(null)}
+              style={{ padding: "6px 10px", borderRadius: 8, border: "1px solid #555", background: "#141414", color: "#eee" }}
+            >
+              Close
+            </button>
+          </div>
+
+          <div style={{ marginTop: 8, fontSize: 12, opacity: 0.9, fontFamily: "monospace" }}>
+            reason: {String(selectedDetail?.reason ?? reasons[selectedId] ?? "")}
+          </div>
+          {selectedDetail?.note ? (
+            <div style={{ marginTop: 6, fontSize: 12, opacity: 0.75 }}>
+              {String(selectedDetail.note)}
+            </div>
+          ) : null}
+
+          {selectedDetail?.meta ? (
+            <pre style={{ marginTop: 10, maxHeight: 220, overflow: "auto", padding: 10, borderRadius: 8, background: "#0b0b0b", border: "1px solid #222" }}>
+{JSON.stringify(selectedDetail.meta, null, 2)}
+            </pre>
+          ) : null}
+        </div>
+      ) : null}
       </div>
     </div>
   );

@@ -370,8 +370,27 @@ function bumpReasonCount(map: Record<string, number>, reason: string) {
   map[reason] = (map[reason] ?? 0) + 1;
 }
 
-function makeReasonMaps(): { reasons: Record<string, string>; reasonCounts: Record<string, number> } {
-  return { reasons: {}, reasonCounts: {} };
+type ReasonDetail = {
+  reason: string;
+  note?: string;
+  meta?: any;
+};
+
+type ReasonExplain = {
+  reasons: Record<string, string>;
+  reasonCounts: Record<string, number>;
+  reasonDetails: Record<string, ReasonDetail>;
+};
+
+function addReasonExplain(explain: ReasonExplain, spawnId: string, reason: string, note?: string, meta?: any) {
+  const r = makeReasonNote(reason);
+  explain.reasons[spawnId] = r;
+  bumpReasonCount(explain.reasonCounts, r);
+  explain.reasonDetails[spawnId] = { reason: r, note: note ?? undefined, meta: meta ?? undefined };
+}
+
+function makeReasonMaps(): ReasonExplain {
+  return { reasons: {}, reasonCounts: {}, reasonDetails: {} };
 }
 
 function makeReasonNote(reason: string): string {
@@ -3984,16 +4003,24 @@ router.post("/restore", async (req, res) => {
     
     const explain = makeReasonMaps();
     for (const sid of readOnlyIds) {
-      const reason = makeReasonNote(readOnlyReason(sid));
-      explain.reasons[sid] = reason;
-      bumpReasonCount(explain.reasonCounts, reason);
+      addReasonExplain(
+        explain,
+        sid,
+        readOnlyReason(sid),
+        "spawn is not editable in this mode",
+        { spawnId: sid },
+      );
     }
     if (protectedUpdateIds.length) {
       for (const sid of protectedUpdateIds) {
         const meta = protectedMap.get(sid);
-        const reason = makeReasonNote(protectedReason(meta?.ownerKind, meta?.isLocked));
-        explain.reasons[sid] = reason;
-        bumpReasonCount(explain.reasonCounts, reason);
+        addReasonExplain(
+          explain,
+          sid,
+          protectedReason(meta?.ownerKind, meta?.isLocked),
+          "existing row is protected (locked or editor-owned)",
+          { spawnId: sid, ownerKind: meta?.ownerKind ?? null, isLocked: Boolean(meta?.isLocked) },
+        );
       }
     }
 
@@ -4009,6 +4036,7 @@ const opsPreview = buildSpawnSliceOpsPreview({
 
     (opsPreview as any).reasons = explain.reasons;
     (opsPreview as any).reasonCounts = explain.reasonCounts;
+    (opsPreview as any).reasonDetails = explain.reasonDetails;
 
     if (protectedUpdateIds.length > 0) {
       (opsPreview as any).protectedUpdateSpawnIds = protectedUpdateIds.slice(0, 75);
@@ -4633,9 +4661,13 @@ const opsPreview: MotherBrainOpsPreview = {
         if (!sid) continue;
         pset.add(sid);
 
-        const reason = makeReasonNote(makeProtectedReasonFromRow(r));
-        explain.reasons[sid] = reason;
-        bumpReasonCount(explain.reasonCounts, reason);
+        addReasonExplain(
+          explain,
+          sid,
+          makeProtectedReasonFromRow(r),
+          "row is protected by ownership/lock rules",
+          { spawnId: sid, ownerKind: (r as any).owner_kind ?? null, isLocked: Boolean((r as any).is_locked) },
+        );
       }
 
       const pDel = (opsPreview.deleteSpawnIds ?? []).filter((id) => pset.has(String(id)));
@@ -4647,6 +4679,7 @@ const opsPreview: MotherBrainOpsPreview = {
       if (Object.keys(explain.reasons).length) {
         (opsPreview as any).reasons = explain.reasons;
         (opsPreview as any).reasonCounts = explain.reasonCounts;
+    (opsPreview as any).reasonDetails = explain.reasonDetails;
       }
     }
 
