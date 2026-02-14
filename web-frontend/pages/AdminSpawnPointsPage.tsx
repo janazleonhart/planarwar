@@ -649,6 +649,8 @@ const [savedSnapshotsIncludeExpired, setSavedSnapshotsIncludeExpired] = useState
 
 const [savedSnapshots, setSavedSnapshots] = useState<StoredSpawnSnapshotMeta[]>([]);
 const [savedSnapshotsLoading, setSavedSnapshotsLoading] = useState(false);
+const [savedSnapshotsBulkSelectedIds, setSavedSnapshotsBulkSelectedIds] = useState<string[]>([]);
+const [savedSnapshotsBulkWorking, setSavedSnapshotsBulkWorking] = useState(false);
 const [snapshotSaveWorking, setSnapshotSaveWorking] = useState(false);
 const [snapshotLoadWorking, setSnapshotLoadWorking] = useState(false);
 const [snapshotDeleteWorking, setSnapshotDeleteWorking] = useState<string | null>(null);
@@ -2133,6 +2135,61 @@ const runQuickUpdateSavedSnapshotMeta = async (id: string, patch: Partial<Stored
     setError(e.message || String(e));
   } finally {
     setSnapshotEditWorking(false);
+  }
+};
+
+const toggleSavedSnapshotBulkId = (id: string) => {
+  setSavedSnapshotsBulkSelectedIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+};
+
+const setSavedSnapshotBulkSelection = (ids: string[]) => {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const id of ids) {
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    out.push(id);
+  }
+  setSavedSnapshotsBulkSelectedIds(out);
+};
+
+const runBulkUpdateSavedSnapshotsMeta = async (patch: Partial<StoredSpawnSnapshotMeta>, ids?: string[]) => {
+  const targetIds = (ids ?? savedSnapshotsBulkSelectedIds).filter(Boolean);
+  if (!targetIds.length) return;
+
+  setSavedSnapshotsBulkWorking(true);
+  try {
+    const results = await Promise.allSettled(
+      targetIds.map(async (id) => {
+        const res = await authedFetch(`/api/admin/spawn_points/snapshots/${encodeURIComponent(id)}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(patch),
+        });
+        const json = await res.json().catch(() => null);
+        if (!res.ok || !json?.ok) throw new Error(json?.error || `HTTP ${res.status}`);
+        return true;
+      })
+    );
+
+    const failed = results
+      .map((r, i) => ({ r, id: targetIds[i] }))
+      .filter((x) => x.r.status === "rejected") as Array<{ r: PromiseRejectedResult; id: string }>;
+
+    if (failed.length) {
+      throw new Error(
+        `Bulk update failed for ${failed.length}/${targetIds.length}: ${failed[0].id}: ${String(
+          (failed[0].r.reason as any)?.message || failed[0].r.reason
+        )}`
+      );
+    }
+
+    await refreshSavedSnapshots();
+  } catch (e: any) {
+    console.error(e);
+    setError(e.message || String(e));
+  } finally {
+    setSavedSnapshotsBulkWorking(false);
   }
 };
 
@@ -4097,6 +4154,183 @@ Ctrl/⌘-click: filter only`}
         </button>
       </div>
     ) : null}
+
+    {savedSnapshots.length ? (
+      <details style={{ marginTop: 10 }}>
+        <summary style={{ cursor: "pointer", userSelect: "none", fontWeight: 800 }}>Bulk select + actions</summary>
+
+        <div style={{ marginTop: 10, display: "grid", gap: 10 }}>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
+            <button
+              type="button"
+              onClick={() => setSavedSnapshotBulkSelection(savedSnapshots.map((s) => s.id))}
+              disabled={savedSnapshotsBulkWorking}
+              style={{ padding: "6px 10px", borderRadius: 8, border: "1px solid #ccc", background: "white", fontWeight: 800, fontSize: 12 }}
+              title="Select all snapshots currently shown in the dropdown list (after filters)"
+            >
+              Select all ({savedSnapshots.length})
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setSavedSnapshotBulkSelection([])}
+              disabled={savedSnapshotsBulkWorking}
+              style={{ padding: "6px 10px", borderRadius: 8, border: "1px solid #ccc", background: "white", fontWeight: 800, fontSize: 12 }}
+              title="Clear selection"
+            >
+              Clear
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setSavedSnapshotBulkSelection(savedSnapshots.filter((s: any) => Boolean(s.isPinned)).map((s) => s.id))}
+              disabled={savedSnapshotsBulkWorking}
+              style={{ padding: "6px 10px", borderRadius: 8, border: "1px solid #ccc", background: "white", fontWeight: 800, fontSize: 12 }}
+              title="Select all pinned snapshots currently shown"
+            >
+              Select pinned
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setSavedSnapshotBulkSelection(savedSnapshots.filter((s: any) => Boolean(s.isArchived)).map((s) => s.id))}
+              disabled={savedSnapshotsBulkWorking}
+              style={{ padding: "6px 10px", borderRadius: 8, border: "1px solid #ccc", background: "white", fontWeight: 800, fontSize: 12 }}
+              title="Select all archived snapshots currently shown"
+            >
+              Select archived
+            </button>
+
+            <button
+              type="button"
+              onClick={() =>
+                setSavedSnapshotBulkSelection(
+                  savedSnapshots
+                    .filter((s: any) => s.expiresAt && new Date(String(s.expiresAt)).getTime() <= Date.now())
+                    .map((s) => s.id)
+                )
+              }
+              disabled={savedSnapshotsBulkWorking}
+              style={{ padding: "6px 10px", borderRadius: 8, border: "1px solid #ccc", background: "white", fontWeight: 800, fontSize: 12 }}
+              title="Select expired snapshots currently shown"
+            >
+              Select expired
+            </button>
+
+            <span style={{ fontSize: 12, opacity: 0.75, paddingLeft: 6 }}>
+              Selected: <strong>{savedSnapshotsBulkSelectedIds.length}</strong>
+            </span>
+          </div>
+
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
+            <button
+              type="button"
+              onClick={() => runBulkUpdateSavedSnapshotsMeta({ isPinned: true } as any)}
+              disabled={!savedSnapshotsBulkSelectedIds.length || savedSnapshotsBulkWorking}
+              style={{ padding: "6px 10px", borderRadius: 8, border: "1px solid #ccc", background: "white", fontWeight: 900, fontSize: 12 }}
+              title="Pin all selected snapshots"
+            >
+              Pin
+            </button>
+
+            <button
+              type="button"
+              onClick={() => runBulkUpdateSavedSnapshotsMeta({ isPinned: false } as any)}
+              disabled={!savedSnapshotsBulkSelectedIds.length || savedSnapshotsBulkWorking}
+              style={{ padding: "6px 10px", borderRadius: 8, border: "1px solid #ccc", background: "white", fontWeight: 900, fontSize: 12 }}
+              title="Unpin all selected snapshots"
+            >
+              Unpin
+            </button>
+
+            <button
+              type="button"
+              onClick={() => runBulkUpdateSavedSnapshotsMeta({ isArchived: true } as any)}
+              disabled={!savedSnapshotsBulkSelectedIds.length || savedSnapshotsBulkWorking}
+              style={{ padding: "6px 10px", borderRadius: 8, border: "1px solid #ccc", background: "white", fontWeight: 900, fontSize: 12 }}
+              title="Archive all selected snapshots"
+            >
+              Archive
+            </button>
+
+            <button
+              type="button"
+              onClick={() => runBulkUpdateSavedSnapshotsMeta({ isArchived: false } as any)}
+              disabled={!savedSnapshotsBulkSelectedIds.length || savedSnapshotsBulkWorking}
+              style={{ padding: "6px 10px", borderRadius: 8, border: "1px solid #ccc", background: "white", fontWeight: 900, fontSize: 12 }}
+              title="Unarchive all selected snapshots"
+            >
+              Unarchive
+            </button>
+
+            <span style={{ fontSize: 12, opacity: 0.75, paddingLeft: 6 }}>Expiry:</span>
+
+            <button
+              type="button"
+              onClick={() => runBulkUpdateSavedSnapshotsMeta({ expiresAt: 7 } as any)}
+              disabled={!savedSnapshotsBulkSelectedIds.length || savedSnapshotsBulkWorking}
+              style={{ padding: "6px 10px", borderRadius: 8, border: "1px solid #ccc", background: "white", fontWeight: 900, fontSize: 12 }}
+              title="Set expiry for all selected snapshots to 7 days from now"
+            >
+              +7d
+            </button>
+
+            <button
+              type="button"
+              onClick={() => runBulkUpdateSavedSnapshotsMeta({ expiresAt: 30 } as any)}
+              disabled={!savedSnapshotsBulkSelectedIds.length || savedSnapshotsBulkWorking}
+              style={{ padding: "6px 10px", borderRadius: 8, border: "1px solid #ccc", background: "white", fontWeight: 900, fontSize: 12 }}
+              title="Set expiry for all selected snapshots to 30 days from now"
+            >
+              +30d
+            </button>
+
+            <button
+              type="button"
+              onClick={() => runBulkUpdateSavedSnapshotsMeta({ expiresAt: null } as any)}
+              disabled={!savedSnapshotsBulkSelectedIds.length || savedSnapshotsBulkWorking}
+              style={{ padding: "6px 10px", borderRadius: 8, border: "1px solid #ccc", background: "white", fontWeight: 900, fontSize: 12 }}
+              title="Clear expiry for all selected snapshots"
+            >
+              Clear
+            </button>
+
+            {savedSnapshotsBulkWorking ? <span style={{ fontSize: 12, opacity: 0.75 }}>Working…</span> : null}
+          </div>
+
+          <div style={{ border: "1px solid #ddd", borderRadius: 8, padding: 8, maxHeight: 240, overflow: "auto", background: "#fafafa" }}>
+            {savedSnapshots.map((s) => {
+              const checked = savedSnapshotsBulkSelectedIds.includes(s.id);
+              const expired = s.expiresAt ? new Date(String(s.expiresAt)).getTime() <= Date.now() : false;
+              return (
+                <label key={s.id} style={{ display: "flex", gap: 8, alignItems: "center", padding: "4px 2px", fontSize: 12 }}>
+                  <input
+                    type="checkbox"
+                    checked={checked}
+                    onChange={() => toggleSavedSnapshotBulkId(s.id)}
+                    disabled={savedSnapshotsBulkWorking}
+                  />
+                  <span style={{ whiteSpace: "nowrap", opacity: 0.85, fontFamily: "monospace" }}>{s.id.slice(0, 8)}</span>
+                  <span style={{ flex: 1 }}>
+                    {s.isPinned ? "📌 " : ""}
+                    {s.isArchived ? "🗄️ " : ""}
+                    {s.expiresAt ? (expired ? "⏳ " : "⏰ ") : ""}
+                    <strong>{s.name}</strong>
+                    {s.tags && s.tags.length ? <span style={{ opacity: 0.75 }}> — [{s.tags.join(", ")}]</span> : null}
+                  </span>
+                  <span style={{ opacity: 0.75, whiteSpace: "nowrap" }}>{s.rows} rows</span>
+                </label>
+              );
+            })}
+          </div>
+
+          <div style={{ fontSize: 12, opacity: 0.75 }}>
+            Bulk actions operate on the snapshots currently shown by your filters. The server will ignore fields you don’t send.
+          </div>
+        </div>
+      </details>
+    ) : null}
+
 
 
 
