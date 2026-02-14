@@ -27,7 +27,7 @@ import { adminItemsRouter } from "./routes/adminItems";
 import { adminSpellsRouter } from "./routes/adminSpells";
 import { adminAbilitiesRouter } from "./routes/adminAbilities";
 import { adminAbilityUnlocksRouter } from "./routes/adminAbilityUnlocks";
-import adminSpawnPointsRouter from "./routes/adminSpawnPoints";
+import adminSpawnPointsRouter, { startSpawnSnapshotsRetentionScheduler } from "./routes/adminSpawnPoints";
 import { adminVendorAuditRouter } from "./routes/adminVendorAudit";
 import { adminVendorEconomyRouter } from "./routes/adminVendorEconomy";
 import spellsRouter from "./routes/spells";
@@ -162,4 +162,6 @@ app.use("/api/admin/vendor_economy", maybeRequireAdmin("/api/admin/vendor_econom
 
 app.listen(PORT, () => {
   console.log(`Backend listening on http://localhost:${PORT}`);
+  // Optional background hygiene: spawn snapshot retention (disabled by default; see env vars).
+  startSpawnSnapshotsRetentionScheduler();
 });

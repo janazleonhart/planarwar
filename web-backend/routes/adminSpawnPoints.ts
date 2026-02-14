@@ -4192,6 +4192,177 @@ router.post("/snapshots/purge", async (req, res) => {
     });
   }
 });
+
+// ---------------------------------------------------------------------------
+// Snapshot retention scheduler (server-side hygiene; safe defaults)
+// Env vars:
+//   PW_SPAWN_SNAPSHOT_RETENTION_ENABLED=1
+//   PW_SPAWN_SNAPSHOT_RETENTION_INTERVAL_MINUTES=60
+//   PW_SPAWN_SNAPSHOT_RETENTION_DRY_RUN=1          (default 1)
+//   PW_SPAWN_SNAPSHOT_RETENTION_INCLUDE_ARCHIVED=0
+//   PW_SPAWN_SNAPSHOT_RETENTION_ARCHIVED_OLDER_THAN_DAYS=30
+//   PW_SPAWN_SNAPSHOT_RETENTION_INCLUDE_PINNED=0
+//   PW_SPAWN_SNAPSHOT_RETENTION_RUN_ON_BOOT=0
+// ---------------------------------------------------------------------------
+
+export type SpawnSnapshotsRetentionJobOptions = {
+  includeArchived: boolean;
+  includePinned: boolean;
+  olderThanDays: number;
+  dryRun: boolean;
+};
+
+export type SpawnSnapshotsRetentionJobResult = {
+  ok: boolean;
+  dryRun: boolean;
+  includeArchived: boolean;
+  includePinned: boolean;
+  olderThanDays: number;
+
+  skippedPinned: number;
+  count: number;
+  bytes: number;
+  ids: string[];
+
+  deleted?: number;
+  failed?: number;
+};
+
+export async function runSpawnSnapshotsRetentionJob(
+  opts: SpawnSnapshotsRetentionJobOptions,
+): Promise<SpawnSnapshotsRetentionJobResult> {
+  const includeArchived = Boolean(opts.includeArchived);
+  const includePinned = Boolean(opts.includePinned);
+  const olderThanDays = Math.max(0, Math.min(3650, Math.floor(Number(opts.olderThanDays) || 0)));
+  const dryRun = Boolean(opts.dryRun);
+
+  const nowMs = Date.now();
+  const metas = await listStoredSnapshots();
+  const candidates: StoredSpawnSnapshotMeta[] = [];
+  let skippedPinned = 0;
+
+  for (const m of metas) {
+    if (!includePinned && Boolean((m as any).isPinned)) {
+      skippedPinned += 1;
+      continue;
+    }
+
+    const expired = isExpired((m as any).expiresAt, nowMs);
+    if (expired) {
+      candidates.push(m);
+      continue;
+    }
+
+    if (includeArchived && Boolean((m as any).isArchived)) {
+      const savedAtMs = new Date(String((m as any).savedAt ?? "")).getTime();
+      const ageDays = Number.isFinite(savedAtMs) ? Math.floor((nowMs - savedAtMs) / (24 * 60 * 60 * 1000)) : 999999;
+      if (ageDays >= olderThanDays) candidates.push(m);
+    }
+  }
+
+  const ids = candidates.map((c) => c.id).sort((a, b) => a.localeCompare(b));
+  const totalBytes = candidates.reduce((acc, c) => acc + Number((c as any).bytes ?? 0), 0);
+
+  if (dryRun) {
+    return {
+      ok: true,
+      dryRun: true,
+      includeArchived,
+      includePinned,
+      olderThanDays,
+      skippedPinned,
+      count: ids.length,
+      bytes: totalBytes,
+      ids,
+    };
+  }
+
+  const dir = await ensureSnapshotDir();
+  let deleted = 0;
+  let failed = 0;
+
+  for (const id of ids) {
+    const file = path.join(dir, `${id}.json`);
+    try {
+      await fs.unlink(file);
+      deleted += 1;
+    } catch {
+      failed += 1;
+    }
+  }
+
+  return {
+    ok: true,
+    dryRun: false,
+    includeArchived,
+    includePinned,
+    olderThanDays,
+    skippedPinned,
+    count: ids.length,
+    bytes: totalBytes,
+    ids,
+    deleted,
+    failed,
+  };
+}
+
+let _spawnSnapshotsRetentionTimer: NodeJS.Timeout | null = null;
+
+export function startSpawnSnapshotsRetentionScheduler(): void {
+  const enabled = String(process.env.PW_SPAWN_SNAPSHOT_RETENTION_ENABLED ?? "").trim();
+  if (!(enabled === "1" || enabled.toLowerCase() === "true" || enabled.toLowerCase() === "yes")) return;
+
+  const intervalMinRaw = Number(process.env.PW_SPAWN_SNAPSHOT_RETENTION_INTERVAL_MINUTES ?? 60);
+  const intervalMin = Number.isFinite(intervalMinRaw) ? Math.max(1, Math.min(7 * 24 * 60, Math.floor(intervalMinRaw))) : 60;
+
+  const dryRunEnv = String(process.env.PW_SPAWN_SNAPSHOT_RETENTION_DRY_RUN ?? "1").trim().toLowerCase();
+  const dryRun = !(dryRunEnv === "0" || dryRunEnv === "false" || dryRunEnv === "no");
+
+  const includeArchivedEnv = String(process.env.PW_SPAWN_SNAPSHOT_RETENTION_INCLUDE_ARCHIVED ?? "").trim().toLowerCase();
+  const includeArchived = includeArchivedEnv === "1" || includeArchivedEnv === "true" || includeArchivedEnv === "yes";
+
+  const includePinnedEnv = String(process.env.PW_SPAWN_SNAPSHOT_RETENTION_INCLUDE_PINNED ?? "").trim().toLowerCase();
+  const includePinned = includePinnedEnv === "1" || includePinnedEnv === "true" || includePinnedEnv === "yes";
+
+  const olderThanDaysRaw = Number(process.env.PW_SPAWN_SNAPSHOT_RETENTION_ARCHIVED_OLDER_THAN_DAYS ?? 30);
+  const olderThanDays = Number.isFinite(olderThanDaysRaw) ? Math.max(0, Math.min(3650, Math.floor(olderThanDaysRaw))) : 30;
+
+  const runOnBootEnv = String(process.env.PW_SPAWN_SNAPSHOT_RETENTION_RUN_ON_BOOT ?? "").trim().toLowerCase();
+  const runOnBoot = runOnBootEnv === "1" || runOnBootEnv === "true" || runOnBootEnv === "yes";
+
+  const opts: SpawnSnapshotsRetentionJobOptions = {
+    includeArchived,
+    includePinned,
+    olderThanDays,
+    dryRun,
+  };
+
+  const logPrefix = "[web-backend][snapshots][retention]";
+
+  const tick = async () => {
+    try {
+      const r = await runSpawnSnapshotsRetentionJob(opts);
+      const mode = r.dryRun ? "DRY_RUN" : "DELETE";
+      console.log(
+        `${logPrefix} ${mode} candidates=${r.count} bytes=${r.bytes} skippedPinned=${r.skippedPinned} includeArchived=${r.includeArchived ? "1" : "0"} includePinned=${r.includePinned ? "1" : "0"} olderThanDays=${r.olderThanDays}`,
+      );
+      if (!r.dryRun && (r.deleted || r.failed)) {
+        console.log(`${logPrefix} deleted=${r.deleted ?? 0} failed=${r.failed ?? 0}`);
+      }
+    } catch (e: any) {
+      console.error(`${logPrefix} error`, e?.message || e);
+    }
+  };
+
+  if (runOnBoot) void tick();
+
+  if (_spawnSnapshotsRetentionTimer) clearInterval(_spawnSnapshotsRetentionTimer);
+  _spawnSnapshotsRetentionTimer = setInterval(() => void tick(), intervalMin * 60 * 1000);
+
+  console.log(`${logPrefix} enabled intervalMin=${intervalMin} dryRun=${dryRun ? "1" : "0"}`);
+}
+
+
 // POST /api/admin/spawn_points/restore
 // Body:
 //   snapshot (object|string), targetShard?, updateExisting?, allowBrainOwned?, commit?, confirm?
