@@ -2225,6 +2225,110 @@ const runCommitSnapshotPurge = async () => {
 
 
 
+// ---------------------------------------------------------------------------
+// Retention controls (Run now + env export helper)
+// Uses the existing purge endpoint with options derived from the scheduler config.
+// ---------------------------------------------------------------------------
+
+const buildRetentionEnvExports = (s: SpawnSnapshotsRetentionStatusResponse) => {
+  const lines: string[] = [];
+  lines.push(`export PW_SPAWN_SNAPSHOT_RETENTION_ENABLED=${s.enabled ? "1" : "0"}`);
+  lines.push(`export PW_SPAWN_SNAPSHOT_RETENTION_INTERVAL_MINUTES=${Number(s.intervalMinutes || 60)}`);
+  lines.push(`export PW_SPAWN_SNAPSHOT_RETENTION_DRY_RUN=${s.dryRun ? "1" : "0"}`);
+  lines.push(`export PW_SPAWN_SNAPSHOT_RETENTION_INCLUDE_ARCHIVED=${s.includeArchived ? "1" : "0"}`);
+  lines.push(`export PW_SPAWN_SNAPSHOT_RETENTION_ARCHIVED_OLDER_THAN_DAYS=${Number(s.olderThanDays || 0)}`);
+  lines.push(`export PW_SPAWN_SNAPSHOT_RETENTION_INCLUDE_PINNED=${s.includePinned ? "1" : "0"}`);
+  lines.push(`export PW_SPAWN_SNAPSHOT_RETENTION_RUN_ON_BOOT=${s.runOnBoot ? "1" : "0"}`);
+  return lines.join("\n");
+};
+
+const runRetentionNowPreview = async () => {
+  setSnapshotPurgeWorking(true);
+  setError(null);
+  try {
+    const s = snapshotsRetentionStatus;
+    if (!s || !s.ok) throw new Error("Retention status unavailable. Refresh status first.");
+
+    // Mirror the scheduler config into the purge UI controls so the operator can see what will happen.
+    setSnapshotPurgeIncludeArchived(Boolean(s.includeArchived));
+    setSnapshotPurgeIncludePinned(Boolean(s.includePinned));
+    setSnapshotPurgeOlderThanDays(String(Number(s.olderThanDays || 0)));
+
+    const olderThanDays = Number.isFinite(Number(s.olderThanDays))
+      ? Math.max(0, Math.min(3650, Math.floor(Number(s.olderThanDays))))
+      : 30;
+
+    const res = await authedFetch(`/api/admin/spawn_points/snapshots/purge`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        commit: false,
+        includeArchived: Boolean(s.includeArchived),
+        includePinned: Boolean(s.includePinned),
+        olderThanDays,
+      }),
+    });
+
+    const data: SpawnSnapshotsPurgeResponse = await res.json().catch(() => ({} as any));
+    if (!res.ok || !data.ok) throw new Error(data.error || `Retention run preview failed (HTTP ${res.status})`);
+
+    setSnapshotPurgePreview(data);
+    setSnapshotPurgeConfirm("");
+  } catch (e: any) {
+    console.error(e);
+    setError(e.message || String(e));
+  } finally {
+    setSnapshotPurgeWorking(false);
+  }
+};
+
+const runRetentionNowCommit = async () => {
+  setSnapshotPurgeWorking(true);
+  setError(null);
+  try {
+    const s = snapshotsRetentionStatus;
+    if (!s || !s.ok) throw new Error("Retention status unavailable. Refresh status first.");
+    if (s.dryRun) throw new Error("Retention scheduler is configured for DRY RUN. Disable dry-run to allow deletion.");
+
+    const olderThanDays = Number.isFinite(Number(s.olderThanDays))
+      ? Math.max(0, Math.min(3650, Math.floor(Number(s.olderThanDays))))
+      : 30;
+
+    const res = await authedFetch(`/api/admin/spawn_points/snapshots/purge`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        commit: true,
+        includeArchived: Boolean(s.includeArchived),
+        includePinned: Boolean(s.includePinned),
+        olderThanDays,
+        confirm: snapshotPurgeConfirm.trim() || undefined,
+      }),
+    });
+
+    const data: SpawnSnapshotsPurgeResponse = await res.json().catch(() => ({} as any));
+
+    if (!res.ok && (data as any)?.requiresConfirm) {
+      setSnapshotPurgePreview(data);
+      setSnapshotPurgeConfirm("");
+      throw new Error("Confirm token required. Use the token shown below, then click Run retention now (commit) again.");
+    }
+
+    if (!res.ok || !data.ok) throw new Error(data.error || `Retention run commit failed (HTTP ${res.status})`);
+
+    setSnapshotPurgePreview(data);
+    setSnapshotPurgeConfirm("");
+    await refreshSavedSnapshots();
+    await refreshSnapshotsRetentionStatus();
+  } catch (e: any) {
+    console.error(e);
+    setError(e.message || String(e));
+  } finally {
+    setSnapshotPurgeWorking(false);
+  }
+};
+
+
 const runPreviewBulkDeleteSavedSnapshots = async () => {
   if (!savedSnapshotsBulkSelectedIds.length) return;
   setSnapshotBulkDeleteWorking(true);
@@ -4082,6 +4186,86 @@ Ctrl/⌘-click: filter only`}
       </div>
     ) : null}
   </div>
+
+
+{snapshotsRetentionStatus && snapshotsRetentionStatus.ok ? (
+  <div style={{ marginBottom: 10, display: "grid", gap: 8 }}>
+    <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
+      <button
+        onClick={async () => {
+          try {
+            const block = buildRetentionEnvExports(snapshotsRetentionStatus);
+            await navigator.clipboard.writeText(block);
+          } catch (e: any) {
+            setError(e?.message || String(e));
+          }
+        }}
+        style={{
+          padding: "6px 10px",
+          borderRadius: 8,
+          border: "1px solid #ccc",
+          background: "white",
+          cursor: "pointer",
+          fontWeight: 700,
+          fontSize: 12,
+        }}
+        title="Copies a shell export block matching the server's current retention scheduler configuration."
+      >
+        Copy env exports
+      </button>
+
+      <button
+        onClick={runRetentionNowPreview}
+        disabled={snapshotPurgeWorking}
+        style={{
+          padding: "6px 10px",
+          borderRadius: 8,
+          border: "1px solid #ccc",
+          background: "white",
+          cursor: snapshotPurgeWorking ? "not-allowed" : "pointer",
+          fontWeight: 700,
+          fontSize: 12,
+        }}
+        title="Runs retention once (preview) using the scheduler config."
+      >
+        {snapshotPurgeWorking ? "Working..." : "Run retention now (preview)"}
+      </button>
+
+      <button
+        onClick={runRetentionNowCommit}
+        disabled={snapshotPurgeWorking || Boolean(snapshotsRetentionStatus.dryRun)}
+        style={{
+          padding: "6px 10px",
+          borderRadius: 8,
+          border: "1px solid #ccc",
+          background: snapshotsRetentionStatus.dryRun ? "#f6f6f6" : "white",
+          cursor: snapshotPurgeWorking || snapshotsRetentionStatus.dryRun ? "not-allowed" : "pointer",
+          fontWeight: 700,
+          fontSize: 12,
+        }}
+        title={snapshotsRetentionStatus.dryRun ? "Disabled while DRY RUN is enabled." : "Runs retention once (commit) using the scheduler config + confirm token."}
+      >
+        {snapshotPurgeWorking ? "Working..." : "Run retention now (commit)"}
+      </button>
+
+      {snapshotsRetentionStatus.dryRun ? (
+        <span style={{ fontSize: 12, opacity: 0.75 }}>
+          (commit disabled: scheduler is in DRY RUN)
+        </span>
+      ) : null}
+    </div>
+
+    <details>
+      <summary style={{ cursor: "pointer", userSelect: "none", fontSize: 12, opacity: 0.9 }}>
+        Show env export block
+      </summary>
+      <pre style={{ marginTop: 8, background: "#111", color: "#eee", border: "1px solid #333", padding: 8, borderRadius: 6, overflow: "auto" }}>
+        {buildRetentionEnvExports(snapshotsRetentionStatus)}
+      </pre>
+    </details>
+  </div>
+) : null}
+
 
   <div style={{ display: "flex", flexWrap: "wrap", gap: 10, alignItems: "flex-end" }}>
     <label style={{ display: "grid", gap: 4, minWidth: 260 }}>
