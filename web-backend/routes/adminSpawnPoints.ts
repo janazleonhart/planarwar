@@ -1175,6 +1175,14 @@ type BulkOwnershipOpsPreview = {
   readOnlySpawnIds: string[];
   readOnlyCount: number;
   noOpCount: number;
+  sampleRows?: Array<{
+    spawnId: string;
+    ownerKind: string | null;
+    ownerId: string | null;
+    isLocked: boolean;
+    wouldChange: boolean;
+    reason: "change" | "readOnly" | "noOp";
+  }>;
 };
 
 type BulkOwnershipQueryResponseOk = {
@@ -1379,6 +1387,49 @@ router.post("/bulk_ownership_query", async (req, res) => {
       targetSpawnIds.push(spawnId);
     }
 
+    // Provide a small sample so the UI can show "what exactly will happen" without dumping huge JSON.
+    const SAMPLE_LIMIT = 25;
+    const sampleRows = (found as any[]).slice(0, SAMPLE_LIMIT).map((r: any) => {
+      const spawnId = String(r.spawn_id ?? "");
+      const ownerKind = (strOrNull(r.owner_kind) ?? null) as string | null;
+      const rowOwnerId = (strOrNull(r.owner_id) ?? null) as string | null;
+      const locked = Boolean(r.is_locked);
+
+      const editable = action === "adopt" ? true : isRowEditable(spawnId, ownerKind ?? "");
+      if (!editable) {
+        return {
+          spawnId,
+          ownerKind,
+          ownerId: rowOwnerId,
+          isLocked: locked,
+          wouldChange: false,
+          reason: "readOnly" as const,
+        };
+      }
+
+      // Mirror the same no-op checks used above.
+      let isNoOp = false;
+      if (action === "adopt") {
+        isNoOp = String(ownerKind ?? "").trim().toLowerCase() === "editor" && rowOwnerId === ownerId;
+      } else if (action === "release") {
+        const isEditor = String(ownerKind ?? "").trim().toLowerCase() === "editor";
+        isNoOp = !isEditor && !rowOwnerId;
+      } else if (action === "lock") {
+        isNoOp = locked;
+      } else if (action === "unlock") {
+        isNoOp = !locked;
+      }
+
+      return {
+        spawnId,
+        ownerKind,
+        ownerId: rowOwnerId,
+        isLocked: locked,
+        wouldChange: !isNoOp,
+        reason: isNoOp ? ("noOp" as const) : ("change" as const),
+      };
+    });
+
     const PREVIEW_LIMIT = 75;
     const opsPreview: BulkOwnershipOpsPreview = {
       limit: PREVIEW_LIMIT,
@@ -1388,6 +1439,7 @@ router.post("/bulk_ownership_query", async (req, res) => {
       readOnlySpawnIds: readOnlySpawnIds.slice(0, PREVIEW_LIMIT),
       readOnlyCount: readOnlySpawnIds.length,
       noOpCount,
+      sampleRows,
     };
 
     const commit = Boolean(body.commit);

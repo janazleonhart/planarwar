@@ -2826,6 +2826,47 @@ Ctrl/⌘-click: filter only`}
         {JSON.stringify(bulkOwnResult, null, 2)}
       </pre>
     )}
+
+    {Array.isArray((bulkOwnResult as any)?.opsPreview?.sampleRows) ? (
+      <div style={{ marginTop: 10, border: "1px solid #333", borderRadius: 8, padding: 10 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
+          <strong>Sample rows</strong>
+          <span style={{ fontSize: 12, opacity: 0.8 }}>
+            First {(bulkOwnResult as any)?.opsPreview?.sampleRows?.length ?? 0} matches (for sanity-checking)
+          </span>
+        </div>
+
+        <div style={{ marginTop: 8, overflow: "auto" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+            <thead>
+              <tr style={{ textAlign: "left", borderBottom: "1px solid #333" }}>
+                <th style={{ padding: "6px 8px" }}>spawnId</th>
+                <th style={{ padding: "6px 8px" }}>owner</th>
+                <th style={{ padding: "6px 8px" }}>locked</th>
+                <th style={{ padding: "6px 8px" }}>wouldChange</th>
+                <th style={{ padding: "6px 8px" }}>reason</th>
+              </tr>
+            </thead>
+            <tbody>
+              {((bulkOwnResult as any).opsPreview.sampleRows as any[]).map((r, idx) => (
+                <tr key={idx} style={{ borderBottom: "1px solid #222" }}>
+                  <td style={{ padding: "6px 8px", whiteSpace: "nowrap" }}>
+                    <code>{String(r.spawnId ?? "")}</code>
+                  </td>
+                  <td style={{ padding: "6px 8px", whiteSpace: "nowrap" }}>
+                    {String(r.ownerKind ?? "(none)")}
+                    {r.ownerId ? <span style={{ opacity: 0.75 }}>:{String(r.ownerId)}</span> : null}
+                  </td>
+                  <td style={{ padding: "6px 8px" }}>{r.isLocked ? "yes" : "no"}</td>
+                  <td style={{ padding: "6px 8px" }}>{r.wouldChange ? "yes" : "no"}</td>
+                  <td style={{ padding: "6px 8px" }}>{String(r.reason ?? "")}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    ) : null}
   </div>
 )}
 </div>
