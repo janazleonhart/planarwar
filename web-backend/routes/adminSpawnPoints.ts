@@ -205,6 +205,10 @@ type SpawnSliceOpsPreview = {
   readOnlySpawnIds: string[];
   readOnlyCount: number;
 
+  // Explainability
+  reasons?: Record<string, string>;
+  reasonCounts?: Record<string, number>;
+
   // P5: mismatch signal (rows currently in target slice but not present in snapshot)
   extraTargetSpawnIds?: string[];
   extraTargetCount?: number;
@@ -350,6 +354,33 @@ function isExpired(expiresAt: unknown, nowMs = Date.now()): boolean {
   const t = Date.parse(String(expiresAt));
   if (!Number.isFinite(t)) return false;
   return t <= nowMs;
+}
+
+function readOnlyReason(spawnId: string): string {
+  return String(spawnId ?? "").toLowerCase().startsWith("brain:") ? "brain_authority" : "read_only";
+}
+
+function protectedReason(ownerKind: unknown, locked: unknown): string {
+  if (Boolean(locked)) return "locked";
+  if (String(ownerKind ?? "").trim().toLowerCase() === "editor") return "editor_owned";
+  return "protected";
+}
+
+function bumpReasonCount(map: Record<string, number>, reason: string) {
+  map[reason] = (map[reason] ?? 0) + 1;
+}
+
+function makeReasonMaps(): { reasons: Record<string, string>; reasonCounts: Record<string, number> } {
+  return { reasons: {}, reasonCounts: {} };
+}
+
+function makeReasonNote(reason: string): string {
+  // Keep these stable; UI uses them as labels.
+  return reason;
+}
+
+function makeProtectedReasonFromRow(row: any): string {
+  return protectedReason(row?.owner_kind ?? row?.ownerKind, row?.is_locked ?? row?.isLocked);
 }
 
 function makeSnapshotId(name: string, shardId: string, bounds: CellBounds, types: string[]): string {
@@ -2845,6 +2876,10 @@ type MotherBrainOpsPreview = {
   droppedPlannedSpawnIds?: string[];
   protectedDeleteSpawnIds?: string[];
   protectedUpdateSpawnIds?: string[];
+
+  // Explainability
+  reasons?: Record<string, string>;
+  reasonCounts?: Record<string, number>;
 };
 
 type TownBaselineOpsPreview = {
@@ -3854,15 +3889,15 @@ router.post("/restore", async (req, res) => {
     }
 
     // Preload which existing rows are protected (locked or editor-owned)
-    let protectedSet = new Set<string>();
+    let protectedMap = new Map<string, { ownerKind: string | null; isLocked: boolean }>();
     if (updateExisting && !allowProtected) {
       const pclient = await db.connect();
       try {
         const pq = await pclient.query(
-          `SELECT spawn_id FROM spawn_points WHERE shard_id = $1 AND spawn_id = ANY($2::text[]) AND (is_locked = TRUE OR owner_kind = 'editor')`,
+          `SELECT spawn_id, owner_kind, is_locked FROM spawn_points WHERE shard_id = $1 AND spawn_id = ANY($2::text[]) AND (is_locked = TRUE OR owner_kind = 'editor')`,
           [targetShard, spawnIds],
         );
-        for (const r of pq.rows as any[]) protectedSet.add(String(r.spawn_id));
+        for (const r of pq.rows as any[]) protectedMap.set(String(r.spawn_id), { ownerKind: (r as any).owner_kind ?? null, isLocked: Boolean((r as any).is_locked) });
       } finally {
         pclient.release();
       }
@@ -3941,12 +3976,28 @@ router.post("/restore", async (req, res) => {
       if (!exists) insertIds.push(sid);
       else if (updateExisting) {
         updateIds.push(sid);
-        if (!allowProtected && protectedSet.has(sid)) protectedUpdateIds.push(sid);
+        if (!allowProtected && protectedMap.has(sid)) protectedUpdateIds.push(sid);
       }
       else skipIds.push(sid);
     }
 
-    const opsPreview = buildSpawnSliceOpsPreview({
+    
+    const explain = makeReasonMaps();
+    for (const sid of readOnlyIds) {
+      const reason = makeReasonNote(readOnlyReason(sid));
+      explain.reasons[sid] = reason;
+      bumpReasonCount(explain.reasonCounts, reason);
+    }
+    if (protectedUpdateIds.length) {
+      for (const sid of protectedUpdateIds) {
+        const meta = protectedMap.get(sid);
+        const reason = makeReasonNote(protectedReason(meta?.ownerKind, meta?.isLocked));
+        explain.reasons[sid] = reason;
+        bumpReasonCount(explain.reasonCounts, reason);
+      }
+    }
+
+const opsPreview = buildSpawnSliceOpsPreview({
       insertIds,
       updateIds,
       skipIds,
@@ -3955,6 +4006,9 @@ router.post("/restore", async (req, res) => {
       extraTargetCount,
       limit: 75,
     });
+
+    (opsPreview as any).reasons = explain.reasons;
+    (opsPreview as any).reasonCounts = explain.reasonCounts;
 
     if (protectedUpdateIds.length > 0) {
       (opsPreview as any).protectedUpdateSpawnIds = protectedUpdateIds.slice(0, 75);
@@ -4065,7 +4119,7 @@ router.post("/restore", async (req, res) => {
         }
 
         if (updateExisting) {
-          if (!allowProtected && protectedSet.has(sid)) {
+          if (!allowProtected && protectedMap.has(sid)) {
             skippedProtected++;
             continue;
           }
@@ -4568,15 +4622,32 @@ const opsPreview: MotherBrainOpsPreview = {
     const protectIds = Array.from(new Set([...(opsPreview.deleteSpawnIds ?? []), ...(opsPreview.updateSpawnIds ?? [])]));
     if (protectIds.length) {
       const pr = await client.query(
-        `SELECT spawn_id FROM spawn_points WHERE shard_id = $1 AND spawn_id = ANY($2::text[]) AND (is_locked = TRUE OR owner_kind = 'editor')`,
+        `SELECT spawn_id, owner_kind, is_locked FROM spawn_points WHERE shard_id = $1 AND spawn_id = ANY($2::text[]) AND (is_locked = TRUE OR owner_kind = 'editor')`,
         [shardId, protectIds],
       );
-      const pset = new Set((pr.rows ?? []).map((r) => String(r.spawn_id)));
+
+      const explain = makeReasonMaps();
+      const pset = new Set<string>();
+      for (const r of pr.rows ?? []) {
+        const sid = String((r as any).spawn_id ?? "");
+        if (!sid) continue;
+        pset.add(sid);
+
+        const reason = makeReasonNote(makeProtectedReasonFromRow(r));
+        explain.reasons[sid] = reason;
+        bumpReasonCount(explain.reasonCounts, reason);
+      }
+
       const pDel = (opsPreview.deleteSpawnIds ?? []).filter((id) => pset.has(String(id)));
       const pUpd = (opsPreview.updateSpawnIds ?? []).filter((id) => pset.has(String(id)));
       if (pDel.length) opsPreview.protectedDeleteSpawnIds = trunc(pDel);
       if (pUpd.length) opsPreview.protectedUpdateSpawnIds = trunc(pUpd);
       if (pDel.length > PREVIEW_LIMIT || pUpd.length > PREVIEW_LIMIT) opsPreview.truncated = true;
+
+      if (Object.keys(explain.reasons).length) {
+        (opsPreview as any).reasons = explain.reasons;
+        (opsPreview as any).reasonCounts = explain.reasonCounts;
+      }
     }
 
     const wouldDelete = append ? 0 : existingBrainIds.length;
@@ -4736,7 +4807,7 @@ const opsPreview: MotherBrainOpsPreview = {
     const protectIds = Array.from(new Set([...(opsPreview.deleteSpawnIds ?? []), ...(opsPreview.updateSpawnIds ?? [])]));
     if (protectIds.length) {
       const pr = await db.query(
-        `SELECT spawn_id FROM spawn_points WHERE shard_id = $1 AND spawn_id = ANY($2::text[]) AND (is_locked = TRUE OR owner_kind = 'editor')`,
+        `SELECT spawn_id, owner_kind, is_locked FROM spawn_points WHERE shard_id = $1 AND spawn_id = ANY($2::text[]) AND (is_locked = TRUE OR owner_kind = 'editor')`,
         [shardId, protectIds],
       );
       const pset = new Set((pr.rows ?? []).map((r: any) => String(r.spawn_id)));

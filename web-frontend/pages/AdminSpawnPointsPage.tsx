@@ -4641,6 +4641,10 @@ type AnyOpsPreview =
       readOnly?: OpsPreviewBucket;
       protectedDeletes?: OpsPreviewBucket;
       protectedUpdates?: OpsPreviewBucket;
+
+      // Explainability
+      reasons?: Record<string, string>;
+      reasonCounts?: Record<string, number>;
     }
   | {
       // list-style (server payload)
@@ -4655,6 +4659,10 @@ type AnyOpsPreview =
       readOnlySpawnIds?: string[];
       protectedDeleteSpawnIds?: string[];
       protectedUpdateSpawnIds?: string[];
+
+      // Explainability
+      reasons?: Record<string, string>;
+      reasonCounts?: Record<string, number>;
     };
 
 
@@ -4720,12 +4728,31 @@ function normalizeOpsPreview(preview: AnyOpsPreview): Exclude<AnyOpsPreview, { l
     readOnly: toBucket(anyPreview?.readOnlySpawnIds),
     protectedDeletes: toBucket(anyPreview?.protectedDeleteSpawnIds),
     protectedUpdates: toBucket(anyPreview?.protectedUpdateSpawnIds),
+
+    // Explainability
+    reasons: (anyPreview?.reasons ?? undefined) as any,
+    reasonCounts: (anyPreview?.reasonCounts ?? undefined) as any,
   };
 }
 
 function OpsPreviewPanel(props: { title: string; preview: AnyOpsPreview; downloadName: string }) {
   const { title, preview, downloadName } = props;
   const norm = normalizeOpsPreview(preview) as any;
+
+  const reasons: Record<string, string> = (norm?.reasons ?? {}) as any;
+  const reasonCountsRaw: Record<string, number> | null =
+    norm?.reasonCounts && typeof norm.reasonCounts === "object" ? (norm.reasonCounts as any) : null;
+
+  const reasonCounts: Record<string, number> | null = reasonCountsRaw
+    ? reasonCountsRaw
+    : Object.keys(reasons).length
+      ? Object.entries(reasons).reduce((acc: Record<string, number>, [, v]) => {
+          const k = String(v ?? "");
+          if (!k) return acc;
+          acc[k] = (acc[k] ?? 0) + 1;
+          return acc;
+        }, {})
+      : null;
 
   const buckets: Array<[string, OpsPreviewBucket]> = [
     ["delete", norm.deletes],
@@ -4752,6 +4779,17 @@ function OpsPreviewPanel(props: { title: string; preview: AnyOpsPreview; downloa
         </button>
       </div>
 
+      {reasonCounts && Object.keys(reasonCounts).length ? (
+        <div style={{ marginTop: 8, fontSize: 12, opacity: 0.8, fontFamily: "monospace" }}>
+          reasons:{" "}
+          {Object.entries(reasonCounts)
+            .sort(([a], [b]) => a.localeCompare(b))
+            .map(([k, v]) => `${k}:${v}`)
+            .join("  ")}
+        </div>
+      ) : null}
+
+
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 10, marginTop: 10 }}>
         {buckets
           .filter(([, b]) => b.count > 0 || b.spawnIds.length > 0)
@@ -4769,6 +4807,9 @@ function OpsPreviewPanel(props: { title: string; preview: AnyOpsPreview; downloa
                   {b.spawnIds.map((id) => (
                     <div key={id} style={{ fontFamily: "monospace", fontSize: 12, opacity: 0.95 }}>
                       {id}
+                      {reasons[id] ? (
+                        <span style={{ opacity: 0.7 }}>{"  ·  "}{String(reasons[id])}</span>
+                      ) : null}
                     </div>
                   ))}
                 </div>
