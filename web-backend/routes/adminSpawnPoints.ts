@@ -3918,12 +3918,14 @@ router.delete("/snapshots/:id", async (req, res) => {
 // Body:
 //   commit?: boolean
 //   includeArchived?: boolean        (also purge archived snapshots, gated by olderThanDays)
+//   includePinned?: boolean          (also purge pinned snapshots; default false)
 //   olderThanDays?: number          (only for archived purge; default 30)
 //   confirm?: string                (required for commit; returned by preview)
 router.post("/snapshots/purge", async (req, res) => {
   try {
     const commit = Boolean(req.body?.commit);
     const includeArchived = Boolean(req.body?.includeArchived);
+    const includePinned = Boolean(req.body?.includePinned);
     const olderThanDaysRaw = Number(req.body?.olderThanDays);
     const olderThanDays = Number.isFinite(olderThanDaysRaw) ? Math.max(0, Math.min(3650, Math.floor(olderThanDaysRaw))) : 30;
 
@@ -3933,8 +3935,14 @@ router.post("/snapshots/purge", async (req, res) => {
     const nowMs = Date.now();
     const metas = await listStoredSnapshots();
     const candidates: StoredSpawnSnapshotMeta[] = [];
+    let skippedPinned = 0;
 
     for (const m of metas) {
+      if (!includePinned && Boolean((m as any).isPinned)) {
+        skippedPinned += 1;
+        continue;
+      }
+
       const expired = isExpired((m as any).expiresAt, nowMs);
       if (expired) {
         candidates.push(m);
@@ -3952,7 +3960,7 @@ router.post("/snapshots/purge", async (req, res) => {
     const totalBytes = candidates.reduce((acc, c) => acc + Number((c as any).bytes ?? 0), 0);
 
     const token = createHash("sha1")
-      .update(`purge|${includeArchived ? "A" : "a"}|${olderThanDays}|${ids.join(",")}`)
+      .update(`purge|${includeArchived ? "A" : "a"}|${includePinned ? "P" : "p"}|${olderThanDays}|${ids.join(",")}`)
       .digest("hex")
       .slice(0, 10)
       .toUpperCase();
@@ -3963,7 +3971,9 @@ router.post("/snapshots/purge", async (req, res) => {
         ok: true,
         commit: false,
         includeArchived,
+        includePinned,
         olderThanDays,
+        skippedPinned,
         count: ids.length,
         bytes: totalBytes,
         ids,
@@ -3978,7 +3988,9 @@ router.post("/snapshots/purge", async (req, res) => {
         commit: true,
         requiresConfirm: true,
         includeArchived,
+        includePinned,
         olderThanDays,
+        skippedPinned,
         count: ids.length,
         bytes: totalBytes,
         ids: ids.slice(0, 250),
@@ -4005,7 +4017,9 @@ router.post("/snapshots/purge", async (req, res) => {
       ok: true,
       commit: true,
       includeArchived,
+      includePinned,
       olderThanDays,
+      skippedPinned,
       deleted,
       failed,
       bytes: totalBytes,

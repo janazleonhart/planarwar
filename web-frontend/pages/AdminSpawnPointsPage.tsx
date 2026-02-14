@@ -249,6 +249,9 @@ type SpawnSnapshotsPurgeResponse = {
   includeArchived?: boolean;
   olderThanDays?: number;
 
+  includePinned?: boolean;
+  skippedPinned?: number;
+
   count?: number;
   bytes?: number;
   ids?: string[];
@@ -653,6 +656,7 @@ const [snapshotDeleteConfirmExpected, setSnapshotDeleteConfirmExpected] = useSta
 const [snapshotDeleteConfirm, setSnapshotDeleteConfirm] = useState("");
 
 const [snapshotPurgeIncludeArchived, setSnapshotPurgeIncludeArchived] = useState(false);
+const [snapshotPurgeIncludePinned, setSnapshotPurgeIncludePinned] = useState(false);
 const [snapshotPurgeOlderThanDays, setSnapshotPurgeOlderThanDays] = useState("30");
 const [snapshotPurgeWorking, setSnapshotPurgeWorking] = useState(false);
 const [snapshotPurgePreview, setSnapshotPurgePreview] = useState<SpawnSnapshotsPurgeResponse | null>(null);
@@ -2051,6 +2055,7 @@ const runPreviewSnapshotPurge = async () => {
       body: JSON.stringify({
         commit: false,
         includeArchived: !!snapshotPurgeIncludeArchived,
+        includePinned: !!snapshotPurgeIncludePinned,
         olderThanDays,
       }),
     });
@@ -2080,6 +2085,7 @@ const runCommitSnapshotPurge = async () => {
       body: JSON.stringify({
         commit: true,
         includeArchived: !!snapshotPurgeIncludeArchived,
+        includePinned: !!snapshotPurgeIncludePinned,
         olderThanDays,
         confirm: snapshotPurgeConfirm.trim() || undefined,
       }),
@@ -4098,6 +4104,15 @@ Ctrl/⌘-click: filter only`}
         Also purge archived (older than N days)
       </label>
 
+      <label style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 13 }}>
+        <input
+          type="checkbox"
+          checked={snapshotPurgeIncludePinned}
+          onChange={(e) => setSnapshotPurgeIncludePinned(e.target.checked)}
+        />
+        Include pinned (dangerous)
+      </label>
+
       <label style={{ display: "grid", gap: 4 }}>
         <span style={{ fontSize: 12, opacity: 0.85 }}>Archived older than (days)</span>
         <input
@@ -4176,7 +4191,12 @@ Ctrl/⌘-click: filter only`}
           Copy
         </button>
         <div style={{ fontSize: 12, opacity: 0.8, paddingBottom: 6 }}>
-          Candidates: <strong>{snapshotPurgePreview.count ?? 0}</strong> ({Math.round(((snapshotPurgePreview.bytes ?? 0) / (1024 * 1024)) * 10) / 10} MB)
+          Candidates: <strong>{snapshotPurgePreview.count ?? 0}</strong> ({Math.round(((snapshotPurgePreview.bytes ?? 0) / (1024 * 1024)) * 10) / 10} MB){typeof snapshotPurgePreview.skippedPinned === "number" && snapshotPurgePreview.skippedPinned > 0 ? (
+            <>
+              {" "}
+              <span style={{ opacity: 0.8 }}>(skipped pinned: {snapshotPurgePreview.skippedPinned})</span>
+            </>
+          ) : null}
         </div>
       </div>
     ) : null}
@@ -4192,7 +4212,7 @@ Ctrl/⌘-click: filter only`}
       </details>
     ) : (
       <div style={{ fontSize: 12, opacity: 0.75 }}>
-        Preview shows which snapshots will be removed. Expired snapshots are always candidates. Archived snapshots are candidates only when enabled and older than N days.
+        Preview shows which snapshots will be removed. Expired snapshots are always candidates (except pinned, unless enabled). Archived snapshots are candidates only when enabled and older than N days.
       </div>
     )}
   </div>
