@@ -166,6 +166,14 @@ type SpawnSnapshotResponse = {
   snapshot?: any;
 };
 
+type SpawnSnapshotQueryResponse = {
+  kind: "spawn_points.snapshot_query";
+  ok: boolean;
+  error?: string;
+  filename?: string;
+  snapshot?: any;
+};
+
 type StoredSpawnSnapshotMeta = {
   id: string;
   name: string;
@@ -1630,6 +1638,52 @@ const runBulkOwnershipQuery = async (action: BulkOwnershipQueryAction, commit: b
       setSnapshotResult(data);
 
       // Convenience: auto-download the snapshot when available
+      if (data.filename && data.snapshot) {
+        downloadJson(data.filename, data.snapshot);
+      }
+    } catch (err: any) {
+      setError(err.message || String(err));
+    } finally {
+      setSnapshotWorking(false);
+    }
+  };
+
+  const runSnapshotQueryDownload = async () => {
+    setSnapshotWorking(true);
+    setError(null);
+    setSnapshotResult(null);
+
+    try {
+      const body: any = {
+        shardId: shardId.trim() || "prime_shard",
+      };
+
+      if (loadMode === "region") {
+        body.regionId = regionId.trim();
+      } else {
+        body.x = Number(queryX) || 0;
+        body.z = Number(queryZ) || 0;
+        body.radius = Math.max(0, Math.min(10000, Number(queryRadius) || 0));
+      }
+
+      if (filterAuthority.trim()) body.authority = filterAuthority.trim();
+      if (filterType.trim()) body.type = filterType.trim();
+      if (filterArchetype.trim()) body.archetype = filterArchetype.trim();
+      if (filterProtoId.trim()) body.protoId = filterProtoId.trim();
+      if (filterSpawnId.trim()) body.spawnId = filterSpawnId.trim();
+
+      const res = await authedFetch(`/api/admin/spawn_points/snapshot_query`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body),
+      });
+
+      const data: SpawnSnapshotQueryResponse = await res.json().catch(() => ({} as any));
+      if (!res.ok || !data.ok) throw new Error(data.error || `Snapshot query failed (HTTP ${res.status})`);
+
+      // Mirror Snapshot UX: store as snapshotResult so the panel shows a consistent block.
+      setSnapshotResult({ kind: "spawn_points.snapshot", ok: true, filename: data.filename, snapshot: data.snapshot } as any);
+
       if (data.filename && data.snapshot) {
         downloadJson(data.filename, data.snapshot);
       }
@@ -3269,6 +3323,22 @@ Ctrl/⌘-click: filter only`}
                   >
                     {snapshotWorking ? "Snapshotting..." : "Snapshot (download)"}
                   </button>
+
+	                  <button
+	                    onClick={runSnapshotQueryDownload}
+	                    disabled={snapshotWorking}
+	                    style={{
+	                      padding: "8px 12px",
+	                      borderRadius: 8,
+	                      border: "1px solid #ccc",
+	                      background: snapshotWorking ? "#f6f6f6" : "white",
+	                      cursor: snapshotWorking ? "not-allowed" : "pointer",
+	                      fontWeight: 700,
+	                    }}
+	                    title="Generates a snapshot JSON from the current query (region/radius + filters) and auto-downloads it"
+	                  >
+	                    {snapshotWorking ? "Snapshotting..." : "Snapshot Query (download)"}
+	                  </button>
                 </div>
 
                 {snapshotResult ? (
@@ -4186,8 +4256,8 @@ function bulkOwnershipOpsPreviewFromResult(result: any): AnyOpsPreview | null {
 }
 
 
-function downloadJson(filename: string, data: unknown) {
-  const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+function downloadTextFile(filename: string, text: string, mimeType: string) {
+  const blob = new Blob([text], { type: mimeType });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
@@ -4196,6 +4266,10 @@ function downloadJson(filename: string, data: unknown) {
   a.click();
   a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 250);
+}
+
+function downloadJson(filename: string, data: unknown) {
+  downloadTextFile(filename, JSON.stringify(data, null, 2), "application/json");
 }
 
 function normalizeOpsPreview(preview: AnyOpsPreview): Exclude<AnyOpsPreview, { limit: number }> {
