@@ -3278,13 +3278,17 @@ if (commit && expectedConfirmToken && confirm !== expectedConfirmToken) {
     theme,
     epoch,
     append,
-  wouldDelete: existingBrainIds.length,
-  opsPreview: {
-    limit: 75,
-    truncated: existingBrainSpawnIds.length > 75,
-    deleteSpawnIds: [...existingBrainSpawnIds].map((s: any) => String(s ?? "")).filter(Boolean).sort((a, b) => a.localeCompare(b)).slice(0, 75),
-  },
-} satisfies MotherBrainWaveResponse);
+    wouldDelete: existingBrainIds.length,
+    opsPreview: {
+      limit: 75,
+      truncated: existingBrainSpawnIds.length > 75,
+      deleteSpawnIds: [...existingBrainSpawnIds]
+        .map((s: any) => String(s ?? ""))
+        .filter(Boolean)
+        .sort((a, b) => a.localeCompare(b))
+        .slice(0, 75),
+    },
+  } satisfies MotherBrainWaveResponse);
   return;
 }
 
