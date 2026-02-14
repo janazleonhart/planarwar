@@ -2810,6 +2810,7 @@ router.post("/restore", async (req, res) => {
     const targetShard = String(req.body?.targetShard ?? snapshotShard ?? "prime_shard").trim() || "prime_shard";
     const updateExisting = Boolean(req.body?.updateExisting);
     const allowBrainOwned = Boolean(req.body?.allowBrainOwned);
+    const allowProtected = Boolean(req.body?.allowProtected);
     const commit = Boolean(req.body?.commit);
     const confirm = String(req.body?.confirm ?? "").trim() || null;
 
@@ -2831,6 +2832,20 @@ router.post("/restore", async (req, res) => {
       client.release();
     }
 
+    // Preload which existing rows are protected (locked or editor-owned)
+    let protectedSet = new Set<string>();
+    if (updateExisting && !allowProtected) {
+      const pclient = await db.connect();
+      try {
+        const pq = await pclient.query(
+          `SELECT spawn_id FROM spawn_points WHERE shard_id = $1 AND spawn_id = ANY($2::text[]) AND (is_locked = TRUE OR owner_kind = 'editor')`,
+          [targetShard, spawnIds],
+        );
+        for (const r of pq.rows as any[]) protectedSet.add(String(r.spawn_id));
+      } finally {
+        pclient.release();
+      }
+    }
     // P5: mismatch diff — if the snapshot includes bounds/cellSize/pad/types, compare it to the current target slice.
     // This does NOT imply deletion; it simply highlights rows currently in the target slice that are not present in the snapshot.
     let extraTargetIds: string[] = [];
@@ -2888,6 +2903,7 @@ router.post("/restore", async (req, res) => {
     const insertIds: string[] = [];
 
     const updateIds: string[] = [];
+    const protectedUpdateIds: string[] = [];
     const skipIds: string[] = [];
     const readOnlyIds: string[] = [];
 
@@ -2902,7 +2918,10 @@ router.post("/restore", async (req, res) => {
 
       const exists = existingSet.has(sid);
       if (!exists) insertIds.push(sid);
-      else if (updateExisting) updateIds.push(sid);
+      else if (updateExisting) {
+        updateIds.push(sid);
+        if (!allowProtected && protectedSet.has(sid)) protectedUpdateIds.push(sid);
+      }
       else skipIds.push(sid);
     }
 
@@ -2916,6 +2935,10 @@ router.post("/restore", async (req, res) => {
       limit: 75,
     });
 
+    if (protectedUpdateIds.length > 0) {
+      (opsPreview as any).protectedUpdateSpawnIds = protectedUpdateIds.slice(0, 75);
+      (opsPreview as any).skippedProtected = protectedUpdateIds.length;
+    }
     const expectedConfirmToken =
       updateExisting && updateIds.length > 0
         ? makeConfirmToken("REPLACE", targetShard, { op: "restore", updateIds, rows: spawns.length })
@@ -2924,7 +2947,7 @@ router.post("/restore", async (req, res) => {
     // Additional destructive safety: when committing a restore that (a) crosses shards or (b) allows brain-owned spawn_ids,
     // require a human-confirm phrase in addition to any token gate.
     const expectedConfirmPhrase =
-      commit && (targetShard !== snapshotShard || allowBrainOwned) ? "RESTORE" : null;
+      commit && (targetShard !== snapshotShard || allowBrainOwned || allowProtected) ? "RESTORE" : null;
     const confirmPhrase = String(req.body?.confirmPhrase ?? "").trim() || null;
 
     // Confirm phrase gate (high-risk restore modes)
@@ -2945,6 +2968,7 @@ router.post("/restore", async (req, res) => {
         snapshotTypes: snapshotTypes ?? undefined,
         crossShard: targetShard !== snapshotShard,
         allowBrainOwned,
+      allowProtected,
         wouldInsert: insertIds.length,
         wouldUpdate: updateIds.length,
         wouldSkip: skipIds.length,
@@ -2982,6 +3006,7 @@ router.post("/restore", async (req, res) => {
     let updated = 0;
     let skipped = 0;
     let skippedReadOnly = 0;
+    let skippedProtected = 0;
 
     try {
       await txn.query("BEGIN");
@@ -3019,6 +3044,11 @@ router.post("/restore", async (req, res) => {
         }
 
         if (updateExisting) {
+          if (!allowProtected && protectedSet.has(sid)) {
+            skippedProtected++;
+            continue;
+          }
+
           await txn.query(
             `
             UPDATE spawn_points
@@ -3059,6 +3089,7 @@ router.post("/restore", async (req, res) => {
       targetShard,
       crossShard: targetShard !== snapshotShard,
       allowBrainOwned,
+      allowProtected,
       rows: spawns.length,
         snapshotBounds: snapshotBounds ?? undefined,
         snapshotCellSize: snapshotCellSize ?? undefined,
@@ -3068,6 +3099,7 @@ router.post("/restore", async (req, res) => {
       updated,
       skipped,
       skippedReadOnly,
+      skippedProtected,
       expectedConfirmToken: expectedConfirmToken ?? undefined,
       expectedConfirmPhrase: expectedConfirmPhrase ?? undefined,
       opsPreview,

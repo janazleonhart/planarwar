@@ -54,6 +54,7 @@ const SPAWN_UI_LS_KEY = 'adminSpawnPointsPage.ui.v1';
   restoreTargetShard?: string;
   restoreUpdateExisting?: boolean;
   restoreAllowBrainOwned?: boolean;
+  restoreAllowProtected?: boolean;
 
 };
 
@@ -151,6 +152,7 @@ type TownBaselinePlanResponse = {
   wouldUpdate?: number;
   wouldSkip?: number;
   skippedReadOnly?: number;
+  skippedProtected?: number;
 
   plan?: TownBaselinePlanItem[];
   error?: string;
@@ -221,6 +223,7 @@ type SpawnRestoreResponse = {
   targetShard?: string;
   crossShard?: boolean;
   allowBrainOwned?: boolean;
+  allowProtected?: boolean;
 
   rows?: number;
   inserted?: number;
@@ -562,6 +565,7 @@ const [selectedSavedSnapshotId, setSelectedSavedSnapshotId] = useState<string>("
   const [restoreTargetShard, setRestoreTargetShard] = useState(savedUi.restoreTargetShard || "");
   const [restoreUpdateExisting, setRestoreUpdateExisting] = useState(savedUi.restoreUpdateExisting ?? true);
   const [restoreAllowBrainOwned, setRestoreAllowBrainOwned] = useState(savedUi.restoreAllowBrainOwned ?? false);
+  const [restoreAllowProtected, setRestoreAllowProtected] = useState(savedUi.restoreAllowProtected ?? false);
   const [restoreConfirm, setRestoreConfirm] = useState("");
   const [restoreWorking, setRestoreWorking] = useState(false);
   const [restoreResult, setRestoreResult] = useState<SpawnRestoreResponse | null>(null);
@@ -640,7 +644,7 @@ const restoreSnapshotParseError = restoreParsed.error;
 
   // Phrase confirm is required for especially risky restore modes (cross-shard, brain-owned).
   const restoreNeedsPhrase =
-    restoreAllowBrainOwned || restoreCrossShard || restoreConfirmPhraseRequired;
+    restoreAllowBrainOwned || restoreAllowProtected || restoreCrossShard || restoreConfirmPhraseRequired;
 
   const restoreExpectedPhrase =
     restoreConfirmPhraseExpected || (restoreNeedsPhrase ? "RESTORE" : "");
@@ -1025,6 +1029,7 @@ const restoreSnapshotParseError = restoreParsed.error;
       restoreTargetShard,
       restoreUpdateExisting,
       restoreAllowBrainOwned,
+      restoreAllowProtected,
     });
   }, [
     shardId,
@@ -1071,6 +1076,7 @@ const restoreSnapshotParseError = restoreParsed.error;
     restoreTargetShard,
     restoreUpdateExisting,
     restoreAllowBrainOwned,
+    restoreAllowProtected,
   ]);
 
   const startNew = () => {
@@ -1672,6 +1678,7 @@ if (!Array.isArray((snapshot as any).spawns)) throw new Error("Invalid snapshot:
           targetShard,
           updateExisting: !!restoreUpdateExisting,
           allowBrainOwned: !!restoreAllowBrainOwned,
+          allowProtected: !!restoreAllowProtected,
           commit: !!commit,
           confirm: restoreConfirm.trim() || undefined,
           confirmPhrase: (restoreConfirmPhrase.trim() || undefined),
@@ -3205,6 +3212,16 @@ Ctrl/⌘-click: filter only`}
                       Allow brain:* spawn_ids (danger)
                     </label>
 
+                    <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                      <input
+                        type="checkbox"
+                        checked={restoreAllowProtected}
+                        onChange={(e) => setRestoreAllowProtected(e.target.checked)}
+                      />
+                      Allow modifying protected rows (editor-owned or locked) (very danger)
+                    </label>
+
+
                     <label style={{ display: "grid", gap: 4 }}>
                       <span style={{ fontSize: 12, opacity: 0.85 }}>Confirm token (only when required)</span>
                       <input
@@ -3441,7 +3458,7 @@ Ctrl/⌘-click: filter only`}
                     <div style={{ padding: 10, borderRadius: 8, border: "1px solid #c62828", background: "#fff5f5" }}>
                       <div style={{ fontWeight: 800, marginBottom: 6 }}>High-risk restore</div>
                       <div style={{ fontSize: 13, opacity: 0.9 }}>
-                        This restore is flagged as risky because it {restoreCrossShard ? "crosses shards" : ""}{restoreCrossShard && restoreAllowBrainOwned ? " and " : ""}{restoreAllowBrainOwned ? "can touch brain:* spawn_ids" : ""}.
+                        This restore is flagged as risky because it {restoreCrossShard ? "crosses shards" : ""}{(restoreCrossShard && (restoreAllowBrainOwned || restoreAllowProtected)) ? " and " : ""}{restoreAllowBrainOwned ? "can touch brain:* spawn_ids" : ""}{(restoreAllowBrainOwned && restoreAllowProtected) ? " and " : ""}{restoreAllowProtected ? "can modify protected rows" : ""}.
                         To commit, enter the phrase <code>{restoreExpectedPhrase}</code> in the Confirm phrase box.
                       </div>
                     </div>
