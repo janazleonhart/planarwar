@@ -50,6 +50,9 @@ const SPAWN_UI_LS_KEY = 'adminSpawnPointsPage.ui.v1';
   savedSnapshotsFilterTag?: string;
   savedSnapshotsSearch?: string;
   savedSnapshotsSort?: string;
+  savedSnapshotsIncludeArchived?: boolean;
+  savedSnapshotsPinnedOnly?: boolean;
+  savedSnapshotsIncludeExpired?: boolean;
 
   restoreTargetShard?: string;
   restoreUpdateExisting?: boolean;
@@ -189,6 +192,11 @@ type StoredSpawnSnapshotMeta = {
   // P3: metadata for discoverability
   tags: string[];
   notes?: string | null;
+
+  // P6: retention + organization
+  isArchived?: boolean;
+  isPinned?: boolean;
+  expiresAt?: string | null;
 };
 
 type SpawnSnapshotsListResponse = {
@@ -605,9 +613,13 @@ const [snapshotSaveNotes, setSnapshotSaveNotes] = useState(savedUi.snapshotSaveN
 
 const [savedSnapshotsFilterTag, setSavedSnapshotsFilterTag] = useState(savedUi.savedSnapshotsFilterTag || "");
 const [savedSnapshotsSearch, setSavedSnapshotsSearch] = useState(savedUi.savedSnapshotsSearch || "");
-const [savedSnapshotsSort, setSavedSnapshotsSort] = useState<"newest" | "oldest" | "name">(
+const [savedSnapshotsSort, setSavedSnapshotsSort] = useState<"newest" | "oldest" | "name" | "pinned">(
   (savedUi.savedSnapshotsSort as any) || "newest"
 );
+
+const [savedSnapshotsIncludeArchived, setSavedSnapshotsIncludeArchived] = useState(!!savedUi.savedSnapshotsIncludeArchived);
+const [savedSnapshotsPinnedOnly, setSavedSnapshotsPinnedOnly] = useState(!!savedUi.savedSnapshotsPinnedOnly);
+const [savedSnapshotsIncludeExpired, setSavedSnapshotsIncludeExpired] = useState(!!savedUi.savedSnapshotsIncludeExpired);
 
 const [savedSnapshots, setSavedSnapshots] = useState<StoredSpawnSnapshotMeta[]>([]);
 const [savedSnapshotsLoading, setSavedSnapshotsLoading] = useState(false);
@@ -619,6 +631,9 @@ const [snapshotEditMetaOpen, setSnapshotEditMetaOpen] = useState(false);
   const [snapshotEditName, setSnapshotEditName] = useState("");
   const [snapshotEditTags, setSnapshotEditTags] = useState("");
   const [snapshotEditNotes, setSnapshotEditNotes] = useState("");
+  const [snapshotEditPinned, setSnapshotEditPinned] = useState(false);
+  const [snapshotEditArchived, setSnapshotEditArchived] = useState(false);
+  const [snapshotEditExpiresDays, setSnapshotEditExpiresDays] = useState("");
 const [selectedSavedSnapshotId, setSelectedSavedSnapshotId] = useState<string>("");
 
 
@@ -706,6 +721,9 @@ const restoreSnapshotParseError = restoreParsed.error;
       setSnapshotEditName("");
       setSnapshotEditTags("");
       setSnapshotEditNotes("");
+      setSnapshotEditPinned(false);
+      setSnapshotEditArchived(false);
+      setSnapshotEditExpiresDays("");
       return;
     }
     setSnapshotEditName(selectedSavedSnapshotMeta.name || "");
@@ -715,6 +733,9 @@ const restoreSnapshotParseError = restoreParsed.error;
         : ""
     );
     setSnapshotEditNotes(selectedSavedSnapshotMeta.notes ? String(selectedSavedSnapshotMeta.notes) : "");
+    setSnapshotEditPinned(!!selectedSavedSnapshotMeta.isPinned);
+    setSnapshotEditArchived(!!selectedSavedSnapshotMeta.isArchived);
+    setSnapshotEditExpiresDays("");
   }, [selectedSavedSnapshotMeta]);
 
   const effectiveRestoreTargetShard = (restoreTargetShard.trim() || shardId || "").trim() || "prime_shard";
@@ -1105,6 +1126,9 @@ const restoreSnapshotParseError = restoreParsed.error;
       savedSnapshotsFilterTag,
       savedSnapshotsSearch,
       savedSnapshotsSort,
+      savedSnapshotsIncludeArchived,
+      savedSnapshotsPinnedOnly,
+      savedSnapshotsIncludeExpired,
       restoreTargetShard,
       restoreUpdateExisting,
       restoreAllowBrainOwned,
@@ -1152,6 +1176,9 @@ const restoreSnapshotParseError = restoreParsed.error;
     savedSnapshotsFilterTag,
     savedSnapshotsSearch,
     savedSnapshotsSort,
+    savedSnapshotsIncludeArchived,
+    savedSnapshotsPinnedOnly,
+    savedSnapshotsIncludeExpired,
     restoreTargetShard,
     restoreUpdateExisting,
     restoreAllowBrainOwned,
@@ -1733,6 +1760,9 @@ const refreshSavedSnapshots = async () => {
     if (savedSnapshotsSort) qs.set("sort", savedSnapshotsSort);
     if (savedSnapshotsFilterTag.trim()) qs.set("tag", savedSnapshotsFilterTag.trim());
     if (savedSnapshotsSearch.trim()) qs.set("q", savedSnapshotsSearch.trim());
+    if (savedSnapshotsPinnedOnly) qs.set("pinnedOnly", "1");
+    if (savedSnapshotsIncludeArchived) qs.set("includeArchived", "1");
+    if (savedSnapshotsIncludeExpired) qs.set("includeExpired", "1");
     qs.set("limit", "250");
 
     const url = `/api/admin/spawn_points/snapshots?${qs.toString()}`;
@@ -1969,11 +1999,19 @@ const runUpdateSavedSnapshotMeta = async (id: string) => {
   try {
     if (!id) throw new Error("Pick a saved snapshot first.");
 
-    const body = {
+    const body: any = {
       name: snapshotEditName,
       tags: snapshotEditTags,
       notes: snapshotEditNotes,
+      isPinned: !!snapshotEditPinned,
+      isArchived: !!snapshotEditArchived,
     };
+
+    const expDays = Number(String(snapshotEditExpiresDays || "").trim());
+    if (String(snapshotEditExpiresDays || "").trim()) {
+      if (!Number.isFinite(expDays) || expDays < 0) throw new Error("Expires (days) must be a non-negative number.");
+      body.expiresAt = Math.floor(expDays);
+    }
 
     const res = await authedFetch(`/api/admin/spawn_points/snapshots/${encodeURIComponent(id)}`, {
       method: "PUT",
@@ -3630,6 +3668,35 @@ Ctrl/⌘-click: filter only`}
       />
     </label>
 
+    <div style={{ display: "flex", flexWrap: "wrap", gap: 12, alignItems: "center", paddingTop: 10 }}>
+      <label style={{ display: "flex", gap: 6, alignItems: "center", fontSize: 13 }}>
+        <input
+          type="checkbox"
+          checked={savedSnapshotsPinnedOnly}
+          onChange={(e) => setSavedSnapshotsPinnedOnly(e.target.checked)}
+        />
+        Pinned only
+      </label>
+
+      <label style={{ display: "flex", gap: 6, alignItems: "center", fontSize: 13 }}>
+        <input
+          type="checkbox"
+          checked={savedSnapshotsIncludeArchived}
+          onChange={(e) => setSavedSnapshotsIncludeArchived(e.target.checked)}
+        />
+        Include archived
+      </label>
+
+      <label style={{ display: "flex", gap: 6, alignItems: "center", fontSize: 13 }}>
+        <input
+          type="checkbox"
+          checked={savedSnapshotsIncludeExpired}
+          onChange={(e) => setSavedSnapshotsIncludeExpired(e.target.checked)}
+        />
+        Include expired
+      </label>
+    </div>
+
     <label style={{ display: "grid", gap: 4, minWidth: 320, flex: 1 }}>
       <span style={{ fontSize: 12, opacity: 0.85 }}>Notes</span>
       <input
@@ -3675,6 +3742,7 @@ Ctrl/⌘-click: filter only`}
         <option value="newest">Newest</option>
         <option value="oldest">Oldest</option>
         <option value="name">Name</option>
+        <option value="pinned">Pinned</option>
       </select>
     </label>
 
@@ -3708,7 +3776,7 @@ Ctrl/⌘-click: filter only`}
         <option value="">(none)</option>
         {savedSnapshots.map((s) => (
           <option key={s.id} value={s.id}>
-            {s.name}{s.tags && s.tags.length ? ` — [${s.tags.join(", ")}]` : ""} — {s.rows} rows — {new Date(s.savedAt).toLocaleString()}
+            {s.isPinned ? "📌 " : ""}{s.isArchived ? "🗄️ " : ""}{s.expiresAt ? (new Date(String(s.expiresAt)).getTime() <= Date.now() ? "⏳ " : "⏰ ") : ""}{s.name}{s.tags && s.tags.length ? ` — [${s.tags.join(", ")}]` : ""} — {s.rows} rows — {new Date(s.savedAt).toLocaleString()}
           </option>
         ))}
       </select>

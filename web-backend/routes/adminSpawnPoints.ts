@@ -212,7 +212,7 @@ type SpawnSliceOpsPreview = {
 
 type StoredSpawnSnapshotDoc = {
   kind: "admin.stored-spawn-snapshot";
-  version: 1 | 2;
+  version: 1 | 2 | 3;
   id: string;
   name: string;
   savedAt: string;
@@ -220,6 +220,11 @@ type StoredSpawnSnapshotDoc = {
   // P3: metadata for discoverability
   tags: string[];
   notes?: string | null;
+
+  // P6: retention + organization
+  isArchived?: boolean;
+  isPinned?: boolean;
+  expiresAt?: string | null;
 
   snapshot: SpawnSliceSnapshot;
 };
@@ -243,6 +248,11 @@ type StoredSpawnSnapshotMeta = {
   // P3: metadata for discoverability
   tags: string[];
   notes?: string | null;
+
+  // P6: retention + organization
+  isArchived?: boolean;
+  isPinned?: boolean;
+  expiresAt?: string | null;
 };
 
 const SNAPSHOT_DIR =
@@ -298,6 +308,49 @@ function safeSnapshotNotes(input: unknown): string | null {
   return cleaned.slice(0, 600);
 }
 
+function boolish(input: unknown): boolean | null {
+  if (input === undefined || input === null) return null;
+  if (typeof input === "boolean") return input;
+  const s = String(input).trim().toLowerCase();
+  if (!s) return null;
+  if (s === "1" || s === "true" || s === "yes" || s === "y" || s === "on") return true;
+  if (s === "0" || s === "false" || s === "no" || s === "n" || s === "off") return false;
+  return null;
+}
+
+function coerceExpiresAt(input: unknown): string | null | undefined {
+  // undefined => "no change" in updates; null => "clear"; string => ISO
+  if (input === undefined) return undefined;
+  if (input === null) return null;
+
+  // Accept a direct ISO string or a number of days (e.g. "14" => now+14d).
+  if (typeof input === "number" && Number.isFinite(input)) {
+    const days = Math.max(0, Math.min(3650, Math.floor(input)));
+    const dt = new Date(Date.now() + days * 24 * 60 * 60 * 1000);
+    return dt.toISOString();
+  }
+
+  const raw = String(input).trim();
+  if (!raw) return null;
+
+  const asNum = Number(raw);
+  if (Number.isFinite(asNum) && /^\d+(\.0+)?$/.test(raw)) {
+    const days = Math.max(0, Math.min(3650, Math.floor(asNum)));
+    const dt = new Date(Date.now() + days * 24 * 60 * 60 * 1000);
+    return dt.toISOString();
+  }
+
+  const t = Date.parse(raw);
+  if (!Number.isFinite(t)) throw new Error("Invalid expiresAt (expected ISO date or days number).");
+  return new Date(t).toISOString();
+}
+
+function isExpired(expiresAt: unknown, nowMs = Date.now()): boolean {
+  if (expiresAt == null) return false;
+  const t = Date.parse(String(expiresAt));
+  if (!Number.isFinite(t)) return false;
+  return t <= nowMs;
+}
 
 function makeSnapshotId(name: string, shardId: string, bounds: CellBounds, types: string[]): string {
   const seed = { name: safeSnapshotName(name), shardId, bounds, types: [...types].sort() };
@@ -318,6 +371,9 @@ function metaFromStoredDoc(doc: StoredSpawnSnapshotDoc, bytes: number): StoredSp
     bytes,
     tags: Array.isArray((doc as any).tags) ? (doc as any).tags : [],
     notes: (doc as any).notes ?? null,
+    isArchived: Boolean((doc as any).isArchived),
+    isPinned: Boolean((doc as any).isPinned),
+    expiresAt: ((doc as any).expiresAt ?? null) as any,
   };
 }
 
@@ -3432,12 +3488,15 @@ router.post("/snapshots/save_query", async (req, res) => {
 
     const doc: StoredSpawnSnapshotDoc = {
       kind: "admin.stored-spawn-snapshot",
-      version: 2,
+      version: 3,
       id,
       name,
       savedAt,
       tags,
       notes,
+      isArchived: false,
+      isPinned: false,
+      expiresAt: null,
       snapshot,
     };
 
@@ -3457,6 +3516,14 @@ router.post("/snapshots/save_query", async (req, res) => {
 });
 
 // GET /api/admin/spawn_points/snapshots
+// Query:
+//   sort=newest|oldest|name|pinned
+//   tag=<tag>
+//   q=<search in name/tags/notes>
+//   pinnedOnly=1
+//   includeArchived=1
+//   includeExpired=1
+//   limit=250
 router.get("/snapshots", async (req, res) => {
   try {
     let snapshots = await listStoredSnapshots();
@@ -3466,8 +3533,26 @@ router.get("/snapshots", async (req, res) => {
     const sortRaw = (strOrNull((req as any).query?.sort) || "newest").toLowerCase();
     const limitRaw = Number((req as any).query?.limit);
 
+    const pinnedOnly = boolish((req as any).query?.pinnedOnly) === true;
+    const includeArchived = boolish((req as any).query?.includeArchived) === true;
+    const includeExpired = boolish((req as any).query?.includeExpired) === true;
+
     const tag = tagRaw ? normalizeSnapshotTags(tagRaw)[0] : null;
     const q = qRaw ? qRaw.trim().toLowerCase() : "";
+
+    const nowMs = Date.now();
+
+    // Defaults: hide archived + expired.
+    if (!includeArchived) {
+      snapshots = snapshots.filter((s) => !Boolean((s as any).isArchived));
+    }
+    if (!includeExpired) {
+      snapshots = snapshots.filter((s) => !isExpired((s as any).expiresAt, nowMs));
+    }
+
+    if (pinnedOnly) {
+      snapshots = snapshots.filter((s) => Boolean((s as any).isPinned));
+    }
 
     if (tag) {
       snapshots = snapshots.filter((s) => Array.isArray((s as any).tags) && (s as any).tags.includes(tag));
@@ -3482,13 +3567,23 @@ router.get("/snapshots", async (req, res) => {
       });
     }
 
+    const savedAtDesc = (a: any, b: any) => String(b.savedAt).localeCompare(String(a.savedAt));
+
     if (sortRaw === "oldest") {
       snapshots = snapshots.slice().sort((a, b) => String(a.savedAt).localeCompare(String(b.savedAt)));
     } else if (sortRaw === "name") {
       snapshots = snapshots.slice().sort((a, b) => String(a.name).localeCompare(String(b.name)));
+    } else if (sortRaw === "pinned") {
+      // pinned first, then newest
+      snapshots = snapshots.slice().sort((a, b) => {
+        const ap = Boolean((a as any).isPinned);
+        const bp = Boolean((b as any).isPinned);
+        if (ap !== bp) return ap ? -1 : 1;
+        return savedAtDesc(a, b);
+      });
     } else {
       // newest (default)
-      snapshots = snapshots.slice().sort((a, b) => String(b.savedAt).localeCompare(String(a.savedAt)));
+      snapshots = snapshots.slice().sort(savedAtDesc);
     }
 
     const limit = Number.isFinite(limitRaw) ? Math.max(0, Math.min(500, Math.floor(limitRaw))) : 0;
@@ -3500,6 +3595,7 @@ router.get("/snapshots", async (req, res) => {
     return res.status(500).json({ kind: "spawn_points.snapshots", ok: false, error: "internal_error" });
   }
 });
+
 
 
 // POST /api/admin/spawn_points/snapshots/save
@@ -3529,12 +3625,15 @@ router.post("/snapshots/save", async (req, res) => {
 
     const doc: StoredSpawnSnapshotDoc = {
       kind: "admin.stored-spawn-snapshot",
-      version: 2,
+      version: 3,
       id,
       name,
       savedAt,
       tags,
       notes,
+      isArchived: false,
+      isPinned: false,
+      expiresAt: null,
       snapshot,
     };
 
@@ -3569,7 +3668,8 @@ router.get("/snapshots/:id", async (req, res) => {
 
 
 // PUT /api/admin/spawn_points/snapshots/:id
-// Body: { name?, tags?, notes? }
+// Body: { name?, tags?, notes?, isArchived?, isPinned?, expiresAt? }
+// - expiresAt accepts: ISO string, null (clear), or a number/"N" meaning "expire in N days"
 router.put("/snapshots/:id", async (req, res) => {
   try {
     const id = strOrNull(req.params?.id);
@@ -3580,6 +3680,9 @@ router.put("/snapshots/:id", async (req, res) => {
     const nameRaw = strOrNull(req.body?.name);
     const tagsRaw = req.body?.tags;
     const notesRaw = req.body?.notes;
+    const isArchivedRaw = req.body?.isArchived;
+    const isPinnedRaw = req.body?.isPinned;
+    const expiresAtRaw = req.body?.expiresAt;
 
     const nextName = nameRaw ? safeSnapshotName(nameRaw) : doc.name;
     const nextTags = tagsRaw !== undefined ? normalizeSnapshotTags(tagsRaw) : (Array.isArray((doc as any).tags) ? (doc as any).tags : []);
@@ -3590,11 +3693,31 @@ router.put("/snapshots/:id", async (req, res) => {
           ? null
           : String(notesRaw).slice(0, 2000);
 
+
+    const prevArchived = Boolean((doc as any).isArchived);
+    const prevPinned = Boolean((doc as any).isPinned);
+    const prevExpiresAt = ((doc as any).expiresAt ?? null) as any;
+
+    const archivedBool = boolish(isArchivedRaw);
+    const pinnedBool = boolish(isPinnedRaw);
+
+    const nextArchived = archivedBool === null ? prevArchived : archivedBool;
+    const nextPinned = pinnedBool === null ? prevPinned : pinnedBool;
+
+    let nextExpiresAt: string | null = prevExpiresAt;
+    const expiresAtCoerced = coerceExpiresAt(expiresAtRaw);
+    if (expiresAtCoerced !== undefined) nextExpiresAt = expiresAtCoerced;
+
+
     const updated: StoredSpawnSnapshotDoc = {
       ...doc,
+      version: 3,
       name: nextName,
       tags: nextTags,
       notes: nextNotes,
+      isArchived: nextArchived,
+      isPinned: nextPinned,
+      expiresAt: nextExpiresAt,
     };
 
     const dir = await ensureSnapshotDir();
@@ -3644,12 +3767,15 @@ router.post("/snapshots/:id/duplicate", async (req, res) => {
 
     const cloned: StoredSpawnSnapshotDoc = {
       kind: "admin.stored-spawn-snapshot",
-      version: doc.version,
+      version: 3,
       id: newId,
       name: baseName,
       savedAt: now,
       tags,
       notes,
+      isArchived: false,
+      isPinned: false,
+      expiresAt: null,
       snapshot: doc.snapshot,
     };
 
