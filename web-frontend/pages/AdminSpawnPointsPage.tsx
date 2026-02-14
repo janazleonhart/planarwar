@@ -4760,12 +4760,16 @@ function OpsPreviewPanel(props: { title: string; preview: AnyOpsPreview; downloa
         }, {})
       : null;
 
-const reasonDetails: Record<string, any> = (norm?.reasonDetails ?? {}) as any;
-const reasonChains: Record<string, any[]> = (norm?.reasonChains ?? {}) as any;
+  const reasonDetails: Record<string, any> = (norm?.reasonDetails ?? {}) as any;
+  const reasonChains: Record<string, any[]> = (norm?.reasonChains ?? {}) as any;
 
-const [selectedId, setSelectedId] = useState<string | null>(null);
-const selectedDetail = selectedId ? (reasonDetails[selectedId] ?? null) : null;
-const selectedChain = selectedId ? (reasonChains[selectedId] ?? null) : null;
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [bucketFilter, setBucketFilter] = useState<string>("all");
+  const [reasonFilter, setReasonFilter] = useState<string>("all");
+  const [onlyBlocked, setOnlyBlocked] = useState<boolean>(false);
+
+  const selectedDetail = selectedId ? (reasonDetails[selectedId] ?? null) : null;
+  const selectedChain = selectedId ? (reasonChains[selectedId] ?? null) : null;
 
   const buckets: Array<[string, OpsPreviewBucket]> = [
     ["delete", norm.deletes],
@@ -4779,17 +4783,172 @@ const selectedChain = selectedId ? (reasonChains[selectedId] ?? null) : null;
     ["droppedBudget", norm.droppedBudget],
   ];
 
+  const blockedBucketSet = useMemo(() => new Set(["readOnly", "protectedDelete", "protectedUpdate", "duplicates", "droppedBudget"]), []);
+  const allReasonKeys = useMemo(() => {
+    const keys = new Set<string>();
+    if (reasonCounts) Object.keys(reasonCounts).forEach((k) => keys.add(String(k)));
+    // Also include any chain/explicit reasons that might not be in counts.
+    Object.keys(reasons).forEach((id) => {
+      const r = String(reasons[id] ?? "");
+      if (r) keys.add(r);
+    });
+    Object.keys(reasonDetails).forEach((id) => {
+      const r = String(reasonDetails[id]?.reason ?? "");
+      if (r) keys.add(r);
+    });
+    Object.keys(reasonChains).forEach((id) => {
+      const r = String(reasonChains[id]?.[0]?.reason ?? "");
+      if (r) keys.add(r);
+    });
+    return Array.from(keys).sort((a, b) => a.localeCompare(b));
+  }, [reasonCounts, reasons, reasonDetails, reasonChains]);
+
+  function getPrimaryReasonForId(id: string): string {
+    if (reasons[id]) return String(reasons[id]);
+    const chain = reasonChains[id];
+    if (Array.isArray(chain) && chain.length && chain[0]?.reason) return String(chain[0].reason);
+    const d = reasonDetails[id];
+    if (d?.reason) return String(d.reason);
+    return "";
+  }
+
+  function passesReasonFilter(id: string): boolean {
+    if (reasonFilter === "all") return true;
+    return getPrimaryReasonForId(id) === reasonFilter;
+  }
+
+  function copyText(text: string): Promise<void> {
+    const t = String(text ?? "");
+    if (!t) return Promise.resolve();
+    if (typeof navigator !== "undefined" && (navigator as any).clipboard?.writeText) {
+      return (navigator as any).clipboard.writeText(t);
+    }
+    try {
+      // Fallback: open a prompt the user can copy from.
+      // eslint-disable-next-line no-alert
+      window.prompt("Copy to clipboard:", t);
+    } catch {
+      // ignore
+    }
+    return Promise.resolve();
+  }
+
+  const filteredBuckets = useMemo(() => {
+    const out: Array<[string, OpsPreviewBucket, string[]]> = [];
+    for (const [label, b] of buckets) {
+      if (!b) continue;
+      if (onlyBlocked && !blockedBucketSet.has(label)) continue;
+      if (bucketFilter !== "all" && bucketFilter !== label) continue;
+
+      const ids = (b.spawnIds ?? []).filter((id) => passesReasonFilter(String(id)));
+      out.push([label, b, ids]);
+    }
+    return out;
+  }, [buckets, onlyBlocked, blockedBucketSet, bucketFilter, reasonFilter]);
+
+  const visibleIdsFlat = useMemo(() => {
+    const ids: string[] = [];
+    for (const [, , filteredIds] of filteredBuckets) ids.push(...filteredIds);
+    // de-dupe, but preserve order-ish
+    const seen = new Set<string>();
+    return ids.filter((id) => {
+      if (seen.has(id)) return false;
+      seen.add(id);
+      return true;
+    });
+  }, [filteredBuckets]);
+
   return (
     <div style={{ marginTop: 10, border: "1px solid #333", borderRadius: 8, padding: 10, background: "#0b0b0b" }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
         <div style={{ fontWeight: 800 }}>{title}</div>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
+          <button
+            type="button"
+            onClick={() => copyText(visibleIdsFlat.join("\n"))}
+            disabled={!visibleIdsFlat.length}
+            style={{
+              padding: "6px 10px",
+              borderRadius: 8,
+              border: "1px solid #555",
+              background: visibleIdsFlat.length ? "#141414" : "#101010",
+              color: "#eee",
+              opacity: visibleIdsFlat.length ? 1 : 0.5,
+              cursor: visibleIdsFlat.length ? "pointer" : "default",
+            }}
+            title="Copy currently visible spawnIds (one per line)"
+          >
+            Copy IDs
+          </button>
+
+          <button
+            type="button"
+            onClick={() => downloadJson(downloadName, preview)}
+            style={{ padding: "6px 10px", borderRadius: 8, border: "1px solid #555", background: "#141414", color: "#eee" }}
+          >
+            Export JSON
+          </button>
+        </div>
+      </div>
+
+      <div style={{ display: "flex", gap: 10, marginTop: 10, flexWrap: "wrap", alignItems: "center" }}>
+        <label style={{ display: "flex", gap: 6, alignItems: "center", fontSize: 12, opacity: 0.9 }}>
+          Bucket:
+          <select
+            value={bucketFilter}
+            onChange={(e) => setBucketFilter(e.target.value)}
+            style={{ padding: "6px 8px", borderRadius: 8, border: "1px solid #333", background: "#0f0f0f", color: "#eee" }}
+          >
+            <option value="all">all</option>
+            {buckets.map(([label]) => (
+              <option key={label} value={label}>
+                {label}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <label style={{ display: "flex", gap: 6, alignItems: "center", fontSize: 12, opacity: 0.9 }}>
+          Reason:
+          <select
+            value={reasonFilter}
+            onChange={(e) => setReasonFilter(e.target.value)}
+            style={{ padding: "6px 8px", borderRadius: 8, border: "1px solid #333", background: "#0f0f0f", color: "#eee" }}
+          >
+            <option value="all">all</option>
+            {allReasonKeys.map((k) => (
+              <option key={k} value={k}>
+                {k}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <label style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 12, opacity: 0.9 }}>
+          <input
+            type="checkbox"
+            checked={onlyBlocked}
+            onChange={(e) => setOnlyBlocked(Boolean(e.target.checked))}
+          />
+          Only blocked
+        </label>
+
         <button
           type="button"
-          onClick={() => downloadJson(downloadName, preview)}
-          style={{ padding: "6px 10px", borderRadius: 8, border: "1px solid #555", background: "#141414", color: "#eee" }}
+          onClick={() => {
+            setBucketFilter("all");
+            setReasonFilter("all");
+            setOnlyBlocked(false);
+            setSelectedId(null);
+          }}
+          style={{ padding: "6px 10px", borderRadius: 8, border: "1px solid #444", background: "#0f0f0f", color: "#eee", fontSize: 12, opacity: 0.9 }}
         >
-          Export JSON
+          Reset filters
         </button>
+
+        <div style={{ fontSize: 12, opacity: 0.75, fontFamily: "monospace" }}>
+          visibleIds: {visibleIdsFlat.length}
+        </div>
       </div>
 
       {reasonCounts && Object.keys(reasonCounts).length ? (
@@ -4802,30 +4961,26 @@ const selectedChain = selectedId ? (reasonChains[selectedId] ?? null) : null;
         </div>
       ) : null}
 
-
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 10, marginTop: 10 }}>
-        {buckets
-          .filter(([, b]) => b.count > 0 || b.spawnIds.length > 0)
-          .map(([label, b]) => (
+        {filteredBuckets
+          .filter(([, b]) => (b.count > 0 || (b.spawnIds?.length ?? 0) > 0))
+          .map(([label, b, filteredIds]) => (
             <div key={label} style={{ border: "1px solid #222", borderRadius: 8, padding: 8, background: "#0f0f0f" }}>
               <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 700, marginBottom: 6 }}>
                 <span>{label}</span>
-                <span style={{ opacity: 0.9 }}>
-                  {b.count}
+                <span style={{ opacity: 0.9, fontFamily: "monospace", fontSize: 12 }}>
+                  {filteredIds.length}
                   {b.truncated ? "+" : ""}
+                  <span style={{ opacity: 0.55 }}> / {b.count}</span>
                 </span>
               </div>
-              {b.spawnIds.length ? (
+              {filteredIds.length ? (
                 <div style={{ maxHeight: 160, overflow: "auto", border: "1px solid #222", borderRadius: 6, padding: 6, background: "#0b0b0b" }}>
-                  {b.spawnIds.map((id) => {
+                  {filteredIds.map((id) => {
                     const isSelected = selectedId === id;
                     const detail = reasonDetails[id] ?? null;
                     const chain = reasonChains[id] ?? null;
-                    const label = reasons[id]
-                      ? String(reasons[id])
-                      : chain && Array.isArray(chain) && chain.length
-                        ? String(chain[0]?.reason ?? "")
-                        : (detail?.reason ? String(detail.reason) : "");
+                    const labelReason = getPrimaryReasonForId(id);
                     return (
                       <div
                         key={id}
@@ -4835,7 +4990,7 @@ const selectedChain = selectedId ? (reasonChains[selectedId] ?? null) : null;
                           fontFamily: "monospace",
                           fontSize: 12,
                           opacity: 0.95,
-                          cursor: detail || label || (chain && Array.isArray(chain) && chain.length) ? "pointer" : "default",
+                          cursor: detail || labelReason || (chain && Array.isArray(chain) && chain.length) ? "pointer" : "default",
                           padding: "2px 4px",
                           borderRadius: 6,
                           background: isSelected ? "#141414" : "transparent",
@@ -4844,7 +4999,7 @@ const selectedChain = selectedId ? (reasonChains[selectedId] ?? null) : null;
                         }}
                       >
                         {id}
-                        {label ? <span style={{ opacity: 0.7 }}>{"  ·  "}{label}</span> : null}
+                        {labelReason ? <span style={{ opacity: 0.7 }}>{"  ·  "}{labelReason}</span> : null}
                       </div>
                     );
                   })}
@@ -4855,64 +5010,65 @@ const selectedChain = selectedId ? (reasonChains[selectedId] ?? null) : null;
             </div>
           ))}
 
-      {selectedId && (selectedDetail || (selectedChain && Array.isArray(selectedChain) && selectedChain.length)) ? (
-        <div style={{ marginTop: 10, border: "1px solid #222", borderRadius: 8, padding: 10, background: "#0f0f0f" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
-            <div style={{ fontWeight: 800, fontFamily: "monospace" }}>
-              explain: {selectedId}
-            </div>
-            <button
-              type="button"
-              onClick={() => setSelectedId(null)}
-              style={{ padding: "6px 10px", borderRadius: 8, border: "1px solid #555", background: "#141414", color: "#eee" }}
-            >
-              Close
-            </button>
-          </div>
-
-          <div style={{ marginTop: 8, fontSize: 12, opacity: 0.9, fontFamily: "monospace" }}>
-            reason: {String(selectedDetail?.reason ?? reasons[selectedId] ?? (selectedChain?.[0]?.reason ?? ""))}
-          </div>
-
-          {selectedChain && Array.isArray(selectedChain) && selectedChain.length ? (
-            <div style={{ marginTop: 8, border: "1px solid #222", borderRadius: 8, padding: 10, background: "#0b0b0b" }}>
-              <div style={{ fontSize: 12, opacity: 0.85, marginBottom: 8, fontFamily: "monospace" }}>
-                rule chain:
+        {selectedId && (selectedDetail || (selectedChain && Array.isArray(selectedChain) && selectedChain.length)) ? (
+          <div style={{ gridColumn: "1 / -1", marginTop: 0, border: "1px solid #222", borderRadius: 8, padding: 10, background: "#0f0f0f" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
+              <div style={{ fontWeight: 800, fontFamily: "monospace" }}>
+                explain: {selectedId}
               </div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                {selectedChain.map((step: any, idx: number) => (
-                  <div key={idx} style={{ border: "1px solid #1f1f1f", borderRadius: 8, padding: 8, background: "#080808" }}>
-                    <div style={{ fontFamily: "monospace", fontSize: 12, opacity: 0.95 }}>
-                      {idx + 1}. {String(step?.reason ?? "")}
-                    </div>
-                    {step?.note ? (
-                      <div style={{ marginTop: 4, fontSize: 12, opacity: 0.75 }}>
-                        {String(step.note)}
+              <button
+                type="button"
+                onClick={() => setSelectedId(null)}
+                style={{ padding: "6px 10px", borderRadius: 8, border: "1px solid #555", background: "#141414", color: "#eee" }}
+              >
+                Close
+              </button>
+            </div>
+
+            <div style={{ marginTop: 8, fontSize: 12, opacity: 0.9, fontFamily: "monospace" }}>
+              reason: {String(selectedDetail?.reason ?? reasons[selectedId] ?? (selectedChain?.[0]?.reason ?? ""))}
+            </div>
+
+            {selectedChain && Array.isArray(selectedChain) && selectedChain.length ? (
+              <div style={{ marginTop: 8, border: "1px solid #222", borderRadius: 8, padding: 10, background: "#0b0b0b" }}>
+                <div style={{ fontSize: 12, opacity: 0.85, marginBottom: 8, fontFamily: "monospace" }}>
+                  rule chain:
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                  {selectedChain.map((step: any, idx: number) => (
+                    <div key={idx} style={{ border: "1px solid #1f1f1f", borderRadius: 8, padding: 8, background: "#080808" }}>
+                      <div style={{ fontFamily: "monospace", fontSize: 12, opacity: 0.95 }}>
+                        {idx + 1}. {String(step?.reason ?? "")}
                       </div>
-                    ) : null}
-                    {step?.meta ? (
-                      <pre style={{ marginTop: 8, maxHeight: 140, overflow: "auto", padding: 8, borderRadius: 8, background: "#050505", border: "1px solid #1a1a1a" }}>
+                      {step?.note ? (
+                        <div style={{ marginTop: 4, fontSize: 12, opacity: 0.75 }}>
+                          {String(step.note)}
+                        </div>
+                      ) : null}
+                      {step?.meta ? (
+                        <pre style={{ marginTop: 8, maxHeight: 140, overflow: "auto", padding: 8, borderRadius: 8, background: "#050505", border: "1px solid #1a1a1a" }}>
 {JSON.stringify(step.meta, null, 2)}
-                      </pre>
-                    ) : null}
-                  </div>
-                ))}
+                        </pre>
+                      ) : null}
+                    </div>
+                  ))}
+                </div>
               </div>
-            </div>
-          ) : null}
-          {selectedDetail?.note ? (
-            <div style={{ marginTop: 6, fontSize: 12, opacity: 0.75 }}>
-              {String(selectedDetail.note)}
-            </div>
-          ) : null}
+            ) : null}
 
-          {selectedDetail?.meta ? (
-            <pre style={{ marginTop: 10, maxHeight: 220, overflow: "auto", padding: 10, borderRadius: 8, background: "#0b0b0b", border: "1px solid #222" }}>
+            {selectedDetail?.note ? (
+              <div style={{ marginTop: 6, fontSize: 12, opacity: 0.75 }}>
+                {String(selectedDetail.note)}
+              </div>
+            ) : null}
+
+            {selectedDetail?.meta ? (
+              <pre style={{ marginTop: 10, maxHeight: 220, overflow: "auto", padding: 10, borderRadius: 8, background: "#0b0b0b", border: "1px solid #222" }}>
 {JSON.stringify(selectedDetail.meta, null, 2)}
-            </pre>
-          ) : null}
-        </div>
-      ) : null}
+              </pre>
+            ) : null}
+          </div>
+        ) : null}
       </div>
     </div>
   );
