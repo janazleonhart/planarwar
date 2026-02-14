@@ -1,6 +1,6 @@
 //worldcore/mud/commands/progression/questsCommand.ts
 
-import { renderQuestLog } from "../../MudProgression";
+import { renderQuestLog, renderQuestDetails } from "../../../quests/QuestText";
 import { turnInQuest } from "../../../quests/turnInQuest";
 import {
   renderTownQuestBoard,
@@ -22,6 +22,12 @@ export async function handleQuestCommand(
 
   if (!sub || sub === "log" || sub === "list" || sub === "quests" || sub === "questlog") {
     return renderQuestLog(char);
+  }
+
+  if (sub === "show" || sub === "info" || sub === "details") {
+    const target = input.parts.slice(2).join(" ").trim();
+    if (!target) return "Usage: quest show <#|id|name>";
+    return renderQuestDetails(char, target);
   }
 
   if (sub === "board" || sub === "questboard") {
@@ -48,7 +54,8 @@ export async function handleQuestCommand(
 
   return [
     "Usage:",
-    " quest                     (shows quest log)",
+    " quest                      (shows quest log)",
+    " quest show <#|id|name>      (shows quest details)",
     " quest board                (shows available town quests)",
     " quest accept <#|id>",
     " quest abandon <#|id>",

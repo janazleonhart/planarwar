@@ -8,8 +8,9 @@ import { ensureProgression } from "../progression/ProgressionCore";
 import { ensureQuestState } from "./QuestState";
 import { countItemInInventory } from "../items/inventoryConsume";
 import { resolveQuestDefinitionFromStateId } from "./TownQuestBoard";
+import { getAllQuests, getQuestById } from "./QuestRegistry";
 
-import type { QuestObjective } from "./QuestTypes";
+import type { QuestDefinition, QuestObjective } from "./QuestTypes";
 import type { CharacterState } from "../characters/CharacterTypes";
 
 export function renderQuestLog(char: CharacterState): string {
@@ -70,6 +71,88 @@ export function renderQuestLog(char: CharacterState): string {
   }
 
   return out.trimEnd();
+}
+
+/**
+ * Quest details view used by `quest show <#|id|name>`.
+ * - Works for accepted quests (including deterministic town quests)
+ * - Also works for registry quests not yet accepted
+ */
+export function renderQuestDetails(char: CharacterState, targetRaw: string): string {
+  const target = (targetRaw || "").trim();
+  if (!target) {
+    return [
+      "Usage:",
+      " quest show <#|id|name>",
+      "",
+      "Tip: Use `quest` to list accepted quests.",
+    ].join("\n");
+  }
+
+  const prog = ensureProgression(char);
+  const kills = (prog.kills as Record<string, number>) || {};
+  const harvests = (prog.harvests as Record<string, number>) || {};
+  const actions = (prog.actions as Record<string, number>) || {};
+  const flags = (prog.flags as Record<string, unknown>) || {};
+
+  const questState = ensureQuestState(char);
+  const acceptedIds = Object.keys(questState).sort();
+
+  // Numeric index into accepted quest ordering
+  let key = target;
+  if (/^\d+$/.test(target)) {
+    const idx = Number(target);
+    const id = acceptedIds[idx - 1];
+    if (id) key = id;
+  }
+
+  const resolved = resolveQuestByIdOrNameIncludingAccepted(key, questState);
+  if (!resolved) {
+    return `[quest] Unknown quest '${target}'.`;
+  }
+
+  const quest = resolved.quest;
+  const entry = questState[quest.id] ?? null;
+
+  const isAccepted = !!entry;
+  const state = isAccepted ? String(entry.state ?? "active") : "not_accepted";
+
+  const isCompleted = state === "completed";
+  const isTurnedIn = state === "turned_in";
+
+  const isReady = !!(
+    isCompleted && areObjectivesSatisfied(quest, char, { kills, harvests, actions, flags })
+  );
+
+  const mark = isTurnedIn ? "[T]" : isReady ? "[READY]" : isCompleted ? "[C]" : isAccepted ? "[A]" : "[ ]";
+
+  const lines: string[] = [];
+  lines.push(`[quest] ${mark} ${quest.name} (${quest.id})`);
+  lines.push(`State: ${state}${isReady ? " (ready)" : ""}`);
+
+  if (quest.description) {
+    lines.push("");
+    lines.push(quest.description);
+  }
+
+  lines.push("");
+  lines.push("Objectives:");
+  for (const obj of quest.objectives ?? []) {
+    lines.push(renderObjectiveLine(char, obj, { kills, harvests, actions, flags }).trimEnd());
+  }
+
+  const rewardText = renderQuestRewardSummary(quest);
+  if (rewardText) {
+    lines.push("");
+    lines.push(`Rewards: ${rewardText}`);
+  }
+
+  if (isReady) {
+    lines.push("");
+    lines.push(`Turn in with: quest turnin ${quest.id}`);
+  }
+
+  return lines.join("\n").trimEnd();
 }
 
 type ObjectiveRenderCtx = {
@@ -176,7 +259,41 @@ function isObjectiveSatisfied(
   }
 }
 
-function renderQuestRewardSummary(quest: any): string {
+function resolveQuestByIdOrNameIncludingAccepted(
+  input: string,
+  questState: Record<string, any>
+): { quest: QuestDefinition } | null {
+  const lower = input.toLowerCase();
+
+  // 1) Exact id in registry
+  const byId = getQuestById(input);
+  if (byId) return { quest: byId };
+
+  // 2) Exact id match in accepted state (generated or registry)
+  if (questState[input]) {
+    const q = resolveQuestDefinitionFromStateId(input, questState[input]);
+    if (q) return { quest: q };
+  }
+
+  // 3) Case-insensitive by id or name in registry
+  const all = getAllQuests();
+  const idMatch = all.find((q) => q.id.toLowerCase() === lower);
+  if (idMatch) return { quest: idMatch };
+  const nameMatch = all.find((q) => q.name.toLowerCase() === lower);
+  if (nameMatch) return { quest: nameMatch };
+
+  // 4) Case-insensitive match among accepted quests (generated)
+  for (const [id, entry] of Object.entries(questState)) {
+    const q = resolveQuestDefinitionFromStateId(id, entry);
+    if (!q) continue;
+    if (q.id.toLowerCase() === lower) return { quest: q };
+    if (q.name.toLowerCase() === lower) return { quest: q };
+  }
+
+  return null;
+}
+
+function renderQuestRewardSummary(quest: QuestDefinition): string {
   const r: any = quest?.reward ?? null;
   if (!r) return "";
 
