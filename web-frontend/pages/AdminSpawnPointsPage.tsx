@@ -263,6 +263,37 @@ type SpawnSnapshotsPurgeResponse = {
 };
 
 
+type SpawnSnapshotsBulkDeleteResponse = {
+  kind: "spawn_points.snapshots.bulk_delete";
+  ok: boolean;
+  error?: string;
+
+  commit?: boolean;
+  requiresConfirm?: boolean;
+
+  includePinned?: boolean;
+
+  requested?: number;
+  found?: number;
+  missing?: number;
+  missingIds?: string[];
+
+  skippedPinned?: number;
+
+  // number of selected snapshots that are not expired and not archived
+  activeCount?: number;
+
+  count?: number;
+  bytes?: number;
+  ids?: string[];
+
+  confirmToken?: string;
+
+  deleted?: number;
+  failed?: number;
+};
+
+
 type SpawnRestoreResponse = {
   kind: "spawn_points.restore";
   ok: boolean;
@@ -663,6 +694,12 @@ const [snapshotPurgeOlderThanDays, setSnapshotPurgeOlderThanDays] = useState("30
 const [snapshotPurgeWorking, setSnapshotPurgeWorking] = useState(false);
 const [snapshotPurgePreview, setSnapshotPurgePreview] = useState<SpawnSnapshotsPurgeResponse | null>(null);
 const [snapshotPurgeConfirm, setSnapshotPurgeConfirm] = useState("");
+
+const [snapshotBulkDeleteIncludePinned, setSnapshotBulkDeleteIncludePinned] = useState(false);
+const [snapshotBulkDeleteWorking, setSnapshotBulkDeleteWorking] = useState(false);
+const [snapshotBulkDeletePreview, setSnapshotBulkDeletePreview] = useState<SpawnSnapshotsBulkDeleteResponse | null>(null);
+const [snapshotBulkDeleteConfirm, setSnapshotBulkDeleteConfirm] = useState("");
+
 const [snapshotEditMetaOpen, setSnapshotEditMetaOpen] = useState(false);
   const [snapshotEditWorking, setSnapshotEditWorking] = useState(false);
   const [snapshotEditName, setSnapshotEditName] = useState("");
@@ -2116,6 +2153,75 @@ const runCommitSnapshotPurge = async () => {
 };
 
 
+
+
+const runPreviewBulkDeleteSavedSnapshots = async () => {
+  if (!savedSnapshotsBulkSelectedIds.length) return;
+  setSnapshotBulkDeleteWorking(true);
+  setError(null);
+  try {
+    const res = await authedFetch(`/api/admin/spawn_points/snapshots/bulk_delete`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        ids: savedSnapshotsBulkSelectedIds,
+        includePinned: !!snapshotBulkDeleteIncludePinned,
+        commit: false,
+      }),
+    });
+
+    const data: SpawnSnapshotsBulkDeleteResponse = await res.json().catch(() => ({} as any));
+    if (!res.ok || !data.ok) throw new Error(data.error || `Bulk delete preview failed (HTTP ${res.status})`);
+
+    setSnapshotBulkDeletePreview(data);
+    setSnapshotBulkDeleteConfirm("");
+  } catch (e: any) {
+    console.error(e);
+    setError(e.message || String(e));
+  } finally {
+    setSnapshotBulkDeleteWorking(false);
+  }
+};
+
+const runCommitBulkDeleteSavedSnapshots = async () => {
+  if (!savedSnapshotsBulkSelectedIds.length) return;
+  setSnapshotBulkDeleteWorking(true);
+  setError(null);
+  try {
+    const res = await authedFetch(`/api/admin/spawn_points/snapshots/bulk_delete`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        ids: savedSnapshotsBulkSelectedIds,
+        includePinned: !!snapshotBulkDeleteIncludePinned,
+        commit: true,
+        confirm: snapshotBulkDeleteConfirm.trim() || undefined,
+      }),
+    });
+
+    const data: SpawnSnapshotsBulkDeleteResponse = await res.json().catch(() => ({} as any));
+
+    if (!res.ok && (data as any)?.requiresConfirm) {
+      setSnapshotBulkDeletePreview(data);
+      setSnapshotBulkDeleteConfirm("");
+      throw new Error("Confirm token required. Use the token shown below, then click Commit bulk delete again.");
+    }
+
+    if (!res.ok || !data.ok) throw new Error(data.error || `Bulk delete commit failed (HTTP ${res.status})`);
+
+    // success: clear selection + refresh list
+    setSnapshotBulkDeletePreview(data);
+    setSnapshotBulkDeleteConfirm("");
+    setSavedSnapshotsBulkSelectedIds([]);
+    await refreshSavedSnapshots();
+  } catch (e: any) {
+    console.error(e);
+    setError(e.message || String(e));
+  } finally {
+    setSnapshotBulkDeleteWorking(false);
+  }
+};
+
 const runQuickUpdateSavedSnapshotMeta = async (id: string, patch: Partial<StoredSpawnSnapshotMeta>) => {
   setSnapshotEditWorking(true);
   try {
@@ -2139,10 +2245,17 @@ const runQuickUpdateSavedSnapshotMeta = async (id: string, patch: Partial<Stored
 };
 
 const toggleSavedSnapshotBulkId = (id: string) => {
+  // Selection changes invalidate any pending bulk-delete preview/confirm.
+  setSnapshotBulkDeletePreview(null);
+  setSnapshotBulkDeleteConfirm("");
   setSavedSnapshotsBulkSelectedIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
 };
 
 const setSavedSnapshotBulkSelection = (ids: string[]) => {
+  // Selection changes invalidate any pending bulk-delete preview/confirm.
+  setSnapshotBulkDeletePreview(null);
+  setSnapshotBulkDeleteConfirm("");
+
   const seen = new Set<string>();
   const out: string[] = [];
   for (const id of ids) {
@@ -4297,6 +4410,101 @@ Ctrl/⌘-click: filter only`}
 
             {savedSnapshotsBulkWorking ? <span style={{ fontSize: 12, opacity: 0.75 }}>Working…</span> : null}
           </div>
+
+          <div style={{ border: "1px solid #f1c40f", borderRadius: 10, padding: 10, background: "#fffaf0" }}>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 10, alignItems: "center" }}>
+              <strong style={{ fontSize: 12 }}>Danger zone:</strong>
+              <label style={{ display: "flex", gap: 6, alignItems: "center", fontSize: 12, opacity: 0.9 }}>
+                <input
+                  type="checkbox"
+                  checked={snapshotBulkDeleteIncludePinned}
+                  onChange={(e) => {
+                    setSnapshotBulkDeleteIncludePinned(e.target.checked);
+                    setSnapshotBulkDeletePreview(null);
+                    setSnapshotBulkDeleteConfirm("");
+                  }}
+                  disabled={snapshotBulkDeleteWorking || savedSnapshotsBulkWorking}
+                />
+                Include pinned
+              </label>
+
+              <button
+                type="button"
+                onClick={() => void runPreviewBulkDeleteSavedSnapshots()}
+                disabled={!savedSnapshotsBulkSelectedIds.length || snapshotBulkDeleteWorking || savedSnapshotsBulkWorking}
+                style={{ padding: "6px 10px", borderRadius: 8, border: "1px solid #ccc", background: "white", fontWeight: 900, fontSize: 12 }}
+                title="Preview which snapshot files would be deleted and generate a confirm token"
+              >
+                {snapshotBulkDeleteWorking ? "Working..." : "Preview bulk delete"}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => void runCommitBulkDeleteSavedSnapshots()}
+                disabled={
+                  !savedSnapshotsBulkSelectedIds.length ||
+                  snapshotBulkDeleteWorking ||
+                  savedSnapshotsBulkWorking ||
+                  !snapshotBulkDeletePreview?.confirmToken ||
+                  snapshotBulkDeleteConfirm.trim() !== snapshotBulkDeletePreview.confirmToken
+                }
+                style={{ padding: "6px 10px", borderRadius: 8, border: "1px solid #c0392b", background: "white", fontWeight: 900, fontSize: 12 }}
+                title="Commit bulk delete (requires confirm token)"
+              >
+                {snapshotBulkDeleteWorking ? "Working..." : "Commit bulk delete"}
+              </button>
+
+              {snapshotBulkDeletePreview?.confirmToken ? (
+                <span style={{ fontSize: 12, opacity: 0.85 }}>
+                  Confirm token: <code style={{ marginLeft: 6 }}>{snapshotBulkDeletePreview.confirmToken}</code>
+                </span>
+              ) : null}
+            </div>
+
+            {snapshotBulkDeletePreview ? (
+              <div style={{ marginTop: 8, display: "grid", gap: 8 }}>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 12, fontSize: 12, opacity: 0.9 }}>
+                  <span>
+                    Would delete: <strong>{snapshotBulkDeletePreview.count ?? 0}</strong>
+                  </span>
+                  <span>
+                    Skipped pinned: <strong>{snapshotBulkDeletePreview.skippedPinned ?? 0}</strong>
+                  </span>
+                  <span>
+                    Missing: <strong>{snapshotBulkDeletePreview.missing ?? 0}</strong>
+                  </span>
+                  <span title="Selected snapshots that are not expired and not archived">
+                    Active (not expired/archived): <strong>{snapshotBulkDeletePreview.activeCount ?? 0}</strong>
+                  </span>
+                  <span>
+                    Bytes: <strong>{snapshotBulkDeletePreview.bytes ?? 0}</strong>
+                  </span>
+                </div>
+
+                <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+                  <label style={{ fontSize: 12, opacity: 0.9 }}>
+                    Confirm:
+                    <input
+                      value={snapshotBulkDeleteConfirm}
+                      onChange={(e) => setSnapshotBulkDeleteConfirm(e.target.value)}
+                      placeholder="Enter confirm token"
+                      style={{ marginLeft: 8, width: 200, padding: "6px 8px", borderRadius: 6, border: "1px solid #ccc" }}
+                      disabled={snapshotBulkDeleteWorking || savedSnapshotsBulkWorking}
+                    />
+                  </label>
+
+                  <span style={{ fontSize: 12, opacity: 0.8 }}>
+                    Preview first. Commit requires the exact token.
+                  </span>
+                </div>
+              </div>
+            ) : (
+              <div style={{ marginTop: 6, fontSize: 12, opacity: 0.8 }}>
+                Bulk delete permanently removes snapshot files from <code>data/spawn_snapshots</code>. Pinned snapshots are skipped unless “Include pinned” is enabled.
+              </div>
+            )}
+          </div>
+
 
           <div style={{ border: "1px solid #ddd", borderRadius: 8, padding: 8, maxHeight: 240, overflow: "auto", background: "#fafafa" }}>
             {savedSnapshots.map((s) => {

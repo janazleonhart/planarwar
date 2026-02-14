@@ -3914,6 +3914,164 @@ router.delete("/snapshots/:id", async (req, res) => {
 
 
 
+
+
+// POST /api/admin/spawn_points/snapshots/bulk_delete
+// Body:
+//   ids: string[]
+//   commit?: boolean
+//   includePinned?: boolean          (also delete pinned; default false)
+//   confirm?: string                (required for commit; returned by preview)
+router.post("/snapshots/bulk_delete", async (req, res) => {
+  try {
+    const commit = Boolean(req.body?.commit);
+    const includePinned = Boolean(req.body?.includePinned);
+    const confirm = String(req.body?.confirm ?? "").trim() || null;
+
+    const idsRaw = Array.isArray(req.body?.ids) ? (req.body.ids as any[]) : [];
+    const ids: string[] = [];
+    const seen = new Set<string>();
+
+    // Hard cap: bulk delete is an operator tool, not a data shredder.
+    for (const v of idsRaw) {
+      const id = String(v ?? "").trim();
+      if (!id || seen.has(id)) continue;
+      seen.add(id);
+      ids.push(id);
+      if (ids.length >= 500) break;
+    }
+
+    if (!ids.length) {
+      return res.status(400).json({ kind: "spawn_points.snapshots.bulk_delete", ok: false, error: "missing_ids" });
+    }
+
+    // Compute current candidates from disk state.
+    const nowMs = Date.now();
+    const metas = await listStoredSnapshots();
+    const metaById = new Map<string, StoredSpawnSnapshotMeta>();
+    for (const m of metas) metaById.set(String(m.id), m);
+
+    const missingIds: string[] = [];
+    const candidate: StoredSpawnSnapshotMeta[] = [];
+    let skippedPinned = 0;
+    let activeCount = 0;
+
+    for (const id of ids) {
+      const m = metaById.get(id);
+      if (!m) {
+        missingIds.push(id);
+        continue;
+      }
+
+      if (!includePinned && Boolean((m as any).isPinned)) {
+        skippedPinned += 1;
+        continue;
+      }
+
+      const expired = isExpired((m as any).expiresAt, nowMs);
+      const archived = Boolean((m as any).isArchived);
+      if (!expired && !archived) activeCount += 1;
+
+      candidate.push(m);
+    }
+
+    const candidateIds = candidate.map((m) => String(m.id)).sort((a, b) => a.localeCompare(b));
+    const totalBytes = candidate.reduce((acc, m) => acc + Number((m as any).bytes ?? 0), 0);
+
+    // Confirm-token is a function of the *current* on-disk metadata for the candidate set.
+    // If anything changes between preview and commit (even file size), the token changes.
+    const tokenMaterial = candidate
+      .slice()
+      .sort((a, b) => String(a.id).localeCompare(String(b.id)))
+      .map((m) => `${m.id}:${String((m as any).savedAt ?? "")}:${Number((m as any).bytes ?? 0)}`)
+      .join("|");
+
+    const token = createHash("sha1")
+      .update(`bulkdel|${includePinned ? "P" : "p"}|${tokenMaterial}|missing:${missingIds.length}|active:${activeCount}`)
+      .digest("hex")
+      .slice(0, 10)
+      .toUpperCase();
+
+    if (!commit) {
+      return res.json({
+        kind: "spawn_points.snapshots.bulk_delete",
+        ok: true,
+        commit: false,
+        includePinned,
+        requested: ids.length,
+        found: ids.length - missingIds.length,
+        missing: missingIds.length,
+        missingIds: missingIds.slice(0, 250),
+        skippedPinned,
+        activeCount,
+        count: candidateIds.length,
+        bytes: totalBytes,
+        ids: candidateIds,
+        confirmToken: token,
+      });
+    }
+
+    if (!confirm || confirm !== token) {
+      return res.status(400).json({
+        kind: "spawn_points.snapshots.bulk_delete",
+        ok: false,
+        commit: true,
+        requiresConfirm: true,
+        includePinned,
+        requested: ids.length,
+        found: ids.length - missingIds.length,
+        missing: missingIds.length,
+        missingIds: missingIds.slice(0, 250),
+        skippedPinned,
+        activeCount,
+        count: candidateIds.length,
+        bytes: totalBytes,
+        ids: candidateIds.slice(0, 250),
+        confirmToken: token,
+      });
+    }
+
+    const dir = await ensureSnapshotDir();
+    let deleted = 0;
+    let failed = 0;
+
+    for (const id of candidateIds) {
+      const file = path.join(dir, `${id}.json`);
+      try {
+        await fs.unlink(file);
+        deleted += 1;
+      } catch (e: any) {
+        failed += 1;
+      }
+    }
+
+    return res.json({
+      kind: "spawn_points.snapshots.bulk_delete",
+      ok: true,
+      commit: true,
+      includePinned,
+      requested: ids.length,
+      found: ids.length - missingIds.length,
+      missing: missingIds.length,
+      missingIds: missingIds.slice(0, 250),
+      skippedPinned,
+      activeCount,
+      deleted,
+      failed,
+      bytes: totalBytes,
+      ids: candidateIds.slice(0, 250),
+    });
+  } catch (err: any) {
+    console.error("[ADMIN/SPAWN_POINTS] snapshots bulk_delete error", err);
+    return res.status(500).json({
+      kind: "spawn_points.snapshots.bulk_delete",
+      ok: false,
+      error: err?.message || String(err),
+    });
+  }
+});
+
+
 // POST /api/admin/spawn_points/snapshots/purge
 // Body:
 //   commit?: boolean
