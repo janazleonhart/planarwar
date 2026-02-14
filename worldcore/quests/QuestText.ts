@@ -35,12 +35,15 @@ export function renderQuestLog(char: CharacterState): string {
     const q = resolveQuestDefinitionFromStateId(id, entry);
 
     const name = q?.name ?? id;
-    const mark =
-      entry.state === "completed"
-        ? "[C]"
-        : entry.state === "turned_in"
-        ? "[T]"
-        : "[A]";
+    const isCompleted = entry.state === "completed";
+    const isTurnedIn = entry.state === "turned_in";
+    const isReady = !!(
+      q &&
+      isCompleted &&
+      areObjectivesSatisfied(q, char, { kills, harvests, actions, flags })
+    );
+
+    const mark = isTurnedIn ? "[T]" : isReady ? "[READY]" : isCompleted ? "[C]" : "[A]";
 
     let repeatInfo = "";
     if (q?.repeatable) {
@@ -54,6 +57,10 @@ export function renderQuestLog(char: CharacterState): string {
     out += ` ${mark} ${name} (${id})${repeatInfo}\n`;
 
     if (q) {
+      if (isReady) {
+        const rewardText = renderQuestRewardSummary(q);
+        if (rewardText) out += `   Rewards: ${rewardText}\n`;
+      }
       for (const obj of q.objectives) {
         out += renderObjectiveLine(char, obj, { kills, harvests, actions, flags });
       }
@@ -70,6 +77,9 @@ type ObjectiveRenderCtx = {
   harvests: Record<string, number>;
   actions: Record<string, number>;
   flags: Record<string, unknown>;
+  // Provided by areObjectivesSatisfied() for collect_item checks.
+  // renderObjectiveLine() does not require it.
+  inv?: CharacterState["inventory"];
 };
 
 function renderObjectiveLine(
@@ -123,4 +133,89 @@ function renderObjectiveLine(
     default:
       return "";
   }
+}
+
+function areObjectivesSatisfied(
+  quest: { objectives: QuestObjective[] },
+  char: CharacterState,
+  ctx: Omit<ObjectiveRenderCtx, "inv">,
+): boolean {
+  const inv = char.inventory;
+  for (const obj of quest.objectives ?? []) {
+    if (!isObjectiveSatisfied(obj, { ...ctx, inv })) return false;
+  }
+  return true;
+}
+
+function isObjectiveSatisfied(
+  obj: QuestObjective,
+  ctx: ObjectiveRenderCtx,
+): boolean {
+  const { kills, harvests, actions, flags, inv } = ctx;
+
+  switch (obj.kind) {
+    case "kill":
+      return (kills[obj.targetProtoId] ?? 0) >= obj.required;
+    case "harvest":
+      return (harvests[obj.nodeProtoId] ?? 0) >= obj.required;
+    case "collect_item":
+      return !!inv && countItemInInventory(inv, obj.itemId) >= obj.required;
+    case "craft":
+      return (actions[obj.actionId] ?? 0) >= obj.required;
+    case "city":
+      return (actions[obj.cityActionId] ?? 0) >= obj.required;
+    case "talk_to": {
+      const required = obj.required ?? 1;
+      const key = `talked_to:${obj.npcId}`;
+      const v = flags[key];
+      const cur = typeof v === "number" ? v : v ? 1 : 0;
+      return cur >= required;
+    }
+    default:
+      return false;
+  }
+}
+
+function renderQuestRewardSummary(quest: any): string {
+  const r: any = quest?.reward ?? null;
+  if (!r) return "";
+
+  const parts: string[] = [];
+
+  if (typeof r.xp === "number" && r.xp > 0) parts.push(`${r.xp} XP`);
+  if (typeof r.gold === "number" && r.gold > 0) parts.push(`${r.gold}g`);
+
+  const items = Array.isArray(r.items) ? r.items : [];
+  if (items.length > 0) {
+    const t = items
+      .slice(0, 3)
+      .map((it: any) => `${Number(it?.count ?? 1)}x ${String(it?.itemId ?? "?")}`)
+      .join(", ");
+    parts.push(`Items: ${t}${items.length > 3 ? ", …" : ""}`);
+  }
+
+  const titles = Array.isArray(r.titles) ? r.titles : [];
+  if (titles.length > 0) {
+    parts.push(`Titles: ${titles.slice(0, 3).join(", ")}${titles.length > 3 ? ", …" : ""}`);
+  }
+
+  const spellGrants = Array.isArray(r.spellGrants) ? r.spellGrants : [];
+  if (spellGrants.length > 0) {
+    const t = spellGrants
+      .slice(0, 3)
+      .map((g: any) => String(g?.spellId ?? "?"))
+      .join(", ");
+    parts.push(`Spells: ${t}${spellGrants.length > 3 ? ", …" : ""}`);
+  }
+
+  const abilityGrants = Array.isArray(r.abilityGrants) ? r.abilityGrants : [];
+  if (abilityGrants.length > 0) {
+    const t = abilityGrants
+      .slice(0, 3)
+      .map((g: any) => String(g?.abilityId ?? "?"))
+      .join(", ");
+    parts.push(`Abilities: ${t}${abilityGrants.length > 3 ? ", …" : ""}`);
+  }
+
+  return parts.join(" • ");
 }
