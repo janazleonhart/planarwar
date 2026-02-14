@@ -87,6 +87,7 @@ type AdminApiKind =
   | "spawn_points.snapshot"
   | "spawn_points.snapshot_query"
   | "spawn_points.snapshots.save_query"
+  | "spawn_points.snapshots.purge"
   | "spawn_points.restore"
   | "town_baseline.plan"
   | "town_baseline.apply"
@@ -3885,6 +3886,114 @@ router.delete("/snapshots/:id", async (req, res) => {
   }
 });
 
+
+
+// POST /api/admin/spawn_points/snapshots/purge
+// Body:
+//   commit?: boolean
+//   includeArchived?: boolean        (also purge archived snapshots, gated by olderThanDays)
+//   olderThanDays?: number          (only for archived purge; default 30)
+//   confirm?: string                (required for commit; returned by preview)
+router.post("/snapshots/purge", async (req, res) => {
+  try {
+    const commit = Boolean(req.body?.commit);
+    const includeArchived = Boolean(req.body?.includeArchived);
+    const olderThanDaysRaw = Number(req.body?.olderThanDays);
+    const olderThanDays = Number.isFinite(olderThanDaysRaw) ? Math.max(0, Math.min(3650, Math.floor(olderThanDaysRaw))) : 30;
+
+    const confirm = String(req.body?.confirm ?? "").trim() || null;
+
+    // We intentionally compute candidates from current disk state each time.
+    const nowMs = Date.now();
+    const metas = await listStoredSnapshots();
+    const candidates: StoredSpawnSnapshotMeta[] = [];
+
+    for (const m of metas) {
+      const expired = isExpired((m as any).expiresAt, nowMs);
+      if (expired) {
+        candidates.push(m);
+        continue;
+      }
+
+      if (includeArchived && Boolean((m as any).isArchived)) {
+        const savedAtMs = new Date(String((m as any).savedAt ?? "")).getTime();
+        const ageDays = Number.isFinite(savedAtMs) ? Math.floor((nowMs - savedAtMs) / (24 * 60 * 60 * 1000)) : 999999;
+        if (ageDays >= olderThanDays) candidates.push(m);
+      }
+    }
+
+    const ids = candidates.map((c) => c.id).sort((a, b) => a.localeCompare(b));
+    const totalBytes = candidates.reduce((acc, c) => acc + Number((c as any).bytes ?? 0), 0);
+
+    const token = createHash("sha1")
+      .update(`purge|${includeArchived ? "A" : "a"}|${olderThanDays}|${ids.join(",")}`)
+      .digest("hex")
+      .slice(0, 10)
+      .toUpperCase();
+
+    if (!commit) {
+      return res.json({
+        kind: "spawn_points.snapshots.purge",
+        ok: true,
+        commit: false,
+        includeArchived,
+        olderThanDays,
+        count: ids.length,
+        bytes: totalBytes,
+        ids,
+        confirmToken: token,
+      });
+    }
+
+    if (!confirm || confirm !== token) {
+      return res.status(400).json({
+        kind: "spawn_points.snapshots.purge",
+        ok: false,
+        commit: true,
+        requiresConfirm: true,
+        includeArchived,
+        olderThanDays,
+        count: ids.length,
+        bytes: totalBytes,
+        ids: ids.slice(0, 250),
+        confirmToken: token,
+      });
+    }
+
+    const dir = await ensureSnapshotDir();
+    let deleted = 0;
+    let failed = 0;
+
+    for (const id of ids) {
+      const file = path.join(dir, `${id}.json`);
+      try {
+        await fs.unlink(file);
+        deleted += 1;
+      } catch (e: any) {
+        failed += 1;
+      }
+    }
+
+    return res.json({
+      kind: "spawn_points.snapshots.purge",
+      ok: true,
+      commit: true,
+      includeArchived,
+      olderThanDays,
+      deleted,
+      failed,
+      bytes: totalBytes,
+      ids: ids.slice(0, 250),
+    });
+  } catch (err: any) {
+    console.error("[ADMIN/SPAWN_POINTS] snapshots purge error", err);
+    return res.status(500).json({
+      kind: "spawn_points.snapshots.purge",
+      ok: false,
+      error: err?.message || String(err),
+    });
+  }
+});
 // POST /api/admin/spawn_points/restore
 // Body:
 //   snapshot (object|string), targetShard?, updateExisting?, allowBrainOwned?, commit?, confirm?

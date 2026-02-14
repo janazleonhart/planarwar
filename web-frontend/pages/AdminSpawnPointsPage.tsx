@@ -237,6 +237,28 @@ type SpawnSnapshotsDeleteResponse = {
 };
 
 
+type SpawnSnapshotsPurgeResponse = {
+  kind: "spawn_points.snapshots.purge";
+  ok: boolean;
+  error?: string;
+
+  commit?: boolean;
+  requiresConfirm?: boolean;
+
+  includeArchived?: boolean;
+  olderThanDays?: number;
+
+  count?: number;
+  bytes?: number;
+  ids?: string[];
+
+  confirmToken?: string;
+
+  deleted?: number;
+  failed?: number;
+};
+
+
 type SpawnRestoreResponse = {
   kind: "spawn_points.restore";
   ok: boolean;
@@ -626,6 +648,12 @@ const [savedSnapshotsLoading, setSavedSnapshotsLoading] = useState(false);
 const [snapshotSaveWorking, setSnapshotSaveWorking] = useState(false);
 const [snapshotLoadWorking, setSnapshotLoadWorking] = useState(false);
 const [snapshotDeleteWorking, setSnapshotDeleteWorking] = useState<string | null>(null);
+
+const [snapshotPurgeIncludeArchived, setSnapshotPurgeIncludeArchived] = useState(false);
+const [snapshotPurgeOlderThanDays, setSnapshotPurgeOlderThanDays] = useState("30");
+const [snapshotPurgeWorking, setSnapshotPurgeWorking] = useState(false);
+const [snapshotPurgePreview, setSnapshotPurgePreview] = useState<SpawnSnapshotsPurgeResponse | null>(null);
+const [snapshotPurgeConfirm, setSnapshotPurgeConfirm] = useState("");
 const [snapshotEditMetaOpen, setSnapshotEditMetaOpen] = useState(false);
   const [snapshotEditWorking, setSnapshotEditWorking] = useState(false);
   const [snapshotEditName, setSnapshotEditName] = useState("");
@@ -1993,6 +2021,74 @@ const runDeleteSavedSnapshot = async (id: string) => {
   }
 };
 
+
+const runPreviewSnapshotPurge = async () => {
+  setSnapshotPurgeWorking(true);
+  try {
+    const older = Number(String(snapshotPurgeOlderThanDays || "").trim());
+    const olderThanDays = Number.isFinite(older) ? Math.max(0, Math.min(3650, Math.floor(older))) : 30;
+
+    const res = await authedFetch(`/api/admin/spawn_points/snapshots/purge`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        commit: false,
+        includeArchived: !!snapshotPurgeIncludeArchived,
+        olderThanDays,
+      }),
+    });
+
+    const data: SpawnSnapshotsPurgeResponse = await res.json().catch(() => ({} as any));
+    if (!res.ok || !data.ok) throw new Error(data.error || `Purge preview failed (HTTP ${res.status})`);
+
+    setSnapshotPurgePreview(data);
+    setSnapshotPurgeConfirm("");
+  } catch (e: any) {
+    console.error(e);
+    setError(e.message || String(e));
+  } finally {
+    setSnapshotPurgeWorking(false);
+  }
+};
+
+const runCommitSnapshotPurge = async () => {
+  setSnapshotPurgeWorking(true);
+  try {
+    const older = Number(String(snapshotPurgeOlderThanDays || "").trim());
+    const olderThanDays = Number.isFinite(older) ? Math.max(0, Math.min(3650, Math.floor(older))) : 30;
+
+    const res = await authedFetch(`/api/admin/spawn_points/snapshots/purge`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        commit: true,
+        includeArchived: !!snapshotPurgeIncludeArchived,
+        olderThanDays,
+        confirm: snapshotPurgeConfirm.trim() || undefined,
+      }),
+    });
+
+    const data: SpawnSnapshotsPurgeResponse = await res.json().catch(() => ({} as any));
+
+    if (!res.ok && (data as any)?.requiresConfirm) {
+      setSnapshotPurgePreview(data);
+      // server included a new token; keep input empty
+      setSnapshotPurgeConfirm("");
+      throw new Error("Confirm token required. Use the token shown below, then click Commit purge again.");
+    }
+
+    if (!res.ok || !data.ok) throw new Error(data.error || `Purge commit failed (HTTP ${res.status})`);
+
+    setSnapshotPurgePreview(data);
+    setSnapshotPurgeConfirm("");
+    await refreshSavedSnapshots();
+  } catch (e: any) {
+    console.error(e);
+    setError(e.message || String(e));
+  } finally {
+    setSnapshotPurgeWorking(false);
+  }
+};
 
 const runUpdateSavedSnapshotMeta = async (id: string) => {
   setSnapshotEditWorking(true);
@@ -3954,6 +4050,120 @@ Ctrl/⌘-click: filter only`}
   <div style={{ marginTop: 8, fontSize: 12, opacity: 0.8 }}>
     Stored under <code>data/spawn_snapshots</code> on the web-backend host (override with <code>PLANARWAR_SPAWN_SNAPSHOT_DIR</code>).
   </div>
+
+<details style={{ marginTop: 10 }}>
+  <summary style={{ cursor: "pointer", userSelect: "none", fontWeight: 800 }}>Purge expired snapshots</summary>
+  <div style={{ marginTop: 10, display: "grid", gap: 10 }}>
+    <div style={{ display: "flex", flexWrap: "wrap", gap: 12, alignItems: "center" }}>
+      <label style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 13 }}>
+        <input
+          type="checkbox"
+          checked={snapshotPurgeIncludeArchived}
+          onChange={(e) => setSnapshotPurgeIncludeArchived(e.target.checked)}
+        />
+        Also purge archived (older than N days)
+      </label>
+
+      <label style={{ display: "grid", gap: 4 }}>
+        <span style={{ fontSize: 12, opacity: 0.85 }}>Archived older than (days)</span>
+        <input
+          value={snapshotPurgeOlderThanDays}
+          onChange={(e) => setSnapshotPurgeOlderThanDays(e.target.value)}
+          style={{ width: 160, padding: "6px 8px", borderRadius: 6, border: "1px solid #ccc" }}
+        />
+      </label>
+
+      <button
+        type="button"
+        disabled={snapshotPurgeWorking}
+        onClick={runPreviewSnapshotPurge}
+        style={{
+          padding: "8px 12px",
+          borderRadius: 8,
+          border: "1px solid #ccc",
+          background: snapshotPurgeWorking ? "#f6f6f6" : "white",
+          cursor: snapshotPurgeWorking ? "not-allowed" : "pointer",
+          fontWeight: 800,
+        }}
+        title="Computes which snapshots would be purged and returns a confirm token."
+      >
+        {snapshotPurgeWorking ? "Working..." : "Preview purge"}
+      </button>
+
+      <button
+        type="button"
+        disabled={snapshotPurgeWorking}
+        onClick={runCommitSnapshotPurge}
+        style={{
+          padding: "8px 12px",
+          borderRadius: 8,
+          border: "1px solid #ccc",
+          background: snapshotPurgeWorking ? "#f6f6f6" : "white",
+          cursor: snapshotPurgeWorking ? "not-allowed" : "pointer",
+          fontWeight: 800,
+        }}
+        title="Deletes the previewed candidate snapshot files. Requires a confirm token."
+      >
+        {snapshotPurgeWorking ? "Working..." : "Commit purge"}
+      </button>
+    </div>
+
+    {snapshotPurgePreview?.confirmToken ? (
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 10, alignItems: "flex-end" }}>
+        <label style={{ display: "grid", gap: 4 }}>
+          <span style={{ fontSize: 12, opacity: 0.85 }}>Confirm token</span>
+          <input
+            value={snapshotPurgeConfirm}
+            onChange={(e) => setSnapshotPurgeConfirm(e.target.value)}
+            placeholder={String(snapshotPurgePreview.confirmToken)}
+            style={{ width: 220, padding: "6px 8px", borderRadius: 6, border: "1px solid #ccc" }}
+          />
+        </label>
+        <button
+          type="button"
+          onClick={() => setSnapshotPurgeConfirm(String(snapshotPurgePreview.confirmToken))}
+          style={{ padding: "6px 10px", borderRadius: 8, border: "1px solid #ccc", background: "white", cursor: "pointer", fontWeight: 800 }}
+          title="Fill the confirm token input"
+        >
+          Use token
+        </button>
+        <button
+          type="button"
+          onClick={async () => {
+            try {
+              await navigator.clipboard.writeText(String(snapshotPurgePreview.confirmToken));
+            } catch (e) {
+              console.warn("clipboard write failed", e);
+            }
+          }}
+          style={{ padding: "6px 10px", borderRadius: 8, border: "1px solid #ccc", background: "white", cursor: "pointer", fontWeight: 800 }}
+          title="Copy token to clipboard"
+        >
+          Copy
+        </button>
+        <div style={{ fontSize: 12, opacity: 0.8, paddingBottom: 6 }}>
+          Candidates: <strong>{snapshotPurgePreview.count ?? 0}</strong> ({Math.round(((snapshotPurgePreview.bytes ?? 0) / (1024 * 1024)) * 10) / 10} MB)
+        </div>
+      </div>
+    ) : null}
+
+    {snapshotPurgePreview?.ids && snapshotPurgePreview.ids.length ? (
+      <details>
+        <summary style={{ cursor: "pointer", userSelect: "none", opacity: 0.85 }}>
+          Candidate IDs ({snapshotPurgePreview.ids.length})
+        </summary>
+        <pre style={{ marginTop: 8, background: "#111", color: "#eee", border: "1px solid #333", padding: 8, borderRadius: 6, overflow: "auto", maxHeight: 220 }}>
+          {snapshotPurgePreview.ids.join("\n")}
+        </pre>
+      </details>
+    ) : (
+      <div style={{ fontSize: 12, opacity: 0.75 }}>
+        Preview shows which snapshots will be removed. Expired snapshots are always candidates. Archived snapshots are candidates only when enabled and older than N days.
+      </div>
+    )}
+  </div>
+</details>
+
 </div>
 
 <hr style={{ margin: "14px 0", opacity: 0.4 }} />
