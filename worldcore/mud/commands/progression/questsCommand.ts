@@ -54,6 +54,9 @@ export async function handleQuestCommand(
     " quest abandon <#|id>",
     " quest turnin list          (shows completed quests ready to turn in)",
     " quest turnin ready         (alias of list)",
+    " quest turnin preview <#|id|name> (shows readiness + reward preview)",
+    " quest turnin all           (shows confirm token for bulk turn-in)",
+    " quest turnin all <token>   (bulk turn-in all completed quests)",
     " quest turnin <#|id|name>   (turn in by quest-log index, id, or name)",
   ].join("\n");
 }

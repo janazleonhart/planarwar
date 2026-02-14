@@ -17,6 +17,7 @@ import { grantSpellInState } from "../spells/SpellLearning";
 import { grantAbilityInState } from "../abilities/AbilityLearning";
 import { getSpellByIdOrAlias } from "../spells/SpellTypes";
 import { findAbilityByNameOrId } from "../abilities/AbilityTypes";
+import crypto from "node:crypto";
 
 /**
  * Turn in a quest by id or name.
@@ -38,8 +39,101 @@ export async function turnInQuest(
 
   // Warfront-friendly helpers:
   // - 'quest turnin list' / 'quest turnin ready' => show completed quests ready to cash in
+  // - 'quest turnin preview <#|id|name>' => show reward + objective readiness
+  // - 'quest turnin all' => confirm-token gated bulk turn-in of all completed quests
   // - 'quest turnin <#>' => numeric index into quest log ordering (ids.sort())
   const lower = trimmed.toLowerCase();
+
+  // ------------------------------------------------------------
+  // Bulk turn-in (confirm-token gated)
+  // ------------------------------------------------------------
+  if (lower === "all" || lower.startsWith("all ")) {
+    if (ids.length === 0) return "[quest] You have no accepted quests.";
+
+    const completed = ids.filter((id) => questState[id]?.state === "completed");
+    if (completed.length === 0) return "[quest] No completed quests are ready to turn in yet.";
+
+    const providedToken = trimmed.split(/\s+/).slice(1).join(" ").trim();
+    const token = computeTurnInAllToken(char, completed, questState);
+
+    if (!providedToken) {
+      const lines: string[] = [];
+      lines.push(`[quest] Turn-in ALL ready quests: ${completed.length}`);
+      lines.push("\nReady:");
+      for (const id of completed) {
+        const entry = questState[id];
+        const q = resolveQuestDefinitionFromStateId(id, entry);
+        const name = q?.name ?? id;
+        const idx = ids.indexOf(id) + 1;
+        const rewardText = q ? renderQuestRewardSummary(q) : "";
+        lines.push(` - ${idx}) ${name} (${id})${rewardText ? ` • ${rewardText}` : ""}`);
+      }
+      lines.push("\nThis action is confirm-token gated to prevent oopsies.");
+      lines.push(`Confirm with: quest turnin all ${token}`);
+      return lines.join("\n").trimEnd();
+    }
+
+    if (providedToken !== token) {
+      return [
+        "[quest] Turn-in ALL denied: confirm token mismatch.",
+        "Re-run: quest turnin all (to get a fresh token)",
+      ].join("\n");
+    }
+
+    // Commit: sequentially turn in each quest. turnInQuest() already updates ctx.session.character.
+    const results: string[] = [];
+    for (const id of completed) {
+      const current = (ctx as any)?.session?.character ?? char;
+      const msg = await turnInQuest(ctx, current, id);
+      results.push(msg);
+    }
+
+    const finalChar = (ctx as any)?.session?.character ?? char;
+    const remaining = Object.keys(ensureQuestState(finalChar) as any)
+      .sort()
+      .filter((id) => (finalChar as any).progression?.quests?.[id]?.state === "completed");
+
+    const footer = remaining.length > 0
+      ? `\n[quest] Note: ${remaining.length} quests are still completed (likely repeatables capped or newly completed mid-turnin).`
+      : "";
+
+    return (`[quest] Turn-in ALL complete (${completed.length} attempted).\n` + results.join("\n") + footer).trimEnd();
+  }
+
+  // ------------------------------------------------------------
+  // Preview
+  // ------------------------------------------------------------
+  if (lower === "preview" || lower.startsWith("preview ")) {
+    const target = trimmed.split(/\s+/).slice(1).join(" ").trim();
+    if (!target) return "Usage: quest turnin preview <#|id|name>";
+
+    let key = target;
+    if (/^\d+$/.test(target)) {
+      const idx = Number(target);
+      const id = ids[idx - 1];
+      if (!id) return `[quest] You do not have a quest #${target}. (Use 'quest' to list accepted quests.)`;
+      key = id;
+    }
+
+    const resolved = resolveQuestByIdOrNameIncludingAccepted(key, questState);
+    if (!resolved) return `[quest] Unknown quest '${target}'.`;
+
+    const quest = resolved.quest;
+    const entry = questState[quest.id];
+    if (!entry) return `[quest] You have not accepted '${quest.name}'.`;
+
+    const objOk = areObjectivesSatisfiedForTurnIn(quest, char);
+    const state = entry.state ?? "unknown";
+    const rewardText = renderQuestRewardSummary(quest);
+
+    const lines: string[] = [];
+    lines.push(`[quest] Preview: ${quest.name} (${quest.id})`);
+    lines.push(`State: ${state}${state === "completed" ? " (ready)" : ""}`);
+    lines.push(`Objectives satisfied: ${objOk ? "YES" : "NO"}`);
+    if (rewardText) lines.push(`Rewards: ${rewardText}`);
+    lines.push("\nTurn in with: quest turnin <#|id|name>");
+    return lines.join("\n").trimEnd();
+  }
   if (lower === "list" || lower === "ready") {
     if (ids.length === 0) return "[quest] You have no accepted quests.";
 
@@ -52,9 +146,10 @@ export async function turnInQuest(
       const q = resolveQuestDefinitionFromStateId(id, entry);
       const name = q?.name ?? id;
       const idx = ids.indexOf(id) + 1;
-      out += ` - ${idx}) ${name} (${id})\n`;
+      const rewardText = q ? renderQuestRewardSummary(q) : "";
+      out += ` - ${idx}) ${name} (${id})${rewardText ? ` • ${rewardText}` : ""}\n`;
     }
-    out += "\nUse: quest turnin <#|id|name>";
+    out += "\nUse: quest turnin <#|id|name> (or 'preview'/'all')";
     return out.trimEnd();
   }
 
@@ -386,6 +481,62 @@ function resolveQuestByIdOrNameIncludingAccepted(
   }
 
   return null;
+}
+
+function renderQuestRewardSummary(quest: QuestDefinition): string {
+  const r: any = quest.reward ?? null;
+  if (!r) return "";
+
+  const parts: string[] = [];
+
+  if (typeof r.xp === "number" && r.xp > 0) parts.push(`${r.xp} XP`);
+  if (typeof r.gold === "number" && r.gold > 0) parts.push(`${r.gold}g`);
+
+  const items = Array.isArray(r.items) ? r.items : [];
+  if (items.length > 0) {
+    const t = items
+      .slice(0, 3)
+      .map((it: any) => `${Number(it?.count ?? 1)}x ${String(it?.itemId ?? "?")}`)
+      .join(", ");
+    parts.push(`Items: ${t}${items.length > 3 ? ", …" : ""}`);
+  }
+
+  const titles = Array.isArray(r.titles) ? r.titles : [];
+  if (titles.length > 0) parts.push(`Titles: ${titles.slice(0, 3).join(", ")}${titles.length > 3 ? ", …" : ""}`);
+
+  const spellGrants = Array.isArray((r as any).spellGrants) ? (r as any).spellGrants : [];
+  if (spellGrants.length > 0) {
+    const t = spellGrants
+      .slice(0, 3)
+      .map((g: any) => String(g?.spellId ?? "?") )
+      .join(", ");
+    parts.push(`Spells: ${t}${spellGrants.length > 3 ? ", …" : ""}`);
+  }
+
+  const abilityGrants = Array.isArray((r as any).abilityGrants) ? (r as any).abilityGrants : [];
+  if (abilityGrants.length > 0) {
+    const t = abilityGrants
+      .slice(0, 3)
+      .map((g: any) => String(g?.abilityId ?? "?") )
+      .join(", ");
+    parts.push(`Abilities: ${t}${abilityGrants.length > 3 ? ", …" : ""}`);
+  }
+
+  return parts.join(" • ");
+}
+
+function computeTurnInAllToken(
+  char: CharacterState,
+  completedQuestIds: string[],
+  questState: Record<string, any>
+): string {
+  const base = [
+    String(char.id),
+    completedQuestIds.join(","),
+    completedQuestIds.map((id) => String(questState?.[id]?.completions ?? 0)).join(","),
+  ].join("|");
+
+  return crypto.createHash("sha256").update(base).digest("hex").slice(0, 16);
 }
 
 function areObjectivesSatisfiedForTurnIn(
