@@ -205,6 +205,15 @@ type SpawnSnapshotsSaveResponse = {
   snapshot?: StoredSpawnSnapshotMeta;
 };
 
+type SpawnSnapshotsSaveQueryResponse = {
+  kind: "spawn_points.snapshots.save_query";
+  ok: boolean;
+  error?: string;
+  snapshot?: StoredSpawnSnapshotMeta;
+  total?: number;
+};
+
+
 type SpawnSnapshotsGetResponse = {
   kind: "spawn_points.snapshots.get";
   ok: boolean;
@@ -1748,6 +1757,54 @@ const runSaveSnapshotToServer = async () => {
 
     const data: SpawnSnapshotsSaveResponse = await res.json().catch(() => ({} as any));
     if (!res.ok || !data.ok) throw new Error(data.error || `Save snapshot failed (HTTP ${res.status})`);
+
+    await refreshSavedSnapshots();
+    if (data.snapshot?.id) setSelectedSavedSnapshotId(data.snapshot.id);
+  } catch (e: any) {
+    console.error(e);
+    setError(e.message || String(e));
+  } finally {
+    setSnapshotSaveWorking(false);
+  }
+};
+
+
+const runSaveSnapshotQueryToServer = async () => {
+  setSnapshotSaveWorking(true);
+  try {
+    const name = snapshotSaveName.trim();
+    if (!name) throw new Error("Snapshot name is required.");
+
+    const body: any = {
+      name,
+      shardId: shardId || "prime_shard",
+      cellSize: snapshotCellSize,
+      pad: snapshotPad,
+      tags: snapshotSaveTags,
+      notes: snapshotSaveNotes,
+      authority: filterAuthority || undefined,
+      type: filterType.trim() || undefined,
+      archetype: filterArchetype.trim() || undefined,
+      protoId: filterProtoId.trim() || undefined,
+      spawnId: filterSpawnId.trim() || undefined,
+    };
+
+    if (loadMode === "region") {
+      body.regionId = regionId;
+    } else if (loadMode === "radius") {
+      body.x = Number(queryX) || 0;
+      body.z = Number(queryZ) || 0;
+      body.radius = Math.max(0, Math.min(10000, Number(queryRadius) || 0));
+    }
+
+    const res = await authedFetch(`/api/admin/spawn_points/snapshots/save_query`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+
+    const data: SpawnSnapshotsSaveQueryResponse = await res.json().catch(() => ({} as any));
+    if (!res.ok || !data.ok) throw new Error(data.error || `Save query snapshot failed (HTTP ${res.status})`);
 
     await refreshSavedSnapshots();
     if (data.snapshot?.id) setSelectedSavedSnapshotId(data.snapshot.id);
@@ -3430,6 +3487,15 @@ Ctrl/⌘-click: filter only`}
     >
       {snapshotSaveWorking ? "Saving..." : "Save to server"}
     </button>
+
+<button
+  disabled={!canWrite || snapshotSaveWorking}
+  title="Saves a snapshot file on the server using the current query (region/radius + filters)."
+  onClick={runSaveSnapshotQueryToServer}
+>
+  Save Query (server)
+</button>
+
 
     <label style={{ display: "grid", gap: 4, minWidth: 160 }}>
       <span style={{ fontSize: 12, opacity: 0.85 }}>Sort</span>

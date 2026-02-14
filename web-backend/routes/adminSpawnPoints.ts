@@ -86,6 +86,7 @@ type AdminApiKind =
   | "spawn_points.scatter"
   | "spawn_points.snapshot"
   | "spawn_points.snapshot_query"
+  | "spawn_points.snapshots.save_query"
   | "spawn_points.restore"
   | "town_baseline.plan"
   | "town_baseline.apply"
@@ -3241,6 +3242,188 @@ router.post("/snapshot_query", async (req, res) => {
   } catch (err: any) {
     console.error("[ADMIN/SPAWN_POINTS] snapshot_query error", err);
     return res.status(500).json({ kind: "spawn_points.snapshot_query", ok: false, error: err?.message || String(err) });
+  }
+});
+
+
+// POST /api/admin/spawn_points/snapshots/save_query
+router.post("/snapshots/save_query", async (req, res) => {
+  try {
+    const nameRaw = strOrNull(req.body?.name);
+    if (!nameRaw) return res.status(400).json({ kind: "spawn_points.snapshots.save_query", ok: false, error: "missing_name" });
+
+    const shardId = String(req.body?.shardId ?? "prime_shard").trim();
+
+    const regionId = strOrNull(req.body?.regionId);
+    const x = numOrNull(req.body?.x);
+    const z = numOrNull(req.body?.z);
+    const radius = numOrNull(req.body?.radius);
+
+    const authority = normalizeAuthority(req.body?.authority);
+    const typeQ = strOrNull(req.body?.type);
+    const archetypeQ = strOrNull(req.body?.archetype);
+    const protoQ = strOrNull(req.body?.protoId);
+    const spawnQ = strOrNull(req.body?.spawnId);
+
+    const cellSize = Math.max(1, Math.min(1024, Number(req.body?.cellSize ?? 64)));
+    const pad = Math.max(0, Math.min(1000, Number(req.body?.pad ?? 0)));
+
+    const tags = normalizeSnapshotTags(req.body?.tags);
+    const notes = safeSnapshotNotes(req.body?.notes);
+
+    const MAX_ROWS = 5000;
+
+    const where: string[] = ["shard_id = $1"];
+    const args: any[] = [shardId];
+    let i = 2;
+
+    if (regionId) {
+      where.push(`region_id = $${i++}`);
+      args.push(regionId);
+    }
+
+    if (!regionId && x !== null && z !== null && radius !== null) {
+      const safeRadius = Math.max(0, Math.min(radius, 10_000));
+      const r2 = safeRadius * safeRadius;
+
+      where.push(`x IS NOT NULL AND z IS NOT NULL`);
+      where.push(`((x - $${i}) * (x - $${i}) + (z - $${i + 1}) * (z - $${i + 1})) <= $${i + 2}`);
+      args.push(x, z, r2);
+      i += 3;
+    }
+
+    if (authority) {
+      if (authority === "anchor") where.push(`spawn_id LIKE 'anchor:%'`);
+      else if (authority === "seed") where.push(`spawn_id LIKE 'seed:%'`);
+      else if (authority === "brain") where.push(`spawn_id LIKE 'brain:%'`);
+      else where.push(`spawn_id NOT LIKE 'anchor:%' AND spawn_id NOT LIKE 'seed:%' AND spawn_id NOT LIKE 'brain:%'`);
+    }
+
+    if (typeQ) {
+      where.push(`LOWER(type) = LOWER($${i++})`);
+      args.push(typeQ);
+    }
+
+    if (archetypeQ) {
+      where.push(`LOWER(archetype) = LOWER($${i++})`);
+      args.push(archetypeQ);
+    }
+
+    if (protoQ) {
+      where.push(`proto_id ILIKE $${i++}`);
+      args.push(`%${protoQ}%`);
+    }
+
+    if (spawnQ) {
+      where.push(`spawn_id ILIKE $${i++}`);
+      args.push(`%${spawnQ}%`);
+    }
+
+    const countSql = `SELECT COUNT(1)::int AS n FROM spawn_points WHERE ${where.join(" AND ")}`;
+    const countRes = await db.query(countSql, args);
+    const total = Number(countRes.rows?.[0]?.n ?? 0);
+    if (total > MAX_ROWS) {
+      return res.status(400).json({
+        kind: "spawn_points.snapshots.save_query",
+        ok: false,
+        error: "too_many_rows",
+        total,
+        max: MAX_ROWS,
+      });
+    }
+
+    const sql = `
+      SELECT
+        shard_id,
+        spawn_id,
+        type,
+        archetype,
+        proto_id,
+        variant_id,
+        x,
+        y,
+        z,
+        region_id,
+        town_tier
+      FROM spawn_points
+      WHERE ${where.join(" AND ")}
+      ORDER BY id ASC
+      LIMIT ${MAX_ROWS}
+    `;
+
+    const rowsRes = await db.query(sql, args);
+    const spawns: SnapshotSpawnRow[] = (rowsRes.rows || []).map((r: any) => ({
+      shardId: String(r.shard_id),
+      spawnId: String(r.spawn_id),
+      type: String(r.type),
+      protoId: String(r.proto_id ?? ""),
+      archetype: String(r.archetype),
+      variantId: r.variant_id ? String(r.variant_id) : null,
+      x: Number(r.x ?? 0),
+      y: Number(r.y ?? 0),
+      z: Number(r.z ?? 0),
+      regionId: String(r.region_id ?? ""),
+      townTier: r.town_tier === null || r.town_tier === undefined ? null : Number(r.town_tier),
+    }));
+
+    let minX = 0, maxX = 0, minZ = 0, maxZ = 0;
+    if (spawns.length) {
+      minX = Math.min(...spawns.map((s) => s.x));
+      maxX = Math.max(...spawns.map((s) => s.x));
+      minZ = Math.min(...spawns.map((s) => s.z));
+      maxZ = Math.max(...spawns.map((s) => s.z));
+    }
+
+    const toCell = (v: number) => Math.floor(v / cellSize);
+    const bounds: CellBounds = {
+      minCx: toCell(minX) - pad,
+      maxCx: toCell(maxX) + pad,
+      minCz: toCell(minZ) - pad,
+      maxCz: toCell(maxZ) + pad,
+    };
+
+    const types = typeQ ? [typeQ] : Array.from(new Set(spawns.map((s) => s.type))).slice(0, 50);
+
+    const snapshot: SpawnSliceSnapshot = {
+      kind: "admin.snapshot-spawns",
+      version: 1,
+      createdAt: new Date().toISOString(),
+      shardId,
+      bounds,
+      cellSize,
+      pad,
+      types,
+      rows: spawns.length,
+      spawns,
+    };
+
+    const name = safeSnapshotName(nameRaw);
+    const id = makeSnapshotId(name, shardId, snapshot.bounds, snapshot.types);
+    const savedAt = new Date().toISOString();
+
+    const doc: StoredSpawnSnapshotDoc = {
+      kind: "admin.stored-spawn-snapshot",
+      version: 2,
+      id,
+      name,
+      savedAt,
+      tags,
+      notes,
+      snapshot,
+    };
+
+    const dir = await ensureSnapshotDir();
+    const file = path.join(dir, `${id}.json`);
+    const raw = JSON.stringify(doc, null, 2);
+    await fs.writeFile(file, raw, "utf8");
+
+    const meta = metaFromStoredDoc(doc, Buffer.byteLength(raw, "utf8"));
+    return res.json({ kind: "spawn_points.snapshots.save_query", ok: true, snapshot: meta, total: spawns.length });
+  } catch (err: any) {
+    console.error("[ADMIN/SPAWN_POINTS] snapshots save_query error", err);
+    return res
+      .status(500)
+      .json({ kind: "spawn_points.snapshots.save_query", ok: false, error: err?.message || String(err) });
   }
 });
 
