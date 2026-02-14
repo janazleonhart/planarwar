@@ -208,6 +208,7 @@ type SpawnSliceOpsPreview = {
   // Explainability
   reasons?: Record<string, string>;
   reasonCounts?: Record<string, number>;
+  reasonChains?: Record<string, ReasonDetail[]>;
 
   // P5: mismatch signal (rows currently in target slice but not present in snapshot)
   extraTargetSpawnIds?: string[];
@@ -380,17 +381,28 @@ type ReasonExplain = {
   reasons: Record<string, string>;
   reasonCounts: Record<string, number>;
   reasonDetails: Record<string, ReasonDetail>;
+  reasonChains: Record<string, ReasonDetail[]>;
 };
 
-function addReasonExplain(explain: ReasonExplain, spawnId: string, reason: string, note?: string, meta?: any) {
+function addReasonExplainStep(explain: ReasonExplain, spawnId: string, reason: string, note?: string, meta?: any) {
   const r = makeReasonNote(reason);
-  explain.reasons[spawnId] = r;
-  bumpReasonCount(explain.reasonCounts, r);
-  explain.reasonDetails[spawnId] = { reason: r, note: note ?? undefined, meta: meta ?? undefined };
+
+  const step: ReasonDetail = { reason: r, note: note ?? undefined, meta: meta ?? undefined };
+  const chain = (explain.reasonChains[spawnId] ??= []);
+  chain.push(step);
+
+  // First step is the "headline" reason used in summaries and row labels.
+  if (!explain.reasons[spawnId]) {
+    explain.reasons[spawnId] = r;
+    bumpReasonCount(explain.reasonCounts, r);
+  }
+
+  // Keep the legacy single-detail shape around (last step wins).
+  explain.reasonDetails[spawnId] = step;
 }
 
 function makeReasonMaps(): ReasonExplain {
-  return { reasons: {}, reasonCounts: {}, reasonDetails: {} };
+  return { reasons: {}, reasonCounts: {}, reasonDetails: {}, reasonChains: {} };
 }
 
 function makeReasonNote(reason: string): string {
@@ -2899,6 +2911,8 @@ type MotherBrainOpsPreview = {
   // Explainability
   reasons?: Record<string, string>;
   reasonCounts?: Record<string, number>;
+  reasonDetails?: Record<string, ReasonDetail>;
+  reasonChains?: Record<string, ReasonDetail[]>;
 };
 
 type TownBaselineOpsPreview = {
@@ -4003,18 +4017,23 @@ router.post("/restore", async (req, res) => {
     
     const explain = makeReasonMaps();
     for (const sid of readOnlyIds) {
-      addReasonExplain(
-        explain,
-        sid,
-        readOnlyReason(sid),
-        "spawn is not editable in this mode",
-        { spawnId: sid },
-      );
+      addReasonExplainStep(explain, sid, readOnlyReason(sid), "spawn is not editable in this mode", { spawnId: sid });
+
+      const meta = protectedMap.get(sid);
+      if (meta && (meta.ownerKind === "editor" || Boolean(meta.isLocked))) {
+        addReasonExplainStep(
+          explain,
+          sid,
+          protectedReason(meta?.ownerKind, meta?.isLocked),
+          "row is also protected (locked or editor-owned)",
+          { spawnId: sid, ownerKind: meta?.ownerKind ?? null, isLocked: Boolean(meta?.isLocked) },
+        );
+      }
     }
     if (protectedUpdateIds.length) {
       for (const sid of protectedUpdateIds) {
         const meta = protectedMap.get(sid);
-        addReasonExplain(
+        addReasonExplainStep(
           explain,
           sid,
           protectedReason(meta?.ownerKind, meta?.isLocked),
@@ -4037,6 +4056,7 @@ const opsPreview = buildSpawnSliceOpsPreview({
     (opsPreview as any).reasons = explain.reasons;
     (opsPreview as any).reasonCounts = explain.reasonCounts;
     (opsPreview as any).reasonDetails = explain.reasonDetails;
+    (opsPreview as any).reasonChains = explain.reasonChains;
 
     if (protectedUpdateIds.length > 0) {
       (opsPreview as any).protectedUpdateSpawnIds = protectedUpdateIds.slice(0, 75);
@@ -4661,7 +4681,7 @@ const opsPreview: MotherBrainOpsPreview = {
         if (!sid) continue;
         pset.add(sid);
 
-        addReasonExplain(
+        addReasonExplainStep(
           explain,
           sid,
           makeProtectedReasonFromRow(r),
@@ -4679,7 +4699,8 @@ const opsPreview: MotherBrainOpsPreview = {
       if (Object.keys(explain.reasons).length) {
         (opsPreview as any).reasons = explain.reasons;
         (opsPreview as any).reasonCounts = explain.reasonCounts;
-    (opsPreview as any).reasonDetails = explain.reasonDetails;
+        (opsPreview as any).reasonDetails = explain.reasonDetails;
+        (opsPreview as any).reasonChains = explain.reasonChains;
       }
     }
 

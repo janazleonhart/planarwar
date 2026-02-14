@@ -4646,6 +4646,7 @@ type AnyOpsPreview =
       reasons?: Record<string, string>;
       reasonCounts?: Record<string, number>;
       reasonDetails?: Record<string, { reason: string; note?: string; meta?: any }>;
+      reasonChains?: Record<string, Array<{ reason: string; note?: string; meta?: any }>>;
     }
   | {
       // list-style (server payload)
@@ -4665,6 +4666,7 @@ type AnyOpsPreview =
       reasons?: Record<string, string>;
       reasonCounts?: Record<string, number>;
       reasonDetails?: Record<string, { reason: string; note?: string; meta?: any }>;
+      reasonChains?: Record<string, Array<{ reason: string; note?: string; meta?: any }>>;
     };
 
 
@@ -4735,6 +4737,7 @@ function normalizeOpsPreview(preview: AnyOpsPreview): Exclude<AnyOpsPreview, { l
     reasons: (anyPreview?.reasons ?? undefined) as any,
     reasonCounts: (anyPreview?.reasonCounts ?? undefined) as any,
     reasonDetails: (anyPreview?.reasonDetails ?? undefined) as any,
+    reasonChains: (anyPreview?.reasonChains ?? undefined) as any,
   };
 }
 
@@ -4758,9 +4761,11 @@ function OpsPreviewPanel(props: { title: string; preview: AnyOpsPreview; downloa
       : null;
 
 const reasonDetails: Record<string, any> = (norm?.reasonDetails ?? {}) as any;
+const reasonChains: Record<string, any[]> = (norm?.reasonChains ?? {}) as any;
 
 const [selectedId, setSelectedId] = useState<string | null>(null);
 const selectedDetail = selectedId ? (reasonDetails[selectedId] ?? null) : null;
+const selectedChain = selectedId ? (reasonChains[selectedId] ?? null) : null;
 
   const buckets: Array<[string, OpsPreviewBucket]> = [
     ["delete", norm.deletes],
@@ -4815,17 +4820,22 @@ const selectedDetail = selectedId ? (reasonDetails[selectedId] ?? null) : null;
                   {b.spawnIds.map((id) => {
                     const isSelected = selectedId === id;
                     const detail = reasonDetails[id] ?? null;
-                    const label = reasons[id] ? String(reasons[id]) : (detail?.reason ? String(detail.reason) : "");
+                    const chain = reasonChains[id] ?? null;
+                    const label = reasons[id]
+                      ? String(reasons[id])
+                      : chain && Array.isArray(chain) && chain.length
+                        ? String(chain[0]?.reason ?? "")
+                        : (detail?.reason ? String(detail.reason) : "");
                     return (
                       <div
                         key={id}
                         onClick={() => setSelectedId(isSelected ? null : id)}
-                        title={detail?.note ? String(detail.note) : undefined}
+                        title={detail?.note ? String(detail.note) : (chain?.[0]?.note ? String(chain?.[0]?.note) : undefined)}
                         style={{
                           fontFamily: "monospace",
                           fontSize: 12,
                           opacity: 0.95,
-                          cursor: detail || label ? "pointer" : "default",
+                          cursor: detail || label || (chain && Array.isArray(chain) && chain.length) ? "pointer" : "default",
                           padding: "2px 4px",
                           borderRadius: 6,
                           background: isSelected ? "#141414" : "transparent",
@@ -4845,7 +4855,7 @@ const selectedDetail = selectedId ? (reasonDetails[selectedId] ?? null) : null;
             </div>
           ))}
 
-      {selectedId && selectedDetail ? (
+      {selectedId && (selectedDetail || (selectedChain && Array.isArray(selectedChain) && selectedChain.length)) ? (
         <div style={{ marginTop: 10, border: "1px solid #222", borderRadius: 8, padding: 10, background: "#0f0f0f" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
             <div style={{ fontWeight: 800, fontFamily: "monospace" }}>
@@ -4861,8 +4871,35 @@ const selectedDetail = selectedId ? (reasonDetails[selectedId] ?? null) : null;
           </div>
 
           <div style={{ marginTop: 8, fontSize: 12, opacity: 0.9, fontFamily: "monospace" }}>
-            reason: {String(selectedDetail?.reason ?? reasons[selectedId] ?? "")}
+            reason: {String(selectedDetail?.reason ?? reasons[selectedId] ?? (selectedChain?.[0]?.reason ?? ""))}
           </div>
+
+          {selectedChain && Array.isArray(selectedChain) && selectedChain.length ? (
+            <div style={{ marginTop: 8, border: "1px solid #222", borderRadius: 8, padding: 10, background: "#0b0b0b" }}>
+              <div style={{ fontSize: 12, opacity: 0.85, marginBottom: 8, fontFamily: "monospace" }}>
+                rule chain:
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                {selectedChain.map((step: any, idx: number) => (
+                  <div key={idx} style={{ border: "1px solid #1f1f1f", borderRadius: 8, padding: 8, background: "#080808" }}>
+                    <div style={{ fontFamily: "monospace", fontSize: 12, opacity: 0.95 }}>
+                      {idx + 1}. {String(step?.reason ?? "")}
+                    </div>
+                    {step?.note ? (
+                      <div style={{ marginTop: 4, fontSize: 12, opacity: 0.75 }}>
+                        {String(step.note)}
+                      </div>
+                    ) : null}
+                    {step?.meta ? (
+                      <pre style={{ marginTop: 8, maxHeight: 140, overflow: "auto", padding: 8, borderRadius: 8, background: "#050505", border: "1px solid #1a1a1a" }}>
+{JSON.stringify(step.meta, null, 2)}
+                      </pre>
+                    ) : null}
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : null}
           {selectedDetail?.note ? (
             <div style={{ marginTop: 6, fontSize: 12, opacity: 0.75 }}>
               {String(selectedDetail.note)}
