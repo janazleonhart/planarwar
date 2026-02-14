@@ -234,6 +234,7 @@ type SpawnSnapshotsDeleteResponse = {
   ok: boolean;
   error?: string;
   id?: string;
+  expectedConfirmToken?: string;
 };
 
 
@@ -648,6 +649,8 @@ const [savedSnapshotsLoading, setSavedSnapshotsLoading] = useState(false);
 const [snapshotSaveWorking, setSnapshotSaveWorking] = useState(false);
 const [snapshotLoadWorking, setSnapshotLoadWorking] = useState(false);
 const [snapshotDeleteWorking, setSnapshotDeleteWorking] = useState<string | null>(null);
+const [snapshotDeleteConfirmExpected, setSnapshotDeleteConfirmExpected] = useState<string | null>(null);
+const [snapshotDeleteConfirm, setSnapshotDeleteConfirm] = useState("");
 
 const [snapshotPurgeIncludeArchived, setSnapshotPurgeIncludeArchived] = useState(false);
 const [snapshotPurgeOlderThanDays, setSnapshotPurgeOlderThanDays] = useState("30");
@@ -2007,9 +2010,23 @@ const runDeleteSavedSnapshot = async (id: string) => {
   try {
     if (!id) throw new Error("Pick a saved snapshot first.");
 
-    const res = await authedFetch(`/api/admin/spawn_points/snapshots/${encodeURIComponent(id)}`, { method: "DELETE" });
+    const confirm = snapshotDeleteConfirm.trim() || undefined;
+    const url = confirm
+      ? `/api/admin/spawn_points/snapshots/${encodeURIComponent(id)}?confirm=${encodeURIComponent(confirm)}`
+      : `/api/admin/spawn_points/snapshots/${encodeURIComponent(id)}`;
+
+    const res = await authedFetch(url, { method: "DELETE" });
     const data: SpawnSnapshotsDeleteResponse = await res.json().catch(() => ({} as any));
+
+    if ((data as any)?.error === "confirm_required") {
+      setSnapshotDeleteConfirmExpected(String((data as any)?.expectedConfirmToken ?? ""));
+      return;
+    }
+
     if (!res.ok || !data.ok) throw new Error(data.error || `Delete snapshot failed (HTTP ${res.status})`);
+
+    setSnapshotDeleteConfirmExpected(null);
+    setSnapshotDeleteConfirm("");
 
     if (selectedSavedSnapshotId === id) setSelectedSavedSnapshotId("");
     await refreshSavedSnapshots();
@@ -3866,7 +3883,7 @@ Ctrl/⌘-click: filter only`}
       <span style={{ fontSize: 12, opacity: 0.85 }}>Saved snapshots</span>
       <select
         value={selectedSavedSnapshotId}
-        onChange={(e) => setSelectedSavedSnapshotId(e.target.value)}
+        onChange={(e) => { setSelectedSavedSnapshotId(e.target.value); setSnapshotDeleteConfirmExpected(null); setSnapshotDeleteConfirm(""); }}
         style={{ width: "100%", padding: "6px 8px", borderRadius: 6, border: "1px solid #ccc" }}
       >
         <option value="">(none)</option>
@@ -4029,6 +4046,23 @@ Ctrl/⌘-click: filter only`}
     >
       {snapshotEditMetaOpen ? "Cancel edit" : "Edit meta"}
     </button>
+
+    {snapshotDeleteConfirmExpected ? (
+      <div style={{ display: "grid", gap: 6, minWidth: 260 }}>
+        <div style={{ fontSize: 12, opacity: 0.85 }}>
+          <strong>Delete confirm token required:</strong> <code>{snapshotDeleteConfirmExpected}</code>
+        </div>
+        <input
+          value={snapshotDeleteConfirm}
+          onChange={(e) => setSnapshotDeleteConfirm(e.target.value)}
+          placeholder="paste confirm token here"
+          style={{ width: "100%", padding: "6px 8px", borderRadius: 6, border: "1px solid #ccc" }}
+        />
+        <div style={{ fontSize: 12, opacity: 0.75 }}>
+          This token is derived from the current on-disk snapshot. If the file changes, the token changes.
+        </div>
+      </div>
+    ) : null}
 
 <button
       onClick={() => runDeleteSavedSnapshot(selectedSavedSnapshotId)}

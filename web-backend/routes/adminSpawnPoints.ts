@@ -3873,8 +3873,34 @@ router.delete("/snapshots/:id", async (req, res) => {
     const id = strOrNull(req.params?.id);
     if (!id) return res.status(400).json({ kind: "spawn_points.snapshots.delete", ok: false, error: "missing_id" });
 
+    // Destructive action safety gate: require an explicit confirm token.
+    // This avoids accidental deletes from mis-clicks or stale UI state.
+    const confirm = String((req.query as any)?.confirm ?? "").trim() || null;
+
     const dir = await ensureSnapshotDir();
     const file = path.join(dir, `${id}.json`);
+
+    // Compute a deterministic token based on the current on-disk snapshot.
+    // If the file changes between preview and commit, the token changes.
+    const stat = await fs.stat(file);
+    const raw = await fs.readFile(file, "utf8");
+    const parsed = JSON.parse(raw) as Partial<StoredSpawnSnapshotDoc>;
+    const savedAt = String((parsed as any)?.savedAt ?? "");
+    const expectedConfirmToken = createHash("sha256")
+      .update(`snapdel:v1:${id}:${savedAt}:${stat.size}`)
+      .digest("hex")
+      .slice(0, 20);
+
+    if (!confirm || confirm !== expectedConfirmToken) {
+      return res.status(409).json({
+        kind: "spawn_points.snapshots.delete",
+        ok: false,
+        error: "confirm_required",
+        expectedConfirmToken,
+        id,
+      });
+    }
+
     await fs.unlink(file);
 
     return res.json({ kind: "spawn_points.snapshots.delete", ok: true, id });
