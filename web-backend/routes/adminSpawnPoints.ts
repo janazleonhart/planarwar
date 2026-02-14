@@ -88,6 +88,7 @@ type AdminApiKind =
   | "spawn_points.snapshot_query"
   | "spawn_points.snapshots.save_query"
   | "spawn_points.snapshots.purge"
+  | "spawn_points.snapshots.retention_status"
   | "spawn_points.restore"
   | "town_baseline.plan"
   | "town_baseline.apply"
@@ -4193,6 +4194,81 @@ router.post("/snapshots/purge", async (req, res) => {
   }
 });
 
+
+
+// GET /api/admin/spawn_points/snapshots/retention_status
+router.get("/snapshots/retention_status", (_req, res) => {
+  try {
+    const cfg =
+      _spawnSnapshotsRetentionConfig ??
+      ({
+        enabled: false,
+        intervalMinutes: 0,
+        dryRun: true,
+        includeArchived: false,
+        includePinned: false,
+        olderThanDays: 0,
+        runOnBoot: false,
+      } as const);
+
+    const payload: SpawnSnapshotsRetentionStatusResponse = {
+      kind: "spawn_points.snapshots.retention_status",
+      ok: true,
+      enabled: cfg.enabled,
+      intervalMinutes: cfg.intervalMinutes,
+      dryRun: cfg.dryRun,
+      includeArchived: cfg.includeArchived,
+      includePinned: cfg.includePinned,
+      olderThanDays: cfg.olderThanDays,
+      runOnBoot: cfg.runOnBoot,
+      ...( _spawnSnapshotsRetentionLastRunAt ? { lastRunAt: _spawnSnapshotsRetentionLastRunAt } : null),
+      ...( _spawnSnapshotsRetentionLastResult ? { lastResult: _spawnSnapshotsRetentionLastResult } : null),
+    };
+
+    return res.json(payload);
+  } catch (err: any) {
+    return res.status(500).json({
+      kind: "spawn_points.snapshots.retention_status",
+      ok: false,
+      error: err?.message || String(err),
+    });
+  }
+});
+
+
+
+type SpawnSnapshotsRetentionStatusResponse = {
+  kind: "spawn_points.snapshots.retention_status";
+  ok: boolean;
+  error?: string;
+
+  enabled: boolean;
+  intervalMinutes: number;
+  dryRun: boolean;
+
+  includeArchived: boolean;
+  includePinned: boolean;
+  olderThanDays: number;
+  runOnBoot: boolean;
+
+  // server memory (since boot)
+  lastRunAt?: string;
+  lastResult?: SpawnSnapshotsRetentionJobResult;
+};
+
+let _spawnSnapshotsRetentionLastRunAt: string | null = null;
+let _spawnSnapshotsRetentionLastResult: SpawnSnapshotsRetentionJobResult | null = null;
+
+let _spawnSnapshotsRetentionConfig: {
+  enabled: boolean;
+  intervalMinutes: number;
+  dryRun: boolean;
+  includeArchived: boolean;
+  includePinned: boolean;
+  olderThanDays: number;
+  runOnBoot: boolean;
+} | null = null;
+
 // ---------------------------------------------------------------------------
 // Snapshot retention scheduler (server-side hygiene; safe defaults)
 // Env vars:
@@ -4310,7 +4386,19 @@ let _spawnSnapshotsRetentionTimer: NodeJS.Timeout | null = null;
 
 export function startSpawnSnapshotsRetentionScheduler(): void {
   const enabled = String(process.env.PW_SPAWN_SNAPSHOT_RETENTION_ENABLED ?? "").trim();
-  if (!(enabled === "1" || enabled.toLowerCase() === "true" || enabled.toLowerCase() === "yes")) return;
+  const isEnabled = enabled === "1" || enabled.toLowerCase() === "true" || enabled.toLowerCase() === "yes";
+  if (!isEnabled) {
+    _spawnSnapshotsRetentionConfig = {
+      enabled: false,
+      intervalMinutes: 0,
+      dryRun: true,
+      includeArchived: false,
+      includePinned: false,
+      olderThanDays: 0,
+      runOnBoot: false,
+    };
+    return;
+  }
 
   const intervalMinRaw = Number(process.env.PW_SPAWN_SNAPSHOT_RETENTION_INTERVAL_MINUTES ?? 60);
   const intervalMin = Number.isFinite(intervalMinRaw) ? Math.max(1, Math.min(7 * 24 * 60, Math.floor(intervalMinRaw))) : 60;
@@ -4330,6 +4418,17 @@ export function startSpawnSnapshotsRetentionScheduler(): void {
   const runOnBootEnv = String(process.env.PW_SPAWN_SNAPSHOT_RETENTION_RUN_ON_BOOT ?? "").trim().toLowerCase();
   const runOnBoot = runOnBootEnv === "1" || runOnBootEnv === "true" || runOnBootEnv === "yes";
 
+
+_spawnSnapshotsRetentionConfig = {
+  enabled: true,
+  intervalMinutes: intervalMin,
+  dryRun,
+  includeArchived,
+  includePinned,
+  olderThanDays,
+  runOnBoot,
+};
+
   const opts: SpawnSnapshotsRetentionJobOptions = {
     includeArchived,
     includePinned,
@@ -4342,6 +4441,9 @@ export function startSpawnSnapshotsRetentionScheduler(): void {
   const tick = async () => {
     try {
       const r = await runSpawnSnapshotsRetentionJob(opts);
+_spawnSnapshotsRetentionLastRunAt = new Date().toISOString();
+_spawnSnapshotsRetentionLastResult = r;
+
       const mode = r.dryRun ? "DRY_RUN" : "DELETE";
       console.log(
         `${logPrefix} ${mode} candidates=${r.count} bytes=${r.bytes} skippedPinned=${r.skippedPinned} includeArchived=${r.includeArchived ? "1" : "0"} includePinned=${r.includePinned ? "1" : "0"} olderThanDays=${r.olderThanDays}`,

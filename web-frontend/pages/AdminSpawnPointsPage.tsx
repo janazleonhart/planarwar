@@ -294,6 +294,41 @@ type SpawnSnapshotsBulkDeleteResponse = {
 };
 
 
+type SpawnSnapshotsRetentionStatusResponse = {
+  kind: "spawn_points.snapshots.retention_status";
+  ok: boolean;
+  error?: string;
+
+  enabled: boolean;
+  intervalMinutes: number;
+  dryRun: boolean;
+
+  includeArchived: boolean;
+  includePinned: boolean;
+  olderThanDays: number;
+  runOnBoot: boolean;
+
+  lastRunAt?: string | null;
+  lastResult?: {
+    ok: boolean;
+    error?: string;
+    commit: boolean;
+    includeArchived: boolean;
+    includePinned: boolean;
+    olderThanDays: number;
+    count: number;
+    bytes: number;
+    ids: string[];
+    skippedPinned: number;
+    deleted?: number;
+    failed?: number;
+    activeCount?: number;
+    missing?: number;
+  } | null;
+};
+
+
+
 type SpawnRestoreResponse = {
   kind: "spawn_points.restore";
   ok: boolean;
@@ -699,6 +734,9 @@ const [snapshotBulkDeleteIncludePinned, setSnapshotBulkDeleteIncludePinned] = us
 const [snapshotBulkDeleteWorking, setSnapshotBulkDeleteWorking] = useState(false);
 const [snapshotBulkDeletePreview, setSnapshotBulkDeletePreview] = useState<SpawnSnapshotsBulkDeleteResponse | null>(null);
 const [snapshotBulkDeleteConfirm, setSnapshotBulkDeleteConfirm] = useState("");
+
+const [snapshotsRetentionStatus, setSnapshotsRetentionStatus] = useState<SpawnSnapshotsRetentionStatusResponse | null>(null);
+const [snapshotsRetentionLoading, setSnapshotsRetentionLoading] = useState(false);
 
 const [snapshotEditMetaOpen, setSnapshotEditMetaOpen] = useState(false);
   const [snapshotEditWorking, setSnapshotEditWorking] = useState(false);
@@ -1142,6 +1180,7 @@ const restoreSnapshotParseError = restoreParsed.error;
   useEffect(() => {
     if (activeTab === "tools" && toolsSubtab === "snapshot") {
       void refreshSavedSnapshots();
+      void refreshSnapshotsRetentionStatus();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab, toolsSubtab]);
@@ -1827,8 +1866,39 @@ const runBulkOwnershipQuery = async (action: BulkOwnershipQueryAction, commit: b
     }
   };
 
+const refreshSnapshotsRetentionStatus = async () => {
+  setSnapshotsRetentionLoading(true);
+  try {
+    const res = await authedFetch("/api/admin/spawn_points/snapshots/retention_status");
+    const data: SpawnSnapshotsRetentionStatusResponse = await res.json().catch(() => ({} as any));
+    if (!res.ok || !data.ok) {
+      throw new Error((data as any).error || `Retention status failed (HTTP ${res.status})`);
+    }
+    setSnapshotsRetentionStatus(data);
+  } catch (err: any) {
+    setSnapshotsRetentionStatus({
+      kind: "spawn_points.snapshots.retention_status",
+      ok: false,
+      error: err?.message || String(err),
+      enabled: false,
+      intervalMinutes: 0,
+      dryRun: true,
+      includeArchived: false,
+      includePinned: false,
+      olderThanDays: 0,
+      runOnBoot: false,
+      lastRunAt: null,
+      lastResult: null,
+    });
+  } finally {
+    setSnapshotsRetentionLoading(false);
+  }
+};
+
+
 const refreshSavedSnapshots = async () => {
   setSavedSnapshotsLoading(true);
+  void refreshSnapshotsRetentionStatus();
   try {
     const qs = new URLSearchParams();
     if (savedSnapshotsSort) qs.set("sort", savedSnapshotsSort);
@@ -3957,6 +4027,60 @@ Ctrl/⌘-click: filter only`}
     >
       {savedSnapshotsLoading ? "Refreshing..." : "Refresh"}
     </button>
+  </div>
+
+  <div style={{ marginBottom: 10, display: "grid", gap: 6 }}>
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+      <div style={{ fontSize: 12, opacity: 0.85 }}>
+        <strong style={{ fontSize: 12 }}>Retention scheduler</strong>{" "}
+        <span style={{ opacity: 0.85 }}>
+          {snapshotsRetentionStatus
+            ? snapshotsRetentionStatus.enabled
+              ? `ENABLED · every ${snapshotsRetentionStatus.intervalMinutes}m · ${snapshotsRetentionStatus.dryRun ? "DRY RUN" : "DELETE"}`
+              : "disabled"
+            : "unknown"}
+        </span>
+      </div>
+      <button
+        onClick={refreshSnapshotsRetentionStatus}
+        disabled={snapshotsRetentionLoading}
+        style={{
+          padding: "4px 8px",
+          borderRadius: 8,
+          border: "1px solid #ccc",
+          background: "white",
+          cursor: snapshotsRetentionLoading ? "not-allowed" : "pointer",
+          fontWeight: 700,
+          fontSize: 12,
+        }}
+        title="Refresh retention scheduler status"
+      >
+        {snapshotsRetentionLoading ? "Refreshing..." : "Refresh status"}
+      </button>
+    </div>
+
+    {snapshotsRetentionStatus ? (
+      <div style={{ fontSize: 12, opacity: 0.9, display: "grid", gap: 4 }}>
+        <div>
+          includeArchived={String(snapshotsRetentionStatus.includeArchived)} · includePinned={String(snapshotsRetentionStatus.includePinned)} · olderThanDays={snapshotsRetentionStatus.olderThanDays} · runOnBoot={String(snapshotsRetentionStatus.runOnBoot)}
+        </div>
+        <div>
+          lastRunAt={snapshotsRetentionStatus.lastRunAt || "(none)"}{" "}
+          {snapshotsRetentionStatus.lastResult ? (
+            <>
+              · candidates={snapshotsRetentionStatus.lastResult.count} · bytes={snapshotsRetentionStatus.lastResult.bytes} · skippedPinned={snapshotsRetentionStatus.lastResult.skippedPinned}
+              {snapshotsRetentionStatus.lastResult.deleted != null ? ` · deleted=${snapshotsRetentionStatus.lastResult.deleted}` : ""}
+              {snapshotsRetentionStatus.lastResult.failed != null ? ` · failed=${snapshotsRetentionStatus.lastResult.failed}` : ""}
+            </>
+          ) : (
+            ""
+          )}
+        </div>
+        {!snapshotsRetentionStatus.ok ? (
+          <div style={{ color: "#b00" }}>status error: {snapshotsRetentionStatus.error}</div>
+        ) : null}
+      </div>
+    ) : null}
   </div>
 
   <div style={{ display: "flex", flexWrap: "wrap", gap: 10, alignItems: "flex-end" }}>
