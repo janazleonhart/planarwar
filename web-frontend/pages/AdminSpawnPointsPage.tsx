@@ -245,6 +245,36 @@ type SpawnRestoreResponse = {
   wouldReadOnly?: number;
 };
 
+
+type BulkOwnershipQueryAction = "adopt" | "release" | "lock" | "unlock";
+
+type BulkOwnershipOpsPreview = {
+  limit: number;
+  truncated: boolean;
+  changeSpawnIds: string[];
+  changeCount: number;
+  readOnlySpawnIds: string[];
+  readOnlyCount: number;
+  noOpCount: number;
+};
+
+type BulkOwnershipQueryResponse = {
+  kind: "spawn_points.bulk_ownership";
+  ok: boolean;
+  action: BulkOwnershipQueryAction;
+  shardId: string;
+  matched: number;
+  wouldChange: number;
+  skippedReadOnly: number;
+  skippedNoOp: number;
+  expectedConfirmToken?: string;
+  opsPreview?: BulkOwnershipOpsPreview;
+  commit?: boolean;
+  changed?: number;
+  error?: string;
+};
+
+
 // Mother Brain admin responses (kept structural on purpose)
 type MotherBrainListRow = {
   spawnId: string;
@@ -484,6 +514,15 @@ export function AdminSpawnPointsPage() {
   const [bulkDy, setBulkDy] = useState(0);
   const [bulkDz, setBulkDz] = useState(0);
   const [bulkWorking, setBulkWorking] = useState(false);
+
+// Bulk ownership (from current query)
+const [bulkOwnOwnerId, setBulkOwnOwnerId] = useState("");
+const [bulkOwnWorking, setBulkOwnWorking] = useState(false);
+const [bulkOwnResult, setBulkOwnResult] = useState<BulkOwnershipQueryResponse | null>(null);
+const [bulkOwnPendingAction, setBulkOwnPendingAction] = useState<BulkOwnershipQueryAction | null>(null);
+const [bulkOwnConfirmExpected, setBulkOwnConfirmExpected] = useState<string | null>(null);
+const [bulkOwnConfirmInput, setBulkOwnConfirmInput] = useState("");
+
 
   // Clone / Scatter (System 3 MVP)
   const [whereamiPaste, setWhereamiPaste] = useState("");
@@ -1319,6 +1358,79 @@ const restoreSnapshotParseError = restoreParsed.error;
   const bulkNudge = async (dx: number, dz: number) => {
     await bulkMove(dx, 0, dz);
   };
+
+
+const buildCurrentSpawnQuery = (): any => {
+  const q: any = {};
+
+  if (loadMode === "region") {
+    q.regionId = regionId.trim();
+  } else if (loadMode === "radius") {
+    q.x = Number(queryX) || 0;
+    q.z = Number(queryZ) || 0;
+    q.radius = Math.max(0, Math.min(10000, Number(queryRadius) || 0));
+  }
+
+  if (filterAuthority.trim()) q.authority = filterAuthority.trim();
+  if (filterType.trim()) q.type = filterType.trim();
+  if (filterArchetype.trim()) q.archetype = filterArchetype.trim();
+  if (filterProtoId.trim()) q.protoId = filterProtoId.trim();
+  if (filterSpawnId.trim()) q.spawnId = filterSpawnId.trim();
+
+  return q;
+};
+
+const runBulkOwnershipQuery = async (action: BulkOwnershipQueryAction, commit: boolean, confirmToken?: string) => {
+  setBulkOwnWorking(true);
+  setError(null);
+  try {
+    const res = await authedFetch(`/api/admin/spawn_points/bulk_ownership_query`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        shardId: shardId.trim() || "prime_shard",
+        action,
+        ownerId: bulkOwnOwnerId.trim() ? bulkOwnOwnerId.trim() : null,
+        query: buildCurrentSpawnQuery(),
+        commit: !!commit,
+        confirm: confirmToken?.trim() ? confirmToken.trim() : null,
+      }),
+    });
+
+    let data: BulkOwnershipQueryResponse | null = null;
+    try {
+      data = (await res.json()) as BulkOwnershipQueryResponse;
+    } catch {
+      data = null;
+    }
+
+    if (res.status === 409 && data && data.error === "confirm_required" && data.expectedConfirmToken) {
+      setBulkOwnPendingAction(action);
+      setBulkOwnConfirmExpected(data.expectedConfirmToken);
+      setBulkOwnConfirmInput("");
+      setBulkOwnResult(data);
+      return;
+    }
+
+    if (!res.ok || !data || data.ok === false) {
+      const msg = data?.error || `Bulk ownership failed (HTTP ${res.status})`;
+      throw new Error(msg);
+    }
+
+    // Success (preview or commit)
+    setBulkOwnPendingAction(action);
+    setBulkOwnConfirmExpected(data.expectedConfirmToken ?? null);
+    setBulkOwnResult(data);
+
+    if (commit) {
+      await load();
+    }
+  } catch (err: any) {
+    setError(err.message || String(err));
+  } finally {
+    setBulkOwnWorking(false);
+  }
+};
 
 
   const parseWhereami = (txt: string): { x: number; y: number; z: number } | null => {
@@ -2587,6 +2699,76 @@ Ctrl/⌘-click: filter only`}
                   0,+5
                 </button>
               </div>
+
+
+<div style={{ borderTop: "1px dashed #444", marginTop: 10, paddingTop: 10 }}>
+  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+    <strong>Bulk Ownership (current query)</strong>
+    <span style={{ fontSize: 12, opacity: 0.8 }}>
+      Applies to all rows matching your current load + filter settings (server-side). Preview requires confirm token.
+    </span>
+  </div>
+
+  <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 10, alignItems: "flex-end" }}>
+    <label style={{ display: "grid", gap: 4 }}>
+      <span style={{ opacity: 0.8 }}>OwnerId (optional)</span>
+      <input style={{ width: 220 }} value={bulkOwnOwnerId} onChange={(e) => setBulkOwnOwnerId(e.target.value)} placeholder="(optional)" />
+    </label>
+
+    <button disabled={bulkOwnWorking || !canWrite} onClick={() => void runBulkOwnershipQuery("adopt", false)}>
+      {bulkOwnWorking ? "Working..." : "Preview Adopt"}
+    </button>
+    <button disabled={bulkOwnWorking || !canWrite} onClick={() => void runBulkOwnershipQuery("release", false)}>
+      {bulkOwnWorking ? "Working..." : "Preview Release"}
+    </button>
+    <button disabled={bulkOwnWorking || !canWrite} onClick={() => void runBulkOwnershipQuery("lock", false)}>
+      {bulkOwnWorking ? "Working..." : "Preview Lock"}
+    </button>
+    <button disabled={bulkOwnWorking || !canWrite} onClick={() => void runBulkOwnershipQuery("unlock", false)}>
+      {bulkOwnWorking ? "Working..." : "Preview Unlock"}
+    </button>
+  </div>
+
+  {bulkOwnConfirmExpected && bulkOwnPendingAction && (
+    <div style={{ marginTop: 10, display: "grid", gap: 8 }}>
+      <div style={{ fontSize: 12, opacity: 0.9 }}>
+        Confirm token required to commit <b>{bulkOwnPendingAction}</b>:
+        <code style={{ marginLeft: 8 }}>{bulkOwnConfirmExpected}</code>
+      </div>
+
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+        <input
+          style={{ width: 280 }}
+          value={bulkOwnConfirmInput}
+          onChange={(e) => setBulkOwnConfirmInput(e.target.value)}
+          placeholder="Paste confirm token"
+        />
+        <button
+          disabled={bulkOwnWorking || !canWrite || bulkOwnConfirmInput.trim() !== bulkOwnConfirmExpected}
+          onClick={() => void runBulkOwnershipQuery(bulkOwnPendingAction, true, bulkOwnConfirmInput)}
+        >
+          {bulkOwnWorking ? "Working..." : "Commit"}
+        </button>
+
+        <button
+          disabled={bulkOwnWorking}
+          onClick={() => {
+            setBulkOwnConfirmExpected(null);
+            setBulkOwnConfirmInput("");
+          }}
+        >
+          Clear
+        </button>
+      </div>
+    </div>
+  )}
+
+  {bulkOwnResult && (
+    <pre style={{ marginTop: 10, background: "#111", color: "#eee", border: "1px solid #333", padding: 8, borderRadius: 6, overflow: "auto" }}>
+      {JSON.stringify(bulkOwnResult, null, 2)}
+    </pre>
+  )}
+</div>
 
               <div style={{ fontSize: 12, opacity: 0.85 }}>
                 Note: brain:* rows will be <b>skipped</b> by bulk delete/move even if selected.
