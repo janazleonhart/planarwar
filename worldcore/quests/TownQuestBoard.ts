@@ -66,15 +66,32 @@ export function renderTownQuestBoard(
       })
     : offering.quests;
 
-  if (onlyNew) lines.push(`NEW quests available: ${visibleQuests.length}`);
+  // Quest chains v0.5: bubble NEW unlocked follow-ups to the top of the board
+  // (while preserving the existing deterministic ordering within each group).
+  const orderedVisibleQuests = (() => {
+    if (onlyNew) return visibleQuests;
+
+    const newlyUnlocked: QuestDefinition[] = [];
+    const rest: QuestDefinition[] = [];
+
+    for (const q of visibleQuests) {
+      const entry = state[q.id];
+      const isNewUnlocked = !entry && unlockedFollowups.has(q.id);
+      (isNewUnlocked ? newlyUnlocked : rest).push(q);
+    }
+
+    return newlyUnlocked.concat(rest);
+  })();
+
+  if (onlyNew) lines.push(`NEW quests available: ${orderedVisibleQuests.length}`);
   else lines.push(`Quests available: ${offering.quests.length} (NEW: ${newCountAll})`);
 
-  if (visibleQuests.length === 0) {
+  if (orderedVisibleQuests.length === 0) {
     lines.push(onlyNew ? " - No NEW quests available." : " - No quests available.");
     return lines.join("\n");
   }
 
-  visibleQuests.forEach((q, i) => {
+  orderedVisibleQuests.forEach((q, i) => {
     const entry = state[q.id];
     const status =
       !entry
