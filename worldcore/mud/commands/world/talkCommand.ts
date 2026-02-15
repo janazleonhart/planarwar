@@ -334,6 +334,7 @@ export async function handleTalkCommand(
     lines.push(` - talk ${npcToken} ready [here|local] (view quests ready to turn in)`);
     lines.push(` - talk ${npcToken} handin             (hand in if exactly one eligible)`);
     lines.push(` - talk ${npcToken} handin list|ls      (list eligible NPC hand-ins)`);
+    lines.push(` - talk ${npcToken} handin preview [#|id|name] (preview a turn-in without committing)`);
     lines.push(` - talk ${npcToken} handin <#|id|name>  (hand in a specific quest)`);
     lines.push(` - talk ${npcToken} handin all [token]  (hand in all, token-gated)`);
     lines.push(`Tip: the standalone 'handin ${npcToken} ...' command also works.`);
@@ -402,11 +403,11 @@ export async function handleTalkCommand(
       lines.push("");
       lines.push(`Usage: talk ${npcToken} accept <#|id|name>`);
       lines.push(`Tip: show details via 'talk ${npcToken} show <#|id|name>'`);
-      return lines.join("").trimEnd();
+      return lines.join("\n").trimEnd();
     }
     const msg = await acceptTownQuest(ctx as any, char as any, selector);
     lines.push(msg);
-    return lines.join("").trimEnd();
+    return lines.join("\n").trimEnd();
   }
 
   if (normalizedAction === "abandon" || normalizedAction === "drop") {

@@ -128,4 +128,5 @@ test("[contract] talk help lists talk-driven quest + handin shortcuts", async ()
   assert.match(s, /talk\s+trainer\.1\s+accept/i, s);
   assert.match(s, /talk\s+trainer\.1\s+abandon/i, s);
   assert.match(s, /talk\s+trainer\.1\s+handin/i, s);
+  assert.match(s, /handin\s+preview/i, s);
 });
