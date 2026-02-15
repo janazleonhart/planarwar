@@ -411,7 +411,13 @@ export async function handleTalkCommand(
 
   if (normalizedAction === "abandon" || normalizedAction === "drop") {
     const selector = actionArgs.join(" ").trim();
-    if (!selector) return `Usage: talk ${npcToken} abandon <#|id|name>`;
+    if (!selector) {
+      // QoL: stay in talk-mode. Show the quest log context so the player can pick a target.
+      lines.push(renderQuestLog(char as any, { ctx }));
+      lines.push("");
+      lines.push(`Usage: talk ${npcToken} abandon <#|id|name>`);
+      return lines.join("\n").trimEnd();
+    }
     const msg = await abandonQuest(ctx as any, char as any, selector);
     lines.push(msg);
     return lines.join("\n").trimEnd();
