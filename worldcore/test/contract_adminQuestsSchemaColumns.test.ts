@@ -2,7 +2,7 @@
 // Contract guard: schema contains the columns required by the Admin Quests editor.
 //
 // The editor uses:
-// - quests (021_quests.sql)
+// - quests (021_quests.sql + follow-on migrations)
 // - quest_objectives (022_quest_objectives.sql)
 // - quest_rewards (023_quest_rewards.sql)
 
@@ -41,6 +41,9 @@ test("[contract] quests tables contain columns used by adminQuests editor", () =
     "is_enabled",
     "designer",
     "notes",
+    "turnin_policy",
+    "turnin_npc_id",
+    "turnin_board_id",
     "created_at",
     "updated_at",
   ]);

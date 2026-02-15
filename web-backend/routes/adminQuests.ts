@@ -42,6 +42,11 @@ type AdminQuestPayload = {
   repeatable?: boolean;
   maxCompletions?: number | null;
 
+  // Turn-in policy (Questloop v0.2)
+  turninPolicy?: "anywhere" | "board" | "npc";
+  turninNpcId?: string | null;
+  turninBoardId?: string | null;
+
   objectiveKind: ObjectiveKind;
   objectiveTargetId: string;
   objectiveRequired: number;
@@ -108,6 +113,9 @@ router.get("/", async (_req, res) => {
         description: q.description,
         repeatable: !!q.repeatable,
         maxCompletions: q.maxCompletions ?? null,
+        turninPolicy: ((q as any).turninPolicy as any) ?? "anywhere",
+        turninNpcId: ((q as any).turninNpcId as any) ?? null,
+        turninBoardId: ((q as any).turninBoardId as any) ?? null,
         objectiveKind,
         objectiveTargetId: targetId,
         objectiveRequired: required,
@@ -245,6 +253,12 @@ router.post("/", async (req, res) => {
   const repeatable = !!body.repeatable;
   const maxCompletions = body.maxCompletions === null || body.maxCompletions === undefined ? null : Number(body.maxCompletions);
 
+  const turninPolicyRaw = String((body as any).turninPolicy ?? "anywhere").trim().toLowerCase();
+  const turninPolicy: "anywhere" | "board" | "npc" =
+    turninPolicyRaw === "board" ? "board" : turninPolicyRaw === "npc" ? "npc" : "anywhere";
+  const turninNpcId = ((body as any).turninNpcId ?? null) ? String((body as any).turninNpcId).trim() : null;
+  const turninBoardId = ((body as any).turninBoardId ?? null) ? String((body as any).turninBoardId).trim() : null;
+
   const required = Number(body.objectiveRequired || 1);
   const rewardXp = Number(body.rewardXp || 0);
   const rewardGold = Number(body.rewardGold || 0);
@@ -342,6 +356,20 @@ router.post("/", async (req, res) => {
       }
     }
 
+    if (turninPolicy === "npc") {
+      if (!turninNpcId) {
+        return res.status(400).json({ ok: false, error: "turninNpcId is required when turninPolicy is 'npc'." });
+      }
+
+      const npcCheck = await db.query("SELECT 1 FROM npcs WHERE id = $1", [turninNpcId]);
+      if (npcCheck.rowCount === 0) {
+        return res.status(400).json({
+          ok: false,
+          error: `Turn-in NPC '${turninNpcId}' does not exist. Create it first in the NPC editor.`,
+        });
+      }
+    }
+
     // harvest/craft/city: no hard validation here (table names differ per build)
   } catch (err) {
     // eslint-disable-next-line no-console
@@ -352,17 +380,20 @@ router.post("/", async (req, res) => {
     // 1) Upsert quest row
     await db.query(
       `
-      INSERT INTO quests (id, name, description, repeatable, max_repeats, is_enabled)
-      VALUES ($1, $2, $3, $4, $5, TRUE)
+      INSERT INTO quests (id, name, description, repeatable, max_repeats, turnin_policy, turnin_npc_id, turnin_board_id, is_enabled)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, TRUE)
       ON CONFLICT (id)
       DO UPDATE SET
         name = EXCLUDED.name,
         description = EXCLUDED.description,
         repeatable = EXCLUDED.repeatable,
         max_repeats = EXCLUDED.max_repeats,
+        turnin_policy = EXCLUDED.turnin_policy,
+        turnin_npc_id = EXCLUDED.turnin_npc_id,
+        turnin_board_id = EXCLUDED.turnin_board_id,
         updated_at = NOW()
       `,
-      [body.id, body.name, body.description, repeatable, maxCompletions]
+      [body.id, body.name, body.description, repeatable, maxCompletions, turninPolicy, turninNpcId, turninBoardId]
     );
 
     // 2) Clear old objectives / rewards

@@ -61,6 +61,9 @@ export function generateTownQuests(opts: TownQuestGeneratorOptions): QuestDefini
       id: `${prefix}greet_quartermaster`,
       name: "Report to the Quartermaster",
       description: "Check in with the local quartermaster to receive your first orders.",
+      // Town board quests should be turned in at the board for the current town.
+      turninPolicy: "board",
+      turninBoardId: townId,
       objectives: [
         {
           kind: "talk_to",
@@ -82,6 +85,8 @@ export function generateTownQuests(opts: TownQuestGeneratorOptions): QuestDefini
       id: `${prefix}rat_culling`,
       name: "Rat Culling",
       description: "Help keep the town clean by killing some of the local rats.",
+      turninPolicy: "board",
+      turninBoardId: townId,
       objectives: [
         {
           kind: "kill",
@@ -101,6 +106,8 @@ export function generateTownQuests(opts: TownQuestGeneratorOptions): QuestDefini
         id: `${prefix}ore_sampling`,
         name: "Ore Sampling",
         description: "Gather hematite ore samples from nearby veins.",
+        turninPolicy: "board",
+        turninBoardId: townId,
         objectives: [
           {
             kind: "harvest",
@@ -121,6 +128,8 @@ export function generateTownQuests(opts: TownQuestGeneratorOptions): QuestDefini
         id: `${prefix}alchemist_aid`,
         name: "Alchemist's Aid",
         description: "Brew a minor healing draught for a local alchemist.",
+        turninPolicy: "board",
+        turninBoardId: townId,
         objectives: [
           {
             kind: "craft",
@@ -144,6 +153,8 @@ export function generateTownQuests(opts: TownQuestGeneratorOptions): QuestDefini
         id: `${prefix}rat_tail_collection`,
         name: "Rat Tail Collection",
         description: "A local alchemist is paying for rat tails for their experiments.",
+        turninPolicy: "board",
+        turninBoardId: townId,
         objectives: [
           {
             kind: "collect_item",

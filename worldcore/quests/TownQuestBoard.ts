@@ -178,6 +178,23 @@ export function resolveQuestDefinitionFromStateId(
   return null;
 }
 
+// ------------------------------------------------------------
+// Shared helpers (Questloop v0.2)
+// ------------------------------------------------------------
+
+/** Best-effort: resolve the player's current room id for quest/board/turn-in rules. */
+export function getQuestContextRoomId(ctx: any, char: any): string | null {
+  return getCurrentRoomId(ctx, char);
+}
+
+/** Best-effort: resolve the current "town id" (region id) for quest board + turn-in rules. */
+export function getQuestContextTownId(ctx: any, char: any): string | null {
+  const roomId = getCurrentRoomId(ctx, char);
+  if (!roomId) return null;
+  const regionId = inferRegionId(ctx, roomId) ?? roomId;
+  return regionId ? String(regionId) : null;
+}
+
 // ----------------------------
 // Internals
 // ----------------------------

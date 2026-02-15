@@ -32,6 +32,11 @@ type AdminQuest = {
   repeatable: boolean;
   maxCompletions: number | null;
 
+  // Turn-in policy (Questloop v0.2)
+  turninPolicy?: "anywhere" | "board" | "npc";
+  turninNpcId?: string | null;
+  turninBoardId?: string | null;
+
   objectiveKind: ObjectiveKind;
   objectiveTargetId: string;
   objectiveRequired: number;
@@ -240,6 +245,9 @@ export function AdminQuestsPage() {
       description: "",
       repeatable: false,
       maxCompletions: null,
+      turninPolicy: "anywhere",
+      turninNpcId: null,
+      turninBoardId: null,
       objectiveKind: "kill",
       objectiveTargetId: "",
       objectiveRequired: 1,
@@ -528,6 +536,62 @@ export function AdminQuestsPage() {
                     </div>
                   )}
                 </div>
+
+                <fieldset style={{ marginBottom: 8 }}>
+                  <legend>Turn-in policy</legend>
+
+                  <div style={{ marginBottom: 4 }}>
+                    <label>
+                      Policy:{" "}
+                      <select
+                        value={form.turninPolicy ?? "anywhere"}
+                        onChange={(e) => {
+                          const v = (e.target.value as any) || "anywhere";
+                          updateField("turninPolicy", v);
+                          if (v !== "npc") updateField("turninNpcId", null);
+                          if (v !== "board") updateField("turninBoardId", null);
+                        }}
+                        disabled={saving || !canWrite}
+                      >
+                        <option value="anywhere">Anywhere (legacy)</option>
+                        <option value="board">Quest board (town)</option>
+                        <option value="npc">Specific NPC</option>
+                      </select>
+                    </label>
+                  </div>
+
+                  {form.turninPolicy === "npc" ? (
+                    <div style={{ marginBottom: 4 }}>
+                      <label>
+                        Turn-in NPC ID (proto id):{" "}
+                        <input
+                          value={form.turninNpcId ?? ""}
+                          onChange={(e) => updateField("turninNpcId", e.target.value)}
+                          disabled={saving || !canWrite}
+                        />
+                      </label>
+                      <div style={{ fontSize: 12, color: "rgba(0,0,0,0.65)", marginTop: 2 }}>
+                        Player must be standing with an NPC whose <code>protoId</code> matches this id.
+                      </div>
+                    </div>
+                  ) : null}
+
+                  {form.turninPolicy === "board" ? (
+                    <div style={{ marginBottom: 4 }}>
+                      <label>
+                        Bound board/town id (optional):{" "}
+                        <input
+                          value={form.turninBoardId ?? ""}
+                          onChange={(e) => updateField("turninBoardId", e.target.value)}
+                          disabled={saving || !canWrite}
+                        />
+                      </label>
+                      <div style={{ fontSize: 12, color: "rgba(0,0,0,0.65)", marginTop: 2 }}>
+                        Leave empty to allow any town board. Generated town quests auto-bind to their town.
+                      </div>
+                    </div>
+                  ) : null}
+                </fieldset>
 
                 <fieldset style={{ marginBottom: 8 }}>
                   <legend>Objective (single, v0)</legend>

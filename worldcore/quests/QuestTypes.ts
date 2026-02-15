@@ -72,6 +72,14 @@ export interface QuestDefinition {
   objectives: QuestObjective[];
   reward?: QuestReward;
 
+  // Turn-in policy (Questloop v0.2)
+  /** Default: "anywhere" (legacy). */
+  turninPolicy?: "anywhere" | "board" | "npc";
+  /** When turninPolicy === "npc", the proto id required to be present in the player's room. */
+  turninNpcId?: string | null;
+  /** When turninPolicy === "board", optional town/region id required for turn-in (generated quests set this). */
+  turninBoardId?: string | null;
+
   // NEW
   /**
    * If true, this quest can be turned in multiple times.

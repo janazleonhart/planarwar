@@ -14,6 +14,9 @@ interface QuestRow {
   repeatable: boolean;
   max_repeats: number | null;
   is_enabled: boolean;
+  turnin_policy?: string | null;
+  turnin_npc_id?: string | null;
+  turnin_board_id?: string | null;
 }
 
 interface ObjectiveRow {
@@ -42,7 +45,8 @@ export class PostgresQuestService implements QuestService {
     // NOTE: Do NOT use db.query<QuestRow>(...) generics here.
     // Some runtimes/tests stub db.query as untyped, which breaks TS compilation.
     const qRes = await db.query(
-      `SELECT id, name, description, repeatable, max_repeats, is_enabled
+      `SELECT id, name, description, repeatable, max_repeats, is_enabled,
+              turnin_policy, turnin_npc_id, turnin_board_id
        FROM quests
        WHERE is_enabled = TRUE
        ORDER BY id ASC`
@@ -172,6 +176,9 @@ export class PostgresQuestService implements QuestService {
         description: row.description ?? "",
         objectives,
         reward,
+        turninPolicy: (row.turnin_policy as any) ?? "anywhere",
+        turninNpcId: row.turnin_npc_id ?? null,
+        turninBoardId: row.turnin_board_id ?? null,
         repeatable: row.repeatable,
         maxCompletions: row.max_repeats ?? undefined,
       });
@@ -182,7 +189,8 @@ export class PostgresQuestService implements QuestService {
 
   async getQuest(id: string): Promise<QuestDefinition | null> {
     const res = await db.query(
-      `SELECT id, name, description, repeatable, max_repeats, is_enabled
+      `SELECT id, name, description, repeatable, max_repeats, is_enabled,
+              turnin_policy, turnin_npc_id, turnin_board_id
        FROM quests
        WHERE id = $1
          AND is_enabled = TRUE`,
@@ -288,6 +296,9 @@ export class PostgresQuestService implements QuestService {
       description: row.description ?? "",
       objectives,
       reward,
+      turninPolicy: (row.turnin_policy as any) ?? "anywhere",
+      turninNpcId: row.turnin_npc_id ?? null,
+      turninBoardId: row.turnin_board_id ?? null,
       repeatable: row.repeatable,
       maxCompletions: row.max_repeats ?? undefined,
     };
