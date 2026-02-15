@@ -87,6 +87,18 @@ export interface QuestDefinition {
   objectives: QuestObjective[];
   reward?: QuestReward;
 
+  /**
+   * Optional prerequisites: these quest ids must have been turned in at least once
+   * before this quest can be accepted.
+   */
+  requiresTurnedIn?: string[];
+
+  /**
+   * Optional follow-up hints: quest ids that become relevant after turning this quest in.
+   * (Pure UX for now; the board/service will still decide what to offer.)
+   */
+  unlocks?: string[];
+
   // Turn-in policy (Questloop v0.2)
   /** Default: "anywhere" (legacy). */
   turninPolicy?: "anywhere" | "board" | "npc";
@@ -198,6 +210,41 @@ greet_quartermaster: {
     ],
     reward: {
       xp: 50,
+    },
+  },
+
+  // Simple chain example (prereq gating).
+  chain_intro_test: {
+    id: "chain_intro_test",
+    name: "Chain Intro Test",
+    description: "A tiny quest used to verify prerequisite gating in the quest system.",
+    objectives: [
+      {
+        kind: "kill",
+        targetProtoId: "training_dummy",
+        required: 1,
+      },
+    ],
+    reward: {
+      xp: 1,
+    },
+    unlocks: ["chain_followup_test"],
+  },
+
+  chain_followup_test: {
+    id: "chain_followup_test",
+    name: "Chain Follow-up Test",
+    description: "A follow-up quest that is locked until Chain Intro Test is turned in.",
+    requiresTurnedIn: ["chain_intro_test"],
+    objectives: [
+      {
+        kind: "kill",
+        targetProtoId: "training_dummy",
+        required: 1,
+      },
+    ],
+    reward: {
+      xp: 1,
     },
   },
 

@@ -47,7 +47,11 @@ export function renderTownQuestBoard(ctx: any, char: CharacterState): string {
     const objText = obj ? summarizeObjective(obj as any) : "Objective: (none)";
     const rewardText = summarizeRewards(q);
 
-    lines.push(` ${String(i + 1).padStart(2, " ")}. ${status} ${q.name} (${q.id})`);
+    const prereq = describePrereqLock(char, q);
+
+    lines.push(
+      ` ${String(i + 1).padStart(2, " ")}. ${status} ${q.name} (${q.id})${prereq ? " " + prereq : ""}`
+    );
     lines.push(`     - ${objText}`);
     if (rewardText) lines.push(`     - Rewards: ${rewardText}`);
   });
@@ -224,6 +228,9 @@ async function acceptResolvedQuest(
 ): Promise<string> {
   const state = ensureQuestState(char);
   const existing = state[quest.id];
+
+  const prereqDenied = describePrereqDeny(char, quest);
+  if (prereqDenied) return prereqDenied;
 
   if (existing) {
     if (existing.state === "active") return `[quest] '${quest.name}' is already active.`;
@@ -602,6 +609,41 @@ function summarizeRewards(q: QuestDefinition): string {
   if (r.titles && r.titles.length > 0) bits.push(`Titles: ${r.titles.join(", ")}`);
   if (q.repeatable) bits.push(`Repeatable${q.maxCompletions != null ? ` (max ${q.maxCompletions})` : ""}`);
   return bits.join(" • ");
+}
+
+function hasTurnedInQuest(char: CharacterState, questId: string): boolean {
+  const state = ensureQuestState(char);
+  const e = state[questId];
+  if (!e) return false;
+  if (e.state === "turned_in") return true;
+  const completions = Number(e.completions ?? 0);
+  return completions > 0;
+}
+
+function getQuestNameOrId(questId: string): string {
+  const q = getQuestById(questId);
+  return q?.name ?? questId;
+}
+
+function listMissingPrereqs(char: CharacterState, quest: QuestDefinition): string[] {
+  const req = Array.isArray(quest.requiresTurnedIn) ? quest.requiresTurnedIn : [];
+  if (req.length === 0) return [];
+  return req.filter((id) => !hasTurnedInQuest(char, id));
+}
+
+function describePrereqLock(char: CharacterState, quest: QuestDefinition): string | null {
+  const missing = listMissingPrereqs(char, quest);
+  if (missing.length === 0) return null;
+  const names = missing.map(getQuestNameOrId).join(", ");
+  return `(LOCKED: requires ${names})`;
+}
+
+function describePrereqDeny(char: CharacterState, quest: QuestDefinition): string | null {
+  const missing = listMissingPrereqs(char, quest);
+  if (missing.length === 0) return null;
+
+  const names = missing.map(getQuestNameOrId).join(", ");
+  return `[quest] Cannot accept '${quest.name}': requires you to turn in ${names} first.`;
 }
 
 function getCurrentRoomId(ctx: any, char: any): string | null {

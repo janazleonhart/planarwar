@@ -271,6 +271,20 @@ export function renderQuestDetails(
     lines.push(quest.description);
   }
 
+  const prereqIds = Array.isArray((quest as any).requiresTurnedIn) ? (quest as any).requiresTurnedIn as string[] : [];
+  if (prereqIds.length > 0) {
+    const names = prereqIds.map((id) => getQuestById(id)?.name ?? id).join(", ");
+    lines.push("");
+    lines.push(`Prerequisites: Turn in ${names}`);
+  }
+
+  const unlockIds = Array.isArray((quest as any).unlocks) ? (quest as any).unlocks as string[] : [];
+  if (unlockIds.length > 0) {
+    const names = unlockIds.map((id) => getQuestById(id)?.name ?? id).join(", ");
+    lines.push("");
+    lines.push(`Unlocks: ${names}`);
+  }
+
   lines.push("");
   lines.push("Objectives:");
   for (const obj of quest.objectives ?? []) {
