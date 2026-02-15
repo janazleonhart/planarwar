@@ -58,6 +58,16 @@ export async function turnInQuest(
     const wantsHere = (parts[1] ?? "").toLowerCase();
     const isHere = wantsHere === "here" || wantsHere === "local";
 
+    // Optional flags:
+    //  - --preview / -p : show eligible list but do NOT emit a confirm token (no commit)
+    const rawArgs = isHere ? parts.slice(2) : parts.slice(1);
+    const flags = new Set(rawArgs.map((p) => p.toLowerCase()));
+    const previewOnly = flags.has("--preview") || flags.has("-p");
+    const argsNoFlags = rawArgs.filter((p) => {
+      const l = p.toLowerCase();
+      return l !== "--preview" && l !== "-p";
+    });
+
     if (isHere) {
       completed = completed.filter((id) => {
         const entry = questState[id];
@@ -73,10 +83,25 @@ export async function turnInQuest(
       return "[quest] None ready to turn in here.";
     }
 
-    const providedToken = isHere
-      ? parts.slice(2).join(" ").trim()
-      : parts.slice(1).join(" ").trim();
+    const providedToken = argsNoFlags.join(" ").trim();
     const token = computeTurnInAllToken(char, completed, questState);
+
+    if (previewOnly) {
+      const lines: string[] = [];
+      lines.push(`[quest] Turn-in ALL ready quests${isHere ? " (here)" : ""}: ${completed.length}`);
+      lines.push("\nReady:");
+      for (const id of completed) {
+        const entry = questState[id];
+        const q = resolveQuestDefinitionFromStateId(id, entry);
+        const name = q?.name ?? id;
+        const idx = ids.indexOf(id) + 1;
+        const rewardText = q ? renderQuestRewardSummary(q) : "";
+        lines.push(` - ${idx}) ${name} (${id})${rewardText ? ` • ${rewardText}` : ""}`);
+      }
+      lines.push("\n[quest] (preview) No confirm token generated.");
+      lines.push(`Run: quest turnin all${isHere ? " here" : ""}  (to get a confirm token)`);
+      return lines.join("\n").trimEnd();
+    }
 
     if (!providedToken) {
       const lines: string[] = [];

@@ -94,6 +94,8 @@ export async function handleQuestCommand(
     " quest turnin preview <#|id|name> (shows readiness + reward preview)",
     " quest turnin all           (shows confirm token for bulk turn-in)",
     " quest turnin all here      (shows confirm token for bulk turn-in (eligible here))",
+    " quest turnin all --preview (shows bulk eligible list, no token)",
+    " quest turnin all here --preview (shows bulk eligible list here, no token)",
     " quest turnin all <token>   (bulk turn-in all completed quests)",
     " quest turnin all here <token> (bulk turn-in completed quests eligible here)",
     " quest turnin <#|id|name>   (turn in by quest-log index, id, or name)",
