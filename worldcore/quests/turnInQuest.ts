@@ -156,8 +156,16 @@ export async function turnInQuest(
   let key = trimmed;
   if (/^\d+$/.test(trimmed)) {
     const idx = Number(trimmed);
-    const id = ids[idx - 1];
-    if (!id) return `[quest] You do not have a quest #${trimmed}. (Use 'quest' to list accepted quests.)`;
+    // QoL: for turn-in, prefer indexing into the *ready* list first.
+    // This matches player intent when they just ran `quest ready` / `quest turnin list`.
+    const completedIds = ids.filter((id) => questState[id]?.state === "completed");
+    const byReady = completedIds[idx - 1];
+    const byAll = ids[idx - 1];
+
+    const id = byReady ?? byAll;
+    if (!id) {
+      return `[quest] You do not have a quest #${trimmed}. (Use 'quest' to list accepted quests, or 'quest ready' for ready-to-turn-in.)`;
+    }
     key = id;
   }
 

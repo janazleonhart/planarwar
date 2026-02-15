@@ -51,8 +51,14 @@ export async function handleQuestCommand(
   }
 
   if (sub === "turnin" || sub === "turn-in" || sub === "complete") {
-    const target = input.parts.slice(2).join(" ");
+    const target = input.parts.slice(2).join(" ").trim();
     if (!target) return "Usage: quest turnin <#|id|name> (or 'list'/'ready')";
+
+    // QoL: make 'quest turnin ready' behave like 'quest ready' (players discover it faster).
+    if (target.toLowerCase() === "ready") {
+      return renderQuestLog(char, { filter: "ready" });
+    }
+
     return turnInQuest(ctx, char, target);
   }
 
@@ -65,7 +71,7 @@ export async function handleQuestCommand(
     " quest accept <#|id>",
     " quest abandon <#|id>",
     " quest turnin list          (shows completed quests ready to turn in)",
-    " quest turnin ready         (alias of list)",
+    " quest turnin ready         (alias of 'quest ready')",
     " quest turnin preview <#|id|name> (shows readiness + reward preview)",
     " quest turnin all           (shows confirm token for bulk turn-in)",
     " quest turnin all <token>   (bulk turn-in all completed quests)",
