@@ -58,6 +58,30 @@ export function renderTownQuestBoard(ctx: any, char: CharacterState): string {
   return lines.join("\n").trimEnd();
 }
 
+/**
+ * Resolve a quest from the current town offering context (board) without accepting it.
+ *
+ * Used by talk-driven UX (ex: `talk <npc> show 1`) so that numeric indices can
+ * refer to the town board list even before the quest is accepted.
+ */
+export function resolveTownQuestFromContext(
+  ctx: any,
+  char: CharacterState,
+  idOrIndexOrNameRaw: string
+): QuestDefinition | null {
+  const offering = getTownQuestOffering(ctx, char);
+  if (!offering) return null;
+
+  const q = String(idOrIndexOrNameRaw ?? "").trim();
+  if (!q) return null;
+
+  const exact = resolveFromOffering(offering.quests, q);
+  if (exact) return exact;
+
+  const fuzzy = resolveFromOfferingFuzzy(offering.quests, q);
+  return fuzzy.length === 1 ? fuzzy[0] : null;
+}
+
 export async function acceptTownQuest(
   ctx: any,
   char: CharacterState,

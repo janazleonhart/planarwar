@@ -7,7 +7,11 @@
 import { ensureProgression } from "../progression/ProgressionCore";
 import { ensureQuestState } from "./QuestState";
 import { countItemInInventory } from "../items/inventoryConsume";
-import { getQuestContextRoomId, resolveQuestDefinitionFromStateId } from "./TownQuestBoard";
+import {
+  getQuestContextRoomId,
+  resolveQuestDefinitionFromStateId,
+  resolveTownQuestFromContext,
+} from "./TownQuestBoard";
 import { getAllQuests, getQuestById } from "./QuestRegistry";
 import { renderQuestAmbiguous } from "./QuestCommandText";
 
@@ -212,7 +216,17 @@ export function renderQuestDetails(
     if (id) key = id;
   }
 
-  const resolved = resolveQuestByIdOrNameIncludingAccepted(key, questState);
+  let resolved = resolveQuestByIdOrNameIncludingAccepted(key, questState) as any;
+
+  // If we're in a town context (ex: talk-driven UI), allow showing quests from the
+  // current board offering even if they haven't been accepted yet.
+  if (!resolved && opts.ctx) {
+    const q = resolveTownQuestFromContext(opts.ctx, char as any, target);
+    if (q) {
+      resolved = { kind: "single", quest: q };
+    }
+  }
+
   if (!resolved) {
     return `[quest] Unknown quest '${target}'.`;
   }
@@ -220,7 +234,7 @@ export function renderQuestDetails(
     return renderQuestAmbiguous(resolved.matches);
   }
 
-  const quest = resolved.quest;
+  const quest = resolved.quest as QuestDefinition;
   const entry = questState[quest.id] ?? null;
 
   const isAccepted = !!entry;
