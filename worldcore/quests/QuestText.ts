@@ -318,13 +318,12 @@ function computeTurninHint(
   if (policy === "npc") {
     if (!ctx) {
       if (!npcId) return "Go to the quest NPC.";
-      return `Go to ${npcId}. Then: handin ${npcId}.`;
+      return `Go to ${npcId}.`;
     }
 
     if (!npcId) return "Go to the quest NPC.";
 
     const roomId = getQuestContextRoomId(ctx, char);
-    if (!roomId) return `Go to ${npcId}. Then: handin ${npcId}.`;
 
     const ents = (ctx?.entities && typeof ctx.entities.getEntitiesInRoom === "function")
       ? (ctx.entities.getEntitiesInRoom(roomId) as any[])
@@ -335,7 +334,7 @@ function computeTurninHint(
       : false;
 
     // If the required NPC is present here, no hint is needed.
-    return found ? null : `Go to ${npcId}. Then: handin ${npcId}.`;
+    return found ? null : `Go to ${npcId}.`;
   }
 
   if (policy === "board") {

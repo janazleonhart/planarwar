@@ -13,6 +13,7 @@ import {
   preflightBagsForRewards,
 } from "../rewards/RewardDelivery";
 import { getQuestContextRoomId, getTownContextForTurnin, resolveQuestDefinitionFromStateId } from "./TownQuestBoard";
+import { enforceTurninPolicy } from "./QuestTurninPolicy";
 import { grantSpellInState } from "../spells/SpellLearning";
 import { grantAbilityInState } from "../abilities/AbilityLearning";
 import { getSpellByIdOrAlias } from "../spells/SpellTypes";
@@ -73,8 +74,7 @@ export async function turnInQuest(
         const entry = questState[id];
         const q = resolveQuestDefinitionFromStateId(id, entry);
         if (!q) return true; // legacy: don't over-filter when we can't resolve definition
-        const policy = (q as any).turninPolicy ?? "anywhere";
-        const enforced = enforceTurninPolicy(ctx, char, q as any, entry, policy);
+        const enforced = enforceTurninPolicy(ctx, char as any, q as any, entry, (q as any).turninPolicy ?? "anywhere");
         return enforced.ok;
       });
     }
@@ -558,89 +558,6 @@ if (
   }
 
   return msg;
-}
-
-function enforceTurninPolicy(
-  ctx: any,
-  char: any,
-  quest: QuestDefinition,
-  entry: any,
-  policy: "anywhere" | "board" | "npc",
-): { ok: true } | { ok: false; message: string } {
-  if (!policy || policy === "anywhere") return { ok: true };
-
-  // "npc": require a specific NPC proto id to be present in the player's current room.
-  if (policy === "npc") {
-    const npcId = String((quest as any).turninNpcId ?? "").trim();
-    if (!npcId) {
-      return {
-        ok: false,
-        message: "[quest] Turn-in denied: quest is configured for NPC turn-in, but no turninNpcId is set.",
-      };
-    }
-
-    const roomId = getQuestContextRoomId(ctx, char);
-    if (!roomId) {
-      return {
-        ok: false,
-        message: `[quest] You must turn this in to ${npcId} (but your location is unknown).`,
-      };
-    }
-
-    const ents = (ctx?.entities && typeof ctx.entities.getEntitiesInRoom === "function")
-      ? (ctx.entities.getEntitiesInRoom(roomId) as any[])
-      : [];
-
-    const found = Array.isArray(ents)
-      ? ents.some((e) => String(e?.type ?? "") === "npc" && String((e as any)?.protoId ?? "").trim() === npcId)
-      : false;
-
-    if (!found) {
-      return {
-        ok: false,
-        message: `[quest] You must turn this in to ${npcId}. (Go to them, then run: handin ${npcId}  (or: quest turnin ${quest.id}))`,
-      };
-    }
-
-    return { ok: true };
-  }
-
-  // "board": require a town context (region id). If quest specifies a board id, it must match.
-  if (policy === "board") {
-    const townCtx = getTownContextForTurnin(ctx, char);
-    if (!townCtx) {
-      return {
-        ok: false,
-        message: "[quest] You must be at a quest board (in a town) to turn this quest in. (Try: quest board)",
-      };
-    }
-
-    const townId = townCtx.townId;
-
-    const requiredBoard = String((quest as any).turninBoardId ?? "").trim();
-    if (requiredBoard && requiredBoard !== townId) {
-      return {
-        ok: false,
-        message: `[quest] You must return to the quest board for this town to turn it in. (Required: ${requiredBoard}, here: ${townId})`,
-      };
-    }
-
-    // Generated town quests implicitly bind to their source town if not explicitly set on the quest definition.
-    const src = entry?.source;
-    if (!requiredBoard && src?.kind === "generated_town") {
-      const acceptedTown = String(src.townId ?? "").trim();
-      if (acceptedTown && acceptedTown !== townId) {
-        return {
-          ok: false,
-          message: `[quest] You must return to the quest board where you accepted this quest. (Required: ${acceptedTown}, here: ${townId})`,
-        };
-      }
-    }
-
-    return { ok: true };
-  }
-
-  return { ok: true };
 }
 
 // ---------------------------------------------------------------------------
