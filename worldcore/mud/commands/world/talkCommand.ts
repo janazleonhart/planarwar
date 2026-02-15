@@ -10,7 +10,7 @@ import { ensureQuestState } from "../../../quests/QuestState";
 import { resolveQuestDefinitionFromStateId } from "../../../quests/TownQuestBoard";
 import { acceptTownQuest, abandonQuest, renderTownQuestBoard } from "../../../quests/TownQuestBoard";
 import { turnInQuest } from "../../../quests/turnInQuest";
-import { renderQuestLog } from "../../../quests/QuestText";
+import { renderQuestDetails, renderQuestLog } from "../../../quests/QuestText";
 import {
   buildNearbyTargetSnapshot,
   distanceXZ,
@@ -170,6 +170,11 @@ export async function handleTalkCommand(
     "abandon",
     "drop",
 
+    // quest info
+    "show",
+    "info",
+    "details",
+
     // help
     "help",
     "?",
@@ -324,6 +329,7 @@ export async function handleTalkCommand(
     lines.push(` - talk ${npcToken} quests            (view the town quest board)`);
     lines.push(` - talk ${npcToken} accept <#|id|name> (accept a quest from the board)`);
     lines.push(` - talk ${npcToken} abandon <#|id|name> (abandon a quest)`);
+    lines.push(` - talk ${npcToken} show <#|id|name>   (show quest details)`);
     lines.push(` - talk ${npcToken} questlog           (view your quest log)`);
     lines.push(` - talk ${npcToken} ready [here|local] (view quests ready to turn in)`);
     lines.push(` - talk ${npcToken} handin             (hand in if exactly one eligible)`);
@@ -345,6 +351,17 @@ export async function handleTalkCommand(
 
   if (!action && isQuestAnchor) {
     lines.push(`Tip: view quests via 'talk ${npcToken} quests' (or: 'quest board').`);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Quest details shortcut, routed through the same QuestText renderer as `quest show`.
+  // ---------------------------------------------------------------------------
+
+  if (normalizedAction === "show" || normalizedAction === "info" || normalizedAction === "details") {
+    const selector = actionArgs.join(" ").trim();
+    if (!selector) return `Usage: talk ${npcToken} show <#|id|name>`;
+    lines.push(renderQuestDetails(char as any, selector, { ctx }));
+    return lines.join("\n").trimEnd();
   }
 
   // ---------------------------------------------------------------------------
