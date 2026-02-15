@@ -374,6 +374,7 @@ export async function handleTalkCommand(
   if (normalizedAction === "quests" || normalizedAction === "quest" || normalizedAction === "board") {
     lines.push(renderTownQuestBoard(ctx as any, char as any));
     lines.push("");
+    lines.push(`Tip: show details via 'talk ${npcToken} show <#|id|name>' (or: 'quest show <#|id|name>').`);
     lines.push(`Tip: accept via 'talk ${npcToken} accept <#|id|name>' (or: 'quest accept <#|id|name>').`);
     lines.push(`Tip: abandon via 'talk ${npcToken} abandon <#|id|name>' (or: 'quest abandon <#|id|name>').`);
     return lines.join("\n").trimEnd();
