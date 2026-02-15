@@ -260,6 +260,9 @@ export function renderQuestDetails(
 
   if (isReady) {
     lines.push("");
+    if (opts.ctx) {
+      lines.push(`Eligible to turn in here: ${turninHint ? "NO" : "YES"}`);
+    }
     if (turninHint) {
       lines.push(`Turn-in: ${turninHint}`);
       lines.push(`Then: quest turnin ${quest.id}`);
