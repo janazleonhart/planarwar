@@ -397,6 +397,25 @@ type ObjectiveRenderCtx = {
   inv?: CharacterState["inventory"]; 
 };
 
+function renderNpcLabel(npcIdRaw: string): string {
+  const npcId = String(npcIdRaw ?? '').trim();
+  if (!npcId) return '';
+
+  // Common Planar War naming: npc_quartermaster -> Quartermaster (npc_quartermaster)
+  let base = npcId;
+  if (base.startsWith('npc_')) base = base.slice('npc_'.length);
+  if (base.startsWith('trainer_')) base = base.slice('trainer_'.length);
+
+  const pretty = base
+    .split(/[_\-]+/g)
+    .filter(Boolean)
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(' ');
+
+  // Keep the exact proto id in parentheses for precision + auditability.
+  return pretty ? `${pretty} (${npcId})` : npcId;
+}
+
 function renderObjectiveLine(
   char: CharacterState,
   obj: QuestObjective,
@@ -442,7 +461,8 @@ function renderObjectiveLine(
       const v = flags[key];
       const cur = typeof v === "number" ? v : v ? 1 : 0;
       const display = Math.min(cur, required);
-      return `   - Talk to ${obj.npcId} (${display}/${required})\n`;
+      const label = renderNpcLabel(obj.npcId);
+      return `   - Talk to ${label} (${display}/${required})\n`;
     }
 
     default:

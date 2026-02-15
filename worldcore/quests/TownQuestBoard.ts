@@ -500,10 +500,27 @@ function summarizeObjective(obj: any): string {
     case "city":
       return `Complete ${obj.required}x ${obj.cityActionId}`;
     case "talk_to":
-      return `Talk to ${obj.npcId} (${obj.required ?? 1}x)`;
+      return `Talk to ${renderNpcLabel(obj.npcId)} (${obj.required ?? 1}x)`;
     default:
       return `Objective: ${String(obj.kind ?? "unknown")}`;
   }
+}
+
+function renderNpcLabel(npcIdRaw: string): string {
+  const npcId = String(npcIdRaw ?? '').trim();
+  if (!npcId) return '';
+
+  let base = npcId;
+  if (base.startsWith('npc_')) base = base.slice('npc_'.length);
+  if (base.startsWith('trainer_')) base = base.slice('trainer_'.length);
+
+  const pretty = base
+    .split(/[_\-]+/g)
+    .filter(Boolean)
+    .map((w: string) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(' ');
+
+  return pretty ? `${pretty} (${npcId})` : npcId;
 }
 
 function summarizeRewards(q: QuestDefinition): string {
