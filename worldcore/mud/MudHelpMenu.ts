@@ -79,6 +79,7 @@ export const HELP_ENTRIES: { cmd: string; desc: string; debug?: boolean }[] = [
   { cmd: "progress", desc: "Show kills/harvests/tasks progress." },
   { cmd: "quests / questlog", desc: "Show your quest log." },
   { cmd: "quest turnin <id|name>", desc: "Turn in a completed quest." },
+  { cmd: "handin <npcHandle|#>", desc: "Hand in completed NPC-bound quests to an NPC in the room." },
   { cmd: "reward", desc: "List/claim pending rewards (reward list | reward claim [all|N])." },
 
   // Debug (keep these grouped; players will sniff them out anyway)

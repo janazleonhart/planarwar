@@ -18,6 +18,7 @@ import { handleSaveCommand } from "./world/saveCommand";
 import { handleMoveCommand } from "./world/moveCommand";
 import { handleInteractCommand } from "./world/interactCommand";
 import { handleTalkCommand } from "./world/talkCommand";
+import { handleHandinCommand } from "./world/handinCommand";
 import { requireTownService } from "./world/serviceGates";
 import { handleWalkToCommand } from "./world/walktoCommand";
 
@@ -179,6 +180,8 @@ export const COMMANDS: Record<string, MudCommandHandlerFn> = {
   walk: handleMoveCommand,
   go: handleMoveCommand,
   talk: handleTalkCommand,
+  handin: handleHandinCommand,
+  "hand-in": handleHandinCommand,
   interact: handleInteractCommand,
   use: handleInteractCommand,
   walkto: handleWalkToCommand,
