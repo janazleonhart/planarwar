@@ -10,7 +10,9 @@ import {
 import { TITLES } from "../characters/TitleTypes";
 import { grantTaskRewards } from "../progression/rewards/grantTaskRewards";
 
-export type ProgressionCategory = "kills" | "harvests";
+// NOTE: category is primarily used for debugging/logging and future routing.
+// Quest/task/title evaluation is derived from the character's progression state.
+export type ProgressionCategory = "kills" | "harvests" | "talk_to";
 
 export interface ProgressionResultSnippets {
   snippets: string[];
@@ -85,4 +87,3 @@ export interface ProgressionResultSnippets {
 
   return { snippets };
 }
-

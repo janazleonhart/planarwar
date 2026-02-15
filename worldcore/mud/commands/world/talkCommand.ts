@@ -292,7 +292,9 @@ export async function handleTalkCommand(
   applyProgressionEvent(char, { kind: "talk_to", npcId: proto.id });
 
   // 2) tasks/quests/titles + DB patch
-  const { snippets } = await applyProgressionForEvent(ctx, char, "kills", proto.id);
+  // NOTE: this isn't a kill/harvest, but we still want the shared progression reactions
+  // (quests, tasks, titles, rewards) + persistence.
+  const { snippets } = await applyProgressionForEvent(ctx, char, "talk_to", proto.id);
 
   const eligible = listEligibleNpcTurnins(char, proto.id);
   const targetHandle = snapshot.find((s) => String(s.e?.id ?? "") === String(target?.id ?? ""))?.handle;
