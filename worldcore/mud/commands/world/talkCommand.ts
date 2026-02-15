@@ -351,6 +351,23 @@ export async function handleTalkCommand(
     // Action path: talk <npc> handin <#|id|name|all>
     if (wantsHandinAction && selector) {
       const lower = selector.toLowerCase();
+      // Explicit list/ls: always show the eligible list (even when only one), never turn anything in.
+      if (lower === "list" || lower === "ls") {
+        const lines2: string[] = [];
+        if (eligible.length === 1) {
+          lines2.push(`[quest] ${proto.name} can accept a quest hand-in (1):`);
+        } else {
+          lines2.push(`[quest] ${proto.name} can accept quest hand-ins (${eligible.length}):`);
+        }
+        for (let i = 0; i < eligible.length; i++) {
+          lines2.push(` - ${i + 1}) ${eligible[i].name} (${eligible[i].id})`);
+        }
+        lines2.push(`Use: talk ${npcToken} handin <#|id|name>`);
+        lines2.push(`(Or: handin ${npcToken} list)`);
+        lines2.push(`Tip: talk ${npcToken} handin (auto when exactly one eligible)`);
+        return lines2.join("\n").trimEnd();
+      }
+
 
       // Bulk (confirm-token gated)
       if (lower === "all" || lower.startsWith("all ")) {
