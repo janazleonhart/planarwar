@@ -40,12 +40,21 @@ export function renderTownQuestBoard(
     `Quest Board: town=${offering.townId} tier=${offering.tier} epoch=${offering.epoch}`
   );
 
+  const newCountAll = offering.quests.reduce((acc, q) => {
+    const entry = state[q.id];
+    return !entry && unlockedFollowups.has(q.id) ? acc + 1 : acc;
+  }, 0);
+
+
   const visibleQuests = onlyNew
     ? offering.quests.filter((q) => {
         const entry = state[q.id];
         return !entry && unlockedFollowups.has(q.id);
       })
     : offering.quests;
+
+  if (onlyNew) lines.push(`NEW quests available: ${visibleQuests.length}`);
+  else lines.push(`Quests available: ${offering.quests.length} (NEW: ${newCountAll})`);
 
   if (visibleQuests.length === 0) {
     lines.push(onlyNew ? " - No NEW quests available." : " - No quests available.");
