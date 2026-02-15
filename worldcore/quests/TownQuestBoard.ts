@@ -124,9 +124,23 @@ export async function abandonQuest(
   idOrIndexRaw: string
 ): Promise<string> {
   const idOrIndex = String(idOrIndexRaw ?? "").trim();
-  if (!idOrIndex) return "Usage: quest abandon <id>";
+  if (!idOrIndex) return "Usage: quest abandon <#|id>";
 
   const state = ensureQuestState(char);
+
+  // QoL: allow abandoning by numeric index into the player's quest log ordering.
+  // This should work even if the player is not in a town context / board room.
+  if (/^\d+$/.test(idOrIndex)) {
+    const ids = Object.keys(state).sort();
+    const idx = Number(idOrIndex);
+    const questId = ids[idx - 1];
+    if (questId && state[questId]) {
+      const q = resolveQuestDefinitionFromStateId(questId, state[questId]);
+      delete state[questId];
+      await persistQuestState(ctx, char);
+      return q ? `[quest] Abandoned: '${q.name}'.` : `[quest] Abandoned quest '${questId}'.`;
+    }
+  }
 
   // Prefer exact id match first.
   if (state[idOrIndex]) {

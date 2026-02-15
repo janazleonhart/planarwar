@@ -64,6 +64,30 @@ test("[contract] quest abandon removes quest from questlog", async () => {
   }
 });
 
+test("[contract] quest abandon supports numeric questlog index even when not in matching town", async () => {
+  const prevEpoch = process.env.PW_QUEST_EPOCH;
+  process.env.PW_QUEST_EPOCH = "test_epoch";
+
+  try {
+    const ctxTown = makeCtx("prime_shard:0,0");
+    const char = makeChar();
+
+    await acceptTownQuest(ctxTown, char, "1");
+
+    // Move the player to a different town context so the board offering differs.
+    const ctxOtherTown = makeCtx("prime_shard:9,9");
+
+    const abandonMsg = await abandonQuest(ctxOtherTown, char, "1");
+    assert.match(abandonMsg, /Abandoned/);
+
+    const after = renderQuestLog(char);
+    assert.match(after, /None accepted/);
+  } finally {
+    if (prevEpoch === undefined) delete process.env.PW_QUEST_EPOCH;
+    else process.env.PW_QUEST_EPOCH = prevEpoch;
+  }
+});
+
 function makeCtx(roomId: string): AnyCtx {
   const session = { id: "sess1", roomId, auth: { isDev: true } };
 
