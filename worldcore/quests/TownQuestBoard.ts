@@ -16,7 +16,16 @@ import { renderQuestAmbiguous, renderQuestDidYouMean } from "./QuestCommandText"
 // Public API
 // ----------------------------
 
-export function renderTownQuestBoard(ctx: any, char: CharacterState): string {
+export type TownQuestBoardRenderOpts = {
+  /** When true, render only quests that are newly unlocked follow-ups (not yet accepted). */
+  onlyNew?: boolean;
+};
+
+export function renderTownQuestBoard(
+  ctx: any,
+  char: CharacterState,
+  opts?: TownQuestBoardRenderOpts
+): string {
   const offering = getTownQuestOffering(ctx, char);
   if (!offering) return "[quest] You are nowhere. (No room/town context found.)";
 
@@ -24,18 +33,26 @@ export function renderTownQuestBoard(ctx: any, char: CharacterState): string {
   // Quest chains v0.4: mark unlocked follow-ups as NEW on the board so players
   // notice them immediately.
   const unlockedFollowups = new Set<string>(computeUnlockedFollowupQuests(char).map((q) => q.id));
+  const onlyNew = !!opts?.onlyNew;
   const lines: string[] = [];
 
   lines.push(
     `Quest Board: town=${offering.townId} tier=${offering.tier} epoch=${offering.epoch}`
   );
 
-  if (offering.quests.length === 0) {
-    lines.push(" - No quests available.");
+  const visibleQuests = onlyNew
+    ? offering.quests.filter((q) => {
+        const entry = state[q.id];
+        return !entry && unlockedFollowups.has(q.id);
+      })
+    : offering.quests;
+
+  if (visibleQuests.length === 0) {
+    lines.push(onlyNew ? " - No NEW quests available." : " - No quests available.");
     return lines.join("\n");
   }
 
-  offering.quests.forEach((q, i) => {
+  visibleQuests.forEach((q, i) => {
     const entry = state[q.id];
     const status =
       !entry
@@ -63,7 +80,10 @@ export function renderTownQuestBoard(ctx: any, char: CharacterState): string {
   });
 
   lines.push("");
-  lines.push("Use: quest accept <#|id>   |   quest abandon <#|id>   |   questlog");
+  lines.push(
+    "Use: quest accept <#|id>   |   quest abandon <#|id>   |   questlog" +
+      (onlyNew ? "   |   quest board" : "")
+  );
 
   return lines.join("\n").trimEnd();
 }

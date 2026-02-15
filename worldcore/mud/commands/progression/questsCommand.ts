@@ -48,6 +48,10 @@ export async function handleQuestCommand(
   }
 
   if (sub === "board" || sub === "questboard") {
+    const mode = String(input.parts[2] ?? "").toLowerCase().trim();
+    if (mode === "new") {
+      return renderTownQuestBoard(ctx, char, { onlyNew: true });
+    }
     return renderTownQuestBoard(ctx, char);
   }
 
@@ -91,6 +95,7 @@ export async function handleQuestCommand(
     " quest readyhere|readylocal (aliases of 'quest ready here')",
     " quest show <#|id|name>      (shows quest details)",
     " quest board                (shows available town quests)",
+    " quest board new            (shows only newly unlocked follow-ups)",
     " quest accept <#|id|name>",
     " quest abandon <#|id|name>",
     " quest turnin list          (shows completed quests ready to turn in)",
