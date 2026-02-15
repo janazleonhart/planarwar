@@ -51,15 +51,36 @@ export async function turnInQuest(
   if (lower === "all" || lower.startsWith("all ")) {
     if (ids.length === 0) return "[quest] You have no accepted quests.";
 
-    const completed = ids.filter((id) => questState[id]?.state === "completed");
+    let completed = ids.filter((id) => questState[id]?.state === "completed");
     if (completed.length === 0) return "[quest] No completed quests are ready to turn in yet.";
 
-    const providedToken = trimmed.split(/\s+/).slice(1).join(" ").trim();
+    const parts = trimmed.split(/\s+/).filter(Boolean);
+    const wantsHere = (parts[1] ?? "").toLowerCase();
+    const isHere = wantsHere === "here" || wantsHere === "local";
+
+    if (isHere) {
+      completed = completed.filter((id) => {
+        const entry = questState[id];
+        const q = resolveQuestDefinitionFromStateId(id, entry);
+        if (!q) return true; // legacy: don't over-filter when we can't resolve definition
+        const policy = (q as any).turninPolicy ?? "anywhere";
+        const enforced = enforceTurninPolicy(ctx, char, q as any, entry, policy);
+        return enforced.ok;
+      });
+    }
+
+    if (completed.length === 0) {
+      return "[quest] None ready to turn in here.";
+    }
+
+    const providedToken = isHere
+      ? parts.slice(2).join(" ").trim()
+      : parts.slice(1).join(" ").trim();
     const token = computeTurnInAllToken(char, completed, questState);
 
     if (!providedToken) {
       const lines: string[] = [];
-      lines.push(`[quest] Turn-in ALL ready quests: ${completed.length}`);
+      lines.push(`[quest] Turn-in ALL ready quests${isHere ? " (here)" : ""}: ${completed.length}`);
       lines.push("\nReady:");
       for (const id of completed) {
         const entry = questState[id];
@@ -70,7 +91,7 @@ export async function turnInQuest(
         lines.push(` - ${idx}) ${name} (${id})${rewardText ? ` • ${rewardText}` : ""}`);
       }
       lines.push("\nThis action is confirm-token gated to prevent oopsies.");
-      lines.push(`Confirm with: quest turnin all ${token}`);
+      lines.push(`Confirm with: quest turnin all${isHere ? " here" : ""} ${token}`);
       return lines.join("\n").trimEnd();
     }
 
