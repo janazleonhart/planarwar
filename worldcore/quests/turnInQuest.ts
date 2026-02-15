@@ -17,6 +17,7 @@ import { grantSpellInState } from "../spells/SpellLearning";
 import { grantAbilityInState } from "../abilities/AbilityLearning";
 import { getSpellByIdOrAlias } from "../spells/SpellTypes";
 import { findAbilityByNameOrId } from "../abilities/AbilityTypes";
+import { renderQuestAmbiguous } from "./QuestCommandText";
 import crypto from "node:crypto";
 
 /**
@@ -118,11 +119,7 @@ export async function turnInQuest(
     const resolved = resolveQuestByIdOrNameIncludingAccepted(key, questState);
     if (!resolved) return `[quest] Unknown quest '${target}'.`;
     if (resolved.kind === "ambiguous") {
-      const lines: string[] = [];
-      lines.push("[quest] Ambiguous. Did you mean:");
-      resolved.matches.slice(0, 8).forEach((q) => lines.push(` - ${q.name} (${q.id})`));
-      if (resolved.matches.length > 8) lines.push(` - ...and ${resolved.matches.length - 8} more`);
-      return lines.join("").trimEnd();
+      return renderQuestAmbiguous(resolved.matches);
     }
 
     const quest = resolved.quest;
@@ -193,11 +190,7 @@ if (policy && policy !== "anywhere") {
     return `[quest] Unknown quest '${trimmed}'.`;
   }
   if (resolved.kind === "ambiguous") {
-    const lines: string[] = [];
-    lines.push("[quest] Ambiguous. Did you mean:");
-    resolved.matches.slice(0, 8).forEach((q) => lines.push(` - ${q.name} (${q.id})`));
-    if (resolved.matches.length > 8) lines.push(` - ...and ${resolved.matches.length - 8} more`);
-    return lines.join("").trimEnd();
+    return renderQuestAmbiguous(resolved.matches);
   }
 
   const quest = resolved.quest;

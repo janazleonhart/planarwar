@@ -10,6 +10,7 @@ import { ensureQuestState, type QuestSource } from "./QuestState";
 import type { QuestDefinition } from "./QuestTypes";
 import { generateTownQuests } from "./QuestGenerator";
 import { getQuestById, getAllQuests } from "./QuestRegistry";
+import { renderQuestAmbiguous, renderQuestDidYouMean } from "./QuestCommandText";
 
 // ----------------------------
 // Public API
@@ -93,7 +94,7 @@ export async function acceptTownQuest(
     });
   }
   if (offeringFuzzy.length > 1) {
-    return renderAmbiguousQuestMatches("[quest] Ambiguous. Did you mean:", offeringFuzzy);
+    return renderQuestAmbiguous(offeringFuzzy);
   }
 
   // 2) Registry exact
@@ -106,7 +107,7 @@ export async function acceptTownQuest(
     return await acceptResolvedQuest(ctx, char, registryFuzzy[0], { kind: "registry" });
   }
   if (registryFuzzy.length > 1) {
-    return renderAmbiguousQuestMatches("[quest] Ambiguous. Did you mean:", registryFuzzy);
+    return renderQuestAmbiguous(registryFuzzy);
   }
 
   // 3) Service exact (getQuest) / list scan
@@ -132,7 +133,7 @@ export async function acceptTownQuest(
     });
   }
   if (serviceFuzzy && serviceFuzzy.matches.length > 1) {
-    return renderAmbiguousQuestMatches("[quest] Ambiguous. Did you mean:", serviceFuzzy.matches);
+    return renderQuestAmbiguous(serviceFuzzy.matches);
   }
 
   // Unknown: show suggestions from offering+registry (cheap, deterministic)
@@ -140,9 +141,9 @@ export async function acceptTownQuest(
   if (suggestions.length > 0) {
     return [
       `[quest] Unknown quest '${query}'.`,
-      renderAmbiguousQuestMatches("Did you mean:", suggestions),
+      renderQuestDidYouMean(suggestions),
       "(Use 'quest board' to list current town quests.)",
-    ].join("");
+    ].join("\n");
   }
 
   return `[quest] Unknown quest '${query}'. (Use 'quest board' to list.)`;
@@ -174,13 +175,7 @@ async function acceptResolvedQuest(
   return `[quest] Accepted: '${quest.name}'. (Use 'questlog' to track progress.)`;
 }
 
-function renderAmbiguousQuestMatches(header: string, matches: QuestDefinition[]): string {
-  const lines: string[] = [];
-  lines.push(header);
-  matches.slice(0, 8).forEach((q) => lines.push(` - ${q.name} (${q.id})`));
-  if (matches.length > 8) lines.push(` - ...and ${matches.length - 8} more`);
-  return lines.join("");
-}
+// Ambiguity/suggestion formatting lives in QuestCommandText.
 
 export async function abandonQuest(
   ctx: any,
@@ -228,7 +223,7 @@ export async function abandonQuest(
       return `[quest] Abandoned: '${exact[0].name}'.`;
     }
     if (exact.length > 1) {
-      return renderAmbiguousQuestMatches("[quest] Ambiguous. Did you mean:", exact);
+      return renderQuestAmbiguous(exact);
     }
 
     // Fuzzy: prefer prefix matches, then substring.
@@ -241,7 +236,7 @@ export async function abandonQuest(
       return `[quest] Abandoned: '${prefix[0].name}'.`;
     }
     if (prefix.length > 1) {
-      return renderAmbiguousQuestMatches("[quest] Ambiguous. Did you mean:", prefix);
+      return renderQuestAmbiguous(prefix);
     }
 
     const sub = accepted.filter(
@@ -253,7 +248,7 @@ export async function abandonQuest(
       return `[quest] Abandoned: '${sub[0].name}'.`;
     }
     if (sub.length > 1) {
-      return renderAmbiguousQuestMatches("[quest] Ambiguous. Did you mean:", sub);
+      return renderQuestAmbiguous(sub);
     }
   }
 

@@ -9,6 +9,7 @@ import { ensureQuestState } from "./QuestState";
 import { countItemInInventory } from "../items/inventoryConsume";
 import { resolveQuestDefinitionFromStateId } from "./TownQuestBoard";
 import { getAllQuests, getQuestById } from "./QuestRegistry";
+import { renderQuestAmbiguous } from "./QuestCommandText";
 
 import type { QuestDefinition, QuestObjective } from "./QuestTypes";
 import type { CharacterState } from "../characters/CharacterTypes";
@@ -194,11 +195,7 @@ export function renderQuestDetails(
     return `[quest] Unknown quest '${target}'.`;
   }
   if (resolved.kind === "ambiguous") {
-    const lines: string[] = [];
-    lines.push("[quest] Ambiguous. Did you mean:");
-    resolved.matches.slice(0, 8).forEach((q) => lines.push(` - ${q.name} (${q.id})`));
-    if (resolved.matches.length > 8) lines.push(` - ...and ${resolved.matches.length - 8} more`);
-    return lines.join(",").trimEnd();
+    return renderQuestAmbiguous(resolved.matches);
   }
 
   const quest = resolved.quest;
