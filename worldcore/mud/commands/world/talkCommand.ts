@@ -147,7 +147,10 @@ export async function handleTalkCommand(
   //  - talk <target> quests|board
   //  - talk <target> accept <#|id|name>
   //  - talk <target> abandon <#|id|name>
-  // Preserve multi-word targets by finding the *last* action keyword and splitting around it.
+  // Preserve multi-word targets while still supporting sub-modes like:
+  //   talk <npc> quests ready
+  // We treat quests/quest/board as the primary action if present,
+  // and pass any subsequent tokens (including "ready") as action args.
   const args = Array.isArray(input.args) ? input.args : [];
   const actionKeywords = new Set([
     // hand-in actions
@@ -180,6 +183,8 @@ export async function handleTalkCommand(
     "?",
   ]);
 
+  const preferredPrimaryActions = new Set(["quests", "quest", "board"]);
+
   let action = "";
   let actionArgs: string[] = [];
   let targetRaw = "";
@@ -187,23 +192,41 @@ export async function handleTalkCommand(
   if (args.length === 0) {
     targetRaw = "";
   } else {
-    let actionIdx = -1;
-    for (let i = args.length - 1; i >= 0; i--) {
+    // If the user is using the quest-board subcommands, treat that keyword as the
+    // action even if later tokens are also action keywords (e.g. 'ready').
+    let primaryIdx = -1;
+    for (let i = 0; i < args.length; i++) {
       const tok = String(args[i] ?? "").trim().toLowerCase();
-      if (actionKeywords.has(tok)) {
-        actionIdx = i;
+      if (preferredPrimaryActions.has(tok)) {
+        primaryIdx = i;
         action = tok;
         break;
       }
     }
 
-    if (actionIdx >= 0) {
-      targetRaw = args.slice(0, actionIdx).join(" ").trim();
-      actionArgs = args.slice(actionIdx + 1);
+    if (primaryIdx >= 0) {
+      targetRaw = args.slice(0, primaryIdx).join(" ").trim();
+      actionArgs = args.slice(primaryIdx + 1);
     } else {
-      targetRaw = args.join(" ").trim();
+      let actionIdx = -1;
+      for (let i = args.length - 1; i >= 0; i--) {
+        const tok = String(args[i] ?? "").trim().toLowerCase();
+        if (actionKeywords.has(tok)) {
+          actionIdx = i;
+          action = tok;
+          break;
+        }
+      }
+
+      if (actionIdx >= 0) {
+        targetRaw = args.slice(0, actionIdx).join(" ").trim();
+        actionArgs = args.slice(actionIdx + 1);
+      } else {
+        targetRaw = args.join(" ").trim();
+      }
     }
   }
+
   if (!targetRaw) return "Usage: talk <target>";
 
   const selfEntity = getSelfEntity(ctx);
@@ -339,6 +362,7 @@ export async function handleTalkCommand(
     lines.push(` - talk ${npcToken} quests            (view the town quest board)`);
     lines.push(` - talk ${npcToken} quests new        (view only NEW unlocked follow-ups)`);
     lines.push(` - talk ${npcToken} quests active     (view only your active quests)`);
+    lines.push(` - talk ${npcToken} quests ready      (view only quests ready to turn in)`);
     lines.push(` - talk ${npcToken} accept <#|id|name> (accept a quest from the board)`);
     lines.push(` - talk ${npcToken} abandon <#|id|name> (abandon a quest)`);
     lines.push(` - talk ${npcToken} show <#|id|name>   (show quest details)`);
@@ -389,6 +413,8 @@ export async function handleTalkCommand(
       lines.push(renderTownQuestBoard(ctx as any, char as any, { onlyNew: true }));
     } else if (mode === "active") {
       lines.push(renderTownQuestBoard(ctx as any, char as any, { onlyActive: true }));
+    } else if (mode === "ready") {
+      lines.push(renderTownQuestBoard(ctx as any, char as any, { onlyReady: true }));
     } else {
       lines.push(renderTownQuestBoard(ctx as any, char as any));
     }
