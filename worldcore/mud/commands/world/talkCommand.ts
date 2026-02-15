@@ -165,6 +165,10 @@ export async function handleTalkCommand(
     "accept",
     "abandon",
     "drop",
+
+    // help
+    "help",
+    "?",
   ]);
 
   let action = "";
@@ -306,6 +310,23 @@ export async function handleTalkCommand(
 
   const normalizedAction = String(action ?? "").toLowerCase();
   const npcToken = (targetHandle ?? targetRaw).trim();
+
+  // ---------------------------------------------------------------------------
+  // Help: talk <npc> help
+  // ---------------------------------------------------------------------------
+
+  if (normalizedAction === "help" || normalizedAction === "?") {
+    lines.push("[talk] Commands:");
+    lines.push(` - talk ${npcToken} quests            (view the town quest board)`);
+    lines.push(` - talk ${npcToken} accept <#|id|name> (accept a quest from the board)`);
+    lines.push(` - talk ${npcToken} abandon <#|id|name> (abandon a quest)`);
+    lines.push(` - talk ${npcToken} handin             (hand in if exactly one eligible)`);
+    lines.push(` - talk ${npcToken} handin list|ls      (list eligible NPC hand-ins)`);
+    lines.push(` - talk ${npcToken} handin <#|id|name>  (hand in a specific quest)`);
+    lines.push(` - talk ${npcToken} handin all [token]  (hand in all, token-gated)`);
+    lines.push(`Tip: the standalone 'handin ${npcToken} ...' command also works.`);
+    return lines.join("\n").trimEnd();
+  }
 
   // ---------------------------------------------------------------------------
   // Questgiver hint: some NPCs act as the town "quest board" anchor. Without any

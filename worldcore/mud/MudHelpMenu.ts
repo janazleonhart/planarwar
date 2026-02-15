@@ -18,6 +18,7 @@ export const HELP_ENTRIES: { cmd: string; desc: string; debug?: boolean }[] = [
   { cmd: "look", desc: "Describe your current region." },
   { cmd: "face <target|dir|deg>", desc: "Turn to face a target or direction (n,ne,e,... or degrees)." },
   { cmd: "examine <thing>", desc: "Examine an NPC/resource in your area." },
+  { cmd: "talk <target> [help]", desc: "Talk to an NPC (quests/accept/abandon/handin shortcuts)." },
   { cmd: "nearby", desc: "List nearby entities." },
   { cmd: "map [radius]", desc: "Show an ASCII map around you." },
   { cmd: "move <dir>", desc: "Move (n,s,e,w,ne,nw,se,sw)." },
