@@ -21,6 +21,9 @@ export function renderTownQuestBoard(ctx: any, char: CharacterState): string {
   if (!offering) return "[quest] You are nowhere. (No room/town context found.)";
 
   const state = ensureQuestState(char);
+  // Quest chains v0.4: mark unlocked follow-ups as NEW on the board so players
+  // notice them immediately.
+  const unlockedFollowups = new Set<string>(computeUnlockedFollowupQuests(char).map((q) => q.id));
   const lines: string[] = [];
 
   lines.push(
@@ -43,6 +46,9 @@ export function renderTownQuestBoard(ctx: any, char: CharacterState): string {
         ? "[C]"
         : "[T]";
 
+    const isNewUnlocked = !entry && unlockedFollowups.has(q.id);
+    const newTag = isNewUnlocked ? "[NEW] " : "";
+
     const obj = q.objectives?.[0];
     const objText = obj ? summarizeObjective(obj as any) : "Objective: (none)";
     const rewardText = summarizeRewards(q);
@@ -50,7 +56,7 @@ export function renderTownQuestBoard(ctx: any, char: CharacterState): string {
     const prereq = describePrereqLock(char, q);
 
     lines.push(
-      ` ${String(i + 1).padStart(2, " ")}. ${status} ${q.name} (${q.id})${prereq ? " " + prereq : ""}`
+      ` ${String(i + 1).padStart(2, " ")}. ${status} ${newTag}${q.name} (${q.id})${prereq ? " " + prereq : ""}`
     );
     lines.push(`     - ${objText}`);
     if (rewardText) lines.push(`     - Rewards: ${rewardText}`);
