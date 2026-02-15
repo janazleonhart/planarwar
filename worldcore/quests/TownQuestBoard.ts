@@ -65,23 +65,95 @@ export async function acceptTownQuest(
   const offering = getTownQuestOffering(ctx, char);
   if (!offering) return "[quest] Cannot accept: no town context.";
 
-  const idOrIndex = String(idOrIndexRaw ?? "").trim();
-  if (!idOrIndex) return "Usage: quest accept <#|id>";
-
-  const fromOffering = resolveFromOffering(offering.quests, idOrIndex);
+  const query = String(idOrIndexRaw ?? "").trim();
+  if (!query) return "Usage: quest accept <#|id|name>";
 
   // Resolution order:
   // 1) Current town offering
   // 2) Static QuestRegistry
   // 3) Backing QuestService (ex: PostgresQuestService) via ctx.quests
-  const fromRegistry = fromOffering ? null : resolveRegistryQuest(idOrIndex);
-  const fromService = (!fromOffering && !fromRegistry) ? await resolveServiceQuest(ctx, idOrIndex) : null;
 
-  const quest = fromOffering ?? fromRegistry ?? (fromService ? fromService.quest : null);
-  if (!quest) {
-    return `[quest] Unknown quest '${idOrIndex}'. (Use 'quest board' to list.)`;
+  // 1) Offering exact (index/id/name)
+  const fromOfferingExact = resolveFromOffering(offering.quests, query);
+  if (fromOfferingExact) return await acceptResolvedQuest(ctx, char, fromOfferingExact, {
+    kind: "generated_town",
+    townId: offering.townId,
+    tier: offering.tier,
+    epoch: offering.epoch,
+  });
+
+  // 1b) Offering fuzzy (partial id/name)
+  const offeringFuzzy = resolveFromOfferingFuzzy(offering.quests, query);
+  if (offeringFuzzy.length === 1) {
+    return await acceptResolvedQuest(ctx, char, offeringFuzzy[0], {
+      kind: "generated_town",
+      townId: offering.townId,
+      tier: offering.tier,
+      epoch: offering.epoch,
+    });
+  }
+  if (offeringFuzzy.length > 1) {
+    return renderAmbiguousQuestMatches("[quest] Ambiguous. Did you mean:", offeringFuzzy);
   }
 
+  // 2) Registry exact
+  const fromRegistryExact = resolveRegistryQuest(query);
+  if (fromRegistryExact) return await acceptResolvedQuest(ctx, char, fromRegistryExact, { kind: "registry" });
+
+  // 2b) Registry fuzzy
+  const registryFuzzy = resolveRegistryQuestFuzzy(query);
+  if (registryFuzzy.length === 1) {
+    return await acceptResolvedQuest(ctx, char, registryFuzzy[0], { kind: "registry" });
+  }
+  if (registryFuzzy.length > 1) {
+    return renderAmbiguousQuestMatches("[quest] Ambiguous. Did you mean:", registryFuzzy);
+  }
+
+  // 3) Service exact (getQuest) / list scan
+  const fromServiceExact = await resolveServiceQuest(ctx, query);
+  if (fromServiceExact) {
+    return await acceptResolvedQuest(ctx, char, fromServiceExact.quest, {
+      kind: "service",
+      service: fromServiceExact.service,
+      questId: fromServiceExact.quest.id,
+      def: fromServiceExact.quest,
+    });
+  }
+
+  // 3b) Service fuzzy
+  const serviceFuzzy = await resolveServiceQuestFuzzy(ctx, query);
+  if (serviceFuzzy && serviceFuzzy.matches.length === 1) {
+    const q = serviceFuzzy.matches[0];
+    return await acceptResolvedQuest(ctx, char, q, {
+      kind: "service",
+      service: serviceFuzzy.service,
+      questId: q.id,
+      def: q,
+    });
+  }
+  if (serviceFuzzy && serviceFuzzy.matches.length > 1) {
+    return renderAmbiguousQuestMatches("[quest] Ambiguous. Did you mean:", serviceFuzzy.matches);
+  }
+
+  // Unknown: show suggestions from offering+registry (cheap, deterministic)
+  const suggestions = [...resolveFromOfferingFuzzy(offering.quests, query), ...resolveRegistryQuestFuzzy(query)].slice(0, 8);
+  if (suggestions.length > 0) {
+    return [
+      `[quest] Unknown quest '${query}'.`,
+      renderAmbiguousQuestMatches("Did you mean:", suggestions),
+      "(Use 'quest board' to list current town quests.)",
+    ].join("");
+  }
+
+  return `[quest] Unknown quest '${query}'. (Use 'quest board' to list.)`;
+}
+
+async function acceptResolvedQuest(
+  ctx: any,
+  char: CharacterState,
+  quest: QuestDefinition,
+  source: QuestSource
+): Promise<string> {
   const state = ensureQuestState(char);
   const existing = state[quest.id];
 
@@ -90,22 +162,6 @@ export async function acceptTownQuest(
     if (existing.state === "completed") return `[quest] '${quest.name}' is completed. Turn it in with: quest turnin ${quest.id}`;
     return `[quest] '${quest.name}' is already turned in.`;
   }
-
-  const source: QuestSource = fromOffering
-    ? {
-        kind: "generated_town",
-        townId: offering.townId,
-        tier: offering.tier,
-        epoch: offering.epoch,
-      }
-    : fromService
-    ? {
-        kind: "service",
-        service: fromService.service,
-        questId: fromService.quest.id,
-        def: fromService.quest,
-      }
-    : { kind: "registry" };
 
   state[quest.id] = {
     state: "active",
@@ -116,6 +172,14 @@ export async function acceptTownQuest(
   await persistQuestState(ctx, char);
 
   return `[quest] Accepted: '${quest.name}'. (Use 'questlog' to track progress.)`;
+}
+
+function renderAmbiguousQuestMatches(header: string, matches: QuestDefinition[]): string {
+  const lines: string[] = [];
+  lines.push(header);
+  matches.slice(0, 8).forEach((q) => lines.push(` - ${q.name} (${q.id})`));
+  if (matches.length > 8) lines.push(` - ...and ${matches.length - 8} more`);
+  return lines.join("");
 }
 
 export async function abandonQuest(
@@ -265,6 +329,61 @@ function resolveFromOffering(quests: QuestDefinition[], idOrIndex: string): Ques
     quests.find((q) => q.name.toLowerCase() === lower) ??
     null
   );
+}
+
+
+function resolveFromOfferingFuzzy(quests: QuestDefinition[], queryRaw: string): QuestDefinition[] {
+  const q = String(queryRaw ?? "").trim().toLowerCase();
+  if (!q || /^\d+$/.test(q)) return [];
+
+  // Prefer prefix matches, then substring.
+  const byPrefix = quests.filter((x) => x.id.toLowerCase().startsWith(q) || x.name.toLowerCase().startsWith(q));
+  if (byPrefix.length > 0) return uniqById(byPrefix);
+  const bySub = quests.filter((x) => x.id.toLowerCase().includes(q) || x.name.toLowerCase().includes(q));
+  return uniqById(bySub);
+}
+
+function resolveRegistryQuestFuzzy(queryRaw: string): QuestDefinition[] {
+  const q = String(queryRaw ?? "").trim().toLowerCase();
+  if (!q || /^\d+$/.test(q)) return [];
+
+  const all = getAllQuests();
+  const byPrefix = all.filter((x) => x.id.toLowerCase().startsWith(q) || x.name.toLowerCase().startsWith(q));
+  if (byPrefix.length > 0) return uniqById(byPrefix);
+  const bySub = all.filter((x) => x.id.toLowerCase().includes(q) || x.name.toLowerCase().includes(q));
+  return uniqById(bySub);
+}
+
+async function resolveServiceQuestFuzzy(
+  ctx: any,
+  queryRaw: string
+): Promise<{ matches: QuestDefinition[]; service: string } | null> {
+  const raw = String(queryRaw ?? "").trim();
+  if (!raw || /^\d+$/.test(raw)) return null;
+
+  const svc = ctx?.quests;
+  if (!svc || typeof svc.listQuests !== "function") return null;
+
+  try {
+    const all = (await svc.listQuests()) as QuestDefinition[];
+    const q = raw.toLowerCase();
+    const byPrefix = all.filter((x) => x.id.toLowerCase().startsWith(q) || x.name.toLowerCase().startsWith(q));
+    const matches = byPrefix.length > 0 ? byPrefix : all.filter((x) => x.id.toLowerCase().includes(q) || x.name.toLowerCase().includes(q));
+    return { matches: uniqById(matches), service: String(svc.kind ?? "quests.service") };
+  } catch {
+    return null;
+  }
+}
+
+function uniqById(list: QuestDefinition[]): QuestDefinition[] {
+  const seen = new Set<string>();
+  const out: QuestDefinition[] = [];
+  for (const q of list) {
+    if (seen.has(q.id)) continue;
+    seen.add(q.id);
+    out.push(q);
+  }
+  return out;
 }
 
 

@@ -40,7 +40,7 @@ export async function handleQuestCommand(
 
   if (sub === "accept") {
     const target = input.parts.slice(2).join(" ").trim();
-    if (!target) return "Usage: quest accept <#|id>";
+    if (!target) return "Usage: quest accept <#|id|name>";
     return acceptTownQuest(ctx, char, target);
   }
 
@@ -68,7 +68,7 @@ export async function handleQuestCommand(
     " quest ready                (shows quests ready to turn in)",
     " quest show <#|id|name>      (shows quest details)",
     " quest board                (shows available town quests)",
-    " quest accept <#|id>",
+    " quest accept <#|id|name>",
     " quest abandon <#|id>",
     " quest turnin list          (shows completed quests ready to turn in)",
     " quest turnin ready         (alias of 'quest ready')",

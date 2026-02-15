@@ -37,6 +37,29 @@ test("[contract] town quest board accept adds quest to questlog", async () => {
   }
 });
 
+
+test("[contract] quest accept supports partial name match when unambiguous", async () => {
+  const prevEpoch = process.env.PW_QUEST_EPOCH;
+  process.env.PW_QUEST_EPOCH = "test_epoch";
+
+  try {
+    const roomId = "prime_shard:0,0";
+
+    const ctx = makeCtx(roomId);
+    const char = makeChar();
+
+    const acceptMsg = await acceptTownQuest(ctx, char, "Quartermaster");
+    assert.match(acceptMsg, /Accepted:/);
+
+    const log = renderQuestLog(char);
+    assert.match(log, /Report to the Quartermaster/);
+  } finally {
+    if (prevEpoch === undefined) delete process.env.PW_QUEST_EPOCH;
+    else process.env.PW_QUEST_EPOCH = prevEpoch;
+  }
+});
+
+
 test("[contract] quest abandon removes quest from questlog", async () => {
   const prevEpoch = process.env.PW_QUEST_EPOCH;
   process.env.PW_QUEST_EPOCH = "test_epoch";
