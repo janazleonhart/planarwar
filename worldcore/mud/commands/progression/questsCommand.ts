@@ -88,6 +88,7 @@ export async function handleQuestCommand(
     " quest accept <#|id|name>",
     " quest abandon <#|id|name>",
     " quest turnin list          (shows completed quests ready to turn in)",
+    " quest turnin list here     (shows completed quests ready to turn in from here)",
     " quest turnin ready         (alias of 'quest ready')",
     " quest turnin ready here    (alias of 'quest ready here')",
     " quest turnin preview <#|id|name> (shows readiness + reward preview)",

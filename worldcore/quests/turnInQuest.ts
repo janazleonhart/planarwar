@@ -149,24 +149,53 @@ if (policy && policy !== "anywhere") {
     lines.push("\nTurn in with: quest turnin <#|id|name>");
     return lines.join("\n").trimEnd();
   }
-  if (lower === "list" || lower === "ready") {
-    if (ids.length === 0) return "[quest] You have no accepted quests.";
+  
+if (
+  lower === "list" ||
+  lower === "ready" ||
+  lower.startsWith("list ") ||
+  lower.startsWith("ready ")
+) {
+  if (ids.length === 0) return "[quest] You have no accepted quests.";
 
-    const completed = ids.filter((id) => questState[id]?.state === "completed");
-    if (completed.length === 0) return "[quest] No completed quests are ready to turn in yet.";
+  const parts = trimmed.split(/\s+/).filter(Boolean);
+  const wantsHere = (parts[1] ?? "").toLowerCase();
+  const isHere = wantsHere === "here" || wantsHere === "local";
 
-    let out = "[quest] Completed quests ready to turn in:\n";
-    for (const id of completed) {
+  let completed = ids.filter((id) => questState[id]?.state === "completed");
+  if (completed.length === 0) return "[quest] No completed quests are ready to turn in yet.";
+
+  if (isHere) {
+    completed = completed.filter((id) => {
       const entry = questState[id];
       const q = resolveQuestDefinitionFromStateId(id, entry);
-      const name = q?.name ?? id;
-      const idx = ids.indexOf(id) + 1;
-      const rewardText = q ? renderQuestRewardSummary(q) : "";
-      out += ` - ${idx}) ${name} (${id})${rewardText ? ` • ${rewardText}` : ""}\n`;
-    }
-    out += "\nUse: quest turnin <#|id|name> (or 'preview'/'all')";
-    return out.trimEnd();
+      if (!q) return true; // legacy: if we can't resolve definition, don't over-filter
+      const policy = (q as any).turninPolicy ?? "anywhere";
+      const enforced = enforceTurninPolicy(ctx, char, q as any, entry, policy);
+      return enforced.ok;
+    });
   }
+
+  if (completed.length === 0) {
+    return "[quest] None ready to turn in here.";
+  }
+
+  const header = isHere
+    ? "[quest] Completed quests ready to turn in here:\n"
+    : "[quest] Completed quests ready to turn in:\n";
+
+  let out = header;
+  for (const id of completed) {
+    const entry = questState[id];
+    const q = resolveQuestDefinitionFromStateId(id, entry);
+    const name = q?.name ?? id;
+    const idx = ids.indexOf(id) + 1;
+    const rewardText = q ? renderQuestRewardSummary(q) : "";
+    out += ` - ${idx}) ${name} (${id})${rewardText ? ` • ${rewardText}` : ""}\n`;
+  }
+  out += "\nUse: quest turnin <#|id|name> (or 'preview'/'all')";
+  return out.trimEnd();
+}
 
   let key = trimmed;
   if (/^\d+$/.test(trimmed)) {
