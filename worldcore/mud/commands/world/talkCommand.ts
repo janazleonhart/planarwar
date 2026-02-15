@@ -10,6 +10,7 @@ import { ensureQuestState } from "../../../quests/QuestState";
 import { resolveQuestDefinitionFromStateId } from "../../../quests/TownQuestBoard";
 import { acceptTownQuest, abandonQuest, renderTownQuestBoard } from "../../../quests/TownQuestBoard";
 import { turnInQuest } from "../../../quests/turnInQuest";
+import { renderQuestLog } from "../../../quests/QuestText";
 import {
   buildNearbyTargetSnapshot,
   distanceXZ,
@@ -162,6 +163,9 @@ export async function handleTalkCommand(
     "quests",
     "quest",
     "board",
+    "questlog",
+    "log",
+    "ready",
     "accept",
     "abandon",
     "drop",
@@ -320,6 +324,8 @@ export async function handleTalkCommand(
     lines.push(` - talk ${npcToken} quests            (view the town quest board)`);
     lines.push(` - talk ${npcToken} accept <#|id|name> (accept a quest from the board)`);
     lines.push(` - talk ${npcToken} abandon <#|id|name> (abandon a quest)`);
+    lines.push(` - talk ${npcToken} questlog           (view your quest log)`);
+    lines.push(` - talk ${npcToken} ready [here|local] (view quests ready to turn in)`);
     lines.push(` - talk ${npcToken} handin             (hand in if exactly one eligible)`);
     lines.push(` - talk ${npcToken} handin list|ls      (list eligible NPC hand-ins)`);
     lines.push(` - talk ${npcToken} handin <#|id|name>  (hand in a specific quest)`);
@@ -352,6 +358,22 @@ export async function handleTalkCommand(
     lines.push("");
     lines.push(`Tip: accept via 'talk ${npcToken} accept <#|id|name>' (or: 'quest accept <#|id|name>').`);
     lines.push(`Tip: abandon via 'talk ${npcToken} abandon <#|id|name>' (or: 'quest abandon <#|id|name>').`);
+    return lines.join("\n").trimEnd();
+  }
+
+  // ---------------------------------------------------------------------------
+  // Quest log shortcuts, routed through the same QuestText renderer as `quest`.
+  // ---------------------------------------------------------------------------
+
+  if (normalizedAction === "questlog" || normalizedAction === "log") {
+    lines.push(renderQuestLog(char as any, { ctx }));
+    return lines.join("\n").trimEnd();
+  }
+
+  if (normalizedAction === "ready") {
+    const mode = String(actionArgs[0] ?? "").toLowerCase().trim();
+    const filter = mode === "here" || mode === "local" ? "ready_here" : "ready";
+    lines.push(renderQuestLog(char as any, { ctx, filter } as any));
     return lines.join("\n").trimEnd();
   }
 
