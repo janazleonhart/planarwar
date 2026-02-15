@@ -7,14 +7,14 @@
 import { ensureProgression } from "../progression/ProgressionCore";
 import { ensureQuestState } from "./QuestState";
 import { countItemInInventory } from "../items/inventoryConsume";
-import { resolveQuestDefinitionFromStateId } from "./TownQuestBoard";
+import { getQuestContextRoomId, resolveQuestDefinitionFromStateId } from "./TownQuestBoard";
 import { getAllQuests, getQuestById } from "./QuestRegistry";
 import { renderQuestAmbiguous } from "./QuestCommandText";
 
 import type { QuestDefinition, QuestObjective } from "./QuestTypes";
 import type { CharacterState } from "../characters/CharacterTypes";
 
-export type QuestLogFilter = "all" | "ready";
+export type QuestLogFilter = "all" | "ready" | "ready_here";
 
 export type RenderQuestLogOpts = {
   filter?: QuestLogFilter;
@@ -73,6 +73,12 @@ export function renderQuestLog(char: CharacterState, opts: RenderQuestLogOpts = 
       : null;
 
     if (filter === "ready" && !isReady) continue;
+    if (filter === "ready_here") {
+      if (!isReady) continue;
+      // "ready_here" means "ready AND can be turned in from the current context".
+      // We reuse the hinting logic: if a hint exists, it's not turn-in-able here.
+      if (turninHint) continue;
+    }
 
     const mark = isTurnedIn ? "[T]" : isReady ? "[READY]" : isCompleted ? "[C]" : "[A]";
 
@@ -121,7 +127,10 @@ export function renderQuestLog(char: CharacterState, opts: RenderQuestLogOpts = 
     });
   }
 
-  if (rows.length === 0 && filter === "ready") {
+  if (rows.length === 0 && (filter === "ready" || filter === "ready_here")) {
+    if (filter === "ready_here") {
+      return "Quests (ready here):\n - None ready to turn in here.";
+    }
     return "Quests (ready):\n - None ready to turn in.";
   }
 
@@ -135,7 +144,10 @@ export function renderQuestLog(char: CharacterState, opts: RenderQuestLogOpts = 
     return a.id.localeCompare(b.id);
   });
 
-  let out = filter === "ready" ? "Quests (ready):\n" : "Quests:\n";
+  let out =
+    filter === "ready" ? "Quests (ready):\n" :
+    filter === "ready_here" ? "Quests (ready here):\n" :
+    "Quests:\n";
 
   for (const r of rows) {
     out += `${r.line}\n`;
@@ -275,7 +287,23 @@ function computeTurninHint(
   // Without a ctx, we can still provide a static hint for where to go.
   if (policy === "npc") {
     const npcId = String((quest as any).turninNpcId ?? "").trim();
-    return npcId ? `Go to ${npcId}.` : "Go to the quest NPC.";
+    if (!ctx) return npcId ? `Go to ${npcId}.` : "Go to the quest NPC.";
+
+    if (!npcId) return "Go to the quest NPC.";
+
+    const roomId = getQuestContextRoomId(ctx, char);
+    if (!roomId) return `Go to ${npcId}.`;
+
+    const ents = (ctx?.entities && typeof ctx.entities.getEntitiesInRoom === "function")
+      ? (ctx.entities.getEntitiesInRoom(roomId) as any[])
+      : [];
+
+    const found = Array.isArray(ents)
+      ? ents.some((e) => String(e?.type ?? "") === "npc" && String((e as any)?.protoId ?? "").trim() === npcId)
+      : false;
+
+    // If the required NPC is present here, no hint is needed.
+    return found ? null : `Go to ${npcId}.`;
   }
 
   if (policy === "board") {

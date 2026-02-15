@@ -25,7 +25,15 @@ export async function handleQuestCommand(
   }
 
   if (sub === "ready") {
+    const arg = (input.parts[2] || "").toLowerCase();
+    if (arg === "here" || arg === "local") {
+      return renderQuestLog(char, { filter: "ready_here", ctx });
+    }
     return renderQuestLog(char, { filter: "ready", ctx });
+  }
+
+  if (sub === "readyhere" || sub === "ready_here") {
+    return renderQuestLog(char, { filter: "ready_here", ctx });
   }
 
   if (sub === "show" || sub === "info" || sub === "details") {
@@ -56,7 +64,15 @@ export async function handleQuestCommand(
 
     // QoL: make 'quest turnin ready' behave like 'quest ready' (players discover it faster).
     if (target.toLowerCase() === "ready") {
+      const arg = (input.parts[3] || "").toLowerCase();
+      if (arg === "here" || arg === "local") {
+        return renderQuestLog(char, { filter: "ready_here", ctx });
+      }
       return renderQuestLog(char, { filter: "ready", ctx });
+    }
+
+    if (target.toLowerCase() === "readyhere" || target.toLowerCase() === "ready_here") {
+      return renderQuestLog(char, { filter: "ready_here", ctx });
     }
 
     return turnInQuest(ctx, char, target);
@@ -66,12 +82,14 @@ export async function handleQuestCommand(
     "Usage:",
     " quest                      (shows quest log)",
     " quest ready                (shows quests ready to turn in)",
+    " quest ready here           (shows quests ready to turn in from here)",
     " quest show <#|id|name>      (shows quest details)",
     " quest board                (shows available town quests)",
     " quest accept <#|id|name>",
     " quest abandon <#|id|name>",
     " quest turnin list          (shows completed quests ready to turn in)",
     " quest turnin ready         (alias of 'quest ready')",
+    " quest turnin ready here    (alias of 'quest ready here')",
     " quest turnin preview <#|id|name> (shows readiness + reward preview)",
     " quest turnin all           (shows confirm token for bulk turn-in)",
     " quest turnin all <token>   (bulk turn-in all completed quests)",
