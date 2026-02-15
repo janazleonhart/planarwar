@@ -554,13 +554,21 @@ export async function handleTalkCommand(
       }
 
       // Numeric selection (into eligible list)
-      if (/^\d+$/.test(selector)) {
-        const idx = Math.max(1, parseInt(selector, 10)) - 1;
-        const hit = eligible[idx];
-        if (!hit) {
-          return `[quest] Invalid hand-in selection #${selector}. (Try: talk ${npcToken} handin)`;
+      // Also supports suffixes like: `talk <npc> handin 2 choose 1`
+      {
+        const selParts = selector.split(/\s+/).filter(Boolean);
+        const first = selParts[0] ?? "";
+        if (/^\d+$/.test(first)) {
+          const idx = Math.max(1, parseInt(first, 10)) - 1;
+          const hit = eligible[idx];
+          if (!hit) {
+            return `[quest] Invalid hand-in selection #${first}. (Try: talk ${npcToken} handin)`;
+          }
+
+          const suffix = selParts.slice(1).join(" ").trim();
+          const query = suffix ? `${hit.id} ${suffix}` : hit.id;
+          return await turnInQuest(ctx as any, (ctx as any).session?.character ?? (char as any), query);
         }
-        return await turnInQuest(ctx as any, (ctx as any).session?.character ?? (char as any), hit.id);
       }
 
       // Exact ID match first.

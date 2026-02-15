@@ -269,13 +269,23 @@ export async function handleHandinCommand(
   }
 
   // Numeric selection (into eligible list)
-  if (/^\d+$/.test(rest)) {
-    const idx = Math.max(1, parseInt(rest, 10)) - 1;
-    const hit = eligible[idx];
-    if (!hit) {
-      return `[quest] Invalid hand-in selection #${rest}. (Use: handin ${targetToken} list)`;
+  // Also supports suffixes like: `handin <npc> 2 choose 1`
+  {
+    const selParts = rest.split(/\s+/).filter(Boolean);
+    const first = selParts[0] ?? "";
+
+    if (/^\d+$/.test(first)) {
+      const idx = Math.max(1, parseInt(first, 10)) - 1;
+      const hit = eligible[idx];
+      if (!hit) {
+        return `[quest] Invalid hand-in selection #${first}. (Use: handin ${targetToken} list)`;
+      }
+
+      // If the player typed only the number, turn it in. If they provided extra tokens (e.g. choose), forward them.
+      const suffix = selParts.slice(1).join(" ").trim();
+      const query = suffix ? `${hit.id} ${suffix}` : hit.id;
+      return await turnInQuest(ctx as any, char as any, query);
     }
-    return await turnInQuest(ctx as any, char as any, hit.id);
   }
 
   // Otherwise treat as quest id/name (turnInQuest handles fuzzy).
