@@ -43,6 +43,34 @@ function parseRewardChoiceSuffix(input: string): { questQuery: string; choiceInd
   return { questQuery: raw, choiceIndex: null };
 }
 
+function renderRewardChoiceOptionSummary(opt: any): string {
+  if (!opt || typeof opt !== "object") return "(none)";
+
+  const label = String(opt.label ?? "").trim();
+  const xp = typeof opt.xp === "number" && opt.xp > 0 ? `${opt.xp} XP` : "";
+  const gold = typeof opt.gold === "number" && opt.gold > 0 ? `${opt.gold} gold` : "";
+
+  const items = Array.isArray(opt.items) && opt.items.length
+    ? opt.items
+        .slice(0, 5)
+        .map((it: any) => {
+          const qty = Number(it?.count ?? it?.quantity ?? 1);
+          const itemId = String(it?.itemId ?? "").trim();
+          return itemId ? `${qty}x ${itemId}` : "";
+        })
+        .filter(Boolean)
+        .join(", ")
+    : "";
+  const itemsSuffix = Array.isArray(opt.items) && opt.items.length > 5 ? " …" : "";
+
+  const titles = Array.isArray(opt.titles) && opt.titles.length
+    ? `titles: ${opt.titles.slice(0, 5).join(", ")}${opt.titles.length > 5 ? " …" : ""}`
+    : "";
+
+  const bits = [label, xp, gold, items ? `${items}${itemsSuffix}` : "", titles].filter(Boolean);
+  return bits.length ? bits.join(" • ") : "(none)";
+}
+
 
 /**
  * Turn in a quest by id or name.
@@ -337,24 +365,20 @@ if (
   if (Array.isArray(chooseOne) && chooseOne.length > 0) {
     if (choiceIndex == null) {
       const opts = chooseOne
-        .map((opt, i) => {
-          const label = String(opt?.label ?? "").trim();
-          const gold = typeof opt?.gold === "number" && opt.gold > 0 ? `${opt.gold} gold` : "";
-          const xp = typeof opt?.xp === "number" && opt.xp > 0 ? `${opt.xp} XP` : "";
-          const titles = Array.isArray(opt?.titles) && opt.titles.length ? `title:${opt.titles.join(",")}` : "";
-          const items = Array.isArray(opt?.items) && opt.items.length
-            ? opt.items.map((it: any) => `${Number(it?.count ?? it?.quantity ?? 1)}x ${it?.itemId}`).join(", ")
-            : "";
-          const bits = [label, xp, gold, items, titles].filter(Boolean).join(" ");
-          return `(${i + 1}) ${bits || "(none)"}`.trim();
-        })
-        .join("; ");
+        .map((opt, i) => ` (${i + 1}) ${renderRewardChoiceOptionSummary(opt)}`)
+        .join("\n");
 
-      return `[quest] This quest requires choosing a reward. Use: quest turnin ${quest.id} choose <#>  Options: ${opts}`;
+      return [
+        "[quest] This quest requires choosing a reward.",
+        `Use: quest turnin ${quest.id} choose <#>`,
+        "(Tip: the same 'choose <#>' suffix works with handin/talk turn-ins too.)",
+        "Options:",
+        opts,
+      ].join("\n").trimEnd();
     }
 
     if (choiceIndex < 1 || choiceIndex > chooseOne.length) {
-      return `[quest] Invalid reward choice. Choose 1-${chooseOne.length}.`;
+      return `[quest] Invalid reward choice. Choose 1-${chooseOne.length}. (Use: quest turnin ${quest.id} choose <#>)`;
     }
 
     chosenBundle = chooseOne[choiceIndex - 1];
