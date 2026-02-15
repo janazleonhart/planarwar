@@ -146,7 +146,7 @@ test("[contract] quest show: renders details for accepted quest and supports num
 
       const ready = renderQuestDetails(char, q0.id);
       assert.match(ready, /\[READY\]/);
-      assert.match(ready, /Turn in with:/);
+      assert.match(ready, /(Turn in with:|Turn-in:)/);
     }
   } finally {
     if (prevEpoch === undefined) delete process.env.PW_QUEST_EPOCH;

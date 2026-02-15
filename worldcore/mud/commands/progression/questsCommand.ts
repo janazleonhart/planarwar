@@ -10,7 +10,7 @@ import {
 
 export async function handleQuestsCommand(ctx: any, char: any): Promise<string> {
   // Keep 'quests' as the log for backward compatibility.
-  return renderQuestLog(char);
+  return renderQuestLog(char, { ctx });
 }
 
 export async function handleQuestCommand(
@@ -21,17 +21,17 @@ export async function handleQuestCommand(
   const sub = (input.parts[1] || "").toLowerCase();
 
   if (!sub || sub === "log" || sub === "list" || sub === "quests" || sub === "questlog") {
-    return renderQuestLog(char);
+    return renderQuestLog(char, { ctx });
   }
 
   if (sub === "ready") {
-    return renderQuestLog(char, { filter: "ready" });
+    return renderQuestLog(char, { filter: "ready", ctx });
   }
 
   if (sub === "show" || sub === "info" || sub === "details") {
     const target = input.parts.slice(2).join(" ").trim();
     if (!target) return "Usage: quest show <#|id|name>";
-    return renderQuestDetails(char, target);
+    return renderQuestDetails(char, target, { ctx });
   }
 
   if (sub === "board" || sub === "questboard") {
@@ -56,7 +56,7 @@ export async function handleQuestCommand(
 
     // QoL: make 'quest turnin ready' behave like 'quest ready' (players discover it faster).
     if (target.toLowerCase() === "ready") {
-      return renderQuestLog(char, { filter: "ready" });
+      return renderQuestLog(char, { filter: "ready", ctx });
     }
 
     return turnInQuest(ctx, char, target);

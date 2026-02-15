@@ -17,10 +17,13 @@ export type QuestLogFilter = "all" | "ready";
 
 export type RenderQuestLogOpts = {
   filter?: QuestLogFilter;
+  /** Optional MudContext-like object used to compute turn-in hints for READY quests. */
+  ctx?: any;
 };
 
 export function renderQuestLog(char: CharacterState, opts: RenderQuestLogOpts = {}): string {
   const filter: QuestLogFilter = opts.filter ?? "all";
+  const ctx = opts.ctx;
 
   const prog = ensureProgression(char);
   const kills = (prog.kills as Record<string, number>) || {};
@@ -64,6 +67,10 @@ export function renderQuestLog(char: CharacterState, opts: RenderQuestLogOpts = 
       areObjectivesSatisfied(q, char, { kills, harvests, actions, flags })
     );
 
+    const turninHint = (q && isReady)
+      ? computeTurninHint(ctx, char as any, q as any, entry)
+      : null;
+
     if (filter === "ready" && !isReady) continue;
 
     const mark = isTurnedIn ? "[T]" : isReady ? "[READY]" : isCompleted ? "[C]" : "[A]";
@@ -86,6 +93,10 @@ export function renderQuestLog(char: CharacterState, opts: RenderQuestLogOpts = 
       if (isReady) {
         const rewardText = renderQuestRewardSummary(q);
         if (rewardText) detailLines.push(`   Rewards: ${rewardText}`);
+
+        if (turninHint) {
+          detailLines.push(`   Turn-in: ${turninHint}`);
+        }
       }
 
       for (const obj of q.objectives) {
@@ -140,7 +151,17 @@ export function renderQuestLog(char: CharacterState, opts: RenderQuestLogOpts = 
  * - Works for accepted quests (including deterministic town quests)
  * - Also works for registry quests not yet accepted
  */
-export function renderQuestDetails(char: CharacterState, targetRaw: string): string {
+export function renderQuestDetails(char: CharacterState, targetRaw: string): string;
+export function renderQuestDetails(
+  char: CharacterState,
+  targetRaw: string,
+  opts?: { ctx?: any }
+): string;
+export function renderQuestDetails(
+  char: CharacterState,
+  targetRaw: string,
+  opts: { ctx?: any } = {}
+): string {
   const target = (targetRaw || "").trim();
   if (!target) {
     return [
@@ -186,6 +207,10 @@ export function renderQuestDetails(char: CharacterState, targetRaw: string): str
     isCompleted && areObjectivesSatisfied(quest, char, { kills, harvests, actions, flags })
   );
 
+  const turninHint = isReady
+    ? computeTurninHint(opts.ctx, char as any, quest as any, entry)
+    : null;
+
   const mark = isTurnedIn
     ? "[T]"
     : isReady
@@ -219,10 +244,77 @@ export function renderQuestDetails(char: CharacterState, targetRaw: string): str
 
   if (isReady) {
     lines.push("");
-    lines.push(`Turn in with: quest turnin ${quest.id}`);
+    if (turninHint) {
+      lines.push(`Turn-in: ${turninHint}`);
+      lines.push(`Then: quest turnin ${quest.id}`);
+    } else {
+      lines.push(`Turn in with: quest turnin ${quest.id}`);
+    }
   }
 
   return lines.join("\n").trimEnd();
+}
+
+// ---------------------------------------------------------------------------
+// Turn-in hinting (Questloop v0.2)
+// ---------------------------------------------------------------------------
+
+function computeTurninHint(
+  ctx: any,
+  char: any,
+  quest: QuestDefinition,
+  entry: any
+): string | null {
+  const policy = String((quest as any).turninPolicy ?? "anywhere").trim() as any;
+  if (!policy || policy === "anywhere") return null;
+
+  // Without a ctx, we can still provide a static hint for where to go.
+  if (policy === "npc") {
+    const npcId = String((quest as any).turninNpcId ?? "").trim();
+    return npcId ? `Go to ${npcId}.` : "Go to the quest NPC.";
+  }
+
+  if (policy === "board") {
+    const requiredBoard = String((quest as any).turninBoardId ?? "").trim();
+    const acceptedTown = String(entry?.source?.townId ?? "").trim();
+    const hintTown = requiredBoard || acceptedTown;
+    if (!ctx) return hintTown ? `Return to quest board (${hintTown}).` : "Return to a quest board.";
+
+    const townId = getQuestContextTownId(ctx, char);
+    if (!townId) return hintTown ? `Return to quest board (${hintTown}).` : "Return to a quest board.";
+
+    if (requiredBoard && requiredBoard !== townId) {
+      return `Return to quest board (${requiredBoard}).`;
+    }
+
+    // Generated town quests bind to their accepted town.
+    if (!requiredBoard && entry?.source?.kind === "generated_town") {
+      if (acceptedTown && acceptedTown !== townId) {
+        return `Return to quest board (${acceptedTown}).`;
+      }
+    }
+
+    return null;
+  }
+
+  return null;
+}
+
+function getQuestContextTownId(ctx: any, char: any): string | null {
+  const ent = (ctx?.entities && typeof ctx.entities.getEntityByOwner === "function")
+    ? ctx.entities.getEntityByOwner(ctx?.session?.id)
+    : null;
+
+  const roomId = String(ent?.roomId ?? "").trim();
+  if (!roomId) return null;
+
+  const room = (ctx?.rooms && typeof ctx.rooms.getRoom === "function")
+    ? ctx.rooms.getRoom(roomId)
+    : null;
+
+  // In Planar War v0, "town" context is currently represented by regionId.
+  const townId = String(room?.regionId ?? "").trim();
+  return townId || null;
 }
 
 type ObjectiveRenderCtx = {
