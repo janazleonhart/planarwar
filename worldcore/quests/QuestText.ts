@@ -98,6 +98,9 @@ export function renderQuestLog(char: CharacterState, opts: RenderQuestLogOpts = 
 
     if (q) {
       if (isReady) {
+        if (ctx) {
+          detailLines.push(`   Eligible to turn in here: ${turninHint ? "NO" : "YES"}`);
+        }
         const rewardText = renderQuestRewardSummary(q);
         if (rewardText) detailLines.push(`   Rewards: ${rewardText}`);
 
