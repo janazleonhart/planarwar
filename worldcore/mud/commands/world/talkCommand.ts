@@ -396,10 +396,17 @@ export async function handleTalkCommand(
 
   if (normalizedAction === "accept") {
     const selector = actionArgs.join(" ").trim();
-    if (!selector) return `Usage: talk ${npcToken} accept <#|id|name>`;
+    if (!selector) {
+      // QoL: in talk-mode, missing selector should show the board (context) instead of just barking usage.
+      lines.push(renderTownQuestBoard(ctx as any, char as any));
+      lines.push("");
+      lines.push(`Usage: talk ${npcToken} accept <#|id|name>`);
+      lines.push(`Tip: show details via 'talk ${npcToken} show <#|id|name>'`);
+      return lines.join("").trimEnd();
+    }
     const msg = await acceptTownQuest(ctx as any, char as any, selector);
     lines.push(msg);
-    return lines.join("\n").trimEnd();
+    return lines.join("").trimEnd();
   }
 
   if (normalizedAction === "abandon" || normalizedAction === "drop") {
