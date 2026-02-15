@@ -318,13 +318,23 @@ export async function handleTalkCommand(
   lines.push(base);
 
   const normalizedAction = String(action ?? "").toLowerCase();
+  const handinAliases = new Set([
+    "handin",
+    "hand-in",
+    "turnin",
+    "turn-in",
+    "complete",
+    "finish",
+    "submit",
+  ]);
+  const canonicalAction = handinAliases.has(normalizedAction) ? "handin" : normalizedAction;
   const npcToken = (targetHandle ?? targetRaw).trim();
 
   // ---------------------------------------------------------------------------
   // Help: talk <npc> help
   // ---------------------------------------------------------------------------
 
-  if (normalizedAction === "help" || normalizedAction === "?") {
+  if (canonicalAction === "help" || canonicalAction === "?") {
     lines.push("[talk] Commands:");
     lines.push(` - talk ${npcToken} quests            (view the town quest board)`);
     lines.push(` - talk ${npcToken} accept <#|id|name> (accept a quest from the board)`);
@@ -332,7 +342,7 @@ export async function handleTalkCommand(
     lines.push(` - talk ${npcToken} show <#|id|name>   (show quest details)`);
     lines.push(` - talk ${npcToken} questlog           (view your quest log)`);
     lines.push(` - talk ${npcToken} ready [here|local] (view quests ready to turn in)`);
-    lines.push(` - talk ${npcToken} handin             (hand in if exactly one eligible)`);
+    lines.push(` - talk ${npcToken} handin|turnin      (hand in if exactly one eligible)`);
     lines.push(` - talk ${npcToken} handin list|ls      (list eligible NPC hand-ins)`);
     lines.push(` - talk ${npcToken} handin preview [#|id|name] (preview a turn-in without committing)`);
     lines.push(` - talk ${npcToken} handin <#|id|name>  (hand in a specific quest)`);
@@ -358,7 +368,7 @@ export async function handleTalkCommand(
   // Quest details shortcut, routed through the same QuestText renderer as `quest show`.
   // ---------------------------------------------------------------------------
 
-  if (normalizedAction === "show" || normalizedAction === "info" || normalizedAction === "details") {
+  if (canonicalAction === "show" || canonicalAction === "info" || canonicalAction === "details") {
     const selector = actionArgs.join(" ").trim();
     if (!selector) return `Usage: talk ${npcToken} show <#|id|name>`;
     lines.push(renderQuestDetails(char as any, selector, { ctx }));
@@ -371,7 +381,7 @@ export async function handleTalkCommand(
   // existing `quest board/accept/abandon` commands to keep behavior consistent.
   // ---------------------------------------------------------------------------
 
-  if (normalizedAction === "quests" || normalizedAction === "quest" || normalizedAction === "board") {
+  if (canonicalAction === "quests" || canonicalAction === "quest" || canonicalAction === "board") {
     lines.push(renderTownQuestBoard(ctx as any, char as any));
     lines.push("");
     lines.push(`Tip: show details via 'talk ${npcToken} show <#|id|name>' (or: 'quest show <#|id|name>').`);
@@ -384,19 +394,19 @@ export async function handleTalkCommand(
   // Quest log shortcuts, routed through the same QuestText renderer as `quest`.
   // ---------------------------------------------------------------------------
 
-  if (normalizedAction === "questlog" || normalizedAction === "log") {
+  if (canonicalAction === "questlog" || canonicalAction === "log") {
     lines.push(renderQuestLog(char as any, { ctx }));
     return lines.join("\n").trimEnd();
   }
 
-  if (normalizedAction === "ready") {
+  if (canonicalAction === "ready") {
     const mode = String(actionArgs[0] ?? "").toLowerCase().trim();
     const filter = mode === "here" || mode === "local" ? "ready_here" : "ready";
     lines.push(renderQuestLog(char as any, { ctx, filter } as any));
     return lines.join("\n").trimEnd();
   }
 
-  if (normalizedAction === "accept") {
+  if (canonicalAction === "accept") {
     const selector = actionArgs.join(" ").trim();
     if (!selector) {
       // QoL: in talk-mode, missing selector should show the board (context) instead of just barking usage.
@@ -411,7 +421,7 @@ export async function handleTalkCommand(
     return lines.join("\n").trimEnd();
   }
 
-  if (normalizedAction === "abandon" || normalizedAction === "drop") {
+  if (canonicalAction === "abandon" || canonicalAction === "drop") {
     const selector = actionArgs.join(" ").trim();
     if (!selector) {
       // QoL: stay in talk-mode. Show the quest log context so the player can pick a target.
@@ -426,7 +436,7 @@ export async function handleTalkCommand(
   }
 
   if (eligible.length > 0) {
-    const wantsHandinAction = !!action;
+    const wantsHandinAction = canonicalAction === "handin";
     const selector = actionArgs.join(" ").trim();
 
     // QoL (opt-in): if the player explicitly asks to hand in while talking, and there's only
