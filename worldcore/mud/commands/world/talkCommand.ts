@@ -304,14 +304,27 @@ export async function handleTalkCommand(
   if (snippets.length > 0) base += " " + snippets.join(" ");
   lines.push(base);
 
+  const normalizedAction = String(action ?? "").toLowerCase();
+  const npcToken = (targetHandle ?? targetRaw).trim();
+
+  // ---------------------------------------------------------------------------
+  // Questgiver hint: some NPCs act as the town "quest board" anchor. Without any
+  // explicit subcommand, give a lightweight discoverability tip.
+  // ---------------------------------------------------------------------------
+
+  const protoTags = Array.isArray((proto as any)?.tags) ? ((proto as any).tags as any[]) : [];
+  const tagSet = new Set(protoTags.map((t) => String(t ?? "").toLowerCase().trim()).filter(Boolean));
+  const isQuestAnchor = tagSet.has("questgiver") || tagSet.has("trainer") || tagSet.has("service_trainer");
+
+  if (!action && isQuestAnchor) {
+    lines.push(`Tip: view quests via 'talk ${npcToken} quests' (or: 'quest board').`);
+  }
+
   // ---------------------------------------------------------------------------
   // Questgiver UX: talk-driven access to the town quest board and quest accept/abandon.
   // This intentionally routes through the same TownQuestBoard helpers as the
   // existing `quest board/accept/abandon` commands to keep behavior consistent.
   // ---------------------------------------------------------------------------
-
-  const normalizedAction = String(action ?? "").toLowerCase();
-  const npcToken = (targetHandle ?? targetRaw).trim();
 
   if (normalizedAction === "quests" || normalizedAction === "quest" || normalizedAction === "board") {
     lines.push(renderTownQuestBoard(ctx as any, char as any));
