@@ -190,7 +190,16 @@ export async function turnInQuest(
       if (msg) lines.push(`Turn-in hint: ${msg}`);
     }
     if (rewardText) lines.push(`Rewards: ${rewardText}`);
-    lines.push("\nTurn in with: quest turnin <#|id|name>");
+    if (policy === "npc") {
+      const npcId = String((quest as any).turninNpcId ?? "").trim();
+      if (npcId && (policyCheck as any).ok) {
+        lines.push(`\nTurn in with: handin ${npcId}   (or: quest turnin ${quest.id})`);
+      } else {
+        lines.push("\nTurn in with: quest turnin <#|id|name>");
+      }
+    } else {
+      lines.push("\nTurn in with: quest turnin <#|id|name>");
+    }
     return lines.join("\n").trimEnd();
   }
   
@@ -589,7 +598,7 @@ function enforceTurninPolicy(
     if (!found) {
       return {
         ok: false,
-        message: `[quest] You must turn this in to ${npcId}. (Go to them, then run: quest turnin ${quest.id})`,
+        message: `[quest] You must turn this in to ${npcId}. (Go to them, then run: handin ${npcId}  (or: quest turnin ${quest.id}))`,
       };
     }
 

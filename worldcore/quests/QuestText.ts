@@ -275,9 +275,9 @@ export function renderQuestDetails(
     }
     if (turninHint) {
       lines.push(`Turn-in: ${turninHint}`);
-      lines.push(`Then: quest turnin ${quest.id}`);
+      lines.push(renderTurninCommandHint(quest, { canTurnInHere: false }));
     } else {
-      lines.push(`Turn in with: quest turnin ${quest.id}`);
+      lines.push(renderTurninCommandHint(quest, { canTurnInHere: true }));
     }
   }
 
@@ -297,15 +297,19 @@ function computeTurninHint(
   const policy = String((quest as any).turninPolicy ?? "anywhere").trim() as any;
   if (!policy || policy === "anywhere") return null;
 
+  const npcId = String((quest as any).turninNpcId ?? "").trim();
+
   // Without a ctx, we can still provide a static hint for where to go.
   if (policy === "npc") {
-    const npcId = String((quest as any).turninNpcId ?? "").trim();
-    if (!ctx) return npcId ? `Go to ${npcId}.` : "Go to the quest NPC.";
+    if (!ctx) {
+      if (!npcId) return "Go to the quest NPC.";
+      return `Go to ${npcId}. Then: handin ${npcId}.`;
+    }
 
     if (!npcId) return "Go to the quest NPC.";
 
     const roomId = getQuestContextRoomId(ctx, char);
-    if (!roomId) return `Go to ${npcId}.`;
+    if (!roomId) return `Go to ${npcId}. Then: handin ${npcId}.`;
 
     const ents = (ctx?.entities && typeof ctx.entities.getEntitiesInRoom === "function")
       ? (ctx.entities.getEntitiesInRoom(roomId) as any[])
@@ -316,7 +320,7 @@ function computeTurninHint(
       : false;
 
     // If the required NPC is present here, no hint is needed.
-    return found ? null : `Go to ${npcId}.`;
+    return found ? null : `Go to ${npcId}. Then: handin ${npcId}.`;
   }
 
   if (policy === "board") {
@@ -343,6 +347,27 @@ function computeTurninHint(
   }
 
   return null;
+}
+
+function renderTurninCommandHint(
+  quest: QuestDefinition,
+  opts: { canTurnInHere: boolean }
+): string {
+  const policy = String((quest as any).turninPolicy ?? "anywhere").trim() as any;
+  const npcId2 = String((quest as any).turninNpcId ?? "").trim();
+
+  if (policy === "npc" && npcId2) {
+    // If the NPC is here, prefer the immersive hand-in command.
+    if (opts.canTurnInHere) {
+      return `Turn in with: handin ${npcId2}   (or: quest turnin ${quest.id})`;
+    }
+    return `Then: handin ${npcId2}   (or: quest turnin ${quest.id})`;
+  }
+
+  // Default: keep the canonical quest turn-in command.
+  return opts.canTurnInHere
+    ? `Turn in with: quest turnin ${quest.id}`
+    : `Then: quest turnin ${quest.id}`;
 }
 
 function getQuestContextTownId(ctx: any, char: any): string | null {
