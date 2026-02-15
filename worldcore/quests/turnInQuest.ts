@@ -12,7 +12,7 @@ import {
   deliverRewardItemsNeverDrop,
   preflightBagsForRewards,
 } from "../rewards/RewardDelivery";
-import { getQuestContextRoomId, getQuestContextTownId, resolveQuestDefinitionFromStateId } from "./TownQuestBoard";
+import { getQuestContextRoomId, getTownContextForTurnin, resolveQuestDefinitionFromStateId } from "./TownQuestBoard";
 import { grantSpellInState } from "../spells/SpellLearning";
 import { grantAbilityInState } from "../abilities/AbilityLearning";
 import { getSpellByIdOrAlias } from "../spells/SpellTypes";
@@ -607,13 +607,15 @@ function enforceTurninPolicy(
 
   // "board": require a town context (region id). If quest specifies a board id, it must match.
   if (policy === "board") {
-    const townId = getQuestContextTownId(ctx, char);
-    if (!townId) {
+    const townCtx = getTownContextForTurnin(ctx, char);
+    if (!townCtx) {
       return {
         ok: false,
-        message: "[quest] You must be in a town (quest board context) to turn this quest in.",
+        message: "[quest] You must be at a quest board (in a town) to turn this quest in. (Try: quest board)",
       };
     }
+
+    const townId = townCtx.townId;
 
     const requiredBoard = String((quest as any).turninBoardId ?? "").trim();
     if (requiredBoard && requiredBoard !== townId) {

@@ -9,6 +9,7 @@ import { ensureQuestState } from "./QuestState";
 import { countItemInInventory } from "../items/inventoryConsume";
 import {
   getQuestContextRoomId,
+  getTownContextForTurnin,
   resolveQuestDefinitionFromStateId,
   resolveTownQuestFromContext,
 } from "./TownQuestBoard";
@@ -343,8 +344,11 @@ function computeTurninHint(
     const hintTown = requiredBoard || acceptedTown;
     if (!ctx) return hintTown ? `Return to quest board (${hintTown}).` : "Return to a quest board.";
 
-    const townId = getQuestContextTownId(ctx, char);
-    if (!townId) return hintTown ? `Return to quest board (${hintTown}).` : "Return to a quest board.";
+    // Stricter than "regionId exists": require the player to be in a town-tier room.
+    const townCtx = getTownContextForTurnin(ctx, char);
+    if (!townCtx) return hintTown ? `Return to quest board (${hintTown}).` : "Return to a quest board.";
+
+    const townId = townCtx.townId;
 
     if (requiredBoard && requiredBoard !== townId) {
       return `Return to quest board (${requiredBoard}).`;

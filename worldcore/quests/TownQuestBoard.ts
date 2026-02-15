@@ -59,6 +59,49 @@ export function renderTownQuestBoard(ctx: any, char: CharacterState): string {
 }
 
 /**
+ * Returns the player's current "town quest board context" if they are in a town-tier room.
+ *
+ * This is intentionally stricter than "regionId exists": many rooms have a regionId, but
+ * only rooms tagged with a town tier should count as a quest-board context for turn-ins.
+ */
+export function getTownContextForTurnin(
+  ctx: any,
+  char: CharacterState
+): { townId: string; tier: number } | null {
+  const roomId = getCurrentRoomId(ctx, char);
+  if (!roomId) return null;
+
+  // Primary rule: only rooms with an explicit town tier tag count as "board context".
+  // This prevents "regionId exists" from accidentally allowing board turn-ins in the wilderness.
+  const tier = inferTownTier(ctx, roomId);
+
+  // Back-compat / test-mode fallback:
+  // Some unit tests and older MudContext stubs only provide { regionId } without tags.
+  // In that case, treat the location as tier-1 town context to preserve older contracts.
+  if (tier == null) {
+    const rooms = ctx?.rooms;
+    if (rooms && typeof rooms.getRoom === "function") {
+      const room = rooms.getRoom(roomId);
+      const hasRegionId = !!String(room?.regionId ?? room?.region?.id ?? room?.region ?? "").trim();
+      const hasTagsArray = Array.isArray(room?.tags);
+
+      if (hasRegionId && !hasTagsArray) {
+        const regionId = inferRegionId(ctx, roomId) ?? roomId;
+        const townId = regionId;
+        return { townId, tier: 1 };
+      }
+    }
+
+    return null;
+  }
+
+  const regionId = inferRegionId(ctx, roomId) ?? roomId;
+  const townId = regionId;
+
+  return { townId, tier };
+}
+
+/**
  * Resolve a quest from the current town offering context (board) without accepting it.
  *
  * Used by talk-driven UX (ex: `talk <npc> show 1`) so that numeric indices can
