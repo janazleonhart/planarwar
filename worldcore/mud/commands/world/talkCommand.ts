@@ -5,6 +5,8 @@ import type { CharacterState } from "../../../characters/CharacterTypes";
 import { getNpcPrototype } from "../../../npc/NpcTypes";
 import { applyProgressionEvent } from "../../../progression/ProgressionCore";
 import { applyProgressionForEvent } from "../../MudProgressionHooks";
+import { ensureQuestState } from "../../../quests/QuestState";
+import { resolveQuestDefinitionFromStateId } from "../../../quests/TownQuestBoard";
 import {
   buildNearbyTargetSnapshot,
   distanceXZ,
@@ -87,6 +89,33 @@ function renderTownMenu(ctx: MudContext): string {
   lines.push(" - mail");
   lines.push("Tip: services may require being inside a town once PW_SERVICE_GATES=1 is enabled.");
   return lines.join("\n");
+}
+
+function listEligibleNpcTurnins(
+  char: CharacterState,
+  npcProtoId: string
+): { id: string; name: string }[] {
+  const qs = ensureQuestState(char);
+  const ids = Object.keys(qs).sort();
+
+  const completed = ids.filter((id) => qs[id]?.state === "completed");
+  const out: { id: string; name: string }[] = [];
+
+  for (const id of completed) {
+    const entry = qs[id];
+    const q = resolveQuestDefinitionFromStateId(id, entry);
+    if (!q) continue;
+
+    const policy = String((q as any).turninPolicy ?? "anywhere").trim();
+    if (policy !== "npc") continue;
+
+    const requiredNpc = String((q as any).turninNpcId ?? "").trim();
+    if (!requiredNpc || requiredNpc !== npcProtoId) continue;
+
+    out.push({ id: q.id, name: q.name ?? q.id });
+  }
+
+  return out;
 }
 
 export async function handleTalkCommand(
@@ -198,7 +227,29 @@ export async function handleTalkCommand(
   // 2) tasks/quests/titles + DB patch
   const { snippets } = await applyProgressionForEvent(ctx, char, "kills", proto.id);
 
-  let line = `[talk] You speak with ${proto.name}.`;
-  if (snippets.length > 0) line += " " + snippets.join(" ");
-  return line;
+  const eligible = listEligibleNpcTurnins(char, proto.id);
+  const targetHandle = snapshot.find((s) => String(s.e?.id ?? "") === String(target?.id ?? ""))?.handle;
+
+  const lines: string[] = [];
+  let base = `[talk] You speak with ${proto.name}.`;
+  if (snippets.length > 0) base += " " + snippets.join(" ");
+  lines.push(base);
+
+  if (eligible.length > 0) {
+    const npcToken = targetHandle ?? targetRaw;
+
+    if (eligible.length === 1) {
+      lines.push(
+        `[quest] ${proto.name} can accept a quest hand-in: handin ${npcToken} (${eligible[0].name})`
+      );
+    } else {
+      lines.push(`[quest] ${proto.name} can accept quest hand-ins (${eligible.length}):`);
+      for (let i = 0; i < eligible.length; i++) {
+        lines.push(` - ${i + 1}) ${eligible[i].name} (${eligible[i].id})`);
+      }
+      lines.push(`Use: handin ${npcToken} <#|id|name> (or: handin ${npcToken} list)`);
+    }
+  }
+
+  return lines.join("\n").trimEnd();
 }
