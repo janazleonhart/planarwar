@@ -67,20 +67,43 @@ export function renderTownQuestBoard(
     : offering.quests;
 
   // Quest chains v0.5: bubble NEW unlocked follow-ups to the top of the board
-  // (while preserving the existing deterministic ordering within each group).
+  // and then group the remaining quests by status (A/C/T/available).
+  //
+  // Ordering rules (stable within groups):
+  //   1) NEW unlocked follow-ups (not yet accepted)
+  //   2) Active [A]
+  //   3) Completed/Ready [C]
+  //   4) Turned in [T]
+  //   5) Available [ ]
   const orderedVisibleQuests = (() => {
     if (onlyNew) return visibleQuests;
 
     const newlyUnlocked: QuestDefinition[] = [];
-    const rest: QuestDefinition[] = [];
+    const active: QuestDefinition[] = [];
+    const completed: QuestDefinition[] = [];
+    const turnedIn: QuestDefinition[] = [];
+    const available: QuestDefinition[] = [];
 
     for (const q of visibleQuests) {
       const entry = state[q.id];
       const isNewUnlocked = !entry && unlockedFollowups.has(q.id);
-      (isNewUnlocked ? newlyUnlocked : rest).push(q);
+
+      if (isNewUnlocked) {
+        newlyUnlocked.push(q);
+        continue;
+      }
+
+      if (!entry) {
+        available.push(q);
+        continue;
+      }
+
+      if (entry.state === "active") active.push(q);
+      else if (entry.state === "completed") completed.push(q);
+      else turnedIn.push(q);
     }
 
-    return newlyUnlocked.concat(rest);
+    return newlyUnlocked.concat(active, completed, turnedIn, available);
   })();
 
   if (onlyNew) lines.push(`NEW quests available: ${orderedVisibleQuests.length}`);
