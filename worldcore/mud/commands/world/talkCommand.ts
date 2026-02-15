@@ -7,6 +7,7 @@ import { applyProgressionEvent } from "../../../progression/ProgressionCore";
 import { applyProgressionForEvent } from "../../MudProgressionHooks";
 import { ensureQuestState } from "../../../quests/QuestState";
 import { resolveQuestDefinitionFromStateId } from "../../../quests/TownQuestBoard";
+import { turnInQuest } from "../../../quests/turnInQuest";
 import {
   buildNearbyTargetSnapshot,
   distanceXZ,
@@ -123,7 +124,13 @@ export async function handleTalkCommand(
   char: CharacterState,
   input: { cmd: string; args: string[]; parts: string[]; world?: any }
 ): Promise<any> {
-  const targetRaw = input.args.join(" ").trim();
+  // Support: talk <target> [handin|turnin|complete]
+  // Preserve multi-word targets by treating the LAST arg as an action keyword when it matches.
+  const args = Array.isArray(input.args) ? input.args : [];
+  const last = String(args[args.length - 1] ?? "").trim().toLowerCase();
+  const actionKeywords = new Set(["handin", "hand-in", "turnin", "turn-in", "complete", "finish", "submit"]);
+  const action = args.length >= 2 && actionKeywords.has(last) ? last : "";
+  const targetRaw = (action ? args.slice(0, -1) : args).join(" ").trim();
   if (!targetRaw) return "Usage: talk <target>";
 
   const selfEntity = getSelfEntity(ctx);
@@ -237,6 +244,27 @@ export async function handleTalkCommand(
 
   if (eligible.length > 0) {
     const npcToken = targetHandle ?? targetRaw;
+
+    // QoL (opt-in): if the player explicitly asks to hand in while talking, and there's only
+    // one eligible NPC-policy quest, perform the turn-in immediately.
+    const wantsAutoHandin =
+      action === "handin" ||
+      action === "hand-in" ||
+      action === "turnin" ||
+      action === "turn-in" ||
+      action === "complete" ||
+      action === "finish" ||
+      action === "submit";
+
+    if (wantsAutoHandin && eligible.length === 1) {
+      const msg = await turnInQuest(
+        ctx as any,
+        (ctx as any).session?.character ?? (char as any),
+        eligible[0].id
+      );
+      lines.push(msg);
+      return lines.join("\n").trimEnd();
+    }
 
     if (eligible.length === 1) {
       lines.push(
