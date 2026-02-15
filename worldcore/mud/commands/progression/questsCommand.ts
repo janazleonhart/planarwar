@@ -105,5 +105,6 @@ export async function handleQuestCommand(
     " quest turnin all <token>   (bulk turn-in all completed quests)",
     " quest turnin all here|local <token> (bulk turn-in completed quests eligible here)",
     " quest turnin <#|id|name>   (turn in by quest-log index, id, or name)",
+    " quest turnin <#|id|name> choose <#> (pick a choose-one reward option)"
   ].join("\n");
 }

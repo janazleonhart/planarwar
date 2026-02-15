@@ -21,6 +21,29 @@ import { findAbilityByNameOrId } from "../abilities/AbilityTypes";
 import { renderQuestAmbiguous } from "./QuestCommandText";
 import crypto from "node:crypto";
 
+
+function parseRewardChoiceSuffix(input: string): { questQuery: string; choiceIndex: number | null } {
+  const raw = input.trim();
+  if (!raw) return { questQuery: "", choiceIndex: null };
+
+  const parts = raw.split(/\s+/).filter(Boolean);
+  if (parts.length < 3) return { questQuery: raw, choiceIndex: null };
+
+  const last = parts[parts.length - 1];
+  const prev = parts[parts.length - 2].toLowerCase();
+  const n = Number(last);
+
+  if (!Number.isInteger(n) || n <= 0) return { questQuery: raw, choiceIndex: null };
+
+  if (prev === "choose" || prev === "choice" || prev === "pick") {
+    const questQuery = parts.slice(0, -2).join(" ").trim();
+    return { questQuery, choiceIndex: n };
+  }
+
+  return { questQuery: raw, choiceIndex: null };
+}
+
+
 /**
  * Turn in a quest by id or name.
  * Supports both registry quests and deterministic generated quests (accepted via quest board).
@@ -31,6 +54,8 @@ export async function turnInQuest(
   questIdRaw: string
 ): Promise<string> {
   const trimmed = questIdRaw.trim();
+  const { questQuery, choiceIndex } = parseRewardChoiceSuffix(trimmed);
+
   if (!trimmed) {
     return "[quest] Turn in which quest?";
   }
@@ -44,7 +69,7 @@ export async function turnInQuest(
   // - 'quest turnin preview <#|id|name>' => show reward + objective readiness
   // - 'quest turnin all' => confirm-token gated bulk turn-in of all completed quests
   // - 'quest turnin <#>' => numeric index into quest log ordering (ids.sort())
-  const lower = trimmed.toLowerCase();
+  const lower = questQuery.toLowerCase();
 
   // ------------------------------------------------------------
   // Bulk turn-in (confirm-token gated)
@@ -250,9 +275,9 @@ if (
   return out.trimEnd();
 }
 
-  let key = trimmed;
-  if (/^\d+$/.test(trimmed)) {
-    const idx = Number(trimmed);
+  let key = questQuery;
+  if (/^\d+$/.test(questQuery)) {
+    const idx = Number(questQuery);
     // QoL: for turn-in, prefer indexing into the *ready* list first.
     // This matches player intent when they just ran `quest ready` / `quest turnin list`.
     const completedIds = ids.filter((id) => questState[id]?.state === "completed");
@@ -269,7 +294,7 @@ if (
 
   const resolved = resolveQuestByIdOrNameIncludingAccepted(key, questState);
   if (!resolved) {
-    return `[quest] Unknown quest '${trimmed}'.`;
+    return `[quest] Unknown quest '${questQuery}'.`;
   }
   if (resolved.kind === "ambiguous") {
     return renderQuestAmbiguous(resolved.matches);
@@ -301,6 +326,38 @@ if (
   }
   if (isRepeatable && max != null && completions >= max) {
     return `[quest] You cannot turn in '${quest.name}' any more times.`;
+  }
+
+
+
+  // Reward-choice enforcement (Quest Rewards v0.1)
+  // If the quest offers choose-one rewards, the player must pick an option at turn-in time.
+  const chooseOne = ((quest as any).reward as any)?.chooseOne as any[] | undefined;
+  let chosenBundle: any | null = null;
+  if (Array.isArray(chooseOne) && chooseOne.length > 0) {
+    if (choiceIndex == null) {
+      const opts = chooseOne
+        .map((opt, i) => {
+          const label = String(opt?.label ?? "").trim();
+          const gold = typeof opt?.gold === "number" && opt.gold > 0 ? `${opt.gold} gold` : "";
+          const xp = typeof opt?.xp === "number" && opt.xp > 0 ? `${opt.xp} XP` : "";
+          const titles = Array.isArray(opt?.titles) && opt.titles.length ? `title:${opt.titles.join(",")}` : "";
+          const items = Array.isArray(opt?.items) && opt.items.length
+            ? opt.items.map((it: any) => `${Number(it?.count ?? it?.quantity ?? 1)}x ${it?.itemId}`).join(", ")
+            : "";
+          const bits = [label, xp, gold, items, titles].filter(Boolean).join(" ");
+          return `(${i + 1}) ${bits || "(none)"}`.trim();
+        })
+        .join("; ");
+
+      return `[quest] This quest requires choosing a reward. Use: quest turnin ${quest.id} choose <#>  Options: ${opts}`;
+    }
+
+    if (choiceIndex < 1 || choiceIndex > chooseOne.length) {
+      return `[quest] Invalid reward choice. Choose 1-${chooseOne.length}.`;
+    }
+
+    chosenBundle = chooseOne[choiceIndex - 1];
   }
 
   // Re-check objectives from progression + inventory for safety
@@ -498,7 +555,136 @@ if (
         }
       }
     }
-  }
+  
+
+    // Apply chosen reward bundle (Quest Rewards v0.1)
+    if (chosenBundle) {
+      const choice: any = chosenBundle;
+
+      // XP
+      if (typeof choice.xp === "number" && choice.xp > 0 && ctx.characters) {
+        try {
+          const updated = await ctx.characters.grantXp(char.userId, char.id, choice.xp);
+          if (updated) {
+            (char as any).xp = updated.xp;
+            (char as any).level = updated.level;
+            (char as any).attributes = updated.attributes;
+          }
+          rewardMessages.push(`You gain ${choice.xp} XP.`);
+        } catch (err) {
+          // eslint-disable-next-line no-console
+          console.warn("Failed to grant XP (choice reward) for quest turn-in", {
+            err,
+            charId: char.id,
+            questId: quest.id,
+          });
+        }
+      }
+
+      // Gold
+      if (typeof choice.gold === "number" && choice.gold > 0) {
+        try {
+          const econ = grantReward(char, { gold: choice.gold, items: [] });
+          if (econ.goldGranted > 0) rewardMessages.push(`You receive ${econ.goldGranted} gold.`);
+        } catch (err) {
+          // eslint-disable-next-line no-console
+          console.warn("Failed to grant gold (choice reward) for quest turn-in", {
+            err,
+            charId: char.id,
+            questId: quest.id,
+          });
+        }
+      }
+
+      // Items (never drop)
+      if (choice.items && choice.items.length > 0) {
+        try {
+          const res = await deliverRewardItemsNeverDrop(
+            { items: (ctx as any).items, mail: (ctx as any).mail, session: (ctx as any).session },
+            char,
+            inv,
+            choice.items.map((it: any) => ({ itemId: it.itemId, qty: it.count })),
+            {
+              source: `quest turn-in: ${quest.name}`,
+              ownerId: (ctx as any).session?.identity?.userId,
+              ownerKind: "account",
+              mailSubject: `Quest reward: ${quest.name}`,
+              mailBody: `Your bags were full while receiving quest rewards for '${quest.name}'.\nExtra items were delivered to your mailbox.`,
+            }
+          );
+
+          const got = [...res.deliveredToBags, ...res.mailed];
+          if (got.length > 0) {
+            const itemsText = got.map((st: any) => `${st.qty}x ${st.itemId}`).join(", ");
+            rewardMessages.push(`You receive: ${itemsText}.`);
+          }
+
+          if (res.queued.length > 0) {
+            const stuckText = res.queued.map((st: any) => `${st.qty}x ${st.itemId}`).join(", ");
+            rewardMessages.push(`Some items could not be delivered and were queued: ${stuckText}. (Use 'reward claim')`);
+          }
+        } catch (err) {
+          // eslint-disable-next-line no-console
+          console.warn("Failed to grant quest items (choice reward)", {
+            err,
+            charId: char.id,
+            questId: quest.id,
+          });
+        }
+      }
+
+      // Titles
+      if (choice.titles && choice.titles.length > 0) {
+        const titles = prog.titles ?? { unlocked: [], active: null };
+        prog.titles = titles;
+
+        for (const t of choice.titles) {
+          if (!titles.unlocked.includes(t)) titles.unlocked.push(t);
+        }
+
+        rewardMessages.push(`New titles unlocked: ${choice.titles.join(", ")}.`);
+      }
+
+      // Spells/Abilities (pending grants)
+      if (choice.spellGrants && choice.spellGrants.length > 0) {
+        for (const g of choice.spellGrants) {
+          const spellId = String(g?.spellId ?? '').trim();
+          if (!spellId) continue;
+          const spellDef = getSpellByIdOrAlias(spellId);
+          if (!spellDef) {
+            // eslint-disable-next-line no-console
+            console.warn("Quest choice reward spell_grant references unknown spellId", { questId: quest.id, spellId });
+            rewardMessages.push(`[quest] (Reward misconfigured: unknown spell '${spellId}'. It was not granted.)`);
+            continue;
+          }
+          const res = grantSpellInState(char, spellId, g?.source ? String(g.source) : `quest:${quest.id}`);
+          if (res && (res as any).ok) {
+            char = (res as any).next;
+            rewardMessages.push(`New spell granted: ${spellDef.name}. (Visit a trainer to learn higher ranks.)`);
+          }
+        }
+      }
+
+      if (choice.abilityGrants && choice.abilityGrants.length > 0) {
+        for (const g of choice.abilityGrants) {
+          const abilityId = String(g?.abilityId ?? '').trim();
+          if (!abilityId) continue;
+          const abilityDef = findAbilityByNameOrId(abilityId);
+          if (!abilityDef) {
+            // eslint-disable-next-line no-console
+            console.warn("Quest choice reward ability_grant references unknown abilityId", { questId: quest.id, abilityId });
+            rewardMessages.push(`[quest] (Reward misconfigured: unknown ability '${abilityId}'. It was not granted.)`);
+            continue;
+          }
+          const res = grantAbilityInState(char, abilityId, g?.source ? String(g.source) : `quest:${quest.id}`);
+          if (res && (res as any).ok) {
+            char = (res as any).next;
+            rewardMessages.push(`New ability granted: ${abilityDef.name}. (Visit a trainer to learn higher ranks.)`);
+          }
+        }
+      }
+    }
+}
 
   // Update quest state + completions
   entry.completions = (entry.completions ?? 0) + 1;

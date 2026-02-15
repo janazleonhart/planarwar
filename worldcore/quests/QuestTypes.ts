@@ -62,8 +62,23 @@ export interface QuestReward {
   /** Rank system v0.2: rewards that GRANT (pending) spells/abilities (not auto-learn). */
   spellGrants?: { spellId: string; source?: string }[];
   abilityGrants?: { abilityId: string; source?: string }[];
+
+  /** Optional: choose ONE of these reward bundles at turn-in. */
+  chooseOne?: QuestRewardOption[];
   // later: city-favor, reputation, currencies, etc.
 }
+
+export interface QuestRewardOption {
+  /** Optional short label shown in reward previews. */
+  label?: string;
+  xp?: number;
+  gold?: number;
+  items?: { itemId: string; count: number }[];
+  titles?: string[];
+  spellGrants?: { spellId: string; source?: string }[];
+  abilityGrants?: { abilityId: string; source?: string }[];
+}
+
 
 export interface QuestDefinition {
   id: string;
@@ -149,7 +164,28 @@ export const QUESTS: Record<string, QuestDefinition> = {
     maxCompletions: null, // or a number if you want to cap it
   },
 
-  greet_quartermaster: {
+  
+  // Reward-choice contract quest (exercise choose-one rewards)
+  reward_choice_test: {
+    id: "reward_choice_test",
+    name: "Reward Choice Test",
+    description: "A simple quest that requires choosing one reward bundle at turn-in.",
+    objectives: [
+      {
+        kind: "kill",
+        targetProtoId: "training_dummy",
+        required: 1,
+      },
+    ],
+    reward: {
+      chooseOne: [
+        { label: "Gold", gold: 5 },
+        { label: "Title", titles: ["tester"] },
+      ],
+    },
+  },
+
+greet_quartermaster: {
     id: "greet_quartermaster",
     name: "Report to the Quartermaster",
     description: "Check in with the local quartermaster to receive your first orders.",

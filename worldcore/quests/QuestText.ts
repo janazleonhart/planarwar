@@ -610,33 +610,58 @@ export function renderQuestRewardSummary(quest: QuestDefinition): string {
 
   const parts: string[] = [];
 
-  if (typeof r.xp === "number" && r.xp > 0) parts.push(`${r.xp} XP`);
-  if (typeof r.gold === "number" && r.gold > 0) parts.push(`${r.gold} gold`);
+  const pushBundle = (bundle: any): string => {
+    if (!bundle) return "";
+    const p: string[] = [];
 
-  const items = (r.items as any[]) ?? [];
-  for (const it of items) {
-    if (!it || !it.itemId) continue;
-    const qty = Number(it.quantity ?? 1);
-    parts.push(`${qty}x ${it.itemId}`);
+    if (typeof bundle.xp === "number" && bundle.xp > 0) p.push(`${bundle.xp} XP`);
+    if (typeof bundle.gold === "number" && bundle.gold > 0) p.push(`${bundle.gold} gold`);
+
+    const items = (bundle.items as any[]) ?? [];
+    for (const it of items) {
+      if (!it || !it.itemId) continue;
+      const qty = Number((it as any).count ?? (it as any).quantity ?? 1);
+      p.push(`${qty}x ${it.itemId}`);
+    }
+
+    const titles = (bundle.titles as any[]) ?? [];
+    for (const t of titles) {
+      if (!t) continue;
+      p.push(`title:${t}`);
+    }
+
+    const spellGrants = (bundle.spellGrants as any[]) ?? [];
+    for (const sg of spellGrants) {
+      if (!sg || !sg.spellId) continue;
+      p.push(`spell:${sg.spellId}`);
+    }
+
+    const abilityGrants = (bundle.abilityGrants as any[]) ?? [];
+    for (const ag of abilityGrants) {
+      if (!ag || !ag.abilityId) continue;
+      p.push(`ability:${ag.abilityId}`);
+    }
+
+    return p.join(", ");
+  };
+
+  // Fixed rewards (legacy fields)
+  const fixed = pushBundle(r);
+  if (fixed) parts.push(fixed);
+
+  // Choice rewards
+  const chooseOne = (r.chooseOne as any[]) ?? [];
+  if (chooseOne.length > 0) {
+    const opts = chooseOne
+      .map((opt, i) => {
+        const label = String(opt?.label ?? "").trim();
+        const body = pushBundle(opt);
+        const core = body || "(none)";
+        return label ? `(${i + 1}) ${label}: ${core}` : `(${i + 1}) ${core}`;
+      })
+      .join("; ");
+    parts.push(`Choose one: ${opts}`);
   }
 
-  const titles = (r.titles as any[]) ?? [];
-  for (const t of titles) {
-    if (!t) continue;
-    parts.push(`title:${t}`);
-  }
-
-  const spellGrants = (r.spellGrants as any[]) ?? [];
-  for (const sg of spellGrants) {
-    if (!sg || !sg.spellId) continue;
-    parts.push(`spell:${sg.spellId}`);
-  }
-
-  const abilityGrants = (r.abilityGrants as any[]) ?? [];
-  for (const ag of abilityGrants) {
-    if (!ag || !ag.abilityId) continue;
-    parts.push(`ability:${ag.abilityId}`);
-  }
-
-  return parts.join(", ");
+  return parts.join(" | ").trim();
 }
