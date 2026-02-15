@@ -5,6 +5,7 @@ import type { CharacterState } from "../../../characters/CharacterTypes";
 import { moveCharacterAndSync } from "../../../movement/moveOps";
 import { parseMoveDir } from "../../../movement/MovementCommands";
 import { buildNearbyTargetSnapshot as buildNearbyTargetSnapshotShared } from "../../handles/NearbyHandles";
+import { countNewUnlockedFollowups } from "../../../quests/TownQuestBoard";
 
 // NOTE: this command intentionally does NOT depend on a global MudInput type.
 // Different command handlers in this repo accept slightly different input shapes.
@@ -132,6 +133,20 @@ function getRoomId(ctx: MudContext, char: CharacterState): string | null {
   if (roomId) return String(roomId);
   const rid = (char as any)?.roomId;
   return rid ? String(rid) : null;
+}
+
+function inferTownTierFromRoom(ctx: any, roomId: string | null): number | null {
+  if (!roomId) return null;
+  const rooms = ctx?.rooms;
+  if (rooms && typeof rooms.getRoom === "function") {
+    const room = rooms.getRoom(roomId);
+    const tags: string[] = Array.isArray(room?.tags) ? room.tags : [];
+    for (const t of tags) {
+      const m = /^town_tier_(\d+)$/.exec(String(t));
+      if (m) return Number(m[1]);
+    }
+  }
+  return null;
 }
 
 function getPlayerXZ(ctx: MudContext, char: CharacterState): { x: number; z: number } {
@@ -722,6 +737,9 @@ export async function handleWalkToCommand(
   const roomId = getRoomId(ctx, char);
   if (!roomId) return "[walk] You are not in a world room.";
 
+  const beforeRoomId = (ctx as any)?.session?.roomId ?? roomId;
+  const beforeTier = inferTownTierFromRoom(ctx as any, beforeRoomId);
+
   const target = await resolveTarget(ctx, char, roomId, targetRaw);
   if (!target) {
     return `[walk] Could not find target '${targetRaw}'. Try 'nearby' first, or use coords 'x,z'.`;
@@ -800,7 +818,25 @@ export async function handleWalkToCommand(
         risk && sawCombatDuringWalk
           ? ` | cowardice: ${getFlags(char).walktoCowardiceStacks ?? 1} stack(s)`
           : "";
-      return `[walk] You arrive near ${name}. (${moved} step(s), dist ${dist.toFixed(1)} ≤ ${desiredRadius})${extra}`;
+      // Quest chain UX: if we entered a town-tier room during this walk and NEW unlocked
+      // (unaccepted) follow-up quests exist, nudge the player toward `quest board new`.
+      let questNudge: string | null = null;
+      try {
+        const afterRoomId = (ctx as any)?.session?.roomId ?? `${char.shardId}:${char.lastRegionId}`;
+        const afterTier = inferTownTierFromRoom(ctx as any, afterRoomId);
+        if (!beforeTier && afterTier) {
+          const nNew = countNewUnlockedFollowups(char as any);
+          if (nNew > 0) {
+            questNudge = `[quest] NEW quests available: ${nNew}. Try: quest board new`;
+          }
+        }
+      } catch {
+        // best-effort
+      }
+
+      const base = `[walk] You arrive near ${name}. (${moved} step(s), dist ${dist.toFixed(1)} ≤ ${desiredRadius})${extra}`;
+      if (!questNudge) return base;
+      return `${base}\n${questNudge}`;
     }
 
     const dx = tx - px;
