@@ -8,6 +8,7 @@ import { applyProgressionEvent } from "../../../progression/ProgressionCore";
 import { applyProgressionForEvent } from "../../MudProgressionHooks";
 import { ensureQuestState } from "../../../quests/QuestState";
 import { resolveQuestDefinitionFromStateId } from "../../../quests/TownQuestBoard";
+import { acceptTownQuest, abandonQuest, renderTownQuestBoard } from "../../../quests/TownQuestBoard";
 import { turnInQuest } from "../../../quests/turnInQuest";
 import {
   buildNearbyTargetSnapshot,
@@ -142,9 +143,29 @@ export async function handleTalkCommand(
   //  - talk <target> handin
   //  - talk <target> handin <#|id|name>
   //  - talk <target> handin all [token]
+  //  - talk <target> quests|board
+  //  - talk <target> accept <#|id|name>
+  //  - talk <target> abandon <#|id|name>
   // Preserve multi-word targets by finding the *last* action keyword and splitting around it.
   const args = Array.isArray(input.args) ? input.args : [];
-  const actionKeywords = new Set(["handin", "hand-in", "turnin", "turn-in", "complete", "finish", "submit"]);
+  const actionKeywords = new Set([
+    // hand-in actions
+    "handin",
+    "hand-in",
+    "turnin",
+    "turn-in",
+    "complete",
+    "finish",
+    "submit",
+
+    // questgiver-ish actions
+    "quests",
+    "quest",
+    "board",
+    "accept",
+    "abandon",
+    "drop",
+  ]);
 
   let action = "";
   let actionArgs: string[] = [];
@@ -281,9 +302,40 @@ export async function handleTalkCommand(
   if (snippets.length > 0) base += " " + snippets.join(" ");
   lines.push(base);
 
-  if (eligible.length > 0) {
-    const npcToken = targetHandle ?? targetRaw;
+  // ---------------------------------------------------------------------------
+  // Questgiver UX: talk-driven access to the town quest board and quest accept/abandon.
+  // This intentionally routes through the same TownQuestBoard helpers as the
+  // existing `quest board/accept/abandon` commands to keep behavior consistent.
+  // ---------------------------------------------------------------------------
 
+  const normalizedAction = String(action ?? "").toLowerCase();
+  const npcToken = (targetHandle ?? targetRaw).trim();
+
+  if (normalizedAction === "quests" || normalizedAction === "quest" || normalizedAction === "board") {
+    lines.push(renderTownQuestBoard(ctx as any, char as any));
+    lines.push("");
+    lines.push(`Tip: accept via 'talk ${npcToken} accept <#|id|name>' (or: 'quest accept <#|id|name>').`);
+    lines.push(`Tip: abandon via 'talk ${npcToken} abandon <#|id|name>' (or: 'quest abandon <#|id|name>').`);
+    return lines.join("\n").trimEnd();
+  }
+
+  if (normalizedAction === "accept") {
+    const selector = actionArgs.join(" ").trim();
+    if (!selector) return `Usage: talk ${npcToken} accept <#|id|name>`;
+    const msg = await acceptTownQuest(ctx as any, char as any, selector);
+    lines.push(msg);
+    return lines.join("\n").trimEnd();
+  }
+
+  if (normalizedAction === "abandon" || normalizedAction === "drop") {
+    const selector = actionArgs.join(" ").trim();
+    if (!selector) return `Usage: talk ${npcToken} abandon <#|id|name>`;
+    const msg = await abandonQuest(ctx as any, char as any, selector);
+    lines.push(msg);
+    return lines.join("\n").trimEnd();
+  }
+
+  if (eligible.length > 0) {
     const wantsHandinAction = !!action;
     const selector = actionArgs.join(" ").trim();
 
