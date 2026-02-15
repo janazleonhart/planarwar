@@ -19,6 +19,9 @@ import { renderQuestAmbiguous, renderQuestDidYouMean } from "./QuestCommandText"
 export type TownQuestBoardRenderOpts = {
   /** When true, render only quests that are newly unlocked follow-ups (not yet accepted). */
   onlyNew?: boolean;
+
+  /** When true, render only quests that are currently active (accepted but not completed). */
+  onlyActive?: boolean;
 };
 
 export function countNewUnlockedFollowups(char: CharacterState): number {
@@ -47,6 +50,7 @@ export function renderTownQuestBoard(
   // notice them immediately.
   const unlockedFollowups = new Set<string>(computeUnlockedFollowupQuests(char).map((q) => q.id));
   const onlyNew = !!opts?.onlyNew;
+    const onlyActive = !onlyNew && !!opts?.onlyActive;
   const lines: string[] = [];
 
   lines.push(
@@ -64,7 +68,12 @@ export function renderTownQuestBoard(
         const entry = state[q.id];
         return !entry && unlockedFollowups.has(q.id);
       })
-    : offering.quests;
+    : onlyActive
+      ? offering.quests.filter((q) => {
+          const entry = state[q.id];
+          return !!entry && entry.state === "active";
+        })
+      : offering.quests;
 
   // Quest chains v0.5: bubble NEW unlocked follow-ups to the top of the board
   // and then group the remaining quests by status (A/C/T/available).
@@ -76,7 +85,7 @@ export function renderTownQuestBoard(
   //   4) Turned in [T]
   //   5) Available [ ]
   const orderedVisibleQuests = (() => {
-    if (onlyNew) return visibleQuests;
+    if (onlyNew || onlyActive) return visibleQuests;
 
     const newlyUnlocked: QuestDefinition[] = [];
     const active: QuestDefinition[] = [];
@@ -107,10 +116,11 @@ export function renderTownQuestBoard(
   })();
 
   if (onlyNew) lines.push(`NEW quests available: ${orderedVisibleQuests.length}`);
+  else if (onlyActive) lines.push(`Active quests: ${orderedVisibleQuests.length}`);
   else lines.push(`Quests available: ${offering.quests.length} (NEW: ${newCountAll})`);
 
   if (orderedVisibleQuests.length === 0) {
-    lines.push(onlyNew ? " - No NEW quests available." : " - No quests available.");
+    lines.push(onlyNew ? " - No NEW quests available." : (onlyActive ? " - No active quests." : " - No quests available."));
     return lines.join("\n");
   }
 

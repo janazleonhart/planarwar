@@ -338,6 +338,7 @@ export async function handleTalkCommand(
     lines.push("[talk] Commands:");
     lines.push(` - talk ${npcToken} quests            (view the town quest board)`);
     lines.push(` - talk ${npcToken} quests new        (view only NEW unlocked follow-ups)`);
+    lines.push(` - talk ${npcToken} quests active     (view only your active quests)`);
     lines.push(` - talk ${npcToken} accept <#|id|name> (accept a quest from the board)`);
     lines.push(` - talk ${npcToken} abandon <#|id|name> (abandon a quest)`);
     lines.push(` - talk ${npcToken} show <#|id|name>   (show quest details)`);
@@ -386,6 +387,8 @@ export async function handleTalkCommand(
     const mode = String(actionArgs[0] ?? "").toLowerCase().trim();
     if (mode === "new") {
       lines.push(renderTownQuestBoard(ctx as any, char as any, { onlyNew: true }));
+    } else if (mode === "active") {
+      lines.push(renderTownQuestBoard(ctx as any, char as any, { onlyActive: true }));
     } else {
       lines.push(renderTownQuestBoard(ctx as any, char as any));
     }
