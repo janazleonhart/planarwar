@@ -408,6 +408,39 @@ type TownQuestOffering = {
   quests: QuestDefinition[];
 };
 
+function computeUnlockedFollowupQuests(char: CharacterState): QuestDefinition[] {
+  const state = ensureQuestState(char);
+  const unlockedIds: string[] = [];
+
+  for (const [questId, entry] of Object.entries(state)) {
+    if (!entry) continue;
+    if (!hasTurnedInQuest(char, questId)) continue;
+
+    // Prefer registry definition; fall back to service snapshot if present.
+    const def =
+      getQuestById(questId) ??
+      ((entry as any).source?.kind === "service" ? (entry as any).source?.def : null);
+
+    const unlocks = Array.isArray((def as any)?.unlocks) ? (def as any).unlocks : [];
+    for (const u of unlocks) {
+      const id = String(u ?? "").trim();
+      if (id) unlockedIds.push(id);
+    }
+  }
+
+  const out: QuestDefinition[] = [];
+  const seen = new Set<string>();
+  for (const id of unlockedIds) {
+    if (seen.has(id)) continue;
+    seen.add(id);
+
+    const q = getQuestById(id);
+    if (q) out.push(q);
+  }
+
+  return out;
+}
+
 function getTownQuestOffering(ctx: any, char: any): TownQuestOffering | null {
   const roomId = getCurrentRoomId(ctx, char);
   if (!roomId) return null;
@@ -427,6 +460,12 @@ function getTownQuestOffering(ctx: any, char: any): TownQuestOffering | null {
     maxQuests: undefined,
     includeRepeatables: true,
   });
+
+  // Quest chains v0.3: surface unlocked follow-up quests on the board offering once prerequisites are met.
+  const followups = computeUnlockedFollowupQuests(char as any);
+  for (const q of followups) {
+    if (!quests.some((x) => x.id === q.id)) quests.push(q);
+  }
 
   return { townId, tier, epoch, quests };
 }
