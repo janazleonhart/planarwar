@@ -444,6 +444,55 @@ export async function handleTalkCommand(
       }
 
 
+      // Preview (does not turn in)
+      if (lower === "preview" || lower.startsWith("preview ")) {
+        const parts = selector.split(/\s+/).filter(Boolean);
+        const targetSel = parts.slice(1).join(" ").trim();
+
+        const pickByFuzzy = (raw: string): { id: string; name: string } | null => {
+          if (!raw) return null;
+
+          // Exact ID match first.
+          const exact = eligible.find((e) => e.id === raw);
+          if (exact) return exact;
+
+          // Numeric index into eligible list.
+          if (/^\d+$/.test(raw)) {
+            const idx = Math.max(1, parseInt(raw, 10)) - 1;
+            return eligible[idx] ?? null;
+          }
+
+          // Fuzzy name match (unique only).
+          const want = raw.toLowerCase();
+          const hits = eligible.filter((e) => String(e.name ?? "").toLowerCase().includes(want));
+          if (hits.length === 1) return hits[0];
+
+          return null;
+        };
+
+        let chosen: { id: string; name: string } | null = null;
+
+        if (!targetSel) {
+          chosen = eligible.length === 1 ? eligible[0] : null;
+        } else {
+          chosen = pickByFuzzy(targetSel);
+        }
+
+        if (!chosen) {
+          return eligible.length === 1
+            ? `[quest] Preview which hand-in? (Try: talk ${npcToken} handin preview ${eligible[0].id})`
+            : `[quest] Preview which hand-in? (Try: talk ${npcToken} handin list)`;
+        }
+
+        const current = (ctx as any)?.session?.character ?? char;
+        const preview = await turnInQuest(ctx as any, current as any, `preview ${chosen.id}`);
+
+        return (
+          String(preview).trimEnd() +
+          `\n\nTip: hand in via 'talk ${npcToken} handin <#|id|name>' (or: 'handin ${npcToken} <#|id|name>').`
+        ).trimEnd();
+      }
+
       // Bulk (confirm-token gated)
       if (lower === "all" || lower.startsWith("all ")) {
         const parts = selector.split(/\s+/).filter(Boolean);
