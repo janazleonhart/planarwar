@@ -46,7 +46,7 @@ export async function handleQuestCommand(
 
   if (sub === "abandon" || sub === "drop") {
     const target = input.parts.slice(2).join(" ").trim();
-    if (!target) return "Usage: quest abandon <#|id>";
+    if (!target) return "Usage: quest abandon <#|id|name>";
     return abandonQuest(ctx, char, target);
   }
 
@@ -69,7 +69,7 @@ export async function handleQuestCommand(
     " quest show <#|id|name>      (shows quest details)",
     " quest board                (shows available town quests)",
     " quest accept <#|id|name>",
-    " quest abandon <#|id>",
+    " quest abandon <#|id|name>",
     " quest turnin list          (shows completed quests ready to turn in)",
     " quest turnin ready         (alias of 'quest ready')",
     " quest turnin preview <#|id|name> (shows readiness + reward preview)",

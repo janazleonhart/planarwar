@@ -188,7 +188,7 @@ export async function abandonQuest(
   idOrIndexRaw: string
 ): Promise<string> {
   const idOrIndex = String(idOrIndexRaw ?? "").trim();
-  if (!idOrIndex) return "Usage: quest abandon <#|id>";
+  if (!idOrIndex) return "Usage: quest abandon <#|id|name>";
 
   const state = ensureQuestState(char);
 
@@ -214,6 +214,49 @@ export async function abandonQuest(
     return q ? `[quest] Abandoned: '${q.name}'.` : `[quest] Abandoned quest '${idOrIndex}'.`;
   }
 
+  // Case-insensitive exact match by id OR name against accepted quests.
+  // (Players will naturally type the quest name they see.)
+  if (!/^\d+$/.test(idOrIndex)) {
+    const accepted = listAcceptedQuestDefs(char);
+    const lower = idOrIndex.toLowerCase();
+    const exact = accepted.filter(
+      (x) => x.id.toLowerCase() === lower || x.name.toLowerCase() === lower
+    );
+    if (exact.length === 1) {
+      delete state[exact[0].id];
+      await persistQuestState(ctx, char);
+      return `[quest] Abandoned: '${exact[0].name}'.`;
+    }
+    if (exact.length > 1) {
+      return renderAmbiguousQuestMatches("[quest] Ambiguous. Did you mean:", exact);
+    }
+
+    // Fuzzy: prefer prefix matches, then substring.
+    const prefix = accepted.filter(
+      (x) => x.id.toLowerCase().startsWith(lower) || x.name.toLowerCase().startsWith(lower)
+    );
+    if (prefix.length === 1) {
+      delete state[prefix[0].id];
+      await persistQuestState(ctx, char);
+      return `[quest] Abandoned: '${prefix[0].name}'.`;
+    }
+    if (prefix.length > 1) {
+      return renderAmbiguousQuestMatches("[quest] Ambiguous. Did you mean:", prefix);
+    }
+
+    const sub = accepted.filter(
+      (x) => x.id.toLowerCase().includes(lower) || x.name.toLowerCase().includes(lower)
+    );
+    if (sub.length === 1) {
+      delete state[sub[0].id];
+      await persistQuestState(ctx, char);
+      return `[quest] Abandoned: '${sub[0].name}'.`;
+    }
+    if (sub.length > 1) {
+      return renderAmbiguousQuestMatches("[quest] Ambiguous. Did you mean:", sub);
+    }
+  }
+
   // If they gave a number, interpret it against the current board.
   const offering = getTownQuestOffering(ctx, char);
   if (offering) {
@@ -226,6 +269,18 @@ export async function abandonQuest(
   }
 
   return `[quest] You don't have '${idOrIndex}' accepted.`;
+}
+
+function listAcceptedQuestDefs(char: CharacterState): QuestDefinition[] {
+  const state = ensureQuestState(char);
+  const ids = Object.keys(state).sort();
+  const out: QuestDefinition[] = [];
+  for (const id of ids) {
+    const def = resolveQuestDefinitionFromStateId(id, state[id]);
+    if (def) out.push(def);
+    else out.push({ id, name: id } as any);
+  }
+  return out;
 }
 
 // Used by engine/text/turn-in to resolve accepted quest definitions without needing ctx.

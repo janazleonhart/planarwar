@@ -87,6 +87,29 @@ test("[contract] quest abandon removes quest from questlog", async () => {
   }
 });
 
+test("[contract] quest abandon supports partial name match when unambiguous", async () => {
+  const prevEpoch = process.env.PW_QUEST_EPOCH;
+  process.env.PW_QUEST_EPOCH = "test_epoch";
+
+  try {
+    const roomId = "prime_shard:0,0";
+
+    const ctx = makeCtx(roomId);
+    const char = makeChar();
+
+    await acceptTownQuest(ctx, char, "1");
+
+    const abandonMsg = await abandonQuest(ctx, char, "Quartermaster");
+    assert.match(abandonMsg, /Abandoned/);
+
+    const after = renderQuestLog(char);
+    assert.match(after, /None accepted/);
+  } finally {
+    if (prevEpoch === undefined) delete process.env.PW_QUEST_EPOCH;
+    else process.env.PW_QUEST_EPOCH = prevEpoch;
+  }
+});
+
 test("[contract] quest abandon supports numeric questlog index even when not in matching town", async () => {
   const prevEpoch = process.env.PW_QUEST_EPOCH;
   process.env.PW_QUEST_EPOCH = "test_epoch";
