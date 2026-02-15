@@ -180,17 +180,15 @@ export async function turnInQuest(
     lines.push(`[quest] Preview: ${quest.name} (${quest.id})`);
     lines.push(`State: ${state}${state === "completed" ? " (ready)" : ""}`);
     lines.push(`Objectives satisfied: ${objOk ? "YES" : "NO"}`);
-const policy = String((quest as any).turninPolicy ?? "anywhere").trim() as any;
-const policyCheck = enforceTurninPolicy(ctx, char, quest as any, entry, policy);
-if (policy && policy !== "anywhere") {
-  if ((policyCheck as any).ok) {
-    lines.push("Can turn in here: YES");
-  } else {
-    const msg = String((policyCheck as any).message ?? "").replace(/^\[quest\]\s*/i, "").trim();
-    lines.push("Can turn in here: NO");
-    if (msg) lines.push(`Turn-in hint: ${msg}`);
-  }
-}
+    const policy = String((quest as any).turninPolicy ?? "anywhere").trim() as any;
+    const policyCheck = enforceTurninPolicy(ctx, char, quest as any, entry, policy);
+    if ((policyCheck as any).ok) {
+      lines.push("Can turn in here: YES");
+    } else {
+      const msg = String((policyCheck as any).message ?? "").replace(/^\[quest\]\s*/i, "").trim();
+      lines.push("Can turn in here: NO");
+      if (msg) lines.push(`Turn-in hint: ${msg}`);
+    }
     if (rewardText) lines.push(`Rewards: ${rewardText}`);
     lines.push("\nTurn in with: quest turnin <#|id|name>");
     return lines.join("\n").trimEnd();

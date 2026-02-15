@@ -124,4 +124,23 @@ test("[behavior] quest turnin preview includes policy-based eligibility + hint",
   ];
   const okPreview = await turnInQuest(ctx, char, `preview ${quest.id}`);
   assert.match(okPreview, /Can turn in here: YES/);
+
+  // Anywhere policy should always report YES (and no hint).
+  const anywhereQuest: QuestDefinition = {
+    id: "policy_preview_anywhere_test",
+    name: "Policy Preview Anywhere Test",
+    description: "Anywhere policy should always be eligible.",
+    objectives: [],
+    reward: { xp: 1 },
+  } as any;
+
+  state[anywhereQuest.id] = {
+    state: "completed",
+    completions: 0,
+    source: { kind: "service", service: "test", questId: anywhereQuest.id, def: anywhereQuest },
+  } as any;
+
+  const anywherePreview = await turnInQuest(ctx, char, `preview ${anywhereQuest.id}`);
+  assert.match(anywherePreview, /Can turn in here: YES/);
+  assert.doesNotMatch(anywherePreview, /Turn-in hint:/);
 });
