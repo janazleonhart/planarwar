@@ -2,6 +2,7 @@
 
 import type { MudContext } from "../../MudContext";
 import type { CharacterState } from "../../../characters/CharacterTypes";
+import crypto from "node:crypto";
 import { getNpcPrototype } from "../../../npc/NpcTypes";
 import { applyProgressionEvent } from "../../../progression/ProgressionCore";
 import { applyProgressionForEvent } from "../../MudProgressionHooks";
@@ -17,6 +18,18 @@ import {
 
 const MAX_TALK_RADIUS = 30; // keep consistent with nearbyCommand for v1
 const MAX_TALK_LIMIT = 200;
+
+function computeHandinAllToken(char: CharacterState, npcProtoId: string, questIds: string[]): string {
+  const seed = [
+    String((char as any).id),
+    String((char as any).userId ?? ""),
+    String(npcProtoId ?? ""),
+    ...questIds,
+    "talk_handin_all_v1",
+  ].join("|");
+
+  return crypto.createHash("sha256").update(seed).digest("hex").slice(0, 16);
+}
 
 function getEntitiesInRoom(ctx: MudContext, roomId: string): any[] {
   const em: any = ctx.entities as any;
@@ -124,13 +137,39 @@ export async function handleTalkCommand(
   char: CharacterState,
   input: { cmd: string; args: string[]; parts: string[]; world?: any }
 ): Promise<any> {
-  // Support: talk <target> [handin|turnin|complete]
-  // Preserve multi-word targets by treating the LAST arg as an action keyword when it matches.
+  // Support:
+  //  - talk <target>
+  //  - talk <target> handin
+  //  - talk <target> handin <#|id|name>
+  //  - talk <target> handin all [token]
+  // Preserve multi-word targets by finding the *last* action keyword and splitting around it.
   const args = Array.isArray(input.args) ? input.args : [];
-  const last = String(args[args.length - 1] ?? "").trim().toLowerCase();
   const actionKeywords = new Set(["handin", "hand-in", "turnin", "turn-in", "complete", "finish", "submit"]);
-  const action = args.length >= 2 && actionKeywords.has(last) ? last : "";
-  const targetRaw = (action ? args.slice(0, -1) : args).join(" ").trim();
+
+  let action = "";
+  let actionArgs: string[] = [];
+  let targetRaw = "";
+
+  if (args.length === 0) {
+    targetRaw = "";
+  } else {
+    let actionIdx = -1;
+    for (let i = args.length - 1; i >= 0; i--) {
+      const tok = String(args[i] ?? "").trim().toLowerCase();
+      if (actionKeywords.has(tok)) {
+        actionIdx = i;
+        action = tok;
+        break;
+      }
+    }
+
+    if (actionIdx >= 0) {
+      targetRaw = args.slice(0, actionIdx).join(" ").trim();
+      actionArgs = args.slice(actionIdx + 1);
+    } else {
+      targetRaw = args.join(" ").trim();
+    }
+  }
   if (!targetRaw) return "Usage: talk <target>";
 
   const selfEntity = getSelfEntity(ctx);
@@ -245,25 +284,88 @@ export async function handleTalkCommand(
   if (eligible.length > 0) {
     const npcToken = targetHandle ?? targetRaw;
 
-    // QoL (opt-in): if the player explicitly asks to hand in while talking, and there's only
-    // one eligible NPC-policy quest, perform the turn-in immediately.
-    const wantsAutoHandin =
-      action === "handin" ||
-      action === "hand-in" ||
-      action === "turnin" ||
-      action === "turn-in" ||
-      action === "complete" ||
-      action === "finish" ||
-      action === "submit";
+    const wantsHandinAction = !!action;
+    const selector = actionArgs.join(" ").trim();
 
-    if (wantsAutoHandin && eligible.length === 1) {
-      const msg = await turnInQuest(
-        ctx as any,
-        (ctx as any).session?.character ?? (char as any),
-        eligible[0].id
-      );
+    // QoL (opt-in): if the player explicitly asks to hand in while talking, and there's only
+    // one eligible NPC-policy quest, perform the turn-in immediately (unless they supplied
+    // a selector).
+    if (wantsHandinAction && eligible.length === 1 && !selector) {
+      const msg = await turnInQuest(ctx as any, (ctx as any).session?.character ?? (char as any), eligible[0].id);
       lines.push(msg);
       return lines.join("\n").trimEnd();
+    }
+
+    // Action path: talk <npc> handin <#|id|name|all>
+    if (wantsHandinAction && selector) {
+      const lower = selector.toLowerCase();
+
+      // Bulk (confirm-token gated)
+      if (lower === "all" || lower.startsWith("all ")) {
+        const parts = selector.split(/\s+/).filter(Boolean);
+        const providedToken = parts.slice(1).join(" ").trim();
+        const ids = eligible.map((e) => e.id).sort();
+        const token = computeHandinAllToken(char, proto.id, ids);
+
+        if (!providedToken) {
+          lines.push(`[quest] Hand in ALL to ${proto.name}: ${eligible.length}`);
+          for (let i = 0; i < eligible.length; i++) {
+            lines.push(` - ${i + 1}) ${eligible[i].name} (${eligible[i].id})`);
+          }
+          lines.push("\nThis action is confirm-token gated to prevent oopsies.");
+          lines.push(`Confirm with: talk ${npcToken} handin all ${token}`);
+          lines.push(`(Or: handin ${npcToken} all ${token})`);
+          return lines.join("\n").trimEnd();
+        }
+
+        if (providedToken !== token) {
+          return [
+            "[quest] Hand in ALL denied: confirm token mismatch.",
+            `Re-run: talk ${npcToken} handin all (to get a fresh token)`,
+          ].join("\n");
+        }
+
+        const results: string[] = [];
+        for (const q of eligible) {
+          const current = (ctx as any)?.session?.character ?? char;
+          const msg = await turnInQuest(ctx as any, current as any, q.id);
+          results.push(msg);
+        }
+
+        return (`[quest] Hand in ALL complete (${eligible.length} attempted).\n` + results.join("\n")).trimEnd();
+      }
+
+      // Numeric selection (into eligible list)
+      if (/^\d+$/.test(selector)) {
+        const idx = Math.max(1, parseInt(selector, 10)) - 1;
+        const hit = eligible[idx];
+        if (!hit) {
+          return `[quest] Invalid hand-in selection #${selector}. (Try: talk ${npcToken} handin)`;
+        }
+        return await turnInQuest(ctx as any, (ctx as any).session?.character ?? (char as any), hit.id);
+      }
+
+      // Exact ID match first.
+      const exact = eligible.find((e) => e.id === selector);
+      if (exact) {
+        return await turnInQuest(ctx as any, (ctx as any).session?.character ?? (char as any), exact.id);
+      }
+
+      // Fuzzy name match (unique only).
+      const want = selector.toLowerCase();
+      const hits = eligible.filter((e) => String(e.name ?? "").toLowerCase().includes(want));
+      if (hits.length === 1) {
+        return await turnInQuest(ctx as any, (ctx as any).session?.character ?? (char as any), hits[0].id);
+      }
+      if (hits.length > 1) {
+        const lines2: string[] = [];
+        lines2.push(`[quest] Ambiguous hand-in '${selector}' (${hits.length} matches):`);
+        for (let i = 0; i < hits.length; i++) lines2.push(` - ${hits[i].name} (${hits[i].id})`);
+        lines2.push(`Use: talk ${npcToken} handin <#|id>`);
+        return lines2.join("\n").trimEnd();
+      }
+
+      return `[quest] No eligible NPC hand-in matches '${selector}'. (Try: talk ${npcToken} handin)`;
     }
 
     if (eligible.length === 1) {
