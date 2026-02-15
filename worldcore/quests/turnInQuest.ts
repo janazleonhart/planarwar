@@ -117,6 +117,13 @@ export async function turnInQuest(
 
     const resolved = resolveQuestByIdOrNameIncludingAccepted(key, questState);
     if (!resolved) return `[quest] Unknown quest '${target}'.`;
+    if (resolved.kind === "ambiguous") {
+      const lines: string[] = [];
+      lines.push("[quest] Ambiguous. Did you mean:");
+      resolved.matches.slice(0, 8).forEach((q) => lines.push(` - ${q.name} (${q.id})`));
+      if (resolved.matches.length > 8) lines.push(` - ...and ${resolved.matches.length - 8} more`);
+      return lines.join("").trimEnd();
+    }
 
     const quest = resolved.quest;
     const entry = questState[quest.id];
@@ -184,6 +191,13 @@ if (policy && policy !== "anywhere") {
   const resolved = resolveQuestByIdOrNameIncludingAccepted(key, questState);
   if (!resolved) {
     return `[quest] Unknown quest '${trimmed}'.`;
+  }
+  if (resolved.kind === "ambiguous") {
+    const lines: string[] = [];
+    lines.push("[quest] Ambiguous. Did you mean:");
+    resolved.matches.slice(0, 8).forEach((q) => lines.push(` - ${q.name} (${q.id})`));
+    if (resolved.matches.length > 8) lines.push(` - ...and ${resolved.matches.length - 8} more`);
+    return lines.join("").trimEnd();
   }
 
   const quest = resolved.quest;
@@ -556,36 +570,78 @@ function enforceTurninPolicy(
 // Helpers
 // ---------------------------------------------------------------------------
 
+type QuestResolveResult =
+  | { kind: "single"; quest: QuestDefinition }
+  | { kind: "ambiguous"; matches: QuestDefinition[] };
+
 function resolveQuestByIdOrNameIncludingAccepted(
-  input: string,
+  inputRaw: string,
   questState: Record<string, any>
-): { quest: QuestDefinition } | null {
+): QuestResolveResult | null {
+  const input = String(inputRaw ?? "").trim();
+  if (!input) return null;
+
   const lower = input.toLowerCase();
 
-  // 1) Exact id in registry
-  const byId = getQuestById(input);
-  if (byId) return { quest: byId };
-
-  // 2) Exact id match in accepted state (generated or registry)
-  if (questState[input]) {
-    const q = resolveQuestDefinitionFromStateId(input, questState[input]);
-    if (q) return { quest: q };
-  }
-
-  // 3) Case-insensitive by id or name in registry
-  const all = getAllQuests();
-  const idMatch = all.find((q) => q.id.toLowerCase() === lower);
-  if (idMatch) return { quest: idMatch };
-  const nameMatch = all.find((q) => q.name.toLowerCase() === lower);
-  if (nameMatch) return { quest: nameMatch };
-
-  // 4) Case-insensitive match among accepted quests (generated)
+  // Accepted quests (generated or registry accepted)
+  const accepted: QuestDefinition[] = [];
   for (const [id, entry] of Object.entries(questState)) {
     const q = resolveQuestDefinitionFromStateId(id, entry);
-    if (!q) continue;
-    if (q.id.toLowerCase() === lower) return { quest: q };
-    if (q.name.toLowerCase() === lower) return { quest: q };
+    if (q) accepted.push(q);
   }
+
+  // 1) Exact accepted id
+  if (questState[input]) {
+    const q = resolveQuestDefinitionFromStateId(input, questState[input]);
+    if (q) return { kind: "single", quest: q };
+  }
+
+  // 2) Exact registry id
+  const byId = getQuestById(input);
+  if (byId) return { kind: "single", quest: byId };
+
+  // 3) Exact case-insensitive among accepted (prefer accepted)
+  const exact = (q: QuestDefinition) =>
+    q.id.toLowerCase() === lower || q.name.toLowerCase() === lower;
+
+  const starts = (q: QuestDefinition) =>
+    q.id.toLowerCase().startsWith(lower) || q.name.toLowerCase().startsWith(lower);
+
+  const contains = (q: QuestDefinition) =>
+    q.id.toLowerCase().includes(lower) || q.name.toLowerCase().includes(lower);
+
+  const exactAccepted = accepted.filter(exact);
+  if (exactAccepted.length === 1) return { kind: "single", quest: exactAccepted[0] };
+  if (exactAccepted.length > 1) return { kind: "ambiguous", matches: exactAccepted };
+
+  const registry = getAllQuests();
+
+  const exactRegistry = registry.filter(exact);
+  if (exactRegistry.length === 1) return { kind: "single", quest: exactRegistry[0] };
+  if (exactRegistry.length > 1) return { kind: "ambiguous", matches: exactRegistry };
+
+  // 4) Prefix fuzzy (prefer accepted)
+  const prefixAccepted = accepted.filter(starts);
+  if (prefixAccepted.length === 1) return { kind: "single", quest: prefixAccepted[0] };
+  if (prefixAccepted.length > 1) return { kind: "ambiguous", matches: prefixAccepted };
+
+  const prefixRegistry = registry.filter(starts);
+  if (prefixRegistry.length === 1) return { kind: "single", quest: prefixRegistry[0] };
+  if (prefixRegistry.length > 1) return { kind: "ambiguous", matches: prefixRegistry };
+
+  // 5) Substring fuzzy across accepted+registry (unique by id)
+  const uniq: QuestDefinition[] = [];
+  const seen = new Set<string>();
+  for (const q of [...accepted, ...registry]) {
+    if (!q || !q.id) continue;
+    if (seen.has(q.id)) continue;
+    seen.add(q.id);
+    uniq.push(q);
+  }
+
+  const fuzzyAll = uniq.filter(contains);
+  if (fuzzyAll.length === 1) return { kind: "single", quest: fuzzyAll[0] };
+  if (fuzzyAll.length > 1) return { kind: "ambiguous", matches: fuzzyAll };
 
   return null;
 }
