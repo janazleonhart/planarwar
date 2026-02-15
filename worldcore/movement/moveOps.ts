@@ -66,6 +66,18 @@ export async function moveCharacterAndSync(
     entity.z = char.posZ;
   }
 
+
+// Update session room id best-effort so downstream commands can reason about the
+// player's current room without needing to recompute it.
+// Convention: roomId = "<shardId>:<regionId>" where regionId is "x,z".
+try {
+  if (ctx.session) {
+    (ctx.session as any).roomId = `${char.shardId}:${char.lastRegionId}`;
+  }
+} catch {
+  // best-effort
+}
+
   // Persist movement best-effort (don’t block movement on DB).
   const userId = ctx.session.identity?.userId;
   if (ctx.characters && userId) {

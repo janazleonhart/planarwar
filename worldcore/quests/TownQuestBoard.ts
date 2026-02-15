@@ -21,6 +21,19 @@ export type TownQuestBoardRenderOpts = {
   onlyNew?: boolean;
 };
 
+export function countNewUnlockedFollowups(char: CharacterState): number {
+  // "NEW" matches the board marker semantics: unlocked follow-ups that the player
+  // has not accepted yet.
+  const state = ensureQuestState(char);
+  const unlocked = computeUnlockedFollowupQuests(char);
+  let n = 0;
+  for (const q of unlocked) {
+    if (!state[q.id]) n++;
+  }
+  return n;
+}
+
+
 export function renderTownQuestBoard(
   ctx: any,
   char: CharacterState,

@@ -6,6 +6,7 @@ import type { CharacterState } from "../../../characters/CharacterTypes";
 import type { ServerWorldManager } from "../../../world/ServerWorldManager";
 import { isGMOrHigher } from "../../../shared/AuthTypes";
 import { getActiveStatusEffects } from "../../../combat/StatusEffects";
+import { countNewUnlockedFollowups } from "../../../quests/TownQuestBoard";
 import {
   isTownSanctuaryForRegionSync,
   isTravelLockdownOnSiegeForRegionSync,
@@ -29,6 +30,21 @@ function clampSteps(raw: number | undefined, min: number, max: number): number {
   if (i < min) return min;
   if (i > max) return max;
   return i;
+}
+
+
+function inferTownTierFromRoom(ctx: any, roomId: string | null): number | null {
+  if (!roomId) return null;
+  const rooms = ctx?.rooms;
+  if (rooms && typeof rooms.getRoom === "function") {
+    const room = rooms.getRoom(roomId);
+    const tags: string[] = Array.isArray(room?.tags) ? room.tags : [];
+    for (const t of tags) {
+      const m = /^town_tier_(\d+)$/.exec(String(t));
+      if (m) return Number(m[1]);
+    }
+  }
+  return null;
 }
 
 function envFlag(name: string, defaultValue = false): boolean {
@@ -98,6 +114,7 @@ export async function handleMoveCommand(
   const requestedSteps = parseStepsToken(input.args[1]) ?? 1;
   const nowMs = Number((ctx as any).nowMs ?? Date.now());
   const steps = clampSteps(requestedSteps, 1, 256);
+  const beforeRoomId = (ctx as any)?.session?.roomId ?? null;
 
   // Staff-only: multi-step movement is a dev/GM tool.
   // (Normal players will later get speed via mounts, buffs, teleport, etc.)
@@ -201,7 +218,27 @@ export async function handleMoveCommand(
     // Movement should never fail because spawn hydration/spawning failed.
   }
 
+
+// Quest chain UX: if the player just entered a town-tier room and has NEW unlocked
+// follow-up quests available, nudge them toward the board.
+let questNudge: string | null = null;
+try {
+  const beforeTier = inferTownTierFromRoom(ctx, beforeRoomId);
+  // moveCharacterAndSync updates session.roomId best-effort.
+  const afterRoomId = (ctx as any).session?.roomId ?? `${char.shardId}:${char.lastRegionId}`;
+  const afterTier = inferTownTierFromRoom(ctx, afterRoomId);
+  if (!beforeTier && afterTier) {
+    const nNew = countNewUnlockedFollowups(char);
+    if (nNew > 0) {
+      questNudge = `[quest] NEW quests available: ${nNew}. Try: quest board new`;
+    }
+  }
+} catch {
+  // best-effort
+}
+
   const label = DIR_LABELS[dir] ?? (input.args[0] ?? dir).toLowerCase();
-  if (steps === 1) return `You move ${label}.`;
-  return `You move ${label} (${steps} steps).`;
+  const baseMsg = steps === 1 ? `You move ${label}.` : `You move ${label} (${steps} steps).`;
+  if (!questNudge) return baseMsg;
+  return `${baseMsg}\n${questNudge}`;
 }
