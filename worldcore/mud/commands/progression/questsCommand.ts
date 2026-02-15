@@ -36,6 +36,11 @@ export async function handleQuestCommand(
     return renderQuestLog(char, { filter: "ready_here", ctx });
   }
 
+  // Symmetry sugar: `quest readylocal` and `quest ready_local` mirror `readyhere`.
+  if (sub === "readylocal" || sub === "ready_local") {
+    return renderQuestLog(char, { filter: "ready_here", ctx });
+  }
+
   if (sub === "show" || sub === "info" || sub === "details") {
     const target = input.parts.slice(2).join(" ").trim();
     if (!target) return "Usage: quest show <#|id|name>";
@@ -82,7 +87,8 @@ export async function handleQuestCommand(
     "Usage:",
     " quest                      (shows quest log)",
     " quest ready                (shows quests ready to turn in)",
-    " quest ready here           (shows quests ready to turn in from here)",
+    " quest ready here|local     (shows quests ready to turn in from here)",
+    " quest readyhere|readylocal (aliases of 'quest ready here')",
     " quest show <#|id|name>      (shows quest details)",
     " quest board                (shows available town quests)",
     " quest accept <#|id|name>",
