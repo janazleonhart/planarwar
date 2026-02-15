@@ -42,7 +42,7 @@ export function renderQuestLog(char: CharacterState, opts: RenderQuestLogOpts = 
   type Row = {
     id: string;
     name: string;
-    mark: "[A]" | "[C]" | "[READY]" | "[T]";
+    mark: string;
     repeatInfo: string;
     isReady: boolean;
     sortKey: number;
@@ -80,7 +80,14 @@ export function renderQuestLog(char: CharacterState, opts: RenderQuestLogOpts = 
       if (turninHint) continue;
     }
 
-    const mark = isTurnedIn ? "[T]" : isReady ? "[READY]" : isCompleted ? "[C]" : "[A]";
+    const eligibleHere = !!(isReady && ctx && !turninHint);
+    const mark = isTurnedIn
+      ? "[T]"
+      : isReady
+        ? (eligibleHere ? "[READY][HERE]" : "[READY]")
+        : isCompleted
+          ? "[C]"
+          : "[A]";
 
     // Sort: Active -> READY -> Completed -> Turned in
     const sortKey = isTurnedIn ? 3 : isReady ? 1 : isCompleted ? 2 : 0;

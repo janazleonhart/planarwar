@@ -114,6 +114,7 @@ test("[contract] quest log READY rows show Eligible to turn in here: YES/NO when
   const ctxA = makeCtx(char, "prime_shard:0,0", "town_a");
   const logA = renderQuestLog(char, { ctx: ctxA, filter: "ready" });
   assert.ok(logA.includes("[READY]"), logA);
+  assert.ok(logA.includes("[HERE]"), logA);
   assert.ok(logA.includes("Eligible to turn in here: YES"), logA);
 
   const ctxB = makeCtx(char, "prime_shard:0,0", "town_b");
