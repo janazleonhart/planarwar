@@ -770,7 +770,8 @@ if (
   const unlocks = Array.isArray((quest as any).unlocks) ? ((quest as any).unlocks as string[]) : [];
   if (unlocks.length > 0) {
     const names = unlocks.map((id) => getQuestById(id)?.name ?? id).join(", ");
-    msg += ` [quest] Unlocked: ${names}.`;
+    msg += ` [quest] Unlocked: .`;
+    msg += " Tip: check the quest board for follow-ups.";
   }
 
   return msg;
