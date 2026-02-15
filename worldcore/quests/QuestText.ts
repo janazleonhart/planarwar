@@ -13,7 +13,15 @@ import { getAllQuests, getQuestById } from "./QuestRegistry";
 import type { QuestDefinition, QuestObjective } from "./QuestTypes";
 import type { CharacterState } from "../characters/CharacterTypes";
 
-export function renderQuestLog(char: CharacterState): string {
+export type QuestLogFilter = "all" | "ready";
+
+export type RenderQuestLogOpts = {
+  filter?: QuestLogFilter;
+};
+
+export function renderQuestLog(char: CharacterState, opts: RenderQuestLogOpts = {}): string {
+  const filter: QuestLogFilter = opts.filter ?? "all";
+
   const prog = ensureProgression(char);
   const kills = (prog.kills as Record<string, number>) || {};
   const harvests = (prog.harvests as Record<string, number>) || {};
@@ -27,9 +35,20 @@ export function renderQuestLog(char: CharacterState): string {
     return "Quests:\n - None accepted.\n\nUse: quest board\n      quest accept <#|id>";
   }
 
-  let out = "Quests:\n";
+  type Row = {
+    id: string;
+    name: string;
+    mark: "[A]" | "[C]" | "[READY]" | "[T]";
+    repeatInfo: string;
+    isReady: boolean;
+    sortKey: number;
+    line: string;
+    detailLines: string[];
+  };
 
-  for (const id of ids.sort()) {
+  const rows: Row[] = [];
+
+  for (const id of ids) {
     const entry = state[id];
     if (!entry) continue;
 
@@ -38,13 +57,19 @@ export function renderQuestLog(char: CharacterState): string {
     const name = q?.name ?? id;
     const isCompleted = entry.state === "completed";
     const isTurnedIn = entry.state === "turned_in";
+
     const isReady = !!(
       q &&
       isCompleted &&
       areObjectivesSatisfied(q, char, { kills, harvests, actions, flags })
     );
 
+    if (filter === "ready" && !isReady) continue;
+
     const mark = isTurnedIn ? "[T]" : isReady ? "[READY]" : isCompleted ? "[C]" : "[A]";
+
+    // Sort: Active -> READY -> Completed -> Turned in
+    const sortKey = isTurnedIn ? 3 : isReady ? 1 : isCompleted ? 2 : 0;
 
     let repeatInfo = "";
     if (q?.repeatable) {
@@ -55,18 +80,55 @@ export function renderQuestLog(char: CharacterState): string {
       else repeatInfo = ` [repeatable ${completions}/∞]`;
     }
 
-    out += ` ${mark} ${name} (${id})${repeatInfo}\n`;
+    const detailLines: string[] = [];
 
     if (q) {
       if (isReady) {
         const rewardText = renderQuestRewardSummary(q);
-        if (rewardText) out += `   Rewards: ${rewardText}\n`;
+        if (rewardText) detailLines.push(`   Rewards: ${rewardText}`);
       }
+
       for (const obj of q.objectives) {
-        out += renderObjectiveLine(char, obj, { kills, harvests, actions, flags });
+        detailLines.push(renderObjectiveLine(char, obj, { kills, harvests, actions, flags }).trimEnd());
       }
     } else {
-      out += "   - (Quest definition missing; cannot render objectives.)\n";
+      detailLines.push("   - (Quest definition missing; cannot render objectives.)");
+    }
+
+    const line = ` ${mark} ${name} (${id})${repeatInfo}`;
+
+    rows.push({
+      id,
+      name,
+      mark,
+      repeatInfo,
+      isReady,
+      sortKey,
+      line,
+      detailLines,
+    });
+  }
+
+  if (rows.length === 0 && filter === "ready") {
+    return "Quests (ready):\n - None ready to turn in.";
+  }
+
+  rows.sort((a, b) => {
+    if (a.sortKey !== b.sortKey) return a.sortKey - b.sortKey;
+    // Stable-ish secondary ordering: name then id
+    const an = a.name.toLowerCase();
+    const bn = b.name.toLowerCase();
+    if (an < bn) return -1;
+    if (an > bn) return 1;
+    return a.id.localeCompare(b.id);
+  });
+
+  let out = filter === "ready" ? "Quests (ready):\n" : "Quests:\n";
+
+  for (const r of rows) {
+    out += `${r.line}\n`;
+    for (const dl of r.detailLines) {
+      out += `${dl}\n`;
     }
   }
 
@@ -124,7 +186,15 @@ export function renderQuestDetails(char: CharacterState, targetRaw: string): str
     isCompleted && areObjectivesSatisfied(quest, char, { kills, harvests, actions, flags })
   );
 
-  const mark = isTurnedIn ? "[T]" : isReady ? "[READY]" : isCompleted ? "[C]" : isAccepted ? "[A]" : "[ ]";
+  const mark = isTurnedIn
+    ? "[T]"
+    : isReady
+      ? "[READY]"
+      : isCompleted
+        ? "[C]"
+        : isAccepted
+          ? "[A]"
+          : "[ ]";
 
   const lines: string[] = [];
   lines.push(`[quest] ${mark} ${quest.name} (${quest.id})`);
@@ -162,7 +232,7 @@ type ObjectiveRenderCtx = {
   flags: Record<string, unknown>;
   // Provided by areObjectivesSatisfied() for collect_item checks.
   // renderObjectiveLine() does not require it.
-  inv?: CharacterState["inventory"];
+  inv?: CharacterState["inventory"]; 
 };
 
 function renderObjectiveLine(
@@ -260,79 +330,59 @@ function isObjectiveSatisfied(
 }
 
 function resolveQuestByIdOrNameIncludingAccepted(
-  input: string,
-  questState: Record<string, any>
+  key: string,
+  acceptedState: Record<string, any>,
 ): { quest: QuestDefinition } | null {
-  const lower = input.toLowerCase();
-
-  // 1) Exact id in registry
-  const byId = getQuestById(input);
-  if (byId) return { quest: byId };
-
-  // 2) Exact id match in accepted state (generated or registry)
-  if (questState[input]) {
-    const q = resolveQuestDefinitionFromStateId(input, questState[input]);
+  const directAccepted = acceptedState[key];
+  if (directAccepted) {
+    const q = resolveQuestDefinitionFromStateId(key, directAccepted);
     if (q) return { quest: q };
   }
 
-  // 3) Case-insensitive by id or name in registry
-  const all = getAllQuests();
-  const idMatch = all.find((q) => q.id.toLowerCase() === lower);
-  if (idMatch) return { quest: idMatch };
-  const nameMatch = all.find((q) => q.name.toLowerCase() === lower);
-  if (nameMatch) return { quest: nameMatch };
+  const byId = getQuestById(key);
+  if (byId) return { quest: byId };
 
-  // 4) Case-insensitive match among accepted quests (generated)
-  for (const [id, entry] of Object.entries(questState)) {
-    const q = resolveQuestDefinitionFromStateId(id, entry);
-    if (!q) continue;
-    if (q.id.toLowerCase() === lower) return { quest: q };
-    if (q.name.toLowerCase() === lower) return { quest: q };
-  }
+  const lower = key.toLowerCase();
+  const all = getAllQuests();
+  const byName = all.find((q) => q.name.toLowerCase() === lower);
+  if (byName) return { quest: byName };
 
   return null;
 }
 
-function renderQuestRewardSummary(quest: QuestDefinition): string {
-  const r: any = quest?.reward ?? null;
+export function renderQuestRewardSummary(quest: QuestDefinition): string {
+  const r: any = (quest as any).reward ?? null;
   if (!r) return "";
 
   const parts: string[] = [];
 
   if (typeof r.xp === "number" && r.xp > 0) parts.push(`${r.xp} XP`);
-  if (typeof r.gold === "number" && r.gold > 0) parts.push(`${r.gold}g`);
+  if (typeof r.gold === "number" && r.gold > 0) parts.push(`${r.gold} gold`);
 
-  const items = Array.isArray(r.items) ? r.items : [];
-  if (items.length > 0) {
-    const t = items
-      .slice(0, 3)
-      .map((it: any) => `${Number(it?.count ?? 1)}x ${String(it?.itemId ?? "?")}`)
-      .join(", ");
-    parts.push(`Items: ${t}${items.length > 3 ? ", …" : ""}`);
+  const items = (r.items as any[]) ?? [];
+  for (const it of items) {
+    if (!it || !it.itemId) continue;
+    const qty = Number(it.quantity ?? 1);
+    parts.push(`${qty}x ${it.itemId}`);
   }
 
-  const titles = Array.isArray(r.titles) ? r.titles : [];
-  if (titles.length > 0) {
-    parts.push(`Titles: ${titles.slice(0, 3).join(", ")}${titles.length > 3 ? ", …" : ""}`);
+  const titles = (r.titles as any[]) ?? [];
+  for (const t of titles) {
+    if (!t) continue;
+    parts.push(`title:${t}`);
   }
 
-  const spellGrants = Array.isArray(r.spellGrants) ? r.spellGrants : [];
-  if (spellGrants.length > 0) {
-    const t = spellGrants
-      .slice(0, 3)
-      .map((g: any) => String(g?.spellId ?? "?"))
-      .join(", ");
-    parts.push(`Spells: ${t}${spellGrants.length > 3 ? ", …" : ""}`);
+  const spellGrants = (r.spellGrants as any[]) ?? [];
+  for (const sg of spellGrants) {
+    if (!sg || !sg.spellId) continue;
+    parts.push(`spell:${sg.spellId}`);
   }
 
-  const abilityGrants = Array.isArray(r.abilityGrants) ? r.abilityGrants : [];
-  if (abilityGrants.length > 0) {
-    const t = abilityGrants
-      .slice(0, 3)
-      .map((g: any) => String(g?.abilityId ?? "?"))
-      .join(", ");
-    parts.push(`Abilities: ${t}${abilityGrants.length > 3 ? ", …" : ""}`);
+  const abilityGrants = (r.abilityGrants as any[]) ?? [];
+  for (const ag of abilityGrants) {
+    if (!ag || !ag.abilityId) continue;
+    parts.push(`ability:${ag.abilityId}`);
   }
 
-  return parts.join(" • ");
+  return parts.join(", ");
 }

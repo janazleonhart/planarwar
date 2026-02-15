@@ -24,6 +24,10 @@ export async function handleQuestCommand(
     return renderQuestLog(char);
   }
 
+  if (sub === "ready") {
+    return renderQuestLog(char, { filter: "ready" });
+  }
+
   if (sub === "show" || sub === "info" || sub === "details") {
     const target = input.parts.slice(2).join(" ").trim();
     if (!target) return "Usage: quest show <#|id|name>";
@@ -55,6 +59,7 @@ export async function handleQuestCommand(
   return [
     "Usage:",
     " quest                      (shows quest log)",
+    " quest ready                (shows quests ready to turn in)",
     " quest show <#|id|name>      (shows quest details)",
     " quest board                (shows available town quests)",
     " quest accept <#|id>",
