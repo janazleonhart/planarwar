@@ -25,6 +25,63 @@ function isRotationImmuneQuestId(id: string): boolean {
   return s.includes("greet_quartermaster") || s.includes("rat_culling");
 }
 
+
+// Follow-up parent rotation memory (v0.18)
+//
+// This is a tiny helper to avoid showing NEW follow-ups from the same parent chain
+// on consecutive board refreshes when there are multiple chains available.
+const QUEST_BOARD_FOLLOWUP_PARENT_ROTATION_MAX = 8;
+
+function getRecentFollowupParentIds(char: any, rotationKey: string, epoch: string): string[] {
+  const prog = (char.progression ??= {});
+  const history = (prog.questBoardHistory ??= {});
+
+  const cur = history[rotationKey];
+  if (!cur || cur.epoch !== epoch) {
+    history[rotationKey] = { epoch, ids: [] as string[] };
+    return [];
+  }
+
+  const ids = Array.isArray(cur.ids) ? cur.ids : [];
+  if (ids.length > QUEST_BOARD_FOLLOWUP_PARENT_ROTATION_MAX) {
+    cur.ids = ids.slice(-QUEST_BOARD_FOLLOWUP_PARENT_ROTATION_MAX);
+  }
+  return cur.ids;
+}
+
+function recordQuestBoardFollowupParents(
+  char: any,
+  rotationKey: string,
+  epoch: string,
+  parentIds: string[]
+): void {
+  const prog = (char.progression ??= {});
+  const history = (prog.questBoardHistory ??= {});
+
+  const cur = history[rotationKey];
+  if (!cur || cur.epoch !== epoch) {
+    history[rotationKey] = { epoch, ids: [] as string[] };
+  }
+
+  const slot = history[rotationKey];
+  const ids: string[] = Array.isArray(slot.ids) ? slot.ids.slice() : [];
+
+  const sample = Array.isArray(parentIds) ? parentIds.slice(0, 6) : [];
+  for (const raw of sample) {
+    const id = String(raw ?? "").trim();
+    if (!id) continue;
+
+    const existingIdx = ids.indexOf(id);
+    if (existingIdx >= 0) ids.splice(existingIdx, 1);
+    ids.push(id);
+
+    if (ids.length > QUEST_BOARD_FOLLOWUP_PARENT_ROTATION_MAX) {
+      ids.splice(0, ids.length - QUEST_BOARD_FOLLOWUP_PARENT_ROTATION_MAX);
+    }
+  }
+
+  slot.ids = ids;
+}
 function getRecentOfferedQuestIds(char: any, rotationKey: string, epoch: string): string[] {
   const prog = (char.progression ??= {});
   const history = (prog.questBoardHistory ??= {});
@@ -829,6 +886,9 @@ function getTownQuestOffering(ctx: any, char: any): TownQuestOffering | null {
   const rotationKey = `town:${townId}|t${tier}`;
   const recentOffered = getRecentOfferedQuestIds(char as any, rotationKey, epoch);
 
+  const followupRotationKey = `${rotationKey}|followupParents`;
+  const recentFollowupParents = getRecentFollowupParentIds(char as any, followupRotationKey, epoch);
+
   const quests = generateTownQuests({
     townId,
     tier,
@@ -869,9 +929,37 @@ function getTownQuestOffering(ctx: any, char: any): TownQuestOffering | null {
 
   // Quest chains v0.3: surface unlocked follow-up quests on the board offering once prerequisites are met.
   const followups = computeUnlockedFollowupQuests(char as any);
-  const followupsToSurface = selectFollowupsForBoard({ townId, tier, epoch }, quests, followups, char as any);
+  const followupsToSurface = selectFollowupsForBoard({ townId, tier, epoch }, quests, followups, char as any, recentFollowupParents);
   for (const q of followupsToSurface) {
     if (!quests.some((x) => x.id === q.id)) quests.push(q);
+  }
+
+
+  // v0.18: remember which follow-up parent chains we just surfaced (NEW only),
+  // so the next refresh can spread "NEW follow-ups" across different parents over time.
+  try {
+    const st = ensureQuestState(char as any);
+    const parentsByFollowup = computeUnlockedFollowupParents(char as any);
+    const parentIds: string[] = [];
+
+    for (const q of followupsToSurface) {
+      if (!q?.id) continue;
+      // Only rotate NEW follow-ups (unaccepted).
+      if (st[q.id]) continue;
+
+      const parents = parentsByFollowup.get(q.id) ?? [];
+      if (!parents.length) continue;
+
+      const parent = pickDeterministicParent({ townId, tier, epoch }, q.id, parents);
+      if (!parent) continue;
+
+      if (!parentIds.includes(parent)) parentIds.push(parent);
+      if (parentIds.length >= 6) break;
+    }
+
+    recordQuestBoardFollowupParents(char as any, followupRotationKey, epoch, parentIds);
+  } catch {
+    // Non-fatal: parent rotation memory should never break the board.
   }
 
   // Persist rotation memory for the next board view. This is intentionally cheap and bounded.
@@ -894,7 +982,8 @@ function selectFollowupsForBoard(
   key: BoardKey,
   offering: QuestDefinition[],
   unlocked: QuestDefinition[],
-  char: CharacterState
+  char: CharacterState,
+  recentFollowupParents: string[]
 ): QuestDefinition[] {
   if (!unlocked.length) return [];
 
@@ -918,6 +1007,9 @@ function selectFollowupsForBoard(
   // Tier 1: 3, Tier 2: 4, Tier 3+: 4 (small but discoverable).
   const capNew = Math.max(1, 2 + Math.min(2, Math.floor(key.tier || 1)));
 
+  const recentParentsSet = new Set((recentFollowupParents ?? []).map((x) => String(x ?? "")).filter(Boolean));
+
+
   // Deterministic selection that spreads NEW follow-ups across different parent chains first.
   // If a follow-up has multiple parents, we assign it to the earliest (deterministic) parent bucket.
   const buckets = new Map<string, QuestDefinition[]>();
@@ -937,6 +1029,10 @@ function selectFollowupsForBoard(
 
   const parentKeys = [...buckets.keys()];
   parentKeys.sort((a, b) => {
+    const ra = recentParentsSet.has(a) ? 1 : 0;
+    const rb = recentParentsSet.has(b) ? 1 : 0;
+    if (ra !== rb) return ra - rb;
+
     const ka = followupSortKey(key, a);
     const kb = followupSortKey(key, b);
     if (ka !== kb) return ka - kb;

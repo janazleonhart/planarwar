@@ -397,6 +397,96 @@ greet_quartermaster: {
     reward: { xp: 1 },
   },
 
+
+  // Follow-up parent rotation v0.18 contract kit:
+  // three different parents unlock follow-ups. Used to ensure the board deprioritizes
+  // repeating the same parent chain across consecutive refreshes.
+  chain_followup_parent_rot_intro_a: {
+    id: "chain_followup_parent_rot_intro_a",
+    name: "Follow-up Parent Rot Intro A",
+    description: "Parent A for follow-up parent rotation tests.",
+    requiresTurnedIn: ["__contract_only_followup_parent_rotation__"],
+    objectives: [{ kind: "kill", targetProtoId: "training_dummy", required: 1 }],
+    reward: { xp: 1 },
+    unlocks: [
+      "chain_followup_parent_rot_a1",
+      "chain_followup_parent_rot_a2",
+    ],
+  },
+  chain_followup_parent_rot_intro_b: {
+    id: "chain_followup_parent_rot_intro_b",
+    name: "Follow-up Parent Rot Intro B",
+    description: "Parent B for follow-up parent rotation tests.",
+    requiresTurnedIn: ["__contract_only_followup_parent_rotation__"],
+    objectives: [{ kind: "kill", targetProtoId: "training_dummy", required: 1 }],
+    reward: { xp: 1 },
+    unlocks: [
+      "chain_followup_parent_rot_b1",
+      "chain_followup_parent_rot_b2",
+    ],
+  },
+  chain_followup_parent_rot_intro_c: {
+    id: "chain_followup_parent_rot_intro_c",
+    name: "Follow-up Parent Rot Intro C",
+    description: "Parent C for follow-up parent rotation tests.",
+    requiresTurnedIn: ["__contract_only_followup_parent_rotation__"],
+    objectives: [{ kind: "kill", targetProtoId: "training_dummy", required: 1 }],
+    reward: { xp: 1 },
+    unlocks: [
+      "chain_followup_parent_rot_c1",
+      "chain_followup_parent_rot_c2",
+    ],
+  },
+
+  chain_followup_parent_rot_a1: {
+    id: "chain_followup_parent_rot_a1",
+    name: "Parent Rot A1",
+    description: "Follow-up A1 (parent rotation test).",
+    requiresTurnedIn: ["__contract_only_followup_parent_rotation__", "chain_followup_parent_rot_intro_a"],
+    objectives: [{ kind: "kill", targetProtoId: "training_dummy", required: 1 }],
+    reward: { xp: 1 },
+  },
+  chain_followup_parent_rot_a2: {
+    id: "chain_followup_parent_rot_a2",
+    name: "Parent Rot A2",
+    description: "Follow-up A2 (parent rotation test).",
+    requiresTurnedIn: ["__contract_only_followup_parent_rotation__", "chain_followup_parent_rot_intro_a"],
+    objectives: [{ kind: "kill", targetProtoId: "training_dummy", required: 1 }],
+    reward: { xp: 1 },
+  },
+  chain_followup_parent_rot_b1: {
+    id: "chain_followup_parent_rot_b1",
+    name: "Parent Rot B1",
+    description: "Follow-up B1 (parent rotation test).",
+    requiresTurnedIn: ["__contract_only_followup_parent_rotation__", "chain_followup_parent_rot_intro_b"],
+    objectives: [{ kind: "kill", targetProtoId: "training_dummy", required: 1 }],
+    reward: { xp: 1 },
+  },
+  chain_followup_parent_rot_b2: {
+    id: "chain_followup_parent_rot_b2",
+    name: "Parent Rot B2",
+    description: "Follow-up B2 (parent rotation test).",
+    requiresTurnedIn: ["__contract_only_followup_parent_rotation__", "chain_followup_parent_rot_intro_b"],
+    objectives: [{ kind: "kill", targetProtoId: "training_dummy", required: 1 }],
+    reward: { xp: 1 },
+  },
+  chain_followup_parent_rot_c1: {
+    id: "chain_followup_parent_rot_c1",
+    name: "Parent Rot C1",
+    description: "Follow-up C1 (parent rotation test).",
+    requiresTurnedIn: ["__contract_only_followup_parent_rotation__", "chain_followup_parent_rot_intro_c"],
+    objectives: [{ kind: "kill", targetProtoId: "training_dummy", required: 1 }],
+    reward: { xp: 1 },
+  },
+  chain_followup_parent_rot_c2: {
+    id: "chain_followup_parent_rot_c2",
+    name: "Parent Rot C2",
+    description: "Follow-up C2 (parent rotation test).",
+    requiresTurnedIn: ["__contract_only_followup_parent_rotation__", "chain_followup_parent_rot_intro_c"],
+    objectives: [{ kind: "kill", targetProtoId: "training_dummy", required: 1 }],
+    reward: { xp: 1 },
+  },
+
   // Turn-in policy v0.2 example: board-only turn-in bound to a specific town board.
   // Used by movement/walk-to contract tests to ensure town-entry nudges remain meaningful.
   board_turnin_test: {
