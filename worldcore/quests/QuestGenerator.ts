@@ -74,6 +74,8 @@ export function generateTownQuests(opts: TownQuestGeneratorOptions): QuestDefini
         },
       ],
       reward: rewardForObjective(rng, "talk_to", tier, 1, false),
+      // Generator v0.8: starter talk quest unlocks a deterministic follow-up chain.
+      unlocks: [`${prefix}greet_quartermaster_ii`],
     },
   ];
 
@@ -117,6 +119,8 @@ export function generateTownQuests(opts: TownQuestGeneratorOptions): QuestDefini
         },
       ],
       reward: rewardForObjective(rng, "harvest", tier, required, false),
+      // Generator v0.8: deterministic follow-up for this node type.
+      unlocks: [`${prefix}gather_${nodeProtoId}_ii`],
     });
   }
 
@@ -208,6 +212,8 @@ export function generateTownQuests(opts: TownQuestGeneratorOptions): QuestDefini
           },
         ],
         reward: baseReward,
+        // Generator v0.8: crafted quest unlocks a deterministic follow-up.
+        unlocks: [`${prefix}alchemist_aid_ii`],
       };
     });
   }
@@ -331,6 +337,25 @@ export function generateTownQuests(opts: TownQuestGeneratorOptions): QuestDefini
   // unlock resolution can fetch them deterministically.
   // ----------------------------
   if (opts.includeChainCatalog) {
+    // Quartermaster follow-up chain.
+    const greetId = `${prefix}greet_quartermaster`;
+    quests.push({
+      id: `${prefix}greet_quartermaster_ii`,
+      name: "Quartermaster's Orders",
+      description: "Now that you're signed in, complete a small task to prove your reliability.",
+      turninPolicy: "board",
+      turninBoardId: townId,
+      requiresTurnedIn: [greetId],
+      objectives: [
+        {
+          kind: "kill",
+          targetProtoId: "town_rat",
+          required: jitterInt(rng, 2 + tier * 2, 0, 2),
+        },
+      ],
+      reward: rewardForObjective(rng, "kill", tier, 4 + tier * 2, false),
+    });
+
     const ratCullingId = `${prefix}rat_culling`;
     const ratCullingFollowId = `${prefix}rat_culling_ii`;
 
@@ -349,6 +374,47 @@ export function generateTownQuests(opts: TownQuestGeneratorOptions): QuestDefini
         },
       ],
       reward: rewardForObjective(rng, "kill", tier, 8 + tier * 3, false),
+    });
+
+    // Generator v0.8: deterministic gather follow-up chain for tier 2+.
+    // We include a small set of follow-ups across the resource pool so that
+    // any accepted/generated state id can be resolved later.
+    for (const nodeProtoId of RESOURCE_NODE_POOL) {
+      const baseId = `${prefix}gather_${nodeProtoId}`;
+      quests.push({
+        id: `${prefix}gather_${nodeProtoId}_ii`,
+        name: `${resourceGatherQuestName(nodeProtoId)} II`,
+        description: `The quartermaster wants more ${prettyResourceName(nodeProtoId)} samples for a full report.`,
+        turninPolicy: "board",
+        turninBoardId: townId,
+        requiresTurnedIn: [baseId],
+        objectives: [
+          {
+            kind: "harvest",
+            nodeProtoId,
+            required: jitterInt(rng, 6 + tier * 4, 0, 4),
+          },
+        ],
+        reward: rewardForObjective(rng, "harvest", tier, 8 + tier * 4, false),
+      });
+    }
+
+    // Generator v0.8: deterministic craft follow-up chain for tier 3+.
+    quests.push({
+      id: `${prefix}alchemist_aid_ii`,
+      name: "Alchemist's Aid II",
+      description: "Your draught helped. Brew another batch with extra care.",
+      turninPolicy: "board",
+      turninBoardId: townId,
+      requiresTurnedIn: [`${prefix}alchemist_aid`],
+      objectives: [
+        {
+          kind: "craft",
+          actionId: "craft:brew_minor_heal",
+          required: 1,
+        },
+      ],
+      reward: rewardForObjective(rng, "craft", tier, 1, false),
     });
 
 
