@@ -46,64 +46,47 @@ export function countNewUnlockedFollowups(char: CharacterState): number {
 }
 
 
-export function renderTownQuestBoard(
-  ctx: any,
-  char: CharacterState,
+function computeTownQuestBoardOrderedVisibleQuests(
+  offeringQuests: QuestDefinition[],
+  state: Record<string, any>,
+  unlockedFollowups: Set<string>,
   opts?: TownQuestBoardRenderOpts
-): string {
-  const offering = getTownQuestOffering(ctx, char);
-  if (!offering) return "[quest] You are nowhere. (No room/town context found.)";
-
-  const state = ensureQuestState(char);
-  // Quest chains v0.4: mark unlocked follow-ups as NEW on the board so players
-  // notice them immediately.
-  const unlockedFollowups = new Set<string>(computeUnlockedFollowupQuests(char).map((q) => q.id));
+): QuestDefinition[] {
   const onlyNew = !!opts?.onlyNew;
   const onlyActive = !onlyNew && !!opts?.onlyActive;
   const onlyReady = !onlyNew && !onlyActive && !!opts?.onlyReady;
   const onlyTurned = !onlyNew && !onlyActive && !onlyReady && !!opts?.onlyTurned;
   const onlyAvailable =
     !onlyNew && !onlyActive && !onlyReady && !onlyTurned && !!opts?.onlyAvailable;
-  const lines: string[] = [];
-
-  lines.push(
-    `Quest Board: town=${offering.townId} tier=${offering.tier} epoch=${offering.epoch}`
-  );
-
-  const newCountAll = offering.quests.reduce((acc, q) => {
-    const entry = state[q.id];
-    return !entry && unlockedFollowups.has(q.id) ? acc + 1 : acc;
-  }, 0);
-
 
   const visibleQuests = onlyNew
-    ? offering.quests.filter((q) => {
+    ? offeringQuests.filter((q) => {
         const entry = state[q.id];
         return !entry && unlockedFollowups.has(q.id);
       })
     : onlyAvailable
-      ? offering.quests.filter((q) => {
+      ? offeringQuests.filter((q) => {
           const entry = state[q.id];
           // Available == unaccepted AND not a newly-unlocked follow-up.
           // (Option A: keep NEW as its own view so 'available' stays clean.)
           return !entry && !unlockedFollowups.has(q.id);
         })
     : onlyActive
-      ? offering.quests.filter((q) => {
+      ? offeringQuests.filter((q) => {
           const entry = state[q.id];
           return !!entry && entry.state === "active";
         })
       : onlyReady
-        ? offering.quests.filter((q) => {
+        ? offeringQuests.filter((q) => {
             const entry = state[q.id];
             return !!entry && entry.state === "completed";
           })
         : onlyTurned
-          ? offering.quests.filter((q) => {
+          ? offeringQuests.filter((q) => {
               const entry = state[q.id];
               return !!entry && entry.state === "turned_in";
             })
-      : offering.quests;
+      : offeringQuests;
 
   // Quest chains v0.5: bubble NEW unlocked follow-ups to the top of the board
   // and then group the remaining quests by status (A/C/T/available).
@@ -114,36 +97,120 @@ export function renderTownQuestBoard(
   //   3) Completed/Ready [C]
   //   4) Turned in [T]
   //   5) Available [ ]
-  const orderedVisibleQuests = (() => {
-    if (onlyNew || onlyAvailable || onlyActive || onlyReady) return visibleQuests;
+  if (onlyNew || onlyAvailable || onlyActive || onlyReady) return visibleQuests;
 
-    const newlyUnlocked: QuestDefinition[] = [];
-    const active: QuestDefinition[] = [];
-    const completed: QuestDefinition[] = [];
-    const turnedIn: QuestDefinition[] = [];
-    const available: QuestDefinition[] = [];
+  const newlyUnlocked: QuestDefinition[] = [];
+  const active: QuestDefinition[] = [];
+  const completed: QuestDefinition[] = [];
+  const turnedIn: QuestDefinition[] = [];
+  const available: QuestDefinition[] = [];
 
-    for (const q of visibleQuests) {
-      const entry = state[q.id];
-      const isNewUnlocked = !entry && unlockedFollowups.has(q.id);
+  for (const q of visibleQuests) {
+    const entry = state[q.id];
+    const isNewUnlocked = !entry && unlockedFollowups.has(q.id);
 
-      if (isNewUnlocked) {
-        newlyUnlocked.push(q);
-        continue;
-      }
-
-      if (!entry) {
-        available.push(q);
-        continue;
-      }
-
-      if (entry.state === "active") active.push(q);
-      else if (entry.state === "completed") completed.push(q);
-      else turnedIn.push(q);
+    if (isNewUnlocked) {
+      newlyUnlocked.push(q);
+      continue;
     }
 
-    return newlyUnlocked.concat(active, completed, turnedIn, available);
-  })();
+    if (!entry) {
+      available.push(q);
+      continue;
+    }
+
+    if (entry.state === "active") active.push(q);
+    else if (entry.state === "completed") completed.push(q);
+    else turnedIn.push(q);
+  }
+
+  return newlyUnlocked.concat(active, completed, turnedIn, available);
+}
+
+export function listTownQuestBoardQuests(
+  ctx: any,
+  char: CharacterState,
+  opts?: TownQuestBoardRenderOpts
+): QuestDefinition[] | null {
+  const offering = getTownQuestOffering(ctx, char);
+  if (!offering) return null;
+
+  const state = ensureQuestState(char);
+  const unlockedFollowups = new Set<string>(computeUnlockedFollowupQuests(char).map((q) => q.id));
+
+  return computeTownQuestBoardOrderedVisibleQuests(offering.quests, state, unlockedFollowups, opts);
+}
+
+export function resolveTownQuestFromBoardView(
+  ctx: any,
+  char: CharacterState,
+  idOrIndexOrNameRaw: string,
+  opts?: TownQuestBoardRenderOpts
+): QuestDefinition | null {
+  const offering = getTownQuestOffering(ctx, char);
+  if (!offering) return null;
+
+  const q = String(idOrIndexOrNameRaw ?? "").trim();
+  if (!q) return null;
+
+  // Index (1-based) uses the same ordering as the rendered board view.
+  if (/^\d+$/.test(q)) {
+    const list = listTownQuestBoardQuests(ctx, char, opts);
+    if (!list) return null;
+
+    const idx = Number(q);
+    if (Number.isFinite(idx) && idx >= 1 && idx <= list.length) {
+      return list[idx - 1];
+    }
+    return null;
+  }
+
+  // Exact id/name in the underlying offering.
+  const exact = resolveFromOffering(offering.quests, q);
+  if (exact) return exact;
+
+  const fuzzy = resolveFromOfferingFuzzy(offering.quests, q);
+  return fuzzy.length === 1 ? fuzzy[0] : null;
+}
+
+
+export function renderTownQuestBoard(
+  ctx: any,
+  char: CharacterState,
+  opts?: TownQuestBoardRenderOpts
+): string {
+  const offering = getTownQuestOffering(ctx, char);
+  if (!offering) return "[quest] You are nowhere. (No room/town context found.)";
+
+
+const state = ensureQuestState(char);
+// Quest chains v0.4: mark unlocked follow-ups as NEW on the board so players
+// notice them immediately.
+const unlockedFollowups = new Set<string>(computeUnlockedFollowupQuests(char).map((q) => q.id));
+const onlyNew = !!opts?.onlyNew;
+const onlyActive = !onlyNew && !!opts?.onlyActive;
+const onlyReady = !onlyNew && !onlyActive && !!opts?.onlyReady;
+const onlyTurned = !onlyNew && !onlyActive && !onlyReady && !!opts?.onlyTurned;
+const onlyAvailable =
+  !onlyNew && !onlyActive && !onlyReady && !onlyTurned && !!opts?.onlyAvailable;
+const lines: string[] = [];
+
+lines.push(
+  `Quest Board: town=${offering.townId} tier=${offering.tier} epoch=${offering.epoch}`
+);
+
+const newCountAll = offering.quests.reduce((acc, q) => {
+  const entry = state[q.id];
+  return !entry && unlockedFollowups.has(q.id) ? acc + 1 : acc;
+}, 0);
+
+const orderedVisibleQuests = computeTownQuestBoardOrderedVisibleQuests(
+  offering.quests,
+  state,
+  unlockedFollowups,
+  opts
+);
+
 
   if (onlyNew) lines.push(`NEW quests available: ${orderedVisibleQuests.length}`);
   else if (onlyAvailable) lines.push(`Available quests: ${orderedVisibleQuests.length}`);
@@ -254,28 +321,24 @@ export function getTownContextForTurnin(
  * Used by talk-driven UX (ex: `talk <npc> show 1`) so that numeric indices can
  * refer to the town board list even before the quest is accepted.
  */
+
 export function resolveTownQuestFromContext(
   ctx: any,
   char: CharacterState,
   idOrIndexOrNameRaw: string
 ): QuestDefinition | null {
-  const offering = getTownQuestOffering(ctx, char);
-  if (!offering) return null;
-
-  const q = String(idOrIndexOrNameRaw ?? "").trim();
-  if (!q) return null;
-
-  const exact = resolveFromOffering(offering.quests, q);
-  if (exact) return exact;
-
-  const fuzzy = resolveFromOfferingFuzzy(offering.quests, q);
-  return fuzzy.length === 1 ? fuzzy[0] : null;
+  // Maintain backward-compat behavior: numeric indices refer to the current board
+  // ordering (NEW-first + status-grouped), not raw offering order.
+  return resolveTownQuestFromBoardView(ctx, char, idOrIndexOrNameRaw);
 }
+
+
 
 export async function acceptTownQuest(
   ctx: any,
   char: CharacterState,
-  idOrIndexRaw: string
+  idOrIndexRaw: string,
+  opts?: TownQuestBoardRenderOpts
 ): Promise<string> {
   const offering = getTownQuestOffering(ctx, char);
   if (!offering) return "[quest] Cannot accept: no town context.";
@@ -283,19 +346,34 @@ export async function acceptTownQuest(
   const query = String(idOrIndexRaw ?? "").trim();
   if (!query) return "Usage: quest accept <#|id|name>";
 
+  // IMPORTANT: numeric indices must match the rendered quest board ordering,
+  // not the raw offering array order (which differs once NEW-first sorting exists).
+  if (/^\d+$/.test(query)) {
+    const fromBoard = resolveTownQuestFromBoardView(ctx, char, query, opts);
+    if (fromBoard) {
+      return await acceptResolvedQuest(ctx, char, fromBoard, {
+        kind: "generated_town",
+        townId: offering.townId,
+        tier: offering.tier,
+        epoch: offering.epoch,
+      });
+    }
+  }
+
   // Resolution order:
   // 1) Current town offering
   // 2) Static QuestRegistry
   // 3) Backing QuestService (ex: PostgresQuestService) via ctx.quests
 
-  // 1) Offering exact (index/id/name)
-  const fromOfferingExact = resolveFromOffering(offering.quests, query);
-  if (fromOfferingExact) return await acceptResolvedQuest(ctx, char, fromOfferingExact, {
-    kind: "generated_town",
-    townId: offering.townId,
-    tier: offering.tier,
-    epoch: offering.epoch,
-  });
+  // 1) Offering exact (id/name)
+  const fromOfferingExact = /^\d+$/.test(query) ? null : resolveFromOffering(offering.quests, query);
+  if (fromOfferingExact)
+    return await acceptResolvedQuest(ctx, char, fromOfferingExact, {
+      kind: "generated_town",
+      townId: offering.townId,
+      tier: offering.tier,
+      epoch: offering.epoch,
+    });
 
   // 1b) Offering fuzzy (partial id/name)
   const offeringFuzzy = resolveFromOfferingFuzzy(offering.quests, query);
@@ -313,7 +391,8 @@ export async function acceptTownQuest(
 
   // 2) Registry exact
   const fromRegistryExact = resolveRegistryQuest(query);
-  if (fromRegistryExact) return await acceptResolvedQuest(ctx, char, fromRegistryExact, { kind: "registry" });
+  if (fromRegistryExact)
+    return await acceptResolvedQuest(ctx, char, fromRegistryExact, { kind: "registry" });
 
   // 2b) Registry fuzzy
   const registryFuzzy = resolveRegistryQuestFuzzy(query);
@@ -351,7 +430,10 @@ export async function acceptTownQuest(
   }
 
   // Unknown: show suggestions from offering+registry (cheap, deterministic)
-  const suggestions = [...resolveFromOfferingFuzzy(offering.quests, query), ...resolveRegistryQuestFuzzy(query)].slice(0, 8);
+  const suggestions = [...resolveFromOfferingFuzzy(offering.quests, query), ...resolveRegistryQuestFuzzy(query)].slice(
+    0,
+    8
+  );
   if (suggestions.length > 0) {
     return [
       `[quest] Unknown quest '${query}'.`,
@@ -472,7 +554,7 @@ export async function abandonQuest(
   // If they gave a number, interpret it against the current board.
   const offering = getTownQuestOffering(ctx, char);
   if (offering) {
-    const q = resolveFromOffering(offering.quests, idOrIndex);
+    const q = resolveTownQuestFromBoardView(ctx, char, idOrIndex);
     if (q && state[q.id]) {
       delete state[q.id];
       await persistQuestState(ctx, char);

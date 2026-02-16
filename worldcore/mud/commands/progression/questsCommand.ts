@@ -4,6 +4,7 @@ import { renderQuestLog, renderQuestDetails } from "../../../quests/QuestText";
 import { turnInQuest } from "../../../quests/turnInQuest";
 import {
   renderTownQuestBoard,
+  resolveTownQuestFromBoardView,
   acceptTownQuest,
   abandonQuest,
 } from "../../../quests/TownQuestBoard";
@@ -47,23 +48,49 @@ export async function handleQuestCommand(
     return renderQuestDetails(char, target, { ctx });
   }
 
+
   if (sub === "board" || sub === "questboard") {
-    const mode = String(input.parts[2] ?? "").toLowerCase().trim();
-    if (mode === "new") {
-      return renderTownQuestBoard(ctx, char, { onlyNew: true });
+    const a2 = String(input.parts[2] ?? "").toLowerCase().trim();
+
+    const parseBoardMode = (s: string): any => {
+      if (s === "new") return { onlyNew: true };
+      if (s === "available" || s === "avail") return { onlyAvailable: true };
+      if (s === "active") return { onlyActive: true };
+      if (s === "ready") return { onlyReady: true };
+      if (s === "turned" || s === "turnedin" || s === "turned_in" || s === "done") return { onlyTurned: true };
+      return null;
+    };
+
+    const modeOpts = parseBoardMode(a2);
+    const verb = String(input.parts[modeOpts ? 3 : 2] ?? "").toLowerCase().trim();
+    const selector = input.parts.slice(modeOpts ? 4 : 3).join(" ").trim();
+
+    // Action forms (keep these inside `quest board` so indices match the current view):
+    //  - quest board accept <#|id|name>
+    //  - quest board show <#|id|name>
+    //  - quest board <mode> accept <#|id|name>
+    //  - quest board <mode> show <#|id|name>
+    if (verb === "accept") {
+      if (!selector) {
+        return [
+          "Usage: quest board" + (modeOpts ? " " + a2 : "") + " accept <#|id|name>",
+          "Tip: numeric indices here match the current board view.",
+        ].join("\n");
+      }
+      return acceptTownQuest(ctx, char, selector, modeOpts ?? undefined);
     }
-    if (mode === "available" || mode === "avail") {
-      return renderTownQuestBoard(ctx, char, { onlyAvailable: true });
+
+    if (verb === "show" || verb === "info" || verb === "details") {
+      if (!selector) {
+        return "Usage: quest board" + (modeOpts ? " " + a2 : "") + " show <#|id|name>";
+      }
+      // Resolve indices against the current board view before handing off to QuestText.
+      const resolved = resolveTownQuestFromBoardView(ctx, char, selector, modeOpts ?? undefined);
+      return resolved ? renderQuestDetails(char, resolved.id, { ctx }) : `[quest] Unknown quest '${selector}'.`;
     }
-    if (mode === "active") {
-      return renderTownQuestBoard(ctx, char, { onlyActive: true });
-    }
-    if (mode === "ready") {
-      return renderTownQuestBoard(ctx, char, { onlyReady: true });
-    }
-    if (mode === "turned" || mode === "turnedin" || mode === "turned_in" || mode === "done") {
-      return renderTownQuestBoard(ctx, char, { onlyTurned: true });
-    }
+
+    // View form
+    if (modeOpts) return renderTownQuestBoard(ctx, char, modeOpts);
     return renderTownQuestBoard(ctx, char);
   }
 

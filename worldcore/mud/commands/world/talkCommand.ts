@@ -8,7 +8,7 @@ import { applyProgressionEvent } from "../../../progression/ProgressionCore";
 import { applyProgressionForEvent } from "../../MudProgressionHooks";
 import { ensureQuestState } from "../../../quests/QuestState";
 import { resolveQuestDefinitionFromStateId } from "../../../quests/TownQuestBoard";
-import { acceptTownQuest, abandonQuest, renderTownQuestBoard } from "../../../quests/TownQuestBoard";
+import { acceptTownQuest, abandonQuest, renderTownQuestBoard, resolveTownQuestFromBoardView } from "../../../quests/TownQuestBoard";
 import { turnInQuest } from "../../../quests/turnInQuest";
 import { renderQuestDetails, renderQuestLog } from "../../../quests/QuestText";
 import {
@@ -408,21 +408,52 @@ export async function handleTalkCommand(
   // existing `quest board/accept/abandon` commands to keep behavior consistent.
   // ---------------------------------------------------------------------------
 
+
   if (canonicalAction === "quests" || canonicalAction === "quest" || canonicalAction === "board") {
     const mode = String(actionArgs[0] ?? "").toLowerCase().trim();
-    if (mode === "new") {
-      lines.push(renderTownQuestBoard(ctx as any, char as any, { onlyNew: true }));
-    } else if (mode === "available" || mode === "avail") {
-      lines.push(renderTownQuestBoard(ctx as any, char as any, { onlyAvailable: true }));
-    } else if (mode === "active") {
-      lines.push(renderTownQuestBoard(ctx as any, char as any, { onlyActive: true }));
-    } else if (mode === "ready") {
-      lines.push(renderTownQuestBoard(ctx as any, char as any, { onlyReady: true }));
-    } else if (mode === "turned" || mode === "turnedin" || mode === "turned_in" || mode === "done") {
-      lines.push(renderTownQuestBoard(ctx as any, char as any, { onlyTurned: true }));
-    } else {
-      lines.push(renderTownQuestBoard(ctx as any, char as any));
+
+    const parseBoardMode = (s: string): any => {
+      if (s === "new") return { onlyNew: true };
+      if (s === "available" || s === "avail") return { onlyAvailable: true };
+      if (s === "active") return { onlyActive: true };
+      if (s === "ready") return { onlyReady: true };
+      if (s === "turned" || s === "turnedin" || s === "turned_in" || s === "done") return { onlyTurned: true };
+      return null;
+    };
+
+    const modeOpts = parseBoardMode(mode);
+    const verb = String(actionArgs[modeOpts ? 1 : 0] ?? "").toLowerCase().trim();
+    const selector = actionArgs.slice(modeOpts ? 2 : 1).join(" ").trim();
+
+    // Action forms (so indices match the current rendered view):
+    //  - talk <npc> quests show <#|id|name>
+    //  - talk <npc> quests accept <#|id|name>
+    //  - talk <npc> quests <mode> show <#|id|name>
+    //  - talk <npc> quests <mode> accept <#|id|name>
+    if (verb === "accept") {
+      if (!selector) {
+        lines.push(renderTownQuestBoard(ctx as any, char as any, modeOpts ?? undefined));
+        lines.push("");
+        lines.push(`Usage: talk ${npcToken} quests${modeOpts ? " " + mode : ""} accept <#|id|name>`);
+        return lines.join("\n").trimEnd();
+      }
+      const msg = await acceptTownQuest(ctx as any, char as any, selector, modeOpts ?? undefined);
+      lines.push(msg);
+      return lines.join("\n").trimEnd();
     }
+
+    if (verb === "show" || verb === "info" || verb === "details") {
+      if (!selector) {
+        lines.push(`Usage: talk ${npcToken} quests${modeOpts ? " " + mode : ""} show <#|id|name>`);
+        return lines.join("\n").trimEnd();
+      }
+      const q = resolveTownQuestFromBoardView(ctx as any, char as any, selector, modeOpts ?? undefined);
+      lines.push(q ? renderQuestDetails(char as any, q.id, { ctx }) : `[quest] Unknown quest '${selector}'.`);
+      return lines.join("\n").trimEnd();
+    }
+
+    // View form
+    lines.push(renderTownQuestBoard(ctx as any, char as any, modeOpts ?? undefined));
     lines.push("");
     lines.push(`Tip: show details via 'talk ${npcToken} show <#|id|name>' (or: 'quest show <#|id|name>').`);
     lines.push(`Tip: accept via 'talk ${npcToken} accept <#|id|name>' (or: 'quest accept <#|id|name>').`);
@@ -431,7 +462,9 @@ export async function handleTalkCommand(
   }
 
   // ---------------------------------------------------------------------------
-  // Quest log shortcuts, routed through the same QuestText renderer as `quest`.
+  // Quest log shortcuts
+  // ---------------------------------------------------------------------------
+
   // ---------------------------------------------------------------------------
 
   if (canonicalAction === "questlog" || canonicalAction === "log") {
