@@ -1057,47 +1057,73 @@ function selectFollowupsForBoard(
     return a.id.localeCompare(b.id);
   });
 
-  // Round-robin pick one from each parent bucket first, then continue deterministically.
+  // Quest chains v0.19: anti "repeat parent spam" within a single refresh.
+  //
+  // Selection policy for NEW follow-ups:
+  // 1) First pass: pick at most ONE quest from each parent bucket (in parent order).
+  // 2) Then fill remaining slots deterministically, but prefer:
+  //    - orphan follow-ups (no known parent) first
+  //    - then additional quests from parent buckets
+  //    and avoid taking more than 2 from the same parent unless we must (scarcity).
   const picked: QuestDefinition[] = [];
-  let safety = 0;
-  while (picked.length < capNew) {
-    let progressed = false;
+  const pickedByParent = new Map<string, number>();
 
-    for (const p of parentKeys) {
-      if (picked.length >= capNew) break;
-      const arr = buckets.get(p);
-      if (!arr || arr.length === 0) continue;
-      picked.push(arr.shift()!);
-      progressed = true;
-    }
-
+  // First pass: one per parent.
+  for (const p of parentKeys) {
     if (picked.length >= capNew) break;
-
-    if (!progressed) break;
-
-    // Safety: prevent theoretical infinite loops if something mutates unexpectedly.
-    safety++;
-    if (safety > 64) break;
+    const arr = buckets.get(p);
+    if (!arr || arr.length === 0) continue;
+    picked.push(arr.shift()!);
+    pickedByParent.set(p, 1);
   }
 
-  // If we still have slack, fill from remaining bucket contents, then orphans.
+  // Second pass: fill slack.
   if (picked.length < capNew) {
-    const rest: QuestDefinition[] = [];
+    // Flatten remaining bucket items with parent tagging.
+    type Tagged = { parent: string | null; q: QuestDefinition };
+    const tagged: Tagged[] = [];
+
+    // Orphans first (they increase variety and avoid parent spam).
+    for (const q of orphan) tagged.push({ parent: null, q });
+
     for (const p of parentKeys) {
       const arr = buckets.get(p);
-      if (arr && arr.length) rest.push(...arr);
+      if (!arr || arr.length === 0) continue;
+      for (const q of arr) tagged.push({ parent: p, q });
     }
-    rest.sort((a, b) => {
-      const ka = followupSortKey(key, a.id);
-      const kb = followupSortKey(key, b.id);
+
+    // Deterministic ordering for the fill pool.
+    tagged.sort((a, b) => {
+      const ka = followupSortKey(key, a.q.id);
+      const kb = followupSortKey(key, b.q.id);
       if (ka !== kb) return ka - kb;
-      return a.id.localeCompare(b.id);
+      return a.q.id.localeCompare(b.q.id);
     });
 
-    const fill = rest.concat(orphan);
-    for (const q of fill) {
+    // Prefer not to exceed 2 per parent, but relax if scarcity would underfill.
+    const MAX_PER_PARENT_SOFT = 2;
+
+    // First fill pass respecting soft max.
+    for (const t of tagged) {
       if (picked.length >= capNew) break;
-      picked.push(q);
+      if (!t.parent) {
+        picked.push(t.q);
+        continue;
+      }
+      const cur = pickedByParent.get(t.parent) ?? 0;
+      if (cur >= MAX_PER_PARENT_SOFT) continue;
+      picked.push(t.q);
+      pickedByParent.set(t.parent, cur + 1);
+    }
+
+    // Relaxation pass: if still under cap, take whatever remains deterministically.
+    if (picked.length < capNew) {
+      for (const t of tagged) {
+        if (picked.length >= capNew) break;
+        // Skip already picked quest ids
+        if (picked.some((x) => x.id === t.q.id)) continue;
+        picked.push(t.q);
+      }
     }
   }
 

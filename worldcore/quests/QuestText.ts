@@ -294,6 +294,22 @@ export function renderQuestDetails(
     lines.push(quest.description);
   }
 
+  // Option B (Quest Board UX): if this quest is a follow-up unlocked by a turned-in parent,
+  // surface a small hint so players can see *why* the quest exists.
+  try {
+    const parents = findUnlockingParentsForQuest(char, quest.id);
+    if (parents.length > 0) {
+      lines.push("");
+      lines.push("Unlocked by:");
+      for (const pid of parents) {
+        const name = getQuestById(pid)?.name ?? pid;
+        lines.push(` - ${name} (${pid})`);
+      }
+    }
+  } catch {
+    // Non-fatal: hints should never break quest rendering.
+  }
+
   const prereqIds = Array.isArray((quest as any).requiresTurnedIn) ? (quest as any).requiresTurnedIn as string[] : [];
   if (prereqIds.length > 0) {
     lines.push("");
@@ -381,6 +397,42 @@ function hasTurnedInQuestLocal(char: CharacterState, questId: string): boolean {
   const completions = Number((e as any).completions ?? 0);
   return completions > 0;
 }
+
+
+function findUnlockingParentsForQuest(char: CharacterState, questId: string): string[] {
+  if (!questId) return [];
+  const state = ensureQuestState(char);
+
+  const out: string[] = [];
+  const seen = new Set<string>();
+
+  for (const [parentId, entry] of Object.entries(state)) {
+    if (!entry) continue;
+    if (!hasTurnedInQuestLocal(char, parentId)) continue;
+
+    const def =
+      getQuestById(parentId) ??
+      resolveQuestDefinitionFromStateId(parentId, entry as any) ??
+      ((entry as any).source?.kind === "service" ? (entry as any).source?.def : null);
+
+    const unlocks = Array.isArray((def as any)?.unlocks) ? ((def as any).unlocks as string[]) : [];
+    if (!unlocks.length) continue;
+
+    for (const u of unlocks) {
+      const id = String(u ?? "").trim();
+      if (!id) continue;
+      if (id !== questId) continue;
+      if (seen.has(parentId)) continue;
+      seen.add(parentId);
+      out.push(parentId);
+    }
+  }
+
+  // Deterministic ordering: by quest id.
+  out.sort((a, b) => a.localeCompare(b));
+  return out;
+}
+
 
 function findQuestIndexOnCurrentBoard(ctx: any, char: CharacterState, questId: string): number | null {
   try {
