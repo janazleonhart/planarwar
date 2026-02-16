@@ -1,5 +1,3 @@
-//mother-brain/index.ts
-
 import dotenv from "dotenv";
 import fs from "node:fs";
 import path from "node:path";
@@ -10,6 +8,17 @@ import { z } from "zod";
 
 type LogLevel = "debug" | "info" | "warn" | "error";
 type MotherBrainMode = "observe" | "apply";
+
+type BrainSpawnSummaryRow = {
+  shardId: string | null;
+  type: string;
+  count: number;
+};
+
+type BrainSpawnSummary = {
+  total: number;
+  topByShardType: BrainSpawnSummaryRow[];
+};
 
 function nowIso(): string {
   return new Date().toISOString();
@@ -31,8 +40,7 @@ function log(level: LogLevel, msg: string, extra?: Record<string, unknown>): voi
 }
 
 function loadDotEnv(): void {
-  // When running via npm workspace, cwd is usually mother-brain/.
-  // Prefer a repo-root .env (../.env), but allow a local override (./.env).
+  // Prefer a local override, then repo-root .env.
   const candidates = [path.resolve(process.cwd(), ".env"), path.resolve(process.cwd(), "..", ".env")];
 
   for (const p of candidates) {
@@ -43,40 +51,22 @@ function loadDotEnv(): void {
     }
   }
 
-  // No .env found is allowed; env may be injected by systemd/docker/etc.
+  // No .env is allowed; env may be injected by systemd/docker/etc.
   log("debug", "No .env file found (continuing with process.env)");
 }
 
 /**
  * Planar War convention: most services use PW_DB_* vars (host/port/user/pass/name).
- * Some places prefer PW_DATABASE_URL / DATABASE_URL.
- *
- * Mother Brain supports BOTH:
- * - Prefer explicit MOTHER_BRAIN_DB_URL if provided.
- * - Else, if PW_DATABASE_URL (or DATABASE_URL) exists, use it.
- * - Else, if PW_DB_* exists, bridge into PW_DATABASE_URL + DATABASE_URL and PG* vars.
+ * Mother Brain supports either:
+ * - MOTHER_BRAIN_DB_URL (direct)
+ * - OR PW_DB_* (bridged into PW_DATABASE_URL/DATABASE_URL + PG* vars)
  */
-function bridgePlanarWarDbEnv(): void {
-  // If user provided a direct URL for mother-brain, do nothing.
+function bridgePwDbEnv(): void {
+  // Respect an explicit Mother Brain DB URL.
   if (process.env.MOTHER_BRAIN_DB_URL) return;
 
-  // If already configured, keep it.
-  const hasUrl =
-    !!process.env.PW_DATABASE_URL ||
-    !!process.env.DATABASE_URL ||
-    !!process.env.POSTGRES_URL ||
-    !!process.env.PG_URL;
-
-  if (hasUrl) {
-    const url =
-      process.env.PW_DATABASE_URL ||
-      process.env.DATABASE_URL ||
-      process.env.POSTGRES_URL ||
-      process.env.PG_URL;
-
-    if (url && !process.env.MOTHER_BRAIN_DB_URL) process.env.MOTHER_BRAIN_DB_URL = url;
-    return;
-  }
+  // If DATABASE_URL is already set, do nothing.
+  if (process.env.DATABASE_URL || process.env.PW_DATABASE_URL) return;
 
   const host = process.env.PW_DB_HOST;
   const port = process.env.PW_DB_PORT;
@@ -84,29 +74,19 @@ function bridgePlanarWarDbEnv(): void {
   const pass = process.env.PW_DB_PASS;
   const name = process.env.PW_DB_NAME;
 
-  // If the Planar War vars aren't set, nothing to bridge.
-  if (!host || !user || !name) return;
+  if (!host || !port || !user || !name) return;
 
-  // Also set PG* vars so any "new Pool()" can use env automatically.
-  if (!process.env.PGHOST) process.env.PGHOST = host;
-  if (!process.env.PGPORT && port) process.env.PGPORT = port;
-  if (!process.env.PGUSER) process.env.PGUSER = user;
-  if (!process.env.PGDATABASE) process.env.PGDATABASE = name;
-  // Ensure password is always a string.
-  if (!process.env.PGPASSWORD) process.env.PGPASSWORD = pass || "";
+  const auth = pass && pass.length > 0 ? `${encodeURIComponent(user)}:${encodeURIComponent(pass)}` : encodeURIComponent(user);
+  const url = `postgresql://${auth}@${host}:${port}/${name}`;
 
-  // Build a connection string for code paths that prefer a URL.
-  // NOTE: omit password segment if blank.
-  const encUser = encodeURIComponent(user);
-  const encPass = pass ? encodeURIComponent(pass) : "";
-  const safePort = port ? String(port) : "5432";
-
-  const auth = encPass ? `${encUser}:${encPass}` : encUser;
-  const url = `postgresql://${auth}@${host}:${safePort}/${name}`;
-
-  if (!process.env.PW_DATABASE_URL) process.env.PW_DATABASE_URL = url;
-  if (!process.env.DATABASE_URL) process.env.DATABASE_URL = url;
-  if (!process.env.MOTHER_BRAIN_DB_URL) process.env.MOTHER_BRAIN_DB_URL = url;
+  // Set a common set of env vars used across Node Postgres tooling.
+  process.env.PW_DATABASE_URL = url;
+  process.env.DATABASE_URL = url;
+  process.env.PGHOST = host;
+  process.env.PGPORT = port;
+  process.env.PGUSER = user;
+  process.env.PGDATABASE = name;
+  if (pass && pass.length > 0) process.env.PGPASSWORD = pass;
 }
 
 const ConfigSchema = z
@@ -123,13 +103,11 @@ const ConfigSchema = z
 
     MOTHER_BRAIN_LOG_LEVEL: z.enum(["debug", "info", "warn", "error"]).optional().default("info"),
 
-    // Optional connectors (read-only in v0.3):
-    // - Postgres: used for health probe queries (SELECT 1), and future wave planning/status.
-    // - WebSocket: used for shard connectivity / future GoalRunner.
+    // Optional connectors (still read-only in v0.4)
     MOTHER_BRAIN_DB_URL: z.string().optional(),
     MOTHER_BRAIN_WS_URL: z.string().optional(),
 
-    // Optional timeouts (ms)
+    // Optional probe timeouts (ms)
     MOTHER_BRAIN_DB_TIMEOUT_MS: z
       .string()
       .optional()
@@ -145,6 +123,23 @@ const ConfigSchema = z
       .refine((n) => Number.isFinite(n) && n >= 250, {
         message: "MOTHER_BRAIN_WS_TIMEOUT_MS must be a number >= 250",
       }),
+
+    // Optional: brain:* spawn_points summary (read-only)
+    MOTHER_BRAIN_SPAWN_SUMMARY_EVERY_TICKS: z
+      .string()
+      .optional()
+      .transform((v) => (v ? Number(v) : 12))
+      .refine((n) => Number.isFinite(n) && n >= 1, {
+        message: "MOTHER_BRAIN_SPAWN_SUMMARY_EVERY_TICKS must be a number >= 1",
+      }),
+
+    MOTHER_BRAIN_SPAWN_SUMMARY_TOP_N: z
+      .string()
+      .optional()
+      .transform((v) => (v ? Number(v) : 8))
+      .refine((n) => Number.isFinite(n) && n >= 1 && n <= 100, {
+        message: "MOTHER_BRAIN_SPAWN_SUMMARY_TOP_N must be between 1 and 100",
+      }),
   })
   .passthrough();
 
@@ -156,6 +151,8 @@ type MotherBrainConfig = {
   wsUrl?: string;
   dbTimeoutMs: number;
   wsTimeoutMs: number;
+  spawnSummaryEveryTicks: number;
+  spawnSummaryTopN: number;
 };
 
 function parseConfig(): MotherBrainConfig {
@@ -168,25 +165,16 @@ function parseConfig(): MotherBrainConfig {
   }
 
   const env = parsed.data;
-
-  // Bridge Planar War DB env variants into a usable URL (if possible).
-  bridgePlanarWarDbEnv();
-
-  const bridgedDbUrl =
-    process.env.MOTHER_BRAIN_DB_URL ||
-    process.env.PW_DATABASE_URL ||
-    process.env.DATABASE_URL ||
-    process.env.POSTGRES_URL ||
-    process.env.PG_URL;
-
   return {
     mode: env.MOTHER_BRAIN_MODE,
     tickMs: env.MOTHER_BRAIN_TICK_MS,
     logLevel: env.MOTHER_BRAIN_LOG_LEVEL,
-    dbUrl: bridgedDbUrl,
+    dbUrl: env.MOTHER_BRAIN_DB_URL,
     wsUrl: env.MOTHER_BRAIN_WS_URL,
     dbTimeoutMs: env.MOTHER_BRAIN_DB_TIMEOUT_MS,
     wsTimeoutMs: env.MOTHER_BRAIN_WS_TIMEOUT_MS,
+    spawnSummaryEveryTicks: env.MOTHER_BRAIN_SPAWN_SUMMARY_EVERY_TICKS,
+    spawnSummaryTopN: env.MOTHER_BRAIN_SPAWN_SUMMARY_TOP_N,
   };
 }
 
@@ -204,30 +192,12 @@ type ProbeResult = {
 class DbProbe {
   private pool: Pool | null;
   private readonly timeoutMs: number;
-  private meta: { serverVersion?: string; dbName?: string } = {};
 
   public constructor(dbUrl: string | undefined, timeoutMs: number) {
     this.timeoutMs = timeoutMs;
-
-    // If we have a URL, use it.
-    if (dbUrl) {
-      this.pool = new Pool({
-        connectionString: dbUrl,
-        // Keep it conservative — this is just a probe in v0.3.
-        max: 2,
-      });
-      return;
-    }
-
-    // If no URL, but PG* env vars exist, pg can connect via environment.
-    const hasPgEnv =
-      !!process.env.PGHOST ||
-      !!process.env.PGUSER ||
-      !!process.env.PGDATABASE ||
-      !!process.env.PGPORT;
-
-    this.pool = hasPgEnv
+    this.pool = dbUrl
       ? new Pool({
+          connectionString: dbUrl,
           max: 2,
         })
       : null;
@@ -244,23 +214,65 @@ class DbProbe {
     try {
       const res = await this.withTimeout(this.pool.query("SELECT 1 as ok"), this.timeoutMs);
       const latencyMs = Date.now() - start;
-
-      // sanity check result shape (defensive)
       const ok = Boolean(res?.rows?.[0]?.ok === 1 || res?.rows?.[0]?.ok === true);
-
-      // Populate lightweight meta once, after first successful query.
-      if (ok && (!this.meta.serverVersion || !this.meta.dbName)) {
-        await this.populateMeta().catch(() => undefined);
-      }
-
       return { ok, latencyMs };
     } catch (err: unknown) {
       return { ok: false, latencyMs: Date.now() - start, error: this.errToString(err) };
     }
   }
 
-  public getMeta(): { serverVersion?: string; dbName?: string } {
-    return { ...this.meta };
+  public async getServerVersion(): Promise<string | null> {
+    if (!this.pool) return null;
+    try {
+      const res = await this.withTimeout(this.pool.query("SHOW server_version"), this.timeoutMs);
+      const v = res?.rows?.[0]?.server_version;
+      return typeof v === "string" ? v : null;
+    } catch {
+      return null;
+    }
+  }
+
+  public async getCurrentDatabase(): Promise<string | null> {
+    if (!this.pool) return null;
+    try {
+      const res = await this.withTimeout(this.pool.query("SELECT current_database() as db"), this.timeoutMs);
+      const v = res?.rows?.[0]?.db;
+      return typeof v === "string" ? v : null;
+    } catch {
+      return null;
+    }
+  }
+
+  public async getBrainSpawnSummary(topN: number): Promise<BrainSpawnSummary | null> {
+    if (!this.pool) return null;
+
+    // NOTE: spawn_points has no timestamps; this is a lightweight visibility query.
+    // Schema: worldcore/infra/schema/004_spawn_points.sql
+    try {
+      const totalRes = await this.withTimeout(
+        this.pool.query("SELECT COUNT(*)::int as c FROM spawn_points WHERE spawn_id LIKE 'brain:%'"),
+        this.timeoutMs
+      );
+      const total = Number(totalRes?.rows?.[0]?.c ?? 0);
+
+      const rowsRes = await this.withTimeout(
+        this.pool.query(
+          "SELECT shard_id, type, COUNT(*)::int as c FROM spawn_points WHERE spawn_id LIKE 'brain:%' GROUP BY shard_id, type ORDER BY c DESC LIMIT $1",
+          [topN]
+        ),
+        this.timeoutMs
+      );
+
+      const topByShardType: BrainSpawnSummaryRow[] = (rowsRes?.rows ?? []).map((r: any) => ({
+        shardId: typeof r.shard_id === "string" ? r.shard_id : null,
+        type: String(r.type ?? ""),
+        count: Number(r.c ?? 0),
+      }));
+
+      return { total, topByShardType };
+    } catch {
+      return null;
+    }
   }
 
   public async close(): Promise<void> {
@@ -287,19 +299,6 @@ class DbProbe {
     } finally {
       if (t) clearTimeout(t);
     }
-  }
-
-  private async populateMeta(): Promise<void> {
-    if (!this.pool) return;
-
-    // Keep this *very* light: two tiny queries.
-    const v = await this.withTimeout(this.pool.query("SHOW server_version"), this.timeoutMs);
-    const ver = (v.rows?.[0] as any)?.server_version;
-    if (typeof ver === "string" && ver.length) this.meta.serverVersion = ver;
-
-    const d = await this.withTimeout(this.pool.query("SELECT current_database() AS name"), this.timeoutMs);
-    const dbName = (d.rows?.[0] as any)?.name;
-    if (typeof dbName === "string" && dbName.length) this.meta.dbName = dbName;
   }
 }
 
@@ -335,10 +334,8 @@ class WsProbe {
   public async ensureConnected(): Promise<ProbeResult> {
     if (!this.url) return { ok: false, error: "disabled" };
 
-    // If already open, treat as ok.
     if (this.ws && this.ws.readyState === WebSocket.OPEN) return { ok: true, latencyMs: 0 };
 
-    // If we have a dead socket reference, drop it.
     if (this.ws && (this.ws.readyState === WebSocket.CLOSED || this.ws.readyState === WebSocket.CLOSING)) {
       this.ws.removeAllListeners();
       this.ws = null;
@@ -421,8 +418,9 @@ type TickSnapshot = {
     ok?: boolean;
     latencyMs?: number;
     error?: string;
-    serverVersion?: string;
-    dbName?: string;
+    serverVersion?: string | null;
+    dbName?: string | null;
+    brainSpawns?: BrainSpawnSummary | null;
   };
 
   ws: {
@@ -436,6 +434,12 @@ type TickSnapshot = {
 
 async function main(): Promise<void> {
   loadDotEnv();
+  bridgePwDbEnv();
+
+  // Prefer explicit MOTHER_BRAIN_DB_URL; otherwise use bridged DATABASE_URL.
+  if (!process.env.MOTHER_BRAIN_DB_URL) {
+    process.env.MOTHER_BRAIN_DB_URL = process.env.PW_DATABASE_URL || process.env.DATABASE_URL;
+  }
 
   const cfg = parseConfig();
   const startedAt = Date.now();
@@ -451,15 +455,23 @@ async function main(): Promise<void> {
     mode: cfg.mode,
     tickMs: cfg.tickMs,
     logLevel: cfg.logLevel,
-    hasDbUrl: Boolean(cfg.dbUrl) || dbProbe.isEnabled(),
+    hasDbUrl: Boolean(cfg.dbUrl),
     hasWsUrl: Boolean(cfg.wsUrl),
     pid: process.pid,
     node: process.version,
   });
 
-  // Guardrail reminder: v0.3 is observe-only.
+  // Guardrail reminder: still observe-only.
   if (cfg.mode === "apply") {
-    gatedLog("warn", "MOTHER_BRAIN_MODE=apply is set, but v0.3 performs no mutations (observe-only probes).");
+    gatedLog("warn", "MOTHER_BRAIN_MODE=apply is set, but v0.4 performs no mutations (observe-only probes).");
+  }
+
+  // Cache DB metadata once (best-effort).
+  let serverVersion: string | null = null;
+  let dbName: string | null = null;
+  if (dbProbe.isEnabled()) {
+    serverVersion = await dbProbe.getServerVersion();
+    dbName = await dbProbe.getCurrentDatabase();
   }
 
   let stopping = false;
@@ -480,7 +492,6 @@ async function main(): Promise<void> {
   process.on("SIGINT", () => void shutdown("SIGINT"));
   process.on("SIGTERM", () => void shutdown("SIGTERM"));
 
-  // Main tick loop (no overlap; each tick awaits probes)
   let tick = 0;
   while (!stopping) {
     tick += 1;
@@ -488,11 +499,13 @@ async function main(): Promise<void> {
     const uptimeMs = Date.now() - startedAt;
 
     const dbRes = dbProbe.isEnabled() ? await dbProbe.ping() : ({ ok: false, error: "disabled" } as ProbeResult);
-    const wsRes = wsProbe.isEnabled()
-      ? await wsProbe.ensureConnected()
-      : ({ ok: false, error: "disabled" } as ProbeResult);
+    const wsRes = wsProbe.isEnabled() ? await wsProbe.ensureConnected() : ({ ok: false, error: "disabled" } as ProbeResult);
 
-    const dbMeta = dbProbe.isEnabled() ? dbProbe.getMeta() : {};
+    let brainSpawns: BrainSpawnSummary | null | undefined = undefined;
+    const shouldSummarize = dbProbe.isEnabled() && cfg.spawnSummaryEveryTicks > 0 && tick % cfg.spawnSummaryEveryTicks === 0;
+    if (shouldSummarize && dbRes.ok) {
+      brainSpawns = await dbProbe.getBrainSpawnSummary(cfg.spawnSummaryTopN);
+    }
 
     const snapshot: TickSnapshot = {
       tick,
@@ -502,7 +515,9 @@ async function main(): Promise<void> {
       db: {
         enabled: dbProbe.isEnabled(),
         ...(dbProbe.isEnabled() ? dbRes : {}),
-        ...dbMeta,
+        serverVersion,
+        dbName,
+        ...(brainSpawns !== undefined ? { brainSpawns } : {}),
       },
 
       ws: {
@@ -512,10 +527,8 @@ async function main(): Promise<void> {
       },
     };
 
-    // Emit a structured heartbeat. Default logLevel=info, so this shows up by default.
     gatedLog("info", "Tick", snapshot);
 
-    // Sleep after tick
     await sleep(cfg.tickMs);
   }
 }
