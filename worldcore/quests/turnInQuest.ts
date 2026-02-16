@@ -71,6 +71,24 @@ function renderRewardChoiceOptionSummary(opt: any): string {
   return bits.length ? bits.join(" • ") : "(none)";
 }
 
+function renderChooseOneRewardsSummary(quest: QuestDefinition): { inline: string; lines: string[] } | null {
+  const chooseOne = ((quest as any).reward as any)?.chooseOne as any[] | undefined;
+  if (!Array.isArray(chooseOne) || chooseOne.length === 0) return null;
+
+  const optsInline = chooseOne
+    .slice(0, 3)
+    .map((opt, i) => `(${i + 1}) ${renderRewardChoiceOptionSummary(opt)}`)
+    .join("; ");
+  const inline = `Choose one: ${optsInline}${chooseOne.length > 3 ? " …" : ""}`;
+
+  const lines = chooseOne
+    .map((opt, i) => ` - (${i + 1}) ${renderRewardChoiceOptionSummary(opt)}`)
+    .slice(0, 10);
+  if (chooseOne.length > 10) lines.push(" - …");
+
+  return { inline, lines };
+}
+
 
 /**
  * Turn in a quest by id or name.
@@ -228,6 +246,7 @@ export async function turnInQuest(
     const objOk = areObjectivesSatisfiedForTurnIn(quest, char);
     const state = entry.state ?? "unknown";
     const rewardText = renderQuestRewardSummary(quest);
+    const chooseOne = renderChooseOneRewardsSummary(quest);
 
     const lines: string[] = [];
     lines.push(`[quest] Preview: ${quest.name} (${quest.id})`);
@@ -243,6 +262,13 @@ export async function turnInQuest(
       if (msg) lines.push(`Turn-in hint: ${msg}`);
     }
     if (rewardText) lines.push(`Rewards: ${rewardText}`);
+
+    // If the quest offers choose-one rewards, preview the options and hint the syntax.
+    if (chooseOne) {
+      lines.push(`Reward choice: YES (${((quest as any).reward as any)?.chooseOne?.length ?? "?"} options)`);
+      lines.push(...chooseOne.lines);
+      lines.push(`Use at turn-in: quest turnin ${quest.id} choose <#>`);
+    }
     if (policy === "npc") {
       const npcId = String((quest as any).turninNpcId ?? "").trim();
       if (npcId && (policyCheck as any).ok) {
@@ -894,6 +920,16 @@ function renderQuestRewardSummary(quest: QuestDefinition): string {
       .map((g: any) => String(g?.abilityId ?? "?") )
       .join(", ");
     parts.push(`Abilities: ${t}${abilityGrants.length > 3 ? ", …" : ""}`);
+  }
+
+  // Choice rewards (short summary)
+  const choose = Array.isArray((r as any).chooseOne) ? (r as any).chooseOne : [];
+  if (choose.length > 0) {
+    const opts = choose
+      .slice(0, 2)
+      .map((opt: any, i: number) => `(${i + 1}) ${renderRewardChoiceOptionSummary(opt)}`)
+      .join("; ");
+    parts.push(`Choose: ${opts}${choose.length > 2 ? " …" : ""}`);
   }
 
   return parts.join(" • ");
