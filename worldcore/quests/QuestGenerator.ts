@@ -23,6 +23,12 @@ export interface TownQuestGeneratorOptions {
   includeRepeatables?: boolean;
   /** Include locked chain follow-ups in the returned catalog (default false). */
   includeChainCatalog?: boolean;
+
+  /**
+   * Optional extension hook: additional candidate quest factories to include.
+   * Useful for experiments (or future town-specific plugins) without changing core pools.
+   */
+  extraCandidates?: Array<() => QuestDefinition>;
 }
 
 /**
@@ -319,6 +325,13 @@ export function generateTownQuests(opts: TownQuestGeneratorOptions): QuestDefini
         reward,
       };
     });
+  }
+
+  // Optional extension hook: allow callers to add candidates without forking this generator.
+  if (Array.isArray(opts.extraCandidates) && opts.extraCandidates.length > 0) {
+    for (const mk of opts.extraCandidates) {
+      if (typeof mk === "function") candidates.push(mk);
+    }
   }
 
 
