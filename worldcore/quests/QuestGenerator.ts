@@ -320,10 +320,45 @@ export function generateTownQuests(opts: TownQuestGeneratorOptions): QuestDefini
   }
 
   // Deterministic ordering: shuffle candidates, then emit until max.
+  //
+  // Generator v0.9: prefer *diverse* objective kinds in the offering.
+  // This reduces "three harvest quests in a trench coat" situations, while
+  // preserving strict determinism. Tier-1 remains intentionally stable due
+  // to onboarding + tests.
   const shuffled = shuffleStable(candidates, rng);
+
+  const presentKinds = new Set<string>();
+  for (const q of quests) {
+    const k = String((q.objectives as any)?.[0]?.kind ?? "").trim();
+    if (k) presentKinds.add(k);
+  }
+
+  const pickKind = (q: QuestDefinition): string => {
+    const k = String((q.objectives as any)?.[0]?.kind ?? "").trim();
+    return k || "unknown";
+  };
+
+  // Pass 1: prefer new kinds when there is slack.
   for (const mk of shuffled) {
     if (quests.length >= maxQuests) break;
-    quests.push(mk());
+    const q = mk();
+    const kind = pickKind(q);
+
+    const remainingSlots = maxQuests - quests.length;
+    if (tier >= 2 && remainingSlots > 1 && presentKinds.has(kind)) {
+      continue;
+    }
+
+    quests.push(q);
+    presentKinds.add(kind);
+  }
+
+  // Pass 2: backfill any remaining slots (never underfill due to diversity skipping).
+  if (quests.length < maxQuests) {
+    for (const mk of shuffled) {
+      if (quests.length >= maxQuests) break;
+      quests.push(mk());
+    }
   }
 
 
