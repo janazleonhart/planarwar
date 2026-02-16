@@ -8,7 +8,7 @@
 import type { CharacterState } from "../characters/CharacterTypes";
 import { ensureQuestState, type QuestSource } from "./QuestState";
 import type { QuestDefinition } from "./QuestTypes";
-import { generateTownQuests } from "./QuestGenerator";
+import { generateTownQuests, getDefaultTownQuestGeneratorTuning } from "./QuestGenerator";
 import { getQuestById, getAllQuests } from "./QuestRegistry";
 import { renderQuestAmbiguous, renderQuestDidYouMean } from "./QuestCommandText";
 
@@ -19,6 +19,11 @@ import { renderQuestAmbiguous, renderQuestDidYouMean } from "./QuestCommandText"
 // Keep this small: it lives on the character state and should be cheap to persist.
 const QUEST_BOARD_ROTATION_MAX = 18;
 const QUEST_BOARD_SHAPE_ROTATION_MAX = 18;
+
+function clampInt(n: number, lo: number, hi: number): number {
+  const x = Math.trunc(Number.isFinite(n) ? n : lo);
+  return Math.min(hi, Math.max(lo, x));
+}
 
 // These are onboarding staples. They should not be rotated out.
 function isRotationImmuneQuestId(id: string): boolean {
@@ -537,6 +542,35 @@ export function renderTownQuestBoardDebugCaps(ctx: any, char: any): string {
   lines.push(` - recentResourceFamilies: ${data.recentResourceFamilies.length ? data.recentResourceFamilies.join(", ") : "(none)"}`);
   lines.push(` - recentFollowupParents: ${data.recentFollowupParentIds.length ? data.recentFollowupParentIds.join(", ") : "(none)"}`);
 
+  return lines.join("\n").trimEnd();
+}
+
+/**
+ * Staff-only: show the *effective* generator tuning for the current town context.
+ *
+ * This does not expose hidden quest pools; it only prints cap/rotation knobs.
+ */
+export function renderTownQuestBoardDebugTuning(ctx: any, char: any): string {
+  const data = getTownQuestBoardDebugCapsData(ctx, char);
+  if (!data) return "[quest] No town context.";
+
+  // Mirror generator defaults (QuestGenerator.ts) so staff can see what is in play.
+  const tier = Math.max(1, Math.floor(data.tier || 1));
+  const defaultMax = clampInt(2 + Math.min(tier, 4), 3, 6);
+  const tuning = getDefaultTownQuestGeneratorTuning({ tier, maxQuests: defaultMax });
+
+  const lines: string[] = [];
+  lines.push("Quest Board Debug Tuning (staff):");
+  lines.push(` - townId: ${data.townId}`);
+  lines.push(` - tier: ${data.tier}`);
+  lines.push(` - epoch: ${data.epoch}`);
+  lines.push(` - maxQuests(default): ${defaultMax}`);
+  lines.push(` - kindBaseCap: ${tuning.kindBaseCap}`);
+  lines.push(` - signatureBaseCap: ${tuning.signatureBaseCap}`);
+  lines.push(` - semanticBaseCap: ${tuning.semanticBaseCap}`);
+  lines.push(` - familyBaseCap: ${tuning.familyBaseCap}`);
+  lines.push(` - avoidRecentUntilFrac: ${tuning.avoidRecentUntilFrac}`);
+  lines.push(` - avoidRecentShapesUntilFrac: ${tuning.avoidRecentShapesUntilFrac}`);
   return lines.join("\n").trimEnd();
 }
 

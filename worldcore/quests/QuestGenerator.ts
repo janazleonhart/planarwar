@@ -47,6 +47,14 @@ export interface TownQuestGeneratorOptions {
   recentlyOfferedObjectiveSignatures?: string[];
   recentlyOfferedResourceFamilies?: string[];
 
+  /**
+   * Generator v0.28: internal tuning hooks.
+   *
+   * These knobs are intended for *staff-side* experimentation and tier-by-tier tuning
+   * without changing deterministic defaults. Most callers should omit this entirely.
+   */
+  tuning?: Partial<TownQuestGeneratorTuning>;
+
 
   /**
    * Optional extension hook: additional candidate quest factories to include.
@@ -64,6 +72,54 @@ export interface TownQuestGeneratorOptions {
     | null
     | undefined
   >;
+}
+
+export interface TownQuestGeneratorTuning {
+  /** Base kind cap before deterministic relaxation. (Default: 2 on small boards; 3 on large.) */
+  kindBaseCap: number;
+  /** Base semantic cap before deterministic relaxation. (Default: 1) */
+  semanticBaseCap: number;
+  /** Base resource-family cap before deterministic relaxation. (Default: 1) */
+  familyBaseCap: number;
+  /** Base objective-signature cap before deterministic relaxation. (Default: 1) */
+  signatureBaseCap: number;
+
+  /**
+   * Fraction of attempt budget during which we avoid recently-offered quest IDs.
+   * (Default: 0.75)
+   */
+  avoidRecentUntilFrac: number;
+  /**
+   * Fraction of attempt budget during which we avoid recently-offered shapes
+   * (signatures / resource families). (Default: 0.75)
+   */
+  avoidRecentShapesUntilFrac: number;
+}
+
+function clamp01(n: unknown, fallback: number): number {
+  const x = Number(n);
+  if (!Number.isFinite(x)) return fallback;
+  return Math.max(0, Math.min(1, x));
+}
+
+/**
+ * Returns the deterministic default tuning values for a given tier/maxQuests.
+ *
+ * This is used by staff-only debug tooling and optional v0.28 tuning overrides.
+ */
+export function getDefaultTownQuestGeneratorTuning(input: {
+  tier: number;
+  maxQuests: number;
+}): TownQuestGeneratorTuning {
+  const maxQuests = clampInt(Math.floor(input.maxQuests ?? 0), 0, 999);
+  return {
+    kindBaseCap: maxQuests <= 6 ? 2 : 3,
+    semanticBaseCap: 1,
+    familyBaseCap: 1,
+    signatureBaseCap: 1,
+    avoidRecentUntilFrac: 0.75,
+    avoidRecentShapesUntilFrac: 0.75,
+  };
 }
 
 function normalizeExtraCandidates(
@@ -124,6 +180,18 @@ export function generateTownQuests(opts: TownQuestGeneratorOptions): QuestDefini
   const defaultMax = clampInt(2 + Math.min(tier, 4), 3, 6);
   const maxQuests = clampInt(Math.floor(opts.maxQuests ?? defaultMax), 0, 50);
   if (maxQuests <= 0) return [];
+
+  const tuningDefaults = getDefaultTownQuestGeneratorTuning({ tier, maxQuests });
+  const tuning: TownQuestGeneratorTuning = {
+    ...tuningDefaults,
+    ...(opts.tuning ?? {}),
+    // Clamp fractional knobs defensively so experiments can't break determinism.
+    avoidRecentUntilFrac: clamp01((opts.tuning as any)?.avoidRecentUntilFrac, tuningDefaults.avoidRecentUntilFrac),
+    avoidRecentShapesUntilFrac: clamp01(
+      (opts.tuning as any)?.avoidRecentShapesUntilFrac,
+      tuningDefaults.avoidRecentShapesUntilFrac,
+    ),
+  };
 
   const rng = mulberry32(stableQuestGenSeed({ townId, tier, epoch }));
 
@@ -542,7 +610,7 @@ if (candidates.length > 0) {
   };
 
   // Baseline cap is strict for small boards; we relax it deterministically if we can't fill.
-  const baseCap = maxQuests <= 6 ? 2 : 3;
+  const baseCap = clampInt(Math.floor(tuning.kindBaseCap), 0, 99);
   const kindCounts = new Map<string, number>();
   for (const q of quests) {
     const k = primaryKindOf(q);
@@ -551,7 +619,7 @@ if (candidates.length > 0) {
 
   // Semantic cap is stricter than kind cap: prefer unique targets.
   // We still relax deterministically if the pool is tiny.
-  const baseSemanticCap = 1;
+  const baseSemanticCap = clampInt(Math.floor(tuning.semanticBaseCap), 0, 99);
   const semanticCounts = new Map<string, number>();
   for (const q of quests) {
     for (const s of semanticKeysOf(q)) {
@@ -561,7 +629,7 @@ if (candidates.length > 0) {
 
   // Family caps are looser than the exact semantic caps, but still bias for variety.
   // Example: avoid both harvest herb + turn-in herb when wood/ore alternatives exist.
-  const baseFamilyCap = 1;
+  const baseFamilyCap = clampInt(Math.floor(tuning.familyBaseCap), 0, 99);
   const familyCounts = new Map<string, number>();
   for (const q of quests) {
     for (const f of semanticFamilyKeysOf(q)) {
@@ -570,7 +638,7 @@ if (candidates.length > 0) {
   }
 
   // Signature cap is between kind-cap and semantic-cap: allow repeats, but prefer variety.
-  const baseSignatureCap = 1;
+  const baseSignatureCap = clampInt(Math.floor(tuning.signatureBaseCap), 0, 99);
   const signatureCounts = new Map<string, number>();
   for (const q of quests) {
     const sig = objectiveSignatureOf(q);
@@ -616,14 +684,14 @@ if (candidates.length > 0) {
   // We relax this preference deterministically near the end of the attempt budget.
   const avoidRecentAtAttempt = (attempt: number): boolean => {
     if (recentlyOffered.size === 0) return false;
-    if (attempt > Math.floor(maxAttempts * 0.75)) return false;
+    if (attempt > Math.floor(maxAttempts * tuning.avoidRecentUntilFrac)) return false;
     return true;
   };
 
 
   const avoidRecentShapeAtAttempt = (attempt: number): boolean => {
     if (recentlyOfferedSigs.size === 0 && recentlyOfferedFamilies.size === 0) return false;
-    if (attempt > Math.floor(maxAttempts * 0.75)) return false;
+    if (attempt > Math.floor(maxAttempts * tuning.avoidRecentShapesUntilFrac)) return false;
     return true;
   };
 

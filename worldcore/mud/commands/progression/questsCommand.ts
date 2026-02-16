@@ -5,6 +5,7 @@ import { turnInQuest } from "../../../quests/turnInQuest";
 import {
   renderTownQuestBoard,
   renderTownQuestBoardDebugCaps,
+  renderTownQuestBoardDebugTuning,
   resolveTownQuestFromBoardView,
   acceptTownQuest,
   abandonQuest,
@@ -126,6 +127,7 @@ if (!sub || sub === "log" || sub === "list" || sub === "quests" || sub === "ques
         " quest debug board                 (full board + per-quest metadata)",
         " quest debug board <available|new|active|ready|turned>",
         " quest debug caps                  (shows rotation memory + keys)",
+        " quest debug tuning                (shows effective generator tuning defaults)",
       ].join("\n").trimEnd();
     }
 
@@ -144,6 +146,10 @@ if (!sub || sub === "log" || sub === "list" || sub === "quests" || sub === "ques
 
     if (sub2 === "caps" || sub2 === "cap") {
       return renderTownQuestBoardDebugCaps(ctx, char);
+    }
+
+    if (sub2 === "tuning" || sub2 === "tunings") {
+      return renderTownQuestBoardDebugTuning(ctx, char);
     }
 
     if (sub2 === "board") {
