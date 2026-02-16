@@ -749,6 +749,40 @@ function computeUnlockedFollowupQuests(char: CharacterState): QuestDefinition[] 
   return out;
 }
 
+// Build a deterministic mapping of unlocked follow-up questId -> parent questIds that unlocked it.
+// Used for board density shaping so we can surface follow-ups from different chains first.
+function computeUnlockedFollowupParents(char: CharacterState): Map<string, string[]> {
+  const state = ensureQuestState(char);
+  const map = new Map<string, string[]>();
+
+  for (const [questId, entry] of Object.entries(state)) {
+    if (!entry) continue;
+    if (!hasTurnedInQuest(char, questId)) continue;
+
+    const def =
+      getQuestById(questId) ??
+      resolveQuestDefinitionFromStateId(questId, entry as any) ??
+      ((entry as any).source?.kind === "service" ? (entry as any).source?.def : null);
+
+    const unlocks = Array.isArray((def as any)?.unlocks) ? (def as any).unlocks : [];
+    for (const u of unlocks) {
+      const id = String(u ?? "").trim();
+      if (!id) continue;
+      const cur = map.get(id);
+      if (!cur) map.set(id, [questId]);
+      else if (!cur.includes(questId)) cur.push(questId);
+    }
+  }
+
+  // Deterministic ordering of parent lists.
+  for (const [k, parents] of map.entries()) {
+    parents.sort((a, b) => a.localeCompare(b));
+    map.set(k, parents);
+  }
+
+  return map;
+}
+
 function resolveGeneratedUnlockedQuestFromState(
   char: CharacterState,
   unlockedQuestId: string
@@ -865,6 +899,7 @@ function selectFollowupsForBoard(
   if (!unlocked.length) return [];
 
   const state = ensureQuestState(char);
+  const parentsByFollowup = computeUnlockedFollowupParents(char);
 
   // Always surface follow-ups that have already been accepted/completed/turned in.
   // (If we don't, they vanish from board filters that are offering-based.)
@@ -883,15 +918,110 @@ function selectFollowupsForBoard(
   // Tier 1: 3, Tier 2: 4, Tier 3+: 4 (small but discoverable).
   const capNew = Math.max(1, 2 + Math.min(2, Math.floor(key.tier || 1)));
 
-  // Deterministic ordering so different clients/sessions agree.
-  unaccepted.sort((a, b) => {
+  // Deterministic selection that spreads NEW follow-ups across different parent chains first.
+  // If a follow-up has multiple parents, we assign it to the earliest (deterministic) parent bucket.
+  const buckets = new Map<string, QuestDefinition[]>();
+  const orphan: QuestDefinition[] = [];
+
+  for (const q of unaccepted) {
+    const parents = parentsByFollowup.get(q.id) ?? [];
+    const parent = parents.length ? pickDeterministicParent(key, q.id, parents) : null;
+    if (!parent) {
+      orphan.push(q);
+      continue;
+    }
+    const arr = buckets.get(parent) ?? [];
+    arr.push(q);
+    buckets.set(parent, arr);
+  }
+
+  const parentKeys = [...buckets.keys()];
+  parentKeys.sort((a, b) => {
+    const ka = followupSortKey(key, a);
+    const kb = followupSortKey(key, b);
+    if (ka !== kb) return ka - kb;
+    return a.localeCompare(b);
+  });
+
+  for (const p of parentKeys) {
+    const arr = buckets.get(p) ?? [];
+    arr.sort((a, b) => {
+      const ka = followupSortKey(key, a.id);
+      const kb = followupSortKey(key, b.id);
+      if (ka !== kb) return ka - kb;
+      return a.id.localeCompare(b.id);
+    });
+    buckets.set(p, arr);
+  }
+
+  orphan.sort((a, b) => {
     const ka = followupSortKey(key, a.id);
     const kb = followupSortKey(key, b.id);
     if (ka !== kb) return ka - kb;
     return a.id.localeCompare(b.id);
   });
 
-  return accepted.concat(unaccepted.slice(0, capNew));
+  // Round-robin pick one from each parent bucket first, then continue deterministically.
+  const picked: QuestDefinition[] = [];
+  let safety = 0;
+  while (picked.length < capNew) {
+    let progressed = false;
+
+    for (const p of parentKeys) {
+      if (picked.length >= capNew) break;
+      const arr = buckets.get(p);
+      if (!arr || arr.length === 0) continue;
+      picked.push(arr.shift()!);
+      progressed = true;
+    }
+
+    if (picked.length >= capNew) break;
+
+    if (!progressed) break;
+
+    // Safety: prevent theoretical infinite loops if something mutates unexpectedly.
+    safety++;
+    if (safety > 64) break;
+  }
+
+  // If we still have slack, fill from remaining bucket contents, then orphans.
+  if (picked.length < capNew) {
+    const rest: QuestDefinition[] = [];
+    for (const p of parentKeys) {
+      const arr = buckets.get(p);
+      if (arr && arr.length) rest.push(...arr);
+    }
+    rest.sort((a, b) => {
+      const ka = followupSortKey(key, a.id);
+      const kb = followupSortKey(key, b.id);
+      if (ka !== kb) return ka - kb;
+      return a.id.localeCompare(b.id);
+    });
+
+    const fill = rest.concat(orphan);
+    for (const q of fill) {
+      if (picked.length >= capNew) break;
+      picked.push(q);
+    }
+  }
+
+  return accepted.concat(picked);
+}
+
+function pickDeterministicParent(key: BoardKey, followupId: string, parents: string[]): string {
+  // Parents are already sorted lexicographically. We additionally stabilize by hash so epoch changes
+  // can reshuffle without becoming random.
+  let best = parents[0] ?? "";
+  let bestKey = followupSortKey(key, `${followupId}|parent|${best}`);
+  for (let i = 1; i < parents.length; i++) {
+    const p = parents[i];
+    const k = followupSortKey(key, `${followupId}|parent|${p}`);
+    if (k < bestKey) {
+      best = p;
+      bestKey = k;
+    }
+  }
+  return best;
 }
 
 function followupSortKey(key: BoardKey, questId: string): number {

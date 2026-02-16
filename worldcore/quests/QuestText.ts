@@ -210,15 +210,37 @@ export function renderQuestDetails(
   const questState = ensureQuestState(char);
   const acceptedIds = Object.keys(questState).sort();
 
-  // Numeric index into accepted quest ordering
+  // Numeric index into accepted quest ordering.
+  // NOTE: When a talk/UI ctx is present, numeric selectors should prefer the
+  // *current town board offering index* before any global fuzzy resolution.
   let key = target;
+
+  let resolved: any = null;
+
   if (/^\d+$/.test(target)) {
     const idx = Number(target);
-    const id = acceptedIds[idx - 1];
-    if (id) key = id;
+
+    // 1) Accepted quest index (quest log)
+    const acceptedId = acceptedIds[idx - 1];
+    if (acceptedId) {
+      key = acceptedId;
+    } else if (opts.ctx) {
+      // 2) Current board offering index (quest board)
+      try {
+        const board = listTownQuestBoardQuests(opts.ctx, char as any);
+        const q = Array.isArray(board) ? board[idx - 1] : null;
+        if (q) {
+          resolved = { kind: "single", quest: q };
+        }
+      } catch {
+        // ignore; fall through to other resolution paths
+      }
+    }
   }
 
-  let resolved = resolveQuestByIdOrNameIncludingAccepted(key, questState) as any;
+  if (!resolved) {
+    resolved = resolveQuestByIdOrNameIncludingAccepted(key, questState) as any;
+  }
 
   // If we're in a town context (ex: talk-driven UI), allow showing quests from the
   // current board offering even if they haven't been accepted yet.

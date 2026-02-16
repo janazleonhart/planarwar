@@ -318,6 +318,85 @@ greet_quartermaster: {
     reward: { xp: 1 },
   },
 
+  // Chain diversity v0.17 contract kit: two different parents unlock multiple follow-ups.
+  // Used to ensure the quest board spreads NEW follow-ups across chains first.
+  chain_followup_diverse_intro_a: {
+    id: "chain_followup_diverse_intro_a",
+    name: "Chain Diverse Intro A",
+    description: "A tiny quest that unlocks multiple follow-ups (A) to test chain diversity.",
+    // Contract-only: keep this kit out of normal board offerings so other contracts remain stable.
+    requiresTurnedIn: ["__contract_only_chain_diversity__"],
+    objectives: [{ kind: "kill", targetProtoId: "training_dummy", required: 1 }],
+    reward: { xp: 1 },
+    unlocks: [
+      "chain_followup_diverse_a1",
+      "chain_followup_diverse_a2",
+      "chain_followup_diverse_a3",
+    ],
+  },
+  chain_followup_diverse_intro_b: {
+    id: "chain_followup_diverse_intro_b",
+    name: "Chain Diverse Intro B",
+    description: "A tiny quest that unlocks multiple follow-ups (B) to test chain diversity.",
+    // Contract-only: keep this kit out of normal board offerings so other contracts remain stable.
+    requiresTurnedIn: ["__contract_only_chain_diversity__"],
+    objectives: [{ kind: "kill", targetProtoId: "training_dummy", required: 1 }],
+    reward: { xp: 1 },
+    unlocks: [
+      "chain_followup_diverse_b1",
+      "chain_followup_diverse_b2",
+      "chain_followup_diverse_b3",
+    ],
+  },
+  chain_followup_diverse_a1: {
+    id: "chain_followup_diverse_a1",
+    name: "Chain Diverse A1",
+    description: "Follow-up A1 (chain diversity test).",
+    requiresTurnedIn: ["__contract_only_chain_diversity__", "chain_followup_diverse_intro_a"],
+    objectives: [{ kind: "kill", targetProtoId: "training_dummy", required: 1 }],
+    reward: { xp: 1 },
+  },
+  chain_followup_diverse_a2: {
+    id: "chain_followup_diverse_a2",
+    name: "Chain Diverse A2",
+    description: "Follow-up A2 (chain diversity test).",
+    requiresTurnedIn: ["__contract_only_chain_diversity__", "chain_followup_diverse_intro_a"],
+    objectives: [{ kind: "kill", targetProtoId: "training_dummy", required: 1 }],
+    reward: { xp: 1 },
+  },
+  chain_followup_diverse_a3: {
+    id: "chain_followup_diverse_a3",
+    name: "Chain Diverse A3",
+    description: "Follow-up A3 (chain diversity test).",
+    requiresTurnedIn: ["__contract_only_chain_diversity__", "chain_followup_diverse_intro_a"],
+    objectives: [{ kind: "kill", targetProtoId: "training_dummy", required: 1 }],
+    reward: { xp: 1 },
+  },
+  chain_followup_diverse_b1: {
+    id: "chain_followup_diverse_b1",
+    name: "Chain Diverse B1",
+    description: "Follow-up B1 (chain diversity test).",
+    requiresTurnedIn: ["__contract_only_chain_diversity__", "chain_followup_diverse_intro_b"],
+    objectives: [{ kind: "kill", targetProtoId: "training_dummy", required: 1 }],
+    reward: { xp: 1 },
+  },
+  chain_followup_diverse_b2: {
+    id: "chain_followup_diverse_b2",
+    name: "Chain Diverse B2",
+    description: "Follow-up B2 (chain diversity test).",
+    requiresTurnedIn: ["__contract_only_chain_diversity__", "chain_followup_diverse_intro_b"],
+    objectives: [{ kind: "kill", targetProtoId: "training_dummy", required: 1 }],
+    reward: { xp: 1 },
+  },
+  chain_followup_diverse_b3: {
+    id: "chain_followup_diverse_b3",
+    name: "Chain Diverse B3",
+    description: "Follow-up B3 (chain diversity test).",
+    requiresTurnedIn: ["__contract_only_chain_diversity__", "chain_followup_diverse_intro_b"],
+    objectives: [{ kind: "kill", targetProtoId: "training_dummy", required: 1 }],
+    reward: { xp: 1 },
+  },
+
   // Turn-in policy v0.2 example: board-only turn-in bound to a specific town board.
   // Used by movement/walk-to contract tests to ensure town-entry nudges remain meaningful.
   board_turnin_test: {
