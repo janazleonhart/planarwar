@@ -265,8 +265,10 @@ const orderedVisibleQuests = computeTownQuestBoardOrderedVisibleQuests(
 
   lines.push("");
   lines.push(
-    "Use: quest accept <#|id>   |   quest abandon <#|id>   |   questlog" +
-      (onlyNew || onlyAvailable || onlyActive || onlyReady ? "   |   quest board" : "")
+    "Use: quest board help   |   quest board [available|new|active|ready|turned]"
+  );
+  lines.push(
+    "     quest board show <#|id|name>   |   quest board accept <#|id|name>   |   questlog"
   );
 
   return lines.join("\n").trimEnd();

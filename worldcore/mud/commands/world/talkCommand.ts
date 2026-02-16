@@ -425,6 +425,27 @@ export async function handleTalkCommand(
     const verb = String(actionArgs[modeOpts ? 1 : 0] ?? "").toLowerCase().trim();
     const selector = actionArgs.slice(modeOpts ? 2 : 1).join(" ").trim();
 
+    if (mode === "help" || mode === "?" || mode === "h" || verb === "help" || verb === "?" || verb === "h") {
+      const prefix = `talk ${npcToken} quests`;
+      lines.push("[talk] Quest board commands:");
+      lines.push(` - ${prefix}                 (view the town quest board)`);
+      lines.push(` - ${prefix} help            (this help)`);
+      lines.push(` - ${prefix} available        (only available [ ] quests; excludes NEW follow-ups)`);
+      lines.push(` - ${prefix} new             (only NEW unlocked follow-ups)`);
+      lines.push(` - ${prefix} active          (only your active quests)`);
+      lines.push(` - ${prefix} ready           (only quests ready to turn in)`);
+      lines.push(` - ${prefix} turned|done     (only turned-in quests)`);
+      lines.push("");
+      lines.push("Board-scoped actions (indices always match the current rendered view):");
+      lines.push(` - ${prefix} show <#|id|name>`);
+      lines.push(` - ${prefix} accept <#|id|name>`);
+      lines.push(` - ${prefix} <mode> show <#|id|name>`);
+      lines.push(` - ${prefix} <mode> accept <#|id|name>`);
+      return lines.join("\n").trimEnd();
+    }
+
+
+
     // Action forms (so indices match the current rendered view):
     //  - talk <npc> quests show <#|id|name>
     //  - talk <npc> quests accept <#|id|name>

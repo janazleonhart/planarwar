@@ -21,7 +21,37 @@ export async function handleQuestCommand(
 ): Promise<string> {
   const sub = (input.parts[1] || "").toLowerCase();
 
-  if (!sub || sub === "log" || sub === "list" || sub === "quests" || sub === "questlog") {
+  
+  if (sub === "help" || sub === "?" || sub === "h") {
+    return [
+      "Usage:",
+      " quest help                 (shows this help)",
+    " quest                      (shows quest log)",
+      " quest ready                (shows quests ready to turn in)",
+      " quest ready here|local     (shows quests ready to turn in from here)",
+      " quest show <#|id|name>      (shows quest details)",
+      " quest accept <#|id|name>    (accepts a town quest by id/name, or # from the current board view)",
+      " quest abandon <#|id|name>   (abandons an active quest)",
+      " quest turnin ...            (see: quest turnin list/ready/preview/all)",
+      "",
+      "Quest board:",
+      " quest board                 (shows town quest board)",
+      " quest board help            (shows board filters + board-scoped actions)",
+      " quest board available        (only available [ ] quests; excludes NEW follow-ups)",
+      " quest board new             (only NEW unlocked follow-ups)",
+      " quest board active          (only your active quests)",
+      " quest board ready           (only quests ready to turn in)",
+      " quest board turned|done     (only turned-in quests)",
+      "",
+      "Board-scoped actions (indices always match the current board view):",
+      " quest board show <#|id|name>",
+      " quest board accept <#|id|name>",
+      " quest board <mode> show <#|id|name>",
+      " quest board <mode> accept <#|id|name>",
+    ].join("\n").trimEnd();
+  }
+
+if (!sub || sub === "log" || sub === "list" || sub === "quests" || sub === "questlog") {
     return renderQuestLog(char, { ctx });
   }
 
@@ -51,6 +81,27 @@ export async function handleQuestCommand(
 
   if (sub === "board" || sub === "questboard") {
     const a2 = String(input.parts[2] ?? "").toLowerCase().trim();
+    if (a2 === "help" || a2 === "?" || a2 === "h") {
+      return [
+        "Quest Board (town context):",
+        " quest board                 (full board)",
+        " quest board available        (only available [ ] quests; excludes NEW follow-ups)",
+        " quest board new             (only NEW unlocked follow-ups)",
+        " quest board active          (only your active quests)",
+        " quest board ready           (only quests ready to turn in)",
+        " quest board turned|done     (only turned-in quests)",
+        "",
+        "Board-scoped actions (indices always match the current rendered view):",
+        " quest board show <#|id|name>",
+        " quest board accept <#|id|name>",
+        " quest board <mode> show <#|id|name>",
+        " quest board <mode> accept <#|id|name>",
+        "",
+        "Tip: use numeric indices only within the view you are looking at.",
+      ].join("\n").trimEnd();
+    }
+
+
 
     const parseBoardMode = (s: string): any => {
       if (s === "new") return { onlyNew: true };
@@ -128,6 +179,7 @@ export async function handleQuestCommand(
 
   return [
     "Usage:",
+    " quest help                 (shows this help)",
     " quest                      (shows quest log)",
     " quest ready                (shows quests ready to turn in)",
     " quest ready here|local     (shows quests ready to turn in from here)",
