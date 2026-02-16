@@ -65,9 +65,11 @@ export async function handleQuestCommand(
       "Board-scoped actions (indices always match the current board view):",
       " quest board show <#|id|name>",
       " quest board accept <#|id|name>",
+      " quest board preview <#|id|name>   (reward + policy preview)",
       " quest board turnin <#|id|name> (optionally: choose <#>)",
       " quest board <mode> show <#|id|name>",
       " quest board <mode> accept <#|id|name>",
+      " quest board <mode> preview <#|id|name>",
       " quest board <mode> turnin <#|id|name> (optionally: choose <#>)",
     ].join("\n").trimEnd();
   }
@@ -115,9 +117,11 @@ if (!sub || sub === "log" || sub === "list" || sub === "quests" || sub === "ques
         "Board-scoped actions (indices always match the current rendered view):",
         " quest board show <#|id|name>",
         " quest board accept <#|id|name>",
+        " quest board preview <#|id|name>",
         " quest board turnin <#|id|name> (optionally: choose <#>)",
         " quest board <mode> show <#|id|name>",
         " quest board <mode> accept <#|id|name>",
+        " quest board <mode> preview <#|id|name>",
         " quest board <mode> turnin <#|id|name> (optionally: choose <#>)",
         "",
         "Tip: use numeric indices only within the view you are looking at.",
@@ -166,6 +170,18 @@ if (!sub || sub === "log" || sub === "list" || sub === "quests" || sub === "ques
 
       const arg = choice ? `${resolved.id} choose ${choice}` : resolved.id;
       return turnInQuest(ctx, char, arg);
+    }
+
+    if (verb === "preview" || verb === "peek" || verb === "inspect") {
+      if (!selector) {
+        return "Usage: quest board" + (modeOpts ? " " + a2 : "") + " preview <#|id|name>";
+      }
+
+      // Resolve indices against the current board view first, then delegate to canonical preview.
+      const resolved = resolveTownQuestFromBoardView(ctx, char, selector, modeOpts ?? undefined);
+      if (!resolved) return `[quest] Unknown quest '${selector}'.`;
+
+      return turnInQuest(ctx, char, `preview ${resolved.id}`);
     }
 
     if (verb === "show" || verb === "info" || verb === "details") {

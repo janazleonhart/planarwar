@@ -412,6 +412,25 @@ export async function handleTalkCommand(
   if (canonicalAction === "quests" || canonicalAction === "quest" || canonicalAction === "board") {
     const mode = String(actionArgs[0] ?? "").toLowerCase().trim();
 
+    // Split a selector plus optional `choose N` suffix.
+    // Mirrors quest command behavior so talk-scoped turn-ins can pick reward options.
+    const splitSelectorAndChoice = (rawParts: string[]): { selector: string; choice: number | null } => {
+      const p = rawParts.map((x) => String(x ?? "")).filter((s) => s.trim().length > 0);
+      if (p.length === 0) return { selector: "", choice: null };
+
+      const chooseAt = p.findIndex((w) => {
+        const l = w.toLowerCase();
+        return l === "choose" || l === "choice" || l === "pick";
+      });
+
+      if (chooseAt === -1) return { selector: p.join(" ").trim(), choice: null };
+
+      const selector = p.slice(0, chooseAt).join(" ").trim();
+      const n = Number(p[chooseAt + 1]);
+      if (!Number.isInteger(n) || n <= 0) return { selector: p.join(" ").trim(), choice: null };
+      return { selector, choice: n };
+    };
+
     const parseBoardMode = (s: string): any => {
       if (s === "new") return { onlyNew: true };
       if (s === "available" || s === "avail") return { onlyAvailable: true };
@@ -423,7 +442,8 @@ export async function handleTalkCommand(
 
     const modeOpts = parseBoardMode(mode);
     const verb = String(actionArgs[modeOpts ? 1 : 0] ?? "").toLowerCase().trim();
-    const selector = actionArgs.slice(modeOpts ? 2 : 1).join(" ").trim();
+    const tail = actionArgs.slice(modeOpts ? 2 : 1);
+    const { selector, choice } = splitSelectorAndChoice(tail);
 
     if (mode === "help" || mode === "?" || mode === "h" || verb === "help" || verb === "?" || verb === "h") {
       const prefix = `talk ${npcToken} quests`;
@@ -439,8 +459,12 @@ export async function handleTalkCommand(
       lines.push("Board-scoped actions (indices always match the current rendered view):");
       lines.push(` - ${prefix} show <#|id|name>`);
       lines.push(` - ${prefix} accept <#|id|name>`);
+      lines.push(` - ${prefix} preview <#|id|name>`);
+      lines.push(` - ${prefix} turnin <#|id|name> (optionally: choose <#>)`);
       lines.push(` - ${prefix} <mode> show <#|id|name>`);
       lines.push(` - ${prefix} <mode> accept <#|id|name>`);
+      lines.push(` - ${prefix} <mode> preview <#|id|name>`);
+      lines.push(` - ${prefix} <mode> turnin <#|id|name> (optionally: choose <#>)`);
       return lines.join("\n").trimEnd();
     }
 
@@ -473,11 +497,38 @@ export async function handleTalkCommand(
       return lines.join("\n").trimEnd();
     }
 
+    if (verb === "preview" || verb === "peek" || verb === "inspect") {
+      if (!selector) {
+        lines.push(`Usage: talk ${npcToken} quests${modeOpts ? " " + mode : ""} preview <#|id|name>`);
+        return lines.join("\n").trimEnd();
+      }
+      const q = resolveTownQuestFromBoardView(ctx as any, char as any, selector, modeOpts ?? undefined);
+      lines.push(q ? await turnInQuest(ctx as any, char as any, `preview ${q.id}`) : `[quest] Unknown quest '${selector}'.`);
+      return lines.join("\n").trimEnd();
+    }
+
+    if (verb === "turnin" || verb === "turn-in" || verb === "complete") {
+      if (!selector) {
+        lines.push(`Usage: talk ${npcToken} quests${modeOpts ? " " + mode : ""} turnin <#|id|name> (optionally: choose <#>)`);
+        return lines.join("\n").trimEnd();
+      }
+      const q = resolveTownQuestFromBoardView(ctx as any, char as any, selector, modeOpts ?? undefined);
+      if (!q) {
+        lines.push(`[quest] Unknown quest '${selector}'.`);
+        return lines.join("\n").trimEnd();
+      }
+      const arg = choice ? `${q.id} choose ${choice}` : q.id;
+      lines.push(await turnInQuest(ctx as any, char as any, arg));
+      return lines.join("\n").trimEnd();
+    }
+
     // View form
     lines.push(renderTownQuestBoard(ctx as any, char as any, modeOpts ?? undefined));
     lines.push("");
     lines.push(`Tip: show details via 'talk ${npcToken} show <#|id|name>' (or: 'quest show <#|id|name>').`);
+    lines.push(`Tip: preview rewards via 'talk ${npcToken} quests preview <#|id|name>' (or: 'quest turnin preview <#|id|name>').`);
     lines.push(`Tip: accept via 'talk ${npcToken} accept <#|id|name>' (or: 'quest accept <#|id|name>').`);
+    lines.push(`Tip: turn in via 'talk ${npcToken} quests turnin <#|id|name>' (or: 'quest turnin <#|id|name>').`);
     lines.push(`Tip: abandon via 'talk ${npcToken} abandon <#|id|name>' (or: 'quest abandon <#|id|name>').`);
     return lines.join("\n").trimEnd();
   }
