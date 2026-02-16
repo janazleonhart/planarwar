@@ -4370,7 +4370,8 @@
         "Implements 'quests' and 'quest ...' commands.",
         "Default shows quest log; subcommand 'turnin'/'turn-in'/'complete' turns in a quest by target string.",
         "Provides board/accept/abandon",
-        "Help text advertises warfront-friendly turn-in: 'quest turnin list|ready' and 'quest turnin <#|id|name>'."
+        "Help text advertises warfront-friendly turn-in: 'quest turnin list|ready' and 'quest turnin <#|id|name>'.",
+        "Quest board supports available|new|active|ready|turned"
       ],
       "path": "worldcore/mud/commands/progression/questsCommand.ts"
     },
@@ -4807,7 +4808,8 @@
       "kind": "mud_command",
       "notes": [
         "Implements 'talk <npc>'.",
-        "Finds an NPC in the room, fires a talk_to progression event, runs hooks, and prints any progression snippets."
+        "Finds an NPC in the room, fires a talk_to progression event, runs hooks, and prints any progression snippets.",
+        "Talk supports quest board viewing + filters, including available"
       ],
       "path": "worldcore/mud/commands/world/talkCommand.ts"
     },

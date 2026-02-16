@@ -20,6 +20,9 @@ export type TownQuestBoardRenderOpts = {
   /** When true, render only quests that are newly unlocked follow-ups (not yet accepted). */
   onlyNew?: boolean;
 
+  /** When true, render only quests that are available to accept (unaccepted, non-NEW). */
+  onlyAvailable?: boolean;
+
   /** When true, render only quests that are currently active (accepted but not completed). */
   onlyActive?: boolean;
 
@@ -59,6 +62,8 @@ export function renderTownQuestBoard(
   const onlyActive = !onlyNew && !!opts?.onlyActive;
   const onlyReady = !onlyNew && !onlyActive && !!opts?.onlyReady;
   const onlyTurned = !onlyNew && !onlyActive && !onlyReady && !!opts?.onlyTurned;
+  const onlyAvailable =
+    !onlyNew && !onlyActive && !onlyReady && !onlyTurned && !!opts?.onlyAvailable;
   const lines: string[] = [];
 
   lines.push(
@@ -76,6 +81,13 @@ export function renderTownQuestBoard(
         const entry = state[q.id];
         return !entry && unlockedFollowups.has(q.id);
       })
+    : onlyAvailable
+      ? offering.quests.filter((q) => {
+          const entry = state[q.id];
+          // Available == unaccepted AND not a newly-unlocked follow-up.
+          // (Option A: keep NEW as its own view so 'available' stays clean.)
+          return !entry && !unlockedFollowups.has(q.id);
+        })
     : onlyActive
       ? offering.quests.filter((q) => {
           const entry = state[q.id];
@@ -103,7 +115,7 @@ export function renderTownQuestBoard(
   //   4) Turned in [T]
   //   5) Available [ ]
   const orderedVisibleQuests = (() => {
-    if (onlyNew || onlyActive || onlyReady) return visibleQuests;
+    if (onlyNew || onlyAvailable || onlyActive || onlyReady) return visibleQuests;
 
     const newlyUnlocked: QuestDefinition[] = [];
     const active: QuestDefinition[] = [];
@@ -134,6 +146,7 @@ export function renderTownQuestBoard(
   })();
 
   if (onlyNew) lines.push(`NEW quests available: ${orderedVisibleQuests.length}`);
+  else if (onlyAvailable) lines.push(`Available quests: ${orderedVisibleQuests.length}`);
   else if (onlyActive) lines.push(`Active quests: ${orderedVisibleQuests.length}`);
   else if (onlyReady) lines.push(`Ready quests: ${orderedVisibleQuests.length}`);
   else if (onlyTurned) lines.push(`Turned-in quests: ${orderedVisibleQuests.length}`);
@@ -143,6 +156,8 @@ export function renderTownQuestBoard(
     lines.push(
       onlyNew
         ? " - No NEW quests available."
+        : onlyAvailable
+          ? " - No available quests."
         : onlyActive
           ? " - No active quests."
           : onlyReady
@@ -184,7 +199,7 @@ export function renderTownQuestBoard(
   lines.push("");
   lines.push(
     "Use: quest accept <#|id>   |   quest abandon <#|id>   |   questlog" +
-      (onlyNew || onlyActive || onlyReady ? "   |   quest board" : "")
+      (onlyNew || onlyAvailable || onlyActive || onlyReady ? "   |   quest board" : "")
   );
 
   return lines.join("\n").trimEnd();

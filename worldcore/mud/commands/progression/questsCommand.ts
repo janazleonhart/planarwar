@@ -52,6 +52,9 @@ export async function handleQuestCommand(
     if (mode === "new") {
       return renderTownQuestBoard(ctx, char, { onlyNew: true });
     }
+    if (mode === "available" || mode === "avail") {
+      return renderTownQuestBoard(ctx, char, { onlyAvailable: true });
+    }
     if (mode === "active") {
       return renderTownQuestBoard(ctx, char, { onlyActive: true });
     }
@@ -104,6 +107,7 @@ export async function handleQuestCommand(
     " quest readyhere|readylocal (aliases of 'quest ready here')",
     " quest show <#|id|name>      (shows quest details)",
     " quest board                (shows available town quests)",
+    " quest board available       (shows only available (non-NEW) town quests)",
     " quest board new            (shows only newly unlocked follow-ups)",
     " quest board active         (shows only your active quests)",
     " quest board ready          (shows only quests ready to turn in)",
