@@ -523,37 +523,65 @@ function computeResourceFamilies(q: QuestDefinition): string[] {
  */
 
 export function renderTownQuestBoardDebugCaps(ctx: any, char: any): string {
-  // Staff-only wrapper exists in questsCommand; this function is pure display.
+  const data = getTownQuestBoardDebugCapsData(ctx, char);
+  if (!data) return "[quest] No town context.";
+
+  const lines: string[] = [];
+  lines.push("Quest Board Debug Caps (staff):");
+  lines.push(` - townId: ${data.townId}`);
+  lines.push(` - tier: ${data.tier}`);
+  lines.push(` - epoch: ${data.epoch}`);
+  lines.push(` - rotationKey: ${data.rotationKey}`);
+  lines.push(` - recentOfferedIds: ${data.recentOfferedIds.length ? data.recentOfferedIds.join(", ") : "(none)"}`);
+  lines.push(` - recentObjectiveSignatures: ${data.recentObjectiveSignatures.length ? data.recentObjectiveSignatures.join(", ") : "(none)"}`);
+  lines.push(` - recentResourceFamilies: ${data.recentResourceFamilies.length ? data.recentResourceFamilies.join(", ") : "(none)"}`);
+  lines.push(` - recentFollowupParents: ${data.recentFollowupParentIds.length ? data.recentFollowupParentIds.join(", ") : "(none)"}`);
+
+  return lines.join("\n").trimEnd();
+}
+
+export type TownQuestBoardDebugCapsData = {
+  townId: string;
+  tier: number;
+  epoch: string;
+  rotationKey: string;
+  recentOfferedIds: string[];
+  recentObjectiveSignatures: string[];
+  recentResourceFamilies: string[];
+  recentFollowupParentIds: string[];
+};
+
+export function getTownQuestBoardDebugCapsData(ctx: any, char: any): TownQuestBoardDebugCapsData | null {
+  // Staff-only wrapper exists in questsCommand; this function is pure data.
   const roomId = getQuestContextRoomId(ctx, char);
   const townId = roomId ? inferRegionId(ctx, roomId) : null;
-
-  if (!townId) return "[quest] No town context.";
+  if (!townId) return null;
 
   const tier = inferTownTier(ctx, townId) ?? 1;
   const epoch = inferQuestEpoch();
 
   const rotationKey = `town:${townId}|t${tier}`;
-  const recentOffered = getRecentOfferedQuestIds(char as any, rotationKey, epoch);
+  const recentOfferedIds = getRecentOfferedQuestIds(char as any, rotationKey, epoch);
 
   // v0.26: fairness weighting across rotations (quest shapes).
   const sigKey = `${rotationKey}|sigs`;
   const famKey = `${rotationKey}|families`;
-  const recentSigs = getRecentOfferedStrings(char as any, sigKey, epoch);
-  const recentFams = getRecentOfferedStrings(char as any, famKey, epoch);
+  const recentObjectiveSignatures = getRecentOfferedStrings(char as any, sigKey, epoch);
+  const recentResourceFamilies = getRecentOfferedStrings(char as any, famKey, epoch);
 
   const followupRotationKey = `${rotationKey}|followupParents`;
-  const recentParents = getRecentFollowupParentIds(char as any, followupRotationKey, epoch);
+  const recentFollowupParentIds = getRecentFollowupParentIds(char as any, followupRotationKey, epoch);
 
-  const lines: string[] = [];
-  lines.push("Quest Board Debug Caps (staff):");
-  lines.push(` - townId: ${townId}`);
-  lines.push(` - tier: ${tier}`);
-  lines.push(` - epoch: ${epoch}`);
-  lines.push(` - rotationKey: ${rotationKey}`);
-  lines.push(` - recentOfferedIds: ${recentOffered.length ? recentOffered.join(", ") : "(none)"}`);
-  lines.push(` - recentFollowupParents: ${recentParents.length ? recentParents.join(", ") : "(none)"}`);
-
-  return lines.join("\n").trimEnd();
+  return {
+    townId,
+    tier,
+    epoch,
+    rotationKey,
+    recentOfferedIds,
+    recentObjectiveSignatures,
+    recentResourceFamilies,
+    recentFollowupParentIds,
+  };
 }
 
 export function getTownContextForTurnin(

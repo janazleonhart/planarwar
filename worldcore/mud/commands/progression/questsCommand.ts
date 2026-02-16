@@ -122,6 +122,7 @@ if (!sub || sub === "log" || sub === "list" || sub === "quests" || sub === "ques
       return [
         "Quest Debug (staff):",
         " quest debug show <#|id|name>",
+        " quest debug explain <#|id|name>      (show + rotation-memory comparisons)",
         " quest debug board                 (full board + per-quest metadata)",
         " quest debug board <available|new|active|ready|turned>",
         " quest debug caps                  (shows rotation memory + keys)",
@@ -132,6 +133,12 @@ if (!sub || sub === "log" || sub === "list" || sub === "quests" || sub === "ques
       const target = input.parts.slice(3).join(" ").trim();
       if (!target) return "Usage: quest debug show <#|id|name>";
       return renderQuestDetails(char, target, { ctx, debug: true });
+    }
+
+    if (sub2 === "explain") {
+      const target = input.parts.slice(3).join(" ").trim();
+      if (!target) return "Usage: quest debug explain <#|id|name>";
+      return renderQuestDetails(char, target, { ctx, debug: true, explain: true });
     }
 
 

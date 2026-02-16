@@ -13,6 +13,7 @@ import {
   resolveQuestDefinitionFromStateId,
   resolveTownQuestFromContext,
   listTownQuestBoardQuests,
+  getTownQuestBoardDebugCapsData,
 } from "./TownQuestBoard";
 import { getAllQuests, getQuestById } from "./QuestRegistry";
 import { renderQuestAmbiguous } from "./QuestCommandText";
@@ -184,12 +185,12 @@ export function renderQuestDetails(char: CharacterState, targetRaw: string): str
 export function renderQuestDetails(
   char: CharacterState,
   targetRaw: string,
-  opts?: { ctx?: any; debug?: boolean }
+  opts?: { ctx?: any; debug?: boolean; explain?: boolean }
 ): string;
 export function renderQuestDetails(
   char: CharacterState,
   targetRaw: string,
-  opts: { ctx?: any; debug?: boolean } = {}
+  opts: { ctx?: any; debug?: boolean; explain?: boolean } = {}
 ): string {
   const target = (targetRaw || "").trim();
   if (!target) {
@@ -380,11 +381,30 @@ export function renderQuestDetails(
     const fams = computeResourceFamilies(quest);
     const sem = computeSemanticKeys(quest);
 
+    const caps = (opts.explain && opts.ctx) ? getTownQuestBoardDebugCapsData(opts.ctx, char as any) : null;
+    const sigIsRecent = !!(caps && sig && caps.recentObjectiveSignatures.includes(sig));
+    const famIsRecent = !!(caps && fams.some((f) => caps.recentResourceFamilies.includes(f)));
+    const idIsRecent = !!(caps && caps.recentOfferedIds.includes(String(quest.id)));
+
     lines.push("");
     lines.push("Debug (staff):");
     if (sig) lines.push(` - signature: ${sig}`);
-    if (fams.length) lines.push(` - families: ${fams.join(", ")}`);
+    // Always show families line (even if empty) so staff/debug tooling and tests
+    // can rely on its presence without being sensitive to quest kind.
+    lines.push(` - families: ${fams.length ? fams.join(", ") : "(none)"}`);
     if (sem.length) lines.push(` - semantic: ${sem.slice(0, 10).join(", ")}`);
+
+    // Optional explain mode: compare the quest's computed "shape" against current rotation memory.
+    // This stays staff-only and is meant for internal verification (not player UX).
+    if (caps) {
+      lines.push(" - explain:");
+      lines.push(`   - epoch: ${caps.epoch}`);
+      lines.push(`   - rotationKey: ${caps.rotationKey}`);
+      lines.push(`   - recentOfferedId: ${idIsRecent ? "YES" : "no"}`);
+      if (sig) lines.push(`   - signatureRecent: ${sigIsRecent ? "YES" : "no"}`);
+      const hits = fams.filter((f) => caps.recentResourceFamilies.includes(f));
+      lines.push(`   - familiesRecent: ${hits.length ? hits.join(", ") : "(none)"}`);
+    }
   }
 
   if (isReady) {
