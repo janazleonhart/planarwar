@@ -413,6 +413,18 @@ if (candidates.length > 0) {
   // We treat the *first* objective as the primary kind (the board grouping logic does the same).
   const primaryKindOf = (q: QuestDefinition): string => q.objectives?.[0]?.kind ?? "unknown";
 
+  // Generator v0.22: objective signature variety (soft).
+  // Even with kind + semantic caps, compound quests can still feel repetitive if multiple
+  // offerings share the same objective-kind *pattern* (e.g. harvest+collect repeated).
+  // We treat the objective kind sequence as a "signature" and softly cap repeats.
+  const objectiveSignatureOf = (q: QuestDefinition): string => {
+    const objs: any[] = Array.isArray(q.objectives) ? (q.objectives as any[]) : [];
+    if (objs.length === 0) return "sig:empty";
+    return `sig:${objs
+      .map((o) => (o && typeof o.kind === "string" ? o.kind : "unknown"))
+      .join("+")}`;
+  };
+
   // Generator v0.20 → v0.21: semantic variety (soft).
   // v0.20: avoid repeating the *same target* for the primary objective.
   // v0.21: extend this to *all objectives* (compound quests included) so secondary
@@ -463,6 +475,14 @@ if (candidates.length > 0) {
     }
   }
 
+  // Signature cap is between kind-cap and semantic-cap: allow repeats, but prefer variety.
+  const baseSignatureCap = 1;
+  const signatureCounts = new Map<string, number>();
+  for (const q of quests) {
+    const sig = objectiveSignatureOf(q);
+    signatureCounts.set(sig, (signatureCounts.get(sig) ?? 0) + 1);
+  }
+
   // Bounded retry loop to prevent infinite loops if pools are tiny and we keep colliding.
   const maxAttempts = Math.max(50, maxQuests * 40);
   let idx = 0;
@@ -481,6 +501,13 @@ if (candidates.length > 0) {
     if (attempt > Math.floor(maxAttempts * 0.65)) return baseSemanticCap + 2;
     if (attempt > Math.floor(maxAttempts * 0.45)) return baseSemanticCap + 1;
     return baseSemanticCap;
+  };
+
+  const signatureCapAtAttempt = (attempt: number): number => {
+    if (attempt > Math.floor(maxAttempts * 0.85)) return Number.POSITIVE_INFINITY;
+    if (attempt > Math.floor(maxAttempts * 0.65)) return baseSignatureCap + 2;
+    if (attempt > Math.floor(maxAttempts * 0.45)) return baseSignatureCap + 1;
+    return baseSignatureCap;
   };
 
 
@@ -511,6 +538,12 @@ if (candidates.length > 0) {
     const current = kindCounts.get(kind) ?? 0;
     if (Number.isFinite(cap) && current >= cap) continue;
 
+    // Objective signature cap (soft): avoid repeating the same objective pattern too often.
+    const sig = objectiveSignatureOf(q);
+    const sigCap = signatureCapAtAttempt(attempts);
+    const sigCur = signatureCounts.get(sig) ?? 0;
+    if (Number.isFinite(sigCap) && sigCur >= sigCap) continue;
+
     // Semantic cap (soft): avoid repeating the same targets across *all* objectives.
     // This is especially important for compound quests.
     const sKeys = semanticKeysOf(q);
@@ -535,6 +568,7 @@ if (candidates.length > 0) {
     seenIds.add(q.id);
     quests.push(q);
     kindCounts.set(kind, current + 1);
+    signatureCounts.set(sig, sigCur + 1);
   }
 }
 
