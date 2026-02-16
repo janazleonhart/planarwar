@@ -450,10 +450,68 @@ if (candidates.length > 0) {
     }
   };
 
+  // Generator v0.23: semantic "family" variety (soft).
+  // We group harvest + collect objectives into broad resource families so the board
+  // doesn't spam the same resource type in multiple shapes (e.g. harvest herb + turn-in herb).
+  // This is intentionally heuristic (prefix-based) and must remain deterministic.
+  const semanticFamilyKeysOfObjective = (o: any): string[] => {
+    if (!o || typeof o.kind !== "string") return [];
+
+    const resourceFamilyOfId = (id: string): string | null => {
+      const s = String(id);
+      if (s.startsWith("herb_")) return "herb";
+      if (s.startsWith("wood_")) return "wood";
+      if (s.startsWith("ore_")) return "ore";
+      if (s.startsWith("stone_")) return "stone";
+      if (s.startsWith("grain_")) return "grain";
+      if (s.startsWith("fish_")) return "fish";
+      if (s.startsWith("mana_")) return "mana";
+      return null;
+    };
+
+    switch (o.kind) {
+      case "harvest": {
+        if (typeof o.nodeProtoId !== "string") return [];
+        const fam = resourceFamilyOfId(o.nodeProtoId);
+        return fam ? [`resfam:${fam}`] : [];
+      }
+      case "vein_report": {
+        // Some resource reporting objectives (e.g. "vein_report_herb_peacebloom")
+        // should count toward the same family caps as harvest/turn-in variants.
+        // We support multiple historical field names to stay robust across objective unions.
+        const id =
+          typeof o.nodeProtoId === "string"
+            ? o.nodeProtoId
+            : typeof o.veinProtoId === "string"
+              ? o.veinProtoId
+              : typeof o.resourceProtoId === "string"
+                ? o.resourceProtoId
+                : null;
+        if (!id) return [];
+        const fam = resourceFamilyOfId(id);
+        return fam ? [`resfam:${fam}`] : [];
+      }
+      case "collect_item": {
+        if (typeof o.itemId !== "string") return [];
+        const fam = resourceFamilyOfId(o.itemId);
+        return fam ? [`resfam:${fam}`] : [];
+      }
+      default:
+        return [];
+    }
+  };
+
   const semanticKeysOf = (q: QuestDefinition): string[] => {
     const objs: any[] = Array.isArray(q.objectives) ? (q.objectives as any[]) : [];
     const out: string[] = [];
     for (const o of objs) out.push(...semanticKeysOfObjective(o));
+    return out;
+  };
+
+  const semanticFamilyKeysOf = (q: QuestDefinition): string[] => {
+    const objs: any[] = Array.isArray(q.objectives) ? (q.objectives as any[]) : [];
+    const out: string[] = [];
+    for (const o of objs) out.push(...semanticFamilyKeysOfObjective(o));
     return out;
   };
 
@@ -472,6 +530,16 @@ if (candidates.length > 0) {
   for (const q of quests) {
     for (const s of semanticKeysOf(q)) {
       semanticCounts.set(s, (semanticCounts.get(s) ?? 0) + 1);
+    }
+  }
+
+  // Family caps are looser than the exact semantic caps, but still bias for variety.
+  // Example: avoid both harvest herb + turn-in herb when wood/ore alternatives exist.
+  const baseFamilyCap = 1;
+  const familyCounts = new Map<string, number>();
+  for (const q of quests) {
+    for (const f of semanticFamilyKeysOf(q)) {
+      familyCounts.set(f, (familyCounts.get(f) ?? 0) + 1);
     }
   }
 
@@ -501,6 +569,13 @@ if (candidates.length > 0) {
     if (attempt > Math.floor(maxAttempts * 0.65)) return baseSemanticCap + 2;
     if (attempt > Math.floor(maxAttempts * 0.45)) return baseSemanticCap + 1;
     return baseSemanticCap;
+  };
+
+  const familyCapAtAttempt = (attempt: number): number => {
+    if (attempt > Math.floor(maxAttempts * 0.85)) return Number.POSITIVE_INFINITY;
+    if (attempt > Math.floor(maxAttempts * 0.65)) return baseFamilyCap + 2;
+    if (attempt > Math.floor(maxAttempts * 0.45)) return baseFamilyCap + 1;
+    return baseFamilyCap;
   };
 
   const signatureCapAtAttempt = (attempt: number): number => {
@@ -560,9 +635,32 @@ if (candidates.length > 0) {
         }
         if (blocked) continue;
       }
-      for (const sKey of sKeys) {
-        semanticCounts.set(sKey, (semanticCounts.get(sKey) ?? 0) + 1);
+    }
+
+    // Semantic family cap (soft): avoid spamming the same resource family across
+    // harvest/collect quests in different shapes (e.g. harvest herb + turn-in herb).
+    const fKeys = semanticFamilyKeysOf(q);
+    if (fKeys.length > 0) {
+      const fCap = familyCapAtAttempt(attempts);
+      if (Number.isFinite(fCap)) {
+        let blocked = false;
+        for (const fKey of fKeys) {
+          const fCur = familyCounts.get(fKey) ?? 0;
+          if (fCur >= fCap) {
+            blocked = true;
+            break;
+          }
+        }
+        if (blocked) continue;
       }
+    }
+
+    // All caps passed; now increment our tracking counts.
+    for (const sKey of sKeys) {
+      semanticCounts.set(sKey, (semanticCounts.get(sKey) ?? 0) + 1);
+    }
+    for (const fKey of fKeys) {
+      familyCounts.set(fKey, (familyCounts.get(fKey) ?? 0) + 1);
     }
 
     seenIds.add(q.id);
