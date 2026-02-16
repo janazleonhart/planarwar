@@ -160,7 +160,7 @@ export function generateTownQuests(opts: TownQuestGeneratorOptions): QuestDefini
       const nodeProtoId = pickResourceNodeProtoId(rng, tier);
       const required = jitterInt(rng, 6 + tier * 4, 0, 4);
       return {
-        id: `${prefix}resource_sampling`,
+        id: `${prefix}resource_sampling_${nodeProtoId}`,
         name: "Resource Sampling",
         description: "Gather resource samples from nearby nodes.",
         turninPolicy: "board",
@@ -274,17 +274,18 @@ export function generateTownQuests(opts: TownQuestGeneratorOptions): QuestDefini
   if (tier >= 2) {
     candidates.push(() => {
       const harvestReq = jitterInt(rng, 5 + tier * 3, 0, 3);
+      const nodeProtoId = pickResourceNodeProtoId(rng, tier);
       const r1 = rewardForObjective(rng, "harvest", tier, harvestReq, false);
       const r2 = rewardForObjective(rng, "talk_to", tier, 1, false);
       const reward = rewardForCompound(rng, mergeRewards(r1, r2), 0.9);
       return {
-        id: `${prefix}vein_report`,
+        id: `${prefix}vein_report_${nodeProtoId}`,
         name: "Vein Report",
         description: "Gather ore samples and report your findings to the quartermaster.",
         turninPolicy: "board",
         turninBoardId: townId,
         objectives: [
-          { kind: "harvest", nodeProtoId: pickResourceNodeProtoId(rng, tier), required: harvestReq },
+          { kind: "harvest", nodeProtoId, required: harvestReq },
           { kind: "talk_to", npcId: "npc_quartermaster", required: 1 },
         ],
         reward,
@@ -298,6 +299,7 @@ export function generateTownQuests(opts: TownQuestGeneratorOptions): QuestDefini
     candidates.push(() => {
       const itemId = pickRepeatableTurninItemId(rng, tier);
       const harvestReq = jitterInt(rng, 4 + tier * 2, 0, 2);
+      const nodeProtoId = pickResourceNodeProtoId(rng, tier);
       const collectReq = Math.max(2, Math.floor(harvestReq * 0.75));
 
       const r1 = rewardForObjective(rng, "harvest", tier, harvestReq, false);
@@ -319,48 +321,35 @@ export function generateTownQuests(opts: TownQuestGeneratorOptions): QuestDefini
     });
   }
 
-  // Deterministic ordering: shuffle candidates, then emit until max.
-  //
-  // Generator v0.9: prefer *diverse* objective kinds in the offering.
-  // This reduces "three harvest quests in a trench coat" situations, while
-  // preserving strict determinism. Tier-1 remains intentionally stable due
-  // to onboarding + tests.
-  const shuffled = shuffleStable(candidates, rng);
 
-  const presentKinds = new Set<string>();
-  for (const q of quests) {
-    const k = String((q.objectives as any)?.[0]?.kind ?? "").trim();
-    if (k) presentKinds.add(k);
-  }
+// ----------------------------
+// Fill remaining slots (dedupe-safe / underfill-safe)
+// ----------------------------
+// Some tiers intentionally have *no* extra candidates (e.g., tier 1). In that case we allow underfill.
+// For tiers with candidates, we retry generation to avoid duplicate quest IDs and avoid crashing when the
+// candidate list is empty.
+const seenIds = new Set<string>(quests.map((q) => q.id));
 
-  const pickKind = (q: QuestDefinition): string => {
-    const k = String((q.objectives as any)?.[0]?.kind ?? "").trim();
-    return k || "unknown";
-  };
+if (candidates.length > 0) {
+  const shuffled = shuffleStable(candidates.slice(), rng);
 
-  // Pass 1: prefer new kinds when there is slack.
-  for (const mk of shuffled) {
-    if (quests.length >= maxQuests) break;
+  // Bounded retry loop to prevent infinite loops if pools are tiny and we keep colliding.
+  const maxAttempts = Math.max(50, maxQuests * 40);
+  let idx = 0;
+
+  for (let attempts = 0; quests.length < maxQuests && attempts < maxAttempts; attempts++) {
+    const mk = shuffled[idx % shuffled.length];
+    idx++;
+
     const q = mk();
-    const kind = pickKind(q);
 
-    const remainingSlots = maxQuests - quests.length;
-    if (tier >= 2 && remainingSlots > 1 && presentKinds.has(kind)) {
+    if (seenIds.has(q.id))
       continue;
-    }
 
+    seenIds.add(q.id);
     quests.push(q);
-    presentKinds.add(kind);
   }
-
-  // Pass 2: backfill any remaining slots (never underfill due to diversity skipping).
-  if (quests.length < maxQuests) {
-    for (const mk of shuffled) {
-      if (quests.length >= maxQuests) break;
-      quests.push(mk());
-    }
-  }
-
+}
 
   // ----------------------------
   // Deterministic chain follow-ups (v0.4)
