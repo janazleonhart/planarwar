@@ -598,6 +598,7 @@ export function resolveQuestDefinitionFromStateId(
       epoch: src.epoch,
       maxQuests: 12,
       includeRepeatables: true,
+      includeChainCatalog: true,
     });
     return generated.find((q) => q.id === questId) ?? null;
   }
@@ -646,9 +647,11 @@ function computeUnlockedFollowupQuests(char: CharacterState): QuestDefinition[] 
     if (!entry) continue;
     if (!hasTurnedInQuest(char, questId)) continue;
 
-    // Prefer registry definition; fall back to service snapshot if present.
+    // Resolve the definition for the quest that was turned in.
+    // This supports BOTH registry quests and generated town quests.
     const def =
       getQuestById(questId) ??
+      resolveQuestDefinitionFromStateId(questId, entry as any) ??
       ((entry as any).source?.kind === "service" ? (entry as any).source?.def : null);
 
     const unlocks = Array.isArray((def as any)?.unlocks) ? (def as any).unlocks : [];
@@ -660,15 +663,56 @@ function computeUnlockedFollowupQuests(char: CharacterState): QuestDefinition[] 
 
   const out: QuestDefinition[] = [];
   const seen = new Set<string>();
+
   for (const id of unlockedIds) {
     if (seen.has(id)) continue;
     seen.add(id);
 
+    // 1) Registry quest
     const q = getQuestById(id);
-    if (q) out.push(q);
+    if (q) {
+      out.push(q);
+      continue;
+    }
+
+    // 2) Generated-town follow-up (deterministic catalog lookup)
+    //
+    // For generated quests, follow-ups live inside the same generated catalog
+    // for the town/tier/epoch that produced the quest that unlocked them.
+    const unlocked = resolveGeneratedUnlockedQuestFromState(char, id);
+    if (unlocked) out.push(unlocked);
   }
 
   return out;
+}
+
+function resolveGeneratedUnlockedQuestFromState(
+  char: CharacterState,
+  unlockedQuestId: string
+): QuestDefinition | null {
+  const state = ensureQuestState(char);
+
+  for (const entry of Object.values(state)) {
+    const src = (entry as any)?.source;
+    if (!src) continue;
+
+    if (src.kind !== "generated_town" && src.kind !== "generated") continue;
+
+    // Generate a large catalog so "maxQuests" on the board doesn't hide follow-ups.
+    const catalog = generateTownQuests({
+      townId: src.townId,
+      tier: src.tier,
+      epoch: src.epoch,
+      maxQuests: 50,
+      includeRepeatables: true,
+      includeChainCatalog: true,
+    });
+
+    const found = catalog.find((q) => q.id === unlockedQuestId);
+    if (found) return found;
+  }
+
+  return null;
 }
 
 function getTownQuestOffering(ctx: any, char: any): TownQuestOffering | null {

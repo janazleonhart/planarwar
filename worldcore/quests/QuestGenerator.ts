@@ -21,6 +21,8 @@ export interface TownQuestGeneratorOptions {
   maxQuests?: number;
   /** Include repeatable item turn-in quests (default true). */
   includeRepeatables?: boolean;
+  /** Include locked chain follow-ups in the returned catalog (default false). */
+  includeChainCatalog?: boolean;
 }
 
 /**
@@ -95,6 +97,7 @@ export function generateTownQuests(opts: TownQuestGeneratorOptions): QuestDefini
         },
       ],
       reward: { xp: jitterInt(rng, 60 + tier * 25, 0, 15) },
+      unlocks: [`${prefix}rat_culling_ii`],
     };
   });
 
@@ -177,6 +180,38 @@ export function generateTownQuests(opts: TownQuestGeneratorOptions): QuestDefini
   for (const mk of shuffled) {
     if (quests.length >= maxQuests) break;
     quests.push(mk());
+  }
+
+
+  // ----------------------------
+  // Deterministic chain follow-ups (v0.4)
+  //
+  // Follow-ups are NOT part of the default board offering; they are surfaced
+  // via TownQuestBoard's unlocked-followup mechanism once prerequisites are met.
+  //
+  // When includeChainCatalog=true, we emit the locked follow-up definitions so
+  // unlock resolution can fetch them deterministically.
+  // ----------------------------
+  if (opts.includeChainCatalog) {
+    const ratCullingId = `${prefix}rat_culling`;
+    const ratCullingFollowId = `${prefix}rat_culling_ii`;
+
+    quests.push({
+      id: ratCullingFollowId,
+      name: "Rat Culling II",
+      description: "The infestation is worse than expected. Cull more rats to keep the town safe.",
+      turninPolicy: "board",
+      turninBoardId: townId,
+      requiresTurnedIn: [ratCullingId],
+      objectives: [
+        {
+          kind: "kill",
+          targetProtoId: "town_rat",
+          required: jitterInt(rng, 6 + tier * 3, 0, 3),
+        },
+      ],
+      reward: { xp: jitterInt(rng, 90 + tier * 35, 0, 20) },
+    });
   }
 
   // Sanity: ensure unique ids.
