@@ -27,8 +27,50 @@ export interface TownQuestGeneratorOptions {
   /**
    * Optional extension hook: additional candidate quest factories to include.
    * Useful for experiments (or future town-specific plugins) without changing core pools.
+   *
+   * Historical note: some callers represented this hook as `{ mk: () => QuestDefinition }`
+   * or even a concrete `QuestDefinition`. The generator normalizes these shapes to
+   * avoid brittle runtime crashes (e.g. "mk is not a function"). Unknown entries
+   * are ignored.
    */
-  extraCandidates?: Array<() => QuestDefinition>;
+  extraCandidates?: Array<
+    | (() => QuestDefinition)
+    | { mk: () => QuestDefinition }
+    | QuestDefinition
+    | null
+    | undefined
+  >;
+}
+
+function normalizeExtraCandidates(
+  extra: TownQuestGeneratorOptions["extraCandidates"],
+): Array<() => QuestDefinition> {
+  if (!extra || extra.length === 0) return [];
+
+  const out: Array<() => QuestDefinition> = [];
+  for (const entry of extra) {
+    if (!entry) continue;
+    if (typeof entry === "function") {
+      out.push(entry);
+      continue;
+    }
+    const maybeObj = entry as any;
+    if (maybeObj && typeof maybeObj.mk === "function") {
+      out.push(maybeObj.mk);
+      continue;
+    }
+    if (
+      maybeObj &&
+      typeof maybeObj.id === "string" &&
+      typeof maybeObj.name === "string" &&
+      Array.isArray(maybeObj.objectives)
+    ) {
+      const def = maybeObj as QuestDefinition;
+      out.push(() => def);
+      continue;
+    }
+  }
+  return out;
 }
 
 /**
@@ -328,11 +370,8 @@ export function generateTownQuests(opts: TownQuestGeneratorOptions): QuestDefini
   }
 
   // Optional extension hook: allow callers to add candidates without forking this generator.
-  if (Array.isArray(opts.extraCandidates) && opts.extraCandidates.length > 0) {
-    for (const mk of opts.extraCandidates) {
-      if (typeof mk === "function") candidates.push(mk);
-    }
-  }
+  const extraMakers = normalizeExtraCandidates(opts.extraCandidates);
+  for (const mk of extraMakers) candidates.push(mk);
 
 
 // ----------------------------
