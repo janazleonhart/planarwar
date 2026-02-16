@@ -29,6 +29,12 @@ function clampInt(n: number, lo: number, hi: number): number {
   return Math.min(hi, Math.max(lo, x));
 }
 
+function clamp01(n: unknown, fallback: number): number {
+  const x = Number(n);
+  if (!Number.isFinite(x)) return fallback;
+  return Math.max(0, Math.min(1, x));
+}
+
 // These are onboarding staples. They should not be rotated out.
 function isRotationImmuneQuestId(id: string): boolean {
   const s = String(id ?? "").toLowerCase();
@@ -558,11 +564,15 @@ export function renderTownQuestBoardDebugTuning(ctx: any, char: any): string {
   const data = getTownQuestBoardDebugCapsData(ctx, char);
   if (!data) return "[quest] No town context.";
 
+  const roomId = getQuestContextRoomId(ctx, char);
+  const profileTags = roomId ? getTownQuestBoardProfileTags(ctx, roomId) : [];
+  const profileName = pickTownQuestBoardProfile(profileTags);
+
   // Mirror generator defaults (QuestGenerator.ts) so staff can see what is in play.
   const tier = Math.max(1, Math.floor(data.tier || 1));
   const defaultMax = clampInt(2 + Math.min(tier, 4), 3, 6);
   const base = getDefaultTownQuestGeneratorTuning({ tier, maxQuests: defaultMax });
-  const overrides = getTownQuestBoardTuningOverrides(tier);
+  const overrides = getTownQuestBoardTuningOverrides(tier, profileName);
   const tuning: TownQuestGeneratorTuning = { ...base, ...overrides };
 
   const lines: string[] = [];
@@ -571,6 +581,8 @@ export function renderTownQuestBoardDebugTuning(ctx: any, char: any): string {
   lines.push(` - tier: ${data.tier}`);
   lines.push(` - epoch: ${data.epoch}`);
   lines.push(` - maxQuests(default): ${defaultMax}`);
+  lines.push(` - profileTags: ${profileTags.length ? profileTags.join(", ") : "(none)"}`);
+  lines.push(` - profile: ${profileName ?? "(none)"}`);
   lines.push(
     ` - overrides: ${Object.keys(overrides).length ? Object.keys(overrides).sort().join(", ") : "(none)"}`
   );
@@ -583,23 +595,77 @@ export function renderTownQuestBoardDebugTuning(ctx: any, char: any): string {
   return lines.join("\n").trimEnd();
 }
 
-// v0.29: tier-based tuning activation.
+function getTownQuestBoardProfileTags(ctx: any, roomId: string): string[] {
+  try {
+    const rooms = ctx?.rooms;
+    if (!rooms || typeof rooms.getRoom !== "function") return [];
+    const room = rooms.getRoom(roomId);
+    const tags = Array.isArray(room?.tags) ? (room.tags as any[]) : [];
+    return tags
+      .filter((t) => typeof t === "string" && t.startsWith("town_profile_"))
+      .map((t) => String(t))
+      .sort();
+  } catch {
+    return [];
+  }
+}
+
+function pickTownQuestBoardProfile(profileTags: string[]): "arcane" | "military" | "trade" | null {
+  if (!profileTags || profileTags.length === 0) return null;
+  // Deterministic priority order if multiple tags exist.
+  if (profileTags.includes("town_profile_arcane")) return "arcane";
+  if (profileTags.includes("town_profile_military")) return "military";
+  if (profileTags.includes("town_profile_trade")) return "trade";
+  return null;
+}
+
+// v0.29/v0.30: tier-based tuning activation + optional town profile overrides.
 //
 // These overrides are intentionally modest. Tier 1 remains conservative onboarding.
 // Higher tiers nudge harder toward variety/rotation fairness.
-function getTownQuestBoardTuningOverrides(tier: number): Partial<TownQuestGeneratorTuning> {
+function getTownQuestBoardTuningOverrides(
+  tier: number,
+  profile: "arcane" | "military" | "trade" | null
+): Partial<TownQuestGeneratorTuning> {
   const t = Math.max(1, Math.floor(Number.isFinite(tier) ? tier : 1));
-  if (t <= 1) return {};
+
+  // Base tier overrides.
+  let out: Partial<TownQuestGeneratorTuning> = {};
   if (t === 2) {
-    return {
-      avoidRecentUntilFrac: 0.8,
-      avoidRecentShapesUntilFrac: 0.85,
+    out = { avoidRecentUntilFrac: 0.8, avoidRecentShapesUntilFrac: 0.85 };
+  } else if (t >= 3) {
+    out = { avoidRecentUntilFrac: 0.85, avoidRecentShapesUntilFrac: 0.9 };
+  }
+
+  // Profile overrides: gentle nudges that do NOT affect player-facing text.
+  // These only influence selection preference when the pool allows.
+  if (profile === "arcane") {
+    out = {
+      ...out,
+      // Arcane towns tend to have more "shape" variety (talk/cast/collect), so bias harder.
+      avoidRecentShapesUntilFrac: clamp01(
+        (out.avoidRecentShapesUntilFrac ?? 0) + 0.05,
+        out.avoidRecentShapesUntilFrac ?? 0
+      ),
+    };
+  } else if (profile === "military") {
+    out = {
+      ...out,
+      // Military towns bias more toward repeatable training loops; keep ID-avoidance stronger.
+      avoidRecentUntilFrac: clamp01((out.avoidRecentUntilFrac ?? 0) + 0.05, out.avoidRecentUntilFrac ?? 0),
+    };
+  } else if (profile === "trade") {
+    out = {
+      ...out,
+      // Trade towns bias toward resource variety to keep the board feeling curated.
+      avoidRecentShapesUntilFrac: clamp01(
+        (out.avoidRecentShapesUntilFrac ?? 0) + 0.03,
+        out.avoidRecentShapesUntilFrac ?? 0
+      ),
     };
   }
-  return {
-    avoidRecentUntilFrac: 0.85,
-    avoidRecentShapesUntilFrac: 0.9,
-  };
+
+  return out;
 }
 
 export type TownQuestBoardDebugCapsData = {
@@ -1191,6 +1257,9 @@ function getTownQuestOffering(ctx: any, char: any): TownQuestOffering | null {
   const followupRotationKey = `${rotationKey}|followupParents`;
   const recentFollowupParents = getRecentFollowupParentIds(char as any, followupRotationKey, epoch);
 
+  const profileTags = getTownQuestBoardProfileTags(ctx, roomId);
+  const profileName = pickTownQuestBoardProfile(profileTags);
+
   const quests = generateTownQuests({
     townId,
     tier,
@@ -1200,7 +1269,7 @@ function getTownQuestOffering(ctx: any, char: any): TownQuestOffering | null {
     recentlyOfferedQuestIds: recentOffered,
     recentlyOfferedObjectiveSignatures: recentSigs,
     recentlyOfferedResourceFamilies: recentFams,
-    tuning: getTownQuestBoardTuningOverrides(tier),
+    tuning: getTownQuestBoardTuningOverrides(tier, profileName),
   });
 
   // Back-compat: some contracts expect turned-in ("[T]") town quests to still appear on the board
