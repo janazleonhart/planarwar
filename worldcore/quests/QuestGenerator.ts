@@ -35,6 +35,20 @@ export interface TownQuestGeneratorOptions {
   recentlyOfferedQuestIds?: string[];
 
   /**
+   * Generator v0.26: fairness weighting across rotations.
+   *
+   * Callers may pass recently offered *objective signatures* (e.g. "sig:harvest+collect_item")
+   * and recently offered *resource families* (e.g. "resfam:herb") so the generator can
+   * prefer under-seen quest *shapes* over time (not just exact quest IDs).
+   *
+   * Like the id-rotation memory, this is a *preference* that relaxes deterministically
+   * near the end of the attempt budget.
+   */
+  recentlyOfferedObjectiveSignatures?: string[];
+  recentlyOfferedResourceFamilies?: string[];
+
+
+  /**
    * Optional extension hook: additional candidate quest factories to include.
    * Useful for experiments (or future town-specific plugins) without changing core pools.
    *
@@ -400,6 +414,18 @@ const recentlyOfferedIdsRaw = Array.isArray(opts.recentlyOfferedQuestIds)
   : [];
 const recentlyOffered = new Set<string>(recentlyOfferedIdsRaw);
 
+  // Generator v0.26: fairness weighting across rotations (signatures/families).
+  const recentlyOfferedSigsRaw = Array.isArray(opts.recentlyOfferedObjectiveSignatures)
+    ? opts.recentlyOfferedObjectiveSignatures.filter((x) => typeof x === "string")
+    : [];
+  const recentlyOfferedSigs = new Set<string>(recentlyOfferedSigsRaw);
+
+  const recentlyOfferedFamiliesRaw = Array.isArray(opts.recentlyOfferedResourceFamilies)
+    ? opts.recentlyOfferedResourceFamilies.filter((x) => typeof x === "string")
+    : [];
+  const recentlyOfferedFamilies = new Set<string>(recentlyOfferedFamiliesRaw);
+
+
 // Some quests are intentionally "sticky" for onboarding + contract stability.
 // They should not be filtered out by rotation history.
 const isRotationImmuneId = (id: string): boolean => {
@@ -594,11 +620,20 @@ if (candidates.length > 0) {
     return true;
   };
 
+
+  const avoidRecentShapeAtAttempt = (attempt: number): boolean => {
+    if (recentlyOfferedSigs.size === 0 && recentlyOfferedFamilies.size === 0) return false;
+    if (attempt > Math.floor(maxAttempts * 0.75)) return false;
+    return true;
+  };
+
   for (let attempts = 0; quests.length < maxQuests && attempts < maxAttempts; attempts++) {
     const mk = shuffled[idx % shuffled.length];
     idx++;
 
     const q = mk();
+
+    const sig = objectiveSignatureOf(q);
 
     if (seenIds.has(q.id)) continue;
 
@@ -607,6 +642,25 @@ if (candidates.length > 0) {
       continue;
     }
 
+    // Rotation v0.26: prefer not to re-offer recently seen *shapes* (signatures / resource families).
+    // This is intentionally soft and relaxes deterministically like id-rotation.
+    if (avoidRecentShapeAtAttempt(attempts)) {
+      if (recentlyOfferedSigs.has(sig)) continue;
+
+      const fKeysRot = semanticFamilyKeysOf(q);
+      if (fKeysRot.length > 0) {
+        let blocked = false;
+        for (const fKey of fKeysRot) {
+          if (recentlyOfferedFamilies.has(fKey)) {
+            blocked = true;
+            break;
+          }
+        }
+        if (blocked) continue;
+      }
+    }
+
+
     // Kind cap (soft).
     const cap = capAtAttempt(attempts);
     const kind = primaryKindOf(q);
@@ -614,7 +668,6 @@ if (candidates.length > 0) {
     if (Number.isFinite(cap) && current >= cap) continue;
 
     // Objective signature cap (soft): avoid repeating the same objective pattern too often.
-    const sig = objectiveSignatureOf(q);
     const sigCap = signatureCapAtAttempt(attempts);
     const sigCur = signatureCounts.get(sig) ?? 0;
     if (Number.isFinite(sigCap) && sigCur >= sigCap) continue;

@@ -18,6 +18,7 @@ import { renderQuestAmbiguous, renderQuestDidYouMean } from "./QuestCommandText"
 
 // Keep this small: it lives on the character state and should be cheap to persist.
 const QUEST_BOARD_ROTATION_MAX = 18;
+const QUEST_BOARD_SHAPE_ROTATION_MAX = 18;
 
 // These are onboarding staples. They should not be rotated out.
 function isRotationImmuneQuestId(id: string): boolean {
@@ -99,6 +100,55 @@ function getRecentOfferedQuestIds(char: any, rotationKey: string, epoch: string)
   }
   return cur.ids;
 }
+
+
+function getRecentOfferedStrings(char: any, rotationKey: string, epoch: string): string[] {
+  const prog = (char.progression ??= {});
+  const history = (prog.questBoardHistory ??= {});
+
+  const cur = history[rotationKey];
+  if (!cur || cur.epoch !== epoch) {
+    history[rotationKey] = { epoch, ids: [] as string[] };
+    return [];
+  }
+
+  const ids = Array.isArray(cur.ids) ? cur.ids : [];
+  // Defensive clamp.
+  if (ids.length > QUEST_BOARD_SHAPE_ROTATION_MAX) {
+    cur.ids = ids.slice(-QUEST_BOARD_SHAPE_ROTATION_MAX);
+  }
+  return cur.ids;
+}
+
+function recordQuestBoardStrings(char: any, rotationKey: string, epoch: string, values: string[]): void {
+  const prog = (char.progression ??= {});
+  const history = (prog.questBoardHistory ??= {});
+
+  const cur = history[rotationKey];
+  if (!cur || cur.epoch !== epoch) {
+    history[rotationKey] = { epoch, ids: [] as string[] };
+  }
+
+  const slot = history[rotationKey];
+  const ids: string[] = Array.isArray(slot.ids) ? slot.ids.slice() : [];
+
+  const sample = Array.isArray(values) ? values.slice(0, 24) : [];
+  for (const raw of sample) {
+    const v = String(raw ?? "").trim();
+    if (!v) continue;
+
+    const existingIdx = ids.indexOf(v);
+    if (existingIdx >= 0) ids.splice(existingIdx, 1);
+    ids.push(v);
+
+    if (ids.length > QUEST_BOARD_SHAPE_ROTATION_MAX) {
+      ids.splice(0, ids.length - QUEST_BOARD_SHAPE_ROTATION_MAX);
+    }
+  }
+
+  slot.ids = ids;
+}
+
 
 function recordQuestBoardOffering(char: any, rotationKey: string, epoch: string, offeredQuestIds: string[]): void {
   const prog = (char.progression ??= {});
@@ -484,6 +534,12 @@ export function renderTownQuestBoardDebugCaps(ctx: any, char: any): string {
 
   const rotationKey = `town:${townId}|t${tier}`;
   const recentOffered = getRecentOfferedQuestIds(char as any, rotationKey, epoch);
+
+  // v0.26: fairness weighting across rotations (quest shapes).
+  const sigKey = `${rotationKey}|sigs`;
+  const famKey = `${rotationKey}|families`;
+  const recentSigs = getRecentOfferedStrings(char as any, sigKey, epoch);
+  const recentFams = getRecentOfferedStrings(char as any, famKey, epoch);
 
   const followupRotationKey = `${rotationKey}|followupParents`;
   const recentParents = getRecentFollowupParentIds(char as any, followupRotationKey, epoch);
@@ -969,6 +1025,56 @@ function resolveGeneratedUnlockedQuestFromState(
   return null;
 }
 
+
+function objectiveSignatureOfQuest(q: QuestDefinition): string {
+  const objs: any[] = Array.isArray((q as any).objectives) ? ((q as any).objectives as any[]) : [];
+  if (objs.length === 0) return "sig:empty";
+  return `sig:${objs.map((o) => (o && typeof o.kind === "string" ? o.kind : "unknown")).join("+")}`;
+}
+
+function semanticFamilyKeysOfQuest(q: QuestDefinition): string[] {
+  const objs: any[] = Array.isArray((q as any).objectives) ? ((q as any).objectives as any[]) : [];
+  const out: string[] = [];
+
+  const famOfId = (id: string): string | null => {
+    const s = String(id);
+    if (s.startsWith("herb_")) return "herb";
+    if (s.startsWith("wood_")) return "wood";
+    if (s.startsWith("ore_")) return "ore";
+    if (s.startsWith("stone_")) return "stone";
+    if (s.startsWith("grain_")) return "grain";
+    if (s.startsWith("fish_")) return "fish";
+    if (s.startsWith("mana_")) return "mana";
+    return null;
+  };
+
+  for (const o of objs) {
+    if (!o || typeof o.kind !== "string") continue;
+    if (o.kind === "harvest" && typeof o.nodeProtoId === "string") {
+      const fam = famOfId(o.nodeProtoId);
+      if (fam) out.push(`resfam:${fam}`);
+    } else if (o.kind === "vein_report") {
+      const id =
+        typeof o.nodeProtoId === "string"
+          ? o.nodeProtoId
+          : typeof o.veinProtoId === "string"
+            ? o.veinProtoId
+            : typeof o.resourceProtoId === "string"
+              ? o.resourceProtoId
+              : null;
+      if (id) {
+        const fam = famOfId(id);
+        if (fam) out.push(`resfam:${fam}`);
+      }
+    } else if (o.kind === "collect_item" && typeof o.itemId === "string") {
+      const fam = famOfId(o.itemId);
+      if (fam) out.push(`resfam:${fam}`);
+    }
+  }
+
+  return out;
+}
+
 function getTownQuestOffering(ctx: any, char: any): TownQuestOffering | null {
   const roomId = getCurrentRoomId(ctx, char);
   if (!roomId) return null;
@@ -986,6 +1092,12 @@ function getTownQuestOffering(ctx: any, char: any): TownQuestOffering | null {
   const rotationKey = `town:${townId}|t${tier}`;
   const recentOffered = getRecentOfferedQuestIds(char as any, rotationKey, epoch);
 
+  // v0.26: fairness weighting across rotations (quest shapes).
+  const sigKey = `${rotationKey}|sigs`;
+  const famKey = `${rotationKey}|families`;
+  const recentSigs = getRecentOfferedStrings(char as any, sigKey, epoch);
+  const recentFams = getRecentOfferedStrings(char as any, famKey, epoch);
+
   const followupRotationKey = `${rotationKey}|followupParents`;
   const recentFollowupParents = getRecentFollowupParentIds(char as any, followupRotationKey, epoch);
 
@@ -996,6 +1108,8 @@ function getTownQuestOffering(ctx: any, char: any): TownQuestOffering | null {
     maxQuests: undefined,
     includeRepeatables: true,
     recentlyOfferedQuestIds: recentOffered,
+    recentlyOfferedObjectiveSignatures: recentSigs,
+    recentlyOfferedResourceFamilies: recentFams,
   });
 
   // Back-compat: some contracts expect turned-in ("[T]") town quests to still appear on the board
@@ -1065,6 +1179,18 @@ function getTownQuestOffering(ctx: any, char: any): TownQuestOffering | null {
   // Persist rotation memory for the next board view. This is intentionally cheap and bounded.
   try {
     recordQuestBoardOffering(char as any, rotationKey, epoch, quests.map((q) => q.id));
+    // v0.26: record quest shapes for future fairness weighting.
+    const sigs: string[] = [];
+    const fams: string[] = [];
+    for (const q of quests) {
+      if (!q?.id) continue;
+      if (isRotationImmuneQuestId(q.id)) continue;
+      sigs.push(objectiveSignatureOfQuest(q));
+      fams.push(...semanticFamilyKeysOfQuest(q));
+      if (sigs.length >= QUEST_BOARD_SHAPE_ROTATION_MAX) break;
+    }
+    recordQuestBoardStrings(char as any, sigKey, epoch, sigs);
+    recordQuestBoardStrings(char as any, famKey, epoch, fams);
   } catch {
     // Non-fatal: rotation memory should never break the board.
   }
