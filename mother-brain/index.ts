@@ -1,4 +1,4 @@
-//mother-brain/index.ts
+// mother-brain/index.ts
 
 import dotenv from "dotenv";
 import fs from "node:fs";
@@ -22,6 +22,11 @@ type BrainSpawnSummary = {
   topByShardType: BrainSpawnSummaryRow[];
 };
 
+type SpawnPointsSchemaProbe = {
+  exists: boolean;
+  missingColumns: string[];
+};
+
 function nowIso(): string {
   return new Date().toISOString();
 }
@@ -42,7 +47,6 @@ function log(level: LogLevel, msg: string, extra?: Record<string, unknown>): voi
 }
 
 function loadDotEnv(): void {
-  // Prefer a local override, then repo-root .env.
   const candidates = [path.resolve(process.cwd(), ".env"), path.resolve(process.cwd(), "..", ".env")];
 
   for (const p of candidates) {
@@ -53,7 +57,6 @@ function loadDotEnv(): void {
     }
   }
 
-  // No .env is allowed; env may be injected by systemd/docker/etc.
   log("debug", "No .env file found (continuing with process.env)");
 }
 
@@ -64,26 +67,27 @@ function loadDotEnv(): void {
  * - OR PW_DB_* (bridged into PW_DATABASE_URL/DATABASE_URL + PG* vars)
  */
 function bridgePwDbEnv(): void {
-  // Respect an explicit Mother Brain DB URL.
   if (process.env.MOTHER_BRAIN_DB_URL) return;
-
-  // If DATABASE_URL is already set, do nothing.
-  if (process.env.DATABASE_URL || process.env.PW_DATABASE_URL) return;
+  if (process.env.PW_DATABASE_URL || process.env.DATABASE_URL) return;
 
   const host = process.env.PW_DB_HOST;
   const port = process.env.PW_DB_PORT;
   const user = process.env.PW_DB_USER;
-  const pass = process.env.PW_DB_PASS;
+  const pass = process.env.PW_DB_PASS ?? "";
   const name = process.env.PW_DB_NAME;
 
   if (!host || !port || !user || !name) return;
 
-  const auth = pass && pass.length > 0 ? `${encodeURIComponent(user)}:${encodeURIComponent(pass)}` : encodeURIComponent(user);
+  const auth =
+    pass && pass.length > 0
+      ? `${encodeURIComponent(user)}:${encodeURIComponent(pass)}`
+      : encodeURIComponent(user);
+
   const url = `postgresql://${auth}@${host}:${port}/${name}`;
 
-  // Set a common set of env vars used across Node Postgres tooling.
   process.env.PW_DATABASE_URL = url;
   process.env.DATABASE_URL = url;
+
   process.env.PGHOST = host;
   process.env.PGPORT = port;
   process.env.PGUSER = user;
@@ -105,11 +109,9 @@ const ConfigSchema = z
 
     MOTHER_BRAIN_LOG_LEVEL: z.enum(["debug", "info", "warn", "error"]).optional().default("info"),
 
-    // Optional connectors (still read-only in v0.4)
     MOTHER_BRAIN_DB_URL: z.string().optional(),
     MOTHER_BRAIN_WS_URL: z.string().optional(),
 
-    // Optional probe timeouts (ms)
     MOTHER_BRAIN_DB_TIMEOUT_MS: z
       .string()
       .optional()
@@ -159,6 +161,15 @@ const ConfigSchema = z
       .refine((n) => Number.isFinite(n) && n >= 1 && n <= 100, {
         message: "MOTHER_BRAIN_SPAWN_SUMMARY_TOP_N must be between 1 and 100",
       }),
+
+    // v0.6: Optional schema drift probe for spawn_points (read-only)
+    MOTHER_BRAIN_SCHEMA_PROBE_EVERY_TICKS: z
+      .string()
+      .optional()
+      .transform((v) => (v ? Number(v) : 30))
+      .refine((n) => Number.isFinite(n) && n >= 1, {
+        message: "MOTHER_BRAIN_SCHEMA_PROBE_EVERY_TICKS must be a number >= 1",
+      }),
   })
   .passthrough();
 
@@ -166,14 +177,20 @@ type MotherBrainConfig = {
   mode: MotherBrainMode;
   tickMs: number;
   logLevel: LogLevel;
+
   dbUrl?: string;
   wsUrl?: string;
+
   dbTimeoutMs: number;
   wsTimeoutMs: number;
+
   wsPingEveryTicks: number;
   wsPingTimeoutMs: number;
+
   spawnSummaryEveryTicks: number;
   spawnSummaryTopN: number;
+
+  schemaProbeEveryTicks: number;
 };
 
 function parseConfig(): MotherBrainConfig {
@@ -190,14 +207,20 @@ function parseConfig(): MotherBrainConfig {
     mode: env.MOTHER_BRAIN_MODE,
     tickMs: env.MOTHER_BRAIN_TICK_MS,
     logLevel: env.MOTHER_BRAIN_LOG_LEVEL,
+
     dbUrl: env.MOTHER_BRAIN_DB_URL,
     wsUrl: env.MOTHER_BRAIN_WS_URL,
+
     dbTimeoutMs: env.MOTHER_BRAIN_DB_TIMEOUT_MS,
     wsTimeoutMs: env.MOTHER_BRAIN_WS_TIMEOUT_MS,
+
     wsPingEveryTicks: env.MOTHER_BRAIN_WS_PING_EVERY_TICKS,
     wsPingTimeoutMs: env.MOTHER_BRAIN_WS_PING_TIMEOUT_MS,
+
     spawnSummaryEveryTicks: env.MOTHER_BRAIN_SPAWN_SUMMARY_EVERY_TICKS,
     spawnSummaryTopN: env.MOTHER_BRAIN_SPAWN_SUMMARY_TOP_N,
+
+    schemaProbeEveryTicks: env.MOTHER_BRAIN_SCHEMA_PROBE_EVERY_TICKS,
   };
 }
 
@@ -269,8 +292,6 @@ class DbProbe {
   public async getBrainSpawnSummary(topN: number): Promise<BrainSpawnSummary | null> {
     if (!this.pool) return null;
 
-    // NOTE: spawn_points has no timestamps; this is a lightweight visibility query.
-    // Schema: worldcore/infra/schema/004_spawn_points.sql
     try {
       const totalRes = await this.withTimeout(
         this.pool.query("SELECT COUNT(*)::int as c FROM spawn_points WHERE spawn_id LIKE 'brain:%'"),
@@ -295,6 +316,41 @@ class DbProbe {
       return { total, topByShardType };
     } catch {
       return null;
+    }
+  }
+
+  public async probeSpawnPointsSchema(): Promise<SpawnPointsSchemaProbe | null> {
+    if (!this.pool) return null;
+
+    const required = ["spawn_id", "shard_id", "type"] as const;
+
+    const sql = `
+      SELECT
+        EXISTS (
+          SELECT 1
+          FROM information_schema.tables
+          WHERE table_schema = 'public'
+            AND table_name = 'spawn_points'
+        ) AS exists,
+        ARRAY(
+          SELECT c.column_name
+          FROM information_schema.columns c
+          WHERE c.table_schema = 'public'
+            AND c.table_name = 'spawn_points'
+        ) AS columns
+    `;
+
+    try {
+      const res = await this.withTimeout(this.pool.query(sql), this.timeoutMs);
+      const row = res.rows?.[0] as { exists?: boolean; columns?: string[] } | undefined;
+
+      const exists = Boolean(row?.exists);
+      const cols = Array.isArray(row?.columns) ? row!.columns : [];
+      const missingColumns = exists ? required.filter((c) => !cols.includes(c)) : [...required];
+
+      return { exists, missingColumns: [...missingColumns] };
+    } catch {
+      return { exists: false, missingColumns: [...required] };
     }
   }
 
@@ -325,16 +381,22 @@ class DbProbe {
   }
 }
 
+type WsPingResult = {
+  ok: boolean;
+  latencyMs?: number;
+  lastPongIso?: string;
+  error?: string;
+};
+
 class WsProbe {
   private ws: WebSocket | null = null;
   private readonly url: string | undefined;
-  private readonly timeoutMs: number;
-
+  private readonly connectTimeoutMs: number;
   private lastPongIso: string | null = null;
 
-  public constructor(wsUrl: string | undefined, timeoutMs: number) {
+  public constructor(wsUrl: string | undefined, connectTimeoutMs: number) {
     this.url = wsUrl;
-    this.timeoutMs = timeoutMs;
+    this.connectTimeoutMs = connectTimeoutMs;
   }
 
   public isEnabled(): boolean {
@@ -349,8 +411,6 @@ class WsProbe {
         return "connecting";
       case WebSocket.OPEN:
         return "open";
-      case WebSocket.CLOSING:
-      case WebSocket.CLOSED:
       default:
         return "closed";
     }
@@ -368,57 +428,55 @@ class WsProbe {
 
     const start = Date.now();
     try {
-      await this.connectOnce(this.url, this.timeoutMs);
+      await this.connectOnce(this.url, this.connectTimeoutMs);
       return { ok: true, latencyMs: Date.now() - start };
     } catch (err: unknown) {
       return { ok: false, latencyMs: Date.now() - start, error: this.errToString(err) };
     }
   }
 
-  /**
-   * Read-only health check: send a WS ping and measure pong latency.
-   * If the socket is not open, returns {ok:false}.
-   */
-  public async pingPong(timeoutMs: number): Promise<{ ok: boolean; latencyMs?: number; error?: string; lastPongIso?: string | null }> {
+  public async pingPong(timeoutMs: number): Promise<WsPingResult> {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return { ok: false, error: "not connected" };
+
     const ws = this.ws;
-    if (!ws || ws.readyState !== WebSocket.OPEN) return { ok: false, error: "not_open", lastPongIso: this.lastPongIso };
-
     const start = Date.now();
-    return await new Promise((resolve) => {
-      let settled = false;
+    let settled = false;
 
-      const finish = (res: { ok: boolean; latencyMs?: number; error?: string }) => {
-        if (settled) return;
-        settled = true;
-        cleanup();
-        resolve({ ...res, lastPongIso: this.lastPongIso });
-      };
-
-      const onPong = () => {
-        this.lastPongIso = nowIso();
-        finish({ ok: true, latencyMs: Date.now() - start });
-      };
-
-      const onClose = () => finish({ ok: false, latencyMs: Date.now() - start, error: "closed" });
-      const onError = (e: unknown) => finish({ ok: false, latencyMs: Date.now() - start, error: this.errToString(e) });
-
-      const timer = setTimeout(() => finish({ ok: false, latencyMs: Date.now() - start, error: `timeout after ${timeoutMs}ms` }), timeoutMs);
+    return await new Promise<WsPingResult>((resolve) => {
+      const timer = setTimeout(() => {
+        finish({ ok: false, error: `timeout after ${timeoutMs}ms` });
+      }, timeoutMs);
 
       const cleanup = () => {
         clearTimeout(timer);
         ws.removeListener("pong", onPong);
         ws.removeListener("close", onClose);
-        ws.removeListener("error", onError);
+        ws.removeListener("error", onErr);
       };
+
+      const finish = (r: WsPingResult) => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        resolve(r);
+      };
+
+      const onPong = () => {
+        this.lastPongIso = nowIso();
+        finish({ ok: true, latencyMs: Date.now() - start, lastPongIso: this.lastPongIso });
+      };
+
+      const onClose = () => finish({ ok: false, error: "socket closed" });
+      const onErr = (e: unknown) => finish({ ok: false, error: this.errToString(e) });
 
       ws.once("pong", onPong);
       ws.once("close", onClose);
-      ws.once("error", onError);
+      ws.once("error", onErr);
 
       try {
         ws.ping();
       } catch (e: unknown) {
-        finish({ ok: false, latencyMs: Date.now() - start, error: this.errToString(e) });
+        finish({ ok: false, error: this.errToString(e) });
       }
     });
   }
@@ -494,6 +552,7 @@ type TickSnapshot = {
     serverVersion?: string | null;
     dbName?: string | null;
     brainSpawns?: BrainSpawnSummary | null;
+    spawnPointsSchema?: SpawnPointsSchemaProbe | null;
   };
 
   ws: {
@@ -513,7 +572,6 @@ async function main(): Promise<void> {
   loadDotEnv();
   bridgePwDbEnv();
 
-  // Prefer explicit MOTHER_BRAIN_DB_URL; otherwise use bridged DATABASE_URL.
   if (!process.env.MOTHER_BRAIN_DB_URL) {
     process.env.MOTHER_BRAIN_DB_URL = process.env.PW_DATABASE_URL || process.env.DATABASE_URL;
   }
@@ -538,9 +596,8 @@ async function main(): Promise<void> {
     node: process.version,
   });
 
-  // Guardrail reminder: still observe-only.
   if (cfg.mode === "apply") {
-    gatedLog("warn", "MOTHER_BRAIN_MODE=apply is set, but v0.4 performs no mutations (observe-only probes).");
+    gatedLog("warn", "MOTHER_BRAIN_MODE=apply is set, but v0.6 remains observe-only (no mutations).");
   }
 
   // Cache DB metadata once (best-effort).
@@ -570,6 +627,8 @@ async function main(): Promise<void> {
   process.on("SIGTERM", () => void shutdown("SIGTERM"));
 
   let tick = 0;
+  let spawnPointsSchema: SpawnPointsSchemaProbe | null | undefined = undefined;
+
   while (!stopping) {
     tick += 1;
 
@@ -578,22 +637,22 @@ async function main(): Promise<void> {
     const dbRes = dbProbe.isEnabled() ? await dbProbe.ping() : ({ ok: false, error: "disabled" } as ProbeResult);
     const wsRes = wsProbe.isEnabled() ? await wsProbe.ensureConnected() : ({ ok: false, error: "disabled" } as ProbeResult);
 
-    let wsPing: { pingOk?: boolean; pingLatencyMs?: number; lastPongIso?: string | null; pingError?: string } | null = null;
     const shouldPingWs = wsProbe.isEnabled() && cfg.wsPingEveryTicks > 0 && tick % cfg.wsPingEveryTicks === 0;
+    let wsPing: WsPingResult | null = null;
     if (shouldPingWs && wsRes.ok) {
-      const pr = await wsProbe.pingPong(cfg.wsPingTimeoutMs);
-      wsPing = {
-        pingOk: pr.ok,
-        pingLatencyMs: pr.latencyMs,
-        lastPongIso: pr.lastPongIso ?? null,
-        ...(pr.ok ? {} : { pingError: pr.error ?? "unknown" }),
-      };
+      wsPing = await wsProbe.pingPong(cfg.wsPingTimeoutMs);
     }
 
     let brainSpawns: BrainSpawnSummary | null | undefined = undefined;
     const shouldSummarize = dbProbe.isEnabled() && cfg.spawnSummaryEveryTicks > 0 && tick % cfg.spawnSummaryEveryTicks === 0;
     if (shouldSummarize && dbRes.ok) {
       brainSpawns = await dbProbe.getBrainSpawnSummary(cfg.spawnSummaryTopN);
+    }
+
+    const shouldProbeSchema =
+      dbProbe.isEnabled() && cfg.schemaProbeEveryTicks > 0 && tick % cfg.schemaProbeEveryTicks === 0;
+    if (shouldProbeSchema && dbRes.ok) {
+      spawnPointsSchema = await dbProbe.probeSpawnPointsSchema();
     }
 
     const snapshot: TickSnapshot = {
@@ -607,6 +666,7 @@ async function main(): Promise<void> {
         serverVersion,
         dbName,
         ...(brainSpawns !== undefined ? { brainSpawns } : {}),
+        ...(spawnPointsSchema !== undefined ? { spawnPointsSchema } : {}),
       },
 
       ws: {
@@ -615,10 +675,10 @@ async function main(): Promise<void> {
         ...(wsProbe.isEnabled() ? wsRes : {}),
         ...(wsPing
           ? {
-              pingOk: wsPing.pingOk,
-              pingLatencyMs: wsPing.pingLatencyMs,
-              lastPongIso: wsPing.lastPongIso,
-              ...(wsPing.pingError ? { pingError: wsPing.pingError } : {}),
+              pingOk: wsPing.ok,
+              pingLatencyMs: wsPing.latencyMs,
+              lastPongIso: wsPing.lastPongIso ?? null,
+              ...(wsPing.ok ? {} : { pingError: wsPing.error ?? "unknown" }),
             }
           : {}),
       },

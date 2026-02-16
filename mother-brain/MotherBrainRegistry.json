@@ -8,7 +8,8 @@
     "v0.3 bridges Planar War PW_DB_* env vars into a usable Postgres URL and logs basic DB metadata (server version, current database).",
     "v0.4 adds read-only brain:* spawn_points summary (counts by shard/type) for quick visibility of planned waves in the DB.",
     "v0.5 adds optional WS ping/pong round-trip measurement (still read-only) when MOTHER_BRAIN_WS_URL is set.",
-    "Future slices will add wave planning (DB) and GoalRunner black-box testing (WS)."
+    "Future slices will add wave planning (DB) and GoalRunner black-box testing (WS).",
+    "v0.6 adds read-only schema awareness probe for spawn_points (existence + required columns), surfaced in tick snapshot for drift detection."
   ],
   "services": {},
   "entries": {
