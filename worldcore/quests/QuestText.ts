@@ -12,6 +12,7 @@ import {
   getTownContextForTurnin,
   resolveQuestDefinitionFromStateId,
   resolveTownQuestFromContext,
+  listTownQuestBoardQuests,
 } from "./TownQuestBoard";
 import { getAllQuests, getQuestById } from "./QuestRegistry";
 import { renderQuestAmbiguous } from "./QuestCommandText";
@@ -273,16 +274,53 @@ export function renderQuestDetails(
 
   const prereqIds = Array.isArray((quest as any).requiresTurnedIn) ? (quest as any).requiresTurnedIn as string[] : [];
   if (prereqIds.length > 0) {
-    const names = prereqIds.map((id) => getQuestById(id)?.name ?? id).join(", ");
     lines.push("");
-    lines.push(`Prerequisites: Turn in ${names}`);
+    lines.push("Prerequisites (must be turned in):");
+    for (const id of prereqIds) {
+      const name = getQuestById(id)?.name ?? id;
+      const ok = hasTurnedInQuestLocal(char, id);
+      lines.push(` - ${ok ? "[DONE]" : "[MISSING]"} ${name} (${id})`);
+    }
   }
 
   const unlockIds = Array.isArray((quest as any).unlocks) ? (quest as any).unlocks as string[] : [];
   if (unlockIds.length > 0) {
-    const names = unlockIds.map((id) => getQuestById(id)?.name ?? id).join(", ");
     lines.push("");
-    lines.push(`Unlocks: ${names}`);
+    const parentTurnedIn = hasTurnedInQuestLocal(char, quest.id);
+    lines.push("Unlocks (follow-ups):");
+    for (const id of unlockIds) {
+      const def = getQuestById(id);
+      const name = def?.name ?? id;
+      const entry2 = ensureQuestState(char)[id] ?? null;
+
+      // NEW semantics: unlocked follow-ups that are not yet accepted.
+      const isUnlocked = parentTurnedIn;
+      const isNew = isUnlocked && !entry2;
+
+      const mark = !isUnlocked
+        ? "[LOCKED]"
+        : isNew
+          ? "[NEW]"
+          : entry2.state === "turned_in"
+            ? "[T]"
+            : entry2.state === "completed"
+              ? "[C]"
+              : "[A]";
+
+      lines.push(` - ${mark} ${name} (${id})`);
+    }
+  }
+
+  // If the quest isn't accepted, provide an action hint. When in a town context,
+  // also try to surface the current board index so the player can accept fast.
+  if (!isAccepted) {
+    const boardHint = opts.ctx ? findQuestIndexOnCurrentBoard(opts.ctx, char, quest.id) : null;
+    lines.push("");
+    lines.push(
+      boardHint
+        ? `Accept with: quest board accept ${boardHint}   (or: quest accept ${quest.id})`
+        : `Accept with: quest accept ${quest.id}`
+    );
   }
 
   lines.push("");
@@ -311,6 +349,26 @@ export function renderQuestDetails(
   }
 
   return lines.join("\n").trimEnd();
+}
+
+function hasTurnedInQuestLocal(char: CharacterState, questId: string): boolean {
+  const state = ensureQuestState(char);
+  const e = state[questId];
+  if (!e) return false;
+  if (String((e as any).state ?? "") === "turned_in") return true;
+  const completions = Number((e as any).completions ?? 0);
+  return completions > 0;
+}
+
+function findQuestIndexOnCurrentBoard(ctx: any, char: CharacterState, questId: string): number | null {
+  try {
+    const list = listTownQuestBoardQuests(ctx, char as any);
+    if (!list) return null;
+    const idx = list.findIndex((q) => q.id === questId);
+    return idx >= 0 ? idx + 1 : null;
+  } catch {
+    return null;
+  }
 }
 
 // ---------------------------------------------------------------------------
