@@ -13,6 +13,69 @@ import { getQuestById, getAllQuests } from "./QuestRegistry";
 import { renderQuestAmbiguous, renderQuestDidYouMean } from "./QuestCommandText";
 
 // ----------------------------
+// Quest board rotation memory (v0.15)
+// ----------------------------
+
+// Keep this small: it lives on the character state and should be cheap to persist.
+const QUEST_BOARD_ROTATION_MAX = 18;
+
+// These are onboarding staples. They should not be rotated out.
+function isRotationImmuneQuestId(id: string): boolean {
+  const s = String(id ?? "").toLowerCase();
+  return s.includes("greet_quartermaster") || s.includes("rat_culling");
+}
+
+function getRecentOfferedQuestIds(char: any, rotationKey: string, epoch: string): string[] {
+  const prog = (char.progression ??= {});
+  const history = (prog.questBoardHistory ??= {});
+
+  const cur = history[rotationKey];
+  if (!cur || cur.epoch !== epoch) {
+    history[rotationKey] = { epoch, ids: [] as string[] };
+    return [];
+  }
+
+  const ids = Array.isArray(cur.ids) ? cur.ids : [];
+  // Defensive clamp.
+  if (ids.length > QUEST_BOARD_ROTATION_MAX) {
+    cur.ids = ids.slice(-QUEST_BOARD_ROTATION_MAX);
+  }
+  return cur.ids;
+}
+
+function recordQuestBoardOffering(char: any, rotationKey: string, epoch: string, offeredQuestIds: string[]): void {
+  const prog = (char.progression ??= {});
+  const history = (prog.questBoardHistory ??= {});
+
+  const cur = history[rotationKey];
+  if (!cur || cur.epoch !== epoch) {
+    history[rotationKey] = { epoch, ids: [] as string[] };
+  }
+
+  const slot = history[rotationKey];
+  const ids: string[] = Array.isArray(slot.ids) ? slot.ids.slice() : [];
+
+  // We only need a sample from the current offering; storing the whole catalog is wasteful.
+  const sample = Array.isArray(offeredQuestIds) ? offeredQuestIds.slice(0, 12) : [];
+
+  for (const raw of sample) {
+    const id = String(raw ?? "").trim();
+    if (!id) continue;
+    if (isRotationImmuneQuestId(id)) continue;
+
+    const existingIdx = ids.indexOf(id);
+    if (existingIdx >= 0) ids.splice(existingIdx, 1);
+    ids.push(id);
+
+    if (ids.length > QUEST_BOARD_ROTATION_MAX) {
+      ids.splice(0, ids.length - QUEST_BOARD_ROTATION_MAX);
+    }
+  }
+
+  slot.ids = ids;
+}
+
+// ----------------------------
 // Public API
 // ----------------------------
 
@@ -727,12 +790,18 @@ function getTownQuestOffering(ctx: any, char: any): TownQuestOffering | null {
   const tier = inferTownTier(ctx, roomId) ?? 1;
   const epoch = inferQuestEpoch();
 
+  // v0.15: per-character quest board rotation memory.
+  // Keyed by (townId, tier) and reset when epoch changes.
+  const rotationKey = `town:${townId}|t${tier}`;
+  const recentOffered = getRecentOfferedQuestIds(char as any, rotationKey, epoch);
+
   const quests = generateTownQuests({
     townId,
     tier,
     epoch,
     maxQuests: undefined,
     includeRepeatables: true,
+    recentlyOfferedQuestIds: recentOffered,
   });
 
   // Back-compat: some contracts expect turned-in ("[T]") town quests to still appear on the board
@@ -768,6 +837,13 @@ function getTownQuestOffering(ctx: any, char: any): TownQuestOffering | null {
   const followups = computeUnlockedFollowupQuests(char as any);
   for (const q of followups) {
     if (!quests.some((x) => x.id === q.id)) quests.push(q);
+  }
+
+  // Persist rotation memory for the next board view. This is intentionally cheap and bounded.
+  try {
+    recordQuestBoardOffering(char as any, rotationKey, epoch, quests.map((q) => q.id));
+  } catch {
+    // Non-fatal: rotation memory should never break the board.
   }
 
   return { townId, tier, epoch, quests };

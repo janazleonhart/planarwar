@@ -25,6 +25,16 @@ export interface TownQuestGeneratorOptions {
   includeChainCatalog?: boolean;
 
   /**
+   * Quest board rotation memory (Generator v0.15):
+   * a list of quest ids that were recently offered for this (townId, tier, epoch).
+   *
+   * The generator will *prefer* quests that are not in this list, but will relax
+   * the preference deterministically if the candidate pool is too small (underfill
+   * is worse than repetition).
+   */
+  recentlyOfferedQuestIds?: string[];
+
+  /**
    * Optional extension hook: additional candidate quest factories to include.
    * Useful for experiments (or future town-specific plugins) without changing core pools.
    *
@@ -382,6 +392,20 @@ export function generateTownQuests(opts: TownQuestGeneratorOptions): QuestDefini
 // candidate list is empty.
 const seenIds = new Set<string>(quests.map((q) => q.id));
 
+// Generator v0.15: rotation fairness.
+// Callers may pass recentlyOfferedQuestIds (typically stored per-character in progression)
+// so the board can avoid re-offering the same quests again and again in short windows.
+const recentlyOfferedIdsRaw = Array.isArray(opts.recentlyOfferedQuestIds)
+  ? opts.recentlyOfferedQuestIds.filter((x) => typeof x === "string")
+  : [];
+const recentlyOffered = new Set<string>(recentlyOfferedIdsRaw);
+
+// Some quests are intentionally "sticky" for onboarding + contract stability.
+// They should not be filtered out by rotation history.
+const isRotationImmuneId = (id: string): boolean => {
+  return id.endsWith("greet_quartermaster") || id.endsWith("rat_culling");
+};
+
 if (candidates.length > 0) {
   const shuffled = shuffleStable(candidates.slice(), rng);
 
@@ -410,6 +434,15 @@ if (candidates.length > 0) {
     return baseCap;
   };
 
+
+  // Rotation preference: for a while, avoid repeating recently offered quest ids.
+  // We relax this preference deterministically near the end of the attempt budget.
+  const avoidRecentAtAttempt = (attempt: number): boolean => {
+    if (recentlyOffered.size === 0) return false;
+    if (attempt > Math.floor(maxAttempts * 0.75)) return false;
+    return true;
+  };
+
   for (let attempts = 0; quests.length < maxQuests && attempts < maxAttempts; attempts++) {
     const mk = shuffled[idx % shuffled.length];
     idx++;
@@ -417,6 +450,11 @@ if (candidates.length > 0) {
     const q = mk();
 
     if (seenIds.has(q.id)) continue;
+
+    // Rotation v0.15: prefer not to re-offer recently seen quest ids.
+    if (avoidRecentAtAttempt(attempts) && !isRotationImmuneId(q.id) && recentlyOffered.has(q.id)) {
+      continue;
+    }
 
     // Kind cap (soft).
     const cap = capAtAttempt(attempts);
