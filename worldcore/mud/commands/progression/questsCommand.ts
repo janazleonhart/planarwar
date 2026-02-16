@@ -181,7 +181,17 @@ if (!sub || sub === "log" || sub === "list" || sub === "quests" || sub === "ques
       const resolved = resolveTownQuestFromBoardView(ctx, char, selector, modeOpts ?? undefined);
       if (!resolved) return `[quest] Unknown quest '${selector}'.`;
 
-      return turnInQuest(ctx, char, `preview ${resolved.id}`);
+      const preview = await turnInQuest(ctx, char, `preview ${resolved.id}`);
+
+      // UX polish: when preview is invoked from the board, show the matching board-scoped turn-in form.
+      // This avoids “preview via board, then turn-in via some other selector syntax” confusion.
+      const prefix = `quest board${modeOpts ? " " + a2 : ""}`;
+      const tail: string[] = [];
+      tail.push(`Or (same view): ${prefix} turnin ${selector}`);
+      if (/Use at turn-in:.*\bchoose\s+<\#>/i.test(preview)) {
+        tail.push(`Or (same view): ${prefix} turnin ${selector} choose <#>`);
+      }
+      return `${preview}\n${tail.join("\n")}`.trimEnd();
     }
 
     if (verb === "show" || verb === "info" || verb === "details") {

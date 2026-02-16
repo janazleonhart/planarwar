@@ -151,6 +151,7 @@ test("[contract] talk quests ready preview 1 previews the ready quest shown at i
     assert.match(s, /\[talk\]\s+You speak with Town Trainer\./i, s);
     assert.match(s, /\[quest\]\s+Preview:/i, s);
     assert.match(s, /town_prime_shard_0_0_t1_rat_culling/i, s);
+    assert.match(s, /Or \(same view\):\s+talk trainer\.1 quests ready turnin 1/i, s);
   } finally {
     if (prevEpoch === undefined) delete process.env.PW_QUEST_EPOCH;
     else process.env.PW_QUEST_EPOCH = prevEpoch;

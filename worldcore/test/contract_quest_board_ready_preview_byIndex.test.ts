@@ -118,6 +118,7 @@ test("[contract] quest board ready preview 1 previews the ready quest shown at i
     assert.match(s, /\[quest\]\s+Preview:/i, s);
     assert.match(s, /town_prime_shard_0_0_t1_rat_culling/i, s);
     assert.match(s, /Can turn in here:\s+YES/i, s);
+    assert.match(s, /Or \(same view\):\s+quest board ready turnin 1/i, s);
   } finally {
     if (prevEpoch === undefined) delete process.env.PW_QUEST_EPOCH;
     else process.env.PW_QUEST_EPOCH = prevEpoch;

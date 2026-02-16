@@ -503,7 +503,20 @@ export async function handleTalkCommand(
         return lines.join("\n").trimEnd();
       }
       const q = resolveTownQuestFromBoardView(ctx as any, char as any, selector, modeOpts ?? undefined);
-      lines.push(q ? await turnInQuest(ctx as any, char as any, `preview ${q.id}`) : `[quest] Unknown quest '${selector}'.`);
+      if (!q) {
+        lines.push(`[quest] Unknown quest '${selector}'.`);
+        return lines.join("\n").trimEnd();
+      }
+
+      const preview = await turnInQuest(ctx as any, char as any, `preview ${q.id}`);
+      lines.push(preview);
+
+      // UX polish: when preview is invoked from talk quest board, show the matching talk-scoped turn-in form.
+      const prefix = `talk ${npcToken} quests${modeOpts ? " " + mode : ""}`;
+      lines.push(`Or (same view): ${prefix} turnin ${selector}`);
+      if (/Use at turn-in:.*\bchoose\s+<\#>/i.test(preview)) {
+        lines.push(`Or (same view): ${prefix} turnin ${selector} choose <#>`);
+      }
       return lines.join("\n").trimEnd();
     }
 
