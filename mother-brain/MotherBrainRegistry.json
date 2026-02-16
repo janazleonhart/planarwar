@@ -5,6 +5,7 @@
     "Mother Brain is a long-running daemon/service for world simulation decisions.",
     "v0.1 is a runnable skeleton (heartbeat + env config validation).",
     "v0.2 adds read-only awareness probes (DB + WS connectivity snapshots).",
+    "v0.3 bridges Planar War PW_DB_* env vars into a usable Postgres URL and logs basic DB metadata (server version, current database).",
     "Future slices will add wave planning (DB) and GoalRunner black-box testing (WS)."
   ],
   "services": {},
