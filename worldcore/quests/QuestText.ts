@@ -184,12 +184,12 @@ export function renderQuestDetails(char: CharacterState, targetRaw: string): str
 export function renderQuestDetails(
   char: CharacterState,
   targetRaw: string,
-  opts?: { ctx?: any }
+  opts?: { ctx?: any; debug?: boolean }
 ): string;
 export function renderQuestDetails(
   char: CharacterState,
   targetRaw: string,
-  opts: { ctx?: any } = {}
+  opts: { ctx?: any; debug?: boolean } = {}
 ): string {
   const target = (targetRaw || "").trim();
   if (!target) {
@@ -373,6 +373,20 @@ export function renderQuestDetails(
     lines.push(`Rewards: ${rewardText}`);
   }
 
+  // Staff-only: append deterministic debug metadata for internal tooling.
+  // IMPORTANT: do not surface this via normal player commands.
+  if (opts.debug) {
+    const sig = computeObjectiveSignature(quest);
+    const fams = computeResourceFamilies(quest);
+    const sem = computeSemanticKeys(quest);
+
+    lines.push("");
+    lines.push("Debug (staff):");
+    if (sig) lines.push(` - signature: ${sig}`);
+    if (fams.length) lines.push(` - families: ${fams.join(", ")}`);
+    if (sem.length) lines.push(` - semantic: ${sem.slice(0, 10).join(", ")}`);
+  }
+
   if (isReady) {
     lines.push("");
     if (opts.ctx) {
@@ -387,6 +401,63 @@ export function renderQuestDetails(
   }
 
   return lines.join("\n").trimEnd();
+}
+
+function computeObjectiveSignature(q: QuestDefinition): string {
+  const kinds = Array.isArray((q as any).objectives)
+    ? (q as any).objectives
+        .map((o: any) => String(o?.kind ?? "").trim())
+        .filter(Boolean)
+    : [];
+  if (!kinds.length) return "";
+  return kinds.join("+");
+}
+
+function computeSemanticKeys(q: QuestDefinition): string[] {
+  const out: string[] = [];
+  const objs: any[] = Array.isArray((q as any).objectives) ? (q as any).objectives : [];
+  for (const o of objs) {
+    const kind = String(o?.kind ?? "");
+    if (kind === "kill") {
+      const id = o?.targetProtoId ?? o?.protoId ?? null;
+      if (id) out.push(`kill:${id}`);
+    } else if (kind === "harvest") {
+      const id = o?.nodeProtoId ?? o?.resourceProtoId ?? null;
+      if (id) out.push(`harvest:${id}`);
+    } else if (kind === "collect_item") {
+      const id = o?.itemId ?? null;
+      if (id) out.push(`collect_item:${id}`);
+    } else if (kind === "talk_to") {
+      const id = o?.npcId ?? null;
+      if (id) out.push(`talk_to:${id}`);
+    } else if (kind === "vein_report") {
+      const id = o?.nodeProtoId ?? o?.veinProtoId ?? o?.resourceProtoId ?? null;
+      if (id) out.push(`vein_report:${id}`);
+    }
+  }
+  return out;
+}
+
+function computeResourceFamilies(q: QuestDefinition): string[] {
+  const fams = new Set<string>();
+  const objs: any[] = Array.isArray((q as any).objectives) ? (q as any).objectives : [];
+
+  const addFromId = (idRaw: any) => {
+    const id = String(idRaw ?? "").trim();
+    if (!id) return;
+    const prefix = id.split("_")[0];
+    if (!prefix) return;
+    if (["herb", "wood", "ore", "stone", "grain", "fish", "mana"].includes(prefix)) fams.add(prefix);
+  };
+
+  for (const o of objs) {
+    const kind = String(o?.kind ?? "");
+    if (kind === "harvest") addFromId(o?.nodeProtoId ?? o?.resourceProtoId);
+    if (kind === "collect_item") addFromId(o?.itemId);
+    if (kind === "vein_report") addFromId(o?.nodeProtoId ?? o?.veinProtoId ?? o?.resourceProtoId);
+  }
+
+  return Array.from(fams).sort();
 }
 
 function hasTurnedInQuestLocal(char: CharacterState, questId: string): boolean {

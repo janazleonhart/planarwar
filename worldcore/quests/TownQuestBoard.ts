@@ -151,6 +151,9 @@ export type TownQuestBoardRenderOpts = {
 
   /** When true, render only quests that are turned in (completed and handed in). */
   onlyTurned?: boolean;
+
+  /** Staff-only: when true, include debug metadata lines for each quest. */
+  debug?: boolean;
 };
 
 export function countNewUnlockedFollowups(char: CharacterState): number {
@@ -381,6 +384,17 @@ const orderedVisibleQuests = computeTownQuestBoardOrderedVisibleQuests(
     );
     lines.push(`     - ${objText}`);
     if (rewardText) lines.push(`     - Rewards: ${rewardText}`);
+
+    if (opts?.debug) {
+      const sig = computeObjectiveSignature(q);
+      const fams = computeResourceFamilies(q);
+      const sem = computeSemanticKeys(q);
+      const bits: string[] = [];
+      if (sig) bits.push(`sig=${sig}`);
+      if (fams.length) bits.push(`fam=${fams.join(",")}`);
+      if (sem.length) bits.push(`sem=${sem.slice(0, 6).join(",")}`);
+      if (bits.length) lines.push(`     { ${bits.join(" ")} }`);
+    }
   });
 
   lines.push("");
@@ -392,6 +406,63 @@ const orderedVisibleQuests = computeTownQuestBoardOrderedVisibleQuests(
   );
 
   return lines.join("\n").trimEnd();
+}
+
+function computeObjectiveSignature(q: QuestDefinition): string {
+  const kinds = Array.isArray((q as any).objectives)
+    ? (q as any).objectives
+        .map((o: any) => String(o?.kind ?? "").trim())
+        .filter(Boolean)
+    : [];
+  if (!kinds.length) return "";
+  return kinds.join("+");
+}
+
+function computeSemanticKeys(q: QuestDefinition): string[] {
+  const out: string[] = [];
+  const objs: any[] = Array.isArray((q as any).objectives) ? (q as any).objectives : [];
+  for (const o of objs) {
+    const kind = String(o?.kind ?? "");
+    if (kind === "kill") {
+      const id = o?.targetProtoId ?? o?.protoId ?? null;
+      if (id) out.push(`kill:${id}`);
+    } else if (kind === "harvest") {
+      const id = o?.nodeProtoId ?? o?.resourceProtoId ?? null;
+      if (id) out.push(`harvest:${id}`);
+    } else if (kind === "collect_item") {
+      const id = o?.itemId ?? null;
+      if (id) out.push(`collect_item:${id}`);
+    } else if (kind === "talk_to") {
+      const id = o?.npcId ?? null;
+      if (id) out.push(`talk_to:${id}`);
+    } else if (kind === "vein_report") {
+      const id = o?.nodeProtoId ?? o?.veinProtoId ?? o?.resourceProtoId ?? null;
+      if (id) out.push(`vein_report:${id}`);
+    }
+  }
+  return out;
+}
+
+function computeResourceFamilies(q: QuestDefinition): string[] {
+  const fams = new Set<string>();
+  const objs: any[] = Array.isArray((q as any).objectives) ? (q as any).objectives : [];
+
+  const addFromId = (idRaw: any) => {
+    const id = String(idRaw ?? "").trim();
+    if (!id) return;
+    const prefix = id.split("_")[0];
+    if (!prefix) return;
+    if (["herb", "wood", "ore", "stone", "grain", "fish", "mana"].includes(prefix)) fams.add(prefix);
+  };
+
+  for (const o of objs) {
+    const kind = String(o?.kind ?? "");
+    if (kind === "harvest") addFromId(o?.nodeProtoId ?? o?.resourceProtoId);
+    if (kind === "collect_item") addFromId(o?.itemId);
+    if (kind === "vein_report") addFromId(o?.nodeProtoId ?? o?.veinProtoId ?? o?.resourceProtoId);
+  }
+
+  return Array.from(fams).sort();
 }
 
 /**

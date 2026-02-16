@@ -9,6 +9,8 @@ import {
   abandonQuest,
 } from "../../../quests/TownQuestBoard";
 
+import { getStaffRole } from "../../../shared/AuthTypes";
+
 export async function handleQuestsCommand(ctx: any, char: any): Promise<string> {
   // Keep 'quests' as the log for backward compatibility.
   return renderQuestLog(char, { ctx });
@@ -20,6 +22,14 @@ export async function handleQuestCommand(
   input: { cmd: string; args: string[]; parts: string[] }
 ): Promise<string> {
   const sub = (input.parts[1] || "").toLowerCase();
+
+  const isDevDebugAllowed = (): boolean => {
+    // Most unit tests stub `ctx.session.auth.isDev`, while live sessions use `identity.flags`.
+    if (ctx?.session?.auth?.isDev) return true;
+    const flags = ctx?.session?.identity?.flags;
+    const role = getStaffRole(flags);
+    return role === "owner" || role === "dev";
+  };
 
   // Split a selector plus optional `choose N` suffix.
   // This keeps board-scoped commands consistent with `quest turnin <id> choose <n>`.
@@ -99,6 +109,44 @@ if (!sub || sub === "log" || sub === "list" || sub === "quests" || sub === "ques
     const target = input.parts.slice(2).join(" ").trim();
     if (!target) return "Usage: quest show <#|id|name>";
     return renderQuestDetails(char, target, { ctx });
+  }
+
+  // Staff-only internal tooling: deterministic debug metadata.
+  // (Do not expose this via normal player UX; it exists to help us sanity-check board rotation.)
+  if (sub === "debug") {
+    if (!isDevDebugAllowed()) return "[quest] Debug is staff-only.";
+
+    const sub2 = (input.parts[2] || "").toLowerCase();
+    if (!sub2 || sub2 === "help" || sub2 === "?" || sub2 === "h") {
+      return [
+        "Quest Debug (staff):",
+        " quest debug show <#|id|name>",
+        " quest debug board                 (full board + per-quest metadata)",
+        " quest debug board <available|new|active|ready|turned>",
+      ].join("\n").trimEnd();
+    }
+
+    if (sub2 === "show") {
+      const target = input.parts.slice(3).join(" ").trim();
+      if (!target) return "Usage: quest debug show <#|id|name>";
+      return renderQuestDetails(char, target, { ctx, debug: true });
+    }
+
+    if (sub2 === "board") {
+      const mode = (input.parts[3] || "").toLowerCase();
+      const parseBoardMode = (s: string): any => {
+        if (s === "new") return { onlyNew: true };
+        if (s === "available" || s === "avail") return { onlyAvailable: true };
+        if (s === "active") return { onlyActive: true };
+        if (s === "ready") return { onlyReady: true };
+        if (s === "turned" || s === "turnedin" || s === "turned_in" || s === "done") return { onlyTurned: true };
+        return null;
+      };
+      const m = parseBoardMode(mode) ?? {};
+      return renderTownQuestBoard(ctx, char, { ...m, debug: true });
+    }
+
+    return "[quest] Unknown debug command. Try: quest debug help";
   }
 
 
