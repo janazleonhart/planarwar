@@ -16,7 +16,7 @@ test("[contract] town quest generator v0 respects tier gating + repeatable toggl
   // First quest is always the greet quest (talk_to)
   assert.equal(t1[0]?.objectives?.[0]?.kind, "talk_to");
 
-  // Tier 1: no harvest/craft, and repeatables can be disabled.
+  // Tier 1: harvest is still gated; craft is gated.
   assert.equal(hasObjectiveKind(t1, "harvest"), false);
   assert.equal(hasObjectiveKind(t1, "craft"), false);
   assert.equal(t1.some((q) => q?.repeatable === true), false);

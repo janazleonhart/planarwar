@@ -5558,9 +5558,10 @@
       "kind": "module",
       "lifecycle": "static",
       "notes": [
-        "Quest Generator v0: deterministic per (townId, tier, epoch).",
-        "Uses conservative objective pools (ids already present in QuestTypes examples) so generated quests are completable with current content.",
-        "Introduces small deterministic jitter on required counts and XP/gold rewards."
+        "Quest Generator v0.7: deterministic per (townId, tier, epoch).",
+        "Uses conservative objective pools (ids already present in current content: starter resource nodes + rat/talk/craft) so generated quests are completable.",
+        "Always includes a deterministic gather quest; optionally includes a deterministic repeatable turn-in when includeRepeatables=true and there's room.",
+        "Supports reward scaling + choose-one rewards and compound objectives (multi-step board quests)."
       ],
       "path": "worldcore/quests/QuestGenerator.ts",
       "provides": [

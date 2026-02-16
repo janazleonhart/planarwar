@@ -77,13 +77,11 @@ export function generateTownQuests(opts: TownQuestGeneratorOptions): QuestDefini
     },
   ];
 
-  // Candidate templates (safe ids only).
-  const candidates: Array<() => QuestDefinition> = [];
-
-  // Kill quest (always available).
-  candidates.push(() => {
+  // Generator invariant: early gameplay + many tests assume Rat Culling exists at tier 1.
+  // We always include it (when there is room) to keep the board stable and predictable.
+  if (quests.length < maxQuests) {
     const required = jitterInt(rng, 3 + tier * 2, 0, 2);
-    return {
+    quests.push({
       id: `${prefix}rat_culling`,
       name: "Rat Culling",
       description: "Help keep the town clean by killing some of the local rats.",
@@ -98,23 +96,75 @@ export function generateTownQuests(opts: TownQuestGeneratorOptions): QuestDefini
       ],
       reward: rewardForObjective(rng, "kill", tier, required, false),
       unlocks: [`${prefix}rat_culling_ii`],
-    };
-  });
+    });
+  }
+
+  // Generator v0.7: Deterministic variety, but only from tier 2+ so tier-1 stays "classic" (tests + onboarding).
+  if (tier >= 2 && quests.length < maxQuests) {
+    const nodeProtoId = pickResourceNodeProtoId(rng, tier);
+    const required = jitterInt(rng, 4 + tier * 3, 0, 3);
+    quests.push({
+      id: `${prefix}gather_${nodeProtoId}`,
+      name: resourceGatherQuestName(nodeProtoId),
+      description: resourceGatherQuestDescription(nodeProtoId),
+      turninPolicy: "board",
+      turninBoardId: townId,
+      objectives: [
+        {
+          kind: "harvest",
+          nodeProtoId,
+          required,
+        },
+      ],
+      reward: rewardForObjective(rng, "harvest", tier, required, false),
+    });
+  }
+
+  // Generator v0.7: Deterministic repeatable turn-in (when enabled), tier 2+ only.
+  if (tier >= 2 && includeRepeatables && quests.length < maxQuests) {
+    const itemId = pickRepeatableTurninItemId(rng, tier);
+    const required = jitterInt(rng, 6 + tier * 4, 0, 4);
+    const reward = rewardForObjective(rng, "collect_item", tier, required, true);
+    quests.push({
+      id: repeatableTurninQuestId(prefix, itemId),
+      name: repeatableTurninQuestName(itemId),
+      description: repeatableTurninQuestDescription(itemId),
+      turninPolicy: "board",
+      turninBoardId: townId,
+      objectives: [
+        {
+          kind: "collect_item",
+          itemId,
+          required,
+        },
+      ],
+      reward,
+      repeatable: true,
+      maxCompletions: null,
+    });
+  }
+
+
+  // Candidate templates (safe ids only).
+  const candidates: Array<() => QuestDefinition> = [];
+
 
   // Harvest quest (tier 2+).
+  // Kept for back-compat intent; now rotates the node type deterministically for variety.
   if (tier >= 2) {
     candidates.push(() => {
+      const nodeProtoId = pickResourceNodeProtoId(rng, tier);
       const required = jitterInt(rng, 6 + tier * 4, 0, 4);
       return {
-        id: `${prefix}ore_sampling`,
-        name: "Ore Sampling",
-        description: "Gather hematite ore samples from nearby veins.",
+        id: `${prefix}resource_sampling`,
+        name: "Resource Sampling",
+        description: "Gather resource samples from nearby nodes.",
         turninPolicy: "board",
         turninBoardId: townId,
         objectives: [
           {
             kind: "harvest",
-            nodeProtoId: "ore_vein_small",
+            nodeProtoId,
             required,
           },
         ],
@@ -163,20 +213,23 @@ export function generateTownQuests(opts: TownQuestGeneratorOptions): QuestDefini
   }
 
   // Repeatable item turn-in quest (safe + stable).
-  if (includeRepeatables) {
+  // (Kept as an optional extra; the deterministic repeatable is added earlier if there's room.)
+  // Tier 2+ only: tier-1 onboarding + tests expect no repeatable turn-ins to appear as available.
+  if (tier >= 2 && includeRepeatables) {
     candidates.push(() => {
+      const itemId = pickRepeatableTurninItemId(rng, tier);
       const required = jitterInt(rng, 6 + tier * 4, 0, 4);
       const reward = rewardForObjective(rng, "collect_item", tier, required, true);
       return {
-        id: `${prefix}rat_tail_collection`,
-        name: "Rat Tail Collection",
-        description: "A local alchemist is paying for rat tails for their experiments.",
+        id: repeatableTurninQuestId(prefix, itemId),
+        name: repeatableTurninQuestName(itemId),
+        description: repeatableTurninQuestDescription(itemId),
         turninPolicy: "board",
         turninBoardId: townId,
         objectives: [
           {
             kind: "collect_item",
-            itemId: "rat_tail",
+            itemId,
             required,
           },
         ],
@@ -225,8 +278,35 @@ export function generateTownQuests(opts: TownQuestGeneratorOptions): QuestDefini
         turninPolicy: "board",
         turninBoardId: townId,
         objectives: [
-          { kind: "harvest", nodeProtoId: "ore_vein_small", required: harvestReq },
+          { kind: "harvest", nodeProtoId: pickResourceNodeProtoId(rng, tier), required: harvestReq },
           { kind: "talk_to", npcId: "npc_quartermaster", required: 1 },
+        ],
+        reward,
+      };
+    });
+  }
+
+  // Generator v0.7: additional compound template: harvest + collect of the same resource.
+  // This leverages the inventory loop: gather nodes, then turn in the resulting items.
+  if (tier >= 2) {
+    candidates.push(() => {
+      const itemId = pickRepeatableTurninItemId(rng, tier);
+      const harvestReq = jitterInt(rng, 4 + tier * 2, 0, 2);
+      const collectReq = Math.max(2, Math.floor(harvestReq * 0.75));
+
+      const r1 = rewardForObjective(rng, "harvest", tier, harvestReq, false);
+      const r2 = rewardForObjective(rng, "collect_item", tier, collectReq, false);
+      const reward = rewardForCompound(rng, mergeRewards(r1, r2), 0.88);
+
+      return {
+        id: `${prefix}gather_and_deliver_${itemId}`,
+        name: `Gather and Deliver (${prettyResourceName(itemId)})`,
+        description: `Harvest nearby nodes and deliver ${prettyResourceName(itemId)} to the board as proof of work.`,
+        turninPolicy: "board",
+        turninBoardId: townId,
+        objectives: [
+          { kind: "harvest", nodeProtoId: nodeProtoIdForDeliverItem(itemId), required: harvestReq },
+          { kind: "collect_item", itemId, required: collectReq },
         ],
         reward,
       };
@@ -270,6 +350,28 @@ export function generateTownQuests(opts: TownQuestGeneratorOptions): QuestDefini
       ],
       reward: rewardForObjective(rng, "kill", tier, 8 + tier * 3, false),
     });
+
+
+    // Also include canonical repeatable definitions in the catalog so turned-in quest states can be rendered
+    // even if repeatables are not part of the current offering (tier-1 and/or includeRepeatables=false).
+    const ratTailId = repeatableTurninQuestId(prefix, "rat_tail");
+    quests.push({
+      id: ratTailId,
+      name: repeatableTurninQuestName("rat_tail"),
+      description: repeatableTurninQuestDescription("rat_tail"),
+      turninPolicy: "board",
+      turninBoardId: townId,
+      objectives: [
+        {
+          kind: "collect_item",
+          itemId: "rat_tail",
+          required: jitterInt(rng, 8 + tier * 3, 0, 3),
+        },
+      ],
+      reward: rewardForObjective(rng, "collect_item", tier, 10 + tier * 3, true),
+      repeatable: true,
+      maxCompletions: null,
+    });
   }
 
   // Sanity: ensure unique ids.
@@ -287,6 +389,93 @@ export function generateTownQuests(opts: TownQuestGeneratorOptions): QuestDefini
 }
 
 // ----------------- helpers -----------------
+
+// Generator v0.7 resource pools.
+// These ids are already present in core content (NpcTypes/ItemCatalog) and are used elsewhere in tests.
+const RESOURCE_NODE_POOL: string[] = [
+  // existing node used by early examples
+  "ore_vein_small",
+  // starter resource node prototypes
+  "herb_peacebloom",
+  "wood_oak",
+  "stone_granite",
+  "grain_wheat",
+  "fish_river_trout",
+  "mana_spark_arcane",
+];
+
+const REPEATABLE_TURNIN_ITEM_POOL: string[] = [
+  "rat_tail",
+  "herb_peacebloom",
+  "wood_oak",
+  "ore_iron_hematite",
+  "stone_granite",
+  "grain_wheat",
+  "fish_river_trout",
+  "mana_spark_arcane",
+];
+
+function pickResourceNodeProtoId(rng: () => number, tier: number): string {
+  // As tier climbs, broaden the pool by permitting more indices.
+  const maxIdx = clampInt(1 + Math.floor(tier / 2), 1, RESOURCE_NODE_POOL.length);
+  return RESOURCE_NODE_POOL[randInt(rng, 0, maxIdx - 1)] ?? "ore_vein_small";
+}
+
+function pickRepeatableTurninItemId(rng: () => number, tier: number): string {
+  const maxIdx = clampInt(2 + Math.floor(tier / 2), 2, REPEATABLE_TURNIN_ITEM_POOL.length);
+  return REPEATABLE_TURNIN_ITEM_POOL[randInt(rng, 0, maxIdx - 1)] ?? "rat_tail";
+}
+
+function nodeProtoIdForDeliverItem(itemId: string): string {
+  // Most starter resources use the same id for node prototype and item.
+  // Ore is the exception: the node proto is "ore_vein_small" while the item is "ore_iron_hematite".
+  if (itemId === "ore_iron_hematite") return "ore_vein_small";
+  return itemId;
+}
+
+function prettyResourceName(id: string): string {
+  // A tiny humanizer; we don't have to hit the ItemCatalog for UX.
+  return String(id)
+    .replace(/^npc_/, "")
+    .replace(/^ore_/, "Ore ")
+    .replace(/^herb_/, "Herb ")
+    .replace(/^wood_/, "Wood ")
+    .replace(/^grain_/, "Grain ")
+    .replace(/^fish_/, "Fish ")
+    .replace(/^mana_/, "Mana ")
+    .replace(/^stone_/, "Stone ")
+    .replace(/_/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function resourceGatherQuestName(nodeProtoId: string): string {
+  if (nodeProtoId === "ore_vein_small") return "Ore Sampling";
+  return `Gather ${prettyResourceName(nodeProtoId)}`;
+}
+
+function resourceGatherQuestDescription(nodeProtoId: string): string {
+  if (nodeProtoId === "ore_vein_small") return "Gather hematite ore samples from nearby veins.";
+  return `Gather ${prettyResourceName(nodeProtoId)} from nearby nodes.`;
+}
+
+function repeatableTurninQuestName(itemId: string): string {
+  if (itemId === "rat_tail") return "Rat Tail Collection";
+  return `${prettyResourceName(itemId)} Turn-in`;
+}
+
+function repeatableTurninQuestDescription(itemId: string): string {
+  if (itemId === "rat_tail") return "A local alchemist is paying for rat tails for their experiments.";
+  return `A local buyer is paying for ${prettyResourceName(itemId)}. Deliver them to the board.`;
+}
+
+
+function repeatableTurninQuestId(prefix: string, itemId: string): string {
+  // Back-compat: many tests and older quest-state seeders refer to the canonical rat tail repeatable id.
+  // Keep it stable forever to avoid breaking "turned-in" resolution.
+  if (itemId === "rat_tail") return `${prefix}rat_tail_collection`;
+  return `${prefix}turnin_${itemId}`;
+}
 
 type RewardObjectiveKind = "talk_to" | "kill" | "harvest" | "collect_item" | "craft";
 

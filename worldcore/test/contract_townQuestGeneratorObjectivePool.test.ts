@@ -11,8 +11,25 @@ test("[contract] generated quest objectives only use safe ids from the current c
 
   const allowedNpcIds = new Set(["npc_quartermaster"]);
   const allowedTargetProtoIds = new Set(["town_rat"]);
-  const allowedNodeProtoIds = new Set(["ore_vein_small"]);
-  const allowedItemIds = new Set(["rat_tail"]);
+  const allowedNodeProtoIds = new Set([
+    "ore_vein_small",
+    "herb_peacebloom",
+    "wood_oak",
+    "stone_granite",
+    "grain_wheat",
+    "fish_river_trout",
+    "mana_spark_arcane",
+  ]);
+  const allowedItemIds = new Set([
+    "rat_tail",
+    "herb_peacebloom",
+    "wood_oak",
+    "ore_iron_hematite",
+    "stone_granite",
+    "grain_wheat",
+    "fish_river_trout",
+    "mana_spark_arcane",
+  ]);
   const allowedActionIds = new Set(["craft:brew_minor_heal"]);
 
   for (const q of quests) {

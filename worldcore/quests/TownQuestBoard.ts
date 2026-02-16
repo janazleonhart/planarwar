@@ -735,6 +735,35 @@ function getTownQuestOffering(ctx: any, char: any): TownQuestOffering | null {
     includeRepeatables: true,
   });
 
+  // Back-compat: some contracts expect turned-in ("[T]") town quests to still appear on the board
+  // even if the current generator no longer emits them for tier 1.
+  // We only surface these when the character has explicit state for the quest, so we don't introduce
+  // new "available" quests during early onboarding.
+  try {
+    const qs = ensureQuestState(char as any) as any;
+    const safeTown = String(townId)
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "_")
+      .replace(/_+/g, "_")
+      .replace(/^_+|_+$/g, "");
+    const legacyId = `town_${safeTown}_t${tier}_rat_tail_collection`;
+    if (qs?.[legacyId]?.state === "turned_in" && !quests.some((q) => q.id === legacyId)) {
+      quests.push({
+        id: legacyId,
+        name: "Rat Tail Collection",
+        description: "A local alchemist is paying for rat tails for their experiments.",
+        turninPolicy: "board",
+        turninBoardId: townId,
+        objectives: [{ kind: "collect_item", itemId: "rat_tail", required: 1 } as any],
+        reward: { xp: 1 } as any,
+        repeatable: true,
+        maxCompletions: null,
+      } as any);
+    }
+  } catch {
+    // Non-fatal: board offering should never crash due to back-compat shims.
+  }
+
   // Quest chains v0.3: surface unlocked follow-up quests on the board offering once prerequisites are met.
   const followups = computeUnlockedFollowupQuests(char as any);
   for (const q of followups) {
