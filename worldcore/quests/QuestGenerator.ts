@@ -73,7 +73,7 @@ export function generateTownQuests(opts: TownQuestGeneratorOptions): QuestDefini
           required: 1,
         },
       ],
-      reward: { xp: jitterInt(rng, 25 + tier * 10, 0, 10) },
+      reward: rewardForObjective(rng, "talk_to", tier, 1, false),
     },
   ];
 
@@ -96,7 +96,7 @@ export function generateTownQuests(opts: TownQuestGeneratorOptions): QuestDefini
           required,
         },
       ],
-      reward: { xp: jitterInt(rng, 60 + tier * 25, 0, 15) },
+      reward: rewardForObjective(rng, "kill", tier, required, false),
       unlocks: [`${prefix}rat_culling_ii`],
     };
   });
@@ -118,7 +118,7 @@ export function generateTownQuests(opts: TownQuestGeneratorOptions): QuestDefini
             required,
           },
         ],
-        reward: { xp: jitterInt(rng, 80 + tier * 30, 0, 20) },
+        reward: rewardForObjective(rng, "harvest", tier, required, false),
       };
     });
   }
@@ -127,6 +127,23 @@ export function generateTownQuests(opts: TownQuestGeneratorOptions): QuestDefini
   if (tier >= 3) {
     candidates.push(() => {
       const required = 1;
+      const baseReward = rewardForObjective(rng, "craft", tier, required, false);
+
+      // Generator v0.5: higher-tier crafted quests offer a simple choose-one bonus
+      // at turn-in. This exercises reward-choice UX without requiring new content ids.
+      if (tier >= 4) {
+        baseReward.chooseOne = [
+          {
+            label: "Bonus XP",
+            xp: 40 + tier * 15,
+          },
+          {
+            label: "Bonus Gold",
+            gold: 3 + Math.floor(tier / 2),
+          },
+        ];
+      }
+
       return {
         id: `${prefix}alchemist_aid`,
         name: "Alchemist's Aid",
@@ -140,10 +157,7 @@ export function generateTownQuests(opts: TownQuestGeneratorOptions): QuestDefini
             required,
           },
         ],
-        reward: {
-          xp: jitterInt(rng, 90 + tier * 35, 0, 25),
-          gold: tier >= 4 ? 1 : 0,
-        },
+        reward: baseReward,
       };
     });
   }
@@ -152,6 +166,7 @@ export function generateTownQuests(opts: TownQuestGeneratorOptions): QuestDefini
   if (includeRepeatables) {
     candidates.push(() => {
       const required = jitterInt(rng, 6 + tier * 4, 0, 4);
+      const reward = rewardForObjective(rng, "collect_item", tier, required, true);
       return {
         id: `${prefix}rat_tail_collection`,
         name: "Rat Tail Collection",
@@ -165,10 +180,7 @@ export function generateTownQuests(opts: TownQuestGeneratorOptions): QuestDefini
             required,
           },
         ],
-        reward: {
-          xp: jitterInt(rng, 70 + tier * 25, 0, 20),
-          gold: Math.max(1, Math.floor(tier / 2)),
-        },
+        reward,
         repeatable: true,
         maxCompletions: null,
       };
@@ -210,7 +222,7 @@ export function generateTownQuests(opts: TownQuestGeneratorOptions): QuestDefini
           required: jitterInt(rng, 6 + tier * 3, 0, 3),
         },
       ],
-      reward: { xp: jitterInt(rng, 90 + tier * 35, 0, 20) },
+      reward: rewardForObjective(rng, "kill", tier, 8 + tier * 3, false),
     });
   }
 
@@ -229,6 +241,65 @@ export function generateTownQuests(opts: TownQuestGeneratorOptions): QuestDefini
 }
 
 // ----------------- helpers -----------------
+
+type RewardObjectiveKind = "talk_to" | "kill" | "harvest" | "collect_item" | "craft";
+
+function rewardForObjective(
+  rng: () => number,
+  kind: RewardObjectiveKind,
+  tier: number,
+  required: number,
+  isRepeatable: boolean
+): QuestReward {
+  const t = clampInt(Math.floor(tier || 1), 1, 99);
+  const req = clampInt(Math.floor(required || 1), 1, 9999);
+
+  // Generator v0.5: consistent scaling by tier + objective size.
+  // The jitter is intentionally small so rewards feel stable per epoch.
+  let baseXp = 50;
+  let baseGold = 0;
+
+  switch (kind) {
+    case "talk_to":
+      baseXp = 20 + t * 10;
+      break;
+
+    case "kill":
+      baseXp = 40 + t * 30 + req * 5;
+      break;
+
+    case "harvest":
+      baseXp = 50 + t * 35 + req * 3;
+      break;
+
+    case "collect_item":
+      baseXp = 45 + t * 25 + req * 4;
+      // Turn-in quests are a natural gold faucet; keep it modest.
+      baseGold = Math.max(1, Math.floor(t / 2));
+      break;
+
+    case "craft":
+      baseXp = 80 + t * 40;
+      baseGold = t >= 4 ? 1 + Math.floor(t / 3) : 0;
+      break;
+
+    default:
+      baseXp = 50 + t * 20;
+      break;
+  }
+
+  // Repeatables should not outclass unique quests by raw XP.
+  if (isRepeatable) {
+    baseXp = Math.floor(baseXp * 0.85);
+  }
+
+  const xp = jitterInt(rng, baseXp, -5, 10);
+  const gold = baseGold > 0 ? jitterInt(rng, baseGold, 0, 1) : 0;
+
+  const reward: QuestReward = { xp };
+  if (gold > 0) reward.gold = gold;
+  return reward;
+}
 
 function normalizeTownPrefix(townId: string, tier: number): string {
   // Keep ids filesystem/URL-friendly.
