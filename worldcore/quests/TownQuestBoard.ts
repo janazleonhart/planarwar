@@ -758,6 +758,19 @@ function getTownQuestBoardTuningOverrides(
   return computeTownQuestBoardTuningOverridesAndSources(tier, p, tuningPreset).overrides;
 }
 
+
+function computeQuestBoardRotationSeamKey(ctx: any, roomId: string, tier: number): string {
+  // v0.33: seam-key rotation history by tuning regime to prevent old history from "poisoning" new tuning settings.
+  const profileTags = getTownQuestBoardProfileTags(ctx, roomId);
+  const profileName = pickTownQuestBoardProfile(profileTags) ?? "none";
+
+  const tuningPresetTags = getTownQuestBoardTuningPresetTags(ctx, roomId);
+  const tuningPreset = pickTownQuestBoardTuningPreset(tuningPresetTags) ?? "none";
+
+  // Tier is already present in rotationKey, but include it in seam for extra safety against future refactors.
+  return `seam:${tier}|p:${profileName}|preset:${tuningPreset}`;
+}
+
 export type TownQuestBoardDebugCapsData = {
   townId: string;
   tier: number;
@@ -778,7 +791,12 @@ export function getTownQuestBoardDebugCapsData(ctx: any, char: any): TownQuestBo
   const tier = inferTownTier(ctx, townId) ?? 1;
   const epoch = inferQuestEpoch();
 
-  const rotationKey = `town:${townId}|t${tier}`;
+	// `roomId` is nullable, but by the time we have a `townId` it should be present.
+	// Keep this defensive so TypeScript (and future refactors) don't explode.
+	const safeRoomId = roomId ?? "unknown_room";
+	const seamKey = computeQuestBoardRotationSeamKey(ctx, safeRoomId, tier);
+
+  const rotationKey = `town:${townId}|t${tier}|${seamKey}`;
   const recentOfferedIds = getRecentOfferedQuestIds(char as any, rotationKey, epoch);
 
   // v0.26: fairness weighting across rotations (quest shapes).
@@ -1335,7 +1353,9 @@ function getTownQuestOffering(ctx: any, char: any): TownQuestOffering | null {
 
   // v0.15: per-character quest board rotation memory.
   // Keyed by (townId, tier) and reset when epoch changes.
-  const rotationKey = `town:${townId}|t${tier}`;
+  const seamKey = computeQuestBoardRotationSeamKey(ctx, roomId, tier);
+
+  const rotationKey = `town:${townId}|t${tier}|${seamKey}`;
   const recentOffered = getRecentOfferedQuestIds(char as any, rotationKey, epoch);
 
   // v0.26: fairness weighting across rotations (quest shapes).
