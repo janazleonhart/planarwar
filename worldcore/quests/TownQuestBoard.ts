@@ -574,8 +574,16 @@ export function renderTownQuestBoardDebugTuning(ctx: any, char: any): string {
   const tier = Math.max(1, Math.floor(data.tier || 1));
   const defaultMax = clampInt(2 + Math.min(tier, 4), 3, 6);
   const base = getDefaultTownQuestGeneratorTuning({ tier, maxQuests: defaultMax });
-  const overrides = getTownQuestBoardTuningOverrides(tier, profileName, tuningPreset);
+  const profileForSources =
+    profileName === "arcane" || profileName === "military" || profileName === "trade" ? profileName : null;
+  const { overrides, sources } = computeTownQuestBoardTuningOverridesAndSources(tier, profileForSources, tuningPreset);
   const tuning: TownQuestGeneratorTuning = { ...base, ...overrides };
+
+  const srcOf = (k: keyof TownQuestGeneratorTuning): string => {
+    const key = String(k);
+    const has = Object.prototype.hasOwnProperty.call(overrides, key);
+    return has ? sources[key] ?? "override" : "base";
+  };
 
   const lines: string[] = [];
   lines.push("Quest Board Debug Tuning (staff):");
@@ -590,12 +598,12 @@ export function renderTownQuestBoardDebugTuning(ctx: any, char: any): string {
   lines.push(
     ` - overrides: ${Object.keys(overrides).length ? Object.keys(overrides).sort().join(", ") : "(none)"}`
   );
-  lines.push(` - kindBaseCap: ${tuning.kindBaseCap}`);
-  lines.push(` - signatureBaseCap: ${tuning.signatureBaseCap}`);
-  lines.push(` - semanticBaseCap: ${tuning.semanticBaseCap}`);
-  lines.push(` - familyBaseCap: ${tuning.familyBaseCap}`);
-  lines.push(` - avoidRecentUntilFrac: ${tuning.avoidRecentUntilFrac}`);
-  lines.push(` - avoidRecentShapesUntilFrac: ${tuning.avoidRecentShapesUntilFrac}`);
+  lines.push(` - kindBaseCap: ${tuning.kindBaseCap} (${srcOf("kindBaseCap")})`);
+  lines.push(` - signatureBaseCap: ${tuning.signatureBaseCap} (${srcOf("signatureBaseCap")})`);
+  lines.push(` - semanticBaseCap: ${tuning.semanticBaseCap} (${srcOf("semanticBaseCap")})`);
+  lines.push(` - familyBaseCap: ${tuning.familyBaseCap} (${srcOf("familyBaseCap")})`);
+  lines.push(` - avoidRecentUntilFrac: ${tuning.avoidRecentUntilFrac} (${srcOf("avoidRecentUntilFrac")})`);
+  lines.push(` - avoidRecentShapesUntilFrac: ${tuning.avoidRecentShapesUntilFrac} (${srcOf("avoidRecentShapesUntilFrac")})`);
   return lines.join("\n").trimEnd();
 }
 
@@ -654,82 +662,100 @@ function pickTownQuestBoardProfile(profileTags: string[]): "arcane" | "military"
 //
 // These overrides are intentionally modest. Tier 1 remains conservative onboarding.
 // Higher tiers nudge harder toward variety/rotation fairness.
-function getTownQuestBoardTuningOverrides(
+function computeTownQuestBoardTuningOverridesAndSources(
   tier: number,
-  profile: "arcane" | "military" | "trade" | "strict" | "loose" | "chaos" | null,
+  profile: "arcane" | "military" | "trade" | null,
   tuningPreset: "strict" | "loose" | "chaos" | null
-): Partial<TownQuestGeneratorTuning> {
+): { overrides: Partial<TownQuestGeneratorTuning>; sources: Record<string, string> } {
   const t = Math.max(1, Math.floor(Number.isFinite(tier) ? tier : 1));
+  const sources: Record<string, string> = {};
+  let overrides: Partial<TownQuestGeneratorTuning> = {};
+
+  const set = (k: keyof TownQuestGeneratorTuning, v: any, src: string) => {
+    (overrides as any)[k] = v;
+    sources[String(k)] = src;
+  };
 
   // Base tier overrides.
-  let out: Partial<TownQuestGeneratorTuning> = {};
   if (t === 2) {
-    out = { avoidRecentUntilFrac: 0.8, avoidRecentShapesUntilFrac: 0.85 };
+    set("avoidRecentUntilFrac", 0.8 as any, `tier:${t}`);
+    set("avoidRecentShapesUntilFrac", 0.85 as any, `tier:${t}`);
   } else if (t >= 3) {
-    out = { avoidRecentUntilFrac: 0.85, avoidRecentShapesUntilFrac: 0.9 };
+    set("avoidRecentUntilFrac", 0.85 as any, `tier:${t}`);
+    set("avoidRecentShapesUntilFrac", 0.9 as any, `tier:${t}`);
   }
 
   // Profile overrides: gentle nudges that do NOT affect player-facing text.
   // These only influence selection preference when the pool allows.
   if (profile === "arcane") {
-    out = {
-      ...out,
-      // Arcane towns tend to have more "shape" variety (talk/cast/collect), so bias harder.
-      avoidRecentShapesUntilFrac: clamp01(
-        (out.avoidRecentShapesUntilFrac ?? 0) + 0.05,
-        out.avoidRecentShapesUntilFrac ?? 0
-      ),
-    };
+    set(
+      "avoidRecentShapesUntilFrac",
+      clamp01((overrides.avoidRecentShapesUntilFrac ?? 0) + 0.05, overrides.avoidRecentShapesUntilFrac ?? 0) as any,
+      "profile:arcane"
+    );
   } else if (profile === "military") {
-    out = {
-      ...out,
-      // Military towns bias more toward repeatable training loops; keep ID-avoidance stronger.
-      avoidRecentUntilFrac: clamp01((out.avoidRecentUntilFrac ?? 0) + 0.05, out.avoidRecentUntilFrac ?? 0),
-    };
+    set(
+      "avoidRecentUntilFrac",
+      clamp01((overrides.avoidRecentUntilFrac ?? 0) + 0.05, overrides.avoidRecentUntilFrac ?? 0) as any,
+      "profile:military"
+    );
   } else if (profile === "trade") {
-    out = {
-      ...out,
-      // Trade towns bias toward resource variety to keep the board feeling curated.
-      avoidRecentShapesUntilFrac: clamp01(
-        (out.avoidRecentShapesUntilFrac ?? 0) + 0.03,
-        out.avoidRecentShapesUntilFrac ?? 0
-      ),
-    };
+    set(
+      "avoidRecentShapesUntilFrac",
+      clamp01((overrides.avoidRecentShapesUntilFrac ?? 0) + 0.03, overrides.avoidRecentShapesUntilFrac ?? 0) as any,
+      "profile:trade"
+    );
   }
-
 
   // Tuning preset overrides: explicit tags that can intentionally shift board feel.
   // Applied last so they win over tier/profile nudges.
   if (tuningPreset === "strict") {
-    out = {
-      ...out,
-      avoidRecentUntilFrac: clamp01(Math.max(out.avoidRecentUntilFrac ?? 0, 0.92), out.avoidRecentUntilFrac ?? 0),
-      avoidRecentShapesUntilFrac: clamp01(
-        Math.max(out.avoidRecentShapesUntilFrac ?? 0, 0.94),
-        out.avoidRecentShapesUntilFrac ?? 0
-      ),
-    };
+    set(
+      "avoidRecentUntilFrac",
+      clamp01(Math.max(overrides.avoidRecentUntilFrac ?? 0, 0.92), overrides.avoidRecentUntilFrac ?? 0) as any,
+      "preset:strict"
+    );
+    set(
+      "avoidRecentShapesUntilFrac",
+      clamp01(Math.max(overrides.avoidRecentShapesUntilFrac ?? 0, 0.94), overrides.avoidRecentShapesUntilFrac ?? 0) as any,
+      "preset:strict"
+    );
   } else if (tuningPreset === "loose") {
-    out = {
-      ...out,
-      avoidRecentUntilFrac: clamp01(Math.min(out.avoidRecentUntilFrac ?? 0, 0.75), out.avoidRecentUntilFrac ?? 0),
-      avoidRecentShapesUntilFrac: clamp01(
-        Math.min(out.avoidRecentShapesUntilFrac ?? 0, 0.8),
-        out.avoidRecentShapesUntilFrac ?? 0
-      ),
-    };
+    set(
+      "avoidRecentUntilFrac",
+      clamp01(Math.min(overrides.avoidRecentUntilFrac ?? 0, 0.75), overrides.avoidRecentUntilFrac ?? 0) as any,
+      "preset:loose"
+    );
+    set(
+      "avoidRecentShapesUntilFrac",
+      clamp01(Math.min(overrides.avoidRecentShapesUntilFrac ?? 0, 0.8), overrides.avoidRecentShapesUntilFrac ?? 0) as any,
+      "preset:loose"
+    );
   } else if (tuningPreset === "chaos") {
     // Chaos: allow repetition earlier; still clamped by generator.
-    out = {
-      ...out,
-      avoidRecentUntilFrac: clamp01(Math.min(out.avoidRecentUntilFrac ?? 0, 0.6), out.avoidRecentUntilFrac ?? 0),
-      avoidRecentShapesUntilFrac: clamp01(
-        Math.min(out.avoidRecentShapesUntilFrac ?? 0, 0.65),
-        out.avoidRecentShapesUntilFrac ?? 0
-      ),
-    };
+    set(
+      "avoidRecentUntilFrac",
+      clamp01(Math.min(overrides.avoidRecentUntilFrac ?? 0, 0.6), overrides.avoidRecentUntilFrac ?? 0) as any,
+      "preset:chaos"
+    );
+    set(
+      "avoidRecentShapesUntilFrac",
+      clamp01(Math.min(overrides.avoidRecentShapesUntilFrac ?? 0, 0.65), overrides.avoidRecentShapesUntilFrac ?? 0) as any,
+      "preset:chaos"
+    );
   }
-  return out;
+
+  return { overrides, sources };
+}
+
+function getTownQuestBoardTuningOverrides(
+  tier: number,
+  profile: "arcane" | "military" | "trade" | "strict" | "loose" | "chaos" | null,
+  tuningPreset: "strict" | "loose" | "chaos" | null
+): Partial<TownQuestGeneratorTuning> {
+  // Keep the generation path stable; only the debug path needs sources.
+  const p = profile === "arcane" || profile === "military" || profile === "trade" ? profile : null;
+  return computeTownQuestBoardTuningOverridesAndSources(tier, p, tuningPreset).overrides;
 }
 
 export type TownQuestBoardDebugCapsData = {
