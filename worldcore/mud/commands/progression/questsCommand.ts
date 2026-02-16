@@ -21,6 +21,25 @@ export async function handleQuestCommand(
 ): Promise<string> {
   const sub = (input.parts[1] || "").toLowerCase();
 
+  // Split a selector plus optional `choose N` suffix.
+  // This keeps board-scoped commands consistent with `quest turnin <id> choose <n>`.
+  const splitSelectorAndChoice = (parts: string[]): { selector: string; choice: number | null } => {
+    const p = parts.map((x) => String(x ?? "")).filter((s) => s.trim().length > 0);
+    if (p.length === 0) return { selector: "", choice: null };
+
+    const chooseAt = p.findIndex((w) => {
+      const l = w.toLowerCase();
+      return l === "choose" || l === "choice" || l === "pick";
+    });
+
+    if (chooseAt === -1) return { selector: p.join(" ").trim(), choice: null };
+
+    const selector = p.slice(0, chooseAt).join(" ").trim();
+    const n = Number(p[chooseAt + 1]);
+    if (!Number.isInteger(n) || n <= 0) return { selector: p.join(" ").trim(), choice: null };
+    return { selector, choice: n };
+  };
+
   
   if (sub === "help" || sub === "?" || sub === "h") {
     return [
@@ -46,8 +65,10 @@ export async function handleQuestCommand(
       "Board-scoped actions (indices always match the current board view):",
       " quest board show <#|id|name>",
       " quest board accept <#|id|name>",
+      " quest board turnin <#|id|name> (optionally: choose <#>)",
       " quest board <mode> show <#|id|name>",
       " quest board <mode> accept <#|id|name>",
+      " quest board <mode> turnin <#|id|name> (optionally: choose <#>)",
     ].join("\n").trimEnd();
   }
 
@@ -94,8 +115,10 @@ if (!sub || sub === "log" || sub === "list" || sub === "quests" || sub === "ques
         "Board-scoped actions (indices always match the current rendered view):",
         " quest board show <#|id|name>",
         " quest board accept <#|id|name>",
+        " quest board turnin <#|id|name> (optionally: choose <#>)",
         " quest board <mode> show <#|id|name>",
         " quest board <mode> accept <#|id|name>",
+        " quest board <mode> turnin <#|id|name> (optionally: choose <#>)",
         "",
         "Tip: use numeric indices only within the view you are looking at.",
       ].join("\n").trimEnd();
@@ -114,7 +137,8 @@ if (!sub || sub === "log" || sub === "list" || sub === "quests" || sub === "ques
 
     const modeOpts = parseBoardMode(a2);
     const verb = String(input.parts[modeOpts ? 3 : 2] ?? "").toLowerCase().trim();
-    const selector = input.parts.slice(modeOpts ? 4 : 3).join(" ").trim();
+    const tail = input.parts.slice(modeOpts ? 4 : 3);
+    const { selector, choice } = splitSelectorAndChoice(tail);
 
     // Action forms (keep these inside `quest board` so indices match the current view):
     //  - quest board accept <#|id|name>
@@ -129,6 +153,19 @@ if (!sub || sub === "log" || sub === "list" || sub === "quests" || sub === "ques
         ].join("\n");
       }
       return acceptTownQuest(ctx, char, selector, modeOpts ?? undefined);
+    }
+
+    if (verb === "turnin" || verb === "turn-in" || verb === "complete") {
+      if (!selector) {
+        return "Usage: quest board" + (modeOpts ? " " + a2 : "") + " turnin <#|id|name> (optionally: choose <#>)";
+      }
+
+      // Resolve indices against the current board view first.
+      const resolved = resolveTownQuestFromBoardView(ctx, char, selector, modeOpts ?? undefined);
+      if (!resolved) return `[quest] Unknown quest '${selector}'.`;
+
+      const arg = choice ? `${resolved.id} choose ${choice}` : resolved.id;
+      return turnInQuest(ctx, char, arg);
     }
 
     if (verb === "show" || verb === "info" || verb === "details") {

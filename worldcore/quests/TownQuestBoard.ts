@@ -268,7 +268,7 @@ const orderedVisibleQuests = computeTownQuestBoardOrderedVisibleQuests(
     "Use: quest board help   |   quest board [available|new|active|ready|turned]"
   );
   lines.push(
-    "     quest board show <#|id|name>   |   quest board accept <#|id|name>   |   questlog"
+    "     quest board show <#|id|name>   |   quest board accept <#|id|name>   |   quest board turnin <#|id|name>   |   questlog"
   );
 
   return lines.join("\n").trimEnd();
@@ -301,6 +301,9 @@ export function getTownContextForTurnin(
       const hasRegionId = !!String(room?.regionId ?? room?.region?.id ?? room?.region ?? "").trim();
       const hasTagsArray = Array.isArray(room?.tags);
 
+      // IMPORTANT: do NOT treat `tags: []` as town context.
+      // Empty tags means "explicitly no tags" and should deny board turn-ins.
+      // The fallback is ONLY for older stubs that omit tags entirely.
       if (hasRegionId && !hasTagsArray) {
         const regionId = inferRegionId(ctx, roomId) ?? roomId;
         const townId = regionId;
@@ -588,7 +591,7 @@ export function resolveQuestDefinitionFromStateId(
   if (fromRegistry) return fromRegistry;
 
   const src = entry?.source as QuestSource | undefined;
-  if (src?.kind === "generated_town") {
+  if (src?.kind === "generated_town" || src?.kind === "generated") {
     const generated = generateTownQuests({
       townId: src.townId,
       tier: src.tier,

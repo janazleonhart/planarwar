@@ -12,6 +12,16 @@ export type QuestSource =
       epoch: string;
     }
   | {
+      /**
+       * Legacy alias for "generated_town" (early Questloop prototypes).
+       * Kept for save compatibility + older contract fixtures.
+       */
+      kind: "generated";
+      townId: string;
+      tier: number;
+      epoch: string;
+    }
+  | {
       kind: "service";
       /**
        * Which backing quest provider produced this quest (ex: PostgresQuestService).
