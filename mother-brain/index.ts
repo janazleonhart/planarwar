@@ -1,3 +1,5 @@
+//mother-brain/index.ts
+
 import dotenv from "dotenv";
 import fs from "node:fs";
 import path from "node:path";
@@ -124,6 +126,23 @@ const ConfigSchema = z
         message: "MOTHER_BRAIN_WS_TIMEOUT_MS must be a number >= 250",
       }),
 
+    // Optional: WS ping/pong health measurement
+    MOTHER_BRAIN_WS_PING_EVERY_TICKS: z
+      .string()
+      .optional()
+      .transform((v) => (v ? Number(v) : 3))
+      .refine((n) => Number.isFinite(n) && n >= 1, {
+        message: "MOTHER_BRAIN_WS_PING_EVERY_TICKS must be a number >= 1",
+      }),
+
+    MOTHER_BRAIN_WS_PING_TIMEOUT_MS: z
+      .string()
+      .optional()
+      .transform((v) => (v ? Number(v) : 2000))
+      .refine((n) => Number.isFinite(n) && n >= 250, {
+        message: "MOTHER_BRAIN_WS_PING_TIMEOUT_MS must be a number >= 250",
+      }),
+
     // Optional: brain:* spawn_points summary (read-only)
     MOTHER_BRAIN_SPAWN_SUMMARY_EVERY_TICKS: z
       .string()
@@ -151,6 +170,8 @@ type MotherBrainConfig = {
   wsUrl?: string;
   dbTimeoutMs: number;
   wsTimeoutMs: number;
+  wsPingEveryTicks: number;
+  wsPingTimeoutMs: number;
   spawnSummaryEveryTicks: number;
   spawnSummaryTopN: number;
 };
@@ -173,6 +194,8 @@ function parseConfig(): MotherBrainConfig {
     wsUrl: env.MOTHER_BRAIN_WS_URL,
     dbTimeoutMs: env.MOTHER_BRAIN_DB_TIMEOUT_MS,
     wsTimeoutMs: env.MOTHER_BRAIN_WS_TIMEOUT_MS,
+    wsPingEveryTicks: env.MOTHER_BRAIN_WS_PING_EVERY_TICKS,
+    wsPingTimeoutMs: env.MOTHER_BRAIN_WS_PING_TIMEOUT_MS,
     spawnSummaryEveryTicks: env.MOTHER_BRAIN_SPAWN_SUMMARY_EVERY_TICKS,
     spawnSummaryTopN: env.MOTHER_BRAIN_SPAWN_SUMMARY_TOP_N,
   };
@@ -307,6 +330,8 @@ class WsProbe {
   private readonly url: string | undefined;
   private readonly timeoutMs: number;
 
+  private lastPongIso: string | null = null;
+
   public constructor(wsUrl: string | undefined, timeoutMs: number) {
     this.url = wsUrl;
     this.timeoutMs = timeoutMs;
@@ -348,6 +373,54 @@ class WsProbe {
     } catch (err: unknown) {
       return { ok: false, latencyMs: Date.now() - start, error: this.errToString(err) };
     }
+  }
+
+  /**
+   * Read-only health check: send a WS ping and measure pong latency.
+   * If the socket is not open, returns {ok:false}.
+   */
+  public async pingPong(timeoutMs: number): Promise<{ ok: boolean; latencyMs?: number; error?: string; lastPongIso?: string | null }> {
+    const ws = this.ws;
+    if (!ws || ws.readyState !== WebSocket.OPEN) return { ok: false, error: "not_open", lastPongIso: this.lastPongIso };
+
+    const start = Date.now();
+    return await new Promise((resolve) => {
+      let settled = false;
+
+      const finish = (res: { ok: boolean; latencyMs?: number; error?: string }) => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        resolve({ ...res, lastPongIso: this.lastPongIso });
+      };
+
+      const onPong = () => {
+        this.lastPongIso = nowIso();
+        finish({ ok: true, latencyMs: Date.now() - start });
+      };
+
+      const onClose = () => finish({ ok: false, latencyMs: Date.now() - start, error: "closed" });
+      const onError = (e: unknown) => finish({ ok: false, latencyMs: Date.now() - start, error: this.errToString(e) });
+
+      const timer = setTimeout(() => finish({ ok: false, latencyMs: Date.now() - start, error: `timeout after ${timeoutMs}ms` }), timeoutMs);
+
+      const cleanup = () => {
+        clearTimeout(timer);
+        ws.removeListener("pong", onPong);
+        ws.removeListener("close", onClose);
+        ws.removeListener("error", onError);
+      };
+
+      ws.once("pong", onPong);
+      ws.once("close", onClose);
+      ws.once("error", onError);
+
+      try {
+        ws.ping();
+      } catch (e: unknown) {
+        finish({ ok: false, latencyMs: Date.now() - start, error: this.errToString(e) });
+      }
+    });
   }
 
   public async close(): Promise<void> {
@@ -429,6 +502,10 @@ type TickSnapshot = {
     ok?: boolean;
     latencyMs?: number;
     error?: string;
+    pingOk?: boolean;
+    pingLatencyMs?: number;
+    lastPongIso?: string | null;
+    pingError?: string;
   };
 };
 
@@ -501,6 +578,18 @@ async function main(): Promise<void> {
     const dbRes = dbProbe.isEnabled() ? await dbProbe.ping() : ({ ok: false, error: "disabled" } as ProbeResult);
     const wsRes = wsProbe.isEnabled() ? await wsProbe.ensureConnected() : ({ ok: false, error: "disabled" } as ProbeResult);
 
+    let wsPing: { pingOk?: boolean; pingLatencyMs?: number; lastPongIso?: string | null; pingError?: string } | null = null;
+    const shouldPingWs = wsProbe.isEnabled() && cfg.wsPingEveryTicks > 0 && tick % cfg.wsPingEveryTicks === 0;
+    if (shouldPingWs && wsRes.ok) {
+      const pr = await wsProbe.pingPong(cfg.wsPingTimeoutMs);
+      wsPing = {
+        pingOk: pr.ok,
+        pingLatencyMs: pr.latencyMs,
+        lastPongIso: pr.lastPongIso ?? null,
+        ...(pr.ok ? {} : { pingError: pr.error ?? "unknown" }),
+      };
+    }
+
     let brainSpawns: BrainSpawnSummary | null | undefined = undefined;
     const shouldSummarize = dbProbe.isEnabled() && cfg.spawnSummaryEveryTicks > 0 && tick % cfg.spawnSummaryEveryTicks === 0;
     if (shouldSummarize && dbRes.ok) {
@@ -524,6 +613,14 @@ async function main(): Promise<void> {
         enabled: wsProbe.isEnabled(),
         state: wsProbe.getState(),
         ...(wsProbe.isEnabled() ? wsRes : {}),
+        ...(wsPing
+          ? {
+              pingOk: wsPing.pingOk,
+              pingLatencyMs: wsPing.pingLatencyMs,
+              lastPongIso: wsPing.lastPongIso,
+              ...(wsPing.pingError ? { pingError: wsPing.pingError } : {}),
+            }
+          : {}),
       },
     };
 
