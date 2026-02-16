@@ -248,6 +248,76 @@ greet_quartermaster: {
     },
   },
 
+  // Chain density v0.16 contract kit: unlocks multiple follow-ups at once.
+  // Used to ensure the quest board staggers NEW follow-ups instead of flooding the list.
+  chain_intro_multi_test: {
+    id: "chain_intro_multi_test",
+    name: "Chain Intro Multi Test",
+    description: "A tiny quest that unlocks multiple follow-ups to test board staggering.",
+    objectives: [
+      {
+        kind: "kill",
+        targetProtoId: "training_dummy",
+        required: 1,
+      },
+    ],
+    reward: {
+      xp: 1,
+    },
+    unlocks: [
+      "chain_followup_multi_a",
+      "chain_followup_multi_b",
+      "chain_followup_multi_c",
+      "chain_followup_multi_d",
+      "chain_followup_multi_e",
+    ],
+  },
+
+  chain_followup_multi_a: {
+    id: "chain_followup_multi_a",
+    name: "Chain Follow-up Multi A",
+    description: "Follow-up A (density test).",
+    requiresTurnedIn: ["chain_intro_multi_test"],
+    objectives: [{ kind: "kill", targetProtoId: "training_dummy", required: 1 }],
+    reward: { xp: 1 },
+  },
+
+  chain_followup_multi_b: {
+    id: "chain_followup_multi_b",
+    name: "Chain Follow-up Multi B",
+    description: "Follow-up B (density test).",
+    requiresTurnedIn: ["chain_intro_multi_test"],
+    objectives: [{ kind: "kill", targetProtoId: "training_dummy", required: 1 }],
+    reward: { xp: 1 },
+  },
+
+  chain_followup_multi_c: {
+    id: "chain_followup_multi_c",
+    name: "Chain Follow-up Multi C",
+    description: "Follow-up C (density test).",
+    requiresTurnedIn: ["chain_intro_multi_test"],
+    objectives: [{ kind: "kill", targetProtoId: "training_dummy", required: 1 }],
+    reward: { xp: 1 },
+  },
+
+  chain_followup_multi_d: {
+    id: "chain_followup_multi_d",
+    name: "Chain Follow-up Multi D",
+    description: "Follow-up D (density test).",
+    requiresTurnedIn: ["chain_intro_multi_test"],
+    objectives: [{ kind: "kill", targetProtoId: "training_dummy", required: 1 }],
+    reward: { xp: 1 },
+  },
+
+  chain_followup_multi_e: {
+    id: "chain_followup_multi_e",
+    name: "Chain Follow-up Multi E",
+    description: "Follow-up E (density test).",
+    requiresTurnedIn: ["chain_intro_multi_test"],
+    objectives: [{ kind: "kill", targetProtoId: "training_dummy", required: 1 }],
+    reward: { xp: 1 },
+  },
+
   // Turn-in policy v0.2 example: board-only turn-in bound to a specific town board.
   // Used by movement/walk-to contract tests to ensure town-entry nudges remain meaningful.
   board_turnin_test: {

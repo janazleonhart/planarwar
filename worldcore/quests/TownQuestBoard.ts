@@ -835,7 +835,8 @@ function getTownQuestOffering(ctx: any, char: any): TownQuestOffering | null {
 
   // Quest chains v0.3: surface unlocked follow-up quests on the board offering once prerequisites are met.
   const followups = computeUnlockedFollowupQuests(char as any);
-  for (const q of followups) {
+  const followupsToSurface = selectFollowupsForBoard({ townId, tier, epoch }, quests, followups, char as any);
+  for (const q of followupsToSurface) {
     if (!quests.some((x) => x.id === q.id)) quests.push(q);
   }
 
@@ -847,6 +848,64 @@ function getTownQuestOffering(ctx: any, char: any): TownQuestOffering | null {
   }
 
   return { townId, tier, epoch, quests };
+}
+
+// ----------------------------
+// Quest chain density controls (v0.16)
+// ----------------------------
+
+type BoardKey = { townId: string; tier: number; epoch: string };
+
+function selectFollowupsForBoard(
+  key: BoardKey,
+  offering: QuestDefinition[],
+  unlocked: QuestDefinition[],
+  char: CharacterState
+): QuestDefinition[] {
+  if (!unlocked.length) return [];
+
+  const state = ensureQuestState(char);
+
+  // Always surface follow-ups that have already been accepted/completed/turned in.
+  // (If we don't, they vanish from board filters that are offering-based.)
+  const accepted: QuestDefinition[] = [];
+  const unaccepted: QuestDefinition[] = [];
+
+  for (const q of unlocked) {
+    if (!q || !q.id) continue;
+    if (offering.some((x) => x.id === q.id)) continue;
+
+    if (state[q.id]) accepted.push(q);
+    else unaccepted.push(q);
+  }
+
+  // Cap how many *NEW* follow-ups we surface at once.
+  // Tier 1: 3, Tier 2: 4, Tier 3+: 4 (small but discoverable).
+  const capNew = Math.max(1, 2 + Math.min(2, Math.floor(key.tier || 1)));
+
+  // Deterministic ordering so different clients/sessions agree.
+  unaccepted.sort((a, b) => {
+    const ka = followupSortKey(key, a.id);
+    const kb = followupSortKey(key, b.id);
+    if (ka !== kb) return ka - kb;
+    return a.id.localeCompare(b.id);
+  });
+
+  return accepted.concat(unaccepted.slice(0, capNew));
+}
+
+function followupSortKey(key: BoardKey, questId: string): number {
+  const h = hashString32(`followup|${key.townId}|t${key.tier}|${key.epoch}|${questId}`);
+  return h >>> 0;
+}
+
+function hashString32(input: string): number {
+  let h = 1779033703 ^ input.length;
+  for (let i = 0; i < input.length; i++) {
+    h = Math.imul(h ^ input.charCodeAt(i), 3432918353);
+    h = (h << 13) | (h >>> 19);
+  }
+  return (h >>> 0) || 1;
 }
 
 function resolveFromOffering(quests: QuestDefinition[], idOrIndex: string): QuestDefinition | null {
