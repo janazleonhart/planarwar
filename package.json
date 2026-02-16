@@ -1,51 +1,51 @@
 {
-    "name": "planarwar",
-    "private": true,
-    "version": "1.0.0",
-    "workspaces": [
-        "worldcore",
-        "mmo-backend",
-        "web-backend",
-        "web-frontend",
-        "mother-brain"
-    ],
-    "scripts": {
-        "dev:web-frontend": "npm run dev --workspace web-frontend",
-        "dev:web-backend": "npm run dev --workspace planarwar-web-backend",
-        "dev:mmo": "npm run dev --workspace planarwar-mmo-backend",
-        "check:no-mud-helpers": "node .github/scripts/noMudHelperFunctionsCheck.js",
-        "audit:seed:npc-lawtags": "npm run build --workspace worldcore && node dist/worldcore/tools/seedNpcLawTagsAudit.js",
-        "audit:seed:npc-loot-items": "npm run build --workspace worldcore && node dist/worldcore/tools/seedNpcLootItemIdAudit.js",
-        "audit:seed:skin-loot-items": "npm run build --workspace worldcore && node dist/worldcore/tools/seedSkinLootItemIdAudit.js",
-        "verify": "npm run verify:repo",
-        "verify:worldcore": "npm run verify --workspace worldcore",
-        "verify:repo": "rm -rf dist && npm run verify:worldcore && npm run audit:seed:npc-lawtags && node .github/scripts/registryIndexPathsCheck.js && node .github/scripts/noMudHelperFunctionsCheck.js && node dist/worldcore/tools/seedNpcLootItemIdAudit.js && node dist/worldcore/tools/seedSkinLootItemIdAudit.js && node dist/worldcore/tools/seedSpellIdAudit.js && node dist/worldcore/tools/seedSpellsColumnsAudit.js && node dist/worldcore/tools/seedAbilityIdAudit.js  && node dist/worldcore/tools/seedQuestRewardGrantIdAudit.js && npm run -w web-backend typecheck && npm run -w web-frontend typecheck && npm run -w mother-brain typecheck",
-        "dev:mother-brain": "npm run dev --workspace mother-brain",
-        "verify:mother-brain": "npm run build --workspace mother-brain && npm run -w mother-brain typecheck"
-    },
-    "dependencies": {
-        "cors": "^2.8.5",
-        "dotenv": "^16.4.5",
-        "express": "^5.2.1",
-        "jsonwebtoken": "^9.0.2",
-        "pg": "^8.13.0",
-        "react": "^19.2.3",
-        "react-dom": "^19.2.3",
-        "redis": "^4.6.14",
-        "uuid": "^13.0.0",
-        "ws": "^8.18.0"
-    },
-    "devDependencies": {
-        "@types/cors": "^2.8.19",
-        "@types/express": "^5.0.6",
-        "@types/jsonwebtoken": "^9.0.6",
-        "@types/node": "^22.19.3",
-        "@types/pg": "^8.10.0",
-        "@types/redis": "^4.0.11",
-        "@types/uuid": "^10.0.0",
-        "@types/ws": "^8.5.12",
-        "eslint": "^9.14.0",
-        "ts-node": "^10.9.2",
-        "typescript": "^5.6.3"
-    }
+  "name": "planarwar",
+  "private": true,
+  "version": "1.0.0",
+  "workspaces": [
+    "worldcore",
+    "mmo-backend",
+    "web-backend",
+    "web-frontend",
+    "mother-brain"
+  ],
+  "scripts": {
+    "dev:web-frontend": "npm run dev --workspace web-frontend",
+    "dev:web-backend": "npm run dev --workspace planarwar-web-backend",
+    "dev:mmo": "npm run dev --workspace planarwar-mmo-backend",
+    "check:no-mud-helpers": "node .github/scripts/noMudHelperFunctionsCheck.js",
+    "audit:seed:npc-lawtags": "npm run build --workspace worldcore && node dist/worldcore/tools/seedNpcLawTagsAudit.js",
+    "audit:seed:npc-loot-items": "npm run build --workspace worldcore && node dist/worldcore/tools/seedNpcLootItemIdAudit.js",
+    "audit:seed:skin-loot-items": "npm run build --workspace worldcore && node dist/worldcore/tools/seedSkinLootItemIdAudit.js",
+    "verify": "npm run verify:repo",
+    "verify:worldcore": "npm run verify --workspace worldcore",
+    "verify:repo": "rm -rf dist && npm run verify:worldcore && npm run audit:seed:npc-lawtags && node .github/scripts/registryIndexPathsCheck.js && node .github/scripts/noMudHelperFunctionsCheck.js && node dist/worldcore/tools/seedNpcLootItemIdAudit.js && node dist/worldcore/tools/seedSkinLootItemIdAudit.js && node dist/worldcore/tools/seedSpellIdAudit.js && node dist/worldcore/tools/seedSpellsColumnsAudit.js && node dist/worldcore/tools/seedAbilityIdAudit.js  && node dist/worldcore/tools/seedQuestRewardGrantIdAudit.js && npm run -w web-backend typecheck && npm run -w web-frontend typecheck && npm run verify:mother-brain",
+    "dev:mother-brain": "npm run dev --workspace mother-brain",
+    "verify:mother-brain": "npm run build --workspace mother-brain && npm run -w mother-brain typecheck"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^5.2.1",
+    "jsonwebtoken": "^9.0.2",
+    "pg": "^8.13.0",
+    "react": "^19.2.3",
+    "react-dom": "^19.2.3",
+    "redis": "^4.6.14",
+    "uuid": "^13.0.0",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.6",
+    "@types/jsonwebtoken": "^9.0.6",
+    "@types/node": "^22.19.3",
+    "@types/pg": "^8.10.0",
+    "@types/redis": "^4.0.11",
+    "@types/uuid": "^10.0.0",
+    "@types/ws": "^8.5.12",
+    "eslint": "^9.14.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.6.3"
+  }
 }
