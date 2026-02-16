@@ -1,12 +1,13 @@
 {
     "name": "planarwar",
     "private": true,
-    "version": "1.0.0", 
+    "version": "1.0.0",
     "workspaces": [
         "worldcore",
         "mmo-backend",
         "web-backend",
-        "web-frontend" 
+        "web-frontend",
+        "mother-brain"
     ],
     "scripts": {
         "dev:web-frontend": "npm run dev --workspace web-frontend",
@@ -18,7 +19,9 @@
         "audit:seed:skin-loot-items": "npm run build --workspace worldcore && node dist/worldcore/tools/seedSkinLootItemIdAudit.js",
         "verify": "npm run verify:repo",
         "verify:worldcore": "npm run verify --workspace worldcore",
-        "verify:repo": "rm -rf dist && npm run verify:worldcore && npm run audit:seed:npc-lawtags && node .github/scripts/registryIndexPathsCheck.js && node .github/scripts/noMudHelperFunctionsCheck.js && node dist/worldcore/tools/seedNpcLootItemIdAudit.js && node dist/worldcore/tools/seedSkinLootItemIdAudit.js && node dist/worldcore/tools/seedSpellIdAudit.js && node dist/worldcore/tools/seedSpellsColumnsAudit.js && node dist/worldcore/tools/seedAbilityIdAudit.js  && node dist/worldcore/tools/seedQuestRewardGrantIdAudit.js && npm run -w web-backend typecheck && npm run -w web-frontend typecheck"
+        "verify:repo": "rm -rf dist && npm run verify:worldcore && npm run audit:seed:npc-lawtags && node .github/scripts/registryIndexPathsCheck.js && node .github/scripts/noMudHelperFunctionsCheck.js && node dist/worldcore/tools/seedNpcLootItemIdAudit.js && node dist/worldcore/tools/seedSkinLootItemIdAudit.js && node dist/worldcore/tools/seedSpellIdAudit.js && node dist/worldcore/tools/seedSpellsColumnsAudit.js && node dist/worldcore/tools/seedAbilityIdAudit.js  && node dist/worldcore/tools/seedQuestRewardGrantIdAudit.js && npm run -w web-backend typecheck && npm run -w web-frontend typecheck && npm run -w mother-brain typecheck",
+        "dev:mother-brain": "npm run dev --workspace mother-brain",
+        "verify:mother-brain": "npm run build --workspace mother-brain && npm run -w mother-brain typecheck"
     },
     "dependencies": {
         "cors": "^2.8.5",

@@ -1,0 +1,26 @@
+{
+  "registryVersion": "1.0",
+  "scope": "mother-brain",
+  "notes": [
+    "Mother Brain is a long-running daemon/service for world simulation decisions.",
+    "v0.1 is a runnable skeleton (heartbeat + env config validation).",
+    "Future slices will add wave planning (DB) and GoalRunner black-box testing (WS)."
+  ],
+  "entries": {
+    "mother-brain.service.MotherBrain": {
+      "kind": "service",
+      "service": "mother-brain",
+      "path": "mother-brain/index.ts",
+      "class": "(entrypoint)",
+      "lifecycle": "daemon",
+      "ctorArgs": [],
+      "dependsOn": [],
+      "provides": [
+        "mother-brain:daemon"
+      ],
+      "owns": [
+        "Mother Brain runtime loop"
+      ]
+    }
+  }
+}

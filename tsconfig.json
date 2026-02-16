@@ -1,28 +1,35 @@
 {
     "compilerOptions": {
-      "target": "ES2020",
-      "module": "CommonJS", 
-      "moduleResolution": "node",
-      "strict": true,
-      "esModuleInterop": true,
-      "forceConsistentCasingInFileNames": true,
-      "skipLibCheck": true,
-      "lib": ["ES2020"],
-      "types": ["node"], 
-      "rootDir": ".",
-      "outDir": "dist",
-      "baseUrl": "."
+        "target": "ES2020",
+        "module": "CommonJS",
+        "moduleResolution": "node",
+        "strict": true,
+        "esModuleInterop": true,
+        "forceConsistentCasingInFileNames": true,
+        "skipLibCheck": true,
+        "lib": [
+            "ES2020"
+        ],
+        "types": [
+            "node"
+        ],
+        "rootDir": ".",
+        "outDir": "dist",
+        "baseUrl": "."
     },
     "include": [
-      "worldcore/**/*",
-      "mmo-backend/**/*",
-      "web-backend/**/*",
-      "web-frontend/**/*"
+        "worldcore/**/*",
+        "mmo-backend/**/*",
+        "web-backend/**/*",
+        "web-frontend/**/*",
+        "mother-brain/**/*"
     ],
-    "exclude": ["node_modules", "dist"],
+    "exclude": [
+        "node_modules",
+        "dist"
+    ],
     "scripts": {
-      "start:web": "ts-node ./web-backend/index.ts",
-      "start:mmo": "ts-node ./mmo-backend/server.ts"
+        "start:web": "ts-node ./web-backend/index.ts",
+        "start:mmo": "ts-node ./mmo-backend/server.ts"
     }
-  }
-  
+}

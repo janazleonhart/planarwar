@@ -15,6 +15,14 @@
       ]
     },
     {
+      "scope": "mother-brain",
+      "path": "mother-brain/MotherBrainRegistry.json",
+      "kind": "code_registry",
+      "notes": [
+        "Long-running world simulation daemon (Mother Brain)."
+      ]
+    },
+    {
       "scope": "web-backend",
       "path": "web-backend/WebBackendRegistry.json",
       "kind": "code_registry",
