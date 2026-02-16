@@ -413,26 +413,36 @@ if (candidates.length > 0) {
   // We treat the *first* objective as the primary kind (the board grouping logic does the same).
   const primaryKindOf = (q: QuestDefinition): string => q.objectives?.[0]?.kind ?? "unknown";
 
-  // Generator v0.20: semantic variety (soft).
-  // In addition to kind caps, avoid repeating the *same target* for the primary objective
-  // (e.g. kill the same protoId twice, harvest the same node twice) when the candidate pool
-  // allows it. This keeps boards from feeling like "the same quest in a different hat".
-  const primarySemanticKeyOf = (q: QuestDefinition): string | null => {
-    const o: any = q.objectives?.[0];
-    if (!o || typeof o.kind !== "string") return null;
-
+  // Generator v0.20 → v0.21: semantic variety (soft).
+  // v0.20: avoid repeating the *same target* for the primary objective.
+  // v0.21: extend this to *all objectives* (compound quests included) so secondary
+  // objectives don't cause accidental monotony (e.g. every quest also says "talk to
+  // the quartermaster").
+  const semanticKeysOfObjective = (o: any): string[] => {
+    if (!o || typeof o.kind !== "string") return [];
     switch (o.kind) {
       case "kill":
-        return typeof o.targetProtoId === "string" ? `kill:${o.targetProtoId}` : null;
+        return typeof o.targetProtoId === "string" ? [`kill:${o.targetProtoId}`] : [];
       case "harvest":
-        return typeof o.nodeProtoId === "string" ? `harvest:${o.nodeProtoId}` : null;
+        return typeof o.nodeProtoId === "string" ? [`harvest:${o.nodeProtoId}`] : [];
       case "collect_item":
-        return typeof o.itemId === "string" ? `collect_item:${o.itemId}` : null;
+        return typeof o.itemId === "string" ? [`collect_item:${o.itemId}`] : [];
       case "talk_to":
-        return typeof o.npcId === "string" ? `talk_to:${o.npcId}` : null;
+        return typeof o.npcId === "string" ? [`talk_to:${o.npcId}`] : [];
+      case "craft":
+        return typeof o.actionId === "string" ? [`craft:${o.actionId}`] : [];
+      case "city":
+        return typeof o.cityActionId === "string" ? [`city:${o.cityActionId}`] : [];
       default:
-        return null;
+        return [];
     }
+  };
+
+  const semanticKeysOf = (q: QuestDefinition): string[] => {
+    const objs: any[] = Array.isArray(q.objectives) ? (q.objectives as any[]) : [];
+    const out: string[] = [];
+    for (const o of objs) out.push(...semanticKeysOfObjective(o));
+    return out;
   };
 
   // Baseline cap is strict for small boards; we relax it deterministically if we can't fill.
@@ -448,9 +458,9 @@ if (candidates.length > 0) {
   const baseSemanticCap = 1;
   const semanticCounts = new Map<string, number>();
   for (const q of quests) {
-    const s = primarySemanticKeyOf(q);
-    if (!s) continue;
-    semanticCounts.set(s, (semanticCounts.get(s) ?? 0) + 1);
+    for (const s of semanticKeysOf(q)) {
+      semanticCounts.set(s, (semanticCounts.get(s) ?? 0) + 1);
+    }
   }
 
   // Bounded retry loop to prevent infinite loops if pools are tiny and we keep colliding.
@@ -501,13 +511,25 @@ if (candidates.length > 0) {
     const current = kindCounts.get(kind) ?? 0;
     if (Number.isFinite(cap) && current >= cap) continue;
 
-    // Semantic cap (soft): avoid repeating the same primary target.
-    const sKey = primarySemanticKeyOf(q);
-    if (sKey) {
+    // Semantic cap (soft): avoid repeating the same targets across *all* objectives.
+    // This is especially important for compound quests.
+    const sKeys = semanticKeysOf(q);
+    if (sKeys.length > 0) {
       const sCap = semanticCapAtAttempt(attempts);
-      const sCur = semanticCounts.get(sKey) ?? 0;
-      if (Number.isFinite(sCap) && sCur >= sCap) continue;
-      semanticCounts.set(sKey, sCur + 1);
+      if (Number.isFinite(sCap)) {
+        let blocked = false;
+        for (const sKey of sKeys) {
+          const sCur = semanticCounts.get(sKey) ?? 0;
+          if (sCur >= sCap) {
+            blocked = true;
+            break;
+          }
+        }
+        if (blocked) continue;
+      }
+      for (const sKey of sKeys) {
+        semanticCounts.set(sKey, (semanticCounts.get(sKey) ?? 0) + 1);
+      }
     }
 
     seenIds.add(q.id);
