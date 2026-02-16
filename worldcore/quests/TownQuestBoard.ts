@@ -8,7 +8,11 @@
 import type { CharacterState } from "../characters/CharacterTypes";
 import { ensureQuestState, type QuestSource } from "./QuestState";
 import type { QuestDefinition } from "./QuestTypes";
-import { generateTownQuests, getDefaultTownQuestGeneratorTuning } from "./QuestGenerator";
+import {
+  generateTownQuests,
+  getDefaultTownQuestGeneratorTuning,
+  type TownQuestGeneratorTuning,
+} from "./QuestGenerator";
 import { getQuestById, getAllQuests } from "./QuestRegistry";
 import { renderQuestAmbiguous, renderQuestDidYouMean } from "./QuestCommandText";
 
@@ -557,7 +561,9 @@ export function renderTownQuestBoardDebugTuning(ctx: any, char: any): string {
   // Mirror generator defaults (QuestGenerator.ts) so staff can see what is in play.
   const tier = Math.max(1, Math.floor(data.tier || 1));
   const defaultMax = clampInt(2 + Math.min(tier, 4), 3, 6);
-  const tuning = getDefaultTownQuestGeneratorTuning({ tier, maxQuests: defaultMax });
+  const base = getDefaultTownQuestGeneratorTuning({ tier, maxQuests: defaultMax });
+  const overrides = getTownQuestBoardTuningOverrides(tier);
+  const tuning: TownQuestGeneratorTuning = { ...base, ...overrides };
 
   const lines: string[] = [];
   lines.push("Quest Board Debug Tuning (staff):");
@@ -565,6 +571,9 @@ export function renderTownQuestBoardDebugTuning(ctx: any, char: any): string {
   lines.push(` - tier: ${data.tier}`);
   lines.push(` - epoch: ${data.epoch}`);
   lines.push(` - maxQuests(default): ${defaultMax}`);
+  lines.push(
+    ` - overrides: ${Object.keys(overrides).length ? Object.keys(overrides).sort().join(", ") : "(none)"}`
+  );
   lines.push(` - kindBaseCap: ${tuning.kindBaseCap}`);
   lines.push(` - signatureBaseCap: ${tuning.signatureBaseCap}`);
   lines.push(` - semanticBaseCap: ${tuning.semanticBaseCap}`);
@@ -572,6 +581,25 @@ export function renderTownQuestBoardDebugTuning(ctx: any, char: any): string {
   lines.push(` - avoidRecentUntilFrac: ${tuning.avoidRecentUntilFrac}`);
   lines.push(` - avoidRecentShapesUntilFrac: ${tuning.avoidRecentShapesUntilFrac}`);
   return lines.join("\n").trimEnd();
+}
+
+// v0.29: tier-based tuning activation.
+//
+// These overrides are intentionally modest. Tier 1 remains conservative onboarding.
+// Higher tiers nudge harder toward variety/rotation fairness.
+function getTownQuestBoardTuningOverrides(tier: number): Partial<TownQuestGeneratorTuning> {
+  const t = Math.max(1, Math.floor(Number.isFinite(tier) ? tier : 1));
+  if (t <= 1) return {};
+  if (t === 2) {
+    return {
+      avoidRecentUntilFrac: 0.8,
+      avoidRecentShapesUntilFrac: 0.85,
+    };
+  }
+  return {
+    avoidRecentUntilFrac: 0.85,
+    avoidRecentShapesUntilFrac: 0.9,
+  };
 }
 
 export type TownQuestBoardDebugCapsData = {
@@ -1172,6 +1200,7 @@ function getTownQuestOffering(ctx: any, char: any): TownQuestOffering | null {
     recentlyOfferedQuestIds: recentOffered,
     recentlyOfferedObjectiveSignatures: recentSigs,
     recentlyOfferedResourceFamilies: recentFams,
+    tuning: getTownQuestBoardTuningOverrides(tier),
   });
 
   // Back-compat: some contracts expect turned-in ("[T]") town quests to still appear on the board
