@@ -6,6 +6,7 @@ import { moveCharacterAndSync } from "../../../movement/moveOps";
 import { parseMoveDir } from "../../../movement/MovementCommands";
 import { buildNearbyTargetSnapshot as buildNearbyTargetSnapshotShared } from "../../handles/NearbyHandles";
 import { countNewUnlockedFollowups } from "../../../quests/TownQuestBoard";
+import { countRestrictedReadyTurninsHere } from "../../../quests/QuestTurninPolicy";
 
 // NOTE: this command intentionally does NOT depend on a global MudInput type.
 // Different command handlers in this repo accept slightly different input shapes.
@@ -828,6 +829,12 @@ export async function handleWalkToCommand(
           const nNew = countNewUnlockedFollowups(char as any);
           if (nNew > 0) {
             questNudge = `[quest] NEW quests available: ${nNew}. Try: quest board new`;
+          }
+
+          const nReadyHere = countRestrictedReadyTurninsHere(ctx as any, char as any);
+          if (nReadyHere > 0) {
+            const line = `[quest] Quests ready to turn in here: ${nReadyHere}. Try: quest turnin list here`;
+            questNudge = questNudge ? `${questNudge}\n${line}` : line;
           }
         }
       } catch {

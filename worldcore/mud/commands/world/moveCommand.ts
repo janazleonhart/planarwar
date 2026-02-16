@@ -7,6 +7,7 @@ import type { ServerWorldManager } from "../../../world/ServerWorldManager";
 import { isGMOrHigher } from "../../../shared/AuthTypes";
 import { getActiveStatusEffects } from "../../../combat/StatusEffects";
 import { countNewUnlockedFollowups } from "../../../quests/TownQuestBoard";
+import { countRestrictedReadyTurninsHere } from "../../../quests/QuestTurninPolicy";
 import {
   isTownSanctuaryForRegionSync,
   isTravelLockdownOnSiegeForRegionSync,
@@ -231,6 +232,12 @@ try {
     const nNew = countNewUnlockedFollowups(char);
     if (nNew > 0) {
       questNudge = `[quest] NEW quests available: ${nNew}. Try: quest board new`;
+    }
+
+    const nReadyHere = countRestrictedReadyTurninsHere(ctx, char);
+    if (nReadyHere > 0) {
+      const line = `[quest] Quests ready to turn in here: ${nReadyHere}. Try: quest turnin list here`;
+      questNudge = questNudge ? `${questNudge}\n${line}` : line;
     }
   }
 } catch {

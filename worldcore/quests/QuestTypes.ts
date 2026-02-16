@@ -248,6 +248,28 @@ greet_quartermaster: {
     },
   },
 
+  // Turn-in policy v0.2 example: board-only turn-in bound to a specific town board.
+  // Used by movement/walk-to contract tests to ensure town-entry nudges remain meaningful.
+  board_turnin_test: {
+    id: "board_turnin_test",
+    name: "Board Turn-in Test",
+    description: "A tiny quest that can only be turned in at a specific town quest board.",
+    objectives: [
+      {
+        kind: "kill",
+        targetProtoId: "training_dummy",
+        required: 1,
+      },
+    ],
+    // Restrict turn-in to a board context and bind it to a specific board id.
+    // (Test harness uses roomId-derived townId like 'prime_shard:1,0'.)
+    turninPolicy: "board" as any,
+    turninBoardId: "prime_shard:1,0" as any,
+    reward: {
+      xp: 1,
+    },
+  },
+
   // Rank system v0.2 example: quest reward grants pending spell + ability.
   // Used by contract tests and as a reference kit for content authors.
   trainer_spell_grant_test: {

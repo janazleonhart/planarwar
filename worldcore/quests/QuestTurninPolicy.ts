@@ -11,7 +11,12 @@
 
 import type { CharacterState } from "../characters/CharacterTypes";
 import type { QuestDefinition } from "./QuestTypes";
-import { getQuestContextRoomId, getTownContextForTurnin } from "./TownQuestBoard";
+import {
+  getQuestContextRoomId,
+  getTownContextForTurnin,
+  resolveQuestDefinitionFromStateId,
+} from "./TownQuestBoard";
+import { ensureQuestState } from "./QuestState";
 
 export type TurninPolicy = "anywhere" | "board" | "npc";
 
@@ -107,6 +112,34 @@ export function computeTurninHint(
   }
 
   return null;
+}
+
+/**
+ * Count completed quests that are eligible to turn in *here*, but ONLY for quests
+ * whose turn-in policy is restricted (board/npc). This keeps town-entry nudges
+ * meaningful and avoids spamming for "anywhere" quests.
+ */
+export function countRestrictedReadyTurninsHere(
+  ctx: any,
+  char: CharacterState
+): number {
+  const qs = ensureQuestState(char);
+  let n = 0;
+
+  for (const [id, entry] of Object.entries(qs)) {
+    if (!entry || (entry as any).state !== "completed") continue;
+
+    const def = resolveQuestDefinitionFromStateId(id, entry);
+    if (!def) continue; // can't evaluate policy safely
+
+    const policy = normalizeTurninPolicy((def as any).turninPolicy);
+    if (policy === "anywhere") continue;
+
+    const enforced = enforceTurninPolicy(ctx, char, def as any, entry, policy);
+    if ((enforced as any).ok) n++;
+  }
+
+  return n;
 }
 
 /**
