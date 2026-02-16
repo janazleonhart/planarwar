@@ -415,6 +415,8 @@ export async function handleTalkCommand(
       lines.push(renderTownQuestBoard(ctx as any, char as any, { onlyActive: true }));
     } else if (mode === "ready") {
       lines.push(renderTownQuestBoard(ctx as any, char as any, { onlyReady: true }));
+    } else if (mode === "turned" || mode === "turnedin" || mode === "turned_in" || mode === "done") {
+      lines.push(renderTownQuestBoard(ctx as any, char as any, { onlyTurned: true }));
     } else {
       lines.push(renderTownQuestBoard(ctx as any, char as any));
     }

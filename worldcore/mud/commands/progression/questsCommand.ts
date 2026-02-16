@@ -58,6 +58,9 @@ export async function handleQuestCommand(
     if (mode === "ready") {
       return renderTownQuestBoard(ctx, char, { onlyReady: true });
     }
+    if (mode === "turned" || mode === "turnedin" || mode === "turned_in" || mode === "done") {
+      return renderTownQuestBoard(ctx, char, { onlyTurned: true });
+    }
     return renderTownQuestBoard(ctx, char);
   }
 
@@ -104,6 +107,7 @@ export async function handleQuestCommand(
     " quest board new            (shows only newly unlocked follow-ups)",
     " quest board active         (shows only your active quests)",
     " quest board ready          (shows only quests ready to turn in)",
+    " quest board turned|done    (shows only turned-in quests)",
     " quest accept <#|id|name>",
     " quest abandon <#|id|name>",
     " quest turnin list          (shows completed quests ready to turn in)",

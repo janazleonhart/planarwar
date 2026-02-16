@@ -25,6 +25,9 @@ export type TownQuestBoardRenderOpts = {
 
   /** When true, render only quests that are ready to turn in (completed). */
   onlyReady?: boolean;
+
+  /** When true, render only quests that are turned in (completed and handed in). */
+  onlyTurned?: boolean;
 };
 
 export function countNewUnlockedFollowups(char: CharacterState): number {
@@ -55,6 +58,7 @@ export function renderTownQuestBoard(
   const onlyNew = !!opts?.onlyNew;
   const onlyActive = !onlyNew && !!opts?.onlyActive;
   const onlyReady = !onlyNew && !onlyActive && !!opts?.onlyReady;
+  const onlyTurned = !onlyNew && !onlyActive && !onlyReady && !!opts?.onlyTurned;
   const lines: string[] = [];
 
   lines.push(
@@ -82,6 +86,11 @@ export function renderTownQuestBoard(
             const entry = state[q.id];
             return !!entry && entry.state === "completed";
           })
+        : onlyTurned
+          ? offering.quests.filter((q) => {
+              const entry = state[q.id];
+              return !!entry && entry.state === "turned_in";
+            })
       : offering.quests;
 
   // Quest chains v0.5: bubble NEW unlocked follow-ups to the top of the board
@@ -127,6 +136,7 @@ export function renderTownQuestBoard(
   if (onlyNew) lines.push(`NEW quests available: ${orderedVisibleQuests.length}`);
   else if (onlyActive) lines.push(`Active quests: ${orderedVisibleQuests.length}`);
   else if (onlyReady) lines.push(`Ready quests: ${orderedVisibleQuests.length}`);
+  else if (onlyTurned) lines.push(`Turned-in quests: ${orderedVisibleQuests.length}`);
   else lines.push(`Quests available: ${offering.quests.length} (NEW: ${newCountAll})`);
 
   if (orderedVisibleQuests.length === 0) {
@@ -137,7 +147,9 @@ export function renderTownQuestBoard(
           ? " - No active quests."
           : onlyReady
             ? " - No ready quests."
-            : " - No quests available."
+            : onlyTurned
+              ? " - No turned-in quests."
+              : " - No quests available."
     );
     return lines.join("\n");
   }
