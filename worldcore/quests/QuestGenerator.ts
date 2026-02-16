@@ -385,9 +385,30 @@ const seenIds = new Set<string>(quests.map((q) => q.id));
 if (candidates.length > 0) {
   const shuffled = shuffleStable(candidates.slice(), rng);
 
+  // Prevent monotony: avoid letting a single primary objective kind dominate the offering.
+  // We treat the *first* objective as the primary kind (the board grouping logic does the same).
+  const primaryKindOf = (q: QuestDefinition): string => q.objectives?.[0]?.kind ?? "unknown";
+
+  // Baseline cap is strict for small boards; we relax it deterministically if we can't fill.
+  const baseCap = maxQuests <= 6 ? 2 : 3;
+  const kindCounts = new Map<string, number>();
+  for (const q of quests) {
+    const k = primaryKindOf(q);
+    kindCounts.set(k, (kindCounts.get(k) ?? 0) + 1);
+  }
+
   // Bounded retry loop to prevent infinite loops if pools are tiny and we keep colliding.
   const maxAttempts = Math.max(50, maxQuests * 40);
   let idx = 0;
+
+  // If caps are too strict for the available candidate pool, underfill is worse than repetition.
+  // We relax the cap partway through the attempt budget.
+  const capAtAttempt = (attempt: number): number => {
+    if (attempt > Math.floor(maxAttempts * 0.85)) return Number.POSITIVE_INFINITY;
+    if (attempt > Math.floor(maxAttempts * 0.65)) return baseCap + 2;
+    if (attempt > Math.floor(maxAttempts * 0.45)) return baseCap + 1;
+    return baseCap;
+  };
 
   for (let attempts = 0; quests.length < maxQuests && attempts < maxAttempts; attempts++) {
     const mk = shuffled[idx % shuffled.length];
@@ -395,11 +416,17 @@ if (candidates.length > 0) {
 
     const q = mk();
 
-    if (seenIds.has(q.id))
-      continue;
+    if (seenIds.has(q.id)) continue;
+
+    // Kind cap (soft).
+    const cap = capAtAttempt(attempts);
+    const kind = primaryKindOf(q);
+    const current = kindCounts.get(kind) ?? 0;
+    if (Number.isFinite(cap) && current >= cap) continue;
 
     seenIds.add(q.id);
     quests.push(q);
+    kindCounts.set(kind, current + 1);
   }
 }
 
