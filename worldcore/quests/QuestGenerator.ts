@@ -413,12 +413,44 @@ if (candidates.length > 0) {
   // We treat the *first* objective as the primary kind (the board grouping logic does the same).
   const primaryKindOf = (q: QuestDefinition): string => q.objectives?.[0]?.kind ?? "unknown";
 
+  // Generator v0.20: semantic variety (soft).
+  // In addition to kind caps, avoid repeating the *same target* for the primary objective
+  // (e.g. kill the same protoId twice, harvest the same node twice) when the candidate pool
+  // allows it. This keeps boards from feeling like "the same quest in a different hat".
+  const primarySemanticKeyOf = (q: QuestDefinition): string | null => {
+    const o: any = q.objectives?.[0];
+    if (!o || typeof o.kind !== "string") return null;
+
+    switch (o.kind) {
+      case "kill":
+        return typeof o.targetProtoId === "string" ? `kill:${o.targetProtoId}` : null;
+      case "harvest":
+        return typeof o.nodeProtoId === "string" ? `harvest:${o.nodeProtoId}` : null;
+      case "collect_item":
+        return typeof o.itemId === "string" ? `collect_item:${o.itemId}` : null;
+      case "talk_to":
+        return typeof o.npcId === "string" ? `talk_to:${o.npcId}` : null;
+      default:
+        return null;
+    }
+  };
+
   // Baseline cap is strict for small boards; we relax it deterministically if we can't fill.
   const baseCap = maxQuests <= 6 ? 2 : 3;
   const kindCounts = new Map<string, number>();
   for (const q of quests) {
     const k = primaryKindOf(q);
     kindCounts.set(k, (kindCounts.get(k) ?? 0) + 1);
+  }
+
+  // Semantic cap is stricter than kind cap: prefer unique targets.
+  // We still relax deterministically if the pool is tiny.
+  const baseSemanticCap = 1;
+  const semanticCounts = new Map<string, number>();
+  for (const q of quests) {
+    const s = primarySemanticKeyOf(q);
+    if (!s) continue;
+    semanticCounts.set(s, (semanticCounts.get(s) ?? 0) + 1);
   }
 
   // Bounded retry loop to prevent infinite loops if pools are tiny and we keep colliding.
@@ -432,6 +464,13 @@ if (candidates.length > 0) {
     if (attempt > Math.floor(maxAttempts * 0.65)) return baseCap + 2;
     if (attempt > Math.floor(maxAttempts * 0.45)) return baseCap + 1;
     return baseCap;
+  };
+
+  const semanticCapAtAttempt = (attempt: number): number => {
+    if (attempt > Math.floor(maxAttempts * 0.85)) return Number.POSITIVE_INFINITY;
+    if (attempt > Math.floor(maxAttempts * 0.65)) return baseSemanticCap + 2;
+    if (attempt > Math.floor(maxAttempts * 0.45)) return baseSemanticCap + 1;
+    return baseSemanticCap;
   };
 
 
@@ -461,6 +500,15 @@ if (candidates.length > 0) {
     const kind = primaryKindOf(q);
     const current = kindCounts.get(kind) ?? 0;
     if (Number.isFinite(cap) && current >= cap) continue;
+
+    // Semantic cap (soft): avoid repeating the same primary target.
+    const sKey = primarySemanticKeyOf(q);
+    if (sKey) {
+      const sCap = semanticCapAtAttempt(attempts);
+      const sCur = semanticCounts.get(sKey) ?? 0;
+      if (Number.isFinite(sCap) && sCur >= sCap) continue;
+      semanticCounts.set(sKey, sCur + 1);
+    }
 
     seenIds.add(q.id);
     quests.push(q);
