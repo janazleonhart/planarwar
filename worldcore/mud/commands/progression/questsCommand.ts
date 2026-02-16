@@ -4,6 +4,7 @@ import { renderQuestLog, renderQuestDetails } from "../../../quests/QuestText";
 import { turnInQuest } from "../../../quests/turnInQuest";
 import {
   renderTownQuestBoard,
+  renderTownQuestBoardDebugCaps,
   resolveTownQuestFromBoardView,
   acceptTownQuest,
   abandonQuest,
@@ -123,6 +124,7 @@ if (!sub || sub === "log" || sub === "list" || sub === "quests" || sub === "ques
         " quest debug show <#|id|name>",
         " quest debug board                 (full board + per-quest metadata)",
         " quest debug board <available|new|active|ready|turned>",
+        " quest debug caps                  (shows rotation memory + keys)",
       ].join("\n").trimEnd();
     }
 
@@ -130,6 +132,11 @@ if (!sub || sub === "log" || sub === "list" || sub === "quests" || sub === "ques
       const target = input.parts.slice(3).join(" ").trim();
       if (!target) return "Usage: quest debug show <#|id|name>";
       return renderQuestDetails(char, target, { ctx, debug: true });
+    }
+
+
+    if (sub2 === "caps" || sub2 === "cap") {
+      return renderTownQuestBoardDebugCaps(ctx, char);
     }
 
     if (sub2 === "board") {

@@ -471,6 +471,35 @@ function computeResourceFamilies(q: QuestDefinition): string[] {
  * This is intentionally stricter than "regionId exists": many rooms have a regionId, but
  * only rooms tagged with a town tier should count as a quest-board context for turn-ins.
  */
+
+export function renderTownQuestBoardDebugCaps(ctx: any, char: any): string {
+  // Staff-only wrapper exists in questsCommand; this function is pure display.
+  const roomId = getQuestContextRoomId(ctx, char);
+  const townId = roomId ? inferRegionId(ctx, roomId) : null;
+
+  if (!townId) return "[quest] No town context.";
+
+  const tier = inferTownTier(ctx, townId) ?? 1;
+  const epoch = inferQuestEpoch();
+
+  const rotationKey = `town:${townId}|t${tier}`;
+  const recentOffered = getRecentOfferedQuestIds(char as any, rotationKey, epoch);
+
+  const followupRotationKey = `${rotationKey}|followupParents`;
+  const recentParents = getRecentFollowupParentIds(char as any, followupRotationKey, epoch);
+
+  const lines: string[] = [];
+  lines.push("Quest Board Debug Caps (staff):");
+  lines.push(` - townId: ${townId}`);
+  lines.push(` - tier: ${tier}`);
+  lines.push(` - epoch: ${epoch}`);
+  lines.push(` - rotationKey: ${rotationKey}`);
+  lines.push(` - recentOfferedIds: ${recentOffered.length ? recentOffered.join(", ") : "(none)"}`);
+  lines.push(` - recentFollowupParents: ${recentParents.length ? recentParents.join(", ") : "(none)"}`);
+
+  return lines.join("\n").trimEnd();
+}
+
 export function getTownContextForTurnin(
   ctx: any,
   char: CharacterState
