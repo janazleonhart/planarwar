@@ -187,6 +187,52 @@ export function generateTownQuests(opts: TownQuestGeneratorOptions): QuestDefini
     });
   }
 
+
+  // Compound quests (Generator v0.6): multi-objective quests increase variety without expanding id pools.
+  // These remain deterministic and use only safe proto/item ids.
+  if (tier >= 2) {
+    candidates.push(() => {
+      const killReq = jitterInt(rng, 4 + tier * 2, 0, 2);
+      const collectReq = Math.max(2, Math.floor(killReq / 2));
+      const r1 = rewardForObjective(rng, "kill", tier, killReq, false);
+      const r2 = rewardForObjective(rng, "collect_item", tier, collectReq, false);
+      const reward = rewardForCompound(rng, mergeRewards(r1, r2), 0.9);
+      return {
+        id: `${prefix}pest_control_supplies`,
+        name: "Pest Control Supplies",
+        description: "Cull the rats and bring back a few tails as proof for the quartermaster.",
+        turninPolicy: "board",
+        turninBoardId: townId,
+        objectives: [
+          { kind: "kill", targetProtoId: "town_rat", required: killReq },
+          { kind: "collect_item", itemId: "rat_tail", required: collectReq },
+        ],
+        reward,
+      };
+    });
+  }
+
+  if (tier >= 2) {
+    candidates.push(() => {
+      const harvestReq = jitterInt(rng, 5 + tier * 3, 0, 3);
+      const r1 = rewardForObjective(rng, "harvest", tier, harvestReq, false);
+      const r2 = rewardForObjective(rng, "talk_to", tier, 1, false);
+      const reward = rewardForCompound(rng, mergeRewards(r1, r2), 0.9);
+      return {
+        id: `${prefix}vein_report`,
+        name: "Vein Report",
+        description: "Gather ore samples and report your findings to the quartermaster.",
+        turninPolicy: "board",
+        turninBoardId: townId,
+        objectives: [
+          { kind: "harvest", nodeProtoId: "ore_vein_small", required: harvestReq },
+          { kind: "talk_to", npcId: "npc_quartermaster", required: 1 },
+        ],
+        reward,
+      };
+    });
+  }
+
   // Deterministic ordering: shuffle candidates, then emit until max.
   const shuffled = shuffleStable(candidates, rng);
   for (const mk of shuffled) {
@@ -300,6 +346,28 @@ function rewardForObjective(
   if (gold > 0) reward.gold = gold;
   return reward;
 }
+
+
+function rewardForCompound(rng: () => number, base: QuestReward | undefined, xpScale: number): QuestReward {
+  const b = base ?? { xp: 0 };
+  const scaledXp = Math.max(1, Math.floor((b.xp ?? 0) * (Number.isFinite(xpScale) ? xpScale : 1)));
+  const xp = jitterInt(rng, scaledXp, -5, 10);
+
+  const reward: QuestReward = { xp };
+
+  const goldBase = Math.max(0, Math.floor(b.gold ?? 0));
+  if (goldBase > 0) {
+    // Keep compound gold conservative; slight jitter only.
+    reward.gold = jitterInt(rng, goldBase, 0, 1);
+  }
+
+  if (b.items && b.items.length > 0) reward.items = b.items;
+  if (b.titles && b.titles.length > 0) reward.titles = b.titles;
+  if ((b as any).chooseOne) (reward as any).chooseOne = (b as any).chooseOne;
+
+  return reward;
+}
+
 
 function normalizeTownPrefix(townId: string, tier: number): string {
   // Keep ids filesystem/URL-friendly.
