@@ -567,12 +567,14 @@ export function renderTownQuestBoardDebugTuning(ctx: any, char: any): string {
   const roomId = getQuestContextRoomId(ctx, char);
   const profileTags = roomId ? getTownQuestBoardProfileTags(ctx, roomId) : [];
   const profileName = pickTownQuestBoardProfile(profileTags);
+  const tuningPresetTags = roomId ? getTownQuestBoardTuningPresetTags(ctx, roomId) : [];
+  const tuningPreset = pickTownQuestBoardTuningPreset(tuningPresetTags);
 
   // Mirror generator defaults (QuestGenerator.ts) so staff can see what is in play.
   const tier = Math.max(1, Math.floor(data.tier || 1));
   const defaultMax = clampInt(2 + Math.min(tier, 4), 3, 6);
   const base = getDefaultTownQuestGeneratorTuning({ tier, maxQuests: defaultMax });
-  const overrides = getTownQuestBoardTuningOverrides(tier, profileName);
+  const overrides = getTownQuestBoardTuningOverrides(tier, profileName, tuningPreset);
   const tuning: TownQuestGeneratorTuning = { ...base, ...overrides };
 
   const lines: string[] = [];
@@ -583,6 +585,8 @@ export function renderTownQuestBoardDebugTuning(ctx: any, char: any): string {
   lines.push(` - maxQuests(default): ${defaultMax}`);
   lines.push(` - profileTags: ${profileTags.length ? profileTags.join(", ") : "(none)"}`);
   lines.push(` - profile: ${profileName ?? "(none)"}`);
+  lines.push(` - tuningPresetTags: ${tuningPresetTags.length ? tuningPresetTags.join(", ") : "(none)"}`);
+  lines.push(` - tuningPreset: ${tuningPreset ?? "(none)"}`);
   lines.push(
     ` - overrides: ${Object.keys(overrides).length ? Object.keys(overrides).sort().join(", ") : "(none)"}`
   );
@@ -610,6 +614,33 @@ function getTownQuestBoardProfileTags(ctx: any, roomId: string): string[] {
   }
 }
 
+function getTownQuestBoardTuningPresetTags(ctx: any, roomId: string): string[] {
+  try {
+    const rooms = ctx?.rooms;
+    if (!rooms || typeof rooms.getRoom !== "function") return [];
+    const room = rooms.getRoom(roomId);
+    const tags = Array.isArray(room?.tags) ? (room.tags as any[]) : [];
+    return tags
+      .filter((t) => typeof t === "string" && t.startsWith("town_tuning_"))
+      .map((t) => String(t))
+      .sort();
+  } catch {
+    return [];
+  }
+}
+
+function pickTownQuestBoardTuningPreset(tags: string[]): "strict" | "loose" | "chaos" | null {
+  if (!tags || tags.length === 0) return null;
+  // Deterministic: choose the first matching tag in sorted order.
+  for (const t of tags) {
+    if (t === "town_tuning_strict") return "strict";
+    if (t === "town_tuning_loose") return "loose";
+    if (t === "town_tuning_chaos") return "chaos";
+  }
+  return null;
+}
+
+
 function pickTownQuestBoardProfile(profileTags: string[]): "arcane" | "military" | "trade" | null {
   if (!profileTags || profileTags.length === 0) return null;
   // Deterministic priority order if multiple tags exist.
@@ -625,7 +656,8 @@ function pickTownQuestBoardProfile(profileTags: string[]): "arcane" | "military"
 // Higher tiers nudge harder toward variety/rotation fairness.
 function getTownQuestBoardTuningOverrides(
   tier: number,
-  profile: "arcane" | "military" | "trade" | null
+  profile: "arcane" | "military" | "trade" | "strict" | "loose" | "chaos" | null,
+  tuningPreset: "strict" | "loose" | "chaos" | null
 ): Partial<TownQuestGeneratorTuning> {
   const t = Math.max(1, Math.floor(Number.isFinite(tier) ? tier : 1));
 
@@ -665,6 +697,38 @@ function getTownQuestBoardTuningOverrides(
     };
   }
 
+
+  // Tuning preset overrides: explicit tags that can intentionally shift board feel.
+  // Applied last so they win over tier/profile nudges.
+  if (tuningPreset === "strict") {
+    out = {
+      ...out,
+      avoidRecentUntilFrac: clamp01(Math.max(out.avoidRecentUntilFrac ?? 0, 0.92), out.avoidRecentUntilFrac ?? 0),
+      avoidRecentShapesUntilFrac: clamp01(
+        Math.max(out.avoidRecentShapesUntilFrac ?? 0, 0.94),
+        out.avoidRecentShapesUntilFrac ?? 0
+      ),
+    };
+  } else if (tuningPreset === "loose") {
+    out = {
+      ...out,
+      avoidRecentUntilFrac: clamp01(Math.min(out.avoidRecentUntilFrac ?? 0, 0.75), out.avoidRecentUntilFrac ?? 0),
+      avoidRecentShapesUntilFrac: clamp01(
+        Math.min(out.avoidRecentShapesUntilFrac ?? 0, 0.8),
+        out.avoidRecentShapesUntilFrac ?? 0
+      ),
+    };
+  } else if (tuningPreset === "chaos") {
+    // Chaos: allow repetition earlier; still clamped by generator.
+    out = {
+      ...out,
+      avoidRecentUntilFrac: clamp01(Math.min(out.avoidRecentUntilFrac ?? 0, 0.6), out.avoidRecentUntilFrac ?? 0),
+      avoidRecentShapesUntilFrac: clamp01(
+        Math.min(out.avoidRecentShapesUntilFrac ?? 0, 0.65),
+        out.avoidRecentShapesUntilFrac ?? 0
+      ),
+    };
+  }
   return out;
 }
 
@@ -1259,6 +1323,8 @@ function getTownQuestOffering(ctx: any, char: any): TownQuestOffering | null {
 
   const profileTags = getTownQuestBoardProfileTags(ctx, roomId);
   const profileName = pickTownQuestBoardProfile(profileTags);
+  const tuningPresetTags = getTownQuestBoardTuningPresetTags(ctx, roomId);
+  const tuningPreset = pickTownQuestBoardTuningPreset(tuningPresetTags);
 
   const quests = generateTownQuests({
     townId,
@@ -1269,7 +1335,7 @@ function getTownQuestOffering(ctx: any, char: any): TownQuestOffering | null {
     recentlyOfferedQuestIds: recentOffered,
     recentlyOfferedObjectiveSignatures: recentSigs,
     recentlyOfferedResourceFamilies: recentFams,
-    tuning: getTownQuestBoardTuningOverrides(tier, profileName),
+    tuning: getTownQuestBoardTuningOverrides(tier, profileName, tuningPreset),
   });
 
   // Back-compat: some contracts expect turned-in ("[T]") town quests to still appear on the board
