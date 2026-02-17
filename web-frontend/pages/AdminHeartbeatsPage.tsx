@@ -36,6 +36,7 @@ type HeartbeatsResponse = {
   warning?: string;
   detail?: string;
   error?: string;
+  restart?: { enabled: boolean; denyServices?: string[]; detail?: string };
 };
 
 const STALE_MS = 15_000;
@@ -114,6 +115,9 @@ export function AdminHeartbeatsPage() {
   const [everyMs, setEveryMs] = useState(5000);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [restartingService, setRestartingService] = useState<string | null>(null);
+  const [restartEnabled, setRestartEnabled] = useState(false);
+  const [restartDenyServices, setRestartDenyServices] = useState<string[]>(["web-backend"]);
+  const [restartDetail, setRestartDetail] = useState<string | null>(null);
 
   const timerRef = useRef<number | null>(null);
   const inFlightRef = useRef(false);
@@ -129,13 +133,22 @@ export function AdminHeartbeatsPage() {
       const res = await api<HeartbeatsResponse>("/api/admin/heartbeats");
       if (!res.ok) {
         setRows([]);
+        setRestartEnabled(false);
+        setRestartDenyServices(["web-backend"]);
+        setRestartDetail(null);
         setError(res.error || "Heartbeats request failed.");
       } else {
         setRows(res.heartbeats ?? []);
+        setRestartEnabled(Boolean(res.restart?.enabled));
+        setRestartDenyServices(res.restart?.denyServices ?? ["web-backend"]);
+        setRestartDetail(res.restart?.detail ?? null);
         if (res.warning) setNotice(res.detail ? `${res.warning}: ${res.detail}` : res.warning);
       }
     } catch (e: any) {
       setRows([]);
+      setRestartEnabled(false);
+      setRestartDenyServices(["web-backend"]);
+      setRestartDetail(null);
       setError(e?.message ? String(e.message) : String(e));
     } finally {
       setBusy(false);
@@ -145,7 +158,9 @@ export function AdminHeartbeatsPage() {
 
   const restartService = async (serviceName: string) => {
     if (!serviceName) return;
-    if (serviceName === "web-backend") { setNotice("Restart disabled for web-backend (it hosts this UI/API)."); return; }
+    const deny = new Set(restartDenyServices);
+    if (!restartEnabled) { setNotice(restartDetail || "Restart disabled (dev only)." ); return; }
+    if (deny.has(serviceName)) { setNotice(`Restart disabled for ${serviceName}.`); return; }
     if (restartingService) return; // single-flight
     setRestartingService(serviceName);
     setError(null);
@@ -273,7 +288,8 @@ export function AdminHeartbeatsPage() {
                   const stale = status === "stale";
                   const dead = status === "dead";
                   const isOpen = expanded === r.service_name;
-                  const canRestart = r.service_name !== "web-backend";
+                  const deny = new Set(restartDenyServices);
+                  const canRestart = restartEnabled && !deny.has(r.service_name);
 
                   return (
                     <Fragment key={r.service_name}>
@@ -324,9 +340,9 @@ export function AdminHeartbeatsPage() {
                             onClick={() => restartService(r.service_name)}
                             disabled={!canRestart || restartingService === r.service_name}
                             style={{ padding: "2px 8px", marginLeft: 8 }}
-                            title={canRestart ? "Dev only: sends SIGTERM to the daemon PID (requires PW_ADMIN_ALLOW_RESTART=true)." : "Restart disabled for web-backend (it hosts this UI/API)."}
+                          title={canRestart ? "Dev only: sends SIGTERM to the daemon PID (requires PW_ADMIN_ALLOW_RESTART=true)." : (restartDetail || "Restart disabled.")}
                           >
-                            {restartingService === r.service_name ? "Restarting…" : canRestart ? "Restart" : "Restart (disabled)"}
+                          {restartingService === r.service_name ? "Restarting…" : canRestart ? "Restart" : "Restart (disabled)"}
                           </button>
                         </td>
                       </tr>

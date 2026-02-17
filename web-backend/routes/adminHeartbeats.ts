@@ -42,7 +42,7 @@ router.get("/", async (_req, res) => {
     `,
     );
 
-    res.json({ ok: true, heartbeats: q.rows ?? [] });
+    res.json({ ok: true, heartbeats: q.rows ?? [], restart: { enabled: isRestartAllowed(), denyServices: ["web-backend"], detail: isRestartAllowed() ? undefined : "Set PW_ADMIN_ALLOW_RESTART=true on web-backend to allow admin-triggered restarts (dev only)." } });
   } catch (err: unknown) {
     // Migration not applied yet (or table schema drift) shouldn't nuke the admin UI.
     // Postgres codes:
