@@ -7,6 +7,7 @@ import "dotenv/config";
 import { tickPetsForCharacter } from "../worldcore/pets/PetAi";
 import { Logger } from "../worldcore/utils/logger";
 import { startHeartbeat } from "../worldcore/core/Heartbeat";
+import { db } from "../worldcore/db/Database";
 import { PostgresAuthService } from "../worldcore/auth/PostgresAuthService";
 import { AttachedIdentity } from "../worldcore/shared/AuthTypes";
 import { PostgresCharacterService } from "../worldcore/characters/PostgresCharacterService";
@@ -317,6 +318,95 @@ async function main() {
   // World tick engine + SongEngine hook
   ticks.start();
 
+
+  // Service heartbeat (ops visibility)
+  // Writes a coarse snapshot into public.service_heartbeats (same table used by Mother Brain).
+  // This is intentionally best-effort: failures are logged but never crash the shard.
+  let serviceHbTick = 0;
+  const serviceName = "mmo-backend";
+  const instanceId = `planarwar:${process.pid}`;
+  const hostLabel = netConfig.host || process.env.HOSTNAME || "unknown";
+  const startedAtIso = new Date().toISOString();
+
+  async function writeServiceHeartbeat(opts: { ready: boolean; wsEnabled: boolean; wsState: string }) {
+    serviceHbTick++;
+
+    const status = {
+      service: serviceName,
+      pid: process.pid,
+      startedAt: startedAtIso,
+      now: new Date().toISOString(),
+      shardId: world?.shardId ?? "unknown",
+      sessions: { total: sessions.getAllSessions().length },
+      rooms: { total: (rooms as any).getAllRooms ? (rooms as any).getAllRooms().length : undefined },
+      ws: {
+        enabled: opts.wsEnabled,
+        state: opts.wsState,
+        host: netConfig.host,
+        port: netConfig.port,
+        path: netConfig.path,
+      },
+    };
+
+    const signature = `db:ok ws:${opts.wsEnabled ? "on" : "off"}:${opts.wsState} shard:${status.shardId}`;
+
+    const sql = `
+      INSERT INTO public.service_heartbeats (
+        service_name,
+        instance_id,
+        host,
+        pid,
+        version,
+        mode,
+        ready,
+        last_tick,
+        last_signature,
+        last_status_json,
+        started_at,
+        last_tick_at,
+        updated_at
+      )
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::jsonb,NOW(),NOW(),NOW())
+      ON CONFLICT (service_name)
+      DO UPDATE SET
+        instance_id = EXCLUDED.instance_id,
+        host = EXCLUDED.host,
+        pid = EXCLUDED.pid,
+        version = EXCLUDED.version,
+        mode = EXCLUDED.mode,
+        ready = EXCLUDED.ready,
+        last_tick = EXCLUDED.last_tick,
+        last_signature = EXCLUDED.last_signature,
+        last_status_json = EXCLUDED.last_status_json,
+        last_tick_at = NOW(),
+        updated_at = NOW()
+    `;
+
+    try {
+      await db.query(sql, [
+        serviceName,
+        instanceId,
+        hostLabel,
+        process.pid,
+        process.env.npm_package_version || "0.0.0",
+        "serve",
+        opts.ready,
+        serviceHbTick,
+        signature,
+        JSON.stringify(status),
+      ]);
+    } catch (err) {
+      log.warn("Service heartbeat write failed (non-fatal)", { err });
+    }
+  }
+
+  let wsState: "boot" | "listening" | "closed" = "boot";
+  let wsEnabled = true;
+
+  const hbHandle = setInterval(() => {
+    void writeServiceHeartbeat({ ready: wsState === "listening", wsEnabled, wsState });
+  }, Math.max(netConfig.heartbeatIntervalMs, 1000));
+  hbHandle.unref?.();
   // Heartbeat / idle session cleanup
   startHeartbeat(sessions, rooms, {
     intervalMs: netConfig.heartbeatIntervalMs,
@@ -332,11 +422,16 @@ async function main() {
   });
 
   wss.on("listening", () => {
+    wsState = "listening";
     log.success("MMO shard WebSocketServer listening", {
       host: netConfig.host,
       port: netConfig.port,
       path: netConfig.path,
     });
+  });
+
+  wss.on("close", () => {
+    wsState = "closed";
   });
 
   wss.on("connection", async (socket: WebSocket, req: http.IncomingMessage) => {
