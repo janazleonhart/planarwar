@@ -113,6 +113,23 @@ const ConfigSchema = z
         message: "MOTHER_BRAIN_TICK_MS must be a number >= 250",
       }),
 
+    // Reduce log spam: only emit full Tick snapshots every N ticks (or on change if enabled).
+    MOTHER_BRAIN_TICK_LOG_EVERY_TICKS: z
+      .string()
+      .optional()
+      .transform((v) => (v ? Number(v) : 6))
+      .refine((n) => Number.isFinite(n) && n >= 1, {
+        message: "MOTHER_BRAIN_TICK_LOG_EVERY_TICKS must be a number >= 1",
+      }),
+
+    MOTHER_BRAIN_TICK_LOG_ON_CHANGE: z
+      .string()
+      .optional()
+      .transform((v) => (v ? v.toLowerCase() : "true"))
+      .refine((v) => v === "true" || v === "false", {
+        message: "MOTHER_BRAIN_TICK_LOG_ON_CHANGE must be true/false",
+      }),
+
     MOTHER_BRAIN_LOG_LEVEL: z.enum(["debug", "info", "warn", "error"]).optional().default("info"),
 
     MOTHER_BRAIN_DB_URL: z.string().optional(),
@@ -182,6 +199,8 @@ const ConfigSchema = z
 type MotherBrainConfig = {
   mode: MotherBrainMode;
   tickMs: number;
+  tickLogEveryTicks: number;
+  tickLogOnChange: boolean;
   logLevel: LogLevel;
 
   dbUrl?: string;
@@ -212,6 +231,8 @@ function parseConfig(): MotherBrainConfig {
   return {
     mode: env.MOTHER_BRAIN_MODE,
     tickMs: env.MOTHER_BRAIN_TICK_MS,
+    tickLogEveryTicks: env.MOTHER_BRAIN_TICK_LOG_EVERY_TICKS,
+    tickLogOnChange: env.MOTHER_BRAIN_TICK_LOG_ON_CHANGE === "true",
     logLevel: env.MOTHER_BRAIN_LOG_LEVEL,
 
     dbUrl: env.MOTHER_BRAIN_DB_URL,
@@ -595,6 +616,37 @@ type TickSnapshot = {
   };
 };
 
+
+function buildTickSignature(s: TickSnapshot): string {
+  // Only include fields that matter for "health changes" to avoid log spam.
+  // NOTE: keep stable ordering.
+  const sig = {
+    mode: s.mode,
+    db: {
+      enabled: s.db.enabled,
+      ok: s.db.ok ?? null,
+      error: s.db.error ?? null,
+      // schema probe (when present)
+      schema: s.db.spawnPointsSchema
+        ? {
+            exists: s.db.spawnPointsSchema.exists,
+            missing: s.db.spawnPointsSchema.missingColumns.join(","),
+          }
+        : null,
+    },
+    ws: {
+      enabled: s.ws.enabled,
+      state: s.ws.state,
+      ok: s.ws.ok ?? null,
+      error: s.ws.error ?? null,
+      pingOk: s.ws.pingOk ?? null,
+      pingError: s.ws.pingError ?? null,
+    },
+  };
+  return JSON.stringify(sig);
+}
+
+
 async function main(): Promise<void> {
   loadDotEnv();
   bridgePwDbEnv();
@@ -616,6 +668,8 @@ async function main(): Promise<void> {
   gatedLog("info", "Boot", {
     mode: cfg.mode,
     tickMs: cfg.tickMs,
+    tickLogEveryTicks: cfg.tickLogEveryTicks,
+    tickLogOnChange: cfg.tickLogOnChange,
     logLevel: cfg.logLevel,
     hasDbUrl: Boolean(cfg.dbUrl),
     hasWsUrl: Boolean(cfg.wsUrl),
@@ -654,6 +708,9 @@ async function main(): Promise<void> {
   process.on("SIGTERM", () => void shutdown("SIGTERM"));
 
   let tick = 0;
+
+  // v0.8: rate-limited Tick logging
+  let lastTickSignature: string | null = null;
 
   while (!stopping) {
     tick += 1;
@@ -717,7 +774,13 @@ async function main(): Promise<void> {
       },
     };
 
-    gatedLog("info", "Tick", snapshot);
+    const shouldLogTickByCadence = tick % cfg.tickLogEveryTicks === 0;
+    const tickSig = buildTickSignature(snapshot);
+    const shouldLogTickByChange = cfg.tickLogOnChange && tickSig !== lastTickSignature;
+    if (shouldLogTickByCadence || shouldLogTickByChange) {
+      gatedLog("info", "Tick", snapshot);
+      lastTickSignature = tickSig;
+    }
 
     await sleep(cfg.tickMs);
   }
