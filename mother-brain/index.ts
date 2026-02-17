@@ -1,16 +1,21 @@
 // mother-brain/index.ts
 //
-// Mother Brain v0.7:
-// - Fix spawn_points schema probe false-positives by parsing Postgres array strings ("{a,b,c}").
-// - Reduce log noise: only include spawnPointsSchema in the Tick snapshot on probe ticks.
-// - Keep everything read-only (observe-only).
+// Mother Brain v0.9.1:
+// - Fix TS errors for optional HTTP status server (missing httpServer symbol + config typing).
+// - HTTP server remains optional (disabled unless MOTHER_BRAIN_HTTP_PORT > 0).
+// - Endpoints: /healthz, /readyz, /status
+//
+// NOTE: Longer-term, yes: we can surface Mother Brain status through the existing admin panel
+// (web-backend) to avoid a dedicated HTTP listener. This slice keeps the HTTP listener optional,
+// mainly for systemd readiness/liveness + easy local inspection.
 
 import dotenv from "dotenv";
 import fs from "node:fs";
+import http from "node:http";
 import path from "node:path";
 import process from "node:process";
-import { Pool } from "pg";
 import WebSocket from "ws";
+import { Pool } from "pg";
 import { z } from "zod";
 
 type LogLevel = "debug" | "info" | "warn" | "error";
@@ -31,6 +36,48 @@ type SpawnPointsSchemaProbe = {
   exists: boolean;
   missingColumns: string[];
   columnCount?: number;
+};
+
+type ProbeResult = {
+  ok: boolean;
+  latencyMs?: number;
+  error?: string;
+};
+
+type WsPingResult = {
+  ok: boolean;
+  latencyMs?: number;
+  lastPongIso?: string;
+  error?: string;
+};
+
+type TickSnapshot = {
+  tick: number;
+  uptimeMs: number;
+  mode: MotherBrainMode;
+
+  db: {
+    enabled: boolean;
+    ok?: boolean;
+    latencyMs?: number;
+    error?: string;
+    serverVersion?: string | null;
+    dbName?: string | null;
+    brainSpawns?: BrainSpawnSummary | null;
+    spawnPointsSchema?: SpawnPointsSchemaProbe | null;
+  };
+
+  ws: {
+    enabled: boolean;
+    state: "disabled" | "closed" | "connecting" | "open";
+    ok?: boolean;
+    latencyMs?: number;
+    error?: string;
+    pingOk?: boolean;
+    pingLatencyMs?: number;
+    lastPongIso?: string | null;
+    pingError?: string;
+  };
 };
 
 function nowIso(): string {
@@ -101,6 +148,22 @@ function bridgePwDbEnv(): void {
   if (pass && pass.length > 0) process.env.PGPASSWORD = pass;
 }
 
+function parsePgArrayText(value: unknown): string[] {
+  if (Array.isArray(value)) return value.map((v) => String(v));
+  if (typeof value === "string") {
+    const s = value.trim();
+    if (s.startsWith("{") && s.endsWith("}")) {
+      const inner = s.slice(1, -1);
+      if (inner.length === 0) return [];
+      return inner
+        .split(",")
+        .map((x) => x.trim())
+        .filter(Boolean);
+    }
+  }
+  return [];
+}
+
 const ConfigSchema = z
   .object({
     MOTHER_BRAIN_MODE: z.enum(["observe", "apply"]).optional().default("observe"),
@@ -113,7 +176,9 @@ const ConfigSchema = z
         message: "MOTHER_BRAIN_TICK_MS must be a number >= 250",
       }),
 
-    // Reduce log spam: only emit full Tick snapshots every N ticks (or on change if enabled).
+    MOTHER_BRAIN_LOG_LEVEL: z.enum(["debug", "info", "warn", "error"]).optional().default("info"),
+
+    // v0.8: tick log controls
     MOTHER_BRAIN_TICK_LOG_EVERY_TICKS: z
       .string()
       .optional()
@@ -125,12 +190,17 @@ const ConfigSchema = z
     MOTHER_BRAIN_TICK_LOG_ON_CHANGE: z
       .string()
       .optional()
-      .transform((v) => (v ? v.toLowerCase() : "true"))
-      .refine((v) => v === "true" || v === "false", {
-        message: "MOTHER_BRAIN_TICK_LOG_ON_CHANGE must be true/false",
-      }),
+      .transform((v) => (v ? v.toLowerCase() === "true" : true)),
 
-    MOTHER_BRAIN_LOG_LEVEL: z.enum(["debug", "info", "warn", "error"]).optional().default("info"),
+    // v0.9: optional HTTP server
+    MOTHER_BRAIN_HTTP_HOST: z.string().optional().default("127.0.0.1"),
+    MOTHER_BRAIN_HTTP_PORT: z
+      .string()
+      .optional()
+      .transform((v) => (v ? Number(v) : 0))
+      .refine((n) => Number.isFinite(n) && n >= 0 && n <= 65535, {
+        message: "MOTHER_BRAIN_HTTP_PORT must be between 0 and 65535",
+      }),
 
     MOTHER_BRAIN_DB_URL: z.string().optional(),
     MOTHER_BRAIN_WS_URL: z.string().optional(),
@@ -185,7 +255,7 @@ const ConfigSchema = z
         message: "MOTHER_BRAIN_SPAWN_SUMMARY_TOP_N must be between 1 and 100",
       }),
 
-    // v0.6+: schema drift probe for spawn_points (read-only)
+    // schema drift probe for spawn_points (read-only)
     MOTHER_BRAIN_SCHEMA_PROBE_EVERY_TICKS: z
       .string()
       .optional()
@@ -199,9 +269,13 @@ const ConfigSchema = z
 type MotherBrainConfig = {
   mode: MotherBrainMode;
   tickMs: number;
+  logLevel: LogLevel;
+
   tickLogEveryTicks: number;
   tickLogOnChange: boolean;
-  logLevel: LogLevel;
+
+  httpHost: string;
+  httpPort: number;
 
   dbUrl?: string;
   wsUrl?: string;
@@ -231,9 +305,13 @@ function parseConfig(): MotherBrainConfig {
   return {
     mode: env.MOTHER_BRAIN_MODE,
     tickMs: env.MOTHER_BRAIN_TICK_MS,
-    tickLogEveryTicks: env.MOTHER_BRAIN_TICK_LOG_EVERY_TICKS,
-    tickLogOnChange: env.MOTHER_BRAIN_TICK_LOG_ON_CHANGE === "true",
     logLevel: env.MOTHER_BRAIN_LOG_LEVEL,
+
+    tickLogEveryTicks: env.MOTHER_BRAIN_TICK_LOG_EVERY_TICKS,
+    tickLogOnChange: env.MOTHER_BRAIN_TICK_LOG_ON_CHANGE,
+
+    httpHost: env.MOTHER_BRAIN_HTTP_HOST,
+    httpPort: env.MOTHER_BRAIN_HTTP_PORT,
 
     dbUrl: env.MOTHER_BRAIN_DB_URL,
     wsUrl: env.MOTHER_BRAIN_WS_URL,
@@ -254,33 +332,6 @@ function parseConfig(): MotherBrainConfig {
 function shouldLog(level: LogLevel, configured: LogLevel): boolean {
   const order: Record<LogLevel, number> = { debug: 10, info: 20, warn: 30, error: 40 };
   return order[level] >= order[configured];
-}
-
-type ProbeResult = {
-  ok: boolean;
-  latencyMs?: number;
-  error?: string;
-};
-
-function parsePgArrayText(value: unknown): string[] {
-  // node-postgres normally returns text[] as string[].
-  // But under some settings/casts, it may return "{a,b,c}" as a string.
-  if (Array.isArray(value)) return value.map((v) => String(v));
-
-  if (typeof value === "string") {
-    const s = value.trim();
-    if (s.startsWith("{") && s.endsWith("}")) {
-      const inner = s.slice(1, -1);
-      if (inner.length === 0) return [];
-      // information_schema.column_name does not contain commas/quotes in our usage.
-      return inner
-        .split(",")
-        .map((x) => x.trim())
-        .filter(Boolean);
-    }
-  }
-
-  return [];
 }
 
 class DbProbe {
@@ -398,7 +449,6 @@ class DbProbe {
 
       return { exists, missingColumns: [...missingColumns], columnCount: cols.length };
     } catch {
-      // Conservative: if probe fails, report as missing.
       return { exists: false, missingColumns: [...required], columnCount: 0 };
     }
   }
@@ -429,13 +479,6 @@ class DbProbe {
     }
   }
 }
-
-type WsPingResult = {
-  ok: boolean;
-  latencyMs?: number;
-  lastPongIso?: string;
-  error?: string;
-};
 
 class WsProbe {
   private ws: WebSocket | null = null;
@@ -587,65 +630,84 @@ class WsProbe {
   }
 }
 
-type TickSnapshot = {
-  tick: number;
-  uptimeMs: number;
-  mode: MotherBrainMode;
-
-  db: {
-    enabled: boolean;
-    ok?: boolean;
-    latencyMs?: number;
-    error?: string;
-    serverVersion?: string | null;
-    dbName?: string | null;
-    brainSpawns?: BrainSpawnSummary | null;
-    spawnPointsSchema?: SpawnPointsSchemaProbe | null;
-  };
-
-  ws: {
-    enabled: boolean;
-    state: "disabled" | "closed" | "connecting" | "open";
-    ok?: boolean;
-    latencyMs?: number;
-    error?: string;
-    pingOk?: boolean;
-    pingLatencyMs?: number;
-    lastPongIso?: string | null;
-    pingError?: string;
-  };
+type StatusState = {
+  lastSnapshot: TickSnapshot | null;
+  lastSnapshotIso: string | null;
+  lastChangeIso: string | null;
+  lastSignature: string | null;
 };
 
-
-function buildTickSignature(s: TickSnapshot): string {
-  // Only include fields that matter for "health changes" to avoid log spam.
-  // NOTE: keep stable ordering.
-  const sig = {
-    mode: s.mode,
-    db: {
-      enabled: s.db.enabled,
-      ok: s.db.ok ?? null,
-      error: s.db.error ?? null,
-      // schema probe (when present)
-      schema: s.db.spawnPointsSchema
-        ? {
-            exists: s.db.spawnPointsSchema.exists,
-            missing: s.db.spawnPointsSchema.missingColumns.join(","),
-          }
-        : null,
-    },
-    ws: {
-      enabled: s.ws.enabled,
-      state: s.ws.state,
-      ok: s.ws.ok ?? null,
-      error: s.ws.error ?? null,
-      pingOk: s.ws.pingOk ?? null,
-      pingError: s.ws.pingError ?? null,
-    },
-  };
-  return JSON.stringify(sig);
+function computeSignature(s: TickSnapshot): string {
+  // Anything that should trigger "log on change" and readiness changes.
+  const parts = [
+    `db:${s.db.enabled ? "on" : "off"}:${s.db.ok ? "ok" : "bad"}`,
+    `ws:${s.ws.enabled ? "on" : "off"}:${s.ws.state}:${s.ws.ok ? "ok" : "bad"}`,
+    `wsping:${s.ws.pingOk === undefined ? "na" : s.ws.pingOk ? "ok" : "bad"}`,
+    `schema:${s.db.spawnPointsSchema ? s.db.spawnPointsSchema.missingColumns.join(",") : "na"}`,
+  ];
+  return parts.join("|");
 }
 
+function isReady(s: TickSnapshot): boolean {
+  if (s.db.enabled && !s.db.ok) return false;
+  if (s.ws.enabled && s.ws.state !== "open") return false;
+  return true;
+}
+
+function startHttpServer(cfg: MotherBrainConfig, state: StatusState): http.Server | null {
+  if (!cfg.httpPort || cfg.httpPort <= 0) return null;
+
+  const server = http.createServer((req, res) => {
+    const url = req.url || "/";
+    if (url === "/healthz") {
+      res.statusCode = 200;
+      res.setHeader("content-type", "application/json");
+      res.end(JSON.stringify({ ok: true, ts: nowIso() }));
+      return;
+    }
+
+    if (url === "/readyz") {
+      const snap = state.lastSnapshot;
+      const ok = snap ? isReady(snap) : false;
+      res.statusCode = ok ? 200 : 503;
+      res.setHeader("content-type", "application/json");
+      res.end(
+        JSON.stringify({
+          ok,
+          ts: nowIso(),
+          lastSnapshotIso: state.lastSnapshotIso,
+          signature: state.lastSignature,
+        })
+      );
+      return;
+    }
+
+    if (url === "/status") {
+      res.statusCode = 200;
+      res.setHeader("content-type", "application/json");
+      res.end(
+        JSON.stringify({
+          ts: nowIso(),
+          lastSnapshotIso: state.lastSnapshotIso,
+          lastChangeIso: state.lastChangeIso,
+          signature: state.lastSignature,
+          snapshot: state.lastSnapshot,
+        })
+      );
+      return;
+    }
+
+    res.statusCode = 404;
+    res.setHeader("content-type", "application/json");
+    res.end(JSON.stringify({ ok: false, error: "not found" }));
+  });
+
+  server.listen(cfg.httpPort, cfg.httpHost, () => {
+    log("info", "HTTP status server listening", { host: cfg.httpHost, port: cfg.httpPort });
+  });
+
+  return server;
+}
 
 async function main(): Promise<void> {
   loadDotEnv();
@@ -668,9 +730,10 @@ async function main(): Promise<void> {
   gatedLog("info", "Boot", {
     mode: cfg.mode,
     tickMs: cfg.tickMs,
+    logLevel: cfg.logLevel,
     tickLogEveryTicks: cfg.tickLogEveryTicks,
     tickLogOnChange: cfg.tickLogOnChange,
-    logLevel: cfg.logLevel,
+    httpPort: cfg.httpPort,
     hasDbUrl: Boolean(cfg.dbUrl),
     hasWsUrl: Boolean(cfg.wsUrl),
     pid: process.pid,
@@ -678,7 +741,7 @@ async function main(): Promise<void> {
   });
 
   if (cfg.mode === "apply") {
-    gatedLog("warn", "MOTHER_BRAIN_MODE=apply is set, but v0.7 remains observe-only (no mutations).");
+    gatedLog("warn", "MOTHER_BRAIN_MODE=apply is set, but v0.9.1 remains observe-only (no mutations).");
   }
 
   // Cache DB metadata once (best-effort).
@@ -691,6 +754,16 @@ async function main(): Promise<void> {
 
   let stopping = false;
 
+  const state: StatusState = {
+    lastSnapshot: null,
+    lastSnapshotIso: null,
+    lastChangeIso: null,
+    lastSignature: null,
+  };
+
+  let httpServer: http.Server | null = null;
+  httpServer = startHttpServer(cfg, state);
+
   const shutdown = async (signal: NodeJS.Signals) => {
     if (stopping) return;
     stopping = true;
@@ -700,6 +773,16 @@ async function main(): Promise<void> {
     await wsProbe.close().catch(() => undefined);
     await dbProbe.close().catch(() => undefined);
 
+    if (httpServer) {
+      await new Promise<void>((resolve) => {
+        try {
+          httpServer!.close(() => resolve());
+        } catch {
+          resolve();
+        }
+      });
+    }
+
     gatedLog("info", "Shutdown complete");
     process.exit(0);
   };
@@ -708,9 +791,6 @@ async function main(): Promise<void> {
   process.on("SIGTERM", () => void shutdown("SIGTERM"));
 
   let tick = 0;
-
-  // v0.8: rate-limited Tick logging
-  let lastTickSignature: string | null = null;
 
   while (!stopping) {
     tick += 1;
@@ -722,14 +802,12 @@ async function main(): Promise<void> {
       ? await wsProbe.ensureConnected()
       : ({ ok: false, error: "disabled" } as ProbeResult);
 
-    // Optional WS ping/pong probe
     const shouldPingWs = wsProbe.isEnabled() && cfg.wsPingEveryTicks > 0 && tick % cfg.wsPingEveryTicks === 0;
     let wsPing: WsPingResult | null = null;
     if (shouldPingWs && wsRes.ok) {
       wsPing = await wsProbe.pingPong(cfg.wsPingTimeoutMs);
     }
 
-    // Optional brain:* spawn_points summary
     let brainSpawns: BrainSpawnSummary | null | undefined = undefined;
     const shouldSummarize =
       dbProbe.isEnabled() && cfg.spawnSummaryEveryTicks > 0 && tick % cfg.spawnSummaryEveryTicks === 0;
@@ -737,7 +815,6 @@ async function main(): Promise<void> {
       brainSpawns = await dbProbe.getBrainSpawnSummary(cfg.spawnSummaryTopN);
     }
 
-    // v0.7: schema probe — only attach on probe ticks (reduces log spam)
     let spawnPointsSchema: SpawnPointsSchemaProbe | null | undefined = undefined;
     const shouldProbeSchema =
       dbProbe.isEnabled() && cfg.schemaProbeEveryTicks > 0 && tick % cfg.schemaProbeEveryTicks === 0;
@@ -774,13 +851,23 @@ async function main(): Promise<void> {
       },
     };
 
-    const shouldLogTickByCadence = tick % cfg.tickLogEveryTicks === 0;
-    const tickSig = buildTickSignature(snapshot);
-    const shouldLogTickByChange = cfg.tickLogOnChange && tickSig !== lastTickSignature;
-    if (shouldLogTickByCadence || shouldLogTickByChange) {
-      gatedLog("info", "Tick", snapshot);
-      lastTickSignature = tickSig;
+    // Update HTTP-visible state
+    const snapIso = nowIso();
+    state.lastSnapshot = snapshot;
+    state.lastSnapshotIso = snapIso;
+
+    const sig = computeSignature(snapshot);
+    const changed = state.lastSignature !== sig;
+    if (changed) {
+      state.lastSignature = sig;
+      state.lastChangeIso = snapIso;
     }
+
+    // v0.8: rate-limited logging
+    const cadenceHit = tick % cfg.tickLogEveryTicks === 0;
+    const shouldLogTick = cadenceHit || (cfg.tickLogOnChange && changed);
+
+    if (shouldLogTick) gatedLog("info", "Tick", snapshot);
 
     await sleep(cfg.tickMs);
   }

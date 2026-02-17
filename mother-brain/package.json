@@ -1,6 +1,6 @@
 {
   "name": "planarwar-mother-brain",
-  "version": "0.8.0",
+  "version": "0.9.1",
   "private": true,
   "main": "../dist/mother-brain/index.js",
   "types": "../dist/mother-brain/index.d.ts",

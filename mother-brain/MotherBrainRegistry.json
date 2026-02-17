@@ -3,14 +3,16 @@
   "scope": "mother-brain",
   "notes": [
     "Mother Brain is a long-running daemon/service for world simulation decisions.",
-    "v0.1 is a runnable skeleton (heartbeat + env config validation).",
-    "v0.2 adds read-only awareness probes (DB + WS connectivity snapshots).",
-    "v0.3 bridges Planar War PW_DB_* env vars into a usable Postgres URL and logs basic DB metadata (server version, current database).",
-    "v0.4 adds read-only brain:* spawn_points summary (counts by shard/type) for quick visibility of planned waves in the DB.",
-    "v0.5 adds optional WS ping/pong round-trip measurement (still read-only) when MOTHER_BRAIN_WS_URL is set.",
-    "Future slices will add wave planning (DB) and GoalRunner black-box testing (WS).",
-    "v0.6 adds read-only schema awareness probe for spawn_points (existence + required columns), surfaced in tick snapshot for drift detection.",
-    "v0.8 rate-limits Tick logs by cadence and/or on-change signature to reduce daemon spam."
+    "v0.1 runnable skeleton (heartbeat + env validation).",
+    "v0.2 DB/WS connectivity snapshots (read-only).",
+    "v0.3 bridges PW_DB_* env to Postgres URL + logs DB metadata.",
+    "v0.4 adds read-only brain:* spawn_points summary.",
+    "v0.5 adds optional WS ping/pong latency probe.",
+    "v0.6 adds read-only spawn_points schema drift probe (table/columns).",
+    "v0.7 fixes schema probe false-positives by parsing Postgres array strings and only emitting probe results on probe ticks.",
+    "v0.8 adds tick log rate limiting (cadence + on-change).",
+    "v0.9 adds optional HTTP status server (/healthz, /readyz, /status) for systemd-friendly liveness/readiness.",
+    "v0.9.1 fixes TS compile issues for the HTTP status server wiring."
   ],
   "services": {},
   "entries": {
@@ -22,12 +24,8 @@
       "lifecycle": "daemon",
       "ctorArgs": [],
       "dependsOn": [],
-      "provides": [
-        "mother-brain:daemon"
-      ],
-      "owns": [
-        "Mother Brain runtime loop"
-      ]
+      "provides": ["mother-brain:daemon"],
+      "owns": ["Mother Brain runtime loop"]
     }
   }
 }
