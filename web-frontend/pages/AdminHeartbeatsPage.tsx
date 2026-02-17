@@ -7,7 +7,7 @@
 // Data source:
 //   GET /api/admin/heartbeats
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../lib/api";
 import { AdminShell, AdminPanel, AdminNotice } from "../components/admin/AdminUI";
 
@@ -42,7 +42,6 @@ const STALE_MS = 15_000;
 const DEAD_MS = 60_000;
 
 function msAgo(iso: string | null | undefined): number | null {
-
   if (!iso) return null;
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return null;
@@ -87,6 +86,25 @@ function statusStyle(s: "ok" | "stale" | "dead" | "unknown"): { color: string; o
   return { color: "#666" };
 }
 
+function safePrettyJson(v: unknown): string {
+  if (v == null) return "null";
+  try {
+    if (typeof v === "string") {
+      const trimmed = v.trim();
+      if (
+        (trimmed.startsWith("{") && trimmed.endsWith("}")) ||
+        (trimmed.startsWith("[") && trimmed.endsWith("]"))
+      ) {
+        return JSON.stringify(JSON.parse(trimmed), null, 2);
+      }
+      return v;
+    }
+    return JSON.stringify(v, null, 2);
+  } catch {
+    return typeof v === "string" ? v : String(v);
+  }
+}
+
 export function AdminHeartbeatsPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -94,6 +112,7 @@ export function AdminHeartbeatsPage() {
   const [rows, setRows] = useState<ServiceHeartbeatRow[]>([]);
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [everyMs, setEveryMs] = useState(5000);
+  const [expanded, setExpanded] = useState<string | null>(null);
 
   const timerRef = useRef<number | null>(null);
   const inFlightRef = useRef(false);
@@ -176,7 +195,8 @@ export function AdminHeartbeatsPage() {
       {notice ? <AdminNotice kind="warn">{notice}</AdminNotice> : null}
       {anyStale ? (
         <AdminNotice kind="warn">
-          Some services look stale (&gt; 30s since last update). They may be stopped, stuck, or writing to a different DB.
+          Some services look stale (&gt; {Math.round(STALE_MS / 1000)}s since last update). They may be stopped, stuck,
+          or writing to a different DB.
         </AdminNotice>
       ) : null}
 
@@ -221,53 +241,119 @@ export function AdminHeartbeatsPage() {
                   <th style={{ padding: "8px 6px" }}>age</th>
                   <th style={{ padding: "8px 6px" }}>updated</th>
                   <th style={{ padding: "8px 6px" }}>instance</th>
+                  <th style={{ padding: "8px 6px" }}></th>
                 </tr>
               </thead>
               <tbody>
                 {rowsSorted.map(({ r, age, status }) => {
                   const stale = status === "stale";
                   const dead = status === "dead";
+                  const isOpen = expanded === r.service_name;
+
                   return (
-                    <tr
-                      key={r.service_name}
-                      style={{
-                        borderBottom: "1px solid var(--pw-border)",
-                        opacity: dead ? 0.6 : 1,
-                      }}
-                    >
-                      <td style={{ padding: "8px 6px" }}>
-                        <code>{r.service_name}</code>
-                      </td>
-                      <td style={{ padding: "8px 6px" }}>
-                        <strong style={{ ...statusStyle(status), fontFamily: "monospace" }}>{statusLabel(status)}</strong>
-                      </td>
-                      <td style={{ padding: "8px 6px" }}>
-                        <strong style={{ color: r.ready ? "#0a7" : "#c33" }}>{r.ready ? "READY" : "NO"}</strong>
-                      </td>
-                      <td style={{ padding: "8px 6px" }}>
-                        <code>{r.mode ?? ""}</code>
-                      </td>
-                      <td style={{ padding: "8px 6px" }}>
-                        <code>{r.version ?? ""}</code>
-                      </td>
-                      <td style={{ padding: "8px 6px" }}>
-                        <code>{r.last_tick ?? ""}</code>
-                      </td>
-                      <td style={{ padding: "8px 6px" }}>
-                        <code>{age != null ? fmtMs(age) : ""}</code>
-                      </td>
-                      <td style={{ padding: "8px 6px", opacity: stale ? 1 : 0.85 }}>
-                        {safeIso(r.updated_at)}
-                        {age != null ? (
-                          <span style={{ marginLeft: 8, opacity: 0.75 }}>
-                            (updated)
-                          </span>
-                        ) : null}
-                      </td>
-                      <td style={{ padding: "8px 6px" }}>
-                        <code>{r.instance_id}</code>
-                      </td>
-                    </tr>
+                    <Fragment key={r.service_name}>
+                      <tr
+                        style={{
+                          borderBottom: isOpen ? "none" : "1px solid var(--pw-border)",
+                          opacity: dead ? 0.6 : 1,
+                        }}
+                      >
+                        <td style={{ padding: "8px 6px" }}>
+                          <code>{r.service_name}</code>
+                        </td>
+                        <td style={{ padding: "8px 6px" }}>
+                          <strong style={{ ...statusStyle(status), fontFamily: "monospace" }}>{statusLabel(status)}</strong>
+                        </td>
+                        <td style={{ padding: "8px 6px" }}>
+                          <strong style={{ color: r.ready ? "#0a7" : "#c33" }}>{r.ready ? "READY" : "NO"}</strong>
+                        </td>
+                        <td style={{ padding: "8px 6px" }}>
+                          <code>{r.mode ?? ""}</code>
+                        </td>
+                        <td style={{ padding: "8px 6px" }}>
+                          <code>{r.version ?? ""}</code>
+                        </td>
+                        <td style={{ padding: "8px 6px" }}>
+                          <code>{r.last_tick ?? ""}</code>
+                        </td>
+                        <td style={{ padding: "8px 6px" }}>
+                          <code>{age != null ? fmtMs(age) : ""}</code>
+                        </td>
+                        <td style={{ padding: "8px 6px", opacity: stale ? 1 : 0.85 }}>
+                          {safeIso(r.updated_at)}
+                          {age != null ? <span style={{ marginLeft: 8, opacity: 0.75 }}>(updated)</span> : null}
+                        </td>
+                        <td style={{ padding: "8px 6px" }}>
+                          <code>{r.instance_id}</code>
+                        </td>
+                        <td style={{ padding: "8px 6px", textAlign: "right" }}>
+                          <button
+                            className="pw-btn"
+                            onClick={() => setExpanded((cur) => (cur === r.service_name ? null : r.service_name))}
+                            style={{ padding: "2px 8px" }}
+                          >
+                            {isOpen ? "Hide" : "Details"}
+                          </button>
+                        </td>
+                      </tr>
+
+                      {isOpen ? (
+                        <tr style={{ borderBottom: "1px solid var(--pw-border)" }}>
+                          <td colSpan={10} style={{ padding: "10px 6px" }}>
+                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                              <div>
+                                <div style={{ fontWeight: 700, marginBottom: 6 }}>Last status snapshot</div>
+                                <pre
+                                  style={{
+                                    margin: 0,
+                                    padding: 10,
+                                    border: "1px solid var(--pw-border)",
+                                    borderRadius: 10,
+                                    background: "rgba(0,0,0,0.03)",
+                                    maxHeight: 360,
+                                    overflow: "auto",
+                                    fontSize: 12,
+                                  }}
+                                >
+                                  {safePrettyJson(r.last_status_json)}
+                                </pre>
+                              </div>
+
+                              <div>
+                                <div style={{ fontWeight: 700, marginBottom: 6 }}>Raw fields</div>
+                                <pre
+                                  style={{
+                                    margin: 0,
+                                    padding: 10,
+                                    border: "1px solid var(--pw-border)",
+                                    borderRadius: 10,
+                                    background: "rgba(0,0,0,0.03)",
+                                    maxHeight: 360,
+                                    overflow: "auto",
+                                    fontSize: 12,
+                                  }}
+                                >
+                                  {safePrettyJson({
+                                    service_name: r.service_name,
+                                    instance_id: r.instance_id,
+                                    host: r.host,
+                                    pid: r.pid,
+                                    version: r.version,
+                                    mode: r.mode,
+                                    ready: r.ready,
+                                    last_tick: r.last_tick,
+                                    last_signature: r.last_signature,
+                                    started_at: r.started_at,
+                                    last_tick_at: r.last_tick_at,
+                                    updated_at: r.updated_at,
+                                  })}
+                                </pre>
+                              </div>
+                            </div>
+                          </td>
+                        </tr>
+                      ) : null}
+                    </Fragment>
                   );
                 })}
               </tbody>
