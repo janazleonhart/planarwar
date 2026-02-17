@@ -1,6 +1,6 @@
 {
   "name": "planarwar-mother-brain",
-  "version": "0.10.0",
+  "version": "0.11.0",
   "private": true,
   "main": "../dist/mother-brain/index.js",
   "types": "../dist/mother-brain/index.d.ts",
@@ -13,6 +13,7 @@
   "dependencies": {
     "dotenv": "^16.6.1",
     "pg": "^8.13.0",
+    "worldcore": "workspace:*",
     "ws": "^8.18.0",
     "zod": "^3.25.76"
   },

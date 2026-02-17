@@ -23,6 +23,7 @@ import path from "node:path";
 import process from "node:process";
 import WebSocket from "ws";
 import { Pool } from "pg";
+import type { QueryResult, QueryResultRow } from "pg";
 import { z } from "zod";
 
 type LogLevel = "debug" | "info" | "warn" | "error";
@@ -72,6 +73,7 @@ type TickSnapshot = {
     dbName?: string | null;
     brainSpawns?: BrainSpawnSummary | null;
     spawnPointsSchema?: SpawnPointsSchemaProbe | null;
+    brainWaveBudget?: any;
   };
 
   ws: {
@@ -299,6 +301,23 @@ const ConfigSchema = z
         message: "MOTHER_BRAIN_SPAWN_SUMMARY_TOP_N must be between 1 and 100",
       }),
 
+    // Wave budget probing (read-only; future: used to drive Mother Brain wave/write decisions)
+    MOTHER_BRAIN_WAVE_BUDGET_EVERY_TICKS: z
+      .string()
+      .optional()
+      .transform((v) => (v ? Number(v) : 12))
+      .refine((n) => Number.isFinite(n) && n >= 1, {
+        message: "MOTHER_BRAIN_WAVE_BUDGET_EVERY_TICKS must be a number >= 1",
+      }),
+
+    MOTHER_BRAIN_WAVE_BUDGET_TOP_N: z
+      .string()
+      .optional()
+      .transform((v) => (v ? Number(v) : 8))
+      .refine((n) => Number.isFinite(n) && n >= 1 && n <= 50, {
+        message: "MOTHER_BRAIN_WAVE_BUDGET_TOP_N must be between 1 and 50",
+      }),
+
     // schema drift probe for spawn_points (read-only)
     MOTHER_BRAIN_SCHEMA_PROBE_EVERY_TICKS: z
       .string()
@@ -336,6 +355,8 @@ type MotherBrainConfig = {
   spawnSummaryTopN: number;
 
   schemaProbeEveryTicks: number;
+  brainWaveBudgetEveryTicks: number;
+  brainWaveBudgetTopN: number;
 };
 
 function parseConfig(): MotherBrainConfig {
@@ -374,6 +395,9 @@ function parseConfig(): MotherBrainConfig {
     spawnSummaryTopN: env.MOTHER_BRAIN_SPAWN_SUMMARY_TOP_N,
 
     schemaProbeEveryTicks: env.MOTHER_BRAIN_SCHEMA_PROBE_EVERY_TICKS,
+
+    brainWaveBudgetEveryTicks: env.MOTHER_BRAIN_WAVE_BUDGET_EVERY_TICKS,
+    brainWaveBudgetTopN: env.MOTHER_BRAIN_WAVE_BUDGET_TOP_N,
   };
 }
 
@@ -398,6 +422,14 @@ class DbProbe {
 
   public isEnabled(): boolean {
     return Boolean(this.pool);
+  }
+
+  public async query<T extends QueryResultRow = any>(
+    sql: string,
+    params?: any[]
+  ): Promise<QueryResult<T> | null> {
+    if (!this.pool) return null;
+    return this.withTimeout(this.pool.query(sql, params), this.timeoutMs);
   }
 
   public async ping(): Promise<ProbeResult> {
@@ -596,6 +628,50 @@ class DbProbe {
       if (t) clearTimeout(t);
     }
   }
+}
+
+type BrainWaveBudgetRow = { shard_id: string; type: string; count: number };
+type BrainWaveBudgetReport = {
+  byShard: Array<{ shardId: string; total: number; topByType: Array<{ type: string; count: number }> }>;
+};
+
+async function probeBrainWaveBudget(
+  db: DbProbe,
+  cfg: MotherBrainConfig,
+): Promise<BrainWaveBudgetReport | null> {
+  if (!db.isEnabled()) return null;
+
+  // Very early, best-effort view: counts of brain:* spawn_points by shard/type.
+  // This intentionally avoids deep coupling to worldcore logic for now.
+  const sql = `
+    SELECT shard_id, type, COUNT(*)::int as count
+    FROM spawn_points
+    WHERE spawn_id LIKE 'brain:%'
+    GROUP BY shard_id, type
+    ORDER BY shard_id ASC, count DESC
+  `;
+
+  const res = await db.query<BrainWaveBudgetRow>(sql);
+  const rows = res?.rows ?? [];
+
+  const byShardMap = new Map<string, BrainWaveBudgetRow[]>();
+  for (const r of rows) {
+    const arr = byShardMap.get(r.shard_id) ?? [];
+    arr.push(r);
+    byShardMap.set(r.shard_id, arr);
+  }
+
+  const byShard = Array.from(byShardMap.entries()).map(([shardId, rs]) => {
+    const total = rs.reduce((acc, r) => acc + (r.count ?? 0), 0);
+    const topByType = rs
+      .slice()
+      .sort((a, b) => (b.count ?? 0) - (a.count ?? 0))
+      .slice(0, cfg.brainWaveBudgetTopN)
+      .map((r) => ({ type: r.type, count: r.count }));
+    return { shardId, total, topByType };
+  });
+
+  return { byShard };
 }
 
 class WsProbe {
@@ -945,6 +1021,16 @@ async function main(): Promise<void> {
       spawnPointsSchema = await dbProbe.probeSpawnPointsSchema();
     }
 
+
+    // v0.11: optional wave-budget probe (cheap, best-effort)
+    const shouldBudget =
+      dbProbe.isEnabled() &&
+      cfg.brainWaveBudgetEveryTicks > 0 &&
+      tick % cfg.brainWaveBudgetEveryTicks === 0 &&
+      dbRes.ok;
+    const brainWaveBudget = shouldBudget ? await probeBrainWaveBudget(dbProbe, cfg) : null;
+
+
     const snapshot: TickSnapshot = {
       tick,
       uptimeMs,
@@ -957,6 +1043,7 @@ async function main(): Promise<void> {
         dbName,
         ...(brainSpawns !== undefined ? { brainSpawns } : {}),
         ...(spawnPointsSchema !== undefined ? { spawnPointsSchema } : {}),
+        ...(brainWaveBudget !== undefined ? { brainWaveBudget } : {}),
       },
 
       ws: {
