@@ -21,7 +21,10 @@
     "verify:worldcore": "npm run verify --workspace worldcore",
     "verify:repo": "rm -rf dist && npm run verify:worldcore && npm run audit:seed:npc-lawtags && node .github/scripts/registryIndexPathsCheck.js && node .github/scripts/noMudHelperFunctionsCheck.js && node dist/worldcore/tools/seedNpcLootItemIdAudit.js && node dist/worldcore/tools/seedSkinLootItemIdAudit.js && node dist/worldcore/tools/seedSpellIdAudit.js && node dist/worldcore/tools/seedSpellsColumnsAudit.js && node dist/worldcore/tools/seedAbilityIdAudit.js  && node dist/worldcore/tools/seedQuestRewardGrantIdAudit.js && npm run -w web-backend typecheck && npm run -w web-frontend typecheck && npm run verify:mother-brain",
     "dev:mother-brain": "npm run dev --workspace mother-brain",
-    "verify:mother-brain": "npm run build --workspace mother-brain && npm run -w mother-brain typecheck"
+    "verify:mother-brain": "npm run build --workspace mother-brain && npm run -w mother-brain typecheck",
+    "dev:daemons": "npx concurrently -k -n web-backend,mmo,mother-brain -c auto \"npm run dev:web-backend\" \"npm run dev:mmo\" \"npm run dev:mother-brain\"",
+    "dev:stack": "npx concurrently -k -n web-backend,web-frontend,mmo,mother-brain -c auto \"npm run dev:web-backend\" \"npm run dev:web-frontend\" \"npm run dev:mmo\" \"npm run dev:mother-brain\"",
+    "dev:stack:quiet": "npx concurrently -k -c auto \"npm run dev:web-backend\" \"npm run dev:web-frontend\" \"npm run dev:mmo\" \"npm run dev:mother-brain\""
   },
   "dependencies": {
     "cors": "^2.8.5",
@@ -46,6 +49,7 @@
     "@types/ws": "^8.5.12",
     "eslint": "^9.14.0",
     "ts-node": "^10.9.2",
-    "typescript": "^5.6.3"
+    "typescript": "^5.6.3",
+    "concurrently": "^9.1.2"
   }
 }
