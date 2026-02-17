@@ -1172,6 +1172,27 @@
         "POST /api/workshop/collect"
       ],
       "service": "http.routes"
+    },
+    "web-backend.routes.adminMotherBrain": {
+      "class": null,
+      "ctorArgs": [],
+      "dependsOn": [
+        "express",
+        "worldcore/db/Database.ts",
+        "infra.schema.079_service_heartbeats"
+      ],
+      "kind": "module",
+      "lifecycle": "singleton",
+      "notes": [
+        "Admin route for Mother Brain status, backed by service_heartbeats table.",
+        "Mounted at /api/admin/mother_brain (see web-backend/index.ts)."
+      ],
+      "owns": [],
+      "path": "web-backend/routes/adminMotherBrain.ts",
+      "provides": [
+        "GET /api/admin/mother_brain/status"
+      ],
+      "service": "web-backend.routes"
     }
   }
 }

@@ -30,6 +30,7 @@ import { adminAbilityUnlocksRouter } from "./routes/adminAbilityUnlocks";
 import adminSpawnPointsRouter, { startSpawnSnapshotsRetentionScheduler } from "./routes/adminSpawnPoints";
 import { adminVendorAuditRouter } from "./routes/adminVendorAudit";
 import { adminVendorEconomyRouter } from "./routes/adminVendorEconomy";
+import adminMotherBrainRouter from "./routes/adminMotherBrain";
 import spellsRouter from "./routes/spells";
 import itemsRouter from "./routes/items";
 import abilitiesRouter from "./routes/abilities";
@@ -159,6 +160,7 @@ app.use("/api/admin/ability_unlocks", maybeRequireAdmin("/api/admin/ability_unlo
 app.use("/api/admin/spawn_points", maybeRequireAdmin("/api/admin/spawn_points"), adminSpawnPointsRouter);
 app.use("/api/admin/vendor_audit", maybeRequireAdmin("/api/admin/vendor_audit"), adminVendorAuditRouter);
 app.use("/api/admin/vendor_economy", maybeRequireAdmin("/api/admin/vendor_economy"), adminVendorEconomyRouter);
+app.use("/api/admin/mother_brain", maybeRequireAdmin("/api/admin/mother_brain"), adminMotherBrainRouter);
 
 app.listen(PORT, () => {
   console.log(`Backend listening on http://localhost:${PORT}`);

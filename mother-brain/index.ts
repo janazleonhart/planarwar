@@ -1,13 +1,14 @@
 // mother-brain/index.ts
 //
-// Mother Brain v0.9.1:
-// - Fix TS errors for optional HTTP status server (missing httpServer symbol + config typing).
-// - HTTP server remains optional (disabled unless MOTHER_BRAIN_HTTP_PORT > 0).
-// - Endpoints: /healthz, /readyz, /status
+// Mother Brain v0.10.1:
+// - Fix config typing: include heartbeatEveryTicks in MotherBrainConfig + parseConfig return.
+// - DB heartbeat support (Option A) remains best-effort and non-fatal.
+// - Optional HTTP status server still supported (disabled unless MOTHER_BRAIN_HTTP_PORT > 0).
 //
-// NOTE: Longer-term, yes: we can surface Mother Brain status through the existing admin panel
-// (web-backend) to avoid a dedicated HTTP listener. This slice keeps the HTTP listener optional,
-// mainly for systemd readiness/liveness + easy local inspection.
+// DB Heartbeat table expected (migration in worldcore/infra/schema):
+//   public.service_heartbeats(service_name text primary key, updated_at timestamptz, ready boolean, signature text, snapshot jsonb)
+//
+// Web-backend can poll this for admin status without Mother Brain hosting HTTP.
 
 import dotenv from "dotenv";
 import fs from "node:fs";
@@ -202,6 +203,15 @@ const ConfigSchema = z
         message: "MOTHER_BRAIN_HTTP_PORT must be between 0 and 65535",
       }),
 
+    // v0.10: DB heartbeat cadence
+    MOTHER_BRAIN_HEARTBEAT_EVERY_TICKS: z
+      .string()
+      .optional()
+      .transform((v) => (v ? Number(v) : 3))
+      .refine((n) => Number.isFinite(n) && n >= 1, {
+        message: "MOTHER_BRAIN_HEARTBEAT_EVERY_TICKS must be a number >= 1",
+      }),
+
     MOTHER_BRAIN_DB_URL: z.string().optional(),
     MOTHER_BRAIN_WS_URL: z.string().optional(),
 
@@ -277,6 +287,8 @@ type MotherBrainConfig = {
   httpHost: string;
   httpPort: number;
 
+  heartbeatEveryTicks: number;
+
   dbUrl?: string;
   wsUrl?: string;
 
@@ -312,6 +324,8 @@ function parseConfig(): MotherBrainConfig {
 
     httpHost: env.MOTHER_BRAIN_HTTP_HOST,
     httpPort: env.MOTHER_BRAIN_HTTP_PORT,
+
+    heartbeatEveryTicks: env.MOTHER_BRAIN_HEARTBEAT_EVERY_TICKS,
 
     dbUrl: env.MOTHER_BRAIN_DB_URL,
     wsUrl: env.MOTHER_BRAIN_WS_URL,
@@ -450,6 +464,24 @@ class DbProbe {
       return { exists, missingColumns: [...missingColumns], columnCount: cols.length };
     } catch {
       return { exists: false, missingColumns: [...required], columnCount: 0 };
+    }
+  }
+
+  public async writeHeartbeat(serviceName: string, ready: boolean, signature: string, snapshot: TickSnapshot): Promise<void> {
+    if (!this.pool) return;
+
+    // Best-effort: if table doesn't exist, or permissions lack, we do not throw.
+    const sql = `
+      INSERT INTO public.service_heartbeats(service_name, updated_at, ready, signature, snapshot)
+      VALUES ($1, NOW(), $2, $3, $4::jsonb)
+      ON CONFLICT (service_name)
+      DO UPDATE SET updated_at = NOW(), ready = EXCLUDED.ready, signature = EXCLUDED.signature, snapshot = EXCLUDED.snapshot
+    `;
+
+    try {
+      await this.withTimeout(this.pool.query(sql, [serviceName, ready, signature, JSON.stringify(snapshot)]), this.timeoutMs);
+    } catch {
+      // swallow
     }
   }
 
@@ -638,7 +670,6 @@ type StatusState = {
 };
 
 function computeSignature(s: TickSnapshot): string {
-  // Anything that should trigger "log on change" and readiness changes.
   const parts = [
     `db:${s.db.enabled ? "on" : "off"}:${s.db.ok ? "ok" : "bad"}`,
     `ws:${s.ws.enabled ? "on" : "off"}:${s.ws.state}:${s.ws.ok ? "ok" : "bad"}`,
@@ -733,6 +764,7 @@ async function main(): Promise<void> {
     logLevel: cfg.logLevel,
     tickLogEveryTicks: cfg.tickLogEveryTicks,
     tickLogOnChange: cfg.tickLogOnChange,
+    heartbeatEveryTicks: cfg.heartbeatEveryTicks,
     httpPort: cfg.httpPort,
     hasDbUrl: Boolean(cfg.dbUrl),
     hasWsUrl: Boolean(cfg.wsUrl),
@@ -741,7 +773,7 @@ async function main(): Promise<void> {
   });
 
   if (cfg.mode === "apply") {
-    gatedLog("warn", "MOTHER_BRAIN_MODE=apply is set, but v0.9.1 remains observe-only (no mutations).");
+    gatedLog("warn", "MOTHER_BRAIN_MODE=apply is set, but v0.10.1 remains observe-only (no mutations).");
   }
 
   // Cache DB metadata once (best-effort).
@@ -866,8 +898,15 @@ async function main(): Promise<void> {
     // v0.8: rate-limited logging
     const cadenceHit = tick % cfg.tickLogEveryTicks === 0;
     const shouldLogTick = cadenceHit || (cfg.tickLogOnChange && changed);
-
     if (shouldLogTick) gatedLog("info", "Tick", snapshot);
+
+    // v0.10: best-effort DB heartbeat
+    const shouldHeartbeat =
+      dbProbe.isEnabled() && cfg.heartbeatEveryTicks > 0 && tick % cfg.heartbeatEveryTicks === 0 && dbRes.ok;
+
+    if (shouldHeartbeat) {
+      void dbProbe.writeHeartbeat("mother-brain", isReady(snapshot), sig, snapshot);
+    }
 
     await sleep(cfg.tickMs);
   }

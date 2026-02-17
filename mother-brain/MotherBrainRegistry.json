@@ -12,7 +12,8 @@
     "v0.7 fixes schema probe false-positives by parsing Postgres array strings and only emitting probe results on probe ticks.",
     "v0.8 adds tick log rate limiting (cadence + on-change).",
     "v0.9 adds optional HTTP status server (/healthz, /readyz, /status) for systemd-friendly liveness/readiness.",
-    "v0.9.1 fixes TS compile issues for the HTTP status server wiring."
+    "v0.9.1 fixes TS compile issues for the HTTP status server wiring.",
+    "v0.10 writes DB heartbeats into service_heartbeats so the web-backend admin panel can poll Mother Brain status without requiring a dedicated HTTP server."
   ],
   "services": {},
   "entries": {
@@ -24,8 +25,12 @@
       "lifecycle": "daemon",
       "ctorArgs": [],
       "dependsOn": [],
-      "provides": ["mother-brain:daemon"],
-      "owns": ["Mother Brain runtime loop"]
+      "provides": [
+        "mother-brain:daemon"
+      ],
+      "owns": [
+        "Mother Brain runtime loop"
+      ]
     }
   }
 }
