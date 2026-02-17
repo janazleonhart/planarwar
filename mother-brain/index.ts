@@ -40,6 +40,20 @@ type BrainSpawnSummary = {
   topByShardType: BrainSpawnSummaryRow[];
 };
 
+type BrainWaveBudgetSnapshot =
+  | {
+      ok: true;
+      total: number;
+      topByShardType: BrainSpawnSummaryRow[];
+    }
+  | {
+      ok: false;
+      reason: string;
+      missingColumns?: string[];
+      schema?: SpawnPointsSchemaProbe | null;
+    };
+
+
 type SpawnPointsSchemaProbe = {
   exists: boolean;
   missingColumns: string[];
@@ -638,41 +652,38 @@ type BrainWaveBudgetReport = {
 async function probeBrainWaveBudget(
   db: DbProbe,
   cfg: MotherBrainConfig,
-): Promise<BrainWaveBudgetReport | null> {
-  if (!db.isEnabled()) return null;
-
-  // Very early, best-effort view: counts of brain:* spawn_points by shard/type.
-  // This intentionally avoids deep coupling to worldcore logic for now.
-  const sql = `
-    SELECT shard_id, type, COUNT(*)::int as count
-    FROM spawn_points
-    WHERE spawn_id LIKE 'brain:%'
-    GROUP BY shard_id, type
-    ORDER BY shard_id ASC, count DESC
-  `;
-
-  const res = await db.query<BrainWaveBudgetRow>(sql);
-  const rows = res?.rows ?? [];
-
-  const byShardMap = new Map<string, BrainWaveBudgetRow[]>();
-  for (const r of rows) {
-    const arr = byShardMap.get(r.shard_id) ?? [];
-    arr.push(r);
-    byShardMap.set(r.shard_id, arr);
+): Promise<BrainWaveBudgetSnapshot | null> {
+  // Only meaningful when we can talk to Postgres.
+  if (!cfg.dbUrl) {
+    return { ok: false, reason: "db disabled (no PW_DB_* / PW_DB_URL configured)" };
   }
 
-  const byShard = Array.from(byShardMap.entries()).map(([shardId, rs]) => {
-    const total = rs.reduce((acc, r) => acc + (r.count ?? 0), 0);
-    const topByType = rs
-      .slice()
-      .sort((a, b) => (b.count ?? 0) - (a.count ?? 0))
-      .slice(0, cfg.brainWaveBudgetTopN)
-      .map((r) => ({ type: r.type, count: r.count }));
-    return { shardId, total, topByType };
-  });
+  // First: do a schema probe so we can explain *why* this might be unavailable.
+  const schema = await db.probeSpawnPointsSchema();
+  if (!schema) {
+    return { ok: false, reason: "spawn_points schema probe failed (see logs)" };
+  }
+  if (!schema.exists) {
+    return { ok: false, reason: "spawn_points table missing", schema };
+  }
+  if (schema.missingColumns.length > 0) {
+    return {
+      ok: false,
+      reason: "spawn_points schema missing required columns",
+      missingColumns: schema.missingColumns,
+      schema,
+    };
+  }
 
-  return { byShard };
+  // Second: compute the summary we use for wave budgeting.
+  const summary = await db.getBrainSpawnSummary(cfg.brainWaveBudgetTopN);
+  if (!summary) {
+    return { ok: false, reason: "spawn_points query failed (see logs)", schema };
+  }
+
+  return { ok: true, total: summary.total, topByShardType: summary.topByShardType };
 }
+
 
 class WsProbe {
   private ws: WebSocket | null = null;

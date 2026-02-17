@@ -102,26 +102,61 @@ async function copyToClipboard(text: string): Promise<boolean> {
 type BrainWaveBudgetEntry = { shardId: string; type: string; count: number };
 type BrainWaveBudgetSnapshot = { total: number; topByShardAndType: BrainWaveBudgetEntry[] };
 
-function parseBrainWaveBudget(raw: any): BrainWaveBudgetSnapshot | null {
+function parseBrainSpawnsTopByShardType(raw: unknown): BrainWaveBudgetEntry[] {
+  if (!Array.isArray(raw)) return [];
+  const out: BrainWaveBudgetEntry[] = [];
+  for (const r of raw) {
+    if (!r || typeof r !== "object") continue;
+    const o = r as any;
+    const shardId = typeof o.shardId === "string" ? o.shardId : typeof o.shard_id === "string" ? o.shard_id : null;
+    const type = typeof o.type === "string" ? o.type : null;
+    const count = typeof o.count === "number" ? o.count : typeof o.count === "string" ? Number(o.count) : NaN;
+    if (!shardId || !type || !Number.isFinite(count)) continue;
+    out.push({ shardId, type, count });
+  }
+  return out;
+}
+
+function parseBrainWaveBudget(raw: unknown): null | {
+  kind: "ok";
+  total: number;
+  top: Array<{ shardId: string; type: string; count: number }>;
+} | {
+  kind: "unavailable";
+  reason: string;
+  missingColumns?: string[];
+} {
   if (!raw || typeof raw !== "object") return null;
 
-  const total = (raw as any).total;
-  const top = (raw as any).topByShardAndType;
+  const anyRaw = raw as any;
 
-  if (typeof total !== "number" || !Array.isArray(top)) return null;
+  // New shape: { ok: true/false, ... }
+  if (typeof anyRaw.ok === "boolean") {
+    if (!anyRaw.ok) {
+      const reason = typeof anyRaw.reason === "string" ? anyRaw.reason : "unavailable";
+      const missingColumns =
+        Array.isArray(anyRaw.missingColumns) && anyRaw.missingColumns.every((x: any) => typeof x === "string")
+          ? (anyRaw.missingColumns as string[])
+          : undefined;
 
-  const rows: BrainWaveBudgetEntry[] = [];
-  for (const r of top) {
-    if (!r || typeof r !== "object") continue;
-    const shardId = (r as any).shardId;
-    const type = (r as any).type;
-    const count = (r as any).count;
-    if (typeof shardId !== "string" || typeof type !== "string" || typeof count !== "number") continue;
-    rows.push({ shardId, type, count });
+      return { kind: "unavailable", reason, missingColumns };
+    }
+
+    const total = typeof anyRaw.total === "number" ? anyRaw.total : null;
+    const top = parseBrainSpawnsTopByShardType(anyRaw.topByShardType);
+
+    if (total === null || !top) return null;
+
+    return { kind: "ok", total, top };
   }
 
-  return { total, topByShardAndType: rows };
+  // Legacy shape: { total, topByShardType }
+  const total = typeof anyRaw.total === "number" ? anyRaw.total : null;
+  const top = parseBrainSpawnsTopByShardType(anyRaw.topByShardType);
+  if (total === null || !top) return null;
+  return { kind: "ok", total, top };
 }
+
 
 export function AdminMotherBrainPage() {
   const [busy, setBusy] = useState(false);
@@ -129,6 +164,8 @@ export function AdminMotherBrainPage() {
   const [error, setError] = useState<string | null>(null);
   const [data, setData] = useState<MotherBrainHeartbeat | null>(null);
   const [raw, setRaw] = useState<MotherBrainStatusResponse | null>(null);
+
+  const snapshot = data?.last_status_json ?? null;
 
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [everyMs, setEveryMs] = useState(2000);
@@ -371,56 +408,67 @@ export function AdminMotherBrainPage() {
           subtitle="Top spawn-point counts used for wave budgeting (from Mother Brain snapshot)."
         >
           {(() => {
-            const budget = parseBrainWaveBudget((data?.last_status_json as any)?.db?.brainWaveBudget);
-            if (!budget) {
-              return (
-                <div style={{ fontSize: 12, color: "#666" }}>
-                  No wave budget snapshot available (feature disabled or DB missing).
-                </div>
-              );
-            }
+	  const budget = parseBrainWaveBudget(
+	    (snapshot as any)?.brainWaveBudget ?? (snapshot as any)?.db?.brainWaveBudget,
+	  );
 
-            const rows = budget.topByShardAndType.slice(0, 50);
+  if (!budget) {
+    return (
+      <div className="text-sm text-slate-600">
+        No wave budget snapshot available (feature disabled or DB missing).
+      </div>
+    );
+  }
 
-            return (
-              <div style={{ display: "grid", gap: 10 }}>
-                <div style={{ fontSize: 12 }}>
-                  <span style={{ fontWeight: 600 }}>Total:</span> {budget.total}
-                </div>
+  if (budget.kind === "unavailable") {
+    return (
+      <div className="text-sm text-slate-600">
+        <div>Wave budget unavailable: {budget.reason}.</div>
+        {budget.missingColumns && budget.missingColumns.length > 0 ? (
+          <div className="mt-1">
+            Missing columns: <code>{budget.missingColumns.join(", ")}</code>
+          </div>
+        ) : null}
+      </div>
+    );
+  }
 
-                {rows.length === 0 ? (
-                  <div style={{ fontSize: 12, color: "#666" }}>No rows.</div>
-                ) : (
-                  <div style={{ border: "1px solid #ddd", borderRadius: 8, overflow: "hidden" }}>
-                    <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
-                      <thead>
-                        <tr style={{ background: "#f7f7f7" }}>
-                          <th style={{ textAlign: "left", padding: "8px 10px" }}>shard</th>
-                          <th style={{ textAlign: "left", padding: "8px 10px" }}>type</th>
-                          <th style={{ textAlign: "right", padding: "8px 10px" }}>count</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {rows.map((r, i) => (
-                          <tr key={`${r.shardId}:${r.type}:${i}`} style={{ borderTop: "1px solid #eee" }}>
-                            <td style={{ padding: "8px 10px", whiteSpace: "nowrap" }}>{r.shardId}</td>
-                            <td style={{ padding: "8px 10px", whiteSpace: "nowrap" }}>{r.type}</td>
-                            <td style={{ padding: "8px 10px", textAlign: "right" }}>{r.count}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
+  return (
+    <div className="text-sm">
+      <div className="mb-1">
+        Total spawn points: <b>{budget.total}</b>
+      </div>
 
-                {budget.topByShardAndType.length > rows.length ? (
-                  <div style={{ fontSize: 12, color: "#666" }}>
-                    Showing top {rows.length} rows (cap).
-                  </div>
-                ) : null}
-              </div>
-            );
-          })()}
+      {budget.top.length === 0 ? (
+        <div className="text-slate-600">No spawn point rows returned.</div>
+      ) : (
+        <table className="w-full text-xs border-collapse">
+          <thead>
+            <tr className="text-left border-b">
+              <th className="py-1 pr-2">shard</th>
+              <th className="py-1 pr-2">type</th>
+              <th className="py-1 pr-2">count</th>
+            </tr>
+          </thead>
+          <tbody>
+            {budget.top.map((row, i) => (
+              <tr key={i} className="border-b last:border-b-0">
+                <td className="py-1 pr-2">
+                  <code>{row.shardId}</code>
+                </td>
+                <td className="py-1 pr-2">
+                  <code>{row.type}</code>
+                </td>
+                <td className="py-1 pr-2">{row.count}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </div>
+  );
+})()}
+
         </AdminPanel>
 
 </div>
