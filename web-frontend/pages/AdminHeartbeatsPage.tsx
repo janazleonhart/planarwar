@@ -38,7 +38,11 @@ type HeartbeatsResponse = {
   error?: string;
 };
 
+const STALE_MS = 15_000;
+const DEAD_MS = 60_000;
+
 function msAgo(iso: string | null | undefined): number | null {
+
   if (!iso) return null;
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return null;
@@ -60,6 +64,27 @@ function safeIso(iso: string | null | undefined): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return String(iso);
   return d.toLocaleString();
+}
+
+function classifyAge(ageMs: number | null): "ok" | "stale" | "dead" | "unknown" {
+  if (ageMs == null) return "unknown";
+  if (ageMs > DEAD_MS) return "dead";
+  if (ageMs > STALE_MS) return "stale";
+  return "ok";
+}
+
+function statusLabel(s: "ok" | "stale" | "dead" | "unknown"): string {
+  if (s === "ok") return "OK";
+  if (s === "stale") return "STALE";
+  if (s === "dead") return "DEAD";
+  return "?";
+}
+
+function statusStyle(s: "ok" | "stale" | "dead" | "unknown"): { color: string; opacity?: number } {
+  if (s === "ok") return { color: "#0a7" };
+  if (s === "stale") return { color: "#b80" };
+  if (s === "dead") return { color: "#777", opacity: 0.9 };
+  return { color: "#666" };
 }
 
 export function AdminHeartbeatsPage() {
@@ -122,7 +147,28 @@ export function AdminHeartbeatsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [autoRefresh, everyMs]);
 
-  const anyStale = useMemo(() => rows.some((r) => (msAgo(r.updated_at) ?? 0) > 30_000), [rows]);
+  const anyStale = useMemo(() => rows.some((r) => (msAgo(r.updated_at) ?? 0) > STALE_MS), [rows]);
+
+  const rowsSorted = useMemo(() => {
+    const withMeta = rows.map((r) => {
+      const age = msAgo(r.updated_at);
+      const status = classifyAge(age);
+      return { r, age, status };
+    });
+
+    const rank = (s: string) => (s === "ok" ? 0 : s === "stale" ? 1 : s === "dead" ? 2 : 3);
+    withMeta.sort((a, b) => {
+      const ra = rank(a.status);
+      const rb = rank(b.status);
+      if (ra !== rb) return ra - rb;
+      const au = a.age ?? Number.POSITIVE_INFINITY;
+      const bu = b.age ?? Number.POSITIVE_INFINITY;
+      if (au !== bu) return au - bu;
+      return a.r.service_name.localeCompare(b.r.service_name);
+    });
+
+    return withMeta;
+  }, [rows]);
 
   return (
     <AdminShell title="Service Heartbeats" subtitle="Daemon health overview (from service_heartbeats).">
@@ -167,22 +213,33 @@ export function AdminHeartbeatsPage() {
               <thead>
                 <tr style={{ textAlign: "left", borderBottom: "1px solid var(--pw-border)" }}>
                   <th style={{ padding: "8px 6px" }}>service</th>
+                  <th style={{ padding: "8px 6px" }}>status</th>
                   <th style={{ padding: "8px 6px" }}>ready</th>
                   <th style={{ padding: "8px 6px" }}>mode</th>
                   <th style={{ padding: "8px 6px" }}>version</th>
                   <th style={{ padding: "8px 6px" }}>last tick</th>
+                  <th style={{ padding: "8px 6px" }}>age</th>
                   <th style={{ padding: "8px 6px" }}>updated</th>
                   <th style={{ padding: "8px 6px" }}>instance</th>
                 </tr>
               </thead>
               <tbody>
-                {rows.map((r) => {
-                  const age = msAgo(r.updated_at);
-                  const stale = (age ?? 0) > 30_000;
+                {rowsSorted.map(({ r, age, status }) => {
+                  const stale = status === "stale";
+                  const dead = status === "dead";
                   return (
-                    <tr key={r.service_name} style={{ borderBottom: "1px solid var(--pw-border)" }}>
+                    <tr
+                      key={r.service_name}
+                      style={{
+                        borderBottom: "1px solid var(--pw-border)",
+                        opacity: dead ? 0.6 : 1,
+                      }}
+                    >
                       <td style={{ padding: "8px 6px" }}>
                         <code>{r.service_name}</code>
+                      </td>
+                      <td style={{ padding: "8px 6px" }}>
+                        <strong style={{ ...statusStyle(status), fontFamily: "monospace" }}>{statusLabel(status)}</strong>
                       </td>
                       <td style={{ padding: "8px 6px" }}>
                         <strong style={{ color: r.ready ? "#0a7" : "#c33" }}>{r.ready ? "READY" : "NO"}</strong>
@@ -196,11 +253,14 @@ export function AdminHeartbeatsPage() {
                       <td style={{ padding: "8px 6px" }}>
                         <code>{r.last_tick ?? ""}</code>
                       </td>
+                      <td style={{ padding: "8px 6px" }}>
+                        <code>{age != null ? fmtMs(age) : ""}</code>
+                      </td>
                       <td style={{ padding: "8px 6px", opacity: stale ? 1 : 0.85 }}>
                         {safeIso(r.updated_at)}
                         {age != null ? (
                           <span style={{ marginLeft: 8, opacity: 0.75 }}>
-                            ({fmtMs(age)} ago{stale ? ", stale" : ""})
+                            (updated)
                           </span>
                         ) : null}
                       </td>
