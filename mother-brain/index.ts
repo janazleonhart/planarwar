@@ -17,6 +17,7 @@
 
 import dotenv from "dotenv";
 import fs from "node:fs";
+import os from "node:os";
 import http from "node:http";
 import path from "node:path";
 import process from "node:process";
@@ -88,6 +89,34 @@ type TickSnapshot = {
 
 function nowIso(): string {
   return new Date().toISOString();
+}
+
+
+function getServiceVersion(): string | null {
+  // Prefer npm's injected env var (works in dev via npm scripts).
+  const fromNpm = process.env.npm_package_version;
+  if (fromNpm && fromNpm.trim().length > 0) return fromNpm.trim();
+
+  // Best-effort: try to read package.json at runtime.
+  // In ts-node-dev, cwd is usually mother-brain/; in dist, cwd is repo root.
+  const candidates = [
+    path.resolve(process.cwd(), "package.json"),
+    path.resolve(process.cwd(), "mother-brain", "package.json"),
+    path.resolve(__dirname, "..", "package.json"),
+  ];
+
+  for (const p of candidates) {
+    try {
+      if (!fs.existsSync(p)) continue;
+      const raw = fs.readFileSync(p, "utf-8");
+      const pkg = JSON.parse(raw) as { version?: unknown };
+      if (typeof pkg.version === "string" && pkg.version.trim().length > 0) return pkg.version.trim();
+    } catch {
+      // ignore
+    }
+  }
+
+  return null;
 }
 
 function sleep(ms: number): Promise<void> {
@@ -809,8 +838,9 @@ async function main(): Promise<void> {
   const startedAt = Date.now();
 
   // Identity for service_heartbeats (best-effort; never blocks startup).
-  const hbHost = process.env.HOSTNAME || process.env.HOST || "unknown";
+  const hbHost = process.env.HOSTNAME || process.env.HOST || os.hostname() || "unknown";
   const hbInstanceId = `${hbHost}:${process.pid}`;
+  const hbVersion = getServiceVersion();
 
   const gatedLog = (level: LogLevel, msg: string, extra?: Record<string, unknown>) => {
     if (shouldLog(level, cfg.logLevel)) log(level, msg, extra);
@@ -971,7 +1001,7 @@ async function main(): Promise<void> {
         hbInstanceId,
         hbHost,
         process.pid,
-        "0.10.0",
+        hbVersion,
         cfg.mode,
         isReady(snapshot),
         tick,
