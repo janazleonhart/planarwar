@@ -38,6 +38,11 @@ function Card(props: { item: LinkCard; onGo: (path: string) => void }) {
 export function AdminHubPage(props: { onGo: (path: string) => void; role?: string }) {
   const links: LinkCard[] = [
     {
+      title: "Mother Brain",
+      path: "/admin/mother_brain",
+      description: "Live heartbeat + last status snapshot (read via web-backend).",
+    },
+    {
       title: "Spawn Points Editor",
       path: "/admin/spawn_points",
       description:

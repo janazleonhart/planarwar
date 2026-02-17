@@ -5,10 +5,15 @@
 // - DB heartbeat support (Option A) remains best-effort and non-fatal.
 // - Optional HTTP status server still supported (disabled unless MOTHER_BRAIN_HTTP_PORT > 0).
 //
-// DB Heartbeat table expected (migration in worldcore/infra/schema):
-//   public.service_heartbeats(service_name text primary key, updated_at timestamptz, ready boolean, signature text, snapshot jsonb)
-//
-// Web-backend can poll this for admin status without Mother Brain hosting HTTP.
+// DB Heartbeat table expected (migration in worldcore/infra/schema/079_service_heartbeats_v0.sql):
+//  service_heartbeats(
+//    service_name PK,
+//    instance_id, host, pid,
+//    version, mode,
+//    ready,
+//    last_tick, last_signature, last_status_json,
+//    started_at, last_tick_at, updated_at
+//  )
 
 import dotenv from "dotenv";
 import fs from "node:fs";
@@ -467,23 +472,75 @@ class DbProbe {
     }
   }
 
-  public async writeHeartbeat(serviceName: string, ready: boolean, signature: string, snapshot: TickSnapshot): Promise<void> {
+  public async writeHeartbeat(
+    serviceName: string,
+    instanceId: string,
+    host: string,
+    pid: number,
+    version: string | null,
+    mode: string | null,
+    ready: boolean,
+    lastTick: number,
+    signature: string,
+    snapshot: TickSnapshot
+  ): Promise<void> {
     if (!this.pool) return;
 
-    // Best-effort: if table doesn't exist, or permissions lack, we do not throw.
+    // Best-effort: if table doesn't exist, or permissions are lacking, we do not throw.
+    // Matches schema/079_service_heartbeats_v0.sql
     const sql = `
-      INSERT INTO public.service_heartbeats(service_name, updated_at, ready, signature, snapshot)
-      VALUES ($1, NOW(), $2, $3, $4::jsonb)
+      INSERT INTO public.service_heartbeats (
+        service_name,
+        instance_id,
+        host,
+        pid,
+        version,
+        mode,
+        ready,
+        last_tick,
+        last_signature,
+        last_status_json,
+        started_at,
+        last_tick_at,
+        updated_at
+      )
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::jsonb,NOW(),NOW(),NOW())
       ON CONFLICT (service_name)
-      DO UPDATE SET updated_at = NOW(), ready = EXCLUDED.ready, signature = EXCLUDED.signature, snapshot = EXCLUDED.snapshot
+      DO UPDATE SET
+        instance_id = EXCLUDED.instance_id,
+        host = EXCLUDED.host,
+        pid = EXCLUDED.pid,
+        version = EXCLUDED.version,
+        mode = EXCLUDED.mode,
+        ready = EXCLUDED.ready,
+        last_tick = EXCLUDED.last_tick,
+        last_signature = EXCLUDED.last_signature,
+        last_status_json = EXCLUDED.last_status_json,
+        last_tick_at = NOW(),
+        updated_at = NOW()
     `;
 
     try {
-      await this.withTimeout(this.pool.query(sql, [serviceName, ready, signature, JSON.stringify(snapshot)]), this.timeoutMs);
+      await this.withTimeout(
+        this.pool.query(sql, [
+          serviceName,
+          instanceId,
+          host,
+          pid,
+          version,
+          mode,
+          ready,
+          lastTick,
+          signature,
+          JSON.stringify(snapshot),
+        ]),
+        this.timeoutMs
+      );
     } catch {
       // swallow
     }
   }
+
 
   public async close(): Promise<void> {
     if (!this.pool) return;
@@ -751,6 +808,10 @@ async function main(): Promise<void> {
   const cfg = parseConfig();
   const startedAt = Date.now();
 
+  // Identity for service_heartbeats (best-effort; never blocks startup).
+  const hbHost = process.env.HOSTNAME || process.env.HOST || "unknown";
+  const hbInstanceId = `${hbHost}:${process.pid}`;
+
   const gatedLog = (level: LogLevel, msg: string, extra?: Record<string, unknown>) => {
     if (shouldLog(level, cfg.logLevel)) log(level, msg, extra);
   };
@@ -905,7 +966,18 @@ async function main(): Promise<void> {
       dbProbe.isEnabled() && cfg.heartbeatEveryTicks > 0 && tick % cfg.heartbeatEveryTicks === 0 && dbRes.ok;
 
     if (shouldHeartbeat) {
-      void dbProbe.writeHeartbeat("mother-brain", isReady(snapshot), sig, snapshot);
+      void dbProbe.writeHeartbeat(
+        "mother-brain",
+        hbInstanceId,
+        hbHost,
+        process.pid,
+        "0.10.0",
+        cfg.mode,
+        isReady(snapshot),
+        tick,
+        sig,
+        snapshot
+      );
     }
 
     await sleep(cfg.tickMs);

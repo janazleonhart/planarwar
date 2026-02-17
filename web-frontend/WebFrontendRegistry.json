@@ -1,10 +1,16 @@
 {
   "conventions": {
     "adminPages": [
+      "/admin",
+      "/admin/mother_brain",
+      "/admin/spawn_points",
       "/admin/quests",
       "/admin/npcs",
       "/admin/items",
-      "/admin/spawn_points"
+      "/admin/spells",
+      "/admin/abilities",
+      "/admin/vendor_economy",
+      "/admin/vendor_audit"
     ],
     "apiConfig": {
       "currentAdminPages": "same-origin /api via Vite dev proxy (no hard-coded ADMIN_API_BASE)",
@@ -225,6 +231,30 @@
         "Admin landing page (hub navigation)"
       ],
       "service": "admin.hub"
+    },
+    "web-frontend.pages.adminMotherBrain": {
+      "class": "AdminMotherBrainPage",
+      "ctorArgs": [],
+      "dependsOn": [
+        "web-frontend.lib.api"
+      ],
+      "kind": "page",
+      "lifecycle": "page",
+      "notes": [
+        "Mother Brain status viewer in the Admin UI.",
+        "Uses same-origin /api requests (dev via Vite proxy; prod via reverse proxy / same host).",
+        "Endpoint: GET /api/admin/mother_brain/status (web-backend reads from service_heartbeats).",
+        "Shows readiness, last tick age, and the last_status_json snapshot."
+      ],
+      "owns": [
+        "UI polling state (auto-refresh interval)",
+        "status snapshot viewer"
+      ],
+      "path": "web-frontend/pages/AdminMotherBrainPage.tsx",
+      "provides": [
+        "/admin/mother_brain"
+      ],
+      "service": "web.adminPages"
     },
     "web-frontend.pages.adminItems": {
       "class": null,
