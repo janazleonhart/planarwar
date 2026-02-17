@@ -98,6 +98,31 @@ async function copyToClipboard(text: string): Promise<boolean> {
   }
 }
 
+
+type BrainWaveBudgetEntry = { shardId: string; type: string; count: number };
+type BrainWaveBudgetSnapshot = { total: number; topByShardAndType: BrainWaveBudgetEntry[] };
+
+function parseBrainWaveBudget(raw: any): BrainWaveBudgetSnapshot | null {
+  if (!raw || typeof raw !== "object") return null;
+
+  const total = (raw as any).total;
+  const top = (raw as any).topByShardAndType;
+
+  if (typeof total !== "number" || !Array.isArray(top)) return null;
+
+  const rows: BrainWaveBudgetEntry[] = [];
+  for (const r of top) {
+    if (!r || typeof r !== "object") continue;
+    const shardId = (r as any).shardId;
+    const type = (r as any).type;
+    const count = (r as any).count;
+    if (typeof shardId !== "string" || typeof type !== "string" || typeof count !== "number") continue;
+    rows.push({ shardId, type, count });
+  }
+
+  return { total, topByShardAndType: rows };
+}
+
 export function AdminMotherBrainPage() {
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
@@ -340,7 +365,65 @@ export function AdminMotherBrainPage() {
             {snapshotText}
           </pre>
         </AdminPanel>
-      </div>
+      
+        <AdminPanel
+          title="Brain wave budget"
+          subtitle="Top spawn-point counts used for wave budgeting (from Mother Brain snapshot)."
+        >
+          {(() => {
+            const budget = parseBrainWaveBudget((data?.last_status_json as any)?.db?.brainWaveBudget);
+            if (!budget) {
+              return (
+                <div style={{ fontSize: 12, color: "#666" }}>
+                  No wave budget snapshot available (feature disabled or DB missing).
+                </div>
+              );
+            }
+
+            const rows = budget.topByShardAndType.slice(0, 50);
+
+            return (
+              <div style={{ display: "grid", gap: 10 }}>
+                <div style={{ fontSize: 12 }}>
+                  <span style={{ fontWeight: 600 }}>Total:</span> {budget.total}
+                </div>
+
+                {rows.length === 0 ? (
+                  <div style={{ fontSize: 12, color: "#666" }}>No rows.</div>
+                ) : (
+                  <div style={{ border: "1px solid #ddd", borderRadius: 8, overflow: "hidden" }}>
+                    <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+                      <thead>
+                        <tr style={{ background: "#f7f7f7" }}>
+                          <th style={{ textAlign: "left", padding: "8px 10px" }}>shard</th>
+                          <th style={{ textAlign: "left", padding: "8px 10px" }}>type</th>
+                          <th style={{ textAlign: "right", padding: "8px 10px" }}>count</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {rows.map((r, i) => (
+                          <tr key={`${r.shardId}:${r.type}:${i}`} style={{ borderTop: "1px solid #eee" }}>
+                            <td style={{ padding: "8px 10px", whiteSpace: "nowrap" }}>{r.shardId}</td>
+                            <td style={{ padding: "8px 10px", whiteSpace: "nowrap" }}>{r.type}</td>
+                            <td style={{ padding: "8px 10px", textAlign: "right" }}>{r.count}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+
+                {budget.topByShardAndType.length > rows.length ? (
+                  <div style={{ fontSize: 12, color: "#666" }}>
+                    Showing top {rows.length} rows (cap).
+                  </div>
+                ) : null}
+              </div>
+            );
+          })()}
+        </AdminPanel>
+
+</div>
 
       <details style={{ marginTop: 12 }}>
         <summary style={{ cursor: "pointer", fontWeight: 800 }}>Raw response</summary>
