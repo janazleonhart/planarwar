@@ -548,6 +548,24 @@
         "Mode selector hub (launcher UI)"
       ],
       "service": "ui.modeHub"
+    },
+    "web-frontend.admin.page.heartbeats": {
+      "class": null,
+      "ctorArgs": [],
+      "dependsOn": [
+        "web-backend.routes.admin-heartbeats"
+      ],
+      "kind": "page",
+      "lifecycle": "singleton",
+      "notes": [
+        "Admin page showing daemon heartbeat rows from service_heartbeats."
+      ],
+      "owns": [],
+      "path": "web-frontend/pages/AdminHeartbeatsPage.tsx",
+      "provides": [
+        "route:/admin/heartbeats"
+      ],
+      "service": "web-frontend.admin"
     }
   }
 }

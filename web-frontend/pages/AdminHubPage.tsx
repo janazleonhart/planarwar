@@ -43,6 +43,11 @@ export function AdminHubPage(props: { onGo: (path: string) => void; role?: strin
       description: "Live heartbeat + last status snapshot (read via web-backend).",
     },
     {
+      title: "Service Heartbeats",
+      path: "/admin/heartbeats",
+      description: "Live daemon health overview (service_heartbeats).",
+    },
+    {
       title: "Spawn Points Editor",
       path: "/admin/spawn_points",
       description:

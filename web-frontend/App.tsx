@@ -16,6 +16,7 @@ import { AdminVendorEconomyPage } from "./pages/AdminVendorEconomyPage";
 import { AdminVendorAuditPage } from "./pages/AdminVendorAuditPage";
 import { AdminHubPage } from "./pages/AdminHubPage";
 import { AdminMotherBrainPage } from "./pages/AdminMotherBrainPage";
+import { AdminHeartbeatsPage } from "./pages/AdminHeartbeatsPage";
 import { AdminTheme } from "./components/admin/AdminTheme";
 import { CityShellPage } from "./pages/CityShellPage";
 import { ModeHubPage, type AppModeId, type ModeCard } from "./pages/ModeHubPage";
@@ -1136,6 +1137,7 @@ const copyToClipboard = async (text: string) => {
 
     if (pathname.startsWith("/admin/spawn_points")) return adminWrap(<AdminSpawnPointsPage />);
     if (pathname.startsWith("/admin/mother_brain")) return adminWrap(<AdminMotherBrainPage />);
+    if (pathname.startsWith("/admin/heartbeats")) return adminWrap(<AdminHeartbeatsPage />);
     if (pathname.startsWith("/admin/quests")) return adminWrap(<AdminQuestsPage />);
     if (pathname.startsWith("/admin/npcs")) return adminWrap(<AdminNpcsPage />);
     if (pathname.startsWith("/admin/spells")) return adminWrap(<AdminSpellsPage />);

@@ -1215,6 +1215,26 @@
         "GET /api/readyz"
       ],
       "service": "web-backend.routes"
+    },
+    "web-backend.routes.admin-heartbeats": {
+      "class": null,
+      "ctorArgs": [],
+      "dependsOn": [
+        "npm:express",
+        "worldcore.db.Database"
+      ],
+      "kind": "module",
+      "lifecycle": "singleton",
+      "notes": [
+        "Admin endpoint returning rows from public.service_heartbeats.",
+        "Tolerates missing/outdated table (returns ok:true, heartbeats:[], warning:...)."
+      ],
+      "owns": [],
+      "path": "web-backend/routes/adminHeartbeats.ts",
+      "provides": [
+        "GET /api/admin/heartbeats"
+      ],
+      "service": "web-backend.routes"
     }
   }
 }
