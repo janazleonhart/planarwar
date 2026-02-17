@@ -113,16 +113,17 @@ router.post("/restart", async (req, res) => {
   if (!serviceName) {
     res.status(400).json({ ok: false, error: "missing_serviceName" });
     return;
+  }
 
   // Hard rule: do not allow the admin panel to restart the web-backend that serves this API/UI.
   if (serviceName === "web-backend") {
     res.status(400).json({
       ok: false,
       error: "restart_denied_self_hosted_service",
-      detail: "Restart is disabled for web-backend (it hosts this admin API/UI). Restart it manually via your dev supervisor (concurrently/systemd/etc).",
+      detail:
+        "Restart is disabled for web-backend (it hosts this admin API/UI). Restart it manually via your dev supervisor (concurrently/systemd/etc).",
     });
     return;
-  }
   }
 
   try {
@@ -177,4 +178,105 @@ router.post("/restart", async (req, res) => {
   }
 });
 
+router.post("/restart_many", async (req, res) => {
+  if (!isRestartAllowed()) {
+    res.status(403).json({
+      ok: false,
+      error: "restart_disabled",
+      detail:
+        "Set PW_ADMIN_ALLOW_RESTART=true on web-backend to allow admin-triggered restarts (dev only).",
+    });
+    return;
+  }
+
+  const raw = (req.body as any)?.serviceNames;
+  const serviceNames = Array.isArray(raw)
+    ? raw.map((v) => String(v ?? "").trim()).filter(Boolean)
+    : [];
+
+  if (serviceNames.length === 0) {
+    res.status(400).json({ ok: false, error: "missing_serviceNames" });
+    return;
+  }
+
+  // Always deny web-backend restart.
+  const filtered = serviceNames.filter((s) => s !== "web-backend");
+
+  const results: Array<{
+    serviceName: string;
+    ok: boolean;
+    pid?: number;
+    action?: "sigterm";
+    error?: string;
+    detail?: string;
+  }> = [];
+
+  for (const serviceName of filtered) {
+    try {
+      const q = await db.query(
+        `
+        SELECT service_name, instance_id, host, pid, updated_at
+        FROM service_heartbeats
+        WHERE service_name = $1
+        ORDER BY updated_at DESC
+        LIMIT 1
+      `,
+        [serviceName],
+      );
+
+      const row = q.rows?.[0];
+      if (!row) {
+        results.push({ serviceName, ok: false, error: "service_not_found" });
+        continue;
+      }
+
+      const pid = Number(row.pid);
+      if (!Number.isFinite(pid) || pid <= 0) {
+        results.push({ serviceName, ok: false, error: "invalid_pid", detail: String(row.pid) });
+        continue;
+      }
+
+      if (!isLocalishHost(row.host)) {
+        results.push({
+          serviceName,
+          ok: false,
+          error: "restart_denied_remote_host",
+          detail: `Refusing to restart non-local host: ${String(row.host)}`,
+        });
+        continue;
+      }
+
+      const cmdline = readProcCmdline(pid);
+      if (!looksLikePlanarwarProcess(cmdline)) {
+        results.push({
+          serviceName,
+          ok: false,
+          error: "restart_denied_unexpected_process",
+          detail: cmdline ?? "(cmdline unavailable)",
+        });
+        continue;
+      }
+
+      process.kill(pid, "SIGTERM");
+      results.push({ serviceName, ok: true, pid, action: "sigterm" });
+    } catch (err: unknown) {
+      results.push({
+        serviceName,
+        ok: false,
+        error: "restart_failed",
+        detail: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
+  res.json({
+    ok: true,
+    requested: serviceNames,
+    restarted: results.filter((r) => r.ok).map((r) => r.serviceName),
+    results,
+    note: serviceNames.includes("web-backend")
+      ? "web-backend restart is always denied (it hosts this admin API/UI)."
+      : undefined,
+  });
+});
 export default router;

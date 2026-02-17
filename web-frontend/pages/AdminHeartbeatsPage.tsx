@@ -180,6 +180,70 @@ export function AdminHeartbeatsPage() {
       void load();
     }
   };
+  const restartMany = async (serviceNames: string[]) => {
+    const names = Array.from(new Set(serviceNames.map((s) => String(s || "").trim()).filter(Boolean)));
+    if (!names.length) return;
+
+    if (!restartEnabled) {
+      setNotice(restartDetail || "Restart disabled (dev only).");
+      return;
+    }
+
+    const deny = new Set(restartDenyServices);
+    const filtered = names.filter((n) => !deny.has(n));
+
+    if (!filtered.length) {
+      setNotice("No restartable services selected.");
+      return;
+    }
+
+    const msg =
+      filtered.length === 1
+        ? `Send restart signal to ${filtered[0]}?`
+        : `Send restart signal to ${filtered.length} services?\n\n${filtered.join("\n")}`;
+    if (!window.confirm(msg)) return;
+
+    if (restartingService) return; // single-flight
+    setRestartingService("__many__");
+    setError(null);
+    setNotice(null);
+
+    try {
+      const res = await api<{
+        ok: boolean;
+        error?: string;
+        restarted?: string[];
+        results?: Array<{ serviceName: string; ok: boolean; error?: string; detail?: string }>;
+      }>(`/api/admin/heartbeats/restart_many`, {
+        method: "POST",
+        body: JSON.stringify({ serviceNames: filtered }),
+      });
+
+      if (!res?.ok) throw new Error(res?.error || "Restart request failed");
+
+      const restarted = res.restarted ?? [];
+      const failed = (res.results ?? []).filter((r) => !r.ok);
+      if (failed.length) {
+        setNotice(
+          `Restart sent to: ${restarted.join(", ") || "(none)"}; failed: ${failed
+            .map((f) => `${f.serviceName} (${f.error || "error"})`)
+            .join(", ")}`,
+        );
+      } else {
+        setNotice(`Restart signal sent to: ${restarted.join(", ")}`);
+      }
+    } catch (e: any) {
+      setError(e?.message ? String(e.message) : String(e));
+    } finally {
+      setRestartingService(null);
+      void load();
+    }
+  };
+
+  const restartAllVisible = () => {
+    const names = rows.map((r) => r.service_name).filter(Boolean);
+    void restartMany(names);
+  };
 
   useEffect(() => {
     void load();
@@ -243,6 +307,17 @@ export function AdminHeartbeatsPage() {
         <button onClick={load} disabled={busy} data-kind="primary">
           {busy ? "Refreshing…" : "Refresh"}
         </button>
+
+        {restartEnabled ? (
+          <button
+            onClick={restartAllVisible}
+            disabled={busy || restartingService != null || rows.length === 0}
+            title="Send SIGTERM to all restartable services shown in the table (dev only)"
+          >
+            Restart all (safe)
+          </button>
+        ) : null}
+
 
         <label style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 12 }}>
           <input
