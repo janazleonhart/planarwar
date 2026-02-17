@@ -1,6 +1,6 @@
 // web-frontend/pages/AdminMotherBrainPage.tsx
 //
-// Mother Brain Status (v0)
+// Mother Brain Status (v1)
 //
 // Goal:
 // - Give the Admin UI a readable, same-origin way to view Mother Brain heartbeats.
@@ -35,6 +35,8 @@ type MotherBrainHeartbeat = {
 type MotherBrainStatusResponse = {
   ok: boolean;
   status: MotherBrainHeartbeat | null;
+  warning?: string;
+  detail?: string;
   error?: string;
 };
 
@@ -70,8 +72,35 @@ function prettyJson(v: any): string {
   }
 }
 
+async function copyToClipboard(text: string): Promise<boolean> {
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  } catch {
+    // fall through
+  }
+
+  try {
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    ta.setAttribute("readonly", "true");
+    ta.style.position = "fixed";
+    ta.style.left = "-9999px";
+    document.body.appendChild(ta);
+    ta.select();
+    const ok = document.execCommand("copy");
+    document.body.removeChild(ta);
+    return ok;
+  } catch {
+    return false;
+  }
+}
+
 export function AdminMotherBrainPage() {
   const [busy, setBusy] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [data, setData] = useState<MotherBrainHeartbeat | null>(null);
   const [raw, setRaw] = useState<MotherBrainStatusResponse | null>(null);
@@ -80,6 +109,9 @@ export function AdminMotherBrainPage() {
   const [everyMs, setEveryMs] = useState(2000);
   const timerRef = useRef<number | null>(null);
 
+  // Avoid overlapping polls even if React state lags.
+  const inFlightRef = useRef(false);
+
   const staleMs = useMemo(() => msAgo(data?.updated_at), [data?.updated_at]);
   const tickAgeMs = useMemo(() => msAgo(data?.last_tick_at), [data?.last_tick_at]);
 
@@ -87,16 +119,25 @@ export function AdminMotherBrainPage() {
   const isTickStale = (tickAgeMs ?? 0) > 15_000;
 
   const load = async () => {
+    if (inFlightRef.current) return;
+    inFlightRef.current = true;
     setBusy(true);
     setError(null);
+    setNotice(null);
+
     try {
       const res = await api<MotherBrainStatusResponse>("/api/admin/mother_brain/status");
       setRaw(res);
+
       if (!res.ok) {
         setData(null);
         setError(res.error || "Mother Brain status request failed.");
       } else {
         setData(res.status ?? null);
+
+        if (res.warning) {
+          setNotice(res.detail ? `${res.warning}: ${res.detail}` : res.warning);
+        }
       }
     } catch (e: any) {
       setRaw(null);
@@ -104,6 +145,7 @@ export function AdminMotherBrainPage() {
       setError(e?.message ? String(e.message) : String(e));
     } finally {
       setBusy(false);
+      inFlightRef.current = false;
     }
   };
 
@@ -122,8 +164,7 @@ export function AdminMotherBrainPage() {
 
     const ms = Math.max(500, Math.min(60_000, Math.floor(everyMs)));
     timerRef.current = window.setInterval(() => {
-      // Avoid overlap if user is on a slow network.
-      if (!busy) load();
+      void load();
     }, ms);
 
     return () => {
@@ -135,14 +176,30 @@ export function AdminMotherBrainPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [autoRefresh, everyMs]);
 
+  const snapshotText = useMemo(() => prettyJson(data?.last_status_json ?? null), [data?.last_status_json]);
+  const rawText = useMemo(() => prettyJson(raw), [raw]);
+
+  const canCopy = typeof navigator !== "undefined";
+
   return (
     <AdminShell title="Mother Brain" subtitle="Service heartbeat + last status snapshot (polled from web-backend).">
       {error ? <AdminNotice kind="error">{error}</AdminNotice> : null}
+      {notice ? <AdminNotice kind="warn">{notice}</AdminNotice> : null}
 
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
         <button onClick={load} disabled={busy} data-kind="primary">
           {busy ? "Refreshing…" : "Refresh"}
         </button>
+
+        <a
+          href="/api/admin/mother_brain/status"
+          target="_blank"
+          rel="noreferrer"
+          style={{ fontSize: 12, textDecoration: "underline", opacity: 0.85 }}
+        >
+          Open API response
+        </a>
+
         <label style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 12 }}>
           <input
             type="checkbox"
@@ -152,6 +209,7 @@ export function AdminMotherBrainPage() {
           />
           Auto refresh
         </label>
+
         <label style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 12 }}>
           Every
           <input
@@ -245,7 +303,23 @@ export function AdminMotherBrainPage() {
           )}
         </AdminPanel>
 
-        <AdminPanel title="Last status snapshot">
+        <AdminPanel
+          title="Last status snapshot"
+        >
+          <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 8 }}>
+            {canCopy ? (
+              <button
+                onClick={async () => {
+                  const ok = await copyToClipboard(snapshotText);
+                  setNotice(ok ? "Copied snapshot JSON to clipboard." : "Copy failed (clipboard not available).");
+                }}
+                disabled={!snapshotText}
+                data-kind="secondary"
+              >
+                Copy JSON
+              </button>
+            ) : null}
+          </div>
           <div style={{ fontSize: 12, opacity: 0.8, marginBottom: 8 }}>
             This is whatever Mother Brain wrote into <code>service_heartbeats.last_status_json</code>.
           </div>
@@ -263,13 +337,27 @@ export function AdminMotherBrainPage() {
               fontSize: 12,
             }}
           >
-            {prettyJson(data?.last_status_json ?? null)}
+            {snapshotText}
           </pre>
         </AdminPanel>
       </div>
 
       <details style={{ marginTop: 12 }}>
         <summary style={{ cursor: "pointer", fontWeight: 800 }}>Raw response</summary>
+        <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 8 }}>
+          {canCopy ? (
+            <button
+              onClick={async () => {
+                const ok = await copyToClipboard(rawText);
+                setNotice(ok ? "Copied raw response JSON to clipboard." : "Copy failed (clipboard not available).");
+              }}
+              disabled={!rawText}
+              data-kind="secondary"
+            >
+              Copy raw
+            </button>
+          ) : null}
+        </div>
         <pre
           style={{
             marginTop: 10,
@@ -282,7 +370,7 @@ export function AdminMotherBrainPage() {
             fontSize: 12,
           }}
         >
-          {prettyJson(raw)}
+          {rawText}
         </pre>
       </details>
     </AdminShell>
