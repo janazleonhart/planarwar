@@ -1,4 +1,9 @@
 // mother-brain/index.ts
+//
+// Mother Brain v0.7:
+// - Fix spawn_points schema probe false-positives by parsing Postgres array strings ("{a,b,c}").
+// - Reduce log noise: only include spawnPointsSchema in the Tick snapshot on probe ticks.
+// - Keep everything read-only (observe-only).
 
 import dotenv from "dotenv";
 import fs from "node:fs";
@@ -25,6 +30,7 @@ type BrainSpawnSummary = {
 type SpawnPointsSchemaProbe = {
   exists: boolean;
   missingColumns: string[];
+  columnCount?: number;
 };
 
 function nowIso(): string {
@@ -162,7 +168,7 @@ const ConfigSchema = z
         message: "MOTHER_BRAIN_SPAWN_SUMMARY_TOP_N must be between 1 and 100",
       }),
 
-    // v0.6: Optional schema drift probe for spawn_points (read-only)
+    // v0.6+: schema drift probe for spawn_points (read-only)
     MOTHER_BRAIN_SCHEMA_PROBE_EVERY_TICKS: z
       .string()
       .optional()
@@ -234,6 +240,27 @@ type ProbeResult = {
   latencyMs?: number;
   error?: string;
 };
+
+function parsePgArrayText(value: unknown): string[] {
+  // node-postgres normally returns text[] as string[].
+  // But under some settings/casts, it may return "{a,b,c}" as a string.
+  if (Array.isArray(value)) return value.map((v) => String(v));
+
+  if (typeof value === "string") {
+    const s = value.trim();
+    if (s.startsWith("{") && s.endsWith("}")) {
+      const inner = s.slice(1, -1);
+      if (inner.length === 0) return [];
+      // information_schema.column_name does not contain commas/quotes in our usage.
+      return inner
+        .split(",")
+        .map((x) => x.trim())
+        .filter(Boolean);
+    }
+  }
+
+  return [];
+}
 
 class DbProbe {
   private pool: Pool | null;
@@ -342,15 +369,16 @@ class DbProbe {
 
     try {
       const res = await this.withTimeout(this.pool.query(sql), this.timeoutMs);
-      const row = res.rows?.[0] as { exists?: boolean; columns?: string[] } | undefined;
+      const row = (res.rows?.[0] ?? {}) as { exists?: boolean; columns?: unknown };
 
-      const exists = Boolean(row?.exists);
-      const cols = Array.isArray(row?.columns) ? row!.columns : [];
+      const exists = Boolean(row.exists);
+      const cols = parsePgArrayText(row.columns);
       const missingColumns = exists ? required.filter((c) => !cols.includes(c)) : [...required];
 
-      return { exists, missingColumns: [...missingColumns] };
+      return { exists, missingColumns: [...missingColumns], columnCount: cols.length };
     } catch {
-      return { exists: false, missingColumns: [...required] };
+      // Conservative: if probe fails, report as missing.
+      return { exists: false, missingColumns: [...required], columnCount: 0 };
     }
   }
 
@@ -443,6 +471,13 @@ class WsProbe {
     let settled = false;
 
     return await new Promise<WsPingResult>((resolve) => {
+      const onPong = () => {
+        this.lastPongIso = nowIso();
+        finish({ ok: true, latencyMs: Date.now() - start, lastPongIso: this.lastPongIso });
+      };
+      const onClose = () => finish({ ok: false, error: "socket closed" });
+      const onErr = (e: unknown) => finish({ ok: false, error: this.errToString(e) });
+
       const timer = setTimeout(() => {
         finish({ ok: false, error: `timeout after ${timeoutMs}ms` });
       }, timeoutMs);
@@ -460,14 +495,6 @@ class WsProbe {
         cleanup();
         resolve(r);
       };
-
-      const onPong = () => {
-        this.lastPongIso = nowIso();
-        finish({ ok: true, latencyMs: Date.now() - start, lastPongIso: this.lastPongIso });
-      };
-
-      const onClose = () => finish({ ok: false, error: "socket closed" });
-      const onErr = (e: unknown) => finish({ ok: false, error: this.errToString(e) });
 
       ws.once("pong", onPong);
       ws.once("close", onClose);
@@ -597,7 +624,7 @@ async function main(): Promise<void> {
   });
 
   if (cfg.mode === "apply") {
-    gatedLog("warn", "MOTHER_BRAIN_MODE=apply is set, but v0.6 remains observe-only (no mutations).");
+    gatedLog("warn", "MOTHER_BRAIN_MODE=apply is set, but v0.7 remains observe-only (no mutations).");
   }
 
   // Cache DB metadata once (best-effort).
@@ -627,7 +654,6 @@ async function main(): Promise<void> {
   process.on("SIGTERM", () => void shutdown("SIGTERM"));
 
   let tick = 0;
-  let spawnPointsSchema: SpawnPointsSchemaProbe | null | undefined = undefined;
 
   while (!stopping) {
     tick += 1;
@@ -635,20 +661,27 @@ async function main(): Promise<void> {
     const uptimeMs = Date.now() - startedAt;
 
     const dbRes = dbProbe.isEnabled() ? await dbProbe.ping() : ({ ok: false, error: "disabled" } as ProbeResult);
-    const wsRes = wsProbe.isEnabled() ? await wsProbe.ensureConnected() : ({ ok: false, error: "disabled" } as ProbeResult);
+    const wsRes = wsProbe.isEnabled()
+      ? await wsProbe.ensureConnected()
+      : ({ ok: false, error: "disabled" } as ProbeResult);
 
+    // Optional WS ping/pong probe
     const shouldPingWs = wsProbe.isEnabled() && cfg.wsPingEveryTicks > 0 && tick % cfg.wsPingEveryTicks === 0;
     let wsPing: WsPingResult | null = null;
     if (shouldPingWs && wsRes.ok) {
       wsPing = await wsProbe.pingPong(cfg.wsPingTimeoutMs);
     }
 
+    // Optional brain:* spawn_points summary
     let brainSpawns: BrainSpawnSummary | null | undefined = undefined;
-    const shouldSummarize = dbProbe.isEnabled() && cfg.spawnSummaryEveryTicks > 0 && tick % cfg.spawnSummaryEveryTicks === 0;
+    const shouldSummarize =
+      dbProbe.isEnabled() && cfg.spawnSummaryEveryTicks > 0 && tick % cfg.spawnSummaryEveryTicks === 0;
     if (shouldSummarize && dbRes.ok) {
       brainSpawns = await dbProbe.getBrainSpawnSummary(cfg.spawnSummaryTopN);
     }
 
+    // v0.7: schema probe — only attach on probe ticks (reduces log spam)
+    let spawnPointsSchema: SpawnPointsSchemaProbe | null | undefined = undefined;
     const shouldProbeSchema =
       dbProbe.isEnabled() && cfg.schemaProbeEveryTicks > 0 && tick % cfg.schemaProbeEveryTicks === 0;
     if (shouldProbeSchema && dbRes.ok) {
