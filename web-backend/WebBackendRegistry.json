@@ -1193,6 +1193,28 @@
         "GET /api/admin/mother_brain/status"
       ],
       "service": "web-backend.routes"
+    },
+    "web-backend.routes.health": {
+      "class": null,
+      "ctorArgs": [],
+      "dependsOn": [
+        "npm:express",
+        "node:process"
+      ],
+      "kind": "module",
+      "lifecycle": "singleton",
+      "notes": [
+        "Lightweight liveness/readiness endpoints for web-backend.",
+        "healthz is always 200 if process is alive; readyz is 200 when DB env is configured, otherwise 503.",
+        "Mounted directly in web-backend/index.ts."
+      ],
+      "owns": [],
+      "path": "web-backend/index.ts",
+      "provides": [
+        "GET /api/healthz",
+        "GET /api/readyz"
+      ],
+      "service": "web-backend.routes"
     }
   }
 }

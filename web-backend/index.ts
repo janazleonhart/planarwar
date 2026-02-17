@@ -131,6 +131,47 @@ app.get("/", (_req, res) => {
   res.json({ ok: true, message: "Planar War – Web backend online." });
 });
 
+app.get("/api/healthz", (_req, res) => {
+  res.json({
+    ok: true,
+    service: "web-backend",
+    pid: process.pid,
+    uptimeMs: Math.floor(process.uptime() * 1000),
+    now: new Date().toISOString(),
+  });
+});
+
+// "Ready" means: basic env is present for DB-backed routes.
+// We don't hard-require DB connectivity here because dev/prod might bring DB up after the service.
+// (Systemd can use this endpoint as a lightweight readiness hint.)
+app.get("/api/readyz", (_req, res) => {
+  const hasDbUrl =
+    !!process.env.PW_DATABASE_URL ||
+    !!process.env.DATABASE_URL ||
+    !!process.env.POSTGRES_URL ||
+    !!process.env.PG_URL;
+
+  const hasDbParts = !!process.env.PW_DB_HOST && !!process.env.PW_DB_USER && !!process.env.PW_DB_NAME;
+
+  const ready = hasDbUrl || hasDbParts;
+
+  const payload = {
+    ok: ready,
+    service: "web-backend",
+    ready,
+    db: {
+      configured: ready,
+      hasDbUrl,
+      hasDbParts,
+    },
+    now: new Date().toISOString(),
+  };
+
+  if (ready) res.json(payload);
+  else res.status(503).json(payload);
+});
+
+
 app.use("/api/me", meRouter);
 app.use("/api/missions", missionsRouter);
 app.use("/api/city", cityRouter);
