@@ -336,8 +336,8 @@ async function main() {
       pid: process.pid,
       startedAt: startedAtIso,
       now: new Date().toISOString(),
-      shardId: world?.shardId ?? "unknown",
-      sessions: { total: sessions.getAllSessions().length },
+      shardId: world.getWorldBlueprint().shardId ?? "unknown",
+      sessions: { total: sessions.count() },
       rooms: { total: (rooms as any).getAllRooms ? (rooms as any).getAllRooms().length : undefined },
       ws: {
         enabled: opts.wsEnabled,
