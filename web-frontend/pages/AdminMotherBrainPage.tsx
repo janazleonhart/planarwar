@@ -230,13 +230,65 @@ type GoalsReportTailResponse =
       suite: string;
       date: string;
       filename: string;
-      lines: any[];
+      lines: unknown[];
     }
   | {
       ok: false;
       error: string;
       detail?: string;
     };
+
+type GoalReportFailingLine = {
+  suite: string;
+  ts: string | null;
+  tick: number | null;
+  goalId: string;
+  kind: string;
+  error: string | null;
+  latencyMs: number | null;
+  details: unknown;
+};
+
+function extractFailingLinesFromReportTail(suite: string, lines: unknown[], max: number): GoalReportFailingLine[] {
+  const out: GoalReportFailingLine[] = [];
+
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const rec: any = lines[i];
+    if (!rec || typeof rec !== "object") continue;
+
+    const results = Array.isArray(rec.results) ? rec.results : null;
+    if (!results) continue;
+
+    const ts = typeof rec.ts === "string" ? rec.ts : null;
+    const tick = typeof rec.tick === "number" && Number.isFinite(rec.tick) ? Math.trunc(rec.tick) : null;
+
+    for (const r of results) {
+      if (!r || typeof r !== "object") continue;
+      if (r.ok === true) continue;
+
+      const goalId = typeof r.id === "string" ? r.id : "(unknown)";
+      const kind = typeof r.kind === "string" ? r.kind : "(unknown)";
+      const error = typeof r.error === "string" ? r.error : null;
+      const latencyMs = typeof r.latencyMs === "number" && Number.isFinite(r.latencyMs) ? r.latencyMs : null;
+      const details = (r as any).details ?? null;
+
+      out.push({ suite, ts, tick, goalId, kind, error, latencyMs, details });
+
+      if (out.length >= max) return out;
+    }
+  }
+
+  return out;
+}
+
+async function copyTextToClipboard(text: string): Promise<boolean> {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 function parseGoalsHealthSummary(snapshot: any): { overall: GoalsHealthSummary | null; suites: GoalsSuiteLast[] } {
   const goals = snapshot && typeof snapshot === "object" ? (snapshot as any).goals : null;
@@ -363,6 +415,10 @@ export function AdminMotherBrainPage() {
   const [reportLines, setReportLines] = useState(200);
   const [reportBusy, setReportBusy] = useState(false);
   const [reportData, setReportData] = useState<GoalsReportTailResponse | null>(null);
+
+  const [reportOnlyFailures, setReportOnlyFailures] = useState(true);
+  const [reportShowRaw, setReportShowRaw] = useState(false);
+  const [reportCopied, setReportCopied] = useState(false);
 
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [everyMs, setEveryMs] = useState(2000);
@@ -934,12 +990,48 @@ export function AdminMotherBrainPage() {
                   {reportData ? (
                     reportData.ok ? (
                       <div style={{ marginTop: 10 }}>
-                        <div style={{ fontSize: 12, opacity: 0.85, marginBottom: 6 }}>
+                        <div style={{ fontSize: 12, opacity: 0.85, marginBottom: 6, display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
                           <code>{reportData.filename}</code>
+
+                          <label style={{ display: "inline-flex", gap: 6, alignItems: "center" }}>
+                            <input type="checkbox" checked={reportOnlyFailures} onChange={(e) => setReportOnlyFailures(Boolean(e.target.checked))} />
+                            <span>only failures</span>
+                          </label>
+
+                          <label style={{ display: "inline-flex", gap: 6, alignItems: "center" }}>
+                            <input type="checkbox" checked={reportShowRaw} onChange={(e) => setReportShowRaw(Boolean(e.target.checked))} />
+                            <span>show raw JSON</span>
+                          </label>
+
+                          <button
+                            disabled={!reportData.lines || !Array.isArray(reportData.lines)}
+                            onClick={async () => {
+                              const failing = extractFailingLinesFromReportTail(reportData.suite, reportData.lines, 200);
+                              const ok = await copyTextToClipboard(JSON.stringify(failing, null, 2));
+                              setReportCopied(ok);
+                              window.setTimeout(() => setReportCopied(false), 1200);
+                            }}
+                          >
+                            Copy failing goals
+                          </button>
+
+                          {reportCopied ? <span style={{ opacity: 0.8 }}>copied</span> : null}
                         </div>
-                        <pre style={{ maxHeight: 240, overflow: "auto", border: "1px solid #eee", padding: 10 }}>
-                          {prettyJson(reportData.lines)}
-                        </pre>
+
+                        {reportOnlyFailures ? (
+                          <pre style={{ maxHeight: 260, overflow: "auto", border: "1px solid #eee", padding: 10 }}>
+                            {prettyJson(extractFailingLinesFromReportTail(reportData.suite, reportData.lines, 200))}
+                          </pre>
+                        ) : null}
+
+                        {!reportOnlyFailures || reportShowRaw ? (
+                          <details style={{ marginTop: 8 }}>
+                            <summary style={{ cursor: "pointer", fontWeight: 700, fontSize: 12 }}>Raw tail lines</summary>
+                            <pre style={{ marginTop: 8, maxHeight: 260, overflow: "auto", border: "1px solid #eee", padding: 10 }}>
+                              {prettyJson(reportData.lines)}
+                            </pre>
+                          </details>
+                        ) : null}
                       </div>
                     ) : (
                       <div style={{ marginTop: 10, color: "#b00" }}>
@@ -951,8 +1043,7 @@ export function AdminMotherBrainPage() {
                     <div style={{ marginTop: 10, fontSize: 12, opacity: 0.85 }}>
                       Tip: set <code>PW_MOTHER_BRAIN_GOALS_REPORT_DIR</code> or <code>PW_FILELOG</code> on web-backend to enable tail viewing.
                     </div>
-                  )}
-                </details>
+                  )}                </details>
               </div>
 
               {goalsRunResult ? (
