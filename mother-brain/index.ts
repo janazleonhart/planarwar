@@ -409,6 +409,9 @@ const ConfigSchema = z
 
     // Optional report directory. If unset, we will derive from PW_FILELOG.
     MOTHER_BRAIN_GOALS_REPORT_DIR: z.string().optional(),
+
+    // Optional base URL for web-backend admin smoke goals.
+    MOTHER_BRAIN_WEB_BACKEND_HTTP_BASE: z.string().optional(),
   })
   .passthrough();
 
@@ -445,6 +448,7 @@ type MotherBrainConfig = {
   goalsFile?: string;
   goalsPacks?: string;
   goalsReportDir?: string;
+  webBackendHttpBase?: string;
 };
 
 function parseConfig(): MotherBrainConfig {
@@ -491,6 +495,7 @@ function parseConfig(): MotherBrainConfig {
     goalsFile: env.MOTHER_BRAIN_GOALS_FILE,
     goalsPacks: env.MOTHER_BRAIN_GOALS_PACKS,
     goalsReportDir: env.MOTHER_BRAIN_GOALS_REPORT_DIR,
+    webBackendHttpBase: env.MOTHER_BRAIN_WEB_BACKEND_HTTP_BASE,
   };
 }
 
@@ -1361,6 +1366,7 @@ async function main(): Promise<void> {
         reportDir: goalsReportDir,
         everyTicks: cfg.goalsEveryTicks,
         packIds: cfg.goalsPacks,
+        webBackendHttpBase: cfg.webBackendHttpBase,
       }),
       lastReport: null,
     },

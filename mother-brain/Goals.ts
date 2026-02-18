@@ -82,6 +82,9 @@ export type GoalsState = {
   // Optional suite selection
   packIds: string[];
 
+  // Optional context for builtin packs
+  webBackendHttpBase?: string;
+
   lastRunIso: string | null;
   lastOk: boolean | null;
   lastSummary: GoalRunReport["summary"] | null;
@@ -222,9 +225,54 @@ export type GoalPackId =
   | "db"
   | "wave_budget"
   | "ws"
-  | "player_smoke";
+  | "player_smoke"
+  | "admin_smoke";
 
-export function builtinGoalPacks(): Record<GoalPackId, GoalDefinition[]> {
+export function builtinGoalPacks(ctx?: { webBackendHttpBase?: string }): Record<GoalPackId, GoalDefinition[]> {
+  // NOTE: When building packs via ternaries/spreads, TS can widen string literals (e.g. kind -> string).
+  // To keep GoalDefinition typing strict, build those packs in typed locals.
+  const adminSmoke: GoalDefinition[] = ctx?.webBackendHttpBase
+    ? (
+        [
+          {
+            id: "admin.fixtures.time",
+            kind: "http_json",
+            url: `${ctx.webBackendHttpBase}/api/admin/test_fixtures/time`,
+            expectStatus: 200,
+            expectPath: "ok",
+            expectValue: true,
+            timeoutMs: 2000,
+          },
+          {
+            id: "admin.fixtures.ping",
+            kind: "http_post_json",
+            url: `${ctx.webBackendHttpBase}/api/admin/test_fixtures/ping`,
+            requestJson: { ping: 7 },
+            expectStatus: 200,
+            expectPath: "pong",
+            expectValue: 7,
+            timeoutMs: 2000,
+          },
+          {
+            id: "admin.fixtures.db_counts",
+            kind: "http_json",
+            url: `${ctx.webBackendHttpBase}/api/admin/test_fixtures/db_counts`,
+            expectStatus: 200,
+            expectPath: "ok",
+            expectValue: true,
+            timeoutMs: 3000,
+          },
+        ] satisfies GoalDefinition[]
+      )
+    : ([
+        {
+          id: "admin_smoke.disabled",
+          kind: "http_get",
+          url: "http://invalid.local/disabled",
+          enabled: false,
+        },
+      ] satisfies GoalDefinition[]);
+
   return {
     core: [
       { id: "db.service_heartbeats.exists", kind: "db_table_exists", table: "service_heartbeats" },
@@ -242,6 +290,8 @@ export function builtinGoalPacks(): Record<GoalPackId, GoalDefinition[]> {
       // Requires WS to be configured for an authenticated character session.
       { id: "ws.mud.whereami", kind: "ws_mud", command: "whereami", expectIncludes: "You are", timeoutMs: 2500 },
     ],
+    admin_smoke: adminSmoke,
+
   };
 }
 
@@ -271,8 +321,8 @@ function mergeGoalsById(goals: GoalDefinition[]): GoalDefinition[] {
   return Array.from(map.values());
 }
 
-export function resolveGoalPacks(packIds: string[]): { goals: GoalDefinition[]; unknown: string[] } {
-  const packs = builtinGoalPacks();
+export function resolveGoalPacks(packIds: string[], ctx?: { webBackendHttpBase?: string }): { goals: GoalDefinition[]; unknown: string[] } {
+  const packs = builtinGoalPacks(ctx);
   const out: GoalDefinition[] = [];
   const unknown: string[] = [];
 
@@ -294,6 +344,7 @@ export function createGoalsState(args: {
   reportDir?: string;
   everyTicks: number;
   packIds?: string[] | string;
+  webBackendHttpBase?: string;
 }): GoalsState {
   const reportDir = args.reportDir;
 
@@ -302,6 +353,7 @@ export function createGoalsState(args: {
     reportDir,
     everyTicks: args.everyTicks,
     packIds: normalizePackIds(args.packIds),
+    webBackendHttpBase: args.webBackendHttpBase,
     lastRunIso: null,
     lastOk: null,
     lastSummary: null,
@@ -366,7 +418,7 @@ export function getGoalSuites(
 
   // Packs: each pack becomes its own suite/report.
   if (state.packIds.length > 0) {
-    const packs = builtinGoalPacks();
+    const packs = builtinGoalPacks({ webBackendHttpBase: state.webBackendHttpBase });
     const suites: GoalSuite[] = [];
     const unknown: string[] = [];
 
