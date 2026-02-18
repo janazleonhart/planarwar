@@ -47,6 +47,8 @@ type BrainWaveBudgetSnapshot =
       topByShardType: BrainSpawnSummaryRow[];
       caps?: { shardId: string; type: string; cap: number; policy: string; updatedAt: string }[];
       remaining?: { shardId: string; type: string; cap: number; used: number; remaining: number; policy: string }[];
+      // Optional: if we also compute/report violations, keep TS happy across variants.
+      breaches?: { shardId: string; type: string; cap: number; used: number; remaining: number; policy: string }[];
     }
   | {
       ok: false;
