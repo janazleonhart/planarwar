@@ -7,6 +7,7 @@ _merged/
 web-backend/.env
 mmo-backend/.env
 web-frontend/.env
+mother-brain/.env
 .env
 planarwar-directory-setup.txt
 .vscode/settings.json
@@ -36,3 +37,5 @@ rg-output.txt
 web-backend/data/spawn_snapshots/
 mmo-backend/.env.local
 mmo-backend/.env.example
+log/
+logs/
