@@ -249,6 +249,13 @@ type GoalReportFailingLine = {
   details: unknown;
 };
 
+type GoalReportFailingRun = {
+  suite: string;
+  ts: string | null;
+  tick: number | null;
+  failures: GoalReportFailingLine[];
+};
+
 function extractFailingLinesFromReportTail(suite: string, lines: unknown[], max: number): GoalReportFailingLine[] {
   const out: GoalReportFailingLine[] = [];
 
@@ -279,6 +286,37 @@ function extractFailingLinesFromReportTail(suite: string, lines: unknown[], max:
   }
 
   return out;
+}
+
+function extractLatestFailingRunFromReportTail(suite: string, lines: unknown[], max: number): GoalReportFailingRun | null {
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const rec: any = lines[i];
+    if (!rec || typeof rec !== "object") continue;
+    const results = Array.isArray(rec.results) ? rec.results : null;
+    if (!results) continue;
+
+    const failures: GoalReportFailingLine[] = [];
+    const ts = typeof rec.ts === "string" ? rec.ts : null;
+    const tick = typeof rec.tick === "number" && Number.isFinite(rec.tick) ? Math.trunc(rec.tick) : null;
+
+    for (const r of results) {
+      if (!r || typeof r !== "object") continue;
+      if (r.ok === true) continue;
+
+      const goalId = typeof r.id === "string" ? r.id : "(unknown)";
+      const kind = typeof r.kind === "string" ? r.kind : "(unknown)";
+      const error = typeof r.error === "string" ? r.error : null;
+      const latencyMs = typeof r.latencyMs === "number" && Number.isFinite(r.latencyMs) ? r.latencyMs : null;
+      const details = (r as any).details ?? null;
+
+      failures.push({ suite, ts, tick, goalId, kind, error, latencyMs, details });
+      if (failures.length >= max) break;
+    }
+
+    if (failures.length) return { suite, ts, tick, failures };
+  }
+
+  return null;
 }
 
 async function copyTextToClipboard(text: string): Promise<boolean> {
@@ -417,8 +455,17 @@ export function AdminMotherBrainPage() {
   const [reportData, setReportData] = useState<GoalsReportTailResponse | null>(null);
 
   const [reportOnlyFailures, setReportOnlyFailures] = useState(true);
+  const [reportLatestFailingRunOnly, setReportLatestFailingRunOnly] = useState(true);
   const [reportShowRaw, setReportShowRaw] = useState(false);
   const [reportCopied, setReportCopied] = useState(false);
+
+  useEffect(() => {
+    // Keep selection valid if packs change.
+    if (!suiteOptions.length) return;
+    if (suiteOptions.includes(reportSuite)) return;
+    setReportSuite(suiteOptions[0] ?? "custom");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [suiteOptions.join("|")]);
 
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [everyMs, setEveryMs] = useState(2000);
@@ -998,6 +1045,17 @@ export function AdminMotherBrainPage() {
                             <span>only failures</span>
                           </label>
 
+                          {reportOnlyFailures ? (
+                            <label style={{ display: "inline-flex", gap: 6, alignItems: "center" }}>
+                              <input
+                                type="checkbox"
+                                checked={reportLatestFailingRunOnly}
+                                onChange={(e) => setReportLatestFailingRunOnly(Boolean(e.target.checked))}
+                              />
+                              <span>latest failing run</span>
+                            </label>
+                          ) : null}
+
                           <label style={{ display: "inline-flex", gap: 6, alignItems: "center" }}>
                             <input type="checkbox" checked={reportShowRaw} onChange={(e) => setReportShowRaw(Boolean(e.target.checked))} />
                             <span>show raw JSON</span>
@@ -1006,7 +1064,9 @@ export function AdminMotherBrainPage() {
                           <button
                             disabled={!reportData.lines || !Array.isArray(reportData.lines)}
                             onClick={async () => {
-                              const failing = extractFailingLinesFromReportTail(reportData.suite, reportData.lines, 200);
+                              const failing = reportLatestFailingRunOnly
+                                ? extractLatestFailingRunFromReportTail(reportData.suite, reportData.lines, 200)?.failures ?? []
+                                : extractFailingLinesFromReportTail(reportData.suite, reportData.lines, 200);
                               const ok = await copyTextToClipboard(JSON.stringify(failing, null, 2));
                               setReportCopied(ok);
                               window.setTimeout(() => setReportCopied(false), 1200);
@@ -1019,9 +1079,34 @@ export function AdminMotherBrainPage() {
                         </div>
 
                         {reportOnlyFailures ? (
-                          <pre style={{ maxHeight: 260, overflow: "auto", border: "1px solid #eee", padding: 10 }}>
-                            {prettyJson(extractFailingLinesFromReportTail(reportData.suite, reportData.lines, 200))}
-                          </pre>
+                          (() => {
+                            const latest = reportLatestFailingRunOnly
+                              ? extractLatestFailingRunFromReportTail(reportData.suite, reportData.lines, 200)
+                              : null;
+                            const payload = reportLatestFailingRunOnly
+                              ? latest
+                                ? { suite: latest.suite, ts: latest.ts, tick: latest.tick, failures: latest.failures }
+                                : { suite: reportData.suite, ts: null, tick: null, failures: [] }
+                              : extractFailingLinesFromReportTail(reportData.suite, reportData.lines, 200);
+
+                            return (
+                              <>
+                                {reportLatestFailingRunOnly ? (
+                                  <div style={{ fontSize: 12, opacity: 0.85, marginBottom: 6 }}>
+                                    Latest failing run: <code>{latest?.ts ?? "(none)"}</code>
+                                    {latest?.tick != null ? (
+                                      <>
+                                        {" "}tick <code>{latest.tick}</code>
+                                      </>
+                                    ) : null}
+                                  </div>
+                                ) : null}
+                                <pre style={{ maxHeight: 260, overflow: "auto", border: "1px solid #eee", padding: 10 }}>
+                                  {prettyJson(payload)}
+                                </pre>
+                              </>
+                            );
+                          })()
                         ) : null}
 
                         {!reportOnlyFailures || reportShowRaw ? (
