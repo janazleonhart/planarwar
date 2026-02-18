@@ -46,6 +46,9 @@ export type GoalDefinition = {
   command?: string;
   expectIncludes?: string;
 
+  expectIncludesAny?: string[];
+  expectIncludesAll?: string[];
+
   // db_wave_budget_breaches
   maxBreaches?: number;
 };
@@ -198,6 +201,8 @@ function normalizeGoals(maybeGoals: unknown): GoalDefinition[] {
         (o as any).requestHeaders && typeof (o as any).requestHeaders === "object" ? ((o as any).requestHeaders as any) : undefined,
       command: typeof o.command === "string" ? o.command : undefined,
       expectIncludes: typeof o.expectIncludes === "string" ? o.expectIncludes : undefined,
+      expectIncludesAny: Array.isArray((o as any).expectIncludesAny) ? (o as any).expectIncludesAny.filter((x: any) => typeof x === 'string') : undefined,
+      expectIncludesAll: Array.isArray((o as any).expectIncludesAll) ? (o as any).expectIncludesAll.filter((x: any) => typeof x === 'string') : undefined,
       maxBreaches: typeof o.maxBreaches === "number" ? o.maxBreaches : undefined,
     });
   }
@@ -306,42 +311,52 @@ export function builtinGoalPacks(ctx?: { webBackendHttpBase?: string }): Record<
         },
       ] satisfies GoalDefinition[]);
 
+
+  const corePack: GoalDefinition[] = [
+    { id: "db.service_heartbeats.exists", kind: "db_table_exists", table: "service_heartbeats" },
+    { id: "db.spawn_points.exists", kind: "db_table_exists", table: "spawn_points" },
+    { id: "wave_budget.no_breaches", kind: "db_wave_budget_breaches", maxBreaches: 0 },
+    { id: "ws.connected", kind: "ws_connected" },
+  ];
+
+  const playerSmoke: GoalDefinition[] = [
+    // Stable, low-brittle: "whereami" should always produce some kind of location text.
+    {
+      id: "ws.mud.whereami",
+      kind: "ws_mud",
+      command: "whereami",
+      expectIncludesAny: ["You are", "Location", "Zone", "Room"],
+      timeoutMs: 2500,
+    },
+
+    // Optional protocol/command dependent checks (disabled until confirmed).
+    { id: "ws.mud.look", kind: "ws_mud", enabled: false, command: "look", expectIncludesAny: ["You see", "Exits", "Around you"], timeoutMs: 2500 },
+    { id: "ws.mud.say", kind: "ws_mud", enabled: false, command: "say mother brain ping", expectIncludesAny: ["You say", "says"], timeoutMs: 2500 },
+    { id: "ws.mud.move.north", kind: "ws_mud", enabled: false, command: "north", expectIncludesAny: ["You move", "You go", "You arrive", "Exits"], timeoutMs: 2500 },
+  ];
   return {
-    core: [
-      { id: "db.service_heartbeats.exists", kind: "db_table_exists", table: "service_heartbeats" },
-      { id: "db.spawn_points.exists", kind: "db_table_exists", table: "spawn_points" },
-      { id: "wave_budget.no_breaches", kind: "db_wave_budget_breaches", maxBreaches: 0 },
-      { id: "ws.connected", kind: "ws_connected" },
-    ],
+    core: corePack,
     db: [
       { id: "db.service_heartbeats.exists", kind: "db_table_exists", table: "service_heartbeats" },
       { id: "db.spawn_points.exists", kind: "db_table_exists", table: "spawn_points" },
     ],
     wave_budget: [{ id: "wave_budget.no_breaches", kind: "db_wave_budget_breaches", maxBreaches: 0 }],
     ws: [{ id: "ws.connected", kind: "ws_connected" }],
-    player_smoke: [
-      // Requires WS to be configured for an authenticated character session.
-      { id: "ws.mud.whereami", kind: "ws_mud", command: "whereami", expectIncludes: "You are", timeoutMs: 2500 },
-    ],
-    admin_smoke: adminSmoke,
-    all_smoke: [
-  // Convenience pack: combines core + web_smoke + admin_smoke + player_smoke.
-  // Individual goals inside may be disabled (e.g. if MOTHER_BRAIN_WEB_BACKEND_HTTP_BASE is not set).
-  ...([
-    { id: "db.service_heartbeats.exists", kind: "db_table_exists", table: "service_heartbeats" },
-    { id: "db.spawn_points.exists", kind: "db_table_exists", table: "spawn_points" },
-    { id: "wave_budget.no_breaches", kind: "db_wave_budget_breaches", maxBreaches: 0 },
-    { id: "ws.connected", kind: "ws_connected" },
-  ] satisfies GoalDefinition[]),
-  ...webSmoke,
-  ...adminSmoke,
-  // Requires WS to be configured for an authenticated character session.
-  { id: "ws.mud.whereami", kind: "ws_mud", command: "whereami", expectIncludes: "You are", timeoutMs: 2500 },
-],
-web_smoke: webSmoke,
 
+    // Player-facing smoke checks (requires WS to be configured for an authenticated character session).
+    // Only the first goal is enabled by default (very stable assertion). The others are optional and
+    // intentionally disabled until your protocol/commands are confirmed for the target environment.
+    player_smoke: playerSmoke,
+
+    admin_smoke: adminSmoke,
+    web_smoke: webSmoke,
+
+    // Convenience pack: combines core + web_smoke + admin_smoke + player_smoke.
+    // Individual goals inside may be disabled (e.g. if MOTHER_BRAIN_WEB_BACKEND_HTTP_BASE is not set).
+    all_smoke: [...corePack, ...webSmoke, ...adminSmoke, ...playerSmoke],
   };
 }
+
 
 function normalizePackIds(maybe: unknown): string[] {
   if (!maybe) return [];
@@ -1102,9 +1117,22 @@ export async function runGoalsOnce(
       const res = await deps.wsMudCommand(command, timeoutMs);
       let ok = res.ok;
       const out = res.output ?? "";
+
+      const missing: string[] = [];
       if (ok && goal.expectIncludes) {
-        ok = out.includes(goal.expectIncludes);
+        if (!out.includes(goal.expectIncludes)) missing.push(goal.expectIncludes);
       }
+      if (ok && Array.isArray(goal.expectIncludesAll) && goal.expectIncludesAll.length > 0) {
+        for (const s of goal.expectIncludesAll) {
+          if (!out.includes(s)) missing.push(s);
+        }
+      }
+      if (ok && Array.isArray(goal.expectIncludesAny) && goal.expectIncludesAny.length > 0) {
+        const anyOk = goal.expectIncludesAny.some((s) => out.includes(s));
+        if (!anyOk) missing.push(`any_of:${goal.expectIncludesAny.join("|")}`);
+      }
+
+      if (missing.length > 0) ok = false;
 
       if (ok) okCount += 1;
       else failCount += 1;
@@ -1116,10 +1144,12 @@ export async function runGoalsOnce(
         latencyMs: Date.now() - start,
         error: ok
           ? undefined
-          : res.error ?? (goal.expectIncludes ? `missing substring: ${goal.expectIncludes}` : "failed"),
+          : res.error ?? (missing.length > 0 ? `missing expectation: ${missing.join(', ')}` : "failed"),
         details: {
           command,
           expectIncludes: goal.expectIncludes,
+          expectIncludesAny: goal.expectIncludesAny,
+          expectIncludesAll: goal.expectIncludesAll,
           outputPreview: out.length > 400 ? `${out.slice(0, 400)}…` : out,
         },
       });

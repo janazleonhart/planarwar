@@ -14,8 +14,10 @@
     "v0.9 adds optional HTTP status server (/healthz, /readyz, /status) for systemd-friendly liveness/readiness.",
     "v0.9.1 fixes TS compile issues for the HTTP status server wiring.",
     "v0.10 writes DB heartbeats into service_heartbeats so the web-backend admin panel can poll Mother Brain status without requiring a dedicated HTTP server.",
-    "v0.11–v0.19 add wave-budget snapshots/caps/breach awareness + Admin UI support + logging polish.",
-    "v0.20 adds an observe-only Goals Runner: cadence-based checks, optional hot-reload goals file, and structured JSONL goal-run reports under the log directory."
+    "v0.11-v0.19 add wave-budget snapshots/caps/breach awareness + Admin UI support + logging polish.",
+    "v0.20 adds an observe-only Goals Runner: cadence-based checks, optional hot-reload goals file, and structured JSONL goal-run reports under the log directory.",
+    "v0.21 adds ws_mud goal kind (MUD command roundtrip over WS for player-facing smoke checks).",
+    "v0.22-v0.34 add builtin goal packs (admin_smoke/web_smoke/all_smoke), admin-safe fixtures support, and goal report tail tooling for the admin UI."
   ],
   "services": {},
   "entries": {

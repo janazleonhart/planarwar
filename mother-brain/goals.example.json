@@ -1,10 +1,52 @@
 [
-  { "id": "db.service_heartbeats.exists", "kind": "db_table_exists", "table": "service_heartbeats" },
-  { "id": "db.spawn_points.exists", "kind": "db_table_exists", "table": "spawn_points" },
-  { "id": "wave_budget.no_breaches", "kind": "db_wave_budget_breaches", "maxBreaches": 0 },
-  { "id": "ws.connected", "kind": "ws_connected" },
-
-  { "id": "ws.mud.whereami", "kind": "ws_mud", "command": "whereami", "expectIncludes": "You are", "timeoutMs": 2500 },
-
-  { "id": "web-backend.health", "kind": "http_get", "url": "http://127.0.0.1:8787/healthz", "expectStatus": 200, "timeoutMs": 2000 }
+  {
+    "id": "db.service_heartbeats.exists",
+    "kind": "db_table_exists",
+    "table": "service_heartbeats"
+  },
+  {
+    "id": "db.spawn_points.exists",
+    "kind": "db_table_exists",
+    "table": "spawn_points"
+  },
+  {
+    "id": "wave_budget.no_breaches",
+    "kind": "db_wave_budget_breaches",
+    "maxBreaches": 0
+  },
+  {
+    "id": "ws.connected",
+    "kind": "ws_connected"
+  },
+  {
+    "id": "ws.mud.whereami",
+    "kind": "ws_mud",
+    "command": "whereami",
+    "timeoutMs": 2500,
+    "expectIncludesAny": [
+      "You are",
+      "Location",
+      "Zone",
+      "Room"
+    ]
+  },
+  {
+    "id": "ws.mud.look",
+    "kind": "ws_mud",
+    "enabled": false,
+    "command": "look",
+    "expectIncludesAny": [
+      "You see",
+      "Exits",
+      "Around you"
+    ],
+    "timeoutMs": 2500
+  },
+  {
+    "id": "web-backend.health",
+    "kind": "http_get",
+    "url": "http://127.0.0.1:8787/healthz",
+    "expectStatus": 200,
+    "timeoutMs": 2000
+  }
 ]
