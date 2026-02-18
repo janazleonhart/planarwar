@@ -627,6 +627,42 @@ function appendJsonl(filePath: string, obj: unknown): void {
   }
 }
 
+
+type FetchErrorInfo = {
+  message: string;
+  details?: Record<string, unknown>;
+};
+
+function describeFetchError(e: unknown): FetchErrorInfo {
+  // Node's fetch (undici) often throws a TypeError("fetch failed") with a nested `cause`
+  // containing the real network error (ECONNREFUSED, ENOTFOUND, etc).
+  const err = e instanceof Error ? e : new Error(String(e));
+  const anyErr = err as any;
+  const cause = anyErr?.cause;
+  const details: Record<string, unknown> = {
+    name: err.name,
+    message: err.message,
+  };
+
+  if (cause && typeof cause === "object") {
+    details.cause = {
+      name: (cause as any).name,
+      message: (cause as any).message,
+      code: (cause as any).code,
+      errno: (cause as any).errno,
+      syscall: (cause as any).syscall,
+      address: (cause as any).address,
+      port: (cause as any).port,
+    };
+  }
+
+  // Build a human readable message.
+  const code = (cause as any)?.code;
+  const msg = code ? `${err.message} (${code})` : err.message;
+
+  return { message: msg, details };
+}
+
 async function httpGet(args: {
   url: string;
   timeoutMs: number;
@@ -637,6 +673,7 @@ async function httpGet(args: {
   ok: boolean;
   status?: number;
   error?: string;
+  errorDetails?: Record<string, unknown>;
   bodyPreview?: string;
 }> {
   // Node 18+ global fetch.
@@ -669,7 +706,8 @@ async function httpGet(args: {
       error: statusOk && !bodyOk ? `missing substring: ${expectIncludes}` : undefined,
     };
   } catch (e: unknown) {
-    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+    const info = describeFetchError(e);
+    return { ok: false, error: info.message, errorDetails: info.details };
   } finally {
     clearTimeout(t);
   }
@@ -770,6 +808,7 @@ async function httpJson(args: {
   ok: boolean;
   status?: number;
   error?: string;
+  errorDetails?: Record<string, unknown>;
   bodyPreview?: string;
   extracted?: unknown;
 }> {
@@ -836,7 +875,8 @@ async function httpJson(args: {
           : checks.find((c) => !c.ok)?.err ?? "json expectation failed",
     };
   } catch (e: unknown) {
-    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+    const info = describeFetchError(e);
+    return { ok: false, error: info.message, errorDetails: info.details };
   } finally {
     clearTimeout(t);
   }
@@ -857,6 +897,7 @@ async function httpPostJson(args: {
   ok: boolean;
   status?: number;
   error?: string;
+  errorDetails?: Record<string, unknown>;
   bodyPreview?: string;
   extracted?: unknown;
 }> {
@@ -941,7 +982,8 @@ async function httpPostJson(args: {
           : checks.find((c) => !c.ok)?.err ?? "json expectation failed",
     };
   } catch (e: unknown) {
-    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+    const info = describeFetchError(e);
+    return { ok: false, error: info.message, errorDetails: info.details };
   } finally {
     clearTimeout(t);
   }
@@ -1189,6 +1231,8 @@ export async function runGoalsOnce(
           expectStatus,
           expectIncludes: goal.expectIncludes,
           bodyPreview: res.bodyPreview,
+          fetchError: res.errorDetails,
+          hint: res.ok ? undefined : "If this is 'fetch failed', verify the target service is running and reachable from Mother Brain (MOTHER_BRAIN_WEB_BACKEND_HTTP_BASE / network).",
         },
       });
       continue;
@@ -1234,6 +1278,8 @@ export async function runGoalsOnce(
           expectJson: goal.expectJson,
           extracted: res.extracted,
           bodyPreview: res.bodyPreview,
+          fetchError: res.errorDetails,
+          hint: res.ok ? undefined : "If this is 'fetch failed', verify the target service is running and reachable from Mother Brain (MOTHER_BRAIN_WEB_BACKEND_HTTP_BASE / network).",
         },
       });
       continue;
