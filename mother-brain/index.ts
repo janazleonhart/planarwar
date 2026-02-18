@@ -34,7 +34,8 @@ import { installFileLogTap } from "./FileLogTap";
 import {
   createGoalsState,
   getActiveGoals,
-  runGoalsOnce,
+  getGoalSuites,
+  runGoalSuites,
   setInMemoryGoals,
   type GoalDefinition,
   type GoalRunReport,
@@ -126,6 +127,18 @@ type TickSnapshot = {
     pingLatencyMs?: number;
     lastPongIso?: string | null;
     pingError?: string;
+  };
+
+  goals?: {
+    enabled: boolean;
+    everyTicks: number;
+    packIds: string[];
+    filePath?: string;
+    reportDir?: string;
+    lastRunIso: string | null;
+    lastOk: boolean | null;
+    lastSummary: GoalRunReport["summary"] | null;
+    lastBySuite?: Record<string, { ok: boolean; summary: GoalRunReport["summary"] }>;
   };
 };
 
@@ -387,6 +400,10 @@ const ConfigSchema = z
     // Optional JSON file containing an array of GoalDefinition (hot-reloaded).
     MOTHER_BRAIN_GOALS_FILE: z.string().optional(),
 
+    // Optional comma-separated list of builtin goal packs (suites).
+    // Ignored if GOALS_FILE exists with a non-empty array.
+    MOTHER_BRAIN_GOALS_PACKS: z.string().optional(),
+
     // Optional report directory. If unset, we will derive from PW_FILELOG.
     MOTHER_BRAIN_GOALS_REPORT_DIR: z.string().optional(),
   })
@@ -423,6 +440,7 @@ type MotherBrainConfig = {
 
   goalsEveryTicks: number;
   goalsFile?: string;
+  goalsPacks?: string;
   goalsReportDir?: string;
 };
 
@@ -468,6 +486,7 @@ function parseConfig(): MotherBrainConfig {
 
     goalsEveryTicks: env.MOTHER_BRAIN_GOALS_EVERY_TICKS,
     goalsFile: env.MOTHER_BRAIN_GOALS_FILE,
+    goalsPacks: env.MOTHER_BRAIN_GOALS_PACKS,
     goalsReportDir: env.MOTHER_BRAIN_GOALS_REPORT_DIR,
   };
 }
@@ -1169,6 +1188,7 @@ function startHttpServer(cfg: MotherBrainConfig, state: StatusState): http.Serve
     // ---------------------------------------------------------------------
 
     if (url === "/goals" && req.method === "GET") {
+      const suites = getGoalSuites(state.goals.state);
       res.statusCode = 200;
       res.setHeader("content-type", "application/json");
       res.end(
@@ -1177,12 +1197,15 @@ function startHttpServer(cfg: MotherBrainConfig, state: StatusState): http.Serve
           ts: nowIso(),
           everyTicks: state.goals.state.everyTicks,
           filePath: state.goals.state.filePath,
-          reportFile: state.goals.state.reportFilePath,
+          reportDir: state.goals.state.reportDir,
+          packIds: state.goals.state.packIds,
           inMemory: Boolean(state.goals.state.inMemoryGoals),
+          suites,
           activeGoals: getActiveGoals(state.goals.state),
           lastRunIso: state.goals.state.lastRunIso,
           lastOk: state.goals.state.lastOk,
           lastSummary: state.goals.state.lastSummary,
+          lastBySuite: state.goals.state.lastBySuite ?? null,
         })
       );
       return;
@@ -1220,29 +1243,25 @@ function startHttpServer(cfg: MotherBrainConfig, state: StatusState): http.Serve
         const wb = state.lastSnapshot?.db.brainWaveBudget ?? null;
         const wsState = state.lastSnapshot?.ws.state ?? "disabled";
 
-        const report = await runGoalsOnce(
-          state.goals.state,
-          {
-            nowIso,
-            dbQuery: async () => {
-              throw new Error("db_query unavailable from HTTP endpoint; rely on scheduled runs");
-            },
-            waveBudget:
-              wb && wb.ok
-                ? { ok: true, breaches: wb.breaches }
-                : wb && !wb.ok
-                  ? { ok: false, reason: wb.reason }
-                  : null,
-            wsState,
-            log,
+        const suiteRun = await runGoalSuites(state.goals.state, {
+          nowIso,
+          dbQuery: async () => {
+            throw new Error("db_query unavailable from HTTP endpoint; rely on scheduled runs");
           },
-          tick
-        );
+          waveBudget:
+            wb && wb.ok
+              ? { ok: true, breaches: wb.breaches }
+              : wb && !wb.ok
+                ? { ok: false, reason: wb.reason }
+                : null,
+          wsState,
+          log,
+        }, tick);
 
-        state.goals.lastReport = report;
-        res.statusCode = report.ok ? 200 : 503;
+        state.goals.lastReport = suiteRun.overall;
+        res.statusCode = suiteRun.ok ? 200 : 503;
         res.setHeader("content-type", "application/json");
-        res.end(JSON.stringify({ ok: report.ok, ts: nowIso(), report }));
+        res.end(JSON.stringify({ ok: suiteRun.ok, ts: nowIso(), bySuite: suiteRun.bySuite, overall: suiteRun.overall }));
       } catch (e: unknown) {
         res.statusCode = 500;
         res.setHeader("content-type", "application/json");
@@ -1306,6 +1325,7 @@ async function main(): Promise<void> {
     hasWsUrl: Boolean(cfg.wsUrl),
     goalsEveryTicks: cfg.goalsEveryTicks,
     goalsFile: goalsFileAbs,
+    goalsPacks: cfg.goalsPacks,
     goalsReportDir,
     pid: process.pid,
     node: process.version,
@@ -1335,6 +1355,7 @@ async function main(): Promise<void> {
         filePath: goalsFileAbs,
         reportDir: goalsReportDir,
         everyTicks: cfg.goalsEveryTicks,
+        packIds: cfg.goalsPacks,
       }),
       lastReport: null,
     },
@@ -1422,22 +1443,20 @@ async function main(): Promise<void> {
               ? { ok: false as const, reason: brainWaveBudget.reason }
               : null;
 
-        state.goals.lastReport = await runGoalsOnce(
-          state.goals.state,
-          {
-            nowIso,
-            dbQuery: async (sql: string, params?: any[]) => {
-              const r = await dbProbe.query(sql, params);
-              if (!r) return null;
-              return { rows: r.rows };
-            },
-            waveBudget: wbForGoals,
-            wsState: wsProbe.isEnabled() ? wsProbe.getState() : "disabled",
-            wsMudCommand: wsProbe.isEnabled() ? (cmd: string, timeoutMs: number) => wsProbe.mudCommand(cmd, timeoutMs) : undefined,
-            log,
+        const suiteRun = await runGoalSuites(state.goals.state, {
+          nowIso,
+          dbQuery: async (sql: string, params?: any[]) => {
+            const r = await dbProbe.query(sql, params);
+            if (!r) return null;
+            return { rows: r.rows };
           },
-          tick
-        );
+          waveBudget: wbForGoals,
+          wsState: wsProbe.isEnabled() ? wsProbe.getState() : "disabled",
+          wsMudCommand: wsProbe.isEnabled() ? (cmd: string, timeoutMs: number) => wsProbe.mudCommand(cmd, timeoutMs) : undefined,
+          log,
+        }, tick);
+
+        state.goals.lastReport = suiteRun.overall;
       } catch (e: unknown) {
         gatedLog("warn", "Goals runner failed", { error: e instanceof Error ? e.message : String(e) });
       }
@@ -1471,6 +1490,18 @@ async function main(): Promise<void> {
               ...(wsPing.ok ? {} : { pingError: wsPing.error ?? "unknown" }),
             }
           : {}),
+      },
+
+      goals: {
+        enabled: cfg.goalsEveryTicks > 0,
+        everyTicks: cfg.goalsEveryTicks,
+        packIds: state.goals.state.packIds,
+        filePath: state.goals.state.filePath,
+        reportDir: state.goals.state.reportDir,
+        lastRunIso: state.goals.state.lastRunIso,
+        lastOk: state.goals.state.lastOk,
+        lastSummary: state.goals.state.lastSummary,
+        lastBySuite: state.goals.state.lastBySuite,
       },
     };
 

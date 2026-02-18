@@ -60,7 +60,8 @@ export type GoalRunReport = {
 export type GoalsState = {
   filePath?: string;
   reportDir?: string;
-  reportFilePath?: string;
+  // Note: reports are written per-suite (pack) when packs are active.
+  // When custom goals are active (file/in-memory), a single "custom" report is written.
   everyTicks: number;
 
   // Optional suite selection
@@ -69,6 +70,15 @@ export type GoalsState = {
   lastRunIso: string | null;
   lastOk: boolean | null;
   lastSummary: GoalRunReport["summary"] | null;
+
+  // Per-suite status (only populated when packs are used)
+  lastBySuite?: Record<
+    string,
+    {
+      ok: boolean;
+      summary: GoalRunReport["summary"];
+    }
+  >;
 
   // If set via HTTP, overrides file goals until cleared.
   inMemoryGoals: GoalDefinition[] | null;
@@ -220,14 +230,10 @@ export function createGoalsState(args: {
   packIds?: string[] | string;
 }): GoalsState {
   const reportDir = args.reportDir;
-  const reportFilePath = reportDir
-    ? path.resolve(reportDir, `mother-brain-goals-${new Date().toISOString().slice(0, 10)}.jsonl`)
-    : undefined;
 
   return {
     filePath: args.filePath,
     reportDir,
-    reportFilePath,
     everyTicks: args.everyTicks,
     packIds: normalizePackIds(args.packIds),
     lastRunIso: null,
@@ -237,20 +243,50 @@ export function createGoalsState(args: {
   };
 }
 
-export function setInMemoryGoals(state: GoalsState, goals: GoalDefinition[] | null): void {
-  state.inMemoryGoals = goals;
+function todayStamp(): string {
+  return new Date().toISOString().slice(0, 10);
 }
 
-export function getActiveGoals(state: GoalsState, deps?: Pick<GoalsDeps, "log">): GoalDefinition[] {
-  if (state.inMemoryGoals) return state.inMemoryGoals;
+function sanitizeSuiteId(id: string): string {
+  return id
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-/g, "")
+    .replace(/-$/g, "")
+    .slice(0, 64);
+}
 
-  // File takes precedence if it exists and contains a non-empty array.
+function reportFilePathForSuite(state: GoalsState, suiteId: string): string | undefined {
+  if (!state.reportDir) return undefined;
+  const safe = sanitizeSuiteId(suiteId) || "suite";
+  return path.resolve(state.reportDir, `mother-brain-goals-${safe}-${todayStamp()}.jsonl`);
+}
+
+export type GoalSuite = {
+  id: string;
+  source: "in_memory" | "file" | "packs" | "default";
+  goals: GoalDefinition[];
+};
+
+export function getGoalSuites(
+  state: GoalsState,
+  deps?: Pick<GoalsDeps, "log">
+): { suites: GoalSuite[]; unknownPacks: string[] } {
+  // In-memory overrides everything.
+  if (state.inMemoryGoals) {
+    return { suites: [{ id: "custom", source: "in_memory", goals: state.inMemoryGoals }], unknownPacks: [] };
+  }
+
+  // File takes precedence if present and non-empty.
   if (state.filePath) {
     try {
       if (fs.existsSync(state.filePath)) {
         const parsed = safeReadJsonFile(state.filePath);
         const goals = normalizeGoals(parsed);
-        if (goals.length > 0) return goals;
+        if (goals.length > 0) {
+          return { suites: [{ id: "custom", source: "file", goals }], unknownPacks: [] };
+        }
       }
     } catch (e: unknown) {
       deps?.log?.("warn", "Failed to load goals file; falling back", {
@@ -261,17 +297,39 @@ export function getActiveGoals(state: GoalsState, deps?: Pick<GoalsDeps, "log">)
     }
   }
 
-  // Packs if configured.
+  // Packs: each pack becomes its own suite/report.
   if (state.packIds.length > 0) {
-    const resolved = resolveGoalPacks(state.packIds);
-    if (resolved.unknown.length > 0) {
-      deps?.log?.("warn", "Unknown goal pack ids ignored", { unknown: resolved.unknown });
+    const packs = builtinGoalPacks();
+    const suites: GoalSuite[] = [];
+    const unknown: string[] = [];
+
+    for (const raw of state.packIds) {
+      const id = raw as GoalPackId;
+      const pack = (packs as Record<string, GoalDefinition[]>)[id];
+      if (!pack) {
+        unknown.push(raw);
+        continue;
+      }
+      suites.push({ id: raw, source: "packs", goals: pack });
     }
-    if (resolved.goals.length > 0) return resolved.goals;
+
+    if (unknown.length > 0) deps?.log?.("warn", "Unknown goal pack ids ignored", { unknown });
+    if (suites.length > 0) return { suites, unknownPacks: unknown };
   }
 
   // Default suite.
-  return defaultGoals();
+  return { suites: [{ id: "default", source: "default", goals: defaultGoals() }], unknownPacks: [] };
+}
+
+export function setInMemoryGoals(state: GoalsState, goals: GoalDefinition[] | null): void {
+  state.inMemoryGoals = goals;
+}
+
+export function getActiveGoals(state: GoalsState, deps?: Pick<GoalsDeps, "log">): GoalDefinition[] {
+  // Back-compat: return a single flattened list.
+  const suites = getGoalSuites(state, deps).suites;
+  if (suites.length === 1) return suites[0].goals;
+  return mergeGoalsById(suites.flatMap((s) => s.goals));
 }
 
 function ensureDir(dir: string): void {
@@ -305,8 +363,13 @@ async function httpGet(url: string, timeoutMs: number): Promise<{ ok: boolean; s
   }
 }
 
-export async function runGoalsOnce(state: GoalsState, deps: GoalsDeps, tick: number): Promise<GoalRunReport> {
-  const goals = getActiveGoals(state, deps);
+export async function runGoalsOnce(
+  state: GoalsState,
+  deps: GoalsDeps,
+  tick: number,
+  opts?: { suiteId?: string; goals?: GoalDefinition[]; reportFilePath?: string }
+): Promise<GoalRunReport> {
+  const goals = opts?.goals ?? getActiveGoals(state, deps);
   const ts = deps.nowIso();
 
   const results: GoalRunResult[] = [];
@@ -542,18 +605,66 @@ export async function runGoalsOnce(state: GoalsState, deps: GoalsDeps, tick: num
   state.lastOk = report.ok;
   state.lastSummary = report.summary;
 
-  if (state.reportFilePath) {
-    appendJsonl(state.reportFilePath, report);
-  }
+  const reportFile = opts?.reportFilePath ?? (opts?.suiteId ? reportFilePathForSuite(state, opts.suiteId) : undefined);
+  if (reportFile) appendJsonl(reportFile, report);
 
   // Also emit a compact log line so PW_FILELOG captures it.
   deps.log(report.ok ? "info" : "warn", "Goals run", {
     tick,
     ok: report.ok,
     summary: report.summary,
-    reportFile: state.reportFilePath,
+    reportFile,
     packs: state.packIds,
+    suiteId: opts?.suiteId,
   });
 
   return report;
+}
+
+export async function runGoalSuites(
+  state: GoalsState,
+  deps: GoalsDeps,
+  tick: number
+): Promise<{ ok: boolean; bySuite: Record<string, GoalRunReport>; overall: GoalRunReport }> {
+  const { suites } = getGoalSuites(state, deps);
+  const bySuite: Record<string, GoalRunReport> = {};
+
+  let overallOk = true;
+  let total = 0;
+  let okCount = 0;
+  let fail = 0;
+  let skipped = 0;
+
+  for (const suite of suites) {
+    const report = await runGoalsOnce(state, deps, tick, {
+      suiteId: suite.id,
+      goals: suite.goals,
+      reportFilePath: reportFilePathForSuite(state, suite.id),
+    });
+    bySuite[suite.id] = report;
+    overallOk = overallOk && report.ok;
+    total += report.summary.total;
+    okCount += report.summary.ok;
+    fail += report.summary.fail;
+    skipped += report.summary.skipped;
+  }
+
+  const overall: GoalRunReport = {
+    ts: deps.nowIso(),
+    tick,
+    ok: overallOk,
+    results: [],
+    summary: { total, ok: okCount, fail, skipped },
+  };
+
+  state.lastBySuite = Object.fromEntries(
+    Object.entries(bySuite).map(([id, r]) => [id, { ok: r.ok, summary: r.summary }])
+  );
+
+  // Keep the legacy fields as the overall view.
+  state.lastRunIso = overall.ts;
+  state.lastOk = overall.ok;
+  state.lastSummary = overall.summary;
+
+  return { ok: overallOk, bySuite, overall };
 }
