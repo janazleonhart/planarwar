@@ -244,7 +244,8 @@
         "Mother Brain status viewer in the Admin UI.",
         "Uses same-origin /api requests (dev via Vite proxy; prod via reverse proxy / same host).",
         "Endpoint: GET /api/admin/mother_brain/status (web-backend reads from service_heartbeats).",
-        "Shows readiness, last tick age, and the last_status_json snapshot."
+        "Shows readiness, last tick age, and the last_status_json snapshot.",
+        "Shows goals health (OK/FAIL/STALE) + failing suites (from snapshot.goals.health / snapshot.goals.lastBySuite)."
       ],
       "owns": [
         "UI polling state (auto-refresh interval)",

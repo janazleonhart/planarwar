@@ -192,6 +192,102 @@ function toInt(v: unknown): number | null {
   return null;
 }
 
+type GoalsHealthSummary = {
+  status: "OK" | "FAIL" | "STALE";
+  ageSec: number | null;
+  okCount: number | null;
+  failCount: number | null;
+  totalCount: number | null;
+  failingSuites: string[];
+};
+
+type GoalsSuiteLast = {
+  suiteId: string;
+  status: "OK" | "FAIL" | "STALE";
+  ageSec: number | null;
+  okCount: number | null;
+  failCount: number | null;
+  totalCount: number | null;
+};
+
+function parseGoalsHealthSummary(snapshot: any): { overall: GoalsHealthSummary | null; suites: GoalsSuiteLast[] } {
+  const goals = snapshot && typeof snapshot === "object" ? (snapshot as any).goals : null;
+  const health = goals && typeof goals === "object" ? (goals as any).health : null;
+  const lastBySuite = goals && typeof goals === "object" ? (goals as any).lastBySuite : null;
+
+  const suites: GoalsSuiteLast[] = [];
+  if (lastBySuite && typeof lastBySuite === "object") {
+    for (const [suiteId, v] of Object.entries(lastBySuite)) {
+      if (!suiteId || typeof suiteId !== "string") continue;
+      if (!v || typeof v !== "object") continue;
+      const o = v as any;
+      const status = o.status === "OK" || o.status === "FAIL" || o.status === "STALE" ? o.status : null;
+      if (!status) continue;
+
+      suites.push({
+        suiteId,
+        status,
+        ageSec: typeof o.ageSec === "number" && Number.isFinite(o.ageSec) ? o.ageSec : null,
+        okCount: typeof o.okCount === "number" && Number.isFinite(o.okCount) ? o.okCount : null,
+        failCount: typeof o.failCount === "number" && Number.isFinite(o.failCount) ? o.failCount : null,
+        totalCount: typeof o.totalCount === "number" && Number.isFinite(o.totalCount) ? o.totalCount : null,
+      });
+    }
+    suites.sort((a, b) => a.suiteId.localeCompare(b.suiteId));
+  }
+
+  if (!health || typeof health !== "object") return { overall: null, suites };
+
+  const status = (health as any).status;
+  const normStatus = status === "OK" || status === "FAIL" || status === "STALE" ? status : null;
+
+  const ageSec = typeof (health as any).ageSec === "number" && Number.isFinite((health as any).ageSec) ? (health as any).ageSec : null;
+
+  const overallObj = (health as any).overall && typeof (health as any).overall === "object" ? (health as any).overall : null;
+  const okCount = overallObj && typeof overallObj.okCount === "number" && Number.isFinite(overallObj.okCount) ? overallObj.okCount : null;
+  const failCount = overallObj && typeof overallObj.failCount === "number" && Number.isFinite(overallObj.failCount) ? overallObj.failCount : null;
+  const totalCount = overallObj && typeof overallObj.totalCount === "number" && Number.isFinite(overallObj.totalCount) ? overallObj.totalCount : null;
+
+  const suitesObj = (health as any).suites && typeof (health as any).suites === "object" ? (health as any).suites : null;
+  const failingSuites =
+    suitesObj && Array.isArray(suitesObj.failingSuites) && suitesObj.failingSuites.every((x: any) => typeof x === "string")
+      ? (suitesObj.failingSuites as string[])
+      : [];
+
+  if (!normStatus) return { overall: null, suites };
+
+  return {
+    overall: {
+      status: normStatus,
+      ageSec,
+      okCount,
+      failCount,
+      totalCount,
+      failingSuites,
+    },
+    suites,
+  };
+}
+
+function goalsBadgeStyle(status: "OK" | "FAIL" | "STALE"): any {
+  const base: any = {
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: "2px 10px",
+    borderRadius: 999,
+    fontWeight: 800,
+    fontSize: 12,
+    letterSpacing: 0.3,
+    border: "1px solid #ddd",
+  };
+
+  if (status === "OK") return { ...base, background: "#e8f7ee", color: "#0a6b2b", borderColor: "#bfe6cc" };
+  if (status === "FAIL") return { ...base, background: "#fdecec", color: "#9b1111", borderColor: "#f3b6b6" };
+  return { ...base, background: "#fff6e6", color: "#8a4b00", borderColor: "#f1d6a6" };
+}
+
+
 export function AdminMotherBrainPage() {
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
@@ -205,6 +301,7 @@ export function AdminMotherBrainPage() {
   const [waveNotice, setWaveNotice] = useState<string | null>(null);
 
   const snapshot = data?.last_status_json ?? null;
+  const goalsSummary = useMemo(() => parseGoalsHealthSummary(snapshot), [snapshot]);
 
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [everyMs, setEveryMs] = useState(2000);
@@ -514,6 +611,102 @@ export function AdminMotherBrainPage() {
             </pre>
             {copiedSnapshot ? <div>Copied.</div> : null}
           </div>
+        
+        <div style={{ marginTop: 14, border: "1px solid #ddd", borderRadius: 10, padding: 12 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
+            <div>
+              <div style={{ fontWeight: 700, marginBottom: 2 }}>Goals health</div>
+              <div style={{ fontSize: 12, opacity: 0.8 }}>
+                Mother Brain self-check suites (from snapshot). Use this as a quick pass/fail/stale signal.
+              </div>
+            </div>
+            {goalsSummary.overall ? <span style={goalsBadgeStyle(goalsSummary.overall.status)}>{goalsSummary.overall.status}</span> : null}
+          </div>
+
+          {!goalsSummary.overall ? (
+            <div style={{ marginTop: 8 }}>
+              <span>No goals health found in the latest snapshot.</span>{" "}
+              <span style={{ opacity: 0.8 }}>
+                Enable goals cadence in Mother Brain (e.g. <code>MOTHER_BRAIN_GOALS_EVERY_TICKS</code>).
+              </span>
+            </div>
+          ) : (
+            <div style={{ marginTop: 10 }}>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 14, alignItems: "center" }}>
+                <div>
+                  <span style={{ opacity: 0.8 }}>age</span>{" "}
+                  <code>{goalsSummary.overall.ageSec == null ? "" : `${Math.round(goalsSummary.overall.ageSec)}s`}</code>
+                </div>
+                <div>
+                  <span style={{ opacity: 0.8 }}>ok</span>{" "}
+                  <code>{goalsSummary.overall.okCount == null ? "" : goalsSummary.overall.okCount}</code>
+                </div>
+                <div>
+                  <span style={{ opacity: 0.8 }}>fail</span>{" "}
+                  <code>{goalsSummary.overall.failCount == null ? "" : goalsSummary.overall.failCount}</code>
+                </div>
+                <div>
+                  <span style={{ opacity: 0.8 }}>total</span>{" "}
+                  <code>{goalsSummary.overall.totalCount == null ? "" : goalsSummary.overall.totalCount}</code>
+                </div>
+                {goalsSummary.overall.failingSuites.length ? (
+                  <div>
+                    <span style={{ opacity: 0.8 }}>failing suites</span>{" "}
+                    <code>{goalsSummary.overall.failingSuites.join(", ")}</code>
+                  </div>
+                ) : null}
+              </div>
+
+              {goalsSummary.suites.length ? (
+                <div style={{ marginTop: 10 }}>
+                  <div style={{ fontWeight: 700, marginBottom: 6, fontSize: 13 }}>Suites</div>
+                  <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                    <thead>
+                      <tr style={{ textAlign: "left" }}>
+                        <th style={{ padding: "6px 6px", borderBottom: "1px solid #eee" }}>suite</th>
+                        <th style={{ padding: "6px 6px", borderBottom: "1px solid #eee" }}>status</th>
+                        <th style={{ padding: "6px 6px", borderBottom: "1px solid #eee" }}>age</th>
+                        <th style={{ padding: "6px 6px", borderBottom: "1px solid #eee" }}>ok</th>
+                        <th style={{ padding: "6px 6px", borderBottom: "1px solid #eee" }}>fail</th>
+                        <th style={{ padding: "6px 6px", borderBottom: "1px solid #eee" }}>total</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {goalsSummary.suites.map((s) => (
+                        <tr key={s.suiteId}>
+                          <td style={{ padding: "6px 6px", borderBottom: "1px solid #f5f5f5" }}>
+                            <code>{s.suiteId}</code>
+                          </td>
+                          <td style={{ padding: "6px 6px", borderBottom: "1px solid #f5f5f5" }}>
+                            <span style={goalsBadgeStyle(s.status)}>{s.status}</span>
+                          </td>
+                          <td style={{ padding: "6px 6px", borderBottom: "1px solid #f5f5f5" }}>
+                            <code>{s.ageSec == null ? "" : `${Math.round(s.ageSec)}s`}</code>
+                          </td>
+                          <td style={{ padding: "6px 6px", borderBottom: "1px solid #f5f5f5" }}>
+                            <code>{s.okCount == null ? "" : s.okCount}</code>
+                          </td>
+                          <td style={{ padding: "6px 6px", borderBottom: "1px solid #f5f5f5" }}>
+                            <code>{s.failCount == null ? "" : s.failCount}</code>
+                          </td>
+                          <td style={{ padding: "6px 6px", borderBottom: "1px solid #f5f5f5" }}>
+                            <code>{s.totalCount == null ? "" : s.totalCount}</code>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+
+                  <div style={{ marginTop: 6, fontSize: 12, opacity: 0.8 }}>
+                    Tip: suites come from <code>MOTHER_BRAIN_GOALS_PACKS</code> (or custom goals file/in-memory goals).
+                  </div>
+                </div>
+              ) : null}
+            </div>
+          )}
+        </div>
+
+
         </div>
 
         <div style={{ marginTop: 14, border: "1px solid #ddd", borderRadius: 10, padding: 12 }}>
