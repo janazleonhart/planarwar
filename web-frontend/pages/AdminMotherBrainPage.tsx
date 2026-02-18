@@ -224,6 +224,20 @@ type GoalsSuiteLast = {
   totalCount: number | null;
 };
 
+type GoalsReportTailResponse =
+  | {
+      ok: true;
+      suite: string;
+      date: string;
+      filename: string;
+      lines: any[];
+    }
+  | {
+      ok: false;
+      error: string;
+      detail?: string;
+    };
+
 function parseGoalsHealthSummary(snapshot: any): { overall: GoalsHealthSummary | null; suites: GoalsSuiteLast[] } {
   const goals = snapshot && typeof snapshot === "object" ? (snapshot as any).goals : null;
   const health = goals && typeof goals === "object" ? (goals as any).health : null;
@@ -339,6 +353,17 @@ export function AdminMotherBrainPage() {
   const snapshot = data?.last_status_json ?? null;
   const goalsSummary = useMemo(() => parseGoalsHealthSummary(snapshot), [snapshot]);
 
+  const suiteOptions = useMemo(() => {
+    const s = goalsSummary.suites.map((x) => x.suiteId).filter((x) => typeof x === "string" && x.trim() !== "");
+    if (!s.length) return ["custom"];
+    return s;
+  }, [goalsSummary.suites]);
+
+  const [reportSuite, setReportSuite] = useState<string>("custom");
+  const [reportLines, setReportLines] = useState(200);
+  const [reportBusy, setReportBusy] = useState(false);
+  const [reportData, setReportData] = useState<GoalsReportTailResponse | null>(null);
+
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [everyMs, setEveryMs] = useState(2000);
   const timerRef = useRef<number | null>(null);
@@ -440,6 +465,23 @@ export function AdminMotherBrainPage() {
       setError(e?.message ? String(e.message) : String(e));
     } finally {
       setGoalsRunBusy(false);
+    }
+  };
+
+  const loadReportTail = async () => {
+    if (reportBusy) return;
+    setReportBusy(true);
+    setReportData(null);
+    try {
+      const suite = (reportSuite || "custom").trim();
+      const lines = Math.max(1, Math.min(500, Math.trunc(reportLines || 200)));
+      const qs = new URLSearchParams({ suite, lines: String(lines) }).toString();
+      const r = await api<GoalsReportTailResponse>(`/api/admin/mother_brain/goals/report_tail?${qs}`);
+      setReportData(r);
+    } catch (e: any) {
+      setReportData({ ok: false, error: "report_tail_failed", detail: e?.message ? String(e.message) : String(e) });
+    } finally {
+      setReportBusy(false);
     }
   };
 
@@ -852,6 +894,66 @@ export function AdminMotherBrainPage() {
                   </details>
                 </div>
               ) : null}
+
+              <div style={{ marginTop: 10 }}>
+                <details>
+                  <summary style={{ cursor: "pointer", fontWeight: 700, fontSize: 13 }}>Goal report tail (JSONL)</summary>
+                  <div style={{ marginTop: 8, fontSize: 12, opacity: 0.85 }}>
+                    Reads the last N lines from today’s <code>mother-brain-goals-&lt;suite&gt;-YYYY-MM-DD.jsonl</code> file (via web-backend).
+                  </div>
+
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 10, alignItems: "center", marginTop: 10 }}>
+                    <label style={{ display: "inline-flex", gap: 6, alignItems: "center" }}>
+                      <span style={{ opacity: 0.8 }}>suite</span>
+                      <select value={reportSuite} onChange={(e) => setReportSuite(String(e.target.value))}>
+                        {suiteOptions.map((s) => (
+                          <option key={s} value={s}>
+                            {s}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+
+                    <label style={{ display: "inline-flex", gap: 6, alignItems: "center" }}>
+                      <span style={{ opacity: 0.8 }}>lines</span>
+                      <input
+                        type="number"
+                        min={1}
+                        max={500}
+                        value={reportLines}
+                        onChange={(e) => setReportLines(Math.max(1, Math.min(500, Number(e.target.value) || 200)))}
+                        style={{ width: 90 }}
+                      />
+                    </label>
+
+                    <button disabled={reportBusy} onClick={() => void loadReportTail()}>
+                      {reportBusy ? "Loading…" : "Load tail"}
+                    </button>
+                  </div>
+
+                  {reportData ? (
+                    reportData.ok ? (
+                      <div style={{ marginTop: 10 }}>
+                        <div style={{ fontSize: 12, opacity: 0.85, marginBottom: 6 }}>
+                          <code>{reportData.filename}</code>
+                        </div>
+                        <pre style={{ maxHeight: 240, overflow: "auto", border: "1px solid #eee", padding: 10 }}>
+                          {prettyJson(reportData.lines)}
+                        </pre>
+                      </div>
+                    ) : (
+                      <div style={{ marginTop: 10, color: "#b00" }}>
+                        <div style={{ fontWeight: 700 }}>{reportData.error}</div>
+                        {reportData.detail ? <div style={{ fontSize: 12 }}>{reportData.detail}</div> : null}
+                      </div>
+                    )
+                  ) : (
+                    <div style={{ marginTop: 10, fontSize: 12, opacity: 0.85 }}>
+                      Tip: set <code>PW_MOTHER_BRAIN_GOALS_REPORT_DIR</code> or <code>PW_FILELOG</code> on web-backend to enable tail viewing.
+                    </div>
+                  )}
+                </details>
+              </div>
 
               {goalsRunResult ? (
                 <details style={{ marginTop: 10 }}>

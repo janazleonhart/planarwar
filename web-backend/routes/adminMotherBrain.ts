@@ -7,6 +7,8 @@
 
 import { Router } from "express";
 import { db } from "../../worldcore/db/Database";
+import fs from "node:fs/promises";
+import path from "node:path";
 
 const router = Router();
 
@@ -88,6 +90,27 @@ function toInt(v: unknown): number | null {
     if (Number.isFinite(n)) return Math.trunc(n);
   }
   return null;
+}
+
+function motherBrainGoalsReportDir(): string | null {
+  const explicit = typeof process.env.PW_MOTHER_BRAIN_GOALS_REPORT_DIR === "string" ? process.env.PW_MOTHER_BRAIN_GOALS_REPORT_DIR.trim() : "";
+  if (explicit) return explicit;
+
+  const filelog = typeof process.env.PW_FILELOG === "string" ? process.env.PW_FILELOG.trim() : "";
+  if (!filelog) return null;
+
+  // PW_FILELOG typically looks like /path/to/log/{scope}.log
+  const base = path.dirname(filelog);
+  return path.join(base, "mother-brain");
+}
+
+function safeSuiteId(v: unknown): string | null {
+  if (typeof v !== "string") return null;
+  const s = v.trim();
+  if (!s) return null;
+  // Prevent path traversal or weirdness.
+  if (!/^[A-Za-z0-9_-]+$/.test(s)) return null;
+  return s;
 }
 
 router.get("/status", async (_req, res) => {
@@ -215,6 +238,59 @@ router.post("/wave_budget", async (req, res) => {
       return;
     }
 
+    res.status(500).json({ ok: false, error: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+// Tail Mother Brain JSONL goal reports (optional).
+// This is a safe, admin-only convenience so you don't have to SSH into logs.
+// Enabled only when PW_MOTHER_BRAIN_GOALS_REPORT_DIR or PW_FILELOG is set.
+
+router.get("/goals/report_tail", async (req, res) => {
+  const reportDir = motherBrainGoalsReportDir();
+  if (!reportDir) {
+    res.status(409).json({
+      ok: false,
+      error: "mother_brain_goals_report_dir_not_configured",
+      detail: "Set PW_MOTHER_BRAIN_GOALS_REPORT_DIR or PW_FILELOG on web-backend to enable JSONL tail viewing.",
+    });
+    return;
+  }
+
+  const suite = safeSuiteId(req.query?.suite);
+  if (!suite) {
+    res.status(400).json({ ok: false, error: "suite_required", detail: "Provide suite=<suiteId> (letters/numbers/_/- only)." });
+    return;
+  }
+
+  const linesRaw = req.query?.lines;
+  const lines = Math.max(1, Math.min(500, toInt(linesRaw) ?? 200));
+
+  // Mother Brain uses date-based filenames. We use UTC date to match most deployments.
+  const date = new Date().toISOString().slice(0, 10);
+  const filename = `mother-brain-goals-${suite}-${date}.jsonl`;
+  const full = path.join(reportDir, filename);
+
+  try {
+    const txt = await fs.readFile(full, "utf8");
+    const all = txt.split(/\r?\n/).filter((l) => l.trim() !== "");
+    const tail = all.slice(Math.max(0, all.length - lines));
+
+    const parsed: any[] = [];
+    for (const line of tail) {
+      try {
+        parsed.push(JSON.parse(line));
+      } catch {
+        parsed.push({ _parseError: true, line });
+      }
+    }
+
+    res.json({ ok: true, suite, date, filename, lines: parsed });
+  } catch (err: any) {
+    if (err && (err.code === "ENOENT" || err.code === "ENOTDIR")) {
+      res.status(404).json({ ok: false, error: "report_not_found", detail: `${filename} not found in ${reportDir}` });
+      return;
+    }
     res.status(500).json({ ok: false, error: err instanceof Error ? err.message : String(err) });
   }
 });
