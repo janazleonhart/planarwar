@@ -280,6 +280,10 @@ const ConfigSchema = z
       }),
 
     MOTHER_BRAIN_DB_URL: z.string().optional(),
+
+    // Accept common Planar War DB env bridge outputs
+    PW_DATABASE_URL: z.string().optional(),
+    DATABASE_URL: z.string().optional(),
     MOTHER_BRAIN_WS_URL: z.string().optional(),
 
     MOTHER_BRAIN_DB_TIMEOUT_MS: z
@@ -413,7 +417,7 @@ function parseConfig(): MotherBrainConfig {
 
     heartbeatEveryTicks: env.MOTHER_BRAIN_HEARTBEAT_EVERY_TICKS,
 
-    dbUrl: env.MOTHER_BRAIN_DB_URL,
+    dbUrl: env.MOTHER_BRAIN_DB_URL ?? env.PW_DATABASE_URL ?? env.DATABASE_URL,
     wsUrl: env.MOTHER_BRAIN_WS_URL,
 
     dbTimeoutMs: env.MOTHER_BRAIN_DB_TIMEOUT_MS,
