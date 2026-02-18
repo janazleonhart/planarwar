@@ -12,7 +12,7 @@
 import fs from "node:fs";
 import path from "node:path";
 
-export type GoalKind = "db_table_exists" | "db_wave_budget_breaches" | "ws_connected" | "ws_mud" | "http_get";
+export type GoalKind = "db_table_exists" | "db_wave_budget_breaches" | "ws_connected" | "ws_mud" | "http_get" | "http_json";
 
 export type GoalDefinition = {
   id: string;
@@ -26,6 +26,16 @@ export type GoalDefinition = {
   url?: string;
   expectStatus?: number;
   timeoutMs?: number;
+
+  // http_json
+  // If provided, Mother Brain will parse the response as JSON and validate.
+  // - expectPath + expectValue: dot-path equality (supports numeric array indexes)
+  // - expectSubset: partial deep match (all keys/values must exist in response)
+  // - expectJson: deep equality with the whole parsed JSON
+  expectPath?: string;
+  expectValue?: unknown;
+  expectSubset?: Record<string, unknown>;
+  expectJson?: unknown;
 
   // ws_mud
   command?: string;
@@ -171,6 +181,10 @@ function normalizeGoals(maybeGoals: unknown): GoalDefinition[] {
       url: typeof o.url === "string" ? o.url : undefined,
       expectStatus: typeof o.expectStatus === "number" ? o.expectStatus : undefined,
       timeoutMs: typeof o.timeoutMs === "number" ? o.timeoutMs : undefined,
+      expectPath: typeof o.expectPath === "string" ? o.expectPath : undefined,
+      expectValue: "expectValue" in o ? (o as any).expectValue : undefined,
+      expectSubset: (o as any).expectSubset && typeof (o as any).expectSubset === "object" ? ((o as any).expectSubset as any) : undefined,
+      expectJson: "expectJson" in o ? (o as any).expectJson : undefined,
       command: typeof o.command === "string" ? o.command : undefined,
       expectIncludes: typeof o.expectIncludes === "string" ? o.expectIncludes : undefined,
       maxBreaches: typeof o.maxBreaches === "number" ? o.maxBreaches : undefined,
@@ -539,6 +553,173 @@ async function httpGet(args: {
 }
 
 
+type JsonValue = null | boolean | number | string | JsonValue[] | { [k: string]: JsonValue };
+
+function isPlainObject(v: unknown): v is Record<string, unknown> {
+  return !!v && typeof v === "object" && !Array.isArray(v);
+}
+
+function deepEqualJson(a: unknown, b: unknown): boolean {
+  if (a === b) return true;
+  if (typeof a !== typeof b) return false;
+  if (a === null || b === null) return a === b;
+
+  if (Array.isArray(a) && Array.isArray(b)) {
+    if (a.length !== b.length) return false;
+    for (let i = 0; i < a.length; i += 1) {
+      if (!deepEqualJson(a[i], b[i])) return false;
+    }
+    return true;
+  }
+
+  if (isPlainObject(a) && isPlainObject(b)) {
+    const ak = Object.keys(a);
+    const bk = Object.keys(b);
+    if (ak.length !== bk.length) return false;
+    for (const k of ak) {
+      if (!(k in b)) return false;
+      if (!deepEqualJson((a as any)[k], (b as any)[k])) return false;
+    }
+    return true;
+  }
+
+  return false;
+}
+
+function subsetMatch(expected: unknown, actual: unknown): boolean {
+  // expected must be contained within actual (deep partial match)
+  if (expected === undefined) return true;
+  if (expected === null || typeof expected !== "object") return deepEqualJson(expected, actual);
+
+  if (Array.isArray(expected)) {
+    if (!Array.isArray(actual)) return false;
+    // For arrays, require same length and element-wise subset (conservative).
+    if (expected.length !== actual.length) return false;
+    for (let i = 0; i < expected.length; i += 1) {
+      if (!subsetMatch(expected[i], (actual as any)[i])) return false;
+    }
+    return true;
+  }
+
+  if (!isPlainObject(actual) || !isPlainObject(expected)) return false;
+  for (const [k, v] of Object.entries(expected)) {
+    if (!(k in actual)) return false;
+    if (!subsetMatch(v, (actual as any)[k])) return false;
+  }
+  return true;
+}
+
+function getByDotPath(root: unknown, dotPath: string): unknown {
+  const parts = dotPath
+    .split(".")
+    .map((p) => p.trim())
+    .filter(Boolean);
+
+  let cur: any = root;
+  for (const part of parts) {
+    if (cur === null || cur === undefined) return undefined;
+
+    // numeric array index
+    if (/^\d+$/.test(part)) {
+      const idx = Number(part);
+      if (!Array.isArray(cur)) return undefined;
+      cur = cur[idx];
+      continue;
+    }
+
+    if (typeof cur !== "object") return undefined;
+    cur = cur[part];
+  }
+  return cur;
+}
+
+async function httpJson(args: {
+  url: string;
+  timeoutMs: number;
+  expectStatus?: number;
+  expectPath?: string;
+  expectValue?: unknown;
+  expectSubset?: unknown;
+  expectJson?: unknown;
+  maxBodyBytes?: number;
+  maxPreviewBytes?: number;
+}): Promise<{
+  ok: boolean;
+  status?: number;
+  error?: string;
+  bodyPreview?: string;
+  extracted?: unknown;
+}> {
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), args.timeoutMs);
+  try {
+    const res = await fetch(args.url, { method: "GET", signal: ctrl.signal });
+    const status = res.status;
+    const statusOk = typeof args.expectStatus === "number" ? status === args.expectStatus : res.ok;
+
+    const maxBodyBytes = typeof args.maxBodyBytes === "number" && args.maxBodyBytes > 0 ? args.maxBodyBytes : 16384;
+    const maxPreviewBytes =
+      typeof args.maxPreviewBytes === "number" && args.maxPreviewBytes > 0 ? args.maxPreviewBytes : 4096;
+
+    const txt = await res.text();
+    const capped = txt.length > maxBodyBytes ? txt.slice(0, maxBodyBytes) : txt;
+    const preview = capped.length > maxPreviewBytes ? `${capped.slice(0, maxPreviewBytes)}…` : capped;
+
+    let json: unknown;
+    try {
+      json = JSON.parse(capped);
+    } catch (e: unknown) {
+      return {
+        ok: false,
+        status,
+        bodyPreview: preview,
+        error: `invalid json: ${e instanceof Error ? e.message : String(e)}`,
+      };
+    }
+
+    // Evaluate expectations (all must pass if provided).
+    const checks: { ok: boolean; err?: string; extracted?: unknown }[] = [];
+
+    if (typeof args.expectPath === "string" && args.expectPath.trim().length > 0) {
+      const v = getByDotPath(json, args.expectPath.trim());
+      checks.push({
+        ok: deepEqualJson(v, args.expectValue),
+        err: `path mismatch: ${args.expectPath}`,
+        extracted: v,
+      });
+    }
+
+    if (args.expectSubset && typeof args.expectSubset === "object") {
+      checks.push({ ok: subsetMatch(args.expectSubset, json), err: "subset mismatch" });
+    }
+
+    if ("expectJson" in args && args.expectJson !== undefined) {
+      checks.push({ ok: deepEqualJson(args.expectJson, json), err: "json mismatch" });
+    }
+
+    const checksOk = checks.every((c) => c.ok);
+    const extracted = checks.find((c) => c.extracted !== undefined)?.extracted;
+
+    const ok = statusOk && checksOk;
+    return {
+      ok,
+      status,
+      bodyPreview: preview,
+      extracted,
+      error: ok
+        ? undefined
+        : !statusOk
+          ? `status ${status}`
+          : checks.find((c) => !c.ok)?.err ?? "json expectation failed",
+    };
+  } catch (e: unknown) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+  } finally {
+    clearTimeout(t);
+  }
+}
+
+
 export async function runGoalsOnce(
   state: GoalsState,
   deps: GoalsDeps,
@@ -770,7 +951,52 @@ export async function runGoalsOnce(
       continue;
     }
 
-    // Unknown kind => fail (explicit, so we notice typos quickly)
+    
+    if (goal.kind === "http_json") {
+      const url = goal.url;
+      if (!url) {
+        failCount += 1;
+        results.push({ id: goal.id, kind: goal.kind, ok: false, error: "missing url" });
+        continue;
+      }
+
+      const timeoutMs = goal.timeoutMs ?? 2000;
+      const res = await httpJson({
+        url,
+        timeoutMs,
+        expectStatus: goal.expectStatus,
+        expectPath: goal.expectPath,
+        expectValue: goal.expectValue,
+        expectSubset: goal.expectSubset,
+        expectJson: goal.expectJson,
+      });
+
+      const ok = res.ok;
+      if (ok) okCount += 1;
+      else failCount += 1;
+
+      results.push({
+        id: goal.id,
+        kind: goal.kind,
+        ok,
+        latencyMs: Date.now() - start,
+        error: ok ? undefined : res.error ?? `status ${res.status ?? "unknown"}`,
+        details: {
+          url,
+          status: res.status,
+          expectStatus: goal.expectStatus,
+          expectPath: goal.expectPath,
+          expectValue: goal.expectValue,
+          expectSubset: goal.expectSubset,
+          expectJson: goal.expectJson,
+          extracted: res.extracted,
+          bodyPreview: res.bodyPreview,
+        },
+      });
+      continue;
+    }
+
+// Unknown kind => fail (explicit, so we notice typos quickly)
     failCount += 1;
     results.push({ id: goal.id, kind: goal.kind, ok: false, error: `unknown goal kind: ${goal.kind}` });
   }
