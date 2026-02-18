@@ -84,6 +84,22 @@ export type GoalsState = {
   inMemoryGoals: GoalDefinition[] | null;
 };
 
+export type GoalsHealth = {
+  status: "OK" | "FAIL" | "STALE";
+  lastRunIso: string | null;
+  ageSec: number | null;
+  overall?: {
+    ok: boolean | null;
+    summary: GoalRunReport["summary"] | null;
+  };
+  suites?: {
+    total: number;
+    ok: number;
+    fail: number;
+    failingSuites: string[];
+  };
+};
+
 export type GoalsDeps = {
   nowIso: () => string;
   // DB query helper – should return rows (or null if DB disabled).
@@ -323,6 +339,44 @@ export function getGoalSuites(
 
 export function setInMemoryGoals(state: GoalsState, goals: GoalDefinition[] | null): void {
   state.inMemoryGoals = goals;
+}
+
+export function computeGoalsHealth(state: GoalsState, now: Date = new Date()): GoalsHealth {
+  const lastRunIso = state.lastRunIso;
+  const lastOk = state.lastOk;
+
+  let ageSec: number | null = null;
+  if (lastRunIso) {
+    const t = Date.parse(lastRunIso);
+    if (Number.isFinite(t)) {
+      ageSec = Math.max(0, Math.floor((now.getTime() - t) / 1000));
+    }
+  }
+
+  let status: GoalsHealth["status"] = "STALE";
+  if (lastRunIso && lastOk === true) status = "OK";
+  if (lastRunIso && lastOk === false) status = "FAIL";
+
+  const bySuite = state.lastBySuite;
+  let suites: GoalsHealth["suites"] | undefined = undefined;
+  if (bySuite && typeof bySuite === "object") {
+    const entries = Object.entries(bySuite);
+    const failingSuites = entries.filter(([, v]) => v?.ok === false).map(([k]) => k);
+    suites = {
+      total: entries.length,
+      ok: entries.filter(([, v]) => v?.ok === true).length,
+      fail: failingSuites.length,
+      failingSuites,
+    };
+  }
+
+  return {
+    status,
+    lastRunIso,
+    ageSec,
+    overall: { ok: lastOk, summary: state.lastSummary },
+    ...(suites ? { suites } : {}),
+  };
 }
 
 export function getActiveGoals(state: GoalsState, deps?: Pick<GoalsDeps, "log">): GoalDefinition[] {

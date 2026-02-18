@@ -32,6 +32,7 @@ import type { Dirent } from "node:fs";
 
 import { installFileLogTap } from "./FileLogTap";
 import {
+  computeGoalsHealth,
   createGoalsState,
   getActiveGoals,
   getGoalSuites,
@@ -39,6 +40,7 @@ import {
   setInMemoryGoals,
   type GoalDefinition,
   type GoalRunReport,
+  type GoalsHealth,
   type GoalsState,
 } from "./Goals";
 
@@ -139,6 +141,7 @@ type TickSnapshot = {
     lastOk: boolean | null;
     lastSummary: GoalRunReport["summary"] | null;
     lastBySuite?: Record<string, { ok: boolean; summary: GoalRunReport["summary"] }>;
+    health: GoalsHealth;
   };
 };
 
@@ -1189,6 +1192,7 @@ function startHttpServer(cfg: MotherBrainConfig, state: StatusState): http.Serve
 
     if (url === "/goals" && req.method === "GET") {
       const suites = getGoalSuites(state.goals.state);
+      const health = computeGoalsHealth(state.goals.state);
       res.statusCode = 200;
       res.setHeader("content-type", "application/json");
       res.end(
@@ -1206,6 +1210,7 @@ function startHttpServer(cfg: MotherBrainConfig, state: StatusState): http.Serve
           lastOk: state.goals.state.lastOk,
           lastSummary: state.goals.state.lastSummary,
           lastBySuite: state.goals.state.lastBySuite ?? null,
+          health,
         })
       );
       return;
@@ -1502,6 +1507,7 @@ async function main(): Promise<void> {
         lastOk: state.goals.state.lastOk,
         lastSummary: state.goals.state.lastSummary,
         lastBySuite: state.goals.state.lastBySuite,
+        health: computeGoalsHealth(state.goals.state),
       },
     };
 
