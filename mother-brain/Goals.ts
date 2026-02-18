@@ -226,11 +226,43 @@ export type GoalPackId =
   | "wave_budget"
   | "ws"
   | "player_smoke"
-  | "admin_smoke";
+  | "admin_smoke"
+  | "web_smoke";
 
 export function builtinGoalPacks(ctx?: { webBackendHttpBase?: string }): Record<GoalPackId, GoalDefinition[]> {
   // NOTE: When building packs via ternaries/spreads, TS can widen string literals (e.g. kind -> string).
   // To keep GoalDefinition typing strict, build those packs in typed locals.
+
+  const webSmoke: GoalDefinition[] = ctx?.webBackendHttpBase
+    ? ([
+        {
+          id: "web.healthz",
+          kind: "http_json",
+          url: `${ctx.webBackendHttpBase}/api/healthz`,
+          expectStatus: 200,
+          expectPath: "ok",
+          expectValue: true,
+          timeoutMs: 1500,
+        },
+        {
+          id: "web.readyz",
+          kind: "http_json",
+          url: `${ctx.webBackendHttpBase}/api/readyz`,
+          // readyz can legitimately be 503 in dev if DB env is not configured.
+          // We treat that as a soft check by not pinning expectStatus.
+          expectPath: "service",
+          expectValue: "web-backend",
+          timeoutMs: 1500,
+        },
+      ] satisfies GoalDefinition[])
+    : ([
+        {
+          id: "web_smoke.disabled",
+          kind: "http_get",
+          url: "http://invalid.local/disabled",
+          enabled: false,
+        },
+      ] satisfies GoalDefinition[]);
   const adminSmoke: GoalDefinition[] = ctx?.webBackendHttpBase
     ? (
         [
@@ -291,6 +323,7 @@ export function builtinGoalPacks(ctx?: { webBackendHttpBase?: string }): Record<
       { id: "ws.mud.whereami", kind: "ws_mud", command: "whereami", expectIncludes: "You are", timeoutMs: 2500 },
     ],
     admin_smoke: adminSmoke,
+    web_smoke: webSmoke,
 
   };
 }
