@@ -26,6 +26,19 @@ import { Pool } from "pg";
 import type { QueryResult, QueryResultRow } from "pg";
 import { z } from "zod";
 
+// Dirent type lives on node:fs (not node:fs/promises). Keeping this here avoids
+// TS errors for any probe code that uses readdir({ withFileTypes:true }).
+import type { Dirent } from "node:fs";
+
+import { installFileLogTap } from "./FileLogTap";
+
+export type Logger = {
+  debug: (...args: unknown[]) => void;
+  info: (...args: unknown[]) => void;
+  warn: (...args: unknown[]) => void;
+  error: (...args: unknown[]) => void;
+};
+
 type LogLevel = "debug" | "info" | "warn" | "error";
 type MotherBrainMode = "observe" | "apply";
 
@@ -1006,6 +1019,11 @@ function startHttpServer(cfg: MotherBrainConfig, state: StatusState): http.Serve
 }
 
 async function main(): Promise<void> {
+  // Optional file logging (same mechanism as MMO backend).
+  // Set PW_FILELOG to enable, e.g.:
+  //   export PW_FILELOG=/home/rimuru/planarwar/log/{scope}.log
+  installFileLogTap();
+
   loadDotEnv();
   bridgePwDbEnv();
 
