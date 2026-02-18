@@ -1194,6 +1194,27 @@
       ],
       "service": "web-backend.routes"
     },
+    "web-backend.routes.adminTestFixtures": {
+      "class": null,
+      "ctorArgs": [],
+      "dependsOn": [
+        "express"
+      ],
+      "kind": "module",
+      "lifecycle": "singleton",
+      "notes": [
+        "Admin-safe test-fixture endpoints for deterministic smoke tests.",
+        "Must not mutate persistent world state.",
+        "Mounted at /api/admin/test_fixtures (see web-backend/index.ts)."
+      ],
+      "owns": [],
+      "path": "web-backend/routes/adminTestFixtures.ts",
+      "provides": [
+        "GET /api/admin/test_fixtures/ping",
+        "POST /api/admin/test_fixtures/ping"
+      ],
+      "service": "web-backend.routes"
+    },
     "web-backend.routes.health": {
       "class": null,
       "ctorArgs": [],

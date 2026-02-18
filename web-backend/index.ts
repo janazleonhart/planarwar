@@ -32,6 +32,7 @@ import { adminVendorAuditRouter } from "./routes/adminVendorAudit";
 import { adminVendorEconomyRouter } from "./routes/adminVendorEconomy";
 import adminMotherBrainRouter from "./routes/adminMotherBrain";
 import adminHeartbeatsRouter from "./routes/adminHeartbeats";
+import adminTestFixturesRouter from "./routes/adminTestFixtures";
 import spellsRouter from "./routes/spells";
 import itemsRouter from "./routes/items";
 import abilitiesRouter from "./routes/abilities";
@@ -205,6 +206,7 @@ app.use("/api/admin/vendor_audit", maybeRequireAdmin("/api/admin/vendor_audit"),
 app.use("/api/admin/vendor_economy", maybeRequireAdmin("/api/admin/vendor_economy"), adminVendorEconomyRouter);
 app.use("/api/admin/mother_brain", maybeRequireAdmin("/api/admin/mother_brain"), adminMotherBrainRouter);
 app.use("/api/admin/heartbeats", maybeRequireAdmin("/api/admin/heartbeats"), adminHeartbeatsRouter);
+app.use("/api/admin/test_fixtures", maybeRequireAdmin("/api/admin/test_fixtures"), adminTestFixturesRouter);
 
 app.listen(PORT, () => {
   console.log(`Backend listening on http://localhost:${PORT}`);
