@@ -71,33 +71,61 @@ export type GoalsState = {
   lastOk: boolean | null;
   lastSummary: GoalRunReport["summary"] | null;
 
-  // Per-suite status (only populated when packs are used)
+  // Per-suite status (populated when packs are used; also works for single-suite runs)
   lastBySuite?: Record<
     string,
     {
+      lastRunIso: string;
       ok: boolean;
       summary: GoalRunReport["summary"];
     }
   >;
 
+  // Recent failing goal previews per-suite (capped). Used for UI surfacing.
+  lastFailingGoalsBySuite?: Record<string, GoalRunResult[]>;
+
   // If set via HTTP, overrides file goals until cleared.
   inMemoryGoals: GoalDefinition[] | null;
+};
+
+export type GoalsSuiteHealthSummary = {
+  status: "OK" | "FAIL" | "STALE";
+  ageSec: number | null;
+  okCount: number | null;
+  failCount: number | null;
+  totalCount: number | null;
+};
+
+export type GoalsFailingGoalPreview = {
+  suiteId: string;
+  id: string;
+  kind: GoalKind;
+  error: string | null;
+  latencyMs: number | null;
+  details: Record<string, unknown> | null;
+};
+
+export type GoalsHealthSummary = {
+  ok: boolean | null;
+  summary: GoalRunReport["summary"] | null;
+  okCount: number | null;
+  failCount: number | null;
+  totalCount: number | null;
+  failingGoals?: GoalsFailingGoalPreview[];
 };
 
 export type GoalsHealth = {
   status: "OK" | "FAIL" | "STALE";
   lastRunIso: string | null;
   ageSec: number | null;
-  overall?: {
-    ok: boolean | null;
-    summary: GoalRunReport["summary"] | null;
-  };
+  overall?: GoalsHealthSummary;
   suites?: {
     total: number;
     ok: number;
     fail: number;
     failingSuites: string[];
   };
+  bySuite?: Record<string, GoalsSuiteHealthSummary>;
 };
 
 export type GoalsDeps = {
@@ -255,6 +283,7 @@ export function createGoalsState(args: {
     lastRunIso: null,
     lastOk: null,
     lastSummary: null,
+    lastFailingGoalsBySuite: undefined,
     inMemoryGoals: null,
   };
 }
@@ -357,25 +386,83 @@ export function computeGoalsHealth(state: GoalsState, now: Date = new Date()): G
   if (lastRunIso && lastOk === true) status = "OK";
   if (lastRunIso && lastOk === false) status = "FAIL";
 
-  const bySuite = state.lastBySuite;
+  const okCount = state.lastSummary && typeof state.lastSummary.ok === "number" ? state.lastSummary.ok : null;
+  const failCount = state.lastSummary && typeof state.lastSummary.fail === "number" ? state.lastSummary.fail : null;
+  const totalCount = state.lastSummary && typeof state.lastSummary.total === "number" ? state.lastSummary.total : null;
+
+  const bySuiteRaw = state.lastBySuite;
+  const bySuite: Record<string, GoalsSuiteHealthSummary> = {};
+
   let suites: GoalsHealth["suites"] | undefined = undefined;
-  if (bySuite && typeof bySuite === "object") {
-    const entries = Object.entries(bySuite);
+  if (bySuiteRaw && typeof bySuiteRaw === "object") {
+    const entries = Object.entries(bySuiteRaw);
     const failingSuites = entries.filter(([, v]) => v?.ok === false).map(([k]) => k);
+
     suites = {
       total: entries.length,
       ok: entries.filter(([, v]) => v?.ok === true).length,
       fail: failingSuites.length,
       failingSuites,
     };
+
+    for (const [suiteId, v] of entries) {
+      const lastIso = v?.lastRunIso ?? null;
+      let suiteAge: number | null = null;
+      if (lastIso) {
+        const t = Date.parse(lastIso);
+        if (Number.isFinite(t)) suiteAge = Math.max(0, Math.floor((now.getTime() - t) / 1000));
+      }
+
+      let suiteStatus: GoalsSuiteHealthSummary["status"] = "STALE";
+      if (lastIso && v?.ok === true) suiteStatus = "OK";
+      if (lastIso && v?.ok === false) suiteStatus = "FAIL";
+
+      const s = v?.summary;
+      bySuite[suiteId] = {
+        status: suiteStatus,
+        ageSec: suiteAge,
+        okCount: s && typeof s.ok === "number" ? s.ok : null,
+        failCount: s && typeof s.fail === "number" ? s.fail : null,
+        totalCount: s && typeof s.total === "number" ? s.total : null,
+      };
+    }
+  }
+
+  const failingGoalsBySuite = state.lastFailingGoalsBySuite;
+  const failingGoals: GoalsFailingGoalPreview[] = [];
+  if (failingGoalsBySuite && typeof failingGoalsBySuite === "object") {
+    const suiteIds = Object.keys(failingGoalsBySuite);
+    for (const suiteId of suiteIds) {
+      const list = failingGoalsBySuite[suiteId];
+      if (!Array.isArray(list)) continue;
+      for (const r of list) {
+        if (!r || typeof r !== "object") continue;
+        failingGoals.push({
+          suiteId,
+          id: r.id,
+          kind: r.kind,
+          error: typeof r.error === "string" ? r.error : null,
+          latencyMs: typeof r.latencyMs === "number" ? r.latencyMs : null,
+          details: r.details && typeof r.details === "object" ? (r.details as Record<string, unknown>) : null,
+        });
+      }
+    }
   }
 
   return {
     status,
     lastRunIso,
     ageSec,
-    overall: { ok: lastOk, summary: state.lastSummary },
+    overall: {
+      ok: lastOk,
+      summary: state.lastSummary,
+      okCount,
+      failCount,
+      totalCount,
+      ...(failingGoals.length ? { failingGoals } : {}),
+    },
     ...(suites ? { suites } : {}),
+    ...(Object.keys(bySuite).length ? { bySuite } : {}),
   };
 }
 
@@ -683,6 +770,9 @@ export async function runGoalSuites(
   const { suites } = getGoalSuites(state, deps);
   const bySuite: Record<string, GoalRunReport> = {};
 
+  // Capture failing goal previews (capped) for UI/snapshot surfacing.
+  const failingBySuite: Record<string, GoalRunResult[]> = {};
+
   let overallOk = true;
   let total = 0;
   let okCount = 0;
@@ -696,6 +786,9 @@ export async function runGoalSuites(
       reportFilePath: reportFilePathForSuite(state, suite.id),
     });
     bySuite[suite.id] = report;
+
+    const failing = report.results.filter((r) => r && r.ok === false);
+    if (failing.length) failingBySuite[suite.id] = failing.slice(0, 10);
     overallOk = overallOk && report.ok;
     total += report.summary.total;
     okCount += report.summary.ok;
@@ -712,8 +805,10 @@ export async function runGoalSuites(
   };
 
   state.lastBySuite = Object.fromEntries(
-    Object.entries(bySuite).map(([id, r]) => [id, { ok: r.ok, summary: r.summary }])
+    Object.entries(bySuite).map(([id, r]) => [id, { lastRunIso: r.ts, ok: r.ok, summary: r.summary }])
   );
+
+  state.lastFailingGoalsBySuite = Object.keys(failingBySuite).length ? failingBySuite : undefined;
 
   // Keep the legacy fields as the overall view.
   state.lastRunIso = overall.ts;

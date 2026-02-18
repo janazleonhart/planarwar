@@ -199,6 +199,14 @@ type GoalsHealthSummary = {
   failCount: number | null;
   totalCount: number | null;
   failingSuites: string[];
+  failingGoals: {
+    suiteId: string;
+    id: string;
+    kind: string;
+    error: string | null;
+    latencyMs: number | null;
+    details: Record<string, unknown> | null;
+  }[];
 };
 
 type GoalsSuiteLast = {
@@ -248,6 +256,22 @@ function parseGoalsHealthSummary(snapshot: any): { overall: GoalsHealthSummary |
   const failCount = overallObj && typeof overallObj.failCount === "number" && Number.isFinite(overallObj.failCount) ? overallObj.failCount : null;
   const totalCount = overallObj && typeof overallObj.totalCount === "number" && Number.isFinite(overallObj.totalCount) ? overallObj.totalCount : null;
 
+  const failingGoalsRaw = overallObj && Array.isArray(overallObj.failingGoals) ? (overallObj.failingGoals as unknown[]) : [];
+  const failingGoals = failingGoalsRaw
+    .filter((x: unknown) => x && typeof x === "object")
+    .map((x: unknown) => {
+      const o = x as any;
+      return {
+        suiteId: typeof o.suiteId === "string" ? o.suiteId : "",
+        id: typeof o.id === "string" ? o.id : "",
+        kind: typeof o.kind === "string" ? o.kind : "",
+        error: typeof o.error === "string" ? o.error : null,
+        latencyMs: typeof o.latencyMs === "number" && Number.isFinite(o.latencyMs) ? o.latencyMs : null,
+        details: o.details && typeof o.details === "object" ? (o.details as Record<string, unknown>) : null,
+      };
+    })
+    .filter((g) => g.suiteId && g.id && g.kind);
+
   const suitesObj = (health as any).suites && typeof (health as any).suites === "object" ? (health as any).suites : null;
   const failingSuites =
     suitesObj && Array.isArray(suitesObj.failingSuites) && suitesObj.failingSuites.every((x: any) => typeof x === "string")
@@ -264,6 +288,7 @@ function parseGoalsHealthSummary(snapshot: any): { overall: GoalsHealthSummary |
       failCount,
       totalCount,
       failingSuites,
+      failingGoals,
     },
     suites,
   };
@@ -700,6 +725,54 @@ export function AdminMotherBrainPage() {
                   <div style={{ marginTop: 6, fontSize: 12, opacity: 0.8 }}>
                     Tip: suites come from <code>MOTHER_BRAIN_GOALS_PACKS</code> (or custom goals file/in-memory goals).
                   </div>
+                </div>
+              ) : null}
+
+              {goalsSummary.overall.failingGoals.length ? (
+                <div style={{ marginTop: 10 }}>
+                  <details>
+                    <summary style={{ cursor: "pointer", fontWeight: 700, fontSize: 13 }}>
+                      Latest failing goals ({goalsSummary.overall.failingGoals.length})
+                    </summary>
+                    <div style={{ marginTop: 8 }}>
+                      {goalsSummary.overall.failingGoals.map((f: any, idx: number) => (
+                        <div
+                          key={`${f.suiteId}:${f.id}:${idx}`}
+                          style={{ border: "1px solid #eee", borderRadius: 10, padding: 10, marginBottom: 8 }}
+                        >
+                          <div style={{ display: "flex", flexWrap: "wrap", gap: 10, alignItems: "center" }}>
+                            <code>{f.suiteId}</code>
+                            <code style={{ fontWeight: 800 }}>{f.id}</code>
+                            <code>{f.kind}</code>
+                            {f.latencyMs != null ? (
+                              <span style={{ opacity: 0.8 }}>
+                                <code>{Math.round(f.latencyMs)}ms</code>
+                              </span>
+                            ) : null}
+                          </div>
+                          {f.error ? (
+                            <div style={{ marginTop: 6 }}>
+                              <span style={{ opacity: 0.8 }}>error</span> <code>{f.error}</code>
+                            </div>
+                          ) : null}
+                          {f.details ? (
+                            <pre
+                              style={{
+                                marginTop: 8,
+                                maxHeight: 160,
+                                overflow: "auto",
+                                background: "#fafafa",
+                                border: "1px solid #eee",
+                                padding: 8,
+                              }}
+                            >
+                              {JSON.stringify(f.details, null, 2)}
+                            </pre>
+                          ) : null}
+                        </div>
+                      ))}
+                    </div>
+                  </details>
                 </div>
               ) : null}
             </div>

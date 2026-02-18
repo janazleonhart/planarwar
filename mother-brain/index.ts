@@ -1468,6 +1468,8 @@ async function main(): Promise<void> {
     }
 
 
+    const goalsHealth = computeGoalsHealth(state.goals.state);
+
     const snapshot: TickSnapshot = {
       tick,
       uptimeMs,
@@ -1506,8 +1508,9 @@ async function main(): Promise<void> {
         lastRunIso: state.goals.state.lastRunIso,
         lastOk: state.goals.state.lastOk,
         lastSummary: state.goals.state.lastSummary,
-        lastBySuite: state.goals.state.lastBySuite,
-        health: computeGoalsHealth(state.goals.state),
+        // Prefer the derived, UI-ready by-suite summaries when available.
+        lastBySuite: goalsHealth.bySuite ?? (state.goals.state.lastBySuite as any),
+        health: goalsHealth,
       },
     };
 
