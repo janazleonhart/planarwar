@@ -40,6 +40,29 @@ type MotherBrainStatusResponse = {
   error?: string;
 };
 
+type WaveBudgetCapRow = {
+  shard_id: string;
+  type: string;
+  cap: number | string;
+  policy: string;
+  updated_at: string;
+};
+
+type WaveBudgetUsageRow = {
+  shard_id: string;
+  type: string;
+  count: number | string;
+};
+
+type WaveBudgetResponse = {
+  ok: boolean;
+  caps: WaveBudgetCapRow[];
+  usage: WaveBudgetUsageRow[];
+  warning?: string;
+  detail?: string;
+  error?: string;
+};
+
 function safeIso(iso: string | null | undefined): string {
   if (!iso) return "";
   const d = new Date(iso);
@@ -98,9 +121,7 @@ async function copyToClipboard(text: string): Promise<boolean> {
   }
 }
 
-
 type BrainWaveBudgetEntry = { shardId: string; type: string; count: number };
-type BrainWaveBudgetSnapshot = { total: number; topByShardAndType: BrainWaveBudgetEntry[] };
 
 function parseBrainSpawnsTopByShardType(raw: unknown): BrainWaveBudgetEntry[] {
   if (!Array.isArray(raw)) return [];
@@ -117,15 +138,20 @@ function parseBrainSpawnsTopByShardType(raw: unknown): BrainWaveBudgetEntry[] {
   return out;
 }
 
-function parseBrainWaveBudget(raw: unknown): null | {
-  kind: "ok";
-  total: number;
-  top: Array<{ shardId: string; type: string; count: number }>;
-} | {
-  kind: "unavailable";
-  reason: string;
-  missingColumns?: string[];
-} {
+function parseBrainWaveBudget(
+  raw: unknown,
+):
+  | null
+  | {
+      kind: "ok";
+      total: number;
+      top: Array<{ shardId: string; type: string; count: number }>;
+    }
+  | {
+      kind: "unavailable";
+      reason: string;
+      missingColumns?: string[];
+    } {
   if (!raw || typeof raw !== "object") return null;
 
   const anyRaw = raw as any;
@@ -157,6 +183,14 @@ function parseBrainWaveBudget(raw: unknown): null | {
   return { kind: "ok", total, top };
 }
 
+function toInt(v: unknown): number | null {
+  if (typeof v === "number" && Number.isFinite(v)) return Math.trunc(v);
+  if (typeof v === "string" && v.trim() !== "") {
+    const n = Number(v);
+    if (Number.isFinite(n)) return Math.trunc(n);
+  }
+  return null;
+}
 
 export function AdminMotherBrainPage() {
   const [busy, setBusy] = useState(false);
@@ -164,6 +198,11 @@ export function AdminMotherBrainPage() {
   const [error, setError] = useState<string | null>(null);
   const [data, setData] = useState<MotherBrainHeartbeat | null>(null);
   const [raw, setRaw] = useState<MotherBrainStatusResponse | null>(null);
+
+  // Optional caps table (spawn_wave_budgets) + derived usage.
+  const [waveCaps, setWaveCaps] = useState<WaveBudgetCapRow[]>([]);
+  const [waveUsage, setWaveUsage] = useState<WaveBudgetUsageRow[]>([]);
+  const [waveNotice, setWaveNotice] = useState<string | null>(null);
 
   const snapshot = data?.last_status_json ?? null;
 
@@ -200,6 +239,24 @@ export function AdminMotherBrainPage() {
         if (res.warning) {
           setNotice(res.detail ? `${res.warning}: ${res.detail}` : res.warning);
         }
+      }
+
+      // Wave budget caps are optional. If missing, don't treat it as fatal.
+      try {
+        const wb = await api<WaveBudgetResponse>("/api/admin/mother_brain/wave_budget");
+        if (wb.ok) {
+          setWaveCaps(Array.isArray(wb.caps) ? wb.caps : []);
+          setWaveUsage(Array.isArray(wb.usage) ? wb.usage : []);
+          setWaveNotice(wb.warning ? (wb.detail ? `${wb.warning}: ${wb.detail}` : wb.warning) : null);
+        } else {
+          setWaveCaps([]);
+          setWaveUsage([]);
+          setWaveNotice(wb.error || "wave_budget request failed");
+        }
+      } catch (e: any) {
+        setWaveCaps([]);
+        setWaveUsage([]);
+        setWaveNotice(e?.message ? String(e.message) : String(e));
       }
     } catch (e: any) {
       setRaw(null);
@@ -238,272 +295,348 @@ export function AdminMotherBrainPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [autoRefresh, everyMs]);
 
-  const snapshotText = useMemo(() => prettyJson(data?.last_status_json ?? null), [data?.last_status_json]);
-  const rawText = useMemo(() => prettyJson(raw), [raw]);
+  const waveBudget = useMemo(() => parseBrainWaveBudget(snapshot?.brainWaveBudget), [snapshot]);
 
-  const canCopy = typeof navigator !== "undefined";
+  const apiJson = useMemo(() => prettyJson(raw), [raw]);
+  const snapshotJson = useMemo(() => prettyJson(snapshot), [snapshot]);
+
+  const [copiedApi, setCopiedApi] = useState(false);
+  const [copiedSnapshot, setCopiedSnapshot] = useState(false);
+
+  // Simple local editor state for caps.
+  const [newShardId, setNewShardId] = useState("prime_shard");
+  const [newType, setNewType] = useState("npc");
+  const [newCap, setNewCap] = useState("50");
+  const [newPolicy, setNewPolicy] = useState("hard");
+
+  const usageMap = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const u of waveUsage) {
+      const shard = u?.shard_id;
+      const type = u?.type;
+      const count = toInt((u as any)?.count);
+      if (!shard || !type || count == null) continue;
+      m.set(`${shard}:${type}`, count);
+    }
+    return m;
+  }, [waveUsage]);
+
+  const handleUpsertCap = async (shardId: string, type: string, cap: number, policy: string) => {
+    setBusy(true);
+    setError(null);
+    setNotice(null);
+
+    try {
+      const res = await api<any>("/api/admin/mother_brain/wave_budget", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ shardId, type, cap, policy }),
+      });
+
+      if (!res?.ok) {
+        setError(res?.error || "Failed to save wave budget cap.");
+        return;
+      }
+
+      setNotice("Wave budget cap saved.");
+      await load();
+    } catch (e: any) {
+      setError(e?.message ? String(e.message) : String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
 
   return (
-    <AdminShell title="Mother Brain" subtitle="Service heartbeat + last status snapshot (polled from web-backend).">
-      {error ? <AdminNotice kind="error">{error}</AdminNotice> : null}
-      {notice ? <AdminNotice kind="warn">{notice}</AdminNotice> : null}
+    <AdminShell title="Mother Brain" subtitle="Service heartbeat + last status snapshot (pulled from web-backend).">
+      <AdminPanel title="Mother Brain" subtitle="Service heartbeat + last status snapshot (pulled from web-backend).">
+        {notice ? <AdminNotice kind="warn">{notice}</AdminNotice> : null}
+        {waveNotice ? <AdminNotice kind="warn">{waveNotice}</AdminNotice> : null}
+        {error ? <AdminNotice kind="error">{error}</AdminNotice> : null}
 
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-        <button onClick={load} disabled={busy} data-kind="primary">
-          {busy ? "Refreshing…" : "Refresh"}
-        </button>
+        <div style={{ display: "flex", gap: 12, alignItems: "center", marginBottom: 10 }}>
+          <button disabled={busy} onClick={() => void load()}>
+            Refresh
+          </button>
 
-        <a
-          href="/api/admin/mother_brain/status"
-          target="_blank"
-          rel="noreferrer"
-          style={{ fontSize: 12, textDecoration: "underline", opacity: 0.85 }}
-        >
-          Open API response
-        </a>
+          <a href="#" onClick={(e) => {
+            e.preventDefault();
+            setCopiedApi(false);
+            void copyToClipboard(apiJson).then((ok) => setCopiedApi(ok));
+          }}>
+            Open API response
+          </a>
 
-        <label style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 12 }}>
+          <label style={{ display: "inline-flex", gap: 6, alignItems: "center" }}>
+            <input type="checkbox" checked={autoRefresh} onChange={(e) => setAutoRefresh(e.target.checked)} />
+            Auto refresh
+          </label>
+
+          <span>Every</span>
           <input
-            type="checkbox"
-            checked={autoRefresh}
-            onChange={(e) => setAutoRefresh(e.target.checked)}
-            style={{ width: 16, height: 16 }}
-          />
-          Auto refresh
-        </label>
-
-        <label style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 12 }}>
-          Every
-          <input
-            value={String(everyMs)}
-            onChange={(e) => setEveryMs(Number(e.target.value || "0"))}
+            type="number"
+            min={500}
+            max={60000}
+            value={everyMs}
+            onChange={(e) => setEveryMs(Math.max(500, Math.min(60000, Number(e.target.value) || 2000)))}
             style={{ width: 90 }}
           />
-          ms
-        </label>
-      </div>
+          <span>ms</span>
 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(340px, 1fr))", gap: 12 }}>
-        <AdminPanel title="Heartbeat">
-          {data ? (
-            <div style={{ display: "grid", gap: 8, fontSize: 13 }}>
-              <div style={{ display: "grid", gridTemplateColumns: "140px 1fr", gap: 8 }}>
-                <div style={{ opacity: 0.75 }}>service</div>
-                <div>
-                  <code>{data.service_name}</code>
-                </div>
+          {copiedApi ? <span style={{ marginLeft: 8 }}>Copied.</span> : null}
+        </div>
 
-                <div style={{ opacity: 0.75 }}>instance</div>
-                <div>
-                  <code>{data.instance_id}</code>
-                </div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+          <div style={{ border: "1px solid #ddd", borderRadius: 10, padding: 12 }}>
+            <div style={{ fontWeight: 700, marginBottom: 8 }}>Heartbeat</div>
 
-                <div style={{ opacity: 0.75 }}>host / pid</div>
-                <div>
-                  <code>
-                    {data.host}:{data.pid}
-                  </code>
-                </div>
+            {data ? (
+              <table style={{ width: "100%" }}>
+                <tbody>
+                  <tr>
+                    <td style={{ width: 110 }}>service</td>
+                    <td>
+                      <code>{data.service_name}</code>
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>instance</td>
+                    <td>
+                      <code>{data.instance_id}</code>
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>host / pid</td>
+                    <td>
+                      <code>
+                        {data.host}:{data.pid}
+                      </code>
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>version</td>
+                    <td>
+                      <code>{data.version ?? ""}</code>
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>mode</td>
+                    <td>
+                      <code>{data.mode ?? ""}</code>
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>ready</td>
+                    <td>
+                      <span style={{ fontWeight: 700, color: data.ready ? "green" : "red" }}>
+                        {data.ready ? "READY" : "NOT READY"}
+                      </span>
+                      {isStale ? <span style={{ marginLeft: 8, color: "#b00" }}>(stale)</span> : null}
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>last tick</td>
+                    <td>
+                      <code>{data.last_tick ?? ""}</code>
+                      {tickAgeMs != null ? <span style={{ marginLeft: 8 }}>({fmtMs(tickAgeMs)} ago)</span> : null}
+                      {isTickStale ? <span style={{ marginLeft: 8, color: "#b00" }}>(tick stale)</span> : null}
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>signature</td>
+                    <td>
+                      <code>{data.last_signature ?? ""}</code>
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>started</td>
+                    <td>{safeIso(data.started_at)}</td>
+                  </tr>
+                  <tr>
+                    <td>updated</td>
+                    <td>
+                      {safeIso(data.updated_at)}
+                      {staleMs != null ? <span style={{ marginLeft: 8 }}>({fmtMs(staleMs)} ago)</span> : null}
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            ) : (
+              <div>No heartbeat row found for <code>mother-brain</code>.</div>
+            )}
+          </div>
 
-                <div style={{ opacity: 0.75 }}>version</div>
-                <div>
-                  <code>{data.version ?? ""}</code>
-                </div>
-
-                <div style={{ opacity: 0.75 }}>mode</div>
-                <div>
-                  <code>{data.mode ?? ""}</code>
-                </div>
-
-                <div style={{ opacity: 0.75 }}>ready</div>
-                <div>
-                  <strong style={{ color: data.ready ? "#0a7" : "#c33" }}>
-                    {data.ready ? "READY" : "NOT READY"}
-                  </strong>
-                </div>
-
-                <div style={{ opacity: 0.75 }}>last tick</div>
-                <div>
-                  <code>{data.last_tick ?? ""}</code>
-                  {tickAgeMs != null ? (
-                    <span style={{ marginLeft: 8, opacity: 0.75 }}>
-                      ({fmtMs(tickAgeMs)} ago{isTickStale ? ", stale" : ""})
-                    </span>
-                  ) : null}
-                </div>
-
-                <div style={{ opacity: 0.75 }}>signature</div>
-                <div>
-                  <code>{data.last_signature ?? ""}</code>
-                </div>
-
-                <div style={{ opacity: 0.75 }}>started</div>
-                <div>{safeIso(data.started_at)}</div>
-
-                <div style={{ opacity: 0.75 }}>updated</div>
-                <div>
-                  {safeIso(data.updated_at)}
-                  {staleMs != null ? (
-                    <span style={{ marginLeft: 8, opacity: 0.75 }}>
-                      ({fmtMs(staleMs)} ago{isStale ? ", stale" : ""})
-                    </span>
-                  ) : null}
+          <div style={{ border: "1px solid #ddd", borderRadius: 10, padding: 12 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <div>
+                <div style={{ fontWeight: 700 }}>Last status snapshot</div>
+                <div style={{ fontSize: 12, opacity: 0.8 }}>
+                  This is whatever Mother Brain wrote into <code>service_heartbeats.last_status_json</code>.
                 </div>
               </div>
-
-              {(isStale || isTickStale) && (
-                <AdminNotice kind="warn">
-                  Heartbeat looks stale. If Mother Brain is running, it may be stuck, unable to write to DB, or
-                  pointed at the wrong database.
-                </AdminNotice>
-              )}
-            </div>
-          ) : (
-            <div style={{ fontSize: 13, opacity: 0.8 }}>
-              No heartbeat row found for <code>mother-brain</code>.
-            </div>
-          )}
-        </AdminPanel>
-
-        <AdminPanel
-          title="Last status snapshot"
-        >
-          <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 8 }}>
-            {canCopy ? (
               <button
-                onClick={async () => {
-                  const ok = await copyToClipboard(snapshotText);
-                  setNotice(ok ? "Copied snapshot JSON to clipboard." : "Copy failed (clipboard not available).");
+                onClick={() => {
+                  setCopiedSnapshot(false);
+                  void copyToClipboard(snapshotJson).then((ok) => setCopiedSnapshot(ok));
                 }}
-                disabled={!snapshotText}
-                data-kind="secondary"
               >
                 Copy JSON
               </button>
-            ) : null}
+            </div>
+
+            <pre style={{ marginTop: 10, maxHeight: 300, overflow: "auto", border: "1px solid #eee", padding: 10 }}>
+              {snapshotJson}
+            </pre>
+            {copiedSnapshot ? <div>Copied.</div> : null}
           </div>
-          <div style={{ fontSize: 12, opacity: 0.8, marginBottom: 8 }}>
-            This is whatever Mother Brain wrote into <code>service_heartbeats.last_status_json</code>.
-          </div>
-          <pre
-            style={{
-              margin: 0,
-              whiteSpace: "pre-wrap",
-              wordBreak: "break-word",
-              background: "#fafafa",
-              border: "1px solid var(--pw-border)",
-              borderRadius: 12,
-              padding: 10,
-              maxHeight: 520,
-              overflow: "auto",
-              fontSize: 12,
-            }}
-          >
-            {snapshotText}
-          </pre>
-        </AdminPanel>
-      
-        <AdminPanel
-          title="Brain wave budget"
-          subtitle="Top spawn-point counts used for wave budgeting (from Mother Brain snapshot)."
-        >
-          {(() => {
-	  const budget = parseBrainWaveBudget(
-	    (snapshot as any)?.brainWaveBudget ?? (snapshot as any)?.db?.brainWaveBudget,
-	  );
-
-  if (!budget) {
-    return (
-      <div className="text-sm text-slate-600">
-        No wave budget snapshot available (feature disabled or DB missing).
-      </div>
-    );
-  }
-
-  if (budget.kind === "unavailable") {
-    return (
-      <div className="text-sm text-slate-600">
-        <div>Wave budget unavailable: {budget.reason}.</div>
-        {budget.missingColumns && budget.missingColumns.length > 0 ? (
-          <div className="mt-1">
-            Missing columns: <code>{budget.missingColumns.join(", ")}</code>
-          </div>
-        ) : null}
-      </div>
-    );
-  }
-
-  return (
-    <div className="text-sm">
-      <div className="mb-1">
-        Total spawn points: <b>{budget.total}</b>
-      </div>
-
-      {budget.top.length === 0 ? (
-        <div className="text-slate-600">No spawn point rows returned.</div>
-      ) : (
-        <table className="w-full text-xs border-collapse">
-          <thead>
-            <tr className="text-left border-b">
-              <th className="py-1 pr-2">shard</th>
-              <th className="py-1 pr-2">type</th>
-              <th className="py-1 pr-2">count</th>
-            </tr>
-          </thead>
-          <tbody>
-            {budget.top.map((row, i) => (
-              <tr key={i} className="border-b last:border-b-0">
-                <td className="py-1 pr-2">
-                  <code>{row.shardId}</code>
-                </td>
-                <td className="py-1 pr-2">
-                  <code>{row.type}</code>
-                </td>
-                <td className="py-1 pr-2">{row.count}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
-    </div>
-  );
-})()}
-
-        </AdminPanel>
-
-</div>
-
-      <details style={{ marginTop: 12 }}>
-        <summary style={{ cursor: "pointer", fontWeight: 800 }}>Raw response</summary>
-        <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 8 }}>
-          {canCopy ? (
-            <button
-              onClick={async () => {
-                const ok = await copyToClipboard(rawText);
-                setNotice(ok ? "Copied raw response JSON to clipboard." : "Copy failed (clipboard not available).");
-              }}
-              disabled={!rawText}
-              data-kind="secondary"
-            >
-              Copy raw
-            </button>
-          ) : null}
         </div>
-        <pre
-          style={{
-            marginTop: 10,
-            whiteSpace: "pre-wrap",
-            wordBreak: "break-word",
-            background: "#fafafa",
-            border: "1px solid var(--pw-border)",
-            borderRadius: 12,
-            padding: 10,
-            fontSize: 12,
-          }}
-        >
-          {rawText}
-        </pre>
-      </details>
+
+        <div style={{ marginTop: 14, border: "1px solid #ddd", borderRadius: 10, padding: 12 }}>
+          <div style={{ fontWeight: 700, marginBottom: 6 }}>Brain wave budget</div>
+          <div style={{ fontSize: 12, opacity: 0.8, marginBottom: 8 }}>
+            Top spawn-point counts used for wave budgeting (from Mother Brain snapshot).
+          </div>
+
+          {waveBudget?.kind === "ok" ? (
+            <>
+              <div style={{ marginBottom: 8 }}>
+                <b>Total spawn points:</b> {waveBudget.total}
+              </div>
+
+              <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                <thead>
+                  <tr>
+                    <th style={{ textAlign: "left" }}>shard</th>
+                    <th style={{ textAlign: "left" }}>type</th>
+                    <th style={{ textAlign: "left" }}>count</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {waveBudget.top.map((r) => (
+                    <tr key={`${r.shardId}:${r.type}`}>
+                      <td>{r.shardId}</td>
+                      <td>{r.type}</td>
+                      <td>{r.count}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </>
+          ) : waveBudget?.kind === "unavailable" ? (
+            <div>
+              No wave budget snapshot available (<code>{waveBudget.reason}</code>)
+              {waveBudget.missingColumns?.length ? (
+                <div style={{ marginTop: 6 }}>
+                  Missing columns: <code>{waveBudget.missingColumns.join(", ")}</code>
+                </div>
+              ) : null}
+            </div>
+          ) : (
+            <div>No wave budget snapshot available (feature disabled or DB missing).</div>
+          )}
+
+          <div style={{ marginTop: 12, borderTop: "1px solid #eee", paddingTop: 10 }}>
+            <div style={{ fontWeight: 700, marginBottom: 6 }}>Wave budget caps</div>
+            <div style={{ fontSize: 12, opacity: 0.8, marginBottom: 8 }}>
+              Optional caps from <code>spawn_wave_budgets</code>. Mother Brain can read these to compute remaining budget.
+            </div>
+
+            <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 10, flexWrap: "wrap" }}>
+              <label>
+                shard
+                <input value={newShardId} onChange={(e) => setNewShardId(e.target.value)} style={{ marginLeft: 6 }} />
+              </label>
+              <label>
+                type
+                <input value={newType} onChange={(e) => setNewType(e.target.value)} style={{ marginLeft: 6 }} />
+              </label>
+              <label>
+                cap
+                <input value={newCap} onChange={(e) => setNewCap(e.target.value)} style={{ marginLeft: 6, width: 80 }} />
+              </label>
+              <label>
+                policy
+                <select value={newPolicy} onChange={(e) => setNewPolicy(e.target.value)} style={{ marginLeft: 6 }}>
+                  <option value="hard">hard</option>
+                  <option value="soft">soft</option>
+                </select>
+              </label>
+              <button
+                disabled={busy}
+                onClick={() => {
+                  const cap = toInt(newCap);
+                  if (!newShardId.trim() || !newType.trim() || cap == null || cap < 0) {
+                    setError("Please provide shard/type and a non-negative cap.");
+                    return;
+                  }
+                  void handleUpsertCap(newShardId.trim(), newType.trim(), cap, newPolicy.trim() || "hard");
+                }}
+              >
+                Add / Update
+              </button>
+            </div>
+
+            {waveCaps.length ? (
+              <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                <thead>
+                  <tr>
+                    <th style={{ textAlign: "left" }}>shard</th>
+                    <th style={{ textAlign: "left" }}>type</th>
+                    <th style={{ textAlign: "left" }}>cap</th>
+                    <th style={{ textAlign: "left" }}>used</th>
+                    <th style={{ textAlign: "left" }}>remaining</th>
+                    <th style={{ textAlign: "left" }}>policy</th>
+                    <th style={{ textAlign: "left" }}>updated</th>
+                    <th />
+                  </tr>
+                </thead>
+                <tbody>
+                  {waveCaps.map((c) => {
+                    const cap = toInt(c.cap) ?? 0;
+                    const used = usageMap.get(`${c.shard_id}:${c.type}`) ?? 0;
+                    const remaining = Math.max(0, cap - used);
+                    return (
+                      <tr key={`${c.shard_id}:${c.type}`}>
+                        <td>{c.shard_id}</td>
+                        <td>{c.type}</td>
+                        <td>{cap}</td>
+                        <td>{used}</td>
+                        <td>{remaining}</td>
+                        <td>{c.policy}</td>
+                        <td>{safeIso(c.updated_at)}</td>
+                        <td>
+                          <button
+                            disabled={busy}
+                            onClick={() => void handleUpsertCap(c.shard_id, c.type, cap, c.policy || "hard")}
+                          >
+                            Save
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            ) : (
+              <div style={{ opacity: 0.8 }}>No caps defined yet.</div>
+            )}
+          </div>
+        </div>
+
+        <details style={{ marginTop: 14 }}>
+          <summary>Raw response</summary>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginTop: 10 }}>
+            <div>
+              <div style={{ fontWeight: 700, marginBottom: 6 }}>API response</div>
+              <pre style={{ maxHeight: 260, overflow: "auto", border: "1px solid #eee", padding: 10 }}>{apiJson}</pre>
+            </div>
+            <div>
+              <div style={{ fontWeight: 700, marginBottom: 6 }}>Snapshot only</div>
+              <pre style={{ maxHeight: 260, overflow: "auto", border: "1px solid #eee", padding: 10 }}>{snapshotJson}</pre>
+            </div>
+          </div>
+        </details>
+      </AdminPanel>
     </AdminShell>
   );
 }

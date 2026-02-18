@@ -45,6 +45,8 @@ type BrainWaveBudgetSnapshot =
       ok: true;
       total: number;
       topByShardType: BrainSpawnSummaryRow[];
+      caps?: { shardId: string; type: string; cap: number; policy: string; updatedAt: string }[];
+      remaining?: { shardId: string; type: string; cap: number; used: number; remaining: number; policy: string }[];
     }
   | {
       ok: false;
@@ -87,7 +89,7 @@ type TickSnapshot = {
     dbName?: string | null;
     brainSpawns?: BrainSpawnSummary | null;
     spawnPointsSchema?: SpawnPointsSchemaProbe | null;
-    brainWaveBudget?: any;
+    brainWaveBudget?: BrainWaveBudgetSnapshot | null;
   };
 
   ws: {
@@ -512,6 +514,66 @@ class DbProbe {
     }
   }
 
+  public async getWaveBudgetCaps(used: BrainSpawnSummaryRow[]): Promise<
+    | {
+        caps: { shardId: string; type: string; cap: number; policy: string; updatedAt: string }[];
+        remaining: { shardId: string; type: string; cap: number; used: number; remaining: number; policy: string }[];
+      }
+    | null
+  > {
+    const pool = this.pool;
+    if (!pool) return null;
+
+    try {
+      const res = await this.withTimeout(
+        pool.query<{
+          shard_id: string;
+          type: string;
+          cap: string | number;
+          policy: string;
+          updated_at: string;
+        }>(
+          `
+          SELECT shard_id, type, cap, policy, updated_at
+          FROM spawn_wave_budgets
+          ORDER BY shard_id, type
+          `
+        ),
+        this.timeoutMs,
+      );
+
+      const caps = res.rows.map((r) => ({
+        shardId: r.shard_id,
+        type: r.type,
+        cap: Number(r.cap),
+        policy: r.policy ?? "hard",
+        updatedAt: r.updated_at,
+      }));
+
+      const usedMap = new Map<string, number>();
+      for (const u of used) usedMap.set(`${u.shardId}:${u.type}`, u.count);
+
+      const remaining = caps.map((c) => {
+        const u = usedMap.get(`${c.shardId}:${c.type}`) ?? 0;
+        return {
+          shardId: c.shardId,
+          type: c.type,
+          cap: c.cap,
+          used: u,
+          remaining: Math.max(0, c.cap - u),
+          policy: c.policy,
+        };
+      });
+
+      return { caps, remaining };
+    } catch (err: any) {
+      // Missing table is acceptable (feature not enabled yet).
+      if (err?.code == "42P01") return null;
+      log("error", "[waveBudgetCaps] query failed", { err: this.errToString(err) });
+      return null;
+    }
+  }
+
   public async probeSpawnPointsSchema(): Promise<SpawnPointsSchemaProbe | null> {
     if (!this.pool) return null;
 
@@ -681,7 +743,15 @@ async function probeBrainWaveBudget(
     return { ok: false, reason: "spawn_points query failed (see logs)", schema };
   }
 
-  return { ok: true, total: summary.total, topByShardType: summary.topByShardType };
+  const caps = await db.getWaveBudgetCaps(summary.topByShardType);
+
+  return {
+    ok: true,
+    total: summary.total,
+    topByShardType: summary.topByShardType,
+    caps: caps?.caps,
+    remaining: caps?.remaining,
+  };
 }
 
 
