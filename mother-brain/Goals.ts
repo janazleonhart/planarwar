@@ -12,7 +12,7 @@
 import fs from "node:fs";
 import path from "node:path";
 
-export type GoalKind = "db_table_exists" | "db_wave_budget_breaches" | "ws_connected" | "ws_mud" | "http_get" | "http_json";
+export type GoalKind = "db_table_exists" | "db_wave_budget_breaches" | "ws_connected" | "ws_mud" | "http_get" | "http_json" | "http_post_json";
 
 export type GoalDefinition = {
   id: string;
@@ -36,6 +36,11 @@ export type GoalDefinition = {
   expectValue?: unknown;
   expectSubset?: Record<string, unknown>;
   expectJson?: unknown;
+
+  // http_post_json
+  // Sends a JSON POST body and (optionally) validates JSON response.
+  requestJson?: unknown;
+  requestHeaders?: Record<string, string>;
 
   // ws_mud
   command?: string;
@@ -185,6 +190,9 @@ function normalizeGoals(maybeGoals: unknown): GoalDefinition[] {
       expectValue: "expectValue" in o ? (o as any).expectValue : undefined,
       expectSubset: (o as any).expectSubset && typeof (o as any).expectSubset === "object" ? ((o as any).expectSubset as any) : undefined,
       expectJson: "expectJson" in o ? (o as any).expectJson : undefined,
+      requestJson: "requestJson" in o ? (o as any).requestJson : undefined,
+      requestHeaders:
+        (o as any).requestHeaders && typeof (o as any).requestHeaders === "object" ? ((o as any).requestHeaders as any) : undefined,
       command: typeof o.command === "string" ? o.command : undefined,
       expectIncludes: typeof o.expectIncludes === "string" ? o.expectIncludes : undefined,
       maxBreaches: typeof o.maxBreaches === "number" ? o.maxBreaches : undefined,
@@ -718,6 +726,111 @@ async function httpJson(args: {
     clearTimeout(t);
   }
 }
+async function httpPostJson(args: {
+  url: string;
+  timeoutMs: number;
+  requestJson: unknown;
+  requestHeaders?: Record<string, string>;
+  expectStatus?: number;
+  expectPath?: string;
+  expectValue?: unknown;
+  expectSubset?: unknown;
+  expectJson?: unknown;
+  maxBodyBytes?: number;
+  maxPreviewBytes?: number;
+}): Promise<{
+  ok: boolean;
+  status?: number;
+  error?: string;
+  bodyPreview?: string;
+  extracted?: unknown;
+}> {
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), args.timeoutMs);
+  try {
+    const headers: Record<string, string> = {
+      "content-type": "application/json",
+      ...(args.requestHeaders ?? {}),
+    };
+
+    const res = await fetch(args.url, {
+      method: "POST",
+      signal: ctrl.signal,
+      headers,
+      body: JSON.stringify(args.requestJson ?? null),
+    });
+
+    const status = res.status;
+    const statusOk = typeof args.expectStatus === "number" ? status === args.expectStatus : res.ok;
+
+    // If no JSON assertions are requested, we can stop here.
+    const wantsJson =
+      (typeof args.expectPath === "string" && args.expectPath.trim().length > 0) ||
+      (args.expectSubset && typeof args.expectSubset === "object") ||
+      ("expectJson" in args && args.expectJson !== undefined);
+
+    if (!wantsJson) return { ok: statusOk, status };
+
+    const maxBodyBytes = typeof args.maxBodyBytes === "number" && args.maxBodyBytes > 0 ? args.maxBodyBytes : 16384;
+    const maxPreviewBytes =
+      typeof args.maxPreviewBytes === "number" && args.maxPreviewBytes > 0 ? args.maxPreviewBytes : 4096;
+
+    const txt = await res.text();
+    const capped = txt.length > maxBodyBytes ? txt.slice(0, maxBodyBytes) : txt;
+    const preview = capped.length > maxPreviewBytes ? `${capped.slice(0, maxPreviewBytes)}…` : capped;
+
+    let json: unknown;
+    try {
+      json = JSON.parse(capped);
+    } catch (e: unknown) {
+      return {
+        ok: false,
+        status,
+        bodyPreview: preview,
+        error: `invalid json: ${e instanceof Error ? e.message : String(e)}`,
+      };
+    }
+
+    const checks: { ok: boolean; err?: string; extracted?: unknown }[] = [];
+
+    if (typeof args.expectPath === "string" && args.expectPath.trim().length > 0) {
+      const v = getByDotPath(json, args.expectPath.trim());
+      checks.push({
+        ok: deepEqualJson(v, args.expectValue),
+        err: `path mismatch: ${args.expectPath}`,
+        extracted: v,
+      });
+    }
+
+    if (args.expectSubset && typeof args.expectSubset === "object") {
+      checks.push({ ok: subsetMatch(args.expectSubset, json), err: "subset mismatch" });
+    }
+
+    if ("expectJson" in args && args.expectJson !== undefined) {
+      checks.push({ ok: deepEqualJson(args.expectJson, json), err: "json mismatch" });
+    }
+
+    const checksOk = checks.every((c) => c.ok);
+    const extracted = checks.find((c) => c.extracted !== undefined)?.extracted;
+
+    const ok = statusOk && checksOk;
+    return {
+      ok,
+      status,
+      bodyPreview: preview,
+      extracted,
+      error: ok
+        ? undefined
+        : !statusOk
+          ? `status ${status}`
+          : checks.find((c) => !c.ok)?.err ?? "json expectation failed",
+    };
+  } catch (e: unknown) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+  } finally {
+    clearTimeout(t);
+  }
+}
 
 
 export async function runGoalsOnce(
@@ -995,6 +1108,61 @@ export async function runGoalsOnce(
       });
       continue;
     }
+
+
+    if (goal.kind === "http_post_json") {
+      const url = goal.url;
+      if (!url) {
+        failCount += 1;
+        results.push({ id: goal.id, kind: goal.kind, ok: false, error: "missing url" });
+        continue;
+      }
+
+      const timeoutMs = goal.timeoutMs ?? 2000;
+      const req = "requestJson" in goal ? (goal as any).requestJson : undefined;
+      if (req === undefined) {
+        failCount += 1;
+        results.push({ id: goal.id, kind: goal.kind, ok: false, error: "missing requestJson" });
+        continue;
+      }
+
+      const res = await httpPostJson({
+        url,
+        timeoutMs,
+        requestJson: req,
+        requestHeaders: (goal as any).requestHeaders,
+        expectStatus: goal.expectStatus,
+        expectPath: goal.expectPath,
+        expectValue: goal.expectValue,
+        expectSubset: goal.expectSubset,
+        expectJson: goal.expectJson,
+      });
+
+      const ok = res.ok;
+      if (ok) okCount += 1;
+      else failCount += 1;
+
+      results.push({
+        id: goal.id,
+        kind: goal.kind,
+        ok,
+        latencyMs: Date.now() - start,
+        error: ok ? undefined : res.error ?? `status ${res.status ?? "unknown"}`,
+        details: {
+          url,
+          status: res.status,
+          expectStatus: goal.expectStatus,
+          expectPath: goal.expectPath,
+          expectValue: goal.expectValue,
+          expectSubset: goal.expectSubset,
+          expectJson: goal.expectJson,
+          extracted: res.extracted,
+          bodyPreview: res.bodyPreview,
+        },
+      });
+      continue;
+    }
+
 
 // Unknown kind => fail (explicit, so we notice typos quickly)
     failCount += 1;
