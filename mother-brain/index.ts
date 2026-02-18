@@ -31,6 +31,15 @@ import { z } from "zod";
 import type { Dirent } from "node:fs";
 
 import { installFileLogTap } from "./FileLogTap";
+import {
+  createGoalsState,
+  getActiveGoals,
+  runGoalsOnce,
+  setInMemoryGoals,
+  type GoalDefinition,
+  type GoalRunReport,
+  type GoalsState,
+} from "./Goals";
 
 export type Logger = {
   debug: (...args: unknown[]) => void;
@@ -361,6 +370,25 @@ const ConfigSchema = z
       .refine((n) => Number.isFinite(n) && n >= 1, {
         message: "MOTHER_BRAIN_SCHEMA_PROBE_EVERY_TICKS must be a number >= 1",
       }),
+
+    // -----------------------------------------------------------------------
+    // Goals runner (observe-only; produces structured JSONL reports)
+    // -----------------------------------------------------------------------
+
+    // How often to run goal checks. 0 disables.
+    MOTHER_BRAIN_GOALS_EVERY_TICKS: z
+      .string()
+      .optional()
+      .transform((v) => (v ? Number(v) : 0))
+      .refine((n) => Number.isFinite(n) && n >= 0, {
+        message: "MOTHER_BRAIN_GOALS_EVERY_TICKS must be a number >= 0",
+      }),
+
+    // Optional JSON file containing an array of GoalDefinition (hot-reloaded).
+    MOTHER_BRAIN_GOALS_FILE: z.string().optional(),
+
+    // Optional report directory. If unset, we will derive from PW_FILELOG.
+    MOTHER_BRAIN_GOALS_REPORT_DIR: z.string().optional(),
   })
   .passthrough();
 
@@ -392,6 +420,10 @@ type MotherBrainConfig = {
   schemaProbeEveryTicks: number;
   brainWaveBudgetEveryTicks: number;
   brainWaveBudgetTopN: number;
+
+  goalsEveryTicks: number;
+  goalsFile?: string;
+  goalsReportDir?: string;
 };
 
 function parseConfig(): MotherBrainConfig {
@@ -433,6 +465,10 @@ function parseConfig(): MotherBrainConfig {
 
     brainWaveBudgetEveryTicks: env.MOTHER_BRAIN_WAVE_BUDGET_EVERY_TICKS,
     brainWaveBudgetTopN: env.MOTHER_BRAIN_WAVE_BUDGET_TOP_N,
+
+    goalsEveryTicks: env.MOTHER_BRAIN_GOALS_EVERY_TICKS,
+    goalsFile: env.MOTHER_BRAIN_GOALS_FILE,
+    goalsReportDir: env.MOTHER_BRAIN_GOALS_REPORT_DIR,
   };
 }
 
@@ -949,7 +985,42 @@ type StatusState = {
   lastSnapshotIso: string | null;
   lastChangeIso: string | null;
   lastSignature: string | null;
+  goals: {
+    state: GoalsState;
+    lastReport: GoalRunReport | null;
+  };
 };
+
+function deriveGoalsReportDir(cfg: MotherBrainConfig): string | undefined {
+  if (cfg.goalsReportDir && cfg.goalsReportDir.trim().length > 0) {
+    return path.resolve(cfg.goalsReportDir.trim());
+  }
+
+  // If PW_FILELOG is set, drop reports into its directory under mother-brain/.
+  const pw = process.env.PW_FILELOG;
+  if (pw && pw.trim().length > 0) {
+    const baseDir = path.dirname(pw);
+    return path.resolve(baseDir, "mother-brain");
+  }
+
+  return undefined;
+}
+
+async function readJsonBody(req: http.IncomingMessage, maxBytes = 128 * 1024): Promise<unknown> {
+  const chunks: Buffer[] = [];
+  let total = 0;
+
+  for await (const chunk of req) {
+    const b = Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk));
+    total += b.length;
+    if (total > maxBytes) throw new Error("body too large");
+    chunks.push(b);
+  }
+
+  const raw = Buffer.concat(chunks).toString("utf-8").trim();
+  if (raw.length === 0) return null;
+  return JSON.parse(raw) as unknown;
+}
 
 function computeSignature(s: TickSnapshot): string {
   const parts = [
@@ -970,7 +1041,7 @@ function isReady(s: TickSnapshot): boolean {
 function startHttpServer(cfg: MotherBrainConfig, state: StatusState): http.Server | null {
   if (!cfg.httpPort || cfg.httpPort <= 0) return null;
 
-  const server = http.createServer((req, res) => {
+  const server = http.createServer(async (req, res) => {
     const url = req.url || "/";
     if (url === "/healthz") {
       res.statusCode = 200;
@@ -1007,6 +1078,93 @@ function startHttpServer(cfg: MotherBrainConfig, state: StatusState): http.Serve
           snapshot: state.lastSnapshot,
         })
       );
+      return;
+    }
+
+    // ---------------------------------------------------------------------
+    // Goals runner endpoints (safe; observe-only)
+    // ---------------------------------------------------------------------
+
+    if (url === "/goals" && req.method === "GET") {
+      res.statusCode = 200;
+      res.setHeader("content-type", "application/json");
+      res.end(
+        JSON.stringify({
+          ok: true,
+          ts: nowIso(),
+          everyTicks: state.goals.state.everyTicks,
+          filePath: state.goals.state.filePath,
+          reportFile: state.goals.state.reportFilePath,
+          inMemory: Boolean(state.goals.state.inMemoryGoals),
+          activeGoals: getActiveGoals(state.goals.state),
+          lastRunIso: state.goals.state.lastRunIso,
+          lastOk: state.goals.state.lastOk,
+          lastSummary: state.goals.state.lastSummary,
+        })
+      );
+      return;
+    }
+
+    if (url === "/goals/set" && req.method === "POST") {
+      try {
+        const body = await readJsonBody(req);
+        const goals = Array.isArray(body) ? (body as GoalDefinition[]) : null;
+        setInMemoryGoals(state.goals.state, goals);
+        res.statusCode = 200;
+        res.setHeader("content-type", "application/json");
+        res.end(JSON.stringify({ ok: true, ts: nowIso(), inMemory: Boolean(goals) }));
+      } catch (e: unknown) {
+        res.statusCode = 400;
+        res.setHeader("content-type", "application/json");
+        res.end(JSON.stringify({ ok: false, error: e instanceof Error ? e.message : String(e) }));
+      }
+      return;
+    }
+
+    if (url === "/goals/clear" && req.method === "POST") {
+      setInMemoryGoals(state.goals.state, null);
+      res.statusCode = 200;
+      res.setHeader("content-type", "application/json");
+      res.end(JSON.stringify({ ok: true, ts: nowIso(), inMemory: false }));
+      return;
+    }
+
+    if (url === "/goals/run" && req.method === "POST") {
+      // Run goals immediately using the last known snapshot context.
+      // Note: DB querying is not available from this endpoint (by design).
+      try {
+        const tick = state.lastSnapshot?.tick ?? 0;
+        const wb = state.lastSnapshot?.db.brainWaveBudget ?? null;
+        const wsState = state.lastSnapshot?.ws.state ?? "disabled";
+
+        const report = await runGoalsOnce(
+          state.goals.state,
+          {
+            nowIso,
+            dbQuery: async () => {
+              throw new Error("db_query unavailable from HTTP endpoint; rely on scheduled runs");
+            },
+            waveBudget:
+              wb && wb.ok
+                ? { ok: true, breaches: wb.breaches }
+                : wb && !wb.ok
+                  ? { ok: false, reason: wb.reason }
+                  : null,
+            wsState,
+            log,
+          },
+          tick
+        );
+
+        state.goals.lastReport = report;
+        res.statusCode = report.ok ? 200 : 503;
+        res.setHeader("content-type", "application/json");
+        res.end(JSON.stringify({ ok: report.ok, ts: nowIso(), report }));
+      } catch (e: unknown) {
+        res.statusCode = 500;
+        res.setHeader("content-type", "application/json");
+        res.end(JSON.stringify({ ok: false, error: e instanceof Error ? e.message : String(e) }));
+      }
       return;
     }
 
@@ -1047,6 +1205,9 @@ async function main(): Promise<void> {
     if (shouldLog(level, cfg.logLevel)) log(level, msg, extra);
   };
 
+  const goalsFileAbs = cfg.goalsFile ? path.resolve(cfg.goalsFile) : undefined;
+  const goalsReportDir = deriveGoalsReportDir(cfg);
+
   const dbProbe = new DbProbe(cfg.dbUrl, cfg.dbTimeoutMs);
   const wsProbe = new WsProbe(cfg.wsUrl, cfg.wsTimeoutMs);
 
@@ -1060,6 +1221,9 @@ async function main(): Promise<void> {
     httpPort: cfg.httpPort,
     hasDbUrl: Boolean(cfg.dbUrl),
     hasWsUrl: Boolean(cfg.wsUrl),
+    goalsEveryTicks: cfg.goalsEveryTicks,
+    goalsFile: goalsFileAbs,
+    goalsReportDir,
     pid: process.pid,
     node: process.version,
   });
@@ -1083,6 +1247,14 @@ async function main(): Promise<void> {
     lastSnapshotIso: null,
     lastChangeIso: null,
     lastSignature: null,
+    goals: {
+      state: createGoalsState({
+        filePath: goalsFileAbs,
+        reportDir: goalsReportDir,
+        everyTicks: cfg.goalsEveryTicks,
+      }),
+      lastReport: null,
+    },
   };
 
   let httpServer: http.Server | null = null;
@@ -1154,6 +1326,38 @@ async function main(): Promise<void> {
       tick % cfg.brainWaveBudgetEveryTicks === 0 &&
       dbRes.ok;
     const brainWaveBudget = shouldBudget ? await probeBrainWaveBudget(dbProbe, cfg) : null;
+
+    // v0.20: optional goals runner (structured JSONL reports)
+    const shouldRunGoals =
+      cfg.goalsEveryTicks > 0 && tick % cfg.goalsEveryTicks === 0 && (dbProbe.isEnabled() || wsProbe.isEnabled());
+    if (shouldRunGoals) {
+      try {
+        const wbForGoals =
+          brainWaveBudget && brainWaveBudget.ok
+            ? { ok: true as const, breaches: brainWaveBudget.breaches }
+            : brainWaveBudget && !brainWaveBudget.ok
+              ? { ok: false as const, reason: brainWaveBudget.reason }
+              : null;
+
+        state.goals.lastReport = await runGoalsOnce(
+          state.goals.state,
+          {
+            nowIso,
+            dbQuery: async (sql: string, params?: any[]) => {
+              const r = await dbProbe.query(sql, params);
+              if (!r) return null;
+              return { rows: r.rows };
+            },
+            waveBudget: wbForGoals,
+            wsState: wsProbe.isEnabled() ? wsProbe.getState() : "disabled",
+            log,
+          },
+          tick
+        );
+      } catch (e: unknown) {
+        gatedLog("warn", "Goals runner failed", { error: e instanceof Error ? e.message : String(e) });
+      }
+    }
 
 
     const snapshot: TickSnapshot = {
