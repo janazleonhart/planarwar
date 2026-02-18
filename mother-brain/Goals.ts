@@ -227,7 +227,8 @@ export type GoalPackId =
   | "ws"
   | "player_smoke"
   | "admin_smoke"
-  | "web_smoke";
+  | "web_smoke"
+  | "all_smoke";
 
 export function builtinGoalPacks(ctx?: { webBackendHttpBase?: string }): Record<GoalPackId, GoalDefinition[]> {
   // NOTE: When building packs via ternaries/spreads, TS can widen string literals (e.g. kind -> string).
@@ -323,7 +324,21 @@ export function builtinGoalPacks(ctx?: { webBackendHttpBase?: string }): Record<
       { id: "ws.mud.whereami", kind: "ws_mud", command: "whereami", expectIncludes: "You are", timeoutMs: 2500 },
     ],
     admin_smoke: adminSmoke,
-    web_smoke: webSmoke,
+    all_smoke: [
+  // Convenience pack: combines core + web_smoke + admin_smoke + player_smoke.
+  // Individual goals inside may be disabled (e.g. if MOTHER_BRAIN_WEB_BACKEND_HTTP_BASE is not set).
+  ...([
+    { id: "db.service_heartbeats.exists", kind: "db_table_exists", table: "service_heartbeats" },
+    { id: "db.spawn_points.exists", kind: "db_table_exists", table: "spawn_points" },
+    { id: "wave_budget.no_breaches", kind: "db_wave_budget_breaches", maxBreaches: 0 },
+    { id: "ws.connected", kind: "ws_connected" },
+  ] satisfies GoalDefinition[]),
+  ...webSmoke,
+  ...adminSmoke,
+  // Requires WS to be configured for an authenticated character session.
+  { id: "ws.mud.whereami", kind: "ws_mud", command: "whereami", expectIncludes: "You are", timeoutMs: 2500 },
+],
+web_smoke: webSmoke,
 
   };
 }
