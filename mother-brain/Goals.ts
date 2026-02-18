@@ -490,19 +490,54 @@ function appendJsonl(filePath: string, obj: unknown): void {
   }
 }
 
-async function httpGet(url: string, timeoutMs: number): Promise<{ ok: boolean; status?: number; error?: string }> {
+async function httpGet(args: {
+  url: string;
+  timeoutMs: number;
+  expectStatus?: number;
+  expectIncludes?: string;
+  maxBodyBytes?: number;
+}): Promise<{
+  ok: boolean;
+  status?: number;
+  error?: string;
+  bodyPreview?: string;
+}> {
   // Node 18+ global fetch.
   const ctrl = new AbortController();
-  const t = setTimeout(() => ctrl.abort(), timeoutMs);
+  const t = setTimeout(() => ctrl.abort(), args.timeoutMs);
   try {
-    const res = await fetch(url, { method: "GET", signal: ctrl.signal });
-    return { ok: res.ok, status: res.status };
+    const res = await fetch(args.url, { method: "GET", signal: ctrl.signal });
+    const status = res.status;
+
+    // Respect explicit expected status if provided; otherwise use res.ok.
+    const statusOk = typeof args.expectStatus === "number" ? status === args.expectStatus : res.ok;
+
+    // Optional body substring assertion.
+    const expectIncludes =
+      typeof args.expectIncludes === "string" && args.expectIncludes.length > 0 ? args.expectIncludes : null;
+    if (!expectIncludes) {
+      return { ok: statusOk, status };
+    }
+
+    // Read the body, but cap it so we don't balloon logs/snapshots.
+    const maxBodyBytes = typeof args.maxBodyBytes === "number" && args.maxBodyBytes > 0 ? args.maxBodyBytes : 4096;
+    const txt = await res.text();
+    const preview = txt.length > maxBodyBytes ? `${txt.slice(0, maxBodyBytes)}…` : txt;
+    const bodyOk = preview.includes(expectIncludes);
+
+    return {
+      ok: statusOk && bodyOk,
+      status,
+      bodyPreview: preview,
+      error: statusOk && !bodyOk ? `missing substring: ${expectIncludes}` : undefined,
+    };
   } catch (e: unknown) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) };
   } finally {
     clearTimeout(t);
   }
 }
+
 
 export async function runGoalsOnce(
   state: GoalsState,
@@ -708,8 +743,13 @@ export async function runGoalsOnce(
       const expectStatus = goal.expectStatus;
       const timeoutMs = goal.timeoutMs ?? 2000;
 
-      const res = await httpGet(url, timeoutMs);
-      const ok = res.ok && (expectStatus ? res.status === expectStatus : true);
+      const res = await httpGet({
+        url,
+        timeoutMs,
+        expectStatus,
+        expectIncludes: goal.expectIncludes,
+      });
+      const ok = res.ok;
       if (ok) okCount += 1;
       else failCount += 1;
 
@@ -718,8 +758,14 @@ export async function runGoalsOnce(
         kind: goal.kind,
         ok,
         latencyMs: Date.now() - start,
-        error: res.ok ? undefined : res.error ?? `status ${res.status ?? "unknown"}`,
-        details: { url, status: res.status, expectStatus },
+        error: ok ? undefined : res.error ?? `status ${res.status ?? "unknown"}`,
+        details: {
+          url,
+          status: res.status,
+          expectStatus,
+          expectIncludes: goal.expectIncludes,
+          bodyPreview: res.bodyPreview,
+        },
       });
       continue;
     }
