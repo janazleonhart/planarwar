@@ -63,6 +63,12 @@ type WaveBudgetResponse = {
   error?: string;
 };
 
+type GoalsProxyInfoResponse = {
+  ok: boolean;
+  enabled: boolean;
+  baseUrl?: string;
+};
+
 function safeIso(iso: string | null | undefined): string {
   if (!iso) return "";
   const d = new Date(iso);
@@ -320,6 +326,11 @@ export function AdminMotherBrainPage() {
   const [data, setData] = useState<MotherBrainHeartbeat | null>(null);
   const [raw, setRaw] = useState<MotherBrainStatusResponse | null>(null);
 
+  const [goalsProxyEnabled, setGoalsProxyEnabled] = useState(false);
+  const [goalsProxyBase, setGoalsProxyBase] = useState<string | null>(null);
+  const [goalsRunBusy, setGoalsRunBusy] = useState(false);
+  const [goalsRunResult, setGoalsRunResult] = useState<any | null>(null);
+
   // Optional caps table (spawn_wave_budgets) + derived usage.
   const [waveCaps, setWaveCaps] = useState<WaveBudgetCapRow[]>([]);
   const [waveUsage, setWaveUsage] = useState<WaveBudgetUsageRow[]>([]);
@@ -363,6 +374,22 @@ export function AdminMotherBrainPage() {
         }
       }
 
+      // Optional: discover whether the web-backend can proxy to Mother Brain's HTTP status server.
+      // This enables a "Run goals now" button (dev-only; disabled unless configured).
+      try {
+        const pi = await api<GoalsProxyInfoResponse>("/api/admin/mother_brain/goals_proxy_info");
+        if (pi && pi.ok) {
+          setGoalsProxyEnabled(Boolean(pi.enabled));
+          setGoalsProxyBase(typeof pi.baseUrl === "string" ? pi.baseUrl : null);
+        } else {
+          setGoalsProxyEnabled(false);
+          setGoalsProxyBase(null);
+        }
+      } catch {
+        setGoalsProxyEnabled(false);
+        setGoalsProxyBase(null);
+      }
+
       // Wave budget caps are optional. If missing, don't treat it as fatal.
       try {
         const wb = await api<WaveBudgetResponse>("/api/admin/mother_brain/wave_budget");
@@ -387,6 +414,32 @@ export function AdminMotherBrainPage() {
     } finally {
       setBusy(false);
       inFlightRef.current = false;
+    }
+  };
+
+  const runGoalsNow = async () => {
+    if (!goalsProxyEnabled || goalsRunBusy) return;
+    setGoalsRunBusy(true);
+    setError(null);
+    setNotice(null);
+    setGoalsRunResult(null);
+
+    try {
+      const r = await api<any>("/api/admin/mother_brain/goals/run", { method: "POST" });
+      setGoalsRunResult(r);
+
+      if (!r?.ok) {
+        setError(r?.error || "Goals run failed.");
+      } else {
+        setNotice("Goals run completed.");
+      }
+
+      // Refresh DB snapshot view (the run result is returned directly, but this keeps the page coherent).
+      await load();
+    } catch (e: any) {
+      setError(e?.message ? String(e.message) : String(e));
+    } finally {
+      setGoalsRunBusy(false);
     }
   };
 
@@ -645,7 +698,16 @@ export function AdminMotherBrainPage() {
                 Mother Brain self-check suites (from snapshot). Use this as a quick pass/fail/stale signal.
               </div>
             </div>
-            {goalsSummary.overall ? <span style={goalsBadgeStyle(goalsSummary.overall.status)}>{goalsSummary.overall.status}</span> : null}
+            <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+              {goalsProxyEnabled ? (
+                <button disabled={busy || goalsRunBusy} onClick={() => void runGoalsNow()}>
+                  {goalsRunBusy ? "Running…" : "Run now"}
+                </button>
+              ) : null}
+              {goalsSummary.overall ? (
+                <span style={goalsBadgeStyle(goalsSummary.overall.status)}>{goalsSummary.overall.status}</span>
+              ) : null}
+            </div>
           </div>
 
           {!goalsSummary.overall ? (
@@ -657,6 +719,21 @@ export function AdminMotherBrainPage() {
             </div>
           ) : (
             <div style={{ marginTop: 10 }}>
+              {goalsProxyEnabled ? (
+                <div style={{ marginBottom: 10, fontSize: 12, opacity: 0.85 }}>
+                  Tip: <code>Run now</code> uses the web-backend proxy to Mother Brain’s HTTP status server{goalsProxyBase ? (
+                    <>
+                      {" "}(<code>{goalsProxyBase}</code>)
+                    </>
+                  ) : null}.
+                </div>
+              ) : (
+                <div style={{ marginBottom: 10, fontSize: 12, opacity: 0.85 }}>
+                  Tip: enable the optional Mother Brain HTTP server to get a <code>Run now</code> button (set <code>MOTHER_BRAIN_HTTP_PORT</code> on mother-brain and
+                  <code>PW_MOTHER_BRAIN_HTTP_URL</code> (or the same host/port) on web-backend).
+                </div>
+              )}
+
               <div style={{ display: "flex", flexWrap: "wrap", gap: 14, alignItems: "center" }}>
                 <div>
                   <span style={{ opacity: 0.8 }}>age</span>{" "}
@@ -774,6 +851,15 @@ export function AdminMotherBrainPage() {
                     </div>
                   </details>
                 </div>
+              ) : null}
+
+              {goalsRunResult ? (
+                <details style={{ marginTop: 10 }}>
+                  <summary style={{ cursor: "pointer", fontWeight: 700, fontSize: 13 }}>Latest Run-now result</summary>
+                  <pre style={{ marginTop: 8, maxHeight: 240, overflow: "auto", border: "1px solid #eee", padding: 10 }}>
+                    {prettyJson(goalsRunResult)}
+                  </pre>
+                </details>
               ) : null}
             </div>
           )}

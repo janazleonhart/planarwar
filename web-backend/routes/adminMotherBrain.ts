@@ -10,6 +10,71 @@ import { db } from "../../worldcore/db/Database";
 
 const router = Router();
 
+function motherBrainHttpBase(): string | null {
+  const explicit = typeof process.env.PW_MOTHER_BRAIN_HTTP_URL === "string" ? process.env.PW_MOTHER_BRAIN_HTTP_URL.trim() : "";
+  if (explicit) return explicit.replace(/\/+$/, "");
+
+  const portRaw = process.env.MOTHER_BRAIN_HTTP_PORT;
+  const port = portRaw && String(portRaw).trim() !== "" ? Number(portRaw) : NaN;
+  if (Number.isFinite(port) && port > 0) {
+    const host = typeof process.env.MOTHER_BRAIN_HTTP_HOST === "string" && process.env.MOTHER_BRAIN_HTTP_HOST.trim()
+      ? process.env.MOTHER_BRAIN_HTTP_HOST.trim()
+      : "127.0.0.1";
+    return `http://${host}:${port}`;
+  }
+
+  return null;
+}
+
+async function proxyMotherBrain(method: "GET" | "POST", path: string, body?: unknown): Promise<{ ok: boolean; status: number; json: any }> {
+  const base = motherBrainHttpBase();
+  if (!base) {
+    return {
+      ok: false,
+      status: 409,
+      json: {
+        ok: false,
+        error: "mother_brain_http_proxy_disabled",
+        detail: "Set PW_MOTHER_BRAIN_HTTP_URL or MOTHER_BRAIN_HTTP_PORT on web-backend to enable proxy.",
+      },
+    };
+  }
+
+  const url = `${base}${path.startsWith("/") ? "" : "/"}${path}`;
+  const ac = new AbortController();
+  const t = setTimeout(() => ac.abort(), 2500);
+
+  try {
+    const res = await fetch(url, {
+      method,
+      headers: body === undefined ? undefined : { "content-type": "application/json" },
+      body: body === undefined ? undefined : JSON.stringify(body),
+      signal: ac.signal,
+    } as any);
+
+    let json: any = null;
+    try {
+      json = await res.json();
+    } catch {
+      json = { ok: false, error: "non_json_response" };
+    }
+
+    return { ok: res.ok, status: res.status, json };
+  } catch (err: unknown) {
+    return {
+      ok: false,
+      status: 502,
+      json: {
+        ok: false,
+        error: "mother_brain_http_proxy_failed",
+        detail: err instanceof Error ? err.message : String(err),
+      },
+    };
+  } finally {
+    clearTimeout(t);
+  }
+}
+
 function pgErrCode(err: unknown): string | null {
   if (!err || typeof err !== "object") return null;
   const anyErr = err as any;
@@ -187,6 +252,42 @@ router.delete("/wave_budget/:shardId/:type", async (req, res) => {
 
     res.status(500).json({ ok: false, error: err instanceof Error ? err.message : String(err) });
   }
+});
+
+// ---------------------------------------------------------------------------
+// Optional: proxy through to Mother Brain's own HTTP status server.
+// This enables "Run goals now" and similar actions from the Admin UI without
+// exposing Mother Brain cross-origin.
+//
+// Enable by setting one of:
+//   - PW_MOTHER_BRAIN_HTTP_URL=http://127.0.0.1:8789
+//   - MOTHER_BRAIN_HTTP_HOST + MOTHER_BRAIN_HTTP_PORT
+// ---------------------------------------------------------------------------
+
+router.get("/goals_proxy_info", async (_req, res) => {
+  const base = motherBrainHttpBase();
+  res.json({ ok: true, enabled: Boolean(base), baseUrl: base ? base : undefined });
+});
+
+router.get("/goals", async (_req, res) => {
+  const r = await proxyMotherBrain("GET", "/goals");
+  res.status(r.status).json(r.json);
+});
+
+router.post("/goals/run", async (_req, res) => {
+  const r = await proxyMotherBrain("POST", "/goals/run", {});
+  res.status(r.status).json(r.json);
+});
+
+router.post("/goals/clear", async (_req, res) => {
+  const r = await proxyMotherBrain("POST", "/goals/clear", {});
+  res.status(r.status).json(r.json);
+});
+
+router.post("/goals/set", async (req, res) => {
+  // body must be a JSON array of goals (forwarded verbatim)
+  const r = await proxyMotherBrain("POST", "/goals/set", req.body);
+  res.status(r.status).json(r.json);
 });
 
 export default router;
