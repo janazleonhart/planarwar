@@ -347,6 +347,31 @@ export function AdminMotherBrainPage() {
     }
   };
 
+  const deleteCap = async (cap: { shard_id: string; type: string }) => {
+    if (busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const shard = encodeURIComponent(cap.shard_id);
+      const type = encodeURIComponent(cap.type);
+      const res = await api<any>(`/api/admin/mother_brain/wave_budget/${shard}/${type}`, {
+        method: "DELETE",
+      });
+
+      if (!res?.ok) {
+        setError(res?.error || "Failed to delete wave budget cap.");
+        return;
+      }
+
+      setNotice("Wave budget cap deleted.");
+      await load();
+    } catch (e: any) {
+      setError(e?.message ? String(e.message) : String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
     <AdminShell title="Mother Brain" subtitle="Service heartbeat + last status snapshot (pulled from web-backend).">
       <AdminPanel title="Mother Brain" subtitle="Service heartbeat + last status snapshot (pulled from web-backend).">
@@ -594,14 +619,17 @@ export function AdminMotherBrainPage() {
                   {waveCaps.map((c) => {
                     const cap = toInt(c.cap) ?? 0;
                     const used = usageMap.get(`${c.shard_id}:${c.type}`) ?? 0;
-                    const remaining = Math.max(0, cap - used);
+                    const remaining = cap - used;
+                    const over = remaining < 0 ? Math.abs(remaining) : 0;
                     return (
                       <tr key={`${c.shard_id}:${c.type}`}>
                         <td>{c.shard_id}</td>
                         <td>{c.type}</td>
                         <td>{cap}</td>
                         <td>{used}</td>
-                        <td>{remaining}</td>
+                        <td>
+                          {over > 0 ? <span style={{ fontWeight: 700 }}>OVER by {over}</span> : Math.max(0, remaining)}
+                        </td>
                         <td>{c.policy}</td>
                         <td>{safeIso(c.updated_at)}</td>
                         <td>
@@ -610,6 +638,13 @@ export function AdminMotherBrainPage() {
                             onClick={() => void handleUpsertCap(c.shard_id, c.type, cap, c.policy || "hard")}
                           >
                             Save
+                          </button>
+                          <button
+                            style={{ marginLeft: 8 }}
+                            disabled={busy}
+                            onClick={() => void deleteCap({ shard_id: c.shard_id, type: c.type })}
+                          >
+                            Delete
                           </button>
                         </td>
                       </tr>

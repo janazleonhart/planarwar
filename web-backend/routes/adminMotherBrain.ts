@@ -154,4 +154,39 @@ router.post("/wave_budget", async (req, res) => {
   }
 });
 
+router.delete("/wave_budget/:shardId/:type", async (req, res) => {
+  try {
+    const shardId = typeof req.params.shardId === "string" ? req.params.shardId.trim() : "";
+    const type = typeof req.params.type === "string" ? req.params.type.trim() : "";
+
+    if (!shardId || !type) {
+      res.status(400).json({ ok: false, error: "shardId_and_type_required" });
+      return;
+    }
+
+    await db.query(
+      `
+      DELETE FROM spawn_wave_budgets
+      WHERE shard_id = $1
+        AND type = $2
+      `,
+      [shardId, type],
+    );
+
+    res.json({ ok: true });
+  } catch (err: unknown) {
+    const code = pgErrCode(err);
+    if (code === "42P01" || code === "42703") {
+      res.status(409).json({
+        ok: false,
+        error: "spawn_wave_budgets_missing_or_outdated",
+        detail: err instanceof Error ? err.message : String(err),
+      });
+      return;
+    }
+
+    res.status(500).json({ ok: false, error: err instanceof Error ? err.message : String(err) });
+  }
+});
+
 export default router;
