@@ -48,7 +48,7 @@ type BrainWaveBudgetSnapshot =
       caps?: { shardId: string; type: string; cap: number; policy: string; updatedAt: string }[];
       remaining?: { shardId: string; type: string; cap: number; used: number; remaining: number; policy: string }[];
       // Optional: if we also compute/report violations, keep TS happy across variants.
-      breaches?: { shardId: string; type: string; cap: number; used: number; remaining: number; policy: string }[];
+      breaches?: { shardId: string; type: string; cap: number; used: number; overBy: number; policy: string }[];
     }
   | {
       ok: false;
@@ -520,6 +520,7 @@ class DbProbe {
     | {
         caps: { shardId: string; type: string; cap: number; policy: string; updatedAt: string }[];
         remaining: { shardId: string; type: string; cap: number; used: number; remaining: number; policy: string }[];
+        breaches: { shardId: string; type: string; cap: number; used: number; overBy: number; policy: string }[];
       }
     | null
   > {
@@ -567,7 +568,25 @@ class DbProbe {
         };
       });
 
-      return { caps, remaining };
+      const breaches = remaining
+        .map((r) => {
+          const overBy = r.used - r.cap;
+          return overBy > 0
+            ? {
+                shardId: r.shardId,
+                type: r.type,
+                cap: r.cap,
+                used: r.used,
+                overBy,
+                policy: r.policy,
+              }
+            : null;
+        })
+        .filter((x): x is { shardId: string; type: string; cap: number; used: number; overBy: number; policy: string } =>
+          Boolean(x)
+        );
+
+      return { caps, remaining, breaches };
     } catch (err: any) {
       // Missing table is acceptable (feature not enabled yet).
       if (err?.code == "42P01") return null;
@@ -753,6 +772,7 @@ async function probeBrainWaveBudget(
     topByShardType: summary.topByShardType,
     caps: caps?.caps,
     remaining: caps?.remaining,
+    breaches: caps?.breaches,
   };
 }
 
