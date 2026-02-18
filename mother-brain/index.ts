@@ -836,6 +836,16 @@ class WsProbe {
   private readonly connectTimeoutMs: number;
   private lastPongIso: string | null = null;
 
+  // v0.21: single-flight MUD command support (one in-flight command at a time).
+  // We keep this intentionally simple and protocol-tolerant.
+  private mudPending:
+    | {
+        startedAt: number;
+        resolve: (r: { ok: boolean; output?: string; error?: string; latencyMs?: number }) => void;
+        timer: NodeJS.Timeout;
+      }
+    | null = null;
+
   public constructor(wsUrl: string | undefined, connectTimeoutMs: number) {
     this.url = wsUrl;
     this.connectTimeoutMs = connectTimeoutMs;
@@ -925,6 +935,7 @@ class WsProbe {
   public async close(): Promise<void> {
     const ws = this.ws;
     this.ws = null;
+    if (this.mudPending) this.finishMudPending({ ok: false, error: "socket closed" });
     if (!ws) return;
 
     await new Promise<void>((resolve) => {
@@ -946,6 +957,9 @@ class WsProbe {
         if (settled) return;
         settled = true;
         cleanup();
+
+        // Wire message handler once per connection.
+        ws.on("message", (data) => this.onMessage(data));
         this.ws = ws;
         resolve();
       };
@@ -971,6 +985,75 @@ class WsProbe {
 
       ws.once("open", finishOk);
       ws.once("error", finishErr);
+    });
+  }
+
+  private onMessage(data: WebSocket.RawData): void {
+    if (!this.mudPending) return;
+
+    let raw = "";
+    try {
+      raw = typeof data === "string" ? data : data.toString("utf-8");
+    } catch {
+      return;
+    }
+
+    const trimmed = raw.trim();
+    if (!trimmed.startsWith("{") && !trimmed.startsWith("[")) return;
+
+    let msg: any;
+    try {
+      msg = JSON.parse(trimmed);
+    } catch {
+      return;
+    }
+
+    // Be tolerant: different servers may name fields differently.
+    const op = typeof msg?.op === "string" ? msg.op : typeof msg?.type === "string" ? msg.type : null;
+    if (op !== "mud_result" && op !== "mudResult" && op !== "mud.result") return;
+
+    const output =
+      typeof msg?.output === "string"
+        ? msg.output
+        : typeof msg?.text === "string"
+          ? msg.text
+          : typeof msg?.payload?.text === "string"
+            ? msg.payload.text
+            : typeof msg?.payload?.output === "string"
+              ? msg.payload.output
+              : "";
+
+    this.finishMudPending({ ok: true, output });
+  }
+
+  private finishMudPending(r: { ok: boolean; output?: string; error?: string }): void {
+    const pending = this.mudPending;
+    if (!pending) return;
+    this.mudPending = null;
+    clearTimeout(pending.timer);
+    pending.resolve({ ...r, latencyMs: Date.now() - pending.startedAt });
+  }
+
+  public async mudCommand(command: string, timeoutMs: number): Promise<{ ok: boolean; output?: string; error?: string }>
+  {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return { ok: false, error: "not connected" };
+    if (this.mudPending) return { ok: false, error: "mud command already in flight" };
+
+    const ws = this.ws;
+    const startedAt = Date.now();
+
+    return await new Promise((resolve) => {
+      const timer = setTimeout(() => {
+        this.finishMudPending({ ok: false, error: `timeout after ${timeoutMs}ms` });
+      }, timeoutMs);
+
+      this.mudPending = { startedAt, resolve, timer };
+
+      try {
+        ws.send(JSON.stringify({ op: "mud", payload: { text: command } }));
+      } catch (e: unknown) {
+        this.finishMudPending({ ok: false, error: e instanceof Error ? e.message : String(e) });
+      }
     });
   }
 
@@ -1350,6 +1433,7 @@ async function main(): Promise<void> {
             },
             waveBudget: wbForGoals,
             wsState: wsProbe.isEnabled() ? wsProbe.getState() : "disabled",
+            wsMudCommand: wsProbe.isEnabled() ? (cmd: string, timeoutMs: number) => wsProbe.mudCommand(cmd, timeoutMs) : undefined,
             log,
           },
           tick

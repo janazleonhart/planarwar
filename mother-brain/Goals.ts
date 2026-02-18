@@ -11,7 +11,7 @@
 import fs from "node:fs";
 import path from "node:path";
 
-export type GoalKind = "db_table_exists" | "db_wave_budget_breaches" | "ws_connected" | "http_get";
+export type GoalKind = "db_table_exists" | "db_wave_budget_breaches" | "ws_connected" | "ws_mud" | "http_get";
 
 export type GoalDefinition = {
   id: string;
@@ -25,6 +25,10 @@ export type GoalDefinition = {
   url?: string;
   expectStatus?: number;
   timeoutMs?: number;
+
+  // ws_mud
+  command?: string;
+  expectIncludes?: string;
 
   // db_wave_budget_breaches
   maxBreaches?: number;
@@ -79,6 +83,8 @@ export type GoalsDeps = {
     | null;
   // WS connection state.
   wsState: "disabled" | "closed" | "connecting" | "open";
+  // Optional WS MUD command helper (if WS is configured).
+  wsMudCommand?: (command: string, timeoutMs: number) => Promise<{ ok: boolean; output?: string; error?: string }>;
   // Logger
   log: (level: "debug" | "info" | "warn" | "error", msg: string, extra?: Record<string, unknown>) => void;
 };
@@ -106,6 +112,8 @@ function normalizeGoals(maybeGoals: unknown): GoalDefinition[] {
       url: typeof o.url === "string" ? o.url : undefined,
       expectStatus: typeof o.expectStatus === "number" ? o.expectStatus : undefined,
       timeoutMs: typeof o.timeoutMs === "number" ? o.timeoutMs : undefined,
+      command: typeof o.command === "string" ? o.command : undefined,
+      expectIncludes: typeof o.expectIncludes === "string" ? o.expectIncludes : undefined,
       maxBreaches: typeof o.maxBreaches === "number" ? o.maxBreaches : undefined,
     });
   }
@@ -335,6 +343,55 @@ export async function runGoalsOnce(state: GoalsState, deps: GoalsDeps, tick: num
         ok,
         latencyMs: Date.now() - start,
         details: { state: deps.wsState },
+      });
+      continue;
+    }
+
+    if (goal.kind === "ws_mud") {
+      // If WS is disabled, treat as skip.
+      if (deps.wsState === "disabled") {
+        skippedCount += 1;
+        results.push({ id: goal.id, kind: goal.kind, ok: true, details: { skipped: true } });
+        continue;
+      }
+
+      const command = goal.command;
+      if (!command) {
+        failCount += 1;
+        results.push({ id: goal.id, kind: goal.kind, ok: false, error: "missing command" });
+        continue;
+      }
+
+      if (!deps.wsMudCommand) {
+        failCount += 1;
+        results.push({ id: goal.id, kind: goal.kind, ok: false, error: "ws mud command not available" });
+        continue;
+      }
+
+      const timeoutMs = goal.timeoutMs ?? 2500;
+      const res = await deps.wsMudCommand(command, timeoutMs);
+      let ok = res.ok;
+      const out = res.output ?? "";
+      if (ok && goal.expectIncludes) {
+        ok = out.includes(goal.expectIncludes);
+      }
+
+      if (ok) okCount += 1;
+      else failCount += 1;
+
+      results.push({
+        id: goal.id,
+        kind: goal.kind,
+        ok,
+        latencyMs: Date.now() - start,
+        error: ok
+          ? undefined
+          : res.error ?? (goal.expectIncludes ? `missing substring: ${goal.expectIncludes}` : "failed"),
+        details: {
+          command,
+          expectIncludes: goal.expectIncludes,
+          outputPreview: out.length > 400 ? `${out.slice(0, 400)}…` : out,
+        },
       });
       continue;
     }
