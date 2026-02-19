@@ -245,7 +245,15 @@ export class TickEngine {
         if (nm) {
           try {
 
-            // ✅ Canonical DOT route
+            // ✅ Canonical DOT route (prefer detailed variant if available)
+            if (typeof nm.applyDotDamageDetailed === "function") {
+              const d = nm.applyDotDamageDetailed((ent as any).id, amount, meta, attackerEntityId);
+              if (d && typeof d.hp === "number") {
+                this.emitDotTickLine(meta as any, ent as any, d.effectiveDamage ?? amount, d.hp, d.absorbed);
+                return;
+              }
+            }
+
             if (typeof nm.applyDotDamage === "function") {
               const r = nm.applyDotDamage((ent as any).id, amount, meta, attackerEntityId);
               if (typeof r === "number") {
@@ -253,8 +261,7 @@ export class TickEngine {
                 return;
               }
             }
-
-            // Fallback: legacy damage path
+// Fallback: legacy damage path
             if (typeof nm.applyDamage === "function") {
               const beforeHp = typeof (ent as any).hp === "number" ? (ent as any).hp : undefined;
               const r = nm.applyDamage(
@@ -296,7 +303,7 @@ export class TickEngine {
    * Emit a DOT tick combat line to the applier (caster).
    * Defaults ON; disable via PW_DOT_TICK_MESSAGES=0.
    */
-  private emitDotTickLine(meta: any, targetEnt: any, amount: number, hpAfter?: number): void {
+  private emitDotTickLine(meta: any, targetEnt: any, damage: number, hpAfter?: number, absorbed?: number): void {
     try {
       if (process.env.PW_DOT_TICK_MESSAGES === "0") return;
 
@@ -313,12 +320,14 @@ export class TickEngine {
 
       const spellName = String(meta?.name ?? meta?.sourceId ?? "DOT");
       const tgtName = String(targetEnt?.name ?? "Target");
-      const dmg = Math.floor(amount);
+      const dmg = Math.floor(damage);
+      const abs = typeof absorbed === "number" ? Math.floor(absorbed) : 0;
 
       const line = formatWorldSpellDotTickLine({
         spellName,
         targetName: tgtName,
         damage: dmg,
+        absorbed: abs > 0 ? abs : undefined,
         hpAfter: typeof hpAfter === "number" ? hpAfter : undefined,
         maxHp: typeof (targetEnt as any)?.maxHp === "number" ? (targetEnt as any).maxHp : undefined,
       });

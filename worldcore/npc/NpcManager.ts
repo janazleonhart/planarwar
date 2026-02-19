@@ -765,12 +765,42 @@ export class NpcManager {
    * safe to call from synchronous tick loops; any async reward work is
    * started best-effort and not awaited.
    */
+
+  /**
+   * Apply DOT damage to an NPC and route fatal ticks through the canonical
+   * death pipeline (XP/loot/corpse/respawn). This method is intentionally
+   * safe to call from synchronous tick loops; any async reward work is
+   * started best-effort and not awaited.
+   */
   applyDotDamage(
     npcEntityId: string,
     amount: number,
     meta?: any,
     attackerEntityId?: string,
   ): number | null {
+    const r = this.applyDotDamageDetailed(npcEntityId, amount, meta, attackerEntityId);
+    return r ? r.hp : null;
+  }
+
+  /**
+   * Richer variant of applyDotDamage(...) that returns absorb/effective damage details.
+   *
+   * This is used by TickEngine and combat loggers to emit truthful "(X absorbed)"
+   * suffixes for DOT ticks while still routing lethal ticks through the canonical
+   * death pipeline (XP/loot/corpse/respawn).
+   */
+  applyDotDamageDetailed(
+    npcEntityId: string,
+    amount: number,
+    meta?: any,
+    attackerEntityId?: string,
+  ):
+    | {
+        hp: number;
+        absorbed: number;
+        effectiveDamage: number;
+      }
+    | null {
     const st = this.npcsByEntityId.get(npcEntityId);
     if (!st) return null;
 
@@ -806,11 +836,10 @@ export class NpcManager {
     }
 
     const wasAlive = st.alive;
-
     const beforeHp = st.hp;
 
-    // Apply damage (shields/absorbs are applied inside applyDamage).
-    const newHp = this.applyDamage(
+    // Apply damage (includes shields/absorbs).
+    const d = this.applyDamageDetailed(
       npcEntityId,
       amount,
       attackerEntityId
@@ -818,11 +847,19 @@ export class NpcManager {
         : undefined,
     );
 
-    // Best-effort threat attribution (prefer effective damage; hostile ticks still seed minimal threat).
+    if (!d) return null;
+
+    const newHp = d.hp;
+    const absorbed = Math.max(0, Math.floor(d.absorbed ?? 0));
+    const effectiveDamage = Math.max(0, Math.floor(d.effectiveDamage ?? (beforeHp - newHp)));
+
+    // Best-effort threat attribution:
+    //  - prefer effective damage
+    //  - hostile ticks still seed minimal threat even when fully absorbed
     if (attackerEntityId) {
       try {
-        const effective = typeof newHp === "number" ? Math.max(0, beforeHp - newHp) : 0;
-        const threatAmt = effective > 0 ? effective : amount > 0 ? 1 : 0;
+        const hostile = (Number(amount) > 0) || absorbed > 0;
+        const threatAmt = effectiveDamage > 0 ? effectiveDamage : hostile ? 1 : 0;
         if (threatAmt > 0) this.recordDamage(npcEntityId, attackerEntityId, threatAmt);
       } catch {
         // ignore
@@ -830,9 +867,9 @@ export class NpcManager {
     }
 
     // Non-fatal tick: nothing else to do.
-    if (!wasAlive || newHp == null || newHp > 0) {
-      this.maybeEmitDotCombatLog(npcEntityId, amount, meta, attackerEntityId, newHp);
-      return newHp;
+    if (!wasAlive || newHp > 0) {
+      this.maybeEmitDotCombatLog(npcEntityId, effectiveDamage, absorbed, meta, attackerEntityId, newHp);
+      return { hp: newHp, absorbed, effectiveDamage };
     }
 
     // Fatal tick: route through canonical death pipeline if services are attached.
@@ -867,7 +904,7 @@ export class NpcManager {
         ).then((res) => {
           // Optional: emit a DOT kill line to the attacker.
           if (process.env.PW_DOT_COMBAT_LOG === "1") {
-            this.emitDotKillLine(npcEntityId, amount, meta, attackerEntityId, res?.text ?? "");
+            this.emitDotKillLine(npcEntityId, effectiveDamage, absorbed, meta, attackerEntityId, res?.text ?? "");
           }
         });
       }
@@ -876,13 +913,14 @@ export class NpcManager {
     }
 
     // Also emit per-tick log if enabled.
-    this.maybeEmitDotCombatLog(npcEntityId, amount, meta, attackerEntityId, newHp);
-    return newHp;
+    this.maybeEmitDotCombatLog(npcEntityId, effectiveDamage, absorbed, meta, attackerEntityId, newHp);
+    return { hp: newHp, absorbed, effectiveDamage };
   }
 
   private maybeEmitDotCombatLog(
     npcEntityId: string,
-    amount: number,
+    effectiveDamage: number,
+    absorbed: number,
     meta: any,
     attackerEntityId: string | undefined,
     newHp: number | null,
@@ -900,7 +938,10 @@ export class NpcManager {
 
       const dotName = String(meta?.name ?? meta?.id ?? meta?.effectId ?? "dot");
       const hpStr = typeof newHp === "number" ? `${newHp}/${npc?.maxHp ?? "?"}` : "?";
-      const line = `[dot:${dotName}] ${npc?.name ?? "Target"} takes ${Math.floor(amount)} damage. (${hpStr} HP)`;
+      const dmg = Math.max(0, Math.floor(effectiveDamage));
+      const abs = Math.max(0, Math.floor(absorbed));
+      const extra = abs > 0 ? ` (${abs} absorbed)` : "";
+      const line = `[dot:${dotName}] ${npc?.name ?? "Target"} takes ${dmg} damage${extra}. (${hpStr} HP)`;
 
       this.sessions.send(session, "mud_result", { text: line });
     } catch {
@@ -910,7 +951,8 @@ export class NpcManager {
 
   private emitDotKillLine(
     npcEntityId: string,
-    amount: number,
+    effectiveDamage: number,
+    absorbed: number,
     meta: any,
     attackerEntityId: string | undefined,
     rewardTextSuffix: string,
