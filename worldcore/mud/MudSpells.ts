@@ -908,7 +908,7 @@ case "damage_single_npc": {
           text: killed
             ? `[${gate.label}] ${selfEntity.name} hits you for ${dmgFinal} damage. You fall. (0/${maxHp} HP)`
             : `[${gate.label}] ${selfEntity.name} hits you for ${dmgFinal} damage. (${newHp}/${maxHp} HP)`,
-          t: gate.now,
+          t: now,
         });
       }
 
@@ -916,7 +916,7 @@ case "damage_single_npc": {
       if (killed) {
         const oppId = String(gate.targetChar?.id ?? "");
         if (oppId && DUEL_SERVICE.isActiveBetween(char.id, oppId)) {
-          DUEL_SERVICE.endDuelFor(char.id, "death", gate.now);
+          DUEL_SERVICE.endDuelFor(char.id, "death", now);
         }
       }
 
@@ -951,15 +951,29 @@ case "damage_single_npc": {
         heal = Math.floor(baseHeal * scalar);
       }
       let result: string;
+      let healedForThreat = 0;
+
+      const now = Number((ctx as any).nowMs ?? Date.now());
 
       if (isDeadEntity(selfEntity)) {
         resurrectEntity(selfEntity);
         (selfEntity as any).hp = maxHp;
+        healedForThreat = Math.max(0, Math.floor(maxHp));
         result = `[spell:${spell.name}] You restore yourself to full health.\n(${maxHp}/${maxHp} HP)`;
       } else {
         const newHp = Math.min(maxHp, hp + heal);
         (selfEntity as any).hp = newHp;
-        result = `[spell:${spell.name}] You restore ${newHp - hp} health.\n(${newHp}/${maxHp} HP)`;
+        healedForThreat = Math.max(0, Math.floor(newHp - hp));
+        result = `[spell:${spell.name}] You restore ${healedForThreat} health.\n(${newHp}/${maxHp} HP)`;
+      }
+
+      // Healing threat: best-effort. Only engaged NPCs in-room will care.
+      try {
+        if (healedForThreat > 0 && (ctx as any).npcs && typeof (ctx as any).npcs.recordHealing === "function") {
+          (ctx as any).npcs.recordHealing(roomId, (selfEntity as any).id, (selfEntity as any).id, healedForThreat, now);
+        }
+      } catch {
+        // ignore
       }
 
       // Simple Virtuoso buff: Song of Rising Courage → STA% buff
@@ -1022,6 +1036,19 @@ case "damage_single_npc": {
       }
 
       const gained = after - before;
+
+
+      const now = Number((ctx as any).nowMs ?? Date.now());
+
+      // Healing threat: best-effort. Only engaged NPCs in-room will care.
+      try {
+        if (gained > 0 && (ctx as any).npcs && typeof (ctx as any).npcs.recordHealing === "function") {
+          (ctx as any).npcs.recordHealing(roomId, (selfEntity as any).id, String((res.entity as any).id ?? ""), gained, now);
+        }
+      } catch {
+        // ignore
+      }
+
       return `[world] [spell:${spell.name}] You restore ${gained} health to ${res.displayName}. (${after}/${res.entity.maxHp} HP)`;
     }
 

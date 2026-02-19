@@ -873,6 +873,68 @@ export class NpcManager {
   }
 
   /**
+   * Record a healing event for threat purposes.
+   *
+   * Policy (v0): Healing generates threat on NPCs that are already engaged with either:
+   *  - the healed target, or
+   *  - the healer
+   * within the same room.
+   *
+   * Threat amount is derived from healAmount * PW_THREAT_HEAL_MULT (default 0.5),
+   * clamped to at least 1 when healAmount > 0.
+   */
+  recordHealing(roomId: string, healerEntityId: string, healedEntityId: string, healAmount: number, now?: number): void {
+    const rid = String(roomId ?? "").trim();
+    const healerId = String(healerEntityId ?? "").trim();
+    const healedId = String(healedEntityId ?? "").trim();
+    const amt = Math.max(0, Math.floor(Number(healAmount) || 0));
+    if (!rid || !healerId || !healedId || amt <= 0) return;
+
+    const tNow = typeof now === "number" ? now : (this._tickNow || Date.now());
+
+    const healMult = Math.max(0, envNumber("PW_THREAT_HEAL_MULT", 0.5));
+    const threatAmt = Math.max(1, Math.floor(amt * healMult));
+
+    // Only apply to NPCs in the room.
+    const npcs = this.listNpcsInRoom(rid);
+    if (!npcs.length) return;
+
+    for (const st of npcs) {
+      const npcId = String((st as any)?.entityId ?? "").trim();
+      if (!npcId) continue;
+
+      const proto =
+        getNpcPrototype((st as any).templateId) ??
+        getNpcPrototype((st as any).protoId) ??
+        DEFAULT_NPC_PROTOTYPES[(st as any).templateId] ??
+        DEFAULT_NPC_PROTOTYPES[(st as any).protoId];
+
+      // Service-provider NPCs should never gain threat.
+      const ent: any = this.entities.get(npcId);
+      if (isServiceProtectedNpcProto(proto) || ent?.invulnerable === true) continue;
+
+      const cur = this.npcThreat.get(npcId);
+      // Only engaged NPCs care; also avoid waking up neutral NPCs.
+      const engagedWithHealed = Math.max(0, getThreatValue(cur, healedId)) > 0;
+      const engagedWithHealer = Math.max(0, getThreatValue(cur, healerId)) > 0;
+      if (!engagedWithHealed && !engagedWithHealer) continue;
+
+      const next = addThreatValue(cur, healerId, threatAmt, tNow, {
+        // Healing threat should not overwrite lastAttacker.
+        setLastAttacker: false,
+      });
+      this.npcThreat.set(npcId, next);
+
+      // Mirror minimal combat state.
+      try {
+        (st as any).lastAggroAt = (next as any)?.lastAggroAt;
+      } catch {
+        // ignore
+      }
+    }
+  }
+
+  /**
    * Apply a taunt to an NPC: temporarily force the NPC to focus the taunter.
    * Returns false if the target NPC doesn't exist or cannot be taunted.
    */
