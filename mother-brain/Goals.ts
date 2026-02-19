@@ -249,6 +249,13 @@ function normalizeGoals(maybeGoals: unknown): GoalDefinition[] {
       expectIncludesAll: Array.isArray((o as any).expectIncludesAll)
         ? (o as any).expectIncludesAll.filter((x: any) => typeof x === "string")
         : undefined,
+      expectRegex: typeof (o as any).expectRegex === "string" ? ((o as any).expectRegex as string) : undefined,
+      expectRegexAny: Array.isArray((o as any).expectRegexAny)
+        ? (o as any).expectRegexAny.filter((x: any) => typeof x === "string")
+        : undefined,
+      expectRegexAll: Array.isArray((o as any).expectRegexAll)
+        ? (o as any).expectRegexAll.filter((x: any) => typeof x === "string")
+        : undefined,
       script: Array.isArray((o as any).script)
         ? (o as any).script
             .filter((s: any) => s && typeof s === "object")
@@ -261,6 +268,13 @@ function normalizeGoals(maybeGoals: unknown): GoalDefinition[] {
                 : undefined,
               expectIncludesAll: Array.isArray(s.expectIncludesAll)
                 ? s.expectIncludesAll.filter((x: any) => typeof x === "string")
+                : undefined,
+              expectRegex: typeof s.expectRegex === "string" ? (s.expectRegex as string) : undefined,
+              expectRegexAny: Array.isArray(s.expectRegexAny)
+                ? s.expectRegexAny.filter((x: any) => typeof x === "string")
+                : undefined,
+              expectRegexAll: Array.isArray(s.expectRegexAll)
+                ? s.expectRegexAll.filter((x: any) => typeof x === "string")
                 : undefined,
             }))
             .filter((s: any) => typeof s.command === "string" && s.command.trim().length > 0)
