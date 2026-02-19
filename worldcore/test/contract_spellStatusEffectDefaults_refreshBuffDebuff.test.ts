@@ -136,12 +136,12 @@ test("[contract] buff_self and debuff_single_npc default to refresh stacking (no
 
   // Cast buff twice; snapshot modifier must not double.
   await castSpellForCharacter(ctx, caster, buff, "");
-  const snap1 = computeCombatStatusSnapshot(caster as any);
+  const snap1 = computeCombatStatusSnapshot(caster as any, ctx.nowMs);
   assert.equal(snap1.damageDealtPct, 0.5);
 
   ctx.nowMs += 1000;
   await castSpellForCharacter(ctx, caster, buff, "");
-  const snap2 = computeCombatStatusSnapshot(caster as any);
+  const snap2 = computeCombatStatusSnapshot(caster as any, ctx.nowMs);
   assert.equal(snap2.damageDealtPct, 0.5, "buff_self should refresh (not stack) when stackingPolicy omitted");
 
   // Cast debuff twice; NPC should not accumulate stacks when stackingPolicy omitted.

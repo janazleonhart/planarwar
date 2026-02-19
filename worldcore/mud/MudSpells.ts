@@ -1419,36 +1419,50 @@ case "dispel_single_ally": {
 }
 
 
-    case "buff_self": {
-      const seRes = spellStatusEffectOrErr(spell);
+case "buff_self": {
+  const seRes = spellStatusEffectOrErr(spell);
+  if (!seRes.ok) return seRes.err;
 
-      if (!seRes.ok) return seRes.err;
+  const now = Number((ctx as any).nowMs ?? Date.now());
 
+  // CC DR immunity stage should deny BEFORE cost/cooldown gates.
+  if (wouldCcDiminishingReturnsBlock(char as any, (seRes.se as any).tags ?? [], now)) {
+    return formatBlockedReasonLine({ reason: "cc_dr_immune", kind: "spell", name: spell.name });
+  }
 
-      const gateErr = applyGates();
+  const gateErr = applyGates();
+  if (gateErr) return gateErr;
 
-      if (gateErr) return gateErr;
-applyStatusEffect(char, {
-        id: seRes.se.id,
-        sourceKind: spell.isSong ? "song" : "spell",
-        sourceId: spell.id,
-        stackingPolicy: seRes.se.stackingPolicy ?? "refresh",
-        appliedByKind: "character",
-        appliedById: char.id,
-        name: seRes.se.name ?? spell.name,
-        durationMs: seRes.se.durationMs,
-        maxStacks: seRes.se.maxStacks,
-        stacks: seRes.se.stacks ?? 1,
-        modifiers: seRes.se.modifiers,
-        tags: seRes.se.tags,
-      });
+  const applied = applyStatusEffect(char, {
+    id: seRes.se.id,
+    sourceKind: spell.isSong ? "song" : "spell",
+    sourceId: spell.id,
+    stackingPolicy: seRes.se.stackingPolicy ?? "refresh",
+    stackingGroupId: (seRes.se as any).stackingGroupId,
+    appliedByKind: "character",
+    appliedById: char.id,
+    name: seRes.se.name ?? spell.name,
+    durationMs: seRes.se.durationMs,
+    maxStacks: seRes.se.maxStacks,
+    stacks: seRes.se.stacks ?? 1,
+    modifiers: seRes.se.modifiers,
+    tags: seRes.se.tags,
+  }, now);
 
-      if (spell.isSong && spell.songSchool) {
-        gainSongSchoolSkill(char, spell.songSchool, 1);
-      }
+  if ((applied as any)?.wasApplied === false) {
+    return formatBlockedReasonLine({
+      reason: (applied as any)?.blockedReason ?? "status_already_present",
+      kind: "spell",
+      name: spell.name,
+    });
+  }
 
-      return `[world] [spell:${spell.name}] You gain ${seRes.se.name ?? spell.name}.`;
-    }
+  if (spell.isSong && spell.songSchool) {
+    gainSongSchoolSkill(char, spell.songSchool, 1);
+  }
+
+  return `[world] [spell:${spell.name}] You gain ${seRes.se.name ?? spell.name}.`;
+}
 
     case "buff_single_ally": {
       if (!ctx.entities) return "[world] Entities not available.";
@@ -1482,6 +1496,7 @@ applyStatusEffect(char, {
         sourceKind: spell.isSong ? "song" : "spell",
         sourceId: spell.id,
         stackingPolicy: seRes.se.stackingPolicy ?? "refresh",
+        stackingGroupId: (seRes.se as any).stackingGroupId,
         appliedByKind: "character",
         appliedById: char.id,
         name: seRes.se.name ?? spell.name,

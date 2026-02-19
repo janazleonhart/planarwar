@@ -60,6 +60,10 @@ export function formatBlockedReasonLine(opts?: {
     }
   }
 
-  // Conservative generic fallback.
+  if (reason === "status_already_present") {
+  return `${namePrefix}That effect is already present.`;
+}
+
+// Conservative generic fallback.
   return "[world] It fails.";
 }
