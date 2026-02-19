@@ -25,6 +25,13 @@ export type GoalKind =
 export type WsMudScriptStep = {
   command: string;
   timeoutMs?: number;
+
+  // Optional per-step retry behavior (overrides goal-level retries when set).
+  retries?: number;
+  retryDelayMs?: number;
+
+  // Optional per-step delay after a successful step (ms). If unset, goal.scriptDelayMs applies between steps.
+  delayAfterMs?: number;
   expectIncludes?: string;
   expectIncludesAny?: string[];
   expectIncludesAll?: string[];
@@ -1780,8 +1787,8 @@ export async function runGoalsOnce(
         continue;
       }
 
-      const retries = Math.max(0, Math.min(10, goal.retries ?? 2));
-      const baseDelayMs = Math.max(0, Math.min(10_000, goal.retryDelayMs ?? 200));
+      const goalRetries = Math.max(0, Math.min(10, goal.retries ?? 2));
+      const goalBaseDelayMs = Math.max(0, Math.min(10_000, goal.retryDelayMs ?? 200));
       const stepDelayMs = Math.max(0, Math.min(10_000, goal.scriptDelayMs ?? 0));
       const stopOnFail = goal.scriptStopOnFail !== false;
 
@@ -1822,6 +1829,9 @@ export async function runGoalsOnce(
         let res: { ok: boolean; output?: string; error?: string } = { ok: false, error: "not attempted" };
         let out = "";
         let ok = false;
+
+        const retries = Math.max(0, Math.min(10, step.retries ?? goalRetries));
+        const baseDelayMs = Math.max(0, Math.min(10_000, step.retryDelayMs ?? goalBaseDelayMs));
 
         for (let attempt = 0; attempt <= retries; attempt += 1) {
           res = await deps.wsMudCommand(cmd, timeoutMs);
@@ -1888,6 +1898,9 @@ export async function runGoalsOnce(
           captureRegex: step.captureRegex,
           captureVar: step.captureVar,
           captureGroup: step.captureGroup,
+          retries: step.retries,
+          retryDelayMs: step.retryDelayMs,
+          delayAfterMs: step.delayAfterMs,
           vars: Object.keys(vars).length > 0 ? { ...vars } : undefined,
         });
 
@@ -1896,8 +1909,9 @@ export async function runGoalsOnce(
           if (stopOnFail) break;
         }
 
-        if (stepDelayMs > 0 && i < script.length - 1) {
-          await sleep(stepDelayMs);
+        const delayAfterMs = ok ? Math.max(0, Math.min(10_000, step.delayAfterMs ?? stepDelayMs)) : 0;
+        if (delayAfterMs > 0 && i < script.length - 1) {
+          await sleep(delayAfterMs);
         }
       }
 
