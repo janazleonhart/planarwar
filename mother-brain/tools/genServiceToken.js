@@ -13,7 +13,7 @@
  *  npm run -w mother-brain gen:service-token -- --serviceId mother-brain --role readonly
  *
  * Env:
- *  PW_SERVICE_TOKEN_SECRET (preferred) or PW_AUTH_JWT_SECRET (fallback)
+ *  PW_SERVICE_TOKEN_SECRET (preferred), PW_SERVICE_TOKEN_SECRET_PREV (rotation), or PW_AUTH_JWT_SECRET (fallback)
  */
 
 const crypto = require('node:crypto');
@@ -24,6 +24,7 @@ function parseArgs(argv) {
     bytes: 32,
     serviceId: 'mother-brain',
     role: 'readonly',
+    secret: undefined,
   };
 
   for (let i = 0; i < argv.length; i++) {
@@ -56,6 +57,13 @@ function parseArgs(argv) {
       args.role = v;
       continue;
     }
+    if (a === '--secret') {
+      const v = argv[i + 1];
+      i++;
+      if (!v) throw new Error('Missing value for --secret');
+      args.secret = v;
+      continue;
+    }
     if (a === '--help' || a === '-h') {
       args.help = true;
       continue;
@@ -84,10 +92,11 @@ Options:
   --bytes <n>            Bytes for secret (default 32 => 256-bit)
   --serviceId <id>       Service id (default mother-brain)
   --role <role>          Role (readonly|editor|root) (default readonly)
+  --secret <hex>          Use an explicit secret value (avoids env loading)
   --help                 Show this help
 
 Env:
-  PW_SERVICE_TOKEN_SECRET (preferred) or PW_AUTH_JWT_SECRET (fallback)
+  PW_SERVICE_TOKEN_SECRET (preferred), PW_SERVICE_TOKEN_SECRET_PREV (rotation), or PW_AUTH_JWT_SECRET (fallback)
 `);
 }
 
@@ -112,9 +121,13 @@ function main() {
     return;
   }
 
-  const secret = process.env.PW_SERVICE_TOKEN_SECRET || process.env.PW_AUTH_JWT_SECRET;
+  const secret =
+    args.secret ||
+    process.env.PW_SERVICE_TOKEN_SECRET ||
+    process.env.PW_SERVICE_TOKEN_SECRET_PREV ||
+    process.env.PW_AUTH_JWT_SECRET;
   if (secret == null || secret === '') {
-    console.error('Missing PW_SERVICE_TOKEN_SECRET (preferred) or PW_AUTH_JWT_SECRET');
+    console.error('Missing PW_SERVICE_TOKEN_SECRET (preferred), PW_SERVICE_TOKEN_SECRET_PREV (rotation), or PW_AUTH_JWT_SECRET');
     process.exit(1);
     return;
   }

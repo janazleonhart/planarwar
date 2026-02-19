@@ -68,9 +68,23 @@ function parseServiceToken(req: Request): string | null {
 
 type VerifiedServiceToken = { serviceId: string; role: AdminRole };
 
+function getServiceTokenSecrets(): string[] {
+  // Rotation-friendly: prefer an explicit service secret, and allow one previous value.
+  // Fallback to PW_AUTH_JWT_SECRET for dev convenience only.
+  const active = (process.env.PW_SERVICE_TOKEN_SECRET || "").trim();
+  const prev = (process.env.PW_SERVICE_TOKEN_SECRET_PREV || "").trim();
+  const jwt = (process.env.PW_AUTH_JWT_SECRET || "").trim();
+
+  const out: string[] = [];
+  if (active) out.push(active);
+  if (prev && prev !== active) out.push(prev);
+  if (jwt && !out.includes(jwt)) out.push(jwt);
+  return out;
+}
+
 function verifyServiceToken(token: string): VerifiedServiceToken | null {
-  const secret = process.env.PW_SERVICE_TOKEN_SECRET || process.env.PW_AUTH_JWT_SECRET;
-  if (!secret || secret.trim().length === 0) return null;
+  const secrets = getServiceTokenSecrets();
+  if (secrets.length === 0) return null;
 
   // Format: svc:<serviceId>:<role>:<sighex>
   // - role: readonly|editor|root
@@ -101,17 +115,27 @@ function verifyServiceToken(token: string): VerifiedServiceToken | null {
   if (!/^[a-f0-9]{64}$/i.test(sigHex)) return null;
 
   const msg = `${serviceId}:${role}`;
-  const expected = crypto.createHmac("sha256", secret).update(msg).digest("hex");
 
-  // Constant-time compare.
-  try {
-    const a = Buffer.from(expected, "hex");
-    const b = Buffer.from(sigHex, "hex");
-    if (a.length !== b.length) return null;
-    if (!crypto.timingSafeEqual(a, b)) return null;
-  } catch {
-    return null;
+  // Accept any currently-valid secret (active, prev, or fallback).
+  let ok = false;
+  for (const secret of secrets) {
+    const expected = crypto.createHmac("sha256", secret).update(msg).digest("hex");
+
+    // Constant-time compare.
+    try {
+      const a = Buffer.from(expected, "hex");
+      const b = Buffer.from(sigHex, "hex");
+      if (a.length !== b.length) continue;
+      if (crypto.timingSafeEqual(a, b)) {
+        ok = true;
+        break;
+      }
+    } catch {
+      // ignore
+    }
   }
+
+  if (!ok) return null;
 
   return { serviceId, role };
 }
