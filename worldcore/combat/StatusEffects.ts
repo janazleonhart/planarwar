@@ -108,6 +108,8 @@ export interface AbsorbPayloadInput {
   amount: number;
   /** Optional: only absorb these schools. If omitted, absorb any. */
   schools?: DamageSchool[];
+  /** Optional: higher priority shields are consumed first (ties fall back to oldest-first). */
+  priority?: number;
 }
 
 export interface AbsorbPayloadState extends AbsorbPayloadInput {
@@ -364,11 +366,15 @@ function resolveAbsorb(
 
   const amount = Math.max(0, Math.floor(Number(input.absorb.amount ?? 0)));
   const schools = Array.isArray(input.absorb.schools) ? input.absorb.schools.slice() : undefined;
+  const priority = Number.isFinite(Number(input.absorb.priority))
+    ? Math.floor(Number(input.absorb.priority))
+    : (existingAbsorb?.priority ?? 0);
 
   return {
     amount,
     remaining: amount,
     schools,
+    priority,
   };
 }
 
@@ -1748,6 +1754,9 @@ function absorbIncomingDamageFromState(
   }
 
   shields.sort((a, b) => {
+    const pa = Number((a.inst as any)?.absorb?.priority ?? 0);
+    const pb = Number((b.inst as any)?.absorb?.priority ?? 0);
+    if (pa !== pb) return pb - pa; // higher priority first
     const ta = a.inst.appliedAtMs ?? 0;
     const tb = b.inst.appliedAtMs ?? 0;
     if (ta !== tb) return ta - tb; // oldest first
@@ -1756,8 +1765,12 @@ function absorbIncomingDamageFromState(
     return ida.localeCompare(idb);
   });
 
-  let absorbed = 0;
-  const depleted = new Set<StatusEffectInstance>();
+    let absorbed = 0;
+
+  // NOTE: Do NOT track depleted instances by object identity.
+  // StatusEffectInstances can be re-materialized across pipelines (same id, different object ref).
+  // Track depletion by stable (bucketKey + id) so buckets actually prune deterministically.
+  const depletedKeys = new Set<string>();
 
   for (const ref of shields) {
     if (remaining <= 0) break;
@@ -1773,19 +1786,19 @@ function absorbIncomingDamageFromState(
 
     if (!Number.isFinite(abs.remaining) || abs.remaining <= 0) {
       abs.remaining = 0;
-      depleted.add(ref.inst);
+      depletedKeys.add(`${ref.bucketKey}:${ref.inst.id ?? ""}`);
     }
   }
 
-  if (depleted.size > 0) {
+  if (depletedKeys.size > 0) {
     for (const [bucketKey, bucket] of Object.entries(state.active)) {
       const items = normalizeBucket(bucket);
-      const kept = items.filter((inst) => !depleted.has(inst));
+      const kept = items.filter((inst) => !depletedKeys.has(`${bucketKey}:${inst.id ?? ""}`));
       writeBucket(state, bucketKey, kept);
     }
   }
 
-  return { remainingDamage: remaining, absorbed };
+return { remainingDamage: remaining, absorbed };
 }
 
 /**

@@ -92,6 +92,8 @@ export interface SpellStatusEffect {
     amount?: number;
     /** Restrict absorption to these schools; omit to absorb any. */
     schools?: DamageSchool[];
+    /** Optional: higher priority shields are consumed first (ties fall back to oldest-first). */
+    priority?: number;
   };
 }
 

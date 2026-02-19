@@ -1199,7 +1199,7 @@ applyStatusEffect(char, {
         initialStacks: seRes.se.stacks ?? 1,
         modifiers: seRes.se.modifiers ?? {},
         tags: seRes.se.tags,
-        absorb: { amount, schools: Array.isArray(absorb.schools) ? absorb.schools : undefined },
+        absorb: { amount, schools: Array.isArray(absorb.schools) ? absorb.schools : undefined, priority: absorb.priority },
       });
 
       applySchoolGains();
@@ -1261,7 +1261,7 @@ applyStatusEffect(char, {
         initialStacks: seRes.se.stacks ?? 1,
         modifiers: seRes.se.modifiers ?? {},
         tags: seRes.se.tags,
-        absorb: { amount, schools: Array.isArray(absorb.schools) ? absorb.schools : undefined },
+        absorb: { amount, schools: Array.isArray(absorb.schools) ? absorb.schools : undefined, priority: absorb.priority },
       }, now);
 
       if ((applied as any)?.wasApplied === false) {
