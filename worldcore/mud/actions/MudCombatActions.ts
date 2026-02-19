@@ -600,7 +600,7 @@ export async function handleAttackAction(
 
     const duelCalc = { outcome, damageToTarget: dmg, didRiposte: riposteDamage > 0, riposteDamage };
 
-    const { newHp, maxHp, killed } = dmg > 0
+    const { newHp, maxHp, killed, absorbed } = dmg > 0
       ? applySimpleDamageToPlayer(
           playerTarget as any,
           dmg,
@@ -608,7 +608,9 @@ export async function handleAttackAction(
           "physical",
           { mode: ctxMode },
         )
-      : { newHp: (playerTarget as any).hp, maxHp: (playerTarget as any).maxHp, killed: false };
+      : { newHp: (playerTarget as any).hp, maxHp: (playerTarget as any).maxHp, killed: false, absorbed: 0 };
+
+    const absorbPart = absorbed > 0 ? ` (${absorbed} absorbed)` : "";
 
     markInCombat(selfEntity);
     markInCombat(playerTarget as any);
@@ -626,11 +628,11 @@ export async function handleAttackAction(
           ? `[${label}] You parry ${selfEntity.name}'s attack.`
           : duelCalc.outcome === "block"
           ? killed
-            ? `[${label}] ${selfEntity.name} hits you (blocked) for ${dmg} damage. You fall. (0/${maxHp} HP)`
-            : `[${label}] ${selfEntity.name} hits you (blocked) for ${dmg} damage. (${newHp}/${maxHp} HP)`
+            ? `[${label}] ${selfEntity.name} hits you (blocked) for ${dmg} damage${absorbPart}. You fall. (0/${maxHp} HP)`
+            : `[${label}] ${selfEntity.name} hits you (blocked) for ${dmg} damage${absorbPart}. (${newHp}/${maxHp} HP)`
           : killed
-          ? `[${label}] ${selfEntity.name} hits you for ${dmg} damage. You fall. (0/${maxHp} HP)`
-          : `[${label}] ${selfEntity.name} hits you for ${dmg} damage. (${newHp}/${maxHp} HP)`,
+          ? `[${label}] ${selfEntity.name} hits you for ${dmg} damage${absorbPart}. You fall. (0/${maxHp} HP)`
+          : `[${label}] ${selfEntity.name} hits you for ${dmg} damage${absorbPart}. (${newHp}/${maxHp} HP)`,
         t: now,
       });
     }
@@ -638,7 +640,7 @@ export async function handleAttackAction(
     // Parry->riposte (best-effort): apply damage back to the attacker and notify both.
     if (duelCalc.riposteDamage > 0) {
       const selfChar: any = char as any;
-      const { newHp: selfNewHp, maxHp: selfMaxHp, killed: selfKilled } = applySimpleDamageToPlayer(
+      const { newHp: selfNewHp, maxHp: selfMaxHp, killed: selfKilled, absorbed: selfAbsorbed } = applySimpleDamageToPlayer(
         selfEntity as any,
         duelCalc.riposteDamage,
         selfChar,
@@ -646,14 +648,16 @@ export async function handleAttackAction(
         { mode: ctxMode },
       );
 
+      const selfAbsorbPart = selfAbsorbed > 0 ? ` (${selfAbsorbed} absorbed)` : "";
+
       // Notify attacker (best-effort).
       try {
         ctx.sessions?.send?.(ctx.session as any, "chat", {
           from: "[world]",
           sessionId: "system",
           text: selfKilled
-            ? `[${label}] ${playerTargetName} ripostes you for ${duelCalc.riposteDamage} damage. You fall. (0/${selfMaxHp} HP)`
-            : `[${label}] ${playerTargetName} ripostes you for ${duelCalc.riposteDamage} damage. (${selfNewHp}/${selfMaxHp} HP)`,
+            ? `[${label}] ${playerTargetName} ripostes you for ${duelCalc.riposteDamage} damage${selfAbsorbPart}. You fall. (0/${selfMaxHp} HP)`
+            : `[${label}] ${playerTargetName} ripostes you for ${duelCalc.riposteDamage} damage${selfAbsorbPart}. (${selfNewHp}/${selfMaxHp} HP)`,
           t: now,
         });
       } catch {
@@ -672,14 +676,14 @@ export async function handleAttackAction(
 
       if (selfKilled && ctxMode === "duel") {
         DUEL_SERVICE.endDuelFor(char.id, "death", now);
-        return `[${label}] ${playerTargetName} ripostes you for ${duelCalc.riposteDamage} damage. You are defeated. (0/${selfMaxHp} HP)`;
+        return `[${label}] ${playerTargetName} ripostes you for ${duelCalc.riposteDamage} damage${selfAbsorbPart}. You are defeated. (0/${selfMaxHp} HP)`;
       }
     }
 
     if (killed) {
       // Skeleton rule: duel ends on death.
       if (ctxMode === "duel") DUEL_SERVICE.endDuelFor(char.id, "death", now);
-      return `[${label}] You hit ${playerTargetName} for ${dmg} damage. You defeat them. (0/${maxHp} HP)`;
+      return `[${label}] You hit ${playerTargetName} for ${dmg} damage${absorbPart}. You defeat them. (0/${maxHp} HP)`;
     }
 
     if (dmg <= 0) {
@@ -690,7 +694,7 @@ export async function handleAttackAction(
     }
 
     const suffix = duelCalc.outcome === "block" ? " (blocked)" : "";
-    return `[${label}] You hit ${playerTargetName}${suffix} for ${dmg} damage. (${newHp}/${maxHp} HP)`;
+    return `[${label}] You hit ${playerTargetName}${suffix} for ${dmg} damage${absorbPart}. (${newHp}/${maxHp} HP)`;
   }
 
   // 3) Fallback: name-only training dummy (if no NPC entity was matched)
@@ -1063,13 +1067,15 @@ export async function handleRangedAttackAction(
     );
     const dmg = Math.max(1, roll.damage);
 
-    const { newHp, maxHp, killed } = applySimpleDamageToPlayer(
+    const { newHp, maxHp, killed, absorbed } = applySimpleDamageToPlayer(
       playerTarget as any,
       dmg,
       targetChar as any,
       "physical",
       { mode: ctxMode },
     );
+
+    const absorbPart = absorbed > 0 ? ` (${absorbed} absorbed)` : "";
 
     markInCombat(selfEntity);
     markInCombat(playerTarget as any);
@@ -1079,18 +1085,18 @@ export async function handleRangedAttackAction(
         from: "[world]",
         sessionId: "system",
         text: killed
-          ? `[${label}] ${selfEntity.name} shoots you for ${dmg} damage. You fall. (0/${maxHp} HP)`
-          : `[${label}] ${selfEntity.name} shoots you for ${dmg} damage. (${newHp}/${maxHp} HP)`,
+          ? `[${label}] ${selfEntity.name} shoots you for ${dmg} damage${absorbPart}. You fall. (0/${maxHp} HP)`
+          : `[${label}] ${selfEntity.name} shoots you for ${dmg} damage${absorbPart}. (${newHp}/${maxHp} HP)`,
         t: now,
       });
     }
 
     if (killed) {
       if (ctxMode === "duel") DUEL_SERVICE.endDuelFor(char.id, "death", now);
-      return `[${label}] You shoot ${playerTarget.name} for ${dmg} damage. You defeat them. (0/${maxHp} HP)`;
+      return `[${label}] You shoot ${playerTarget.name} for ${dmg} damage${absorbPart}. You defeat them. (0/${maxHp} HP)`;
     }
 
-    return `[${label}] You shoot ${playerTarget.name} for ${dmg} damage. (${newHp}/${maxHp} HP)`;
+    return `[${label}] You shoot ${playerTarget.name} for ${dmg} damage${absorbPart}. (${newHp}/${maxHp} HP)`;
   }
 
   return "[world] No such target.";

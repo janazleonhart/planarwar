@@ -15,6 +15,11 @@ export type SimpleDamageResult = {
   newHp: number;
   maxHp: number;
   killed: boolean;
+  /**
+   * Amount of incoming damage absorbed by shields (StatusEffects absorb).
+   * 0 when none or when absorber logic is unavailable.
+   */
+  absorbed: number;
 };
 
 export type DamageMode = "pve" | "pvp" | "duel";
@@ -125,13 +130,13 @@ function applyDamageToPlayerInternal(
       );
 
       if (decision.allowed === false) {
-        return { newHp: oldHp, maxHp, killed: false };
+        return { newHp: oldHp, maxHp, killed: false, absorbed: 0 };
       }
     } else {
       // Still enforce service protection even if attacker is unknown.
       const svcOnly = canDamageFast({ entity: ctx?.attackerEntity }, { entity: e, char }, { ignoreServiceProtection: ctx?.ignoreServiceProtection });
       if (svcOnly.allowed === false) {
-        return { newHp: oldHp, maxHp, killed: false };
+        return { newHp: oldHp, maxHp, killed: false, absorbed: 0 };
       }
     }
   } catch {
@@ -141,7 +146,7 @@ function applyDamageToPlayerInternal(
   // Invulnerable / protected entities take no damage.
   // This is a safety rail for staff/admin flags and protected service entities.
   if (isServiceProtectedEntity(e)) {
-    return { newHp: oldHp, maxHp, killed: false };
+    return { newHp: oldHp, maxHp, killed: false, absorbed: 0 };
   }
 
   const amt = Number.isFinite(amount) ? amount : 0;
@@ -203,11 +208,13 @@ function applyDamageToPlayerInternal(
   if (amt > 0 && dmg < 1) dmg = 1;
 
   // Absorb shields: allow shields to reduce damage to 0 (exception to min-damage rule).
+  let absorbedAmt = 0;
   if (char && dmg > 0) {
     try {
       const schoolN: DamageSchool = (school as DamageSchool) ?? "physical";
       const absorbed = absorbIncomingDamageFromStatusEffects(char, dmg, schoolN, Date.now());
-      dmg = Math.max(0, Math.floor(absorbed.remainingDamage));
+      absorbedAmt = Math.max(0, Math.floor(Number(absorbed.absorbed ?? 0)));
+      dmg = Math.max(0, Math.floor(Number(absorbed.remainingDamage ?? dmg)));
     } catch {
       // Best-effort only.
     }
@@ -239,7 +246,7 @@ function applyDamageToPlayerInternal(
     );
   }
 
-  return { newHp, maxHp, killed };
+  return { newHp, maxHp, killed, absorbed: absorbedAmt };
 }
 
 /**

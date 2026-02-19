@@ -17,18 +17,30 @@ export function formatHpPart(hpAfter?: number, maxHp?: number): string {
   return ` (${hp}/${max} HP)`;
 }
 
+export function formatDamageExtras(opts: { absorbed?: number; overkill?: number }): string {
+  const parts: string[] = [];
+  const absorbed = clampInt(opts.absorbed ?? 0, 0, 9_999_999);
+  const overkill = clampInt(opts.overkill ?? 0, 0, 9_999_999);
+  if (absorbed > 0) parts.push(`${absorbed} absorbed`);
+  if (overkill > 0) parts.push(`${overkill} overkill`);
+  if (parts.length === 0) return "";
+  return ` (${parts.join(", ")})`;
+}
+
 export function formatWorldSpellDotTickLine(opts: {
   spellName: string;
   targetName: string;
   damage: number;
+  absorbed?: number;
   hpAfter?: number;
   maxHp?: number;
 }): string {
   const spellName = String(opts.spellName || "DOT");
   const targetName = String(opts.targetName || "target");
-  const dmg = clampInt(opts.damage, 1, 9_999_999);
+  const dmg = clampInt(opts.damage, 0, 9_999_999);
   const hpPart = formatHpPart(opts.hpAfter, opts.maxHp);
-  return `[world] [spell:${spellName}] ${spellName} deals ${dmg} damage to ${targetName}.${hpPart}`;
+  const extras = formatDamageExtras({ absorbed: opts.absorbed });
+  return `[world] [spell:${spellName}] ${spellName} deals ${dmg} damage${extras} to ${targetName}.${hpPart}`;
 }
 
 export function formatWorldSpellHotTickLine(opts: {
@@ -52,6 +64,7 @@ export function formatWorldSpellDirectDamageLine(opts: {
   hpAfter?: number;
   maxHp?: number;
   overkill?: number;
+  absorbed?: number;
   abilityKind?: "spell" | "song";
 }): string {
   const spellName = String(opts.spellName || "Spell");
@@ -64,7 +77,7 @@ export function formatWorldSpellDirectDamageLine(opts: {
   const tag = `[world] [${kind}:${spellName}]`;
 
   let line = `${tag} You hit ${targetName} for ${dmg} damage`;
-  if (overkill > 0) line += ` (${overkill} overkill)`;
+  line += formatDamageExtras({ absorbed: opts.absorbed, overkill });
   line += `.${hpPart}`;
   return line;
 }

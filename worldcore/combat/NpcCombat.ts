@@ -1046,21 +1046,37 @@ if (phys.outcome !== "hit") {
 
   // Let NpcManager own HP + crime + pack calls when available
   let newHp = Math.max(0, prevHp - dmg);
+  let absorbedForLog = 0;
 
   if (ctx.npcs) {
-    const appliedHp = ctx.npcs.applyDamage(npc.id, dmg, {
-      character: char,
-      entityId: selfEntity.id,
-    });
+    // Prefer rich result so we can emit absorbed semantics.
+    const detailed =
+      typeof (ctx.npcs as any).applyDamageDetailed === "function"
+        ? (ctx.npcs as any).applyDamageDetailed(npc.id, dmg, {
+            character: char,
+            entityId: selfEntity.id,
+          })
+        : null;
 
-    // If manager returns an authoritative HP value, correct dmg to actual delta.
-    if (typeof appliedHp === "number") {
-      const effectiveDamage = Math.max(0, prevHp - appliedHp);
-      dmg = effectiveDamage;
-      newHp = appliedHp;
+    if (detailed && typeof detailed.hp === "number") {
+      absorbedForLog = Math.max(0, Math.floor(Number(detailed.absorbed ?? 0)));
+      dmg = Math.max(0, Math.floor(Number(detailed.effectiveDamage ?? Math.max(0, prevHp - detailed.hp))));
+      newHp = detailed.hp;
     } else {
-      // Fallback if manager couldn't find the NPC or returned null/undefined
-      (npc as any).hp = newHp;
+      const appliedHp = ctx.npcs.applyDamage(npc.id, dmg, {
+        character: char,
+        entityId: selfEntity.id,
+      });
+
+      // If manager returns an authoritative HP value, correct dmg to actual delta.
+      if (typeof appliedHp === "number") {
+        const effectiveDamage = Math.max(0, prevHp - appliedHp);
+        dmg = effectiveDamage;
+        newHp = appliedHp;
+      } else {
+        // Fallback if manager couldn't find the NPC or returned null/undefined
+        (npc as any).hp = newHp;
+      }
     }
 
     // Update threat so brains see the attacker (use actual damage when available)
@@ -1136,6 +1152,7 @@ try {
       spellName: opts.abilityName as string,
       targetName: npc.name,
       damage: rawDamage,
+      absorbed: absorbedForLog,
       overkill,
       hpAfter: newHp,
       maxHp,
@@ -1144,9 +1161,10 @@ try {
 } else {
   const blk = (opts as any)._pwBlockLine as string | null;
   line = `${tag} ${blk ? blk + " " : ""}You hit ${npc.name} for ${rawDamage} damage`;
-  if (overkill > 0) {
-    line += ` (${overkill} overkill)`;
-  }
+  const extras: string[] = [];
+  if (absorbedForLog > 0) extras.push(`${absorbedForLog} absorbed`);
+  if (overkill > 0) extras.push(`${overkill} overkill`);
+  if (extras.length > 0) line += ` (${extras.join(", ")})`;
   line += `. (${newHp}/${targetMaxHp ?? "?"} HP)`;
 }
 
@@ -1478,12 +1496,14 @@ let procSuffix = "";
   // can actually modify incoming damage.
   const char = defenderChar;
 
-  const { newHp, maxHp, killed } = applySimpleDamageToPlayer(
+  const { newHp, maxHp, killed, absorbed } = applySimpleDamageToPlayer(
     player,
     dmgBlocked,
     char ?? undefined,
     "physical",
   );
+
+  const absorbPart = absorbed > 0 ? ` (${absorbed} absorbed)` : "";
 
   // Tag NPC as "in combat" too (player is tagged inside applySimpleDamageToPlayer).
   markInCombat(n);
@@ -1506,13 +1526,13 @@ let procSuffix = "";
       deadChar.melody.active = false;
     }
     return (
-      `[combat] You block ${npc.name}'s attack but still take ${dmgBlocked} damage. ` +
+      `[combat] You block ${npc.name}'s attack but still take ${dmgBlocked} damage${absorbPart}. ` +
       `You die. (0/${maxHp} HP) ` +
       "Use 'respawn' to return to safety or wait for someone to resurrect you."
     );
   }
 
-  return `[combat] You block ${npc.name}'s attack and take ${dmgBlocked} damage. (${newHp}/${maxHp} HP)` + procSuffix;
+  return `[combat] You block ${npc.name}'s attack and take ${dmgBlocked} damage${absorbPart}. (${newHp}/${maxHp} HP)` + procSuffix;
 }
 
 const dmg = computeNpcMeleeDamage(npc);
@@ -1521,12 +1541,14 @@ const dmg = computeNpcMeleeDamage(npc);
   // can actually modify incoming damage.
   const char = defenderChar;
 
-  const { newHp, maxHp, killed } = applySimpleDamageToPlayer(
+  const { newHp, maxHp, killed, absorbed } = applySimpleDamageToPlayer(
     player,
     dmg,
     char ?? undefined,
     "physical",
   );
+
+  const absorbPart = absorbed > 0 ? ` (${absorbed} absorbed)` : "";
 
 
 
@@ -1556,7 +1578,7 @@ const dmg = computeNpcMeleeDamage(npc);
     );
   }
 
-  return `[combat] ${npc.name} hits you for ${dmg} damage. (${newHp}/${maxHp} HP)` + procSuffix;
+  return `[combat] ${npc.name} hits you for ${dmg} damage${absorbPart}. (${newHp}/${maxHp} HP)` + procSuffix;
 }
 
 /**

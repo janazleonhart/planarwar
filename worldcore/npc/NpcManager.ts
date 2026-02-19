@@ -534,6 +534,123 @@ export class NpcManager {
   // Combat helpers
   // -------------------------------------------------------------------------
 
+  /**
+   * Richer variant of applyDamage(...) that includes shield/absorb semantics.
+   *
+   * This keeps the legacy applyDamage(...) return type stable (number | null)
+   * while letting combat loggers emit truthful "(X absorbed)" suffixes.
+   */
+  applyDamageDetailed(
+    entityId: string,
+    amount: number,
+    attacker?: { character?: CharacterState; entityId?: string; damageSchool?: any; tag?: string },
+  ):
+    | {
+        hp: number;
+        absorbed: number;
+        remainingDamage: number;
+        effectiveDamage: number;
+      }
+    | null {
+    const st = this.npcsByEntityId.get(entityId);
+    if (!st) return null;
+
+    const e = this.entities.get(entityId) as any;
+    if (!e) return null;
+
+    const proto =
+      getNpcPrototype(st.templateId) ??
+      getNpcPrototype(st.protoId) ??
+      DEFAULT_NPC_PROTOTYPES[st.templateId] ??
+      DEFAULT_NPC_PROTOTYPES[st.protoId];
+
+    // Service-provider NPCs are immune to damage (banker/mailbox/auctioneer, etc.)
+    if (isServiceProtectedNpcProto(proto) || (e as any).invulnerable === true) {
+      (e as any).invulnerable = true;
+      (e as any).isServiceProvider = true;
+      return { hp: st.hp, absorbed: 0, remainingDamage: 0, effectiveDamage: 0 };
+    }
+
+    const wasAlive = st.alive;
+    const beforeHp = st.hp;
+
+    // Normalize/round incoming damage (deterministic).
+    const rawIn = Number.isFinite(amount) ? amount : 0;
+    let dmg = Math.max(0, Math.floor(rawIn));
+    if (rawIn > 0 && dmg < 1) dmg = 1;
+
+    // Absorb shields (NPC status effects live on the entity).
+    let absorbed = 0;
+    if (dmg > 0) {
+      try {
+        const school: any = (attacker as any)?.damageSchool ?? "physical";
+        const res = absorbIncomingDamageFromEntityStatusEffects(e as any, dmg, school, Date.now());
+        absorbed = Math.max(0, Math.floor(Number(res.absorbed ?? 0)));
+        dmg = Math.max(0, Math.floor(Number(res.remainingDamage ?? dmg)));
+      } catch {
+        // best-effort only
+      }
+    }
+
+    const hitDamage = Math.max(0, dmg + absorbed);
+
+    const newHp = Math.max(0, st.hp - dmg);
+    st.hp = newHp;
+    st.alive = newHp > 0;
+    e.hp = newHp;
+    e.alive = newHp > 0;
+
+    if (hitDamage > 0 && wasAlive && newHp > 0) {
+      breakCrowdControlOnDamage({ entity: e as any, damage: hitDamage, now: Date.now() });
+    }
+
+    if (wasAlive && newHp <= 0) {
+      try {
+        clearAllStatusEffectsFromEntity(e);
+      } catch {
+        // ignore
+      }
+    }
+
+    // Best-effort attacker resolution: DOT ticks often only know attackerEntityId.
+    let atkChar: CharacterState | undefined = attacker?.character;
+    if (!atkChar && attacker?.entityId && this.sessions) {
+      try {
+        const aEnt: any = this.entities.get(attacker.entityId);
+        const ownerSessionId = aEnt?.ownerSessionId;
+        if (ownerSessionId) {
+          const s: any = this.sessions.get(ownerSessionId);
+          if (s?.character) atkChar = s.character as CharacterState;
+        }
+      } catch {
+        // ignore
+      }
+    }
+
+    // Preserve existing crime + pack help behavior.
+    if (atkChar && proto) {
+      if (isProtectedNpc(proto)) {
+        recordNpcCrimeAgainst(st, atkChar, {
+          lethal: newHp <= 0,
+          proto,
+        });
+      }
+
+      if (proto.canCallHelp && proto.groupId && attacker?.entityId) {
+        this.notifyPackAllies(attacker.entityId, st, proto, {
+          snapAllies: false,
+        });
+      }
+    }
+
+    if (st.alive && st.maxHp > 0 && st.hp < st.maxHp) {
+      st.fleeing = st.fleeing ?? false;
+    }
+
+    const effectiveDamage = Math.max(0, beforeHp - newHp);
+    return { hp: newHp, absorbed, remainingDamage: dmg, effectiveDamage };
+  }
+
   applyDamage(
     entityId: string,
     amount: number,
