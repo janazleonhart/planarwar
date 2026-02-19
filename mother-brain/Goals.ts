@@ -28,6 +28,11 @@ export type WsMudScriptStep = {
   expectIncludes?: string;
   expectIncludesAny?: string[];
   expectIncludesAll?: string[];
+
+  // Optional regex expectations (string form; supports /pattern/flags or plain pattern).
+  expectRegex?: string;
+  expectRegexAny?: string[];
+  expectRegexAll?: string[];
 };
 
 export type GoalDefinition = {
@@ -71,6 +76,11 @@ export type GoalDefinition = {
 
   expectIncludesAny?: string[];
   expectIncludesAll?: string[];
+
+  // Optional regex expectations (string form; supports /pattern/flags or plain pattern).
+  expectRegex?: string;
+  expectRegexAny?: string[];
+  expectRegexAll?: string[];
 
   // ws_mud_script
   script?: WsMudScriptStep[];
@@ -496,22 +506,84 @@ function mergeGoalsById(goals: GoalDefinition[]): GoalDefinition[] {
   return Array.from(map.values());
 }
 
-function validateMudExpectations(out: string, goal: { expectIncludes?: string; expectIncludesAll?: string[]; expectIncludesAny?: string[] }): string[] {
+function parseRegexString(pattern: string): RegExp | null {
+  const s = pattern.trim();
+  if (!s) return null;
+
+  // Support a JS-like literal: /body/flags
+  if (s.startsWith("/")) {
+    const lastSlash = s.lastIndexOf("/");
+    if (lastSlash > 0) {
+      const body = s.slice(1, lastSlash);
+      const flags = s.slice(lastSlash + 1);
+      try {
+        return new RegExp(body, flags);
+      } catch {
+        return null;
+      }
+    }
+  }
+
+  try {
+    return new RegExp(s);
+  } catch {
+    return null;
+  }
+}
+
+function validateMudExpectations(
+  out: string,
+  goal: {
+    expectIncludes?: string;
+    expectIncludesAll?: string[];
+    expectIncludesAny?: string[];
+    expectRegex?: string;
+    expectRegexAll?: string[];
+    expectRegexAny?: string[];
+  }
+): string[] {
   const missing: string[] = [];
+
   if (goal.expectIncludes) {
     if (!out.includes(goal.expectIncludes)) missing.push(goal.expectIncludes);
   }
+
   if (Array.isArray(goal.expectIncludesAll) && goal.expectIncludesAll.length > 0) {
     for (const s of goal.expectIncludesAll) {
       if (!out.includes(s)) missing.push(s);
     }
   }
+
   if (Array.isArray(goal.expectIncludesAny) && goal.expectIncludesAny.length > 0) {
     const anyOk = goal.expectIncludesAny.some((s) => out.includes(s));
     if (!anyOk) missing.push(`any_of:${goal.expectIncludesAny.join("|")}`);
   }
+
+  if (goal.expectRegex) {
+    const rx = parseRegexString(goal.expectRegex);
+    if (!rx) missing.push(`bad_regex:${goal.expectRegex}`);
+    else if (!rx.test(out)) missing.push(`regex:${goal.expectRegex}`);
+  }
+
+  if (Array.isArray(goal.expectRegexAll) && goal.expectRegexAll.length > 0) {
+    for (const pat of goal.expectRegexAll) {
+      const rx = parseRegexString(pat);
+      if (!rx) missing.push(`bad_regex:${pat}`);
+      else if (!rx.test(out)) missing.push(`regex:${pat}`);
+    }
+  }
+
+  if (Array.isArray(goal.expectRegexAny) && goal.expectRegexAny.length > 0) {
+    const anyOk = goal.expectRegexAny.some((pat) => {
+      const rx = parseRegexString(pat);
+      return rx ? rx.test(out) : false;
+    });
+    if (!anyOk) missing.push(`regex_any_of:${goal.expectRegexAny.join("|")}`);
+  }
+
   return missing;
 }
+
 
 export function resolveGoalPacks(
   packIds: string[],
@@ -1455,6 +1527,9 @@ export async function runGoalsOnce(
           expectIncludes: goal.expectIncludes,
           expectIncludesAny: goal.expectIncludesAny,
           expectIncludesAll: goal.expectIncludesAll,
+          expectRegex: goal.expectRegex,
+          expectRegexAny: goal.expectRegexAny,
+          expectRegexAll: goal.expectRegexAll,
           outputPreview: out.length > 400 ? `${out.slice(0, 400)}…` : out,
         },
       });
@@ -1540,6 +1615,9 @@ export async function runGoalsOnce(
           expectIncludes: step.expectIncludes,
           expectIncludesAny: step.expectIncludesAny,
           expectIncludesAll: step.expectIncludesAll,
+          expectRegex: step.expectRegex,
+          expectRegexAny: step.expectRegexAny,
+          expectRegexAll: step.expectRegexAll,
         });
 
         if (!ok) {
