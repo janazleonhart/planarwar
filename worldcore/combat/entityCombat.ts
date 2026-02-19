@@ -227,7 +227,7 @@ function applyDamageToPlayerInternal(
   // CC v0.3: break "break-on-damage" CC on any meaningful damage.
   // We clear both character-backed and entity-backed stores because different subsystems
   // attach effects to different spines.
-  breakCrowdControlOnDamage({ char, entity: e as any, damage: dmg, now: Date.now() });
+  breakCrowdControlOnDamage({ char, entity: e as any, damage: dmg + absorbedAmt, now: Date.now() });
 
   markInCombat(e);
 
