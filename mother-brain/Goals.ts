@@ -50,6 +50,15 @@ export type WsMudScriptStep = {
   rejectRegexAny?: string[];
   rejectRegexAll?: string[];
 
+  // Optional stop condition: if output matches, the script ends early as OK.
+  // Useful for "do X if available, else stop cleanly" flows.
+  stopOkIfIncludes?: string;
+  stopOkIfIncludesAny?: string[];
+
+  stopOkIfRegex?: string;
+  stopOkIfRegexAny?: string[];
+  stopOkIfRegexAll?: string[];
+
   // Optional capture: extract a value from output into a named variable for later steps.
   // captureRegex supports /pattern/flags or plain pattern. If captureGroup is not set, group 1 is used when present, else group 0.
   captureRegex?: string;
@@ -342,6 +351,18 @@ function normalizeGoals(maybeGoals: unknown): GoalDefinition[] {
               captureRegex: typeof s.captureRegex === "string" ? (s.captureRegex as string) : undefined,
               captureVar: typeof s.captureVar === "string" ? (s.captureVar as string) : undefined,
               captureGroup: typeof s.captureGroup === "number" ? (s.captureGroup as number) : undefined,
+              stopOkIfIncludes: typeof (s as any).stopOkIfIncludes === "string" ? ((s as any).stopOkIfIncludes as string) : undefined,
+              stopOkIfIncludesAny: Array.isArray((s as any).stopOkIfIncludesAny)
+                ? (s as any).stopOkIfIncludesAny.filter((x: any) => typeof x === "string")
+                : undefined,
+              stopOkIfRegex: typeof (s as any).stopOkIfRegex === "string" ? ((s as any).stopOkIfRegex as string) : undefined,
+              stopOkIfRegexAny: Array.isArray((s as any).stopOkIfRegexAny)
+                ? (s as any).stopOkIfRegexAny.filter((x: any) => typeof x === "string")
+                : undefined,
+              stopOkIfRegexAll: Array.isArray((s as any).stopOkIfRegexAll)
+                ? (s as any).stopOkIfRegexAll.filter((x: any) => typeof x === "string")
+                : undefined,
+
             }))
             .filter((s: any) => typeof s.command === "string" && s.command.trim().length > 0)
         : undefined,
@@ -550,6 +571,55 @@ export function builtinGoalPacks(ctx?: {
       ],
     },
 
+
+    // Optional: exercise the quest accept + abandon plumbing in a town context.
+    // This goal is disabled by default because it requires the WS-attached character to be in a room
+    // with a town quest board offering.
+    //
+    // It is designed to be safe: if there are no available quests, it stops early as OK.
+    {
+      id: "ws.mud.quest.accept_one_if_any",
+      kind: "ws_mud_script",
+      enabled: false,
+      timeoutMs: 3000,
+      retries: 1,
+      retryDelayMs: 250,
+      scriptDelayMs: 75,
+      scriptStopOnFail: true,
+      script: [
+        {
+          command: "quest board available",
+          expectRegexAny: ["Available quests:", "No available quests."],
+          rejectRegexAny: ["/\[error\]/i", "/unknown\s+command/i"],
+          // If no quests are available, end the script cleanly as OK.
+          stopOkIfIncludes: "No available quests.",
+          // Capture the first available quest id from the rendered board line.
+          // Example: "  1. [ ] Some Quest Name (quest_id)"
+          captureRegex: "/^\s*\d+\.\s+\[ \]\s+(?:\[NEW\]\s+)?[^\(]*\(([^\)]+)\)/m",
+          captureVar: "qid",
+          captureGroup: 1,
+        },
+        {
+          command: "quest board accept {{qid}}",
+          expectRegexAny: ["\[quest\] Accepted:"],
+          rejectRegexAny: ["/\[error\]/i", "/unknown\s+command/i"],
+          // Sometimes state persistence can race a tiny bit in dev.
+          retries: 2,
+          retryDelayMs: 200,
+        },
+        {
+          command: "quest",
+          expectRegexAny: ["\[A\]", "{{qid}}"],
+          rejectRegexAny: ["/\[error\]/i"],
+        },
+        {
+          command: "quest abandon {{qid}}",
+          expectRegexAny: ["\[quest\] Abandoned:"],
+          rejectRegexAny: ["/\[error\]/i", "/unknown\s+command/i"],
+        },
+      ],
+    },
+
     {
       id: "ws.mud.player.profile.readonly",
       kind: "ws_mud_script",
@@ -684,6 +754,11 @@ function applyVarsToExpectations<T extends {
   rejectRegex?: string;
   rejectRegexAll?: string[];
   rejectRegexAny?: string[];
+  stopOkIfIncludes?: string;
+  stopOkIfIncludesAny?: string[];
+  stopOkIfRegex?: string;
+  stopOkIfRegexAny?: string[];
+  stopOkIfRegexAll?: string[];
 }>(src: T, vars: TemplateVars): { cooked: T; missing: string[] } {
   const missing: string[] = [];
 
@@ -707,6 +782,15 @@ function applyVarsToExpectations<T extends {
   const ra3 = interpolateStringArray(src.rejectRegexAll, vars); missing.push(...ra3.missing);
   const ra4 = interpolateStringArray(src.rejectRegexAny, vars); missing.push(...ra4.missing);
 
+  const st1 = (src as any).stopOkIfIncludes ? interpolateTemplate(String((src as any).stopOkIfIncludes), vars) : null;
+  if (st1) missing.push(...st1.missing);
+  const stA1 = interpolateStringArray((src as any).stopOkIfIncludesAny, vars); missing.push(...stA1.missing);
+  const stR1 = (src as any).stopOkIfRegex ? interpolateTemplate(String((src as any).stopOkIfRegex), vars) : null;
+  if (stR1) missing.push(...stR1.missing);
+  const stRAny = interpolateStringArray((src as any).stopOkIfRegexAny, vars); missing.push(...stRAny.missing);
+  const stRAll = interpolateStringArray((src as any).stopOkIfRegexAll, vars); missing.push(...stRAll.missing);
+
+
   const cooked = {
     ...src,
     expectIncludes: e1 ? e1.text : src.expectIncludes,
@@ -720,6 +804,11 @@ function applyVarsToExpectations<T extends {
     expectRegexAny: ra2.arr,
     rejectRegexAll: ra3.arr,
     rejectRegexAny: ra4.arr,
+    stopOkIfIncludes: st1 ? st1.text : (src as any).stopOkIfIncludes,
+    stopOkIfIncludesAny: stA1.arr,
+    stopOkIfRegex: stR1 ? stR1.text : (src as any).stopOkIfRegex,
+    stopOkIfRegexAny: stRAny.arr,
+    stopOkIfRegexAll: stRAll.arr,
   } as T;
 
   return { cooked, missing: Array.from(new Set(missing)) };
@@ -814,6 +903,48 @@ function validateMudExpectations(
 
   return missing;
 }
+
+
+function shouldStopScriptOk(out: string, step: {
+  stopOkIfIncludes?: string;
+  stopOkIfIncludesAny?: string[];
+  stopOkIfRegex?: string;
+  stopOkIfRegexAny?: string[];
+  stopOkIfRegexAll?: string[];
+}): boolean {
+  if (step.stopOkIfIncludes && out.includes(step.stopOkIfIncludes)) return true;
+
+  if (Array.isArray(step.stopOkIfIncludesAny) && step.stopOkIfIncludesAny.length > 0) {
+    for (const s of step.stopOkIfIncludesAny) {
+      if (typeof s === "string" && s.length > 0 && out.includes(s)) return true;
+    }
+  }
+
+  const testRegex = (raw: string): boolean => {
+    const rx = parseRegexString(raw);
+    if (!rx) return false;
+    return rx.test(out);
+  };
+
+  if (step.stopOkIfRegex && testRegex(step.stopOkIfRegex)) return true;
+
+  if (Array.isArray(step.stopOkIfRegexAny) && step.stopOkIfRegexAny.length > 0) {
+    for (const raw of step.stopOkIfRegexAny) {
+      if (typeof raw === "string" && raw.length > 0 && testRegex(raw)) return true;
+    }
+  }
+
+  if (Array.isArray(step.stopOkIfRegexAll) && step.stopOkIfRegexAll.length > 0) {
+    for (const raw of step.stopOkIfRegexAll) {
+      if (typeof raw !== "string" || raw.length === 0) return false;
+      if (!testRegex(raw)) return false;
+    }
+    return true;
+  }
+
+  return false;
+}
+
 
 
 export function resolveGoalPacks(
@@ -1880,6 +2011,21 @@ export async function runGoalsOnce(
               vars[step.captureVar] = val;
             }
           }
+        }
+
+
+        const stopOk = ok && shouldStopScriptOk(out, cookedExp.cooked as any);
+        if (stopOk) {
+          stepReports.push({
+            index: i,
+            command: cmd,
+            ok: true,
+            stoppedOk: true,
+            outputPreview: out.length > 220 ? `${out.slice(0, 220)}…` : out,
+            vars: Object.keys(vars).length > 0 ? { ...vars } : undefined,
+          });
+          // Script ends early as OK.
+          break;
         }
 
         stepReports.push({
