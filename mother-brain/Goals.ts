@@ -42,6 +42,12 @@ export type WsMudScriptStep = {
   rejectRegex?: string;
   rejectRegexAny?: string[];
   rejectRegexAll?: string[];
+
+  // Optional capture: extract a value from output into a named variable for later steps.
+  // captureRegex supports /pattern/flags or plain pattern. If captureGroup is not set, group 1 is used when present, else group 0.
+  captureRegex?: string;
+  captureVar?: string;
+  captureGroup?: number;
 };
 
 export type GoalDefinition = {
@@ -320,6 +326,9 @@ function normalizeGoals(maybeGoals: unknown): GoalDefinition[] {
               rejectRegexAll: Array.isArray(s.rejectRegexAll)
                 ? s.rejectRegexAll.filter((x: any) => typeof x === "string")
                 : undefined,
+              captureRegex: typeof s.captureRegex === "string" ? (s.captureRegex as string) : undefined,
+              captureVar: typeof s.captureVar === "string" ? (s.captureVar as string) : undefined,
+              captureGroup: typeof s.captureGroup === "number" ? (s.captureGroup as number) : undefined,
             }))
             .filter((s: any) => typeof s.command === "string" && s.command.trim().length > 0)
         : undefined,
@@ -621,6 +630,86 @@ function parseRegexString(pattern: string): RegExp | null {
   } catch {
     return null;
   }
+}
+
+
+type TemplateVars = Record<string, string>;
+
+function interpolateTemplate(raw: string, vars: TemplateVars): { text: string; missing: string[] } {
+  const missing: string[] = [];
+  const text = raw.replace(/\{\{\s*([a-zA-Z0-9_.-]+)\s*\}\}/g, (_m, name: string) => {
+    const v = vars[name];
+    if (v === undefined) {
+      missing.push(name);
+      return `{{${name}}}`;
+    }
+    return String(v);
+  });
+  return { text, missing };
+}
+
+function interpolateStringArray(arr: string[] | undefined, vars: TemplateVars): { arr?: string[]; missing: string[] } {
+  if (!Array.isArray(arr) || arr.length === 0) return { arr, missing: [] };
+  const missing: string[] = [];
+  const out = arr.map((s) => {
+    const r = interpolateTemplate(String(s), vars);
+    missing.push(...r.missing);
+    return r.text;
+  });
+  return { arr: out, missing };
+}
+
+function applyVarsToExpectations<T extends {
+  expectIncludes?: string;
+  expectIncludesAll?: string[];
+  expectIncludesAny?: string[];
+  rejectIncludes?: string;
+  rejectIncludesAny?: string[];
+  expectRegex?: string;
+  expectRegexAll?: string[];
+  expectRegexAny?: string[];
+  rejectRegex?: string;
+  rejectRegexAll?: string[];
+  rejectRegexAny?: string[];
+}>(src: T, vars: TemplateVars): { cooked: T; missing: string[] } {
+  const missing: string[] = [];
+
+  const e1 = src.expectIncludes ? interpolateTemplate(src.expectIncludes, vars) : null;
+  if (e1) missing.push(...e1.missing);
+
+  const r1 = src.rejectIncludes ? interpolateTemplate(src.rejectIncludes, vars) : null;
+  if (r1) missing.push(...r1.missing);
+
+  const a1 = interpolateStringArray(src.expectIncludesAll, vars); missing.push(...a1.missing);
+  const a2 = interpolateStringArray(src.expectIncludesAny, vars); missing.push(...a2.missing);
+  const a3 = interpolateStringArray(src.rejectIncludesAny, vars); missing.push(...a3.missing);
+
+  const rx1 = src.expectRegex ? interpolateTemplate(src.expectRegex, vars) : null;
+  if (rx1) missing.push(...rx1.missing);
+  const rx2 = src.rejectRegex ? interpolateTemplate(src.rejectRegex, vars) : null;
+  if (rx2) missing.push(...rx2.missing);
+
+  const ra1 = interpolateStringArray(src.expectRegexAll, vars); missing.push(...ra1.missing);
+  const ra2 = interpolateStringArray(src.expectRegexAny, vars); missing.push(...ra2.missing);
+  const ra3 = interpolateStringArray(src.rejectRegexAll, vars); missing.push(...ra3.missing);
+  const ra4 = interpolateStringArray(src.rejectRegexAny, vars); missing.push(...ra4.missing);
+
+  const cooked = {
+    ...src,
+    expectIncludes: e1 ? e1.text : src.expectIncludes,
+    rejectIncludes: r1 ? r1.text : src.rejectIncludes,
+    expectIncludesAll: a1.arr,
+    expectIncludesAny: a2.arr,
+    rejectIncludesAny: a3.arr,
+    expectRegex: rx1 ? rx1.text : src.expectRegex,
+    rejectRegex: rx2 ? rx2.text : src.rejectRegex,
+    expectRegexAll: ra1.arr,
+    expectRegexAny: ra2.arr,
+    rejectRegexAll: ra3.arr,
+    rejectRegexAny: ra4.arr,
+  } as T;
+
+  return { cooked, missing: Array.from(new Set(missing)) };
 }
 
 function validateMudExpectations(
@@ -1697,11 +1786,25 @@ export async function runGoalsOnce(
       const stopOnFail = goal.scriptStopOnFail !== false;
 
       const stepReports: any[] = [];
+      const vars: TemplateVars = {};
       let overallOk = true;
 
       for (let i = 0; i < script.length; i += 1) {
         const step = script[i];
-        const cmd = String(step.command ?? "").trim();
+        const rawCmd = String(step.command ?? "").trim();
+        const cmdInterp = interpolateTemplate(rawCmd, vars);
+        const cmd = cmdInterp.text.trim();
+        if (cmdInterp.missing.length > 0) {
+          overallOk = false;
+          stepReports.push({
+            index: i,
+            command: rawCmd,
+            ok: false,
+            error: `missing vars: ${cmdInterp.missing.join(", ")}`,
+          });
+          if (stopOnFail) break;
+          continue;
+        }
         if (!cmd) {
           overallOk = false;
           stepReports.push({
@@ -1735,8 +1838,33 @@ export async function runGoalsOnce(
           await sleep(delay);
         }
 
-        const missing = ok ? validateMudExpectations(out, step) : [];
+        const cookedExp = applyVarsToExpectations(step, vars);
+        if (cookedExp.missing.length > 0) {
+          ok = false;
+          res = { ok: false, error: `missing vars: ${cookedExp.missing.join(", ")}` };
+        }
+
+        const missing = ok ? validateMudExpectations(out, cookedExp.cooked) : [];
         if (missing.length > 0) ok = false;
+
+        // Capture variable from output for later steps.
+        if (ok && step.captureRegex && step.captureVar) {
+          const rx = parseRegexString(step.captureRegex);
+          if (!rx) {
+            ok = false;
+            res = { ok: false, error: `bad_regex:${step.captureRegex}` };
+          } else {
+            const m = out.match(rx);
+            if (!m) {
+              ok = false;
+              res = { ok: false, error: `capture_no_match:${step.captureRegex}` };
+            } else {
+              const group = Number.isFinite(step.captureGroup as any) ? Math.max(0, Math.floor(step.captureGroup as any)) : 1;
+              const val = (m[group] ?? m[0] ?? "").toString();
+              vars[step.captureVar] = val;
+            }
+          }
+        }
 
         stepReports.push({
           index: i,
@@ -1746,17 +1874,21 @@ export async function runGoalsOnce(
             ? undefined
             : res.error ?? (missing.length > 0 ? `missing expectation: ${missing.join(", ")}` : "failed"),
           outputPreview: out.length > 220 ? `${out.slice(0, 220)}…` : out,
-          expectIncludes: step.expectIncludes,
-          expectIncludesAny: step.expectIncludesAny,
-          expectIncludesAll: step.expectIncludesAll,
-          rejectIncludes: step.rejectIncludes,
-          rejectIncludesAny: step.rejectIncludesAny,
-          expectRegex: step.expectRegex,
-          expectRegexAny: step.expectRegexAny,
-          expectRegexAll: step.expectRegexAll,
-          rejectRegex: step.rejectRegex,
-          rejectRegexAny: step.rejectRegexAny,
-          rejectRegexAll: step.rejectRegexAll,
+          expectIncludes: (cookedExp as any).cooked?.expectIncludes ?? step.expectIncludes,
+          expectIncludesAny: (cookedExp as any).cooked?.expectIncludesAny ?? step.expectIncludesAny,
+          expectIncludesAll: (cookedExp as any).cooked?.expectIncludesAll ?? step.expectIncludesAll,
+          rejectIncludes: (cookedExp as any).cooked?.rejectIncludes ?? step.rejectIncludes,
+          rejectIncludesAny: (cookedExp as any).cooked?.rejectIncludesAny ?? step.rejectIncludesAny,
+          expectRegex: (cookedExp as any).cooked?.expectRegex ?? step.expectRegex,
+          expectRegexAny: (cookedExp as any).cooked?.expectRegexAny ?? step.expectRegexAny,
+          expectRegexAll: (cookedExp as any).cooked?.expectRegexAll ?? step.expectRegexAll,
+          rejectRegex: (cookedExp as any).cooked?.rejectRegex ?? step.rejectRegex,
+          rejectRegexAny: (cookedExp as any).cooked?.rejectRegexAny ?? step.rejectRegexAny,
+          rejectRegexAll: (cookedExp as any).cooked?.rejectRegexAll ?? step.rejectRegexAll,
+          captureRegex: step.captureRegex,
+          captureVar: step.captureVar,
+          captureGroup: step.captureGroup,
+          vars: Object.keys(vars).length > 0 ? { ...vars } : undefined,
         });
 
         if (!ok) {
