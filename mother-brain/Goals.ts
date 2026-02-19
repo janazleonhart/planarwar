@@ -741,6 +741,23 @@ function isTransientHttpStatus(status?: number): boolean {
   return status === 502 || status === 503 || status === 504;
 }
 
+function isTransientWsError(err?: string): boolean {
+  if (!err) return false;
+  const s = err.toLowerCase();
+  return (
+    s.includes("timeout") ||
+    s.includes("timed out") ||
+    s.includes("not connected") ||
+    s.includes("disconnected") ||
+    s.includes("closed") ||
+    s.includes("connecting") ||
+    s.includes("econnrefused") ||
+    s.includes("econnreset") ||
+    s.includes("epipe") ||
+    s.includes("socket")
+  );
+}
+
 async function httpGet(args: {
   url: string;
   timeoutMs: number;
@@ -1316,9 +1333,29 @@ export async function runGoalsOnce(
       }
 
       const timeoutMs = goal.timeoutMs ?? 2500;
-      const res = await deps.wsMudCommand(command, timeoutMs);
-      let ok = res.ok;
-      const out = res.output ?? "";
+      const retries = Math.max(0, Math.min(10, goal.retries ?? 2));
+      const baseDelayMs = Math.max(0, Math.min(10_000, goal.retryDelayMs ?? 200));
+
+      let res: { ok: boolean; output?: string; error?: string } = { ok: false, error: "not attempted" };
+      let out = "";
+      let ok = false;
+
+      for (let attempt = 0; attempt <= retries; attempt += 1) {
+        res = await deps.wsMudCommand(command, timeoutMs);
+        ok = res.ok;
+        out = res.output ?? "";
+
+        // If the command itself succeeded, we can validate expectations.
+        if (ok) break;
+
+        // If it failed, retry only on transient WS failures (startup order, reconnect windows, etc).
+        const transient = isTransientWsError(res.error);
+        if (!transient || attempt === retries) break;
+
+        const jitter = Math.floor(Math.random() * 25);
+        const delay = Math.min(10_000, baseDelayMs * Math.pow(2, attempt) + jitter);
+        await sleep(delay);
+      }
 
       const missing: string[] = [];
       if (ok && goal.expectIncludes) {
@@ -1335,6 +1372,8 @@ export async function runGoalsOnce(
       }
 
       if (missing.length > 0) ok = false;
+
+      // If expectations failed (not a transport issue), do not retry – this is a real contract mismatch.
 
       if (ok) okCount += 1;
       else failCount += 1;
