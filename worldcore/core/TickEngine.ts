@@ -130,7 +130,7 @@ export class TickEngine {
     // This enables out-of-combat regeneration effects without requiring combat loop glue.
     try {
       if (process.env.PW_TICK_PLAYER_HOTS !== "0") {
-        tickAllPlayerHots(this.entities, this.sessions, now);
+        tickAllPlayerHots(this.entities, this.sessions, now, this.npcs as any);
       }
     } catch (err: any) {
       this.log.warn("Error during player HOT tick", { error: String(err) });

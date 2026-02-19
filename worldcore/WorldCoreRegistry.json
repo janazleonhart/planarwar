@@ -815,7 +815,7 @@
         "core.sessionManager"
       ],
       "functions": [
-        "tickAllPlayerHots(entities,sessions,nowMs)"
+        "tickAllPlayerHots(entities,sessions,nowMs,npcs?)"
       ],
       "kind": "utility",
       "notes": [

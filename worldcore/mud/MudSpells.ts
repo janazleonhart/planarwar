@@ -908,7 +908,7 @@ case "damage_single_npc": {
           text: killed
             ? `[${gate.label}] ${selfEntity.name} hits you for ${dmgFinal} damage. You fall. (0/${maxHp} HP)`
             : `[${gate.label}] ${selfEntity.name} hits you for ${dmgFinal} damage. (${newHp}/${maxHp} HP)`,
-          t: now,
+          t: gate.now,
         });
       }
 
@@ -916,7 +916,7 @@ case "damage_single_npc": {
       if (killed) {
         const oppId = String(gate.targetChar?.id ?? "");
         if (oppId && DUEL_SERVICE.isActiveBetween(char.id, oppId)) {
-          DUEL_SERVICE.endDuelFor(char.id, "death", now);
+          DUEL_SERVICE.endDuelFor(char.id, "death", gate.now);
         }
       }
 
@@ -952,8 +952,6 @@ case "damage_single_npc": {
       }
       let result: string;
       let healedForThreat = 0;
-
-      const now = Number((ctx as any).nowMs ?? Date.now());
 
       if (isDeadEntity(selfEntity)) {
         resurrectEntity(selfEntity);
@@ -1037,9 +1035,6 @@ case "damage_single_npc": {
 
       const gained = after - before;
 
-
-      const now = Number((ctx as any).nowMs ?? Date.now());
-
       // Healing threat: best-effort. Only engaged NPCs in-room will care.
       try {
         if (gained > 0 && (ctx as any).npcs && typeof (ctx as any).npcs.recordHealing === "function") {
@@ -1084,7 +1079,8 @@ applyStatusEffect(char, {
         stackingPolicy: seRes.se.stackingPolicy,
         stackingGroupId: seRes.se.stackingGroupId,
         appliedByKind: "character",
-        appliedById: char.id,
+        // IMPORTANT: store the applier as the *entity id* so tickers can attribute HOT threat correctly.
+        appliedById: String((selfEntity as any)?.id ?? char.id),
         name: seRes.se.name ?? spell.name,
         durationMs: seRes.se.durationMs,
         maxStacks: seRes.se.maxStacks,
@@ -1146,7 +1142,8 @@ applyStatusEffect(char, {
         stackingPolicy: seRes.se.stackingPolicy,
         stackingGroupId: seRes.se.stackingGroupId,
         appliedByKind: "character",
-        appliedById: char.id,
+        // IMPORTANT: store the applier as the *entity id* so tickers can attribute HOT threat correctly.
+        appliedById: String((selfEntity as any)?.id ?? char.id),
         name: seRes.se.name ?? spell.name,
         durationMs: seRes.se.durationMs,
         maxStacks: seRes.se.maxStacks,

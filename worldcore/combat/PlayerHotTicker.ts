@@ -2,6 +2,7 @@
 
 import type { EntityManager } from "../core/EntityManager";
 import type { SessionManager } from "../core/SessionManager";
+import type { NpcManager } from "../npc/NpcManager";
 import { getActiveStatusEffects, tickStatusEffectsAndApplyHots } from "./StatusEffects";
 import { formatWorldSpellHotTickLine } from "./CombatLog";
 
@@ -15,6 +16,7 @@ export function tickAllPlayerHots(
   entities: EntityManager,
   sessions: SessionManager,
   now: number,
+  npcs?: NpcManager,
 ): void {
   const sessIter: any[] = (() => {
     const s: any = sessions as any;
@@ -33,12 +35,15 @@ export function tickAllPlayerHots(
     // Cache name lookup so we can attribute ticks to the originating effect.
     // (This is best-effort; if the effect disappears mid-loop, fall back to HOT.)
     const nameById = new Map<string, string>();
+    const casterByEffectId = new Map<string, string>();
     try {
       const active = getActiveStatusEffects(char as any, now);
       for (const inst of active as any[]) {
         if (!inst?.id) continue;
         const nm = String(inst.name ?? inst.sourceId ?? "HOT");
         nameById.set(String(inst.id), nm);
+        const applier = String((inst as any).appliedById ?? "").trim();
+        if (applier) casterByEffectId.set(String(inst.id), applier);
       }
     } catch {
       // ignore
@@ -53,6 +58,22 @@ export function tickAllPlayerHots(
       const curHp = typeof (ent as any).hp === "number" ? (ent as any).hp : 0;
       const after = typeof maxHp === "number" ? Math.min(maxHp, curHp + heal) : curHp + heal;
       (ent as any).hp = after;
+      const gained = after - curHp;
+
+      // Healing threat from HOT ticks: best-effort. Only engaged NPCs in-room will care.
+      try {
+        if (gained > 0 && npcs && typeof (npcs as any).recordHealing === "function") {
+          const rid = String((sess as any)?.roomId ?? "").trim();
+          const healerId = casterByEffectId.get(String((meta as any)?.effectId)) ?? "";
+          const healedId = String((ent as any)?.id ?? "").trim();
+          if (rid && healerId && healedId) {
+            (npcs as any).recordHealing(rid, healerId, healedId, gained, now);
+          }
+        }
+      } catch {
+        // ignore
+      }
+
 
       // Optional combat message to the owner.
       try {

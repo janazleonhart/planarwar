@@ -1234,6 +1234,14 @@ export type DotTickEvent = {
 export type HotTickEvent = {
   effectId: StatusEffectId;
   heal: number;
+  /** Optional attribution forwarded from the status instance (set by spell/ability cast). */
+  appliedByKind?: StatusEffectApplierKind;
+  appliedById?: string;
+  /** Optional source forwarding (spell/ability/item provenance). */
+  sourceKind?: StatusEffectSourceKind;
+  sourceId?: string;
+  /** Optional display name of the effect/spell for messaging. */
+  name?: string;
 };
 
 /**
@@ -1272,7 +1280,15 @@ export function tickStatusEffectsAndApplyHots(
         const heal = perTickHealBase;
 
         try {
-          applyHeal(heal, { effectId: inst.id, heal });
+          applyHeal(heal, {
+            effectId: inst.id,
+            heal,
+            appliedByKind: inst.appliedByKind,
+            appliedById: inst.appliedById,
+            sourceKind: inst.sourceKind,
+            sourceId: inst.sourceId,
+            name: inst.name,
+          });
         } catch {
           // Healing application must never crash the tick loop.
         }
@@ -1317,7 +1333,15 @@ export function tickEntityStatusEffectsAndApplyHots(
         const heal = perTickHealBase;
 
         try {
-          applyHeal(heal, { effectId: inst.id, heal });
+          applyHeal(heal, {
+            effectId: inst.id,
+            heal,
+            appliedByKind: inst.appliedByKind,
+            appliedById: inst.appliedById,
+            sourceKind: inst.sourceKind,
+            sourceId: inst.sourceId,
+            name: inst.name,
+          });
         } catch {
           // Best-effort only.
         }
