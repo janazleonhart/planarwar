@@ -279,6 +279,7 @@ export function builtinGoalPacks(ctx?: {
       ] satisfies GoalDefinition[]);
   const adminToken = ctx?.webBackendAdminToken;
   const serviceToken = ctx?.webBackendServiceToken;
+  const serviceRole = serviceToken?.startsWith("svc:") ? String(serviceToken.split(":")[2] ?? "") : "";
   const adminHeaders: Record<string, string> | undefined = adminToken
     ? {
         // Prefer standards, but also include a simple token header for flexibility.
@@ -307,17 +308,33 @@ export function builtinGoalPacks(ctx?: {
             expectValue: true,
             timeoutMs: 2000,
           },
-          {
-            id: "admin.fixtures.ping",
-            kind: "http_post_json",
-            url: `${ctx.webBackendHttpBase}/api/admin/test_fixtures/ping`,
-            requestHeaders: adminHeaders,
-            requestJson: { ping: 7 },
-            expectStatus: 200,
-            expectPath: "pong",
-            expectValue: 7,
-            timeoutMs: 2000,
-          },
+          // NOTE: readonly service tokens are not allowed to exercise write-ish endpoints.
+          // Use the deterministic GET ping variant instead so admin_smoke can stay green
+          // under least privilege.
+          (
+            serviceToken && serviceRole === "readonly"
+              ? ({
+                  id: "admin.fixtures.ping",
+                  kind: "http_json",
+                  url: `${ctx.webBackendHttpBase}/api/admin/test_fixtures/ping`,
+                  requestHeaders: adminHeaders,
+                  expectStatus: 200,
+                  expectPath: "pong",
+                  expectValue: "pong",
+                  timeoutMs: 2000,
+                } satisfies GoalDefinition)
+              : ({
+                  id: "admin.fixtures.ping",
+                  kind: "http_post_json",
+                  url: `${ctx.webBackendHttpBase}/api/admin/test_fixtures/ping`,
+                  requestHeaders: adminHeaders,
+                  requestJson: { ping: 7 },
+                  expectStatus: 200,
+                  expectPath: "pong",
+                  expectValue: 7,
+                  timeoutMs: 2000,
+                } satisfies GoalDefinition)
+          ),
           {
             id: "admin.fixtures.db_counts",
             kind: "http_json",
