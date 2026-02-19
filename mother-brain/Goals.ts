@@ -78,6 +78,10 @@ export type GoalDefinition = {
   kind: GoalKind;
   enabled?: boolean;
 
+  // Optional service token role requirement (used for admin smoke HTTP goals).
+  // If omitted, we default to "readonly".
+  serviceRole?: "readonly" | "editor" | "root";
+
   // db_table_exists
   table?: string;
 
@@ -183,10 +187,14 @@ export type GoalsState = {
   // Optional context for builtin packs
   webBackendHttpBase?: string;
   webBackendAdminToken?: string;
-  webBackendServiceToken?: string;
+  webBackendServiceToken?: string; // legacy single-token
+  webBackendServiceTokenReadonly?: string;
+  webBackendServiceTokenEditor?: string;
 
   mmoBackendHttpBase?: string;
-  mmoBackendServiceToken?: string;
+  mmoBackendServiceToken?: string; // legacy single-token
+  mmoBackendServiceTokenReadonly?: string;
+  mmoBackendServiceTokenEditor?: string;
 
   lastRunIso: string | null;
   lastOk: boolean | null;
@@ -437,9 +445,13 @@ export function builtinGoalPacks(ctx?: {
   webBackendHttpBase?: string;
   webBackendAdminToken?: string;
   webBackendServiceToken?: string;
+  webBackendServiceTokenReadonly?: string;
+  webBackendServiceTokenEditor?: string;
 
   mmoBackendHttpBase?: string;
   mmoBackendServiceToken?: string;
+  mmoBackendServiceTokenReadonly?: string;
+  mmoBackendServiceTokenEditor?: string;
 }): Record<GoalPackId, GoalDefinition[]> {
   // NOTE: When building packs via ternaries/spreads, TS can widen string literals (e.g. kind -> string).
   // To keep GoalDefinition typing strict, build those packs in typed locals.
@@ -475,31 +487,40 @@ export function builtinGoalPacks(ctx?: {
         },
       ] satisfies GoalDefinition[]);
   const adminToken = ctx?.webBackendAdminToken;
-  const serviceToken = ctx?.webBackendServiceToken;
-  const serviceRole = serviceToken?.startsWith("svc:") ? String(serviceToken.split(":")[2] ?? "") : "";
-  const adminHeaders: Record<string, string> | undefined = adminToken
-    ? {
-        // Prefer standards, but also include a simple token header for flexibility.
-        authorization: adminToken.toLowerCase().startsWith("bearer ") ? adminToken : `Bearer ${adminToken}`,
-        "x-admin-token": adminToken,
-      }
-    : serviceToken
-      ? {
-          // Service tokens are verified server-side via PW_SERVICE_TOKEN_SECRET.
-          // We provide both a dedicated header and a Bearer form for compatibility.
-          authorization: serviceToken.toLowerCase().startsWith("bearer ") ? serviceToken : `Bearer ${serviceToken}`,
-          "x-service-token": serviceToken,
-        }
-      : undefined;
+  const legacyServiceToken = ctx?.webBackendServiceToken;
+  const serviceTokenReadonly = ctx?.webBackendServiceTokenReadonly ?? legacyServiceToken;
+  const serviceTokenEditor = ctx?.webBackendServiceTokenEditor ?? legacyServiceToken;
 
-  const adminSmoke: GoalDefinition[] = ctx?.webBackendHttpBase && adminHeaders
+  const mkAdminHeaders = (token: string, kind: "admin" | "service"): Record<string, string> =>
+    kind === "admin"
+      ? {
+          authorization: token.toLowerCase().startsWith("bearer ") ? token : `Bearer ${token}`,
+          "x-admin-token": token,
+        }
+      : {
+          authorization: token.toLowerCase().startsWith("bearer ") ? token : `Bearer ${token}`,
+          "x-service-token": token,
+        };
+
+  const adminHeaders: Record<string, string> | undefined = adminToken ? mkAdminHeaders(adminToken, "admin") : undefined;
+  const serviceHeadersReadonly: Record<string, string> | undefined = serviceTokenReadonly
+    ? mkAdminHeaders(serviceTokenReadonly, "service")
+    : undefined;
+  const serviceHeadersEditor: Record<string, string> | undefined = serviceTokenEditor ? mkAdminHeaders(serviceTokenEditor, "service") : undefined;
+
+  // Prefer: human admin token, else readonly service token, else editor service token.
+  const defaultAdminHeaders: Record<string, string> | undefined = adminHeaders ?? serviceHeadersReadonly ?? serviceHeadersEditor;
+
+  const serviceRoleReadonly = serviceTokenReadonly?.startsWith("svc:") ? String(serviceTokenReadonly.split(":")[2] ?? "") : "";
+
+  const adminSmoke: GoalDefinition[] = ctx?.webBackendHttpBase && defaultAdminHeaders
     ? (
         [
           {
             id: "admin.fixtures.time",
             kind: "http_json",
             url: `${ctx.webBackendHttpBase}/api/admin/test_fixtures/time`,
-            requestHeaders: adminHeaders,
+            requestHeaders: defaultAdminHeaders,
             expectStatus: 200,
             expectPath: "ok",
             expectValue: true,
@@ -509,12 +530,14 @@ export function builtinGoalPacks(ctx?: {
           // Use the deterministic GET ping variant instead so admin_smoke can stay green
           // under least privilege.
           (
-            serviceToken && serviceRole === "readonly"
+            // If we only have a readonly service token (no human admin token and no editor token),
+            // avoid write-ish pings by using the GET variant.
+            !adminHeaders && serviceHeadersReadonly && serviceRoleReadonly === "readonly" && !serviceHeadersEditor
               ? ({
                   id: "admin.fixtures.ping",
                   kind: "http_json",
                   url: `${ctx.webBackendHttpBase}/api/admin/test_fixtures/ping`,
-                  requestHeaders: adminHeaders,
+                  requestHeaders: defaultAdminHeaders,
                   expectStatus: 200,
                   expectPath: "pong",
                   expectValue: "pong",
@@ -524,7 +547,7 @@ export function builtinGoalPacks(ctx?: {
                   id: "admin.fixtures.ping",
                   kind: "http_post_json",
                   url: `${ctx.webBackendHttpBase}/api/admin/test_fixtures/ping`,
-                  requestHeaders: adminHeaders,
+                  requestHeaders: adminHeaders ?? serviceHeadersEditor ?? defaultAdminHeaders,
                   requestJson: { ping: 7 },
                   expectStatus: 200,
                   expectPath: "pong",
@@ -536,7 +559,7 @@ export function builtinGoalPacks(ctx?: {
             id: "admin.fixtures.db_counts",
             kind: "http_json",
             url: `${ctx.webBackendHttpBase}/api/admin/test_fixtures/db_counts`,
-            requestHeaders: adminHeaders,
+            requestHeaders: defaultAdminHeaders,
             expectStatus: 200,
             expectPath: "ok",
             expectValue: true,
@@ -557,14 +580,14 @@ export function builtinGoalPacks(ctx?: {
 // MMO backend admin character lifecycle smoke (requires MOTHER_BRAIN_MMO_BACKEND_HTTP_BASE and a service token with editor/root role).
 // Disabled by default unless env is set; safe for repeated runs (creates a temp character, renames, then deletes).
 const mmoAdminSmoke: GoalDefinition[] =
-  ctx?.mmoBackendHttpBase && ctx?.mmoBackendServiceToken
+  ctx?.mmoBackendHttpBase && (ctx?.mmoBackendServiceTokenEditor ?? ctx?.mmoBackendServiceToken)
     ? ([
         {
           id: "admin.characters.smoke_cycle",
           kind: "http_post_json",
           url: `${ctx.mmoBackendHttpBase}/api/admin/characters/smoke_cycle`,
           requestHeaders: {
-            authorization: `Bearer ${ctx.mmoBackendServiceToken}`,
+            authorization: `Bearer ${ctx.mmoBackendServiceTokenEditor ?? ctx.mmoBackendServiceToken}`,
           },
           requestJson: {
             // NOTE: userId must be provided by your environment. For convenience, allow env override via MOTHER_BRAIN_TEST_USER_ID.
@@ -577,6 +600,7 @@ const mmoAdminSmoke: GoalDefinition[] =
           expectPath: "ok",
           expectValue: true,
           timeoutMs: 5000,
+          serviceRole: "editor",
         },
       ] satisfies GoalDefinition[])
     : ([] as GoalDefinition[]);
@@ -1040,9 +1064,13 @@ export function createGoalsState(args: {
   webBackendHttpBase?: string;
   webBackendAdminToken?: string;
   webBackendServiceToken?: string;
+  webBackendServiceTokenReadonly?: string;
+  webBackendServiceTokenEditor?: string;
 
   mmoBackendHttpBase?: string;
   mmoBackendServiceToken?: string;
+  mmoBackendServiceTokenReadonly?: string;
+  mmoBackendServiceTokenEditor?: string;
 }): GoalsState {
   const reportDir = args.reportDir;
 
@@ -1054,8 +1082,12 @@ export function createGoalsState(args: {
     webBackendHttpBase: args.webBackendHttpBase,
     webBackendAdminToken: args.webBackendAdminToken,
     webBackendServiceToken: args.webBackendServiceToken,
+    webBackendServiceTokenReadonly: args.webBackendServiceTokenReadonly,
+    webBackendServiceTokenEditor: args.webBackendServiceTokenEditor,
     mmoBackendHttpBase: args.mmoBackendHttpBase,
     mmoBackendServiceToken: args.mmoBackendServiceToken,
+    mmoBackendServiceTokenReadonly: args.mmoBackendServiceTokenReadonly,
+    mmoBackendServiceTokenEditor: args.mmoBackendServiceTokenEditor,
     lastRunIso: null,
     lastOk: null,
     lastSummary: null,
@@ -1124,8 +1156,12 @@ export function getGoalSuites(
       webBackendHttpBase: state.webBackendHttpBase,
       webBackendAdminToken: state.webBackendAdminToken,
       webBackendServiceToken: state.webBackendServiceToken,
+      webBackendServiceTokenReadonly: state.webBackendServiceTokenReadonly,
+      webBackendServiceTokenEditor: state.webBackendServiceTokenEditor,
       mmoBackendHttpBase: state.mmoBackendHttpBase,
       mmoBackendServiceToken: state.mmoBackendServiceToken,
+      mmoBackendServiceTokenReadonly: state.mmoBackendServiceTokenReadonly,
+      mmoBackendServiceTokenEditor: state.mmoBackendServiceTokenEditor,
     });
     const suites: GoalSuite[] = [];
     const unknown: string[] = [];

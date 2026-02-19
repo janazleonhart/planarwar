@@ -425,9 +425,18 @@ const ConfigSchema = z
     // may still use a human admin token (above) or disable admin_smoke.
     MOTHER_BRAIN_WEB_BACKEND_SERVICE_TOKEN: z.string().optional(),
 
+    // Optional role-scoped service tokens. If set, these take precedence over the generic
+    // MOTHER_BRAIN_WEB_BACKEND_SERVICE_TOKEN for the corresponding role.
+    MOTHER_BRAIN_WEB_BACKEND_SERVICE_TOKEN_READONLY: z.string().optional(),
+    MOTHER_BRAIN_WEB_BACKEND_SERVICE_TOKEN_EDITOR: z.string().optional(),
+
     // Optional service token for calling protected mmo-backend admin endpoints.
     // If unset, Mother Brain falls back to PW_MOTHER_BRAIN_SERVICE_TOKEN / PW_SERVICE_TOKEN.
     MOTHER_BRAIN_MMO_BACKEND_SERVICE_TOKEN: z.string().optional(),
+
+    // Optional role-scoped service tokens for mmo-backend.
+    MOTHER_BRAIN_MMO_BACKEND_SERVICE_TOKEN_READONLY: z.string().optional(),
+    MOTHER_BRAIN_MMO_BACKEND_SERVICE_TOKEN_EDITOR: z.string().optional(),
   })
   .passthrough();
 
@@ -467,9 +476,13 @@ type MotherBrainConfig = {
   webBackendHttpBase?: string;
   webBackendAdminToken?: string;
   webBackendServiceToken?: string;
+  webBackendServiceTokenReadonly?: string;
+  webBackendServiceTokenEditor?: string;
 
   mmoBackendHttpBase?: string;
   mmoBackendServiceToken?: string;
+  mmoBackendServiceTokenReadonly?: string;
+  mmoBackendServiceTokenEditor?: string;
 };
 
 function parseConfig(): MotherBrainConfig {
@@ -524,8 +537,32 @@ function parseConfig(): MotherBrainConfig {
     webBackendServiceToken:
       env.MOTHER_BRAIN_WEB_BACKEND_SERVICE_TOKEN ?? process.env.PW_MOTHER_BRAIN_SERVICE_TOKEN ?? process.env.PW_SERVICE_TOKEN,
 
+    webBackendServiceTokenReadonly:
+      env.MOTHER_BRAIN_WEB_BACKEND_SERVICE_TOKEN_READONLY ??
+      env.MOTHER_BRAIN_WEB_BACKEND_SERVICE_TOKEN ??
+      process.env.PW_MOTHER_BRAIN_SERVICE_TOKEN ??
+      process.env.PW_SERVICE_TOKEN,
+
+    webBackendServiceTokenEditor:
+      env.MOTHER_BRAIN_WEB_BACKEND_SERVICE_TOKEN_EDITOR ??
+      env.MOTHER_BRAIN_WEB_BACKEND_SERVICE_TOKEN ??
+      process.env.PW_MOTHER_BRAIN_SERVICE_TOKEN ??
+      process.env.PW_SERVICE_TOKEN,
+
     mmoBackendServiceToken:
       env.MOTHER_BRAIN_MMO_BACKEND_SERVICE_TOKEN ?? process.env.PW_MOTHER_BRAIN_SERVICE_TOKEN ?? process.env.PW_SERVICE_TOKEN,
+
+    mmoBackendServiceTokenReadonly:
+      env.MOTHER_BRAIN_MMO_BACKEND_SERVICE_TOKEN_READONLY ??
+      env.MOTHER_BRAIN_MMO_BACKEND_SERVICE_TOKEN ??
+      process.env.PW_MOTHER_BRAIN_SERVICE_TOKEN ??
+      process.env.PW_SERVICE_TOKEN,
+
+    mmoBackendServiceTokenEditor:
+      env.MOTHER_BRAIN_MMO_BACKEND_SERVICE_TOKEN_EDITOR ??
+      env.MOTHER_BRAIN_MMO_BACKEND_SERVICE_TOKEN ??
+      process.env.PW_MOTHER_BRAIN_SERVICE_TOKEN ??
+      process.env.PW_SERVICE_TOKEN,
   };
 }
 
@@ -1399,8 +1436,12 @@ async function main(): Promise<void> {
         webBackendHttpBase: cfg.webBackendHttpBase,
         webBackendAdminToken: cfg.webBackendAdminToken,
         webBackendServiceToken: cfg.webBackendServiceToken,
+        webBackendServiceTokenReadonly: cfg.webBackendServiceTokenReadonly,
+        webBackendServiceTokenEditor: cfg.webBackendServiceTokenEditor,
         mmoBackendHttpBase: cfg.mmoBackendHttpBase,
         mmoBackendServiceToken: cfg.mmoBackendServiceToken,
+        mmoBackendServiceTokenReadonly: cfg.mmoBackendServiceTokenReadonly,
+        mmoBackendServiceTokenEditor: cfg.mmoBackendServiceTokenEditor,
       }),
       lastReport: null,
     },
