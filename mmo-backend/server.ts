@@ -1,6 +1,7 @@
 // mmo-backend/server.ts
 
 import http from "http";
+import crypto from "node:crypto";
 import { WebSocketServer, WebSocket } from "ws";
 import "dotenv/config";
 
@@ -37,6 +38,94 @@ function describeSocket(ws: WebSocket): string {
   const r = sock?._socket;
   if (!r) return "";
   return `${r.remoteAddress || "?"}:${r.remotePort || "?"}`;
+}
+
+
+type ServiceTokenRole = "readonly" | "editor" | "root";
+
+function timingSafeEqualHex(a: string, b: string): boolean {
+  try {
+    const ba = Buffer.from(a, "hex");
+    const bb = Buffer.from(b, "hex");
+    if (ba.length !== bb.length) return false;
+    return crypto.timingSafeEqual(ba, bb);
+  } catch {
+    return false;
+  }
+}
+
+function parseServiceToken(token: string): { serviceId: string; role: ServiceTokenRole; sigHex: string } | null {
+  const raw = String(token || "").trim();
+  const m = raw.match(/^svc:([^:]+):(readonly|editor|root):([0-9a-f]+)$/i);
+  if (!m) return null;
+  return { serviceId: m[1], role: m[2].toLowerCase() as ServiceTokenRole, sigHex: m[3].toLowerCase() };
+}
+
+function verifyServiceToken(token: string | undefined | null): { ok: true; serviceId: string; role: ServiceTokenRole } | { ok: false; error: string } {
+  const parsed = token ? parseServiceToken(token) : null;
+  if (!parsed) return { ok: false, error: "missing_or_invalid_token" };
+
+  const active = process.env.PW_SERVICE_TOKEN_SECRET || "";
+  const prev = process.env.PW_SERVICE_TOKEN_SECRET_PREV || "";
+  const fallback = process.env.PW_AUTH_JWT_SECRET || "";
+  const secrets = [active, prev, fallback].map((s) => String(s || "")).filter(Boolean);
+
+  if (secrets.length === 0) return { ok: false, error: "missing_secret" };
+
+  const msg = `${parsed.serviceId}:${parsed.role}`;
+  for (const secret of secrets) {
+    const sig = crypto.createHmac("sha256", secret).update(msg).digest("hex");
+    if (timingSafeEqualHex(sig, parsed.sigHex)) {
+      return { ok: true, serviceId: parsed.serviceId, role: parsed.role };
+    }
+  }
+  return { ok: false, error: "bad_signature" };
+}
+
+async function readJsonBody(req: http.IncomingMessage, maxBytes = 128 * 1024): Promise<any> {
+  return await new Promise((resolve, reject) => {
+    const chunks: Buffer[] = [];
+    let total = 0;
+
+    req.on("data", (c: Buffer) => {
+      total += c.length;
+      if (total > maxBytes) {
+        reject(new Error("payload_too_large"));
+        req.destroy();
+        return;
+      }
+      chunks.push(c);
+    });
+
+    req.on("end", () => {
+      const raw = Buffer.concat(chunks).toString("utf8");
+      if (!raw.trim()) return resolve(null);
+      try {
+        resolve(JSON.parse(raw));
+      } catch {
+        reject(new Error("bad_json"));
+      }
+    });
+
+    req.on("error", (err) => reject(err));
+  });
+}
+
+function writeJson(res: http.ServerResponse, status: number, obj: any): void {
+  const body = JSON.stringify(obj ?? {});
+  res.statusCode = status;
+  res.setHeader("content-type", "application/json; charset=utf-8");
+  res.setHeader("content-length", Buffer.byteLength(body));
+  res.end(body);
+}
+
+function getBearerOrServiceHeader(req: http.IncomingMessage): string | null {
+  const auth = String(req.headers["authorization"] || "");
+  const m = auth.match(/^bearer\s+(.+)$/i);
+  if (m && m[1]) return m[1].trim();
+  const x = req.headers["x-service-token"];
+  if (typeof x === "string" && x.trim()) return x.trim();
+  return null;
 }
 
 async function main() {
@@ -415,6 +504,96 @@ async function main() {
 
   // HTTP + WebSocket server
   const server = http.createServer();
+
+server.on("request", async (req, res) => {
+  try {
+    const url = new URL(req.url || "/", `http://${req.headers.host || "localhost"}`);
+    const pathname = url.pathname || "/";
+
+    // Basic health for orchestration.
+    if (req.method === "GET" && (pathname === "/healthz" || pathname === "/health" || pathname === "/")) {
+      return writeJson(res, 200, { ok: true, service: "mmo-backend", wsPath: netConfig.path });
+    }
+
+    // Admin character management endpoints (service-token protected)
+    if (pathname.startsWith("/api/admin/characters/")) {
+      const token = getBearerOrServiceHeader(req);
+      const v = verifyServiceToken(token);
+      if (!v.ok) return writeJson(res, 401, { ok: false, error: v.error });
+
+      if (v.role !== "editor" && v.role !== "root") {
+        return writeJson(res, 403, { ok: false, error: "forbidden" });
+      }
+
+      if (req.method !== "POST") {
+        return writeJson(res, 405, { ok: false, error: "method_not_allowed" });
+      }
+
+      const body = await readJsonBody(req);
+      if (pathname === "/api/admin/characters/create") {
+        const userId = String(body?.userId || "").trim();
+        const shardId = String(body?.shardId || "prime_shard").trim();
+        const name = String(body?.name || "").trim();
+        const classId = String(body?.classId || "pw_class_adventurer").trim();
+        if (!userId || !name) return writeJson(res, 400, { ok: false, error: "missing_fields" });
+
+        const ch = await characters.createCharacter({ userId, shardId, name, classId } as any);
+        return writeJson(res, 200, { ok: true, characterId: ch.id, name: ch.name, shardId: ch.shardId, classId: ch.classId });
+      }
+
+      if (pathname === "/api/admin/characters/rename") {
+        const userId = String(body?.userId || "").trim();
+        const charId = String(body?.charId || body?.characterId || "").trim();
+        const name = String(body?.name || "").trim();
+        if (!userId || !charId || !name) return writeJson(res, 400, { ok: false, error: "missing_fields" });
+
+        const updated = await characters.renameCharacterForUser(userId, charId, name);
+        if (!updated) return writeJson(res, 404, { ok: false, error: "not_found" });
+        return writeJson(res, 200, { ok: true, characterId: updated.id, name: updated.name });
+      }
+
+      
+
+if (pathname === "/api/admin/characters/smoke_cycle") {
+  const userId = String(body?.userId || "").trim();
+  const shardId = String(body?.shardId || "prime_shard").trim();
+  const classId = String(body?.classId || "pw_class_adventurer").trim();
+  const namePrefix = String(body?.namePrefix || "MB").trim() || "MB";
+  if (!userId) return writeJson(res, 400, { ok: false, error: "missing_fields" });
+
+  const baseName = `${namePrefix}_${Math.random().toString(36).slice(2, 8)}`;
+  const ch = await characters.createCharacter({ userId, shardId, name: baseName, classId } as any);
+  const renamed = await characters.renameCharacterForUser(userId, ch.id, `${baseName}_r`);
+  if (!renamed) {
+    // best-effort cleanup
+    await characters.deleteCharacterForUser(userId, ch.id);
+    return writeJson(res, 500, { ok: false, error: "rename_failed" });
+  }
+  const deleted = await characters.deleteCharacterForUser(userId, ch.id);
+  if (!deleted) return writeJson(res, 500, { ok: false, error: "delete_failed", characterId: ch.id });
+
+  return writeJson(res, 200, { ok: true, createdId: ch.id, renamedTo: renamed.name });
+}
+
+if (pathname === "/api/admin/characters/delete") {
+        const userId = String(body?.userId || "").trim();
+        const charId = String(body?.charId || body?.characterId || "").trim();
+        if (!userId || !charId) return writeJson(res, 400, { ok: false, error: "missing_fields" });
+
+        const ok = await characters.deleteCharacterForUser(userId, charId);
+        return writeJson(res, 200, { ok });
+      }
+
+      return writeJson(res, 404, { ok: false, error: "not_found" });
+    }
+
+    // Default: not found.
+    return writeJson(res, 404, { ok: false, error: "not_found" });
+  } catch (err: any) {
+    return writeJson(res, 500, { ok: false, error: String(err?.message || err || "internal_error") });
+  }
+});
+
 
   const wss = new WebSocketServer({
     server,

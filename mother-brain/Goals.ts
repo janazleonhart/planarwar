@@ -185,6 +185,9 @@ export type GoalsState = {
   webBackendAdminToken?: string;
   webBackendServiceToken?: string;
 
+  mmoBackendHttpBase?: string;
+  mmoBackendServiceToken?: string;
+
   lastRunIso: string | null;
   lastOk: boolean | null;
   lastSummary: GoalRunReport["summary"] | null;
@@ -434,6 +437,9 @@ export function builtinGoalPacks(ctx?: {
   webBackendHttpBase?: string;
   webBackendAdminToken?: string;
   webBackendServiceToken?: string;
+
+  mmoBackendHttpBase?: string;
+  mmoBackendServiceToken?: string;
 }): Record<GoalPackId, GoalDefinition[]> {
   // NOTE: When building packs via ternaries/spreads, TS can widen string literals (e.g. kind -> string).
   // To keep GoalDefinition typing strict, build those packs in typed locals.
@@ -546,6 +552,34 @@ export function builtinGoalPacks(ctx?: {
           enabled: false,
         },
       ] satisfies GoalDefinition[]);
+
+
+// MMO backend admin character lifecycle smoke (requires MOTHER_BRAIN_MMO_BACKEND_HTTP_BASE and a service token with editor/root role).
+// Disabled by default unless env is set; safe for repeated runs (creates a temp character, renames, then deletes).
+const mmoAdminSmoke: GoalDefinition[] =
+  ctx?.mmoBackendHttpBase && ctx?.mmoBackendServiceToken
+    ? ([
+        {
+          id: "admin.characters.smoke_cycle",
+          kind: "http_post_json",
+          url: `${ctx.mmoBackendHttpBase}/api/admin/characters/smoke_cycle`,
+          requestHeaders: {
+            authorization: `Bearer ${ctx.mmoBackendServiceToken}`,
+          },
+          requestJson: {
+            // NOTE: userId must be provided by your environment. For convenience, allow env override via MOTHER_BRAIN_TEST_USER_ID.
+            userId: process.env.MOTHER_BRAIN_TEST_USER_ID ?? "",
+            shardId: "prime_shard",
+            classId: "pw_class_adventurer",
+            namePrefix: "MB",
+          },
+          expectStatus: 200,
+          expectPath: "ok",
+          expectValue: true,
+          timeoutMs: 5000,
+        },
+      ] satisfies GoalDefinition[])
+    : ([] as GoalDefinition[]);
 
 
   const corePack: GoalDefinition[] = [
@@ -684,12 +718,12 @@ export function builtinGoalPacks(ctx?: {
     // intentionally disabled until your protocol/commands are confirmed for the target environment.
     player_smoke: playerSmoke,
 
-    admin_smoke: adminSmoke,
+    admin_smoke: [...adminSmoke, ...mmoAdminSmoke],
     web_smoke: webSmoke,
 
     // Convenience pack: combines core + web_smoke + admin_smoke + player_smoke.
     // Individual goals inside may be disabled (e.g. if MOTHER_BRAIN_WEB_BACKEND_HTTP_BASE is not set).
-    all_smoke: [...corePack, ...webSmoke, ...adminSmoke, ...playerSmoke],
+    all_smoke: [...corePack, ...webSmoke, ...adminSmoke, ...mmoAdminSmoke, ...playerSmoke],
   };
 }
 
@@ -979,7 +1013,7 @@ function shouldStopScriptOk(out: string, step: {
 
 export function resolveGoalPacks(
   packIds: string[],
-  ctx?: { webBackendHttpBase?: string; webBackendAdminToken?: string; webBackendServiceToken?: string }
+  ctx?: { webBackendHttpBase?: string; webBackendAdminToken?: string; webBackendServiceToken?: string; mmoBackendHttpBase?: string; mmoBackendServiceToken?: string }
 ): { goals: GoalDefinition[]; unknown: string[] } {
   const packs = builtinGoalPacks(ctx);
   const out: GoalDefinition[] = [];
@@ -1006,6 +1040,9 @@ export function createGoalsState(args: {
   webBackendHttpBase?: string;
   webBackendAdminToken?: string;
   webBackendServiceToken?: string;
+
+  mmoBackendHttpBase?: string;
+  mmoBackendServiceToken?: string;
 }): GoalsState {
   const reportDir = args.reportDir;
 
@@ -1017,6 +1054,8 @@ export function createGoalsState(args: {
     webBackendHttpBase: args.webBackendHttpBase,
     webBackendAdminToken: args.webBackendAdminToken,
     webBackendServiceToken: args.webBackendServiceToken,
+    mmoBackendHttpBase: args.mmoBackendHttpBase,
+    mmoBackendServiceToken: args.mmoBackendServiceToken,
     lastRunIso: null,
     lastOk: null,
     lastSummary: null,
@@ -1085,6 +1124,8 @@ export function getGoalSuites(
       webBackendHttpBase: state.webBackendHttpBase,
       webBackendAdminToken: state.webBackendAdminToken,
       webBackendServiceToken: state.webBackendServiceToken,
+      mmoBackendHttpBase: state.mmoBackendHttpBase,
+      mmoBackendServiceToken: state.mmoBackendServiceToken,
     });
     const suites: GoalSuite[] = [];
     const unknown: string[] = [];

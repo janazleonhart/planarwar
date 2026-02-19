@@ -520,4 +520,32 @@ export class PostgresCharacterService {
     await this.saveCharacter(next);
     return await this.loadCharacter(charId);
   }
+
+async renameCharacterForUser(
+  userId: string,
+  charId: string,
+  newName: string
+): Promise<CharacterState | null> {
+  const name = String(newName ?? "").trim();
+  if (!name) throw new Error("invalid_name");
+  if (name.length > 24) throw new Error("invalid_name");
+
+  // patchCharacter already enforces ownership via loadCharacterForUser()
+  return await this.patchCharacter(userId, charId, { name } as any);
+}
+
+async deleteCharacterForUser(userId: string, charId: string): Promise<boolean> {
+  const existing = await this.loadCharacterForUser(userId, charId);
+  if (!existing) return false;
+
+  const result = await db.query(`DELETE FROM characters WHERE id = $1 AND user_id = $2`, [charId, userId]);
+  const ok = Boolean(result && (result.rowCount ?? 0) > 0);
+
+  if (ok) {
+    this.log.info("Deleted character", { id: charId, userId });
+  }
+
+  return ok;
+}
+
 }

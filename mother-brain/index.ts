@@ -413,6 +413,9 @@ const ConfigSchema = z
     // Optional base URL for web-backend admin smoke goals.
     MOTHER_BRAIN_WEB_BACKEND_HTTP_BASE: z.string().optional(),
 
+    // Optional base URL for mmo-backend admin smoke goals (character lifecycle, etc.).
+    MOTHER_BRAIN_MMO_BACKEND_HTTP_BASE: z.string().optional(),
+
     // Optional admin token for calling protected /api/admin endpoints from goal packs.
     // If unset, admin_smoke will be disabled.
     MOTHER_BRAIN_WEB_BACKEND_ADMIN_TOKEN: z.string().optional(),
@@ -421,6 +424,10 @@ const ConfigSchema = z
     // This is intended for daemon/prod usage (non-human auth). If unset, Mother Brain
     // may still use a human admin token (above) or disable admin_smoke.
     MOTHER_BRAIN_WEB_BACKEND_SERVICE_TOKEN: z.string().optional(),
+
+    // Optional service token for calling protected mmo-backend admin endpoints.
+    // If unset, Mother Brain falls back to PW_MOTHER_BRAIN_SERVICE_TOKEN / PW_SERVICE_TOKEN.
+    MOTHER_BRAIN_MMO_BACKEND_SERVICE_TOKEN: z.string().optional(),
   })
   .passthrough();
 
@@ -460,6 +467,9 @@ type MotherBrainConfig = {
   webBackendHttpBase?: string;
   webBackendAdminToken?: string;
   webBackendServiceToken?: string;
+
+  mmoBackendHttpBase?: string;
+  mmoBackendServiceToken?: string;
 };
 
 function parseConfig(): MotherBrainConfig {
@@ -507,11 +517,15 @@ function parseConfig(): MotherBrainConfig {
     goalsPacks: env.MOTHER_BRAIN_GOALS_PACKS,
     goalsReportDir: env.MOTHER_BRAIN_GOALS_REPORT_DIR,
     webBackendHttpBase: env.MOTHER_BRAIN_WEB_BACKEND_HTTP_BASE,
+    mmoBackendHttpBase: env.MOTHER_BRAIN_MMO_BACKEND_HTTP_BASE,
     // IMPORTANT: env is Zod-parsed and only contains keys declared in ConfigSchema.
     // Use process.env for cross-service fallbacks so TS stays strict (no `unknown`).
     webBackendAdminToken: env.MOTHER_BRAIN_WEB_BACKEND_ADMIN_TOKEN ?? process.env.PW_ADMIN_TOKEN,
     webBackendServiceToken:
       env.MOTHER_BRAIN_WEB_BACKEND_SERVICE_TOKEN ?? process.env.PW_MOTHER_BRAIN_SERVICE_TOKEN ?? process.env.PW_SERVICE_TOKEN,
+
+    mmoBackendServiceToken:
+      env.MOTHER_BRAIN_MMO_BACKEND_SERVICE_TOKEN ?? process.env.PW_MOTHER_BRAIN_SERVICE_TOKEN ?? process.env.PW_SERVICE_TOKEN,
   };
 }
 
@@ -1385,6 +1399,8 @@ async function main(): Promise<void> {
         webBackendHttpBase: cfg.webBackendHttpBase,
         webBackendAdminToken: cfg.webBackendAdminToken,
         webBackendServiceToken: cfg.webBackendServiceToken,
+        mmoBackendHttpBase: cfg.mmoBackendHttpBase,
+        mmoBackendServiceToken: cfg.mmoBackendServiceToken,
       }),
       lastReport: null,
     },
