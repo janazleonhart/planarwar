@@ -412,6 +412,12 @@ const ConfigSchema = z
 
     // Optional base URL for web-backend admin smoke goals.
     MOTHER_BRAIN_WEB_BACKEND_HTTP_BASE: z.string().optional(),
+
+    // Optional fallbacks (shared shell/env):
+    // - PW_WEB_BACKEND_HTTP_BASE is a repo-level convention for "where is web-backend?"
+    // - VITE_API_PROXY_TARGET is used by web-frontend dev proxy and often points at the same server.
+    PW_WEB_BACKEND_HTTP_BASE: z.string().optional(),
+    VITE_API_PROXY_TARGET: z.string().optional(),
   })
   .passthrough();
 
@@ -461,6 +467,14 @@ function parseConfig(): MotherBrainConfig {
   }
 
   const env = parsed.data;
+
+  // Allow sane fallbacks so Mother Brain can run in the same shell as the web stack without
+  // duplicating config. Explicit MOTHER_BRAIN_* always wins.
+  const webBackendHttpBase =
+    env.MOTHER_BRAIN_WEB_BACKEND_HTTP_BASE ??
+    env.PW_WEB_BACKEND_HTTP_BASE ??
+    env.VITE_API_PROXY_TARGET;
+
   return {
     mode: env.MOTHER_BRAIN_MODE,
     tickMs: env.MOTHER_BRAIN_TICK_MS,
@@ -495,7 +509,7 @@ function parseConfig(): MotherBrainConfig {
     goalsFile: env.MOTHER_BRAIN_GOALS_FILE,
     goalsPacks: env.MOTHER_BRAIN_GOALS_PACKS,
     goalsReportDir: env.MOTHER_BRAIN_GOALS_REPORT_DIR,
-    webBackendHttpBase: env.MOTHER_BRAIN_WEB_BACKEND_HTTP_BASE,
+    webBackendHttpBase,
   };
 }
 

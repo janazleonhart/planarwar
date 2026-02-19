@@ -17,7 +17,8 @@
     "v0.11-v0.19 add wave-budget snapshots/caps/breach awareness + Admin UI support + logging polish.",
     "v0.20 adds an observe-only Goals Runner: cadence-based checks, optional hot-reload goals file, and structured JSONL goal-run reports under the log directory.",
     "v0.21 adds ws_mud goal kind (MUD command roundtrip over WS for player-facing smoke checks).",
-    "v0.22-v0.34 add builtin goal packs (admin_smoke/web_smoke/all_smoke), admin-safe fixtures support, and goal report tail tooling for the admin UI."
+    "v0.22-v0.34 add builtin goal packs (admin_smoke/web_smoke/all_smoke), admin-safe fixtures support, and goal report tail tooling for the admin UI.",
+    "v0.35+ supports web-backend base URL fallbacks via PW_WEB_BACKEND_HTTP_BASE or VITE_API_PROXY_TARGET (in addition to MOTHER_BRAIN_WEB_BACKEND_HTTP_BASE)."
   ],
   "services": {},
   "entries": {
