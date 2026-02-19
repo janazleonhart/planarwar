@@ -131,6 +131,11 @@ export type GoalDefinition = {
   scriptDelayMs?: number;
   scriptStopOnFail?: boolean;
 
+  // Optional initial template variables for ws_mud_script.
+  // These are merged into the script's runtime vars before executing steps.
+  // Values must be strings.
+  scriptVars?: Record<string, string>;
+
   // db_wave_budget_breaches
   maxBreaches?: number;
 };
@@ -374,6 +379,14 @@ function normalizeGoals(maybeGoals: unknown): GoalDefinition[] {
         : undefined,
       scriptDelayMs: typeof (o as any).scriptDelayMs === "number" ? (o as any).scriptDelayMs : undefined,
       scriptStopOnFail: typeof (o as any).scriptStopOnFail === "boolean" ? (o as any).scriptStopOnFail : undefined,
+      scriptVars:
+        (o as any).scriptVars && typeof (o as any).scriptVars === "object" && !Array.isArray((o as any).scriptVars)
+          ? Object.fromEntries(
+              Object.entries((o as any).scriptVars as Record<string, unknown>)
+                .filter(([k, v]) => typeof k === "string" && typeof v === "string")
+                .map(([k, v]) => [k, v as string])
+            )
+          : undefined,
       maxBreaches: typeof o.maxBreaches === "number" ? o.maxBreaches : undefined,
     });
   }
@@ -1936,7 +1949,9 @@ export async function runGoalsOnce(
       const stopOnFail = goal.scriptStopOnFail !== false;
 
       const stepReports: any[] = [];
-      const vars: TemplateVars = {};
+      const vars: TemplateVars = {
+        ...(goal.scriptVars && typeof goal.scriptVars === "object" ? goal.scriptVars : {}),
+      };
       let overallOk = true;
 
       for (let i = 0; i < script.length; i += 1) {
@@ -2111,6 +2126,7 @@ export async function runGoalsOnce(
         latencyMs: Date.now() - start,
         error: overallOk ? undefined : failMsg,
         details: {
+          initialVars: goal.scriptVars && Object.keys(goal.scriptVars).length > 0 ? { ...goal.scriptVars } : undefined,
           steps: stepReports,
           stepCount: stepReports.length,
           stepFailCount,
