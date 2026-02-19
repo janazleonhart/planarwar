@@ -413,11 +413,9 @@ const ConfigSchema = z
     // Optional base URL for web-backend admin smoke goals.
     MOTHER_BRAIN_WEB_BACKEND_HTTP_BASE: z.string().optional(),
 
-    // Optional fallbacks (shared shell/env):
-    // - PW_WEB_BACKEND_HTTP_BASE is a repo-level convention for "where is web-backend?"
-    // - VITE_API_PROXY_TARGET is used by web-frontend dev proxy and often points at the same server.
-    PW_WEB_BACKEND_HTTP_BASE: z.string().optional(),
-    VITE_API_PROXY_TARGET: z.string().optional(),
+    // Optional admin token for calling protected /api/admin endpoints from goal packs.
+    // If unset, admin_smoke will be disabled.
+    MOTHER_BRAIN_WEB_BACKEND_ADMIN_TOKEN: z.string().optional(),
   })
   .passthrough();
 
@@ -455,6 +453,7 @@ type MotherBrainConfig = {
   goalsPacks?: string;
   goalsReportDir?: string;
   webBackendHttpBase?: string;
+  webBackendAdminToken?: string;
 };
 
 function parseConfig(): MotherBrainConfig {
@@ -467,14 +466,6 @@ function parseConfig(): MotherBrainConfig {
   }
 
   const env = parsed.data;
-
-  // Allow sane fallbacks so Mother Brain can run in the same shell as the web stack without
-  // duplicating config. Explicit MOTHER_BRAIN_* always wins.
-  const webBackendHttpBase =
-    env.MOTHER_BRAIN_WEB_BACKEND_HTTP_BASE ??
-    env.PW_WEB_BACKEND_HTTP_BASE ??
-    env.VITE_API_PROXY_TARGET;
-
   return {
     mode: env.MOTHER_BRAIN_MODE,
     tickMs: env.MOTHER_BRAIN_TICK_MS,
@@ -509,7 +500,8 @@ function parseConfig(): MotherBrainConfig {
     goalsFile: env.MOTHER_BRAIN_GOALS_FILE,
     goalsPacks: env.MOTHER_BRAIN_GOALS_PACKS,
     goalsReportDir: env.MOTHER_BRAIN_GOALS_REPORT_DIR,
-    webBackendHttpBase,
+    webBackendHttpBase: env.MOTHER_BRAIN_WEB_BACKEND_HTTP_BASE,
+    webBackendAdminToken: env.MOTHER_BRAIN_WEB_BACKEND_ADMIN_TOKEN ?? env.PW_ADMIN_TOKEN,
   };
 }
 
@@ -1381,6 +1373,7 @@ async function main(): Promise<void> {
         everyTicks: cfg.goalsEveryTicks,
         packIds: cfg.goalsPacks,
         webBackendHttpBase: cfg.webBackendHttpBase,
+        webBackendAdminToken: cfg.webBackendAdminToken,
       }),
       lastReport: null,
     },

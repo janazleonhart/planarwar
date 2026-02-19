@@ -37,10 +37,12 @@ export type GoalDefinition = {
   expectSubset?: Record<string, unknown>;
   expectJson?: unknown;
 
+  // Optional request headers for http_json/http_post_json (e.g. admin auth)
+  requestHeaders?: Record<string, string>;
+
   // http_post_json
   // Sends a JSON POST body and (optionally) validates JSON response.
   requestJson?: unknown;
-  requestHeaders?: Record<string, string>;
 
   // ws_mud
   command?: string;
@@ -87,6 +89,7 @@ export type GoalsState = {
 
   // Optional context for builtin packs
   webBackendHttpBase?: string;
+  webBackendAdminToken?: string;
 
   lastRunIso: string | null;
   lastOk: boolean | null;
@@ -235,7 +238,7 @@ export type GoalPackId =
   | "web_smoke"
   | "all_smoke";
 
-export function builtinGoalPacks(ctx?: { webBackendHttpBase?: string }): Record<GoalPackId, GoalDefinition[]> {
+export function builtinGoalPacks(ctx?: { webBackendHttpBase?: string; webBackendAdminToken?: string }): Record<GoalPackId, GoalDefinition[]> {
   // NOTE: When building packs via ternaries/spreads, TS can widen string literals (e.g. kind -> string).
   // To keep GoalDefinition typing strict, build those packs in typed locals.
 
@@ -269,13 +272,23 @@ export function builtinGoalPacks(ctx?: { webBackendHttpBase?: string }): Record<
           enabled: false,
         },
       ] satisfies GoalDefinition[]);
-  const adminSmoke: GoalDefinition[] = ctx?.webBackendHttpBase
+  const adminToken = ctx?.webBackendAdminToken;
+  const adminHeaders: Record<string, string> | undefined = adminToken
+    ? {
+        // Prefer standards, but also include a simple token header for flexibility.
+        authorization: adminToken.toLowerCase().startsWith("bearer ") ? adminToken : `Bearer ${adminToken}`,
+        "x-admin-token": adminToken,
+      }
+    : undefined;
+
+  const adminSmoke: GoalDefinition[] = ctx?.webBackendHttpBase && adminHeaders
     ? (
         [
           {
             id: "admin.fixtures.time",
             kind: "http_json",
             url: `${ctx.webBackendHttpBase}/api/admin/test_fixtures/time`,
+            requestHeaders: adminHeaders,
             expectStatus: 200,
             expectPath: "ok",
             expectValue: true,
@@ -285,6 +298,7 @@ export function builtinGoalPacks(ctx?: { webBackendHttpBase?: string }): Record<
             id: "admin.fixtures.ping",
             kind: "http_post_json",
             url: `${ctx.webBackendHttpBase}/api/admin/test_fixtures/ping`,
+            requestHeaders: adminHeaders,
             requestJson: { ping: 7 },
             expectStatus: 200,
             expectPath: "pong",
@@ -295,6 +309,7 @@ export function builtinGoalPacks(ctx?: { webBackendHttpBase?: string }): Record<
             id: "admin.fixtures.db_counts",
             kind: "http_json",
             url: `${ctx.webBackendHttpBase}/api/admin/test_fixtures/db_counts`,
+            requestHeaders: adminHeaders,
             expectStatus: 200,
             expectPath: "ok",
             expectValue: true,
@@ -384,7 +399,10 @@ function mergeGoalsById(goals: GoalDefinition[]): GoalDefinition[] {
   return Array.from(map.values());
 }
 
-export function resolveGoalPacks(packIds: string[], ctx?: { webBackendHttpBase?: string }): { goals: GoalDefinition[]; unknown: string[] } {
+export function resolveGoalPacks(
+  packIds: string[],
+  ctx?: { webBackendHttpBase?: string; webBackendAdminToken?: string }
+): { goals: GoalDefinition[]; unknown: string[] } {
   const packs = builtinGoalPacks(ctx);
   const out: GoalDefinition[] = [];
   const unknown: string[] = [];
@@ -408,6 +426,7 @@ export function createGoalsState(args: {
   everyTicks: number;
   packIds?: string[] | string;
   webBackendHttpBase?: string;
+  webBackendAdminToken?: string;
 }): GoalsState {
   const reportDir = args.reportDir;
 
@@ -417,6 +436,7 @@ export function createGoalsState(args: {
     everyTicks: args.everyTicks,
     packIds: normalizePackIds(args.packIds),
     webBackendHttpBase: args.webBackendHttpBase,
+    webBackendAdminToken: args.webBackendAdminToken,
     lastRunIso: null,
     lastOk: null,
     lastSummary: null,
@@ -481,7 +501,10 @@ export function getGoalSuites(
 
   // Packs: each pack becomes its own suite/report.
   if (state.packIds.length > 0) {
-    const packs = builtinGoalPacks({ webBackendHttpBase: state.webBackendHttpBase });
+    const packs = builtinGoalPacks({
+      webBackendHttpBase: state.webBackendHttpBase,
+      webBackendAdminToken: (state as any).webBackendAdminToken,
+    });
     const suites: GoalSuite[] = [];
     const unknown: string[] = [];
 
@@ -797,6 +820,7 @@ function getByDotPath(root: unknown, dotPath: string): unknown {
 async function httpJson(args: {
   url: string;
   timeoutMs: number;
+  requestHeaders?: Record<string, string>;
   expectStatus?: number;
   expectPath?: string;
   expectValue?: unknown;
@@ -815,7 +839,7 @@ async function httpJson(args: {
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), args.timeoutMs);
   try {
-    const res = await fetch(args.url, { method: "GET", signal: ctrl.signal });
+    const res = await fetch(args.url, { method: "GET", signal: ctrl.signal, headers: args.requestHeaders });
     const status = res.status;
     const statusOk = typeof args.expectStatus === "number" ? status === args.expectStatus : res.ok;
 
@@ -1232,7 +1256,13 @@ export async function runGoalsOnce(
           expectIncludes: goal.expectIncludes,
           bodyPreview: res.bodyPreview,
           fetchError: res.errorDetails,
-          hint: res.ok ? undefined : "If this is 'fetch failed', verify the target service is running and reachable from Mother Brain (MOTHER_BRAIN_WEB_BACKEND_HTTP_BASE / network).",
+          hint: res.ok
+            ? undefined
+            : res.errorDetails
+              ? "Fetch failed: verify the target service is running and reachable from Mother Brain (base URL / network namespace)."
+              : res.status === 401 || (res.bodyPreview ?? "").includes("missing_token")
+                ? "401 missing_token: admin endpoints require auth. Set MOTHER_BRAIN_WEB_BACKEND_ADMIN_TOKEN (or PW_ADMIN_TOKEN) so admin_smoke can send a token."
+                : undefined,
         },
       });
       continue;
@@ -1251,6 +1281,7 @@ export async function runGoalsOnce(
       const res = await httpJson({
         url,
         timeoutMs,
+        requestHeaders: (goal as any).requestHeaders,
         expectStatus: goal.expectStatus,
         expectPath: goal.expectPath,
         expectValue: goal.expectValue,
@@ -1279,7 +1310,13 @@ export async function runGoalsOnce(
           extracted: res.extracted,
           bodyPreview: res.bodyPreview,
           fetchError: res.errorDetails,
-          hint: res.ok ? undefined : "If this is 'fetch failed', verify the target service is running and reachable from Mother Brain (MOTHER_BRAIN_WEB_BACKEND_HTTP_BASE / network).",
+          hint: res.ok
+            ? undefined
+            : res.errorDetails
+              ? "Fetch failed: verify the target service is running and reachable from Mother Brain (base URL / network namespace)."
+              : res.status === 401 || (res.bodyPreview ?? "").includes("missing_token")
+                ? "401 missing_token: admin endpoints require auth. Set MOTHER_BRAIN_WEB_BACKEND_ADMIN_TOKEN (or PW_ADMIN_TOKEN) so admin_smoke can send a token."
+                : undefined,
         },
       });
       continue;
@@ -1334,6 +1371,14 @@ export async function runGoalsOnce(
           expectJson: goal.expectJson,
           extracted: res.extracted,
           bodyPreview: res.bodyPreview,
+          fetchError: res.errorDetails,
+          hint: ok
+            ? undefined
+            : res.errorDetails
+              ? "Fetch failed: verify the target service is running and reachable from Mother Brain (base URL / network namespace)."
+              : res.status === 401 || (res.bodyPreview ?? "").includes("missing_token")
+                ? "401 missing_token: admin endpoints require auth. Set MOTHER_BRAIN_WEB_BACKEND_ADMIN_TOKEN (or PW_ADMIN_TOKEN) so admin_smoke can send a token."
+                : undefined,
         },
       });
       continue;
