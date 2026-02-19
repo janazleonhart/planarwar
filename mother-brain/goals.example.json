@@ -23,11 +23,124 @@
     "kind": "ws_mud",
     "command": "whereami",
     "timeoutMs": 2500,
+    "maxLatencyMs": 1200,
     "expectIncludesAny": [
       "You are",
       "Location",
       "Zone",
       "Room"
+    ]
+  },
+  {
+    "id": "ws.mud.player_loop.core",
+    "kind": "ws_mud_script",
+    "timeoutMs": 2500,
+    "retries": 2,
+    "retryDelayMs": 250,
+    "scriptDelayMs": 50,
+    "scriptStopOnFail": true,
+    "maxLatencyMs": 1500,
+    "script": [
+      {
+        "command": "help",
+        "expectIncludes": "Available commands:",
+        "rejectRegexAny": [
+          "/\\[error\\]/i",
+          "/unknown\\s+command/i"
+        ]
+      },
+      {
+        "command": "quest help",
+        "expectRegexAny": [
+          "Quest Board",
+          "/quest\\s+board/i"
+        ],
+        "rejectRegexAny": [
+          "/\\[error\\]/i",
+          "/unknown\\s+command/i"
+        ]
+      },
+      {
+        "command": "attack",
+        "expectIncludes": "[combat] You are not engaged",
+        "rejectRegexAny": [
+          "/\\[error\\]/i",
+          "/unknown\\s+command/i"
+        ]
+      },
+      {
+        "command": "pet",
+        "expectIncludes": "[pet] Commands:",
+        "rejectRegexAny": [
+          "/\\[error\\]/i",
+          "/unknown\\s+command/i"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "ws.mud.quest.accept_one_if_any",
+    "kind": "ws_mud_script",
+    "enabled": false,
+    "timeoutMs": 3000,
+    "retries": 1,
+    "retryDelayMs": 250,
+    "scriptDelayMs": 75,
+    "scriptStopOnFail": true,
+    "scriptVars": {
+      "board": "available"
+    },
+    "script": [
+      {
+        "command": "quest board {{board}}",
+        "expectRegexAny": [
+          "Available quests:",
+          "No available quests."
+        ],
+        "rejectRegexAny": [
+          "/\\[error\\]/i",
+          "/unknown\\s+command/i"
+        ],
+        "stopOkIfIncludes": "No available quests.",
+        "captureRegex": "/^\\s*\\d+\\.\\s+\\[ \\]\\s+(?:\\[NEW\\]\\s+)?[^\\(]*\\(([^\\)]+)\\)/m",
+        "captureVar": "qid",
+        "captureGroup": 1
+      },
+      {
+        "command": "quest board accept {{qid}}",
+        "expectRegexAny": [
+          "\\u005Bquest\\u005D Accepted:"
+        ],
+        "rejectRegexAny": [
+          "/\\[error\\]/i",
+          "/unknown\\s+command/i"
+        ],
+        "retries": 2,
+        "retryDelayMs": 200,
+        "maxLatencyMs": 2000
+      },
+      {
+        "command": "quest",
+        "optional": true,
+        "expectRegexAny": [
+          "\\u005BA\\u005D",
+          "{{qid}}"
+        ],
+        "rejectRegexAny": [
+          "/\\[error\\]/i"
+        ]
+      },
+      {
+        "command": "quest abandon {{qid}}",
+        "optional": true,
+        "expectRegexAny": [
+          "\\u005Bquest\\u005D Abandoned:"
+        ],
+        "rejectRegexAny": [
+          "/\\[error\\]/i",
+          "/unknown\\s+command/i"
+        ]
+      }
     ]
   },
   {
@@ -47,6 +160,7 @@
     "kind": "http_get",
     "url": "http://127.0.0.1:4000/api/healthz",
     "expectStatus": 200,
-    "timeoutMs": 2000
+    "timeoutMs": 2000,
+    "maxLatencyMs": 1500
   }
 ]
