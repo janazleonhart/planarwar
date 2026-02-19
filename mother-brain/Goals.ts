@@ -306,6 +306,12 @@ function normalizeGoals(maybeGoals: unknown): GoalDefinition[] {
             .map((s: any) => ({
               command: String(s.command ?? ""),
               timeoutMs: typeof s.timeoutMs === "number" ? s.timeoutMs : undefined,
+
+              // Per-step retry/delay overrides
+              retries: typeof s.retries === "number" ? s.retries : undefined,
+              retryDelayMs: typeof s.retryDelayMs === "number" ? s.retryDelayMs : undefined,
+              delayAfterMs: typeof s.delayAfterMs === "number" ? s.delayAfterMs : undefined,
+
               expectIncludes: typeof s.expectIncludes === "string" ? s.expectIncludes : undefined,
               expectIncludesAny: Array.isArray(s.expectIncludesAny)
                 ? s.expectIncludesAny.filter((x: any) => typeof x === "string")
