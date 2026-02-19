@@ -303,6 +303,7 @@ async function tryTriggerPetOnHitProcs(
                     character: ownerChar,
                     entityId: String(petEntity.id),
                     tag: "pet_proc_spell",
+                    damageSchool: (spell as any).school ?? "pure",
                   });
 
                   let afterHp = Math.max(0, prevHp - dmgFromSpell);
@@ -518,6 +519,7 @@ async function tryTriggerPetOnBeingHitProcs(
                     character: ownerChar,
                     entityId: String(petEntity.id),
                     tag: "pet_proc_spell",
+                    damageSchool: (spell as any).school ?? "pure",
                   });
 
                   let afterHp = Math.max(0, prevHp - dmgFromSpell);

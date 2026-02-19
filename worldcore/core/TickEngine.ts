@@ -244,9 +244,6 @@ export class TickEngine {
         // canonical death pipeline (XP/loot/corpse/respawn). Fall back to applyDamage.
         if (nm) {
           try {
-            if (typeof nm.recordDamage === "function" && attackerEntityId) {
-              try { nm.recordDamage((ent as any).id, attackerEntityId); } catch { /* ignore */ }
-            }
 
             // ✅ Canonical DOT route
             if (typeof nm.applyDotDamage === "function") {

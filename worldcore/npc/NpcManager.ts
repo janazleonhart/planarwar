@@ -55,7 +55,7 @@ import {
 import { recordNpcCrimeAgainst, isProtectedNpc } from "./NpcCrime";
 import { isServiceProtectedNpcProto } from "../combat/ServiceProtection";
 import { isValidCombatTarget } from "../combat/CombatTargeting";
-import { clearAllStatusEffectsFromEntity, getActiveStatusEffectsForEntity, clearEntityStatusEffectsByTags, breakCrowdControlOnDamage } from "../combat/StatusEffects";
+import { clearAllStatusEffectsFromEntity, getActiveStatusEffectsForEntity, clearEntityStatusEffectsByTags, breakCrowdControlOnDamage, absorbIncomingDamageFromEntityStatusEffects } from "../combat/StatusEffects";
 import { handleNpcDeath } from "../combat/NpcDeathPipeline";
 
 import {
@@ -537,7 +537,7 @@ export class NpcManager {
   applyDamage(
     entityId: string,
     amount: number,
-    attacker?: { character?: CharacterState; entityId?: string },
+    attacker?: { character?: CharacterState; entityId?: string; damageSchool?: any; tag?: string },
   ): number | null {
     const st = this.npcsByEntityId.get(entityId);
     if (!st) return null;
@@ -560,7 +560,29 @@ export class NpcManager {
 
     const wasAlive = st.alive;
 
-    const newHp = Math.max(0, st.hp - Math.max(0, amount));
+    // Normalize/round incoming damage (deterministic).
+    const rawIn = Number.isFinite(amount) ? amount : 0;
+    let dmg = Math.max(0, Math.floor(rawIn));
+    if (rawIn > 0 && dmg < 1) dmg = 1;
+
+    // Absorb shields (NPC status effects live on the entity).
+    // NOTE: absorbed damage should still count as a "hit" for CC break,
+    // but it does not reduce HP.
+    let absorbed = 0;
+    if (dmg > 0) {
+      try {
+        const school: any = (attacker as any)?.damageSchool ?? "physical";
+        const res = absorbIncomingDamageFromEntityStatusEffects(e as any, dmg, school, Date.now());
+        absorbed = Math.max(0, Math.floor(Number(res.absorbed ?? 0)));
+        dmg = Math.max(0, Math.floor(Number(res.remainingDamage ?? dmg)));
+      } catch {
+        // best-effort only
+      }
+    }
+
+    const hitDamage = Math.max(0, dmg + absorbed);
+
+    const newHp = Math.max(0, st.hp - dmg);
     st.hp = newHp;
     st.alive = newHp > 0;
     e.hp = newHp;
@@ -568,8 +590,8 @@ export class NpcManager {
 
     // CC v0.3: any damage breaks "break-on-damage" mind-control style CC on NPCs.
     // Mez/Sleep/Incapacitate are intentionally fragile (EverQuest vibes).
-    if (amount > 0 && wasAlive && newHp > 0) {
-      breakCrowdControlOnDamage({ entity: e as any, damage: amount, now: Date.now() });
+    if (hitDamage > 0 && wasAlive && newHp > 0) {
+      breakCrowdControlOnDamage({ entity: e as any, damage: hitDamage, now: Date.now() });
     }
 
     // Death implies all combat status effects should be cleared (DOTs, debuffs, etc.)
@@ -668,21 +690,27 @@ export class NpcManager {
 
     const wasAlive = st.alive;
 
-    // Best-effort threat attribution.
+    const beforeHp = st.hp;
+
+    // Apply damage (shields/absorbs are applied inside applyDamage).
+    const newHp = this.applyDamage(
+      npcEntityId,
+      amount,
+      attackerEntityId
+        ? { entityId: attackerEntityId, damageSchool: (meta as any)?.school ?? (meta as any)?.damageSchool ?? "pure" }
+        : undefined,
+    );
+
+    // Best-effort threat attribution (prefer effective damage; hostile ticks still seed minimal threat).
     if (attackerEntityId) {
       try {
-        this.recordDamage(npcEntityId, attackerEntityId);
+        const effective = typeof newHp === "number" ? Math.max(0, beforeHp - newHp) : 0;
+        const threatAmt = effective > 0 ? effective : amount > 0 ? 1 : 0;
+        if (threatAmt > 0) this.recordDamage(npcEntityId, attackerEntityId, threatAmt);
       } catch {
         // ignore
       }
     }
-
-    // Apply raw damage.
-    const newHp = this.applyDamage(
-      npcEntityId,
-      amount,
-      attackerEntityId ? { entityId: attackerEntityId } : undefined,
-    );
 
     // Non-fatal tick: nothing else to do.
     if (!wasAlive || newHp == null || newHp > 0) {
