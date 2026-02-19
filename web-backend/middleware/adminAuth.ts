@@ -24,6 +24,7 @@
 //   PW_ADMIN_BYPASS=1 (or "true") -> bypass all admin auth (OFF by default)
 
 import type { Request, Response, NextFunction } from "express";
+import crypto from "node:crypto";
 import { PostgresAuthService } from "../../worldcore/auth/PostgresAuthService";
 
 const auth = new PostgresAuthService();
@@ -49,6 +50,70 @@ function parseBearerToken(req: Request): string | null {
   if (!header) return null;
   const m = /^Bearer\s+(.+)$/i.exec(String(header).trim());
   return m ? m[1] : null;
+}
+
+function parseServiceToken(req: Request): string | null {
+  const fromHeader = req.headers["x-service-token"];
+  const h = Array.isArray(fromHeader) ? fromHeader[0] : fromHeader;
+  if (typeof h === "string" && h.trim().length > 0) return h.trim();
+
+  const bearer = parseBearerToken(req);
+  if (!bearer) return null;
+
+  // Service tokens are allowed to travel via Bearer as well.
+  const s = String(bearer).trim();
+  if (s.toLowerCase().startsWith("svc:") || s.toLowerCase().startsWith("service:")) return s;
+  return null;
+}
+
+type VerifiedServiceToken = { serviceId: string; role: AdminRole };
+
+function verifyServiceToken(token: string): VerifiedServiceToken | null {
+  const secret = process.env.PW_SERVICE_TOKEN_SECRET || process.env.PW_AUTH_JWT_SECRET;
+  if (!secret || secret.trim().length === 0) return null;
+
+  // Format: svc:<serviceId>:<role>:<sighex>
+  // - role: readonly|editor|root
+  // - sighex: HMAC-SHA256(secret, `${serviceId}:${role}`) as hex
+  const parts = token.split(":").map((p) => p.trim());
+  if (parts.length < 3) return null;
+
+  const prefix = parts[0]?.toLowerCase();
+  if (prefix !== "svc" && prefix !== "service") return null;
+
+  const serviceId = parts[1] || "";
+  if (!/^[a-z0-9_-]{1,64}$/i.test(serviceId)) return null;
+
+  let role: AdminRole = "readonly";
+  let sigHex = "";
+
+  if (parts.length === 3) {
+    // svc:<serviceId>:<sighex> (role defaults to readonly)
+    sigHex = parts[2] || "";
+  } else {
+    // svc:<serviceId>:<role>:<sighex>
+    const maybeRole = normalizeAdminRole(parts[2]);
+    if (!maybeRole) return null;
+    role = maybeRole;
+    sigHex = parts[3] || "";
+  }
+
+  if (!/^[a-f0-9]{64}$/i.test(sigHex)) return null;
+
+  const msg = `${serviceId}:${role}`;
+  const expected = crypto.createHmac("sha256", secret).update(msg).digest("hex");
+
+  // Constant-time compare.
+  try {
+    const a = Buffer.from(expected, "hex");
+    const b = Buffer.from(sigHex, "hex");
+    if (a.length !== b.length) return null;
+    if (!crypto.timingSafeEqual(a, b)) return null;
+  } catch {
+    return null;
+  }
+
+  return { serviceId, role };
 }
 
 function normalizeAdminRole(v: any): AdminRole | null {
@@ -105,10 +170,37 @@ function isRootOnlyEndpoint(req: Request): boolean {
 
 export async function requireAdmin(req: AuthedRequest, res: Response, next: NextFunction) {
   try {
-    const token = parseBearerToken(req);
-    if (!token) {
-      return res.status(401).json({ ok: false, error: "missing_token" });
+    // Service-token path (daemon/prod auth). If provided but invalid, fail fast.
+    const serviceToken = parseServiceToken(req);
+    if (serviceToken) {
+      const verified = verifyServiceToken(serviceToken);
+      if (!verified) {
+        return res.status(401).json({ ok: false, error: "invalid_service_token" });
+      }
+
+      const flags = { adminRole: verified.role, isService: true, serviceId: verified.serviceId } as Record<string, any>;
+      req.auth = {
+        sub: `svc:${verified.serviceId}`,
+        flags,
+      } as any;
+
+      req.admin = { role: verified.role, flags };
+
+      // Enforce readonly gate: no writes.
+      if (verified.role === "readonly" && isWriteMethod(req.method)) {
+        return res.status(403).json({ ok: false, error: "admin_readonly" });
+      }
+
+      // Enforce root-only endpoints.
+      if (isRootOnlyEndpoint(req) && verified.role !== "root") {
+        return res.status(403).json({ ok: false, error: "admin_root_required" });
+      }
+
+      return next();
     }
+
+    const token = parseBearerToken(req);
+    if (!token) return res.status(401).json({ ok: false, error: "missing_token" });
 
     const payload = await auth.verifyToken(token);
     if (!payload) {

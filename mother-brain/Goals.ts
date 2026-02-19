@@ -90,6 +90,7 @@ export type GoalsState = {
   // Optional context for builtin packs
   webBackendHttpBase?: string;
   webBackendAdminToken?: string;
+  webBackendServiceToken?: string;
 
   lastRunIso: string | null;
   lastOk: boolean | null;
@@ -238,7 +239,11 @@ export type GoalPackId =
   | "web_smoke"
   | "all_smoke";
 
-export function builtinGoalPacks(ctx?: { webBackendHttpBase?: string; webBackendAdminToken?: string }): Record<GoalPackId, GoalDefinition[]> {
+export function builtinGoalPacks(ctx?: {
+  webBackendHttpBase?: string;
+  webBackendAdminToken?: string;
+  webBackendServiceToken?: string;
+}): Record<GoalPackId, GoalDefinition[]> {
   // NOTE: When building packs via ternaries/spreads, TS can widen string literals (e.g. kind -> string).
   // To keep GoalDefinition typing strict, build those packs in typed locals.
 
@@ -273,13 +278,21 @@ export function builtinGoalPacks(ctx?: { webBackendHttpBase?: string; webBackend
         },
       ] satisfies GoalDefinition[]);
   const adminToken = ctx?.webBackendAdminToken;
+  const serviceToken = ctx?.webBackendServiceToken;
   const adminHeaders: Record<string, string> | undefined = adminToken
     ? {
         // Prefer standards, but also include a simple token header for flexibility.
         authorization: adminToken.toLowerCase().startsWith("bearer ") ? adminToken : `Bearer ${adminToken}`,
         "x-admin-token": adminToken,
       }
-    : undefined;
+    : serviceToken
+      ? {
+          // Service tokens are verified server-side via PW_SERVICE_TOKEN_SECRET.
+          // We provide both a dedicated header and a Bearer form for compatibility.
+          authorization: serviceToken.toLowerCase().startsWith("bearer ") ? serviceToken : `Bearer ${serviceToken}`,
+          "x-service-token": serviceToken,
+        }
+      : undefined;
 
   const adminSmoke: GoalDefinition[] = ctx?.webBackendHttpBase && adminHeaders
     ? (
@@ -401,7 +414,7 @@ function mergeGoalsById(goals: GoalDefinition[]): GoalDefinition[] {
 
 export function resolveGoalPacks(
   packIds: string[],
-  ctx?: { webBackendHttpBase?: string; webBackendAdminToken?: string }
+  ctx?: { webBackendHttpBase?: string; webBackendAdminToken?: string; webBackendServiceToken?: string }
 ): { goals: GoalDefinition[]; unknown: string[] } {
   const packs = builtinGoalPacks(ctx);
   const out: GoalDefinition[] = [];
@@ -427,6 +440,7 @@ export function createGoalsState(args: {
   packIds?: string[] | string;
   webBackendHttpBase?: string;
   webBackendAdminToken?: string;
+  webBackendServiceToken?: string;
 }): GoalsState {
   const reportDir = args.reportDir;
 
@@ -437,6 +451,7 @@ export function createGoalsState(args: {
     packIds: normalizePackIds(args.packIds),
     webBackendHttpBase: args.webBackendHttpBase,
     webBackendAdminToken: args.webBackendAdminToken,
+    webBackendServiceToken: args.webBackendServiceToken,
     lastRunIso: null,
     lastOk: null,
     lastSummary: null,
@@ -503,7 +518,8 @@ export function getGoalSuites(
   if (state.packIds.length > 0) {
     const packs = builtinGoalPacks({
       webBackendHttpBase: state.webBackendHttpBase,
-      webBackendAdminToken: (state as any).webBackendAdminToken,
+      webBackendAdminToken: state.webBackendAdminToken,
+      webBackendServiceToken: state.webBackendServiceToken,
     });
     const suites: GoalSuite[] = [];
     const unknown: string[] = [];
@@ -1261,7 +1277,7 @@ export async function runGoalsOnce(
             : res.errorDetails
               ? "Fetch failed: verify the target service is running and reachable from Mother Brain (base URL / network namespace)."
               : res.status === 401 || (res.bodyPreview ?? "").includes("missing_token")
-                ? "401 missing_token: admin endpoints require auth. Set MOTHER_BRAIN_WEB_BACKEND_ADMIN_TOKEN (or PW_ADMIN_TOKEN) so admin_smoke can send a token."
+                ? "401 missing_token: admin endpoints require auth. Set MOTHER_BRAIN_WEB_BACKEND_ADMIN_TOKEN (or PW_ADMIN_TOKEN) for human auth, or MOTHER_BRAIN_WEB_BACKEND_SERVICE_TOKEN for daemon auth."
                 : undefined,
         },
       });
@@ -1315,7 +1331,7 @@ export async function runGoalsOnce(
             : res.errorDetails
               ? "Fetch failed: verify the target service is running and reachable from Mother Brain (base URL / network namespace)."
               : res.status === 401 || (res.bodyPreview ?? "").includes("missing_token")
-                ? "401 missing_token: admin endpoints require auth. Set MOTHER_BRAIN_WEB_BACKEND_ADMIN_TOKEN (or PW_ADMIN_TOKEN) so admin_smoke can send a token."
+                ? "401 missing_token: admin endpoints require auth. Set MOTHER_BRAIN_WEB_BACKEND_ADMIN_TOKEN (or PW_ADMIN_TOKEN) for human auth, or MOTHER_BRAIN_WEB_BACKEND_SERVICE_TOKEN for daemon auth."
                 : undefined,
         },
       });
@@ -1377,7 +1393,7 @@ export async function runGoalsOnce(
             : res.errorDetails
               ? "Fetch failed: verify the target service is running and reachable from Mother Brain (base URL / network namespace)."
               : res.status === 401 || (res.bodyPreview ?? "").includes("missing_token")
-                ? "401 missing_token: admin endpoints require auth. Set MOTHER_BRAIN_WEB_BACKEND_ADMIN_TOKEN (or PW_ADMIN_TOKEN) so admin_smoke can send a token."
+                ? "401 missing_token: admin endpoints require auth. Set MOTHER_BRAIN_WEB_BACKEND_ADMIN_TOKEN (or PW_ADMIN_TOKEN) for human auth, or MOTHER_BRAIN_WEB_BACKEND_SERVICE_TOKEN for daemon auth."
                 : undefined,
         },
       });

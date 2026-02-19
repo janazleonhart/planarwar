@@ -416,6 +416,11 @@ const ConfigSchema = z
     // Optional admin token for calling protected /api/admin endpoints from goal packs.
     // If unset, admin_smoke will be disabled.
     MOTHER_BRAIN_WEB_BACKEND_ADMIN_TOKEN: z.string().optional(),
+
+    // Optional service token for calling protected /api/admin endpoints from goal packs.
+    // This is intended for daemon/prod usage (non-human auth). If unset, Mother Brain
+    // may still use a human admin token (above) or disable admin_smoke.
+    MOTHER_BRAIN_WEB_BACKEND_SERVICE_TOKEN: z.string().optional(),
   })
   .passthrough();
 
@@ -454,6 +459,7 @@ type MotherBrainConfig = {
   goalsReportDir?: string;
   webBackendHttpBase?: string;
   webBackendAdminToken?: string;
+  webBackendServiceToken?: string;
 };
 
 function parseConfig(): MotherBrainConfig {
@@ -501,7 +507,11 @@ function parseConfig(): MotherBrainConfig {
     goalsPacks: env.MOTHER_BRAIN_GOALS_PACKS,
     goalsReportDir: env.MOTHER_BRAIN_GOALS_REPORT_DIR,
     webBackendHttpBase: env.MOTHER_BRAIN_WEB_BACKEND_HTTP_BASE,
-    webBackendAdminToken: env.MOTHER_BRAIN_WEB_BACKEND_ADMIN_TOKEN ?? env.PW_ADMIN_TOKEN,
+    // IMPORTANT: env is Zod-parsed and only contains keys declared in ConfigSchema.
+    // Use process.env for cross-service fallbacks so TS stays strict (no `unknown`).
+    webBackendAdminToken: env.MOTHER_BRAIN_WEB_BACKEND_ADMIN_TOKEN ?? process.env.PW_ADMIN_TOKEN,
+    webBackendServiceToken:
+      env.MOTHER_BRAIN_WEB_BACKEND_SERVICE_TOKEN ?? process.env.PW_MOTHER_BRAIN_SERVICE_TOKEN ?? process.env.PW_SERVICE_TOKEN,
   };
 }
 
@@ -1374,6 +1384,7 @@ async function main(): Promise<void> {
         packIds: cfg.goalsPacks,
         webBackendHttpBase: cfg.webBackendHttpBase,
         webBackendAdminToken: cfg.webBackendAdminToken,
+        webBackendServiceToken: cfg.webBackendServiceToken,
       }),
       lastReport: null,
     },
