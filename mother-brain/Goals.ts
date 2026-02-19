@@ -26,6 +26,9 @@ export type WsMudScriptStep = {
   command: string;
   timeoutMs?: number;
 
+  // Optional maximum acceptable latency for this step (ms). Overrides goal.maxLatencyMs when set.
+  maxLatencyMs?: number;
+
   // If true, a failure in this step will not fail the overall script.
   // The step will be reported with optionalFailed metadata.
   optional?: boolean;
@@ -82,6 +85,11 @@ export type GoalDefinition = {
   url?: string;
   expectStatus?: number;
   timeoutMs?: number;
+
+
+  // Optional maximum acceptable latency for the goal (ms). If exceeded, the goal fails even if checks pass.
+  // For ws_mud_script, steps may override via step.maxLatencyMs.
+  maxLatencyMs?: number;
 
   // Optional retry behavior (primarily for startup-order/race conditions)
   // Retries only apply to transient network errors (ECONNREFUSED/ENOTFOUND/ETIMEDOUT/EAI_AGAIN) and 502/503/504 statuses.
@@ -281,6 +289,7 @@ function normalizeGoals(maybeGoals: unknown): GoalDefinition[] {
       url: typeof o.url === "string" ? o.url : undefined,
       expectStatus: typeof o.expectStatus === "number" ? o.expectStatus : undefined,
       timeoutMs: typeof o.timeoutMs === "number" ? o.timeoutMs : undefined,
+      maxLatencyMs: typeof (o as any).maxLatencyMs === "number" ? (o as any).maxLatencyMs : undefined,
       retries: typeof (o as any).retries === "number" ? (o as any).retries : undefined,
       retryDelayMs: typeof (o as any).retryDelayMs === "number" ? (o as any).retryDelayMs : undefined,
       expectPath: typeof o.expectPath === "string" ? o.expectPath : undefined,
@@ -324,6 +333,8 @@ function normalizeGoals(maybeGoals: unknown): GoalDefinition[] {
             .map((s: any) => ({
               command: String(s.command ?? ""),
               timeoutMs: typeof s.timeoutMs === "number" ? s.timeoutMs : undefined,
+
+              maxLatencyMs: typeof s.maxLatencyMs === "number" ? s.maxLatencyMs : undefined,
 
               optional: typeof s.optional === "boolean" ? s.optional : undefined,
 
@@ -1890,9 +1901,13 @@ export async function runGoalsOnce(
       const missing = ok ? validateMudExpectations(out, goal) : [];
       if (missing.length > 0) ok = false;
 
-      // If expectations failed (not a transport issue), do not retry – this is a real contract mismatch.
+      const elapsedMs = Date.now() - start;
+      const budgetMs = typeof goal.maxLatencyMs === "number" ? Math.max(0, Math.floor(goal.maxLatencyMs)) : null;
+      const okWithBudget = budgetMs !== null ? (ok && elapsedMs <= budgetMs) : ok;
+      const budgetError =
+        budgetMs !== null && ok && elapsedMs > budgetMs ? `latency_exceeded:${elapsedMs}>${budgetMs}` : undefined;
 
-      if (ok) okCount += 1;
+      if (okWithBudget) okCount += 1;
       else failCount += 1;
 
       results.push({
@@ -2154,18 +2169,27 @@ export async function runGoalsOnce(
         retries: goal.retries,
         retryDelayMs: goal.retryDelayMs,
       });
+
       const ok = res.ok;
-      if (ok) okCount += 1;
+      const elapsedMs = Date.now() - start;
+      const budgetMs = typeof goal.maxLatencyMs === "number" ? Math.max(0, Math.floor(goal.maxLatencyMs)) : null;
+      const okWithBudget = budgetMs !== null ? (ok && elapsedMs <= budgetMs) : ok;
+      const budgetError =
+        budgetMs !== null && ok && elapsedMs > budgetMs ? `latency_exceeded:${elapsedMs}>${budgetMs}` : undefined;
+
+      if (okWithBudget) okCount += 1;
       else failCount += 1;
 
       results.push({
         id: goal.id,
         kind: goal.kind,
-        ok,
-        latencyMs: Date.now() - start,
-        error: ok ? undefined : res.error ?? `status ${res.status ?? "unknown"}`,
+        ok: okWithBudget,
+        latencyMs: elapsedMs,
+        error: okWithBudget ? undefined : (budgetError ?? res.error ?? `status ${res.status ?? "unknown"}`),
         details: {
           url,
+          maxLatencyMs: goal.maxLatencyMs,
+          elapsedMs,
           status: res.status,
           expectStatus,
           expectIncludes: goal.expectIncludes,
@@ -2207,16 +2231,23 @@ export async function runGoalsOnce(
       });
 
       const ok = res.ok;
-      if (ok) okCount += 1;
+      const elapsedMs = Date.now() - start;
+      const budgetMs = typeof goal.maxLatencyMs === "number" ? Math.max(0, Math.floor(goal.maxLatencyMs)) : null;
+      const okWithBudget = budgetMs !== null ? (ok && elapsedMs <= budgetMs) : ok;
+      const budgetError = budgetMs !== null && ok && elapsedMs > budgetMs ? `latency_exceeded:${elapsedMs}>${budgetMs}` : undefined;
+
+      if (okWithBudget) okCount += 1;
       else failCount += 1;
 
       results.push({
         id: goal.id,
         kind: goal.kind,
-        ok,
-        latencyMs: Date.now() - start,
-        error: ok ? undefined : res.error ?? `status ${res.status ?? "unknown"}`,
+        ok: okWithBudget,
+        latencyMs: elapsedMs,
+        error: okWithBudget ? undefined : (budgetError ?? res.error ?? `status ${res.status ?? "unknown"}`),
         details: {
+          maxLatencyMs: goal.maxLatencyMs,
+          elapsedMs,
           url,
           status: res.status,
           expectStatus: goal.expectStatus,
@@ -2271,16 +2302,24 @@ export async function runGoalsOnce(
       });
 
       const ok = res.ok;
-      if (ok) okCount += 1;
+      const elapsedMs = Date.now() - start;
+      const budgetMs = typeof goal.maxLatencyMs === "number" ? Math.max(0, Math.floor(goal.maxLatencyMs)) : null;
+      const okWithBudget = budgetMs !== null ? (ok && elapsedMs <= budgetMs) : ok;
+      const budgetError =
+        budgetMs !== null && ok && elapsedMs > budgetMs ? `latency_exceeded:${elapsedMs}>${budgetMs}` : undefined;
+
+      if (okWithBudget) okCount += 1;
       else failCount += 1;
 
       results.push({
         id: goal.id,
         kind: goal.kind,
-        ok,
-        latencyMs: Date.now() - start,
-        error: ok ? undefined : res.error ?? `status ${res.status ?? "unknown"}`,
+        ok: okWithBudget,
+        latencyMs: elapsedMs,
+        error: okWithBudget ? undefined : (budgetError ?? res.error ?? `status ${res.status ?? "unknown"}`),
         details: {
+          maxLatencyMs: goal.maxLatencyMs,
+          elapsedMs,
           url,
           status: res.status,
           expectStatus: goal.expectStatus,
