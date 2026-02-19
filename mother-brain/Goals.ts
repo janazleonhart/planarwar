@@ -12,7 +12,23 @@
 import fs from "node:fs";
 import path from "node:path";
 
-export type GoalKind = "db_table_exists" | "db_wave_budget_breaches" | "ws_connected" | "ws_mud" | "http_get" | "http_json" | "http_post_json";
+export type GoalKind =
+  | "db_table_exists"
+  | "db_wave_budget_breaches"
+  | "ws_connected"
+  | "ws_mud"
+  | "ws_mud_script"
+  | "http_get"
+  | "http_json"
+  | "http_post_json";
+
+export type WsMudScriptStep = {
+  command: string;
+  timeoutMs?: number;
+  expectIncludes?: string;
+  expectIncludesAny?: string[];
+  expectIncludesAll?: string[];
+};
 
 export type GoalDefinition = {
   id: string;
@@ -55,6 +71,11 @@ export type GoalDefinition = {
 
   expectIncludesAny?: string[];
   expectIncludesAll?: string[];
+
+  // ws_mud_script
+  script?: WsMudScriptStep[];
+  scriptDelayMs?: number;
+  scriptStopOnFail?: boolean;
 
   // db_wave_budget_breaches
   maxBreaches?: number;
@@ -212,8 +233,30 @@ function normalizeGoals(maybeGoals: unknown): GoalDefinition[] {
         (o as any).requestHeaders && typeof (o as any).requestHeaders === "object" ? ((o as any).requestHeaders as any) : undefined,
       command: typeof o.command === "string" ? o.command : undefined,
       expectIncludes: typeof o.expectIncludes === "string" ? o.expectIncludes : undefined,
-      expectIncludesAny: Array.isArray((o as any).expectIncludesAny) ? (o as any).expectIncludesAny.filter((x: any) => typeof x === 'string') : undefined,
-      expectIncludesAll: Array.isArray((o as any).expectIncludesAll) ? (o as any).expectIncludesAll.filter((x: any) => typeof x === 'string') : undefined,
+      expectIncludesAny: Array.isArray((o as any).expectIncludesAny)
+        ? (o as any).expectIncludesAny.filter((x: any) => typeof x === "string")
+        : undefined,
+      expectIncludesAll: Array.isArray((o as any).expectIncludesAll)
+        ? (o as any).expectIncludesAll.filter((x: any) => typeof x === "string")
+        : undefined,
+      script: Array.isArray((o as any).script)
+        ? (o as any).script
+            .filter((s: any) => s && typeof s === "object")
+            .map((s: any) => ({
+              command: String(s.command ?? ""),
+              timeoutMs: typeof s.timeoutMs === "number" ? s.timeoutMs : undefined,
+              expectIncludes: typeof s.expectIncludes === "string" ? s.expectIncludes : undefined,
+              expectIncludesAny: Array.isArray(s.expectIncludesAny)
+                ? s.expectIncludesAny.filter((x: any) => typeof x === "string")
+                : undefined,
+              expectIncludesAll: Array.isArray(s.expectIncludesAll)
+                ? s.expectIncludesAll.filter((x: any) => typeof x === "string")
+                : undefined,
+            }))
+            .filter((s: any) => typeof s.command === "string" && s.command.trim().length > 0)
+        : undefined,
+      scriptDelayMs: typeof (o as any).scriptDelayMs === "number" ? (o as any).scriptDelayMs : undefined,
+      scriptStopOnFail: typeof (o as any).scriptStopOnFail === "boolean" ? (o as any).scriptStopOnFail : undefined,
       maxBreaches: typeof o.maxBreaches === "number" ? o.maxBreaches : undefined,
     });
   }
@@ -381,6 +424,23 @@ export function builtinGoalPacks(ctx?: {
       timeoutMs: 2500,
     },
 
+    // Player-facing command loop smoke (stable: these commands should work everywhere once a character is attached).
+    {
+      id: "ws.mud.player_loop.core",
+      kind: "ws_mud_script",
+      timeoutMs: 2500,
+      retries: 2,
+      retryDelayMs: 250,
+      scriptDelayMs: 50,
+      scriptStopOnFail: true,
+      script: [
+        { command: "help", expectIncludes: "Available commands:" },
+        { command: "quest help", expectIncludes: "Quest Board" },
+        { command: "attack", expectIncludes: "[combat] You are not engaged" },
+        { command: "pet", expectIncludes: "[pet] Commands:" },
+      ],
+    },
+
     // Optional protocol/command dependent checks (disabled until confirmed).
     { id: "ws.mud.look", kind: "ws_mud", enabled: false, command: "look", expectIncludesAny: ["You see", "Exits", "Around you"], timeoutMs: 2500 },
     { id: "ws.mud.say", kind: "ws_mud", enabled: false, command: "say mother brain ping", expectIncludesAny: ["You say", "says"], timeoutMs: 2500 },
@@ -434,6 +494,23 @@ function mergeGoalsById(goals: GoalDefinition[]): GoalDefinition[] {
     map.set(g.id, g);
   }
   return Array.from(map.values());
+}
+
+function validateMudExpectations(out: string, goal: { expectIncludes?: string; expectIncludesAll?: string[]; expectIncludesAny?: string[] }): string[] {
+  const missing: string[] = [];
+  if (goal.expectIncludes) {
+    if (!out.includes(goal.expectIncludes)) missing.push(goal.expectIncludes);
+  }
+  if (Array.isArray(goal.expectIncludesAll) && goal.expectIncludesAll.length > 0) {
+    for (const s of goal.expectIncludesAll) {
+      if (!out.includes(s)) missing.push(s);
+    }
+  }
+  if (Array.isArray(goal.expectIncludesAny) && goal.expectIncludesAny.length > 0) {
+    const anyOk = goal.expectIncludesAny.some((s) => out.includes(s));
+    if (!anyOk) missing.push(`any_of:${goal.expectIncludesAny.join("|")}`);
+  }
+  return missing;
 }
 
 export function resolveGoalPacks(
@@ -1357,20 +1434,7 @@ export async function runGoalsOnce(
         await sleep(delay);
       }
 
-      const missing: string[] = [];
-      if (ok && goal.expectIncludes) {
-        if (!out.includes(goal.expectIncludes)) missing.push(goal.expectIncludes);
-      }
-      if (ok && Array.isArray(goal.expectIncludesAll) && goal.expectIncludesAll.length > 0) {
-        for (const s of goal.expectIncludesAll) {
-          if (!out.includes(s)) missing.push(s);
-        }
-      }
-      if (ok && Array.isArray(goal.expectIncludesAny) && goal.expectIncludesAny.length > 0) {
-        const anyOk = goal.expectIncludesAny.some((s) => out.includes(s));
-        if (!anyOk) missing.push(`any_of:${goal.expectIncludesAny.join("|")}`);
-      }
-
+      const missing = ok ? validateMudExpectations(out, goal) : [];
       if (missing.length > 0) ok = false;
 
       // If expectations failed (not a transport issue), do not retry – this is a real contract mismatch.
@@ -1392,6 +1456,113 @@ export async function runGoalsOnce(
           expectIncludesAny: goal.expectIncludesAny,
           expectIncludesAll: goal.expectIncludesAll,
           outputPreview: out.length > 400 ? `${out.slice(0, 400)}…` : out,
+        },
+      });
+      continue;
+    }
+
+    if (goal.kind === "ws_mud_script") {
+      // If WS is disabled, treat as skip.
+      if (deps.wsState === "disabled") {
+        skippedCount += 1;
+        results.push({ id: goal.id, kind: goal.kind, ok: true, details: { skipped: true } });
+        continue;
+      }
+
+      const script = Array.isArray(goal.script) ? goal.script : [];
+      if (script.length === 0) {
+        failCount += 1;
+        results.push({ id: goal.id, kind: goal.kind, ok: false, error: "missing script" });
+        continue;
+      }
+
+      if (!deps.wsMudCommand) {
+        failCount += 1;
+        results.push({ id: goal.id, kind: goal.kind, ok: false, error: "ws mud command not available" });
+        continue;
+      }
+
+      const retries = Math.max(0, Math.min(10, goal.retries ?? 2));
+      const baseDelayMs = Math.max(0, Math.min(10_000, goal.retryDelayMs ?? 200));
+      const stepDelayMs = Math.max(0, Math.min(10_000, goal.scriptDelayMs ?? 0));
+      const stopOnFail = goal.scriptStopOnFail !== false;
+
+      const stepReports: any[] = [];
+      let overallOk = true;
+
+      for (let i = 0; i < script.length; i += 1) {
+        const step = script[i];
+        const cmd = String(step.command ?? "").trim();
+        if (!cmd) {
+          overallOk = false;
+          stepReports.push({
+            index: i,
+            command: "",
+            ok: false,
+            error: "missing command",
+          });
+          if (stopOnFail) break;
+          continue;
+        }
+
+        const timeoutMs = step.timeoutMs ?? goal.timeoutMs ?? 2500;
+
+        let res: { ok: boolean; output?: string; error?: string } = { ok: false, error: "not attempted" };
+        let out = "";
+        let ok = false;
+
+        for (let attempt = 0; attempt <= retries; attempt += 1) {
+          res = await deps.wsMudCommand(cmd, timeoutMs);
+          ok = res.ok;
+          out = res.output ?? "";
+
+          if (ok) break;
+
+          const transient = isTransientWsError(res.error);
+          if (!transient || attempt === retries) break;
+
+          const jitter = Math.floor(Math.random() * 25);
+          const delay = Math.min(10_000, baseDelayMs * Math.pow(2, attempt) + jitter);
+          await sleep(delay);
+        }
+
+        const missing = ok ? validateMudExpectations(out, step) : [];
+        if (missing.length > 0) ok = false;
+
+        stepReports.push({
+          index: i,
+          command: cmd,
+          ok,
+          error: ok
+            ? undefined
+            : res.error ?? (missing.length > 0 ? `missing expectation: ${missing.join(", ")}` : "failed"),
+          outputPreview: out.length > 220 ? `${out.slice(0, 220)}…` : out,
+          expectIncludes: step.expectIncludes,
+          expectIncludesAny: step.expectIncludesAny,
+          expectIncludesAll: step.expectIncludesAll,
+        });
+
+        if (!ok) {
+          overallOk = false;
+          if (stopOnFail) break;
+        }
+
+        if (stepDelayMs > 0 && i < script.length - 1) {
+          await sleep(stepDelayMs);
+        }
+      }
+
+      if (overallOk) okCount += 1;
+      else failCount += 1;
+
+      results.push({
+        id: goal.id,
+        kind: goal.kind,
+        ok: overallOk,
+        latencyMs: Date.now() - start,
+        error: overallOk ? undefined : "script failed",
+        details: {
+          steps: stepReports,
         },
       });
       continue;
