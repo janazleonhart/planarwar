@@ -5,7 +5,9 @@
     "name": "planarwar-mmo-backend",
     "version": "0.1.0",
     "runtime": "node",
-    "transport": ["ws"],
+    "transport": [
+      "ws"
+    ],
     "stack": [
       "ws",
       "dotenv",
@@ -44,7 +46,8 @@
         "Accepts query params: token (JWT), characterId",
         "On connect: creates Session, optionally attaches identity/character, joins room, streams entities",
         "Routes all incoming WS messages through worldcore router.handleRawMessage(session, data)",
-        "Starts TickEngine + Heartbeat idle cleanup"
+        "Starts TickEngine + Heartbeat idle cleanup",
+        "HTTP admin endpoint: POST /api/admin/characters/smoke_cycle (service-token gated; editor/root only)"
       ],
       "owns": [
         "HTTP server instance",
@@ -58,10 +61,9 @@
         "Startup loads quests + NPC prototypes from Postgres asynchronously and hydrates in-memory registries; failures fall back to hardcoded defaults.",
         "Character attach path auto-seeds NPCs from spawn_points and personal resource nodes before joinRoom so entity_list includes them.",
         "OnTick hook drives Virtuoso SongEngine (tickSongsForCharacter) and updates region danger aura; keep this centralized to avoid double ticks.",
-        "Disconnect handler stops melody, leaves room, and removes the session." 
+        "Disconnect handler stops melody, leaves room, and removes the session."
       ]
     },
-
     "mmo-backend.config.network": {
       "kind": "module",
       "service": "config.network",
@@ -69,7 +71,9 @@
       "class": null,
       "lifecycle": "static",
       "ctorArgs": [],
-      "dependsOn": ["node:process"],
+      "dependsOn": [
+        "node:process"
+      ],
       "provides": [
         "netConfig (host, port, path)",
         "netConfig.heartbeatIntervalMs",
@@ -83,7 +87,6 @@
         "Defaults: host 0.0.0.0, port 7777, path /ws, heartbeat 5s, idle timeout 10m, tick interval 50ms (20 TPS)."
       ]
     },
-
     "mmo-backend.logging.fileTap": {
       "kind": "module",
       "service": "logging.fileTap",
@@ -91,7 +94,10 @@
       "class": null,
       "lifecycle": "process",
       "ctorArgs": [],
-      "dependsOn": ["node:fs", "node:util"],
+      "dependsOn": [
+        "node:fs",
+        "node:util"
+      ],
       "provides": [
         "installFileLogTap() console interception",
         "PW_FILELOG env enables file logging",
@@ -105,7 +111,6 @@
         "Scope is extracted from formatted logger payloads like [NPC:INFO]."
       ]
     },
-
     "mmo-backend.package": {
       "kind": "data",
       "service": "package.meta",
@@ -122,6 +127,28 @@
       "owns": [],
       "notes": [
         "express is listed as a dependency but the MMO backend currently serves WS only (HTTP server exists solely as ws upgrade host)."
+      ]
+    },
+    "mmo-backend.routes.adminCharactersSmokeCycle": {
+      "kind": "module",
+      "service": "http.admin.characters",
+      "path": "mmo-backend/server.ts",
+      "class": null,
+      "lifecycle": "process",
+      "ctorArgs": [],
+      "dependsOn": [
+        "worldcore:characters/PostgresCharacterService",
+        "worldcore:auth/PostgresAuthService"
+      ],
+      "provides": [
+        "POST /api/admin/characters/smoke_cycle (create→rename→delete temp character; JSON result)"
+      ],
+      "owns": [
+        "Admin-only canary endpoint for Mother Brain smoke packs"
+      ],
+      "notes": [
+        "Requires Authorization: Bearer svc:... token with role editor/root; readonly should fail.",
+        "Request body: {\"userId\":\"<uuid>\"} (account/user UUID under which temp chars are created)."
       ]
     }
   }

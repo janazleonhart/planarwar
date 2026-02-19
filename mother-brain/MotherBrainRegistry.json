@@ -18,6 +18,7 @@
     "v0.20 adds an observe-only Goals Runner: cadence-based checks, optional hot-reload goals file, and structured JSONL goal-run reports under the log directory.",
     "v0.21 adds ws_mud goal kind (MUD command roundtrip over WS for player-facing smoke checks).",
     "v0.22-v0.34 add builtin goal packs (admin_smoke/web_smoke/all_smoke), admin-safe fixtures support, and goal report tail tooling for the admin UI.",
+    "v0.45 adds ws_mud_script goal kind (multi-step WS MUD scripts with optional steps, stop-ok branching, capture vars, templating, per-step retry/delay, and maxLatencyMs budgets).",
     "v0.35+ allow admin_smoke to send optional auth headers via MOTHER_BRAIN_WEB_BACKEND_ADMIN_TOKEN (human JWT; fallback PW_ADMIN_TOKEN) or MOTHER_BRAIN_WEB_BACKEND_SERVICE_TOKEN (daemon service token); improve hints for 401 missing_token vs fetch/network failures.",
     "v0.41+ adds retry/backoff for transient HTTP/WS startup flakes.",
     "v0.43 adds tools/genServiceToken.js to generate a random PW_SERVICE_TOKEN_SECRET and derive service tokens without shell quoting pitfalls (supports --secret).",
