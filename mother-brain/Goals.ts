@@ -29,10 +29,19 @@ export type WsMudScriptStep = {
   expectIncludesAny?: string[];
   expectIncludesAll?: string[];
 
+  // Negative expectations: fail if output contains/matches these.
+  rejectIncludes?: string;
+  rejectIncludesAny?: string[];
+
   // Optional regex expectations (string form; supports /pattern/flags or plain pattern).
   expectRegex?: string;
   expectRegexAny?: string[];
   expectRegexAll?: string[];
+
+  // Optional regex rejections (string form; supports /pattern/flags or plain pattern).
+  rejectRegex?: string;
+  rejectRegexAny?: string[];
+  rejectRegexAll?: string[];
 };
 
 export type GoalDefinition = {
@@ -77,10 +86,19 @@ export type GoalDefinition = {
   expectIncludesAny?: string[];
   expectIncludesAll?: string[];
 
+  // Negative expectations: fail if output contains/matches these.
+  rejectIncludes?: string;
+  rejectIncludesAny?: string[];
+
   // Optional regex expectations (string form; supports /pattern/flags or plain pattern).
   expectRegex?: string;
   expectRegexAny?: string[];
   expectRegexAll?: string[];
+
+  // Optional regex rejections (string form; supports /pattern/flags or plain pattern).
+  rejectRegex?: string;
+  rejectRegexAny?: string[];
+  rejectRegexAll?: string[];
 
   // ws_mud_script
   script?: WsMudScriptStep[];
@@ -249,12 +267,25 @@ function normalizeGoals(maybeGoals: unknown): GoalDefinition[] {
       expectIncludesAll: Array.isArray((o as any).expectIncludesAll)
         ? (o as any).expectIncludesAll.filter((x: any) => typeof x === "string")
         : undefined,
+
+      rejectIncludes: typeof (o as any).rejectIncludes === "string" ? ((o as any).rejectIncludes as string) : undefined,
+      rejectIncludesAny: Array.isArray((o as any).rejectIncludesAny)
+        ? (o as any).rejectIncludesAny.filter((x: any) => typeof x === "string")
+        : undefined,
       expectRegex: typeof (o as any).expectRegex === "string" ? ((o as any).expectRegex as string) : undefined,
       expectRegexAny: Array.isArray((o as any).expectRegexAny)
         ? (o as any).expectRegexAny.filter((x: any) => typeof x === "string")
         : undefined,
       expectRegexAll: Array.isArray((o as any).expectRegexAll)
         ? (o as any).expectRegexAll.filter((x: any) => typeof x === "string")
+        : undefined,
+
+      rejectRegex: typeof (o as any).rejectRegex === "string" ? ((o as any).rejectRegex as string) : undefined,
+      rejectRegexAny: Array.isArray((o as any).rejectRegexAny)
+        ? (o as any).rejectRegexAny.filter((x: any) => typeof x === "string")
+        : undefined,
+      rejectRegexAll: Array.isArray((o as any).rejectRegexAll)
+        ? (o as any).rejectRegexAll.filter((x: any) => typeof x === "string")
         : undefined,
       script: Array.isArray((o as any).script)
         ? (o as any).script
@@ -269,12 +300,25 @@ function normalizeGoals(maybeGoals: unknown): GoalDefinition[] {
               expectIncludesAll: Array.isArray(s.expectIncludesAll)
                 ? s.expectIncludesAll.filter((x: any) => typeof x === "string")
                 : undefined,
+
+              rejectIncludes: typeof s.rejectIncludes === "string" ? (s.rejectIncludes as string) : undefined,
+              rejectIncludesAny: Array.isArray(s.rejectIncludesAny)
+                ? s.rejectIncludesAny.filter((x: any) => typeof x === "string")
+                : undefined,
               expectRegex: typeof s.expectRegex === "string" ? (s.expectRegex as string) : undefined,
               expectRegexAny: Array.isArray(s.expectRegexAny)
                 ? s.expectRegexAny.filter((x: any) => typeof x === "string")
                 : undefined,
               expectRegexAll: Array.isArray(s.expectRegexAll)
                 ? s.expectRegexAll.filter((x: any) => typeof x === "string")
+                : undefined,
+
+              rejectRegex: typeof s.rejectRegex === "string" ? (s.rejectRegex as string) : undefined,
+              rejectRegexAny: Array.isArray(s.rejectRegexAny)
+                ? s.rejectRegexAny.filter((x: any) => typeof x === "string")
+                : undefined,
+              rejectRegexAll: Array.isArray(s.rejectRegexAll)
+                ? s.rejectRegexAll.filter((x: any) => typeof x === "string")
                 : undefined,
             }))
             .filter((s: any) => typeof s.command === "string" && s.command.trim().length > 0)
@@ -458,10 +502,10 @@ export function builtinGoalPacks(ctx?: {
       scriptDelayMs: 50,
       scriptStopOnFail: true,
       script: [
-        { command: "help", expectIncludes: "Available commands:" },
-        { command: "quest help", expectIncludes: "Quest Board" },
-        { command: "attack", expectIncludes: "[combat] You are not engaged" },
-        { command: "pet", expectIncludes: "[pet] Commands:" },
+        { command: "help", expectIncludes: "Available commands:", rejectRegexAny: ["/\\[error\\]/i", "/unknown\\s+command/i"] },
+        { command: "quest help", expectIncludes: "Quest Board", rejectRegexAny: ["/\\[error\\]/i", "/unknown\\s+command/i"] },
+        { command: "attack", expectIncludes: "[combat] You are not engaged", rejectRegexAny: ["/\\[error\\]/i", "/unknown\\s+command/i"] },
+        { command: "pet", expectIncludes: "[pet] Commands:", rejectRegexAny: ["/\\[error\\]/i", "/unknown\\s+command/i"] },
       ],
     },
 
@@ -585,12 +629,49 @@ function validateMudExpectations(
     expectIncludes?: string;
     expectIncludesAll?: string[];
     expectIncludesAny?: string[];
+    rejectIncludes?: string;
+    rejectIncludesAny?: string[];
     expectRegex?: string;
     expectRegexAll?: string[];
     expectRegexAny?: string[];
+    rejectRegex?: string;
+    rejectRegexAll?: string[];
+    rejectRegexAny?: string[];
   }
 ): string[] {
   const missing: string[] = [];
+
+  // Negative expectations first: fail fast if output contains/matches forbidden patterns.
+  if (goal.rejectIncludes) {
+    if (out.includes(goal.rejectIncludes)) return [`reject:${goal.rejectIncludes}`];
+  }
+
+  if (Array.isArray(goal.rejectIncludesAny) && goal.rejectIncludesAny.length > 0) {
+    const hit = goal.rejectIncludesAny.find((s) => out.includes(s));
+    if (hit) return [`reject_any_of:${hit}`];
+  }
+
+  if (goal.rejectRegex) {
+    const rx = parseRegexString(goal.rejectRegex);
+    if (!rx) return [`bad_regex:${goal.rejectRegex}`];
+    if (rx.test(out)) return [`reject_regex:${goal.rejectRegex}`];
+  }
+
+  if (Array.isArray(goal.rejectRegexAll) && goal.rejectRegexAll.length > 0) {
+    for (const pat of goal.rejectRegexAll) {
+      const rx = parseRegexString(pat);
+      if (!rx) return [`bad_regex:${pat}`];
+      if (rx.test(out)) return [`reject_regex:${pat}`];
+    }
+  }
+
+  if (Array.isArray(goal.rejectRegexAny) && goal.rejectRegexAny.length > 0) {
+    const hit = goal.rejectRegexAny.find((pat) => {
+      const rx = parseRegexString(pat);
+      return rx ? rx.test(out) : false;
+    });
+    if (hit) return [`reject_regex_any_of:${hit}`];
+  }
 
   if (goal.expectIncludes) {
     if (!out.includes(goal.expectIncludes)) missing.push(goal.expectIncludes);
@@ -1575,9 +1656,14 @@ export async function runGoalsOnce(
           expectIncludes: goal.expectIncludes,
           expectIncludesAny: goal.expectIncludesAny,
           expectIncludesAll: goal.expectIncludesAll,
+          rejectIncludes: goal.rejectIncludes,
+          rejectIncludesAny: goal.rejectIncludesAny,
           expectRegex: goal.expectRegex,
           expectRegexAny: goal.expectRegexAny,
           expectRegexAll: goal.expectRegexAll,
+          rejectRegex: goal.rejectRegex,
+          rejectRegexAny: goal.rejectRegexAny,
+          rejectRegexAll: goal.rejectRegexAll,
           outputPreview: out.length > 400 ? `${out.slice(0, 400)}…` : out,
         },
       });
@@ -1663,9 +1749,14 @@ export async function runGoalsOnce(
           expectIncludes: step.expectIncludes,
           expectIncludesAny: step.expectIncludesAny,
           expectIncludesAll: step.expectIncludesAll,
+          rejectIncludes: step.rejectIncludes,
+          rejectIncludesAny: step.rejectIncludesAny,
           expectRegex: step.expectRegex,
           expectRegexAny: step.expectRegexAny,
           expectRegexAll: step.expectRegexAll,
+          rejectRegex: step.rejectRegex,
+          rejectRegexAny: step.rejectRegexAny,
+          rejectRegexAll: step.rejectRegexAll,
         });
 
         if (!ok) {
