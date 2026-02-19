@@ -27,6 +27,11 @@ export type GoalDefinition = {
   expectStatus?: number;
   timeoutMs?: number;
 
+  // Optional retry behavior (primarily for startup-order/race conditions)
+  // Retries only apply to transient network errors (ECONNREFUSED/ENOTFOUND/ETIMEDOUT/EAI_AGAIN) and 502/503/504 statuses.
+  retries?: number;
+  retryDelayMs?: number;
+
   // http_json
   // If provided, Mother Brain will parse the response as JSON and validate.
   // - expectPath + expectValue: dot-path equality (supports numeric array indexes)
@@ -196,6 +201,8 @@ function normalizeGoals(maybeGoals: unknown): GoalDefinition[] {
       url: typeof o.url === "string" ? o.url : undefined,
       expectStatus: typeof o.expectStatus === "number" ? o.expectStatus : undefined,
       timeoutMs: typeof o.timeoutMs === "number" ? o.timeoutMs : undefined,
+      retries: typeof (o as any).retries === "number" ? (o as any).retries : undefined,
+      retryDelayMs: typeof (o as any).retryDelayMs === "number" ? (o as any).retryDelayMs : undefined,
       expectPath: typeof o.expectPath === "string" ? o.expectPath : undefined,
       expectValue: "expectValue" in o ? (o as any).expectValue : undefined,
       expectSubset: (o as any).expectSubset && typeof (o as any).expectSubset === "object" ? ((o as any).expectSubset as any) : undefined,
@@ -719,12 +726,29 @@ function describeFetchError(e: unknown): FetchErrorInfo {
   return { message: msg, details };
 }
 
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function isTransientFetchError(details?: Record<string, unknown>): boolean {
+  if (!details) return false;
+  const cause = (details as any).cause;
+  const code = cause?.code;
+  return code === "ECONNREFUSED" || code === "ENOTFOUND" || code === "ETIMEDOUT" || code === "EAI_AGAIN";
+}
+
+function isTransientHttpStatus(status?: number): boolean {
+  return status === 502 || status === 503 || status === 504;
+}
+
 async function httpGet(args: {
   url: string;
   timeoutMs: number;
   expectStatus?: number;
   expectIncludes?: string;
   maxBodyBytes?: number;
+  retries?: number;
+  retryDelayMs?: number;
 }): Promise<{
   ok: boolean;
   status?: number;
@@ -732,43 +756,65 @@ async function httpGet(args: {
   errorDetails?: Record<string, unknown>;
   bodyPreview?: string;
 }> {
-  // Node 18+ global fetch.
-  const ctrl = new AbortController();
-  const t = setTimeout(() => ctrl.abort(), args.timeoutMs);
-  try {
-    const res = await fetch(args.url, { method: "GET", signal: ctrl.signal });
-    const status = res.status;
+  const retries = Math.max(0, Math.min(10, args.retries ?? 2));
+  const baseDelayMs = Math.max(0, Math.min(10_000, args.retryDelayMs ?? 200));
 
-    // Respect explicit expected status if provided; otherwise use res.ok.
-    const statusOk = typeof args.expectStatus === "number" ? status === args.expectStatus : res.ok;
+  const attemptOnce = async (): Promise<{
+    ok: boolean;
+    status?: number;
+    error?: string;
+    errorDetails?: Record<string, unknown>;
+    bodyPreview?: string;
+  }> => {
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), args.timeoutMs);
 
-    // Optional body substring assertion.
-    const expectIncludes =
-      typeof args.expectIncludes === "string" && args.expectIncludes.length > 0 ? args.expectIncludes : null;
-    if (!expectIncludes) {
-      return { ok: statusOk, status };
+    try {
+      const res = await fetch(args.url, { method: "GET", signal: ctrl.signal });
+      const status = res.status;
+
+      const statusOk = typeof args.expectStatus === "number" ? status === args.expectStatus : res.ok;
+
+      const expectIncludes =
+        typeof args.expectIncludes === "string" && args.expectIncludes.length > 0 ? args.expectIncludes : null;
+      if (!expectIncludes) {
+        return { ok: statusOk, status };
+      }
+
+      const maxBodyBytes = typeof args.maxBodyBytes === "number" && args.maxBodyBytes > 0 ? args.maxBodyBytes : 4096;
+      const txt = await res.text();
+      const preview = txt.length > maxBodyBytes ? `${txt.slice(0, maxBodyBytes)}…` : txt;
+      const bodyOk = preview.includes(expectIncludes);
+
+      return {
+        ok: statusOk && bodyOk,
+        status,
+        bodyPreview: preview,
+        error: statusOk && !bodyOk ? `missing substring: ${expectIncludes}` : undefined,
+      };
+    } catch (e: unknown) {
+      const info = describeFetchError(e);
+      return { ok: false, error: info.message, errorDetails: info.details };
+    } finally {
+      clearTimeout(t);
     }
+  };
 
-    // Read the body, but cap it so we don't balloon logs/snapshots.
-    const maxBodyBytes = typeof args.maxBodyBytes === "number" && args.maxBodyBytes > 0 ? args.maxBodyBytes : 4096;
-    const txt = await res.text();
-    const preview = txt.length > maxBodyBytes ? `${txt.slice(0, maxBodyBytes)}…` : txt;
-    const bodyOk = preview.includes(expectIncludes);
+  let last: Awaited<ReturnType<typeof attemptOnce>> | null = null;
 
-    return {
-      ok: statusOk && bodyOk,
-      status,
-      bodyPreview: preview,
-      error: statusOk && !bodyOk ? `missing substring: ${expectIncludes}` : undefined,
-    };
-  } catch (e: unknown) {
-    const info = describeFetchError(e);
-    return { ok: false, error: info.message, errorDetails: info.details };
-  } finally {
-    clearTimeout(t);
+  for (let i = 0; i <= retries; i += 1) {
+    last = await attemptOnce();
+    if (last.ok) return last;
+
+    const transient = isTransientFetchError(last.errorDetails) || isTransientHttpStatus(last.status);
+    if (!transient || i === retries) break;
+
+    const delay = Math.floor(baseDelayMs * Math.pow(2, i) + Math.random() * 50);
+    await sleep(delay);
   }
-}
 
+  return last ?? { ok: false, error: "unknown http_get failure" };
+}
 
 type JsonValue = null | boolean | number | string | JsonValue[] | { [k: string]: JsonValue };
 
@@ -855,6 +901,8 @@ async function httpJson(args: {
   timeoutMs: number;
   requestHeaders?: Record<string, string>;
   expectStatus?: number;
+  retries?: number;
+  retryDelayMs?: number;
   expectPath?: string;
   expectValue?: unknown;
   expectSubset?: unknown;
@@ -869,81 +917,110 @@ async function httpJson(args: {
   bodyPreview?: string;
   extracted?: unknown;
 }> {
-  const ctrl = new AbortController();
-  const t = setTimeout(() => ctrl.abort(), args.timeoutMs);
-  try {
-    const res = await fetch(args.url, { method: "GET", signal: ctrl.signal, headers: args.requestHeaders });
-    const status = res.status;
-    const statusOk = typeof args.expectStatus === "number" ? status === args.expectStatus : res.ok;
+  const retries = Math.max(0, Math.min(10, args.retries ?? 2));
+  const baseDelayMs = Math.max(0, Math.min(10_000, args.retryDelayMs ?? 200));
 
-    const maxBodyBytes = typeof args.maxBodyBytes === "number" && args.maxBodyBytes > 0 ? args.maxBodyBytes : 16384;
-    const maxPreviewBytes =
-      typeof args.maxPreviewBytes === "number" && args.maxPreviewBytes > 0 ? args.maxPreviewBytes : 4096;
-
-    const txt = await res.text();
-    const capped = txt.length > maxBodyBytes ? txt.slice(0, maxBodyBytes) : txt;
-    const preview = capped.length > maxPreviewBytes ? `${capped.slice(0, maxPreviewBytes)}…` : capped;
-
-    let json: unknown;
+  const attemptOnce = async (): Promise<{
+    ok: boolean;
+    status?: number;
+    error?: string;
+    errorDetails?: Record<string, unknown>;
+    bodyPreview?: string;
+    extracted?: unknown;
+  }> => {
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), args.timeoutMs);
     try {
-      json = JSON.parse(capped);
-    } catch (e: unknown) {
+      const res = await fetch(args.url, { method: "GET", signal: ctrl.signal, headers: args.requestHeaders });
+      const status = res.status;
+      const statusOk = typeof args.expectStatus === "number" ? status === args.expectStatus : res.ok;
+
+      const maxBodyBytes = typeof args.maxBodyBytes === "number" && args.maxBodyBytes > 0 ? args.maxBodyBytes : 16384;
+      const maxPreviewBytes =
+        typeof args.maxPreviewBytes === "number" && args.maxPreviewBytes > 0 ? args.maxPreviewBytes : 4096;
+
+      const txt = await res.text();
+      const capped = txt.length > maxBodyBytes ? txt.slice(0, maxBodyBytes) : txt;
+      const preview = capped.length > maxPreviewBytes ? `${capped.slice(0, maxPreviewBytes)}…` : capped;
+
+      let json: unknown;
+      try {
+        json = JSON.parse(capped);
+      } catch (e: unknown) {
+        return {
+          ok: false,
+          status,
+          bodyPreview: preview,
+          error: `invalid json: ${e instanceof Error ? e.message : String(e)}`,
+        };
+      }
+
+      const checks: { ok: boolean; err?: string; extracted?: unknown }[] = [];
+
+      if (typeof args.expectPath === "string" && args.expectPath.trim().length > 0) {
+        const v = getByDotPath(json, args.expectPath.trim());
+        checks.push({
+          ok: deepEqualJson(v, args.expectValue),
+          err: `path mismatch: ${args.expectPath}`,
+          extracted: v,
+        });
+      }
+
+      if (args.expectSubset && typeof args.expectSubset === "object") {
+        checks.push({ ok: subsetMatch(args.expectSubset, json), err: "subset mismatch" });
+      }
+
+      if ("expectJson" in args && args.expectJson !== undefined) {
+        checks.push({ ok: deepEqualJson(args.expectJson, json), err: "json mismatch" });
+      }
+
+      const checksOk = checks.every((c) => c.ok);
+      const extracted = checks.find((c) => c.extracted !== undefined)?.extracted;
+
+      const ok = statusOk && checksOk;
       return {
-        ok: false,
+        ok,
         status,
         bodyPreview: preview,
-        error: `invalid json: ${e instanceof Error ? e.message : String(e)}`,
+        extracted,
+        error: ok
+          ? undefined
+          : !statusOk
+            ? `status ${status}`
+            : checks.find((c) => !c.ok)?.err ?? "json expectation failed",
       };
+    } catch (e: unknown) {
+      const info = describeFetchError(e);
+      return { ok: false, error: info.message, errorDetails: info.details };
+    } finally {
+      clearTimeout(t);
     }
+  };
 
-    // Evaluate expectations (all must pass if provided).
-    const checks: { ok: boolean; err?: string; extracted?: unknown }[] = [];
+  let last: Awaited<ReturnType<typeof attemptOnce>> | null = null;
 
-    if (typeof args.expectPath === "string" && args.expectPath.trim().length > 0) {
-      const v = getByDotPath(json, args.expectPath.trim());
-      checks.push({
-        ok: deepEqualJson(v, args.expectValue),
-        err: `path mismatch: ${args.expectPath}`,
-        extracted: v,
-      });
-    }
+  for (let i = 0; i <= retries; i += 1) {
+    last = await attemptOnce();
+    if (last.ok) return last;
 
-    if (args.expectSubset && typeof args.expectSubset === "object") {
-      checks.push({ ok: subsetMatch(args.expectSubset, json), err: "subset mismatch" });
-    }
+    const transient = isTransientFetchError(last.errorDetails) || isTransientHttpStatus(last.status);
+    if (!transient || i === retries) break;
 
-    if ("expectJson" in args && args.expectJson !== undefined) {
-      checks.push({ ok: deepEqualJson(args.expectJson, json), err: "json mismatch" });
-    }
-
-    const checksOk = checks.every((c) => c.ok);
-    const extracted = checks.find((c) => c.extracted !== undefined)?.extracted;
-
-    const ok = statusOk && checksOk;
-    return {
-      ok,
-      status,
-      bodyPreview: preview,
-      extracted,
-      error: ok
-        ? undefined
-        : !statusOk
-          ? `status ${status}`
-          : checks.find((c) => !c.ok)?.err ?? "json expectation failed",
-    };
-  } catch (e: unknown) {
-    const info = describeFetchError(e);
-    return { ok: false, error: info.message, errorDetails: info.details };
-  } finally {
-    clearTimeout(t);
+    const delay = Math.floor(baseDelayMs * Math.pow(2, i) + Math.random() * 50);
+    await sleep(delay);
   }
+
+  return last ?? { ok: false, error: "unknown http_json failure" };
 }
+
 async function httpPostJson(args: {
   url: string;
   timeoutMs: number;
   requestJson: unknown;
   requestHeaders?: Record<string, string>;
   expectStatus?: number;
+  retries?: number;
+  retryDelayMs?: number;
   expectPath?: string;
   expectValue?: unknown;
   expectSubset?: unknown;
@@ -958,92 +1035,118 @@ async function httpPostJson(args: {
   bodyPreview?: string;
   extracted?: unknown;
 }> {
-  const ctrl = new AbortController();
-  const t = setTimeout(() => ctrl.abort(), args.timeoutMs);
-  try {
-    const headers: Record<string, string> = {
-      "content-type": "application/json",
-      ...(args.requestHeaders ?? {}),
-    };
+  const retries = Math.max(0, Math.min(10, args.retries ?? 2));
+  const baseDelayMs = Math.max(0, Math.min(10_000, args.retryDelayMs ?? 200));
 
-    const res = await fetch(args.url, {
-      method: "POST",
-      signal: ctrl.signal,
-      headers,
-      body: JSON.stringify(args.requestJson ?? null),
-    });
-
-    const status = res.status;
-    const statusOk = typeof args.expectStatus === "number" ? status === args.expectStatus : res.ok;
-
-    // If no JSON assertions are requested, we can stop here.
-    const wantsJson =
-      (typeof args.expectPath === "string" && args.expectPath.trim().length > 0) ||
-      (args.expectSubset && typeof args.expectSubset === "object") ||
-      ("expectJson" in args && args.expectJson !== undefined);
-
-    if (!wantsJson) return { ok: statusOk, status };
-
-    const maxBodyBytes = typeof args.maxBodyBytes === "number" && args.maxBodyBytes > 0 ? args.maxBodyBytes : 16384;
-    const maxPreviewBytes =
-      typeof args.maxPreviewBytes === "number" && args.maxPreviewBytes > 0 ? args.maxPreviewBytes : 4096;
-
-    const txt = await res.text();
-    const capped = txt.length > maxBodyBytes ? txt.slice(0, maxBodyBytes) : txt;
-    const preview = capped.length > maxPreviewBytes ? `${capped.slice(0, maxPreviewBytes)}…` : capped;
-
-    let json: unknown;
+  const attemptOnce = async (): Promise<{
+    ok: boolean;
+    status?: number;
+    error?: string;
+    errorDetails?: Record<string, unknown>;
+    bodyPreview?: string;
+    extracted?: unknown;
+  }> => {
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), args.timeoutMs);
     try {
-      json = JSON.parse(capped);
-    } catch (e: unknown) {
+      const headers: Record<string, string> = {
+        "content-type": "application/json",
+        ...(args.requestHeaders ?? {}),
+      };
+
+      const res = await fetch(args.url, {
+        method: "POST",
+        signal: ctrl.signal,
+        headers,
+        body: JSON.stringify(args.requestJson ?? null),
+      });
+
+      const status = res.status;
+      const statusOk = typeof args.expectStatus === "number" ? status === args.expectStatus : res.ok;
+
+      const wantsJson =
+        (typeof args.expectPath === "string" && args.expectPath.trim().length > 0) ||
+        (args.expectSubset && typeof args.expectSubset === "object") ||
+        ("expectJson" in args && args.expectJson !== undefined);
+
+      if (!wantsJson) return { ok: statusOk, status };
+
+      const maxBodyBytes = typeof args.maxBodyBytes === "number" && args.maxBodyBytes > 0 ? args.maxBodyBytes : 16384;
+      const maxPreviewBytes =
+        typeof args.maxPreviewBytes === "number" && args.maxPreviewBytes > 0 ? args.maxPreviewBytes : 4096;
+
+      const txt = await res.text();
+      const capped = txt.length > maxBodyBytes ? txt.slice(0, maxBodyBytes) : txt;
+      const preview = capped.length > maxPreviewBytes ? `${capped.slice(0, maxPreviewBytes)}…` : capped;
+
+      let json: unknown;
+      try {
+        json = JSON.parse(capped);
+      } catch (e: unknown) {
+        return {
+          ok: false,
+          status,
+          bodyPreview: preview,
+          error: `invalid json: ${e instanceof Error ? e.message : String(e)}`,
+        };
+      }
+
+      const checks: { ok: boolean; err?: string; extracted?: unknown }[] = [];
+
+      if (typeof args.expectPath === "string" && args.expectPath.trim().length > 0) {
+        const v = getByDotPath(json, args.expectPath.trim());
+        checks.push({
+          ok: deepEqualJson(v, args.expectValue),
+          err: `path mismatch: ${args.expectPath}`,
+          extracted: v,
+        });
+      }
+
+      if (args.expectSubset && typeof args.expectSubset === "object") {
+        checks.push({ ok: subsetMatch(args.expectSubset, json), err: "subset mismatch" });
+      }
+
+      if ("expectJson" in args && args.expectJson !== undefined) {
+        checks.push({ ok: deepEqualJson(args.expectJson, json), err: "json mismatch" });
+      }
+
+      const checksOk = checks.every((c) => c.ok);
+      const extracted = checks.find((c) => c.extracted !== undefined)?.extracted;
+
+      const ok = statusOk && checksOk;
       return {
-        ok: false,
+        ok,
         status,
         bodyPreview: preview,
-        error: `invalid json: ${e instanceof Error ? e.message : String(e)}`,
+        extracted,
+        error: ok
+          ? undefined
+          : !statusOk
+            ? `status ${status}`
+            : checks.find((c) => !c.ok)?.err ?? "json expectation failed",
       };
+    } catch (e: unknown) {
+      const info = describeFetchError(e);
+      return { ok: false, error: info.message, errorDetails: info.details };
+    } finally {
+      clearTimeout(t);
     }
+  };
 
-    const checks: { ok: boolean; err?: string; extracted?: unknown }[] = [];
+  let last: Awaited<ReturnType<typeof attemptOnce>> | null = null;
 
-    if (typeof args.expectPath === "string" && args.expectPath.trim().length > 0) {
-      const v = getByDotPath(json, args.expectPath.trim());
-      checks.push({
-        ok: deepEqualJson(v, args.expectValue),
-        err: `path mismatch: ${args.expectPath}`,
-        extracted: v,
-      });
-    }
+  for (let i = 0; i <= retries; i += 1) {
+    last = await attemptOnce();
+    if (last.ok) return last;
 
-    if (args.expectSubset && typeof args.expectSubset === "object") {
-      checks.push({ ok: subsetMatch(args.expectSubset, json), err: "subset mismatch" });
-    }
+    const transient = isTransientFetchError(last.errorDetails) || isTransientHttpStatus(last.status);
+    if (!transient || i === retries) break;
 
-    if ("expectJson" in args && args.expectJson !== undefined) {
-      checks.push({ ok: deepEqualJson(args.expectJson, json), err: "json mismatch" });
-    }
-
-    const checksOk = checks.every((c) => c.ok);
-    const extracted = checks.find((c) => c.extracted !== undefined)?.extracted;
-
-    const ok = statusOk && checksOk;
-    return {
-      ok,
-      status,
-      bodyPreview: preview,
-      extracted,
-      error: ok
-        ? undefined
-        : !statusOk
-          ? `status ${status}`
-          : checks.find((c) => !c.ok)?.err ?? "json expectation failed",
-    };
-  } catch (e: unknown) {
-    const info = describeFetchError(e);
-    return { ok: false, error: info.message, errorDetails: info.details };
-  } finally {
-    clearTimeout(t);
+    const delay = Math.floor(baseDelayMs * Math.pow(2, i) + Math.random() * 50);
+    await sleep(delay);
   }
+
+  return last ?? { ok: false, error: "unknown http_post_json failure" };
 }
 
 
@@ -1271,6 +1374,8 @@ export async function runGoalsOnce(
         timeoutMs,
         expectStatus,
         expectIncludes: goal.expectIncludes,
+        retries: goal.retries,
+        retryDelayMs: goal.retryDelayMs,
       });
       const ok = res.ok;
       if (ok) okCount += 1;
@@ -1316,6 +1421,8 @@ export async function runGoalsOnce(
         timeoutMs,
         requestHeaders: (goal as any).requestHeaders,
         expectStatus: goal.expectStatus,
+        retries: goal.retries,
+        retryDelayMs: goal.retryDelayMs,
         expectPath: goal.expectPath,
         expectValue: goal.expectValue,
         expectSubset: goal.expectSubset,
@@ -1378,6 +1485,8 @@ export async function runGoalsOnce(
         requestJson: req,
         requestHeaders: (goal as any).requestHeaders,
         expectStatus: goal.expectStatus,
+        retries: goal.retries,
+        retryDelayMs: goal.retryDelayMs,
         expectPath: goal.expectPath,
         expectValue: goal.expectValue,
         expectSubset: goal.expectSubset,
