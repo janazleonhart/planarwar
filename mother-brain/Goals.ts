@@ -451,6 +451,40 @@ export function builtinGoalPacks(ctx?: {
       ],
     },
 
+    // Deeper (still read-only) player-facing checks. These are intentionally disabled by default
+    // until command text/protocol is confirmed for your environment.
+    {
+      id: "ws.mud.quest.readonly",
+      kind: "ws_mud_script",
+      enabled: false,
+      timeoutMs: 2500,
+      retries: 1,
+      retryDelayMs: 200,
+      scriptDelayMs: 50,
+      scriptStopOnFail: true,
+      script: [
+        // Prefer regex to reduce brittleness across formatting tweaks.
+        { command: "quest help", expectRegexAny: ["Quest Board", "/quest\\s+board/i"] },
+        { command: "quest board", expectRegexAny: ["Quest Board", "Quests", "/available\\s+quests/i"] },
+        { command: "quests", expectRegexAny: ["Quests", "Active", "/no\\s+active/i"] },
+      ],
+    },
+
+    {
+      id: "ws.mud.player.profile.readonly",
+      kind: "ws_mud_script",
+      enabled: false,
+      timeoutMs: 2500,
+      retries: 1,
+      retryDelayMs: 200,
+      scriptDelayMs: 50,
+      scriptStopOnFail: true,
+      script: [
+        { command: "stats", expectRegexAny: ["HP", "Level", "/str|dex|int/i"] },
+        { command: "inventory", expectRegexAny: ["Inventory", "You are carrying", "/empty/i"] },
+      ],
+    },
+
     // Optional protocol/command dependent checks (disabled until confirmed).
     { id: "ws.mud.look", kind: "ws_mud", enabled: false, command: "look", expectIncludesAny: ["You see", "Exits", "Around you"], timeoutMs: 2500 },
     { id: "ws.mud.say", kind: "ws_mud", enabled: false, command: "say mother brain ping", expectIncludesAny: ["You say", "says"], timeoutMs: 2500 },
@@ -1633,14 +1667,24 @@ export async function runGoalsOnce(
       if (overallOk) okCount += 1;
       else failCount += 1;
 
+      const firstFail = !overallOk
+        ? stepReports.find((s) => s && typeof s === "object" && (s as any).ok === false)
+        : null;
+      const failMsg = firstFail
+        ? `step ${(firstFail as any).index ?? "?"}: ${(firstFail as any).error ?? "failed"}`
+        : "script failed";
+      const stepFailCount = stepReports.filter((s) => s && typeof s === "object" && (s as any).ok === false).length;
+
       results.push({
         id: goal.id,
         kind: goal.kind,
         ok: overallOk,
         latencyMs: Date.now() - start,
-        error: overallOk ? undefined : "script failed",
+        error: overallOk ? undefined : failMsg,
         details: {
           steps: stepReports,
+          stepCount: stepReports.length,
+          stepFailCount,
         },
       });
       continue;
