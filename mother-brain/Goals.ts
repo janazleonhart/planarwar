@@ -26,6 +26,10 @@ export type WsMudScriptStep = {
   command: string;
   timeoutMs?: number;
 
+  // If true, a failure in this step will not fail the overall script.
+  // The step will be reported with optionalFailed metadata.
+  optional?: boolean;
+
   // Optional per-step retry behavior (overrides goal-level retries when set).
   retries?: number;
   retryDelayMs?: number;
@@ -315,6 +319,8 @@ function normalizeGoals(maybeGoals: unknown): GoalDefinition[] {
             .map((s: any) => ({
               command: String(s.command ?? ""),
               timeoutMs: typeof s.timeoutMs === "number" ? s.timeoutMs : undefined,
+
+              optional: typeof s.optional === "boolean" ? s.optional : undefined,
 
               // Per-step retry/delay overrides
               retries: typeof s.retries === "number" ? s.retries : undefined,
@@ -1935,29 +1941,40 @@ export async function runGoalsOnce(
 
       for (let i = 0; i < script.length; i += 1) {
         const step = script[i];
+        const optional = step.optional === true;
         const rawCmd = String(step.command ?? "").trim();
         const cmdInterp = interpolateTemplate(rawCmd, vars);
         const cmd = cmdInterp.text.trim();
         if (cmdInterp.missing.length > 0) {
-          overallOk = false;
           stepReports.push({
             index: i,
             command: rawCmd,
-            ok: false,
-            error: `missing vars: ${cmdInterp.missing.join(", ")}`,
+            ok: optional,
+            optionalFailed: optional,
+            hardFail: !optional,
+            error: optional ? undefined : `missing vars: ${cmdInterp.missing.join(", ")}`,
+            optionalError: optional ? `missing vars: ${cmdInterp.missing.join(", ")}` : undefined,
           });
-          if (stopOnFail) break;
+          if (!optional) {
+            overallOk = false;
+            if (stopOnFail) break;
+          }
           continue;
         }
         if (!cmd) {
-          overallOk = false;
           stepReports.push({
             index: i,
             command: "",
-            ok: false,
-            error: "missing command",
+            ok: optional,
+            optionalFailed: optional,
+            hardFail: !optional,
+            error: optional ? undefined : "missing command",
+            optionalError: optional ? "missing command" : undefined,
           });
-          if (stopOnFail) break;
+          if (!optional) {
+            overallOk = false;
+            if (stopOnFail) break;
+          }
           continue;
         }
 
@@ -2031,10 +2048,18 @@ export async function runGoalsOnce(
         stepReports.push({
           index: i,
           command: cmd,
-          ok,
-          error: ok
+          ok: optional ? true : ok,
+          optionalFailed: optional ? !ok : undefined,
+          hardFail: optional ? false : !ok,
+          error: optional
             ? undefined
-            : res.error ?? (missing.length > 0 ? `missing expectation: ${missing.join(", ")}` : "failed"),
+            : ok
+              ? undefined
+              : res.error ?? (missing.length > 0 ? `missing expectation: ${missing.join(", ")}` : "failed"),
+          optionalError:
+            optional && !ok
+              ? res.error ?? (missing.length > 0 ? `missing expectation: ${missing.join(", ")}` : "failed")
+              : undefined,
           outputPreview: out.length > 220 ? `${out.slice(0, 220)}…` : out,
           expectIncludes: (cookedExp as any).cooked?.expectIncludes ?? step.expectIncludes,
           expectIncludesAny: (cookedExp as any).cooked?.expectIncludesAny ?? step.expectIncludesAny,
@@ -2053,10 +2078,11 @@ export async function runGoalsOnce(
           retries: step.retries,
           retryDelayMs: step.retryDelayMs,
           delayAfterMs: step.delayAfterMs,
+          optional,
           vars: Object.keys(vars).length > 0 ? { ...vars } : undefined,
         });
 
-        if (!ok) {
+        if (!ok && !optional) {
           overallOk = false;
           if (stopOnFail) break;
         }
@@ -2071,12 +2097,12 @@ export async function runGoalsOnce(
       else failCount += 1;
 
       const firstFail = !overallOk
-        ? stepReports.find((s) => s && typeof s === "object" && (s as any).ok === false)
+        ? stepReports.find((s) => s && typeof s === "object" && (s as any).hardFail === true)
         : null;
       const failMsg = firstFail
         ? `step ${(firstFail as any).index ?? "?"}: ${(firstFail as any).error ?? "failed"}`
         : "script failed";
-      const stepFailCount = stepReports.filter((s) => s && typeof s === "object" && (s as any).ok === false).length;
+      const stepFailCount = stepReports.filter((s) => s && typeof s === "object" && (s as any).hardFail === true).length;
 
       results.push({
         id: goal.id,
