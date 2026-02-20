@@ -1433,6 +1433,22 @@ function appendJsonl(filePath: string, obj: unknown): void {
   }
 }
 
+function safeWriteJson(filePath: string, obj: unknown): void {
+  try {
+    ensureDir(path.dirname(filePath));
+    const tmp = `${filePath}.tmp`;
+    fs.writeFileSync(tmp, JSON.stringify(obj, null, 2), "utf-8");
+    fs.renameSync(tmp, filePath);
+  } catch {
+    // ignore
+  }
+}
+
+function lastReportFilePath(state: GoalsState): string | undefined {
+  if (!state.reportDir) return undefined;
+  return path.resolve(state.reportDir, "mother-brain-goals-last.json");
+}
+
 
 type FetchErrorInfo = {
   message: string;
@@ -2635,6 +2651,20 @@ export async function runGoalSuites(
   state.lastRunIso = overall.ts;
   state.lastOk = overall.ok;
   state.lastSummary = overall.summary;
+
+  // Convenience: always write a single "last run" report (human friendly), so operators
+  // can quickly inspect the most recent outcome without hunting timestamps.
+  const lastPath = lastReportFilePath(state);
+  if (lastPath) {
+    safeWriteJson(lastPath, {
+      ts: overall.ts,
+      tick: overall.tick,
+      ok: overall.ok,
+      summary: overall.summary,
+      bySuite,
+      failingGoalsBySuite: state.lastFailingGoalsBySuite ?? null,
+    });
+  }
 
   return { ok: overallOk, bySuite, overall };
 }
