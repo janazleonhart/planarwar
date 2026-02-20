@@ -641,6 +641,41 @@ const mmoAdminSmoke: GoalDefinition[] =
       ],
     },
 
+// Combat smoke: attempt to swing at a training dummy if present.
+// Safe-by-default: if no dummy is in the current room (or combat isn't available), the script stops OK.
+{
+  id: "ws.mud.combat.training_dummy.swing",
+  kind: "ws_mud_script",
+  timeoutMs: 3500,
+  retries: 1,
+  retryDelayMs: 250,
+  scriptDelayMs: 75,
+  scriptStopOnFail: true,
+  script: [
+    {
+      command: "attack training dummy",
+      // Success case (dummy present)
+      expectRegexAny: ["\[combat\] You hit the Training Dummy", "/Training Dummy/i"],
+      // Safe stop-OK cases (no dummy / not ready / no world)
+      stopOkIfRegexAny: [
+        "/\[world\]\s+No such target/i",
+        "/Combat is not available/i",
+        "/You have no body here/i",
+        "/The world is not initialized/i",
+        "/You cannot see that target/i",
+      ],
+      rejectRegexAny: ["/\[error\]/i", "/unknown\s+command/i"],
+    },
+    {
+      // Follow-up swing without args should work if we successfully engaged the dummy.
+      command: "attack",
+      expectRegexAny: ["\[combat\] You hit the Training Dummy", "\[combat\] You are not engaged"],
+      rejectRegexAny: ["/\[error\]/i", "/unknown\s+command/i"],
+    },
+  ],
+},
+
+
     // Deeper (still read-only) player-facing checks. These are intentionally disabled by default
     // until command text/protocol is confirmed for your environment.
     {
@@ -709,6 +744,39 @@ const mmoAdminSmoke: GoalDefinition[] =
         },
       ],
     },
+
+{
+  // Quest turn-in smoke: if any quests are ready, attempt a turn-in.
+  // Safe-by-default: stops OK when no ready quests (or no board / not in a town).
+  id: "ws.mud.quest.turnin_one_if_ready",
+  kind: "ws_mud_script",
+  enabled: true,
+  timeoutMs: 3500,
+  retries: 1,
+  retryDelayMs: 250,
+  scriptDelayMs: 75,
+  scriptStopOnFail: true,
+  script: [
+    {
+      command: "quest board ready",
+      expectRegexAny: ["Ready quests:", "/no\s+ready\s+quests/i", "/no\s+quest\s+board/i", "/not\s+in\s+a\s+town/i"],
+      rejectRegexAny: ["/\[error\]/i", "/unknown\s+command/i"],
+      stopOkIfRegexAny: ["/no\s+ready\s+quests/i", "/no\s+quest\s+board/i", "/not\s+in\s+a\s+town/i"],
+      // Capture the first ready quest id from any board line with an (id) suffix.
+      captureRegex: "/^\s*\d+\.\s+\[[^\]]*\]\s+(?:\[NEW\]\s+)?[^\(]*\(([^\)]+)\)/m",
+      captureVar: "rqid",
+      captureGroup: 1,
+    },
+    {
+      command: "quest board turnin {{rqid}}",
+      // Turn-in may either complete immediately or prompt for a reward choice.
+      expectRegexAny: ["\[quest\] Turned in:", "/choose\s+\d+/i", "/Choose\s+a\s+reward/i"],
+      rejectRegexAny: ["/\[error\]/i", "/unknown\s+command/i"],
+      stopOkIfRegexAny: ["/Choose\s+a\s+reward/i", "/choose\s+\d+/i"],
+    },
+  ],
+},
+
 
     {
       id: "ws.mud.player.profile.readonly",
