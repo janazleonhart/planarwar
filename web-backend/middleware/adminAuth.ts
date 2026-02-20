@@ -57,12 +57,8 @@ function parseServiceToken(req: Request): string | null {
   const h = Array.isArray(fromHeader) ? fromHeader[0] : fromHeader;
   if (typeof h === "string" && h.trim().length > 0) return h.trim();
 
-  const bearer = parseBearerToken(req);
-  if (!bearer) return null;
-
-  // Service tokens are allowed to travel via Bearer as well.
-  const s = String(bearer).trim();
-  if (s.toLowerCase().startsWith("svc:") || s.toLowerCase().startsWith("service:")) return s;
+  // Important: do NOT accept service tokens via Authorization: Bearer.
+  // That path is reserved for human JWTs and may be verified/logged differently.
   return null;
 }
 
@@ -194,11 +190,25 @@ function isRootOnlyEndpoint(req: Request): boolean {
 
 export async function requireAdmin(req: AuthedRequest, res: Response, next: NextFunction) {
   try {
+    const logFailures = String(process.env.PW_AUTH_LOG_FAILURES ?? "1").trim() !== "0";
+
     // Service-token path (daemon/prod auth). If provided but invalid, fail fast.
     const serviceToken = parseServiceToken(req);
     if (serviceToken) {
       const verified = verifyServiceToken(serviceToken);
       if (!verified) {
+        if (logFailures) {
+          const fp = crypto.createHash("sha256").update(serviceToken).digest("hex").slice(0, 12);
+          console.warn("[AUTH:WARN] service token verification failed", {
+            kind: "service",
+            source: "x-service-token",
+            fp,
+            ip: (req as any).ip,
+            ua: String(req.headers["user-agent"] ?? ""),
+            path: getFullPath(req),
+            method: req.method,
+          });
+        }
         return res.status(401).json({ ok: false, error: "invalid_service_token" });
       }
 
@@ -226,7 +236,29 @@ export async function requireAdmin(req: AuthedRequest, res: Response, next: Next
     const token = parseBearerToken(req);
     if (!token) return res.status(401).json({ ok: false, error: "missing_token" });
 
-    const payload = await auth.verifyToken(token);
+    let payload: any = null;
+    try {
+      payload = await auth.verifyToken(token);
+    } catch (err: any) {
+      if (logFailures) {
+        const fp = crypto.createHash("sha256").update(token).digest("hex").slice(0, 12);
+        const decoded = decodeJwtNoVerify(token);
+
+        console.warn("[AUTH:WARN] bearer auth verification failed", {
+          kind: "jwt",
+          source: "authorization:bearer",
+          fp,
+          ip: (req as any).ip,
+          ua: String(req.headers["user-agent"] ?? ""),
+          path: getFullPath(req),
+          method: req.method,
+          errName: String(err?.name ?? ""),
+          errMsg: String(err?.message ?? ""),
+          jwt: decoded,
+        });
+      }
+      return res.status(401).json({ ok: false, error: "invalid_token" });
+    }
     if (!payload) {
       return res.status(401).json({ ok: false, error: "invalid_token" });
     }
@@ -256,6 +288,40 @@ export async function requireAdmin(req: AuthedRequest, res: Response, next: Next
   } catch (_err) {
     return res.status(401).json({ ok: false, error: "auth_error" });
   }
+}
+
+function decodeJwtNoVerify(
+  token: string
+): { sub?: string; exp?: number; iat?: number; aud?: any; iss?: any; kid?: string } | null {
+  // Safe-ish debugging helper: decodes JWT header/payload without verifying signature.
+  // Use ONLY for logging minimal identifiers. Never trust for authorization.
+  const parts = String(token || "").split(".");
+  if (parts.length < 2) return null;
+  try {
+    const headerJson = Buffer.from(base64UrlToBase64(parts[0]!), "base64").toString("utf8");
+    const payloadJson = Buffer.from(base64UrlToBase64(parts[1]!), "base64").toString("utf8");
+    const header = JSON.parse(headerJson);
+    const payload = JSON.parse(payloadJson);
+    return {
+      sub: typeof payload?.sub === "string" ? payload.sub : undefined,
+      exp: typeof payload?.exp === "number" ? payload.exp : undefined,
+      iat: typeof payload?.iat === "number" ? payload.iat : undefined,
+      aud: payload?.aud,
+      iss: payload?.iss,
+      kid: typeof header?.kid === "string" ? header.kid : undefined,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function base64UrlToBase64(s: string): string {
+  // Convert base64url -> base64 and pad.
+  let out = s.replace(/-/g, "+").replace(/_/g, "/");
+  const pad = out.length % 4;
+  if (pad === 2) out += "==";
+  else if (pad === 3) out += "=";
+  return out;
 }
 
 // For UI/dev convenience: allow bypassing admin auth in dev if explicitly enabled.
