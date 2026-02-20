@@ -1134,8 +1134,22 @@ class WsProbe {
     }
 
     // Be tolerant: different servers may name fields differently.
-    const op = typeof msg?.op === "string" ? msg.op : typeof msg?.type === "string" ? msg.type : null;
-    if (op !== "mud_result" && op !== "mudResult" && op !== "mud.result") return;
+    // We accept a few common response op/type values.
+    const opRaw = typeof msg?.op === "string" ? msg.op : typeof msg?.type === "string" ? msg.type : null;
+    const kindRaw = typeof msg?.kind === "string" ? msg.kind : null;
+    const op = opRaw ? String(opRaw) : kindRaw ? String(kindRaw) : null;
+    const opNorm = op ? op.toLowerCase().replace(/\s+/g, "") : null;
+    const okOps = new Set([
+      "mud_result",
+      "mudresult",
+      "mud.result",
+      "mud_output",
+      "mudoutput",
+      "mud.output",
+      // Some servers echo under the request op for convenience
+      "mud",
+    ]);
+    if (!opNorm || !okOps.has(opNorm)) return;
 
     const output =
       typeof msg?.output === "string"
@@ -1146,7 +1160,11 @@ class WsProbe {
             ? msg.payload.text
             : typeof msg?.payload?.output === "string"
               ? msg.payload.output
-              : "";
+              : typeof msg?.payload?.result === "string"
+                ? msg.payload.result
+                : typeof msg?.result === "string"
+                  ? msg.result
+                  : "";
 
     this.finishMudPending({ ok: true, output });
   }
