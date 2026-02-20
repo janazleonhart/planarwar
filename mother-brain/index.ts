@@ -1896,7 +1896,7 @@ async function main(): Promise<void> {
           },
           waveBudget: wbForGoals,
           wsState: wsProbe.isEnabled() ? wsProbe.getState() : "disabled",
-          wsDisabledReason: wsProbe.isEnabled() ? undefined : (wsPrep.wsUrl ? "ws probe disabled" : "MOTHER_BRAIN_WS_URL not set"),
+          wsDisabledReason: wsProbe.isEnabled() ? undefined : (cfg.wsUrl ? "ws probe disabled" : "MOTHER_BRAIN_WS_URL not set"),
           wsRequired: cfg.wsRequired,
           wsMudCommand: wsProbe.isEnabled() ? (cmd: string, timeoutMs: number) => wsProbe.mudCommand(cmd, timeoutMs) : undefined,
           log,
