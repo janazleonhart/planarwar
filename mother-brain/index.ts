@@ -323,6 +323,21 @@ const ConfigSchema = z
     // Mother Brain can auto-sign a JWT for local dev.
     MOTHER_BRAIN_WS_TOKEN: z.string().optional(),
 
+// If enabled, Mother Brain will auto-create a dedicated WS-attached character (using mmo-backend admin endpoints)
+// when MOTHER_BRAIN_WS_CHARACTER_ID is not explicitly set.
+MOTHER_BRAIN_WS_AUTOCREATE: z.enum(["0", "1"]).optional().default("0"),
+MOTHER_BRAIN_WS_AUTOCREATE_DELETE_ON_EXIT: z.enum(["0", "1"]).optional().default("0"),
+
+// Optional naming/class/shard controls for WS auto-created character.
+MOTHER_BRAIN_WS_AUTOCREATE_NAME_PREFIX: z.string().optional().default("MB_Playtester"),
+MOTHER_BRAIN_WS_AUTOCREATE_CLASS_ID: z.string().optional().default("pw_class_adventurer"),
+MOTHER_BRAIN_WS_AUTOCREATE_SHARD_ID: z.string().optional().default("prime_shard"),
+
+// Optional explicit state file path for storing the auto-created characterId.
+// If unset, we derive it from the goals report dir (or PW_FILELOG).
+MOTHER_BRAIN_WS_STATE_FILE: z.string().optional(),
+
+
     MOTHER_BRAIN_DB_TIMEOUT_MS: z
       .string()
       .optional()
@@ -486,6 +501,13 @@ type MotherBrainConfig = {
   wsCharacterId?: string;
   wsToken?: string;
 
+  wsAutoCreate: boolean;
+  wsAutoCreateDeleteOnExit: boolean;
+  wsAutoCreateNamePrefix: string;
+  wsAutoCreateClassId: string;
+  wsAutoCreateShardId: string;
+  wsStateFile?: string;
+
   dbTimeoutMs: number;
   wsTimeoutMs: number;
 
@@ -545,6 +567,13 @@ function parseConfig(): MotherBrainConfig {
     wsRequired: env.MOTHER_BRAIN_WS_REQUIRED === "1",
     wsCharacterId: env.MOTHER_BRAIN_WS_CHARACTER_ID,
     wsToken: env.MOTHER_BRAIN_WS_TOKEN,
+
+    wsAutoCreate: env.MOTHER_BRAIN_WS_AUTOCREATE === "1",
+    wsAutoCreateDeleteOnExit: env.MOTHER_BRAIN_WS_AUTOCREATE_DELETE_ON_EXIT === "1",
+    wsAutoCreateNamePrefix: env.MOTHER_BRAIN_WS_AUTOCREATE_NAME_PREFIX,
+    wsAutoCreateClassId: env.MOTHER_BRAIN_WS_AUTOCREATE_CLASS_ID,
+    wsAutoCreateShardId: env.MOTHER_BRAIN_WS_AUTOCREATE_SHARD_ID,
+    wsStateFile: env.MOTHER_BRAIN_WS_STATE_FILE,
 
     dbTimeoutMs: env.MOTHER_BRAIN_DB_TIMEOUT_MS,
     wsTimeoutMs: env.MOTHER_BRAIN_WS_TIMEOUT_MS,
@@ -962,8 +991,10 @@ async function probeBrainWaveBudget(
 
 class WsProbe {
   private ws: WebSocket | null = null;
-  private readonly url: string | undefined;
+  private readonly baseUrl: string | undefined;
   private readonly connectTimeoutMs: number;
+  private token: string | undefined;
+  private characterId: string | undefined;
   private lastPongIso: string | null = null;
 
   // v0.21: single-flight MUD command support (one in-flight command at a time).
@@ -976,17 +1007,36 @@ class WsProbe {
       }
     | null = null;
 
-  public constructor(wsUrl: string | undefined, connectTimeoutMs: number) {
-    this.url = wsUrl;
+  public constructor(wsUrl: string | undefined, connectTimeoutMs: number, attach?: { token?: string; characterId?: string }) {
+    this.baseUrl = wsUrl;
     this.connectTimeoutMs = connectTimeoutMs;
+    this.token = attach?.token;
+    this.characterId = attach?.characterId;
+  }
+
+  public setAttach(token: string | undefined, characterId: string | undefined): void {
+    const nextToken = token && token.trim().length > 0 ? token.trim() : undefined;
+    const nextChar = characterId && characterId.trim().length > 0 ? characterId.trim() : undefined;
+    const changed = nextToken !== this.token || nextChar !== this.characterId;
+    this.token = nextToken;
+    this.characterId = nextChar;
+
+    // Force reconnect so the server can authenticate + auto-attach character via URL params.
+    if (changed && this.ws && this.ws.readyState === WebSocket.OPEN) {
+      try {
+        this.ws.close();
+      } catch {
+        // ignore
+      }
+    }
   }
 
   public isEnabled(): boolean {
-    return Boolean(this.url);
+    return Boolean(this.baseUrl);
   }
 
   public getState(): "disabled" | "closed" | "connecting" | "open" {
-    if (!this.url) return "disabled";
+    if (!this.baseUrl) return "disabled";
     if (!this.ws) return "closed";
     switch (this.ws.readyState) {
       case WebSocket.CONNECTING:
@@ -999,7 +1049,7 @@ class WsProbe {
   }
 
   public async ensureConnected(): Promise<ProbeResult> {
-    if (!this.url) return { ok: false, error: "disabled" };
+    if (!this.baseUrl) return { ok: false, error: "disabled" };
 
     if (this.ws && this.ws.readyState === WebSocket.OPEN) return { ok: true, latencyMs: 0 };
 
@@ -1010,7 +1060,7 @@ class WsProbe {
 
     const start = Date.now();
     try {
-      await this.connectOnce(this.url, this.connectTimeoutMs);
+      await this.connectOnce(buildWsUrl(this.baseUrl, this.token, this.characterId), this.connectTimeoutMs);
       return { ok: true, latencyMs: Date.now() - start };
     } catch (err: unknown) {
       return { ok: false, latencyMs: Date.now() - start, error: this.errToString(err) };
@@ -1219,6 +1269,226 @@ function deriveGoalsReportDir(cfg: MotherBrainConfig): string | undefined {
   return undefined;
 }
 
+type MotherBrainWsState = {
+  characterId?: string;
+  createdAtIso?: string;
+  classId?: string;
+  shardId?: string;
+  name?: string;
+};
+
+const WsStateSchema = z
+  .object({
+    characterId: z.string().optional(),
+    createdAtIso: z.string().optional(),
+    classId: z.string().optional(),
+    shardId: z.string().optional(),
+    name: z.string().optional(),
+  })
+  .passthrough();
+
+function deriveWsStateFile(cfg: MotherBrainConfig, goalsReportDir: string | undefined): string | undefined {
+  if (cfg.wsStateFile && cfg.wsStateFile.trim().length > 0) return path.resolve(cfg.wsStateFile.trim());
+  if (goalsReportDir) return path.resolve(goalsReportDir, "mother-brain-ws-state.json");
+  return undefined;
+}
+
+function readWsState(filePath: string | undefined): MotherBrainWsState | null {
+  if (!filePath) return null;
+  try {
+    if (!fs.existsSync(filePath)) return null;
+    const raw = fs.readFileSync(filePath, "utf-8");
+    const parsed = WsStateSchema.safeParse(JSON.parse(raw));
+    if (!parsed.success) return null;
+    return parsed.data as MotherBrainWsState;
+  } catch {
+    return null;
+  }
+}
+
+function writeWsState(filePath: string | undefined, s: MotherBrainWsState): void {
+  if (!filePath) return;
+  try {
+    fs.mkdirSync(path.dirname(filePath), { recursive: true });
+    fs.writeFileSync(filePath, JSON.stringify(s, null, 2), "utf-8");
+  } catch {
+    // ignore
+  }
+}
+
+function signLocalWsJwt(cfg: MotherBrainConfig, userId: string, characterId?: string): string | null {
+  const secret = process.env.PW_AUTH_JWT_SECRET;
+  if (!secret || secret.trim().length === 0) return null;
+
+  const lifetimeSecRaw = process.env.PW_AUTH_JWT_LIFETIME;
+  const lifetimeSec = lifetimeSecRaw && !Number.isNaN(Number(lifetimeSecRaw)) ? Number(lifetimeSecRaw) : 60 * 60 * 24 * 7;
+
+  const payload: Record<string, unknown> = {
+    sub: userId,
+    displayName: "Mother Brain",
+    flags: ["mother_brain"],
+  };
+
+  // Optional conveniences (mmo-backend accepts these but does not require them)
+  if (cfg.wsAutoCreateShardId) payload.shardId = cfg.wsAutoCreateShardId;
+  if (characterId) payload.characterId = characterId;
+
+  try {
+    return jwt.sign(payload, secret, { expiresIn: lifetimeSec });
+  } catch {
+    return null;
+  }
+}
+
+function buildWsUrl(baseUrl: string, token: string | undefined, characterId: string | undefined): string {
+  try {
+    const u = new URL(baseUrl);
+    if (token && token.trim().length > 0) u.searchParams.set("token", token.trim());
+    if (characterId && characterId.trim().length > 0) u.searchParams.set("characterId", characterId.trim());
+    return u.toString();
+  } catch {
+    // If baseUrl isn't a valid WHATWG URL, fallback to naive append.
+    const hasQ = baseUrl.includes("?");
+    const parts: string[] = [];
+    if (token && token.trim().length > 0) parts.push(`token=${encodeURIComponent(token.trim())}`);
+    if (characterId && characterId.trim().length > 0) parts.push(`characterId=${encodeURIComponent(characterId.trim())}`);
+    if (parts.length === 0) return baseUrl;
+    return baseUrl + (hasQ ? "&" : "?") + parts.join("&");
+  }
+}
+
+async function httpPostJson<T>(urlStr: string, headers: Record<string, string>, body: unknown, timeoutMs: number): Promise<T> {
+  const url = new URL(urlStr);
+  const payload = JSON.stringify(body ?? {});
+
+  return await new Promise<T>((resolve, reject) => {
+    const req = http.request(
+      {
+        method: "POST",
+        hostname: url.hostname,
+        port: url.port ? Number(url.port) : url.protocol === "https:" ? 443 : 80,
+        path: url.pathname + url.search,
+        headers: {
+          "content-type": "application/json",
+          "content-length": Buffer.byteLength(payload),
+          ...headers,
+        },
+        timeout: timeoutMs,
+      },
+      (res) => {
+        const chunks: Buffer[] = [];
+        res.on("data", (c) => chunks.push(Buffer.isBuffer(c) ? c : Buffer.from(String(c))));
+        res.on("end", () => {
+          const raw = Buffer.concat(chunks).toString("utf-8").trim();
+          const code = res.statusCode ?? 0;
+          if (code < 200 || code >= 300) {
+            reject(new Error(`HTTP ${code}: ${raw.slice(0, 200)}`));
+            return;
+          }
+          try {
+            resolve((raw ? JSON.parse(raw) : null) as T);
+          } catch (e) {
+            reject(e);
+          }
+        });
+      }
+    );
+
+    req.on("timeout", () => {
+      try {
+        req.destroy(new Error(`timeout after ${timeoutMs}ms`));
+      } catch {
+        // ignore
+      }
+    });
+    req.on("error", reject);
+
+    req.write(payload);
+    req.end();
+  });
+}
+
+async function ensureWsCharacter(cfg: MotherBrainConfig, goalsReportDir: string | undefined, gatedLog: (l: LogLevel, m: string, e?: Record<string, unknown>) => void): Promise<{ characterId?: string; created?: boolean; stateFile?: string }> {
+  const stateFile = deriveWsStateFile(cfg, goalsReportDir);
+  const existingState = readWsState(stateFile);
+  if (cfg.wsCharacterId && cfg.wsCharacterId.trim().length > 0) {
+    // Explicit env wins; also refresh state file for convenience.
+    writeWsState(stateFile, { characterId: cfg.wsCharacterId.trim(), createdAtIso: nowIso(), shardId: cfg.wsAutoCreateShardId, classId: cfg.wsAutoCreateClassId, name: cfg.wsAutoCreateNamePrefix });
+    return { characterId: cfg.wsCharacterId.trim(), created: false, stateFile };
+  }
+
+  if (existingState?.characterId && existingState.characterId.trim().length > 0) {
+    return { characterId: existingState.characterId.trim(), created: false, stateFile };
+  }
+
+  if (!cfg.wsAutoCreate) return { characterId: undefined, created: false, stateFile };
+
+  const userId = process.env.MOTHER_BRAIN_TEST_USER_ID;
+  if (!userId || userId.trim().length === 0) {
+    gatedLog("warn", "WS auto-create enabled but MOTHER_BRAIN_TEST_USER_ID is not set");
+    return { characterId: undefined, created: false, stateFile };
+  }
+
+  const base = cfg.mmoBackendHttpBase;
+  const svc = cfg.mmoBackendServiceTokenEditor ?? cfg.mmoBackendServiceToken;
+  if (!base || !svc) {
+    gatedLog("warn", "WS auto-create enabled but missing mmo-backend admin config", {
+      hasMmoBackendHttpBase: Boolean(base),
+      hasMmoBackendServiceToken: Boolean(svc),
+    });
+    return { characterId: undefined, created: false, stateFile };
+  }
+
+  const name = `${cfg.wsAutoCreateNamePrefix}_${String(Date.now()).slice(-6)}`;
+  const createUrl = `${base}/api/admin/characters/create`;
+  try {
+    const resp = await httpPostJson<any>(
+      createUrl,
+      { "x-service-token": String(svc) },
+      { userId, shardId: cfg.wsAutoCreateShardId, name, classId: cfg.wsAutoCreateClassId },
+      5000
+    );
+
+    const characterId = typeof resp?.character?.id === "string" ? resp.character.id : typeof resp?.id === "string" ? resp.id : null;
+    if (!characterId) {
+      gatedLog("warn", "WS auto-create: mmo-backend did not return a character id", { resp });
+      return { characterId: undefined, created: false, stateFile };
+    }
+
+    writeWsState(stateFile, {
+      characterId,
+      createdAtIso: nowIso(),
+      shardId: cfg.wsAutoCreateShardId,
+      classId: cfg.wsAutoCreateClassId,
+      name,
+    });
+
+    gatedLog("info", "WS auto-created playtester character", { characterId, name, shardId: cfg.wsAutoCreateShardId, classId: cfg.wsAutoCreateClassId });
+    return { characterId, created: true, stateFile };
+  } catch (e: unknown) {
+    gatedLog("warn", "WS auto-create failed", { err: e instanceof Error ? e.message : String(e), url: createUrl });
+    return { characterId: undefined, created: false, stateFile };
+  }
+}
+
+async function deleteWsCharacterIfConfigured(cfg: MotherBrainConfig, characterId: string | undefined, gatedLog: (l: LogLevel, m: string, e?: Record<string, unknown>) => void): Promise<void> {
+  if (!cfg.wsAutoCreateDeleteOnExit) return;
+  if (!characterId) return;
+
+  const userId = process.env.MOTHER_BRAIN_TEST_USER_ID;
+  const base = cfg.mmoBackendHttpBase;
+  const svc = cfg.mmoBackendServiceTokenEditor ?? cfg.mmoBackendServiceToken;
+  if (!userId || !base || !svc) return;
+
+  const url = `${base}/api/admin/characters/delete`;
+  try {
+    await httpPostJson<any>(url, { "x-service-token": String(svc) }, { userId, charId: characterId }, 5000);
+    gatedLog("info", "Deleted WS auto-created playtester character (on exit)", { characterId });
+  } catch (e: unknown) {
+    gatedLog("warn", "Failed deleting WS auto-created playtester character (on exit)", { characterId, err: e instanceof Error ? e.message : String(e) });
+  }
+}
+
 async function readJsonBody(req: http.IncomingMessage, maxBytes = 128 * 1024): Promise<unknown> {
   const chunks: Buffer[] = [];
   let total = 0;
@@ -1423,8 +1693,24 @@ async function main(): Promise<void> {
   const goalsFileAbs = cfg.goalsFile ? path.resolve(cfg.goalsFile) : undefined;
   const goalsReportDir = deriveGoalsReportDir(cfg);
 
-  const dbProbe = new DbProbe(cfg.dbUrl, cfg.dbTimeoutMs);
-  const wsProbe = new WsProbe(cfg.wsUrl, cfg.wsTimeoutMs);
+
+const wsEnsure = await ensureWsCharacter(cfg, goalsReportDir, gatedLog);
+const wsCharacterId = wsEnsure.characterId;
+
+// Prefer explicit WS token, else auto-sign a local JWT (dev convenience).
+const wsToken =
+  cfg.wsToken ??
+  (() => {
+    const userId = process.env.MOTHER_BRAIN_TEST_USER_ID;
+    if (!userId) return undefined;
+    const t = signLocalWsJwt(cfg, userId, wsCharacterId ?? undefined);
+    return t ?? undefined;
+  })();
+
+const wsUrlWithAuth = cfg.wsUrl ? buildWsUrl(cfg.wsUrl, wsToken, wsCharacterId ?? undefined) : undefined;
+
+const dbProbe = new DbProbe(cfg.dbUrl, cfg.dbTimeoutMs);
+const wsProbe = new WsProbe(wsUrlWithAuth, cfg.wsTimeoutMs, { token: wsToken, characterId: wsCharacterId ?? undefined });
 
   gatedLog("info", "Boot", {
     mode: cfg.mode,
@@ -1504,6 +1790,8 @@ async function main(): Promise<void> {
         }
       });
     }
+
+    await deleteWsCharacterIfConfigured(cfg, wsCharacterId ?? undefined, gatedLog);
 
     gatedLog("info", "Shutdown complete");
     process.exit(0);
