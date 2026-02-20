@@ -854,6 +854,29 @@ const mmoAdminSmoke: GoalDefinition[] =
     },
   ];
 
+  // Merge overrides into a base goal list by id (no duplicates).
+  // - If an override shares an id with a base goal, it replaces that goal in-place (preserving order).
+  // - Overrides that don't exist in the base list are appended.
+  const mergeGoalsById = (base: GoalDefinition[], overrides: GoalDefinition[]): GoalDefinition[] => {
+    const byId = new Map<string, GoalDefinition>();
+    for (const o of overrides) byId.set(o.id, o);
+
+    const merged: GoalDefinition[] = [];
+    for (const b of base) merged.push(byId.get(b.id) ?? b);
+
+    const seen = new Set(merged.map((g) => g.id));
+    for (const o of overrides) {
+      if (!seen.has(o.id)) {
+        merged.push(o);
+        seen.add(o.id);
+      }
+    }
+
+    return merged;
+  };
+
+  const playerSmokeWithPlaytester = mergeGoalsById(playerSmoke, playtesterOverrides);
+
   return {
     core: corePack,
     db: [
@@ -869,14 +892,15 @@ const mmoAdminSmoke: GoalDefinition[] =
     player_smoke: playerSmoke,
 
     // Playtester suite (defaults to enabling a few safe player-facing scripts).
-    playtester: [...corePack, ...webSmoke, ...adminSmoke, ...mmoAdminSmoke, ...playerSmoke, ...playtesterOverrides],
+    // NOTE: we merge by id to prevent duplicate goal ids (overrides replace base definitions).
+    playtester: [...corePack, ...webSmoke, ...adminSmoke, ...mmoAdminSmoke, ...playerSmokeWithPlaytester],
 
     admin_smoke: [...adminSmoke, ...mmoAdminSmoke],
     web_smoke: webSmoke,
 
     // Convenience pack: combines core + web_smoke + admin_smoke + player_smoke.
     // Individual goals inside may be disabled (e.g. if MOTHER_BRAIN_WEB_BACKEND_HTTP_BASE is not set).
-    all_smoke: [...corePack, ...webSmoke, ...adminSmoke, ...mmoAdminSmoke, ...playerSmoke, ...playtesterOverrides],
+    all_smoke: [...corePack, ...webSmoke, ...adminSmoke, ...mmoAdminSmoke, ...playerSmokeWithPlaytester],
   };
 }
 
@@ -1965,7 +1989,7 @@ export async function runGoalsOnce(
   for (const goal of goals) {
     if (goal.enabled === false) {
       skippedCount += 1;
-      results.push({ id: goal.id, kind: goal.kind, ok: true, details: { skipped: true } });
+      results.push({ id: goal.id, kind: goal.kind, ok: true, details: { skipped: true, reason: "disabled" } });
       continue;
     }
 
