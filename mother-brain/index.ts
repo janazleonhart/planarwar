@@ -1303,6 +1303,42 @@ function startHttpServer(cfg: MotherBrainConfig, state: StatusState): http.Serve
       return;
     }
 
+    // Convenience: return the most recent goals run report (human-friendly JSON).
+    // This is written by the goals runner as mother-brain-goals-last.json under reportDir.
+    if (url === "/goals/last" && req.method === "GET") {
+      const reportDir = state.goals.state.reportDir;
+      const filePath = reportDir ? path.resolve(reportDir, "mother-brain-goals-last.json") : null;
+
+      if (!filePath || !fs.existsSync(filePath)) {
+        res.statusCode = 404;
+        res.setHeader("content-type", "application/json");
+        res.end(JSON.stringify({ ok: false, ts: nowIso(), error: "last report not found", reportDir }));
+        return;
+      }
+
+      try {
+        const raw = fs.readFileSync(filePath, "utf-8");
+        const parsed = JSON.parse(raw) as unknown;
+        res.statusCode = 200;
+        res.setHeader("content-type", "application/json");
+        res.end(JSON.stringify({ ok: true, ts: nowIso(), reportDir, filePath, report: parsed }));
+        return;
+      } catch (e: unknown) {
+        res.statusCode = 500;
+        res.setHeader("content-type", "application/json");
+        res.end(
+          JSON.stringify({
+            ok: false,
+            ts: nowIso(),
+            error: e instanceof Error ? e.message : String(e),
+            reportDir,
+            filePath,
+          })
+        );
+        return;
+      }
+    }
+
     if (url === "/goals/set" && req.method === "POST") {
       try {
         const body = await readJsonBody(req);
