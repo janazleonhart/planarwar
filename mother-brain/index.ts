@@ -24,8 +24,8 @@ import process from "node:process";
 import WebSocket from "ws";
 import { Pool } from "pg";
 import type { QueryResult, QueryResultRow } from "pg";
-import * as jwt from "jsonwebtoken";
 import { z } from "zod";
+import * as jwt from "jsonwebtoken";
 
 // Dirent type lives on node:fs (not node:fs/promises). Keeping this here avoids
 // TS errors for any probe code that uses readdir({ withFileTypes:true }).
@@ -311,32 +311,18 @@ const ConfigSchema = z
     PW_DATABASE_URL: z.string().optional(),
     DATABASE_URL: z.string().optional(),
     MOTHER_BRAIN_WS_URL: z.string().optional(),
+    // If true, WS must be configured and connected for player smoke (ws.connected will FAIL when disabled).
+    MOTHER_BRAIN_WS_REQUIRED: z
+      .string()
+      .optional()
+      .transform((v) => (v ? v.toLowerCase() === "true" || v === "1" : false)),
 
-    // When set, Mother Brain will enforce WS being configured/connected for player smoke.
-    // 0/1 string keeps env parsing simple.
-    MOTHER_BRAIN_WS_REQUIRED: z.enum(["0", "1"]).optional().default("0"),
-
-    // Character-scoped MUD commands require attaching to a character.
-    MOTHER_BRAIN_WS_CHARACTER_ID: z.string().optional(),
-
-    // Optional JWT token for WS. If unset and PW_AUTH_JWT_SECRET + MOTHER_BRAIN_TEST_USER_ID are set,
-    // Mother Brain can auto-sign a JWT for local dev.
-    MOTHER_BRAIN_WS_TOKEN: z.string().optional(),
-
-// If enabled, Mother Brain will auto-create a dedicated WS-attached character (using mmo-backend admin endpoints)
-// when MOTHER_BRAIN_WS_CHARACTER_ID is not explicitly set.
-MOTHER_BRAIN_WS_AUTOCREATE: z.enum(["0", "1"]).optional().default("0"),
-MOTHER_BRAIN_WS_AUTOCREATE_DELETE_ON_EXIT: z.enum(["0", "1"]).optional().default("0"),
-
-// Optional naming/class/shard controls for WS auto-created character.
-MOTHER_BRAIN_WS_AUTOCREATE_NAME_PREFIX: z.string().optional().default("MB_Playtester"),
-MOTHER_BRAIN_WS_AUTOCREATE_CLASS_ID: z.string().optional().default("pw_class_adventurer"),
-MOTHER_BRAIN_WS_AUTOCREATE_SHARD_ID: z.string().optional().default("prime_shard"),
-
-// Optional explicit state file path for storing the auto-created characterId.
-// If unset, we derive it from the goals report dir (or PW_FILELOG).
-MOTHER_BRAIN_WS_STATE_FILE: z.string().optional(),
-
+    // If true, /readyz will require goals health to be OK (when goals are enabled).
+    // This prevents the service from reporting ready while playtesting is blind/failed.
+    MOTHER_BRAIN_READY_REQUIRES_GOALS_OK: z
+      .string()
+      .optional()
+      .transform((v) => (v ? v.toLowerCase() === "true" || v === "1" : false)),
 
     MOTHER_BRAIN_DB_TIMEOUT_MS: z
       .string()
@@ -495,18 +481,8 @@ type MotherBrainConfig = {
 
   dbUrl?: string;
   wsUrl?: string;
-
-  // WS/MUD session controls
   wsRequired: boolean;
-  wsCharacterId?: string;
-  wsToken?: string;
-
-  wsAutoCreate: boolean;
-  wsAutoCreateDeleteOnExit: boolean;
-  wsAutoCreateNamePrefix: string;
-  wsAutoCreateClassId: string;
-  wsAutoCreateShardId: string;
-  wsStateFile?: string;
+  readyRequiresGoalsOk: boolean;
 
   dbTimeoutMs: number;
   wsTimeoutMs: number;
@@ -563,17 +539,8 @@ function parseConfig(): MotherBrainConfig {
 
     dbUrl: env.MOTHER_BRAIN_DB_URL ?? env.PW_DATABASE_URL ?? env.DATABASE_URL,
     wsUrl: env.MOTHER_BRAIN_WS_URL,
-
-    wsRequired: env.MOTHER_BRAIN_WS_REQUIRED === "1",
-    wsCharacterId: env.MOTHER_BRAIN_WS_CHARACTER_ID,
-    wsToken: env.MOTHER_BRAIN_WS_TOKEN,
-
-    wsAutoCreate: env.MOTHER_BRAIN_WS_AUTOCREATE === "1",
-    wsAutoCreateDeleteOnExit: env.MOTHER_BRAIN_WS_AUTOCREATE_DELETE_ON_EXIT === "1",
-    wsAutoCreateNamePrefix: env.MOTHER_BRAIN_WS_AUTOCREATE_NAME_PREFIX,
-    wsAutoCreateClassId: env.MOTHER_BRAIN_WS_AUTOCREATE_CLASS_ID,
-    wsAutoCreateShardId: env.MOTHER_BRAIN_WS_AUTOCREATE_SHARD_ID,
-    wsStateFile: env.MOTHER_BRAIN_WS_STATE_FILE,
+    wsRequired: env.MOTHER_BRAIN_WS_REQUIRED,
+    readyRequiresGoalsOk: env.MOTHER_BRAIN_READY_REQUIRES_GOALS_OK,
 
     dbTimeoutMs: env.MOTHER_BRAIN_DB_TIMEOUT_MS,
     wsTimeoutMs: env.MOTHER_BRAIN_WS_TIMEOUT_MS,
@@ -991,10 +958,8 @@ async function probeBrainWaveBudget(
 
 class WsProbe {
   private ws: WebSocket | null = null;
-  private readonly baseUrl: string | undefined;
+  private readonly url: string | undefined;
   private readonly connectTimeoutMs: number;
-  private token: string | undefined;
-  private characterId: string | undefined;
   private lastPongIso: string | null = null;
 
   // v0.21: single-flight MUD command support (one in-flight command at a time).
@@ -1007,36 +972,17 @@ class WsProbe {
       }
     | null = null;
 
-  public constructor(wsUrl: string | undefined, connectTimeoutMs: number, attach?: { token?: string; characterId?: string }) {
-    this.baseUrl = wsUrl;
+  public constructor(wsUrl: string | undefined, connectTimeoutMs: number) {
+    this.url = wsUrl;
     this.connectTimeoutMs = connectTimeoutMs;
-    this.token = attach?.token;
-    this.characterId = attach?.characterId;
-  }
-
-  public setAttach(token: string | undefined, characterId: string | undefined): void {
-    const nextToken = token && token.trim().length > 0 ? token.trim() : undefined;
-    const nextChar = characterId && characterId.trim().length > 0 ? characterId.trim() : undefined;
-    const changed = nextToken !== this.token || nextChar !== this.characterId;
-    this.token = nextToken;
-    this.characterId = nextChar;
-
-    // Force reconnect so the server can authenticate + auto-attach character via URL params.
-    if (changed && this.ws && this.ws.readyState === WebSocket.OPEN) {
-      try {
-        this.ws.close();
-      } catch {
-        // ignore
-      }
-    }
   }
 
   public isEnabled(): boolean {
-    return Boolean(this.baseUrl);
+    return Boolean(this.url);
   }
 
   public getState(): "disabled" | "closed" | "connecting" | "open" {
-    if (!this.baseUrl) return "disabled";
+    if (!this.url) return "disabled";
     if (!this.ws) return "closed";
     switch (this.ws.readyState) {
       case WebSocket.CONNECTING:
@@ -1049,7 +995,7 @@ class WsProbe {
   }
 
   public async ensureConnected(): Promise<ProbeResult> {
-    if (!this.baseUrl) return { ok: false, error: "disabled" };
+    if (!this.url) return { ok: false, error: "disabled" };
 
     if (this.ws && this.ws.readyState === WebSocket.OPEN) return { ok: true, latencyMs: 0 };
 
@@ -1060,7 +1006,7 @@ class WsProbe {
 
     const start = Date.now();
     try {
-      await this.connectOnce(buildWsUrl(this.baseUrl, this.token, this.characterId), this.connectTimeoutMs);
+      await this.connectOnce(this.url, this.connectTimeoutMs);
       return { ok: true, latencyMs: Date.now() - start };
     } catch (err: unknown) {
       return { ok: false, latencyMs: Date.now() - start, error: this.errToString(err) };
@@ -1189,11 +1135,38 @@ class WsProbe {
     }
 
     // Be tolerant: different servers may name fields differently.
-    const op = typeof msg?.op === "string" ? msg.op : typeof msg?.type === "string" ? msg.type : null;
-    if (op !== "mud_result" && op !== "mudResult" && op !== "mud.result") return;
+    // We accept a few common response op/type values.
+    const opRaw = typeof msg?.op === "string" ? msg.op : typeof msg?.type === "string" ? msg.type : null;
+    const kindRaw = typeof msg?.kind === "string" ? msg.kind : null;
+    const op = opRaw ? String(opRaw) : kindRaw ? String(kindRaw) : null;
+    const opNorm = op ? op.toLowerCase().replace(/\s+/g, "") : null;
+    const okOps = new Set([
+      "mud_result",
+      "whereami_result",
+      "whereamiresult",
+      "mudresult",
+      "mud.result",
+      "mud_output",
+      "mudoutput",
+      "mud.output",
+      // Some servers echo under the request op for convenience
+      "mud",
+    ]);
+    if (!opNorm || !okOps.has(opNorm)) return;
 
-    const output =
-      typeof msg?.output === "string"
+    const output = (() => {
+      if (opNorm === "whereami_result" || opNorm === "whereamiresult") {
+        const p = msg?.payload ?? msg ?? {};
+        const shardId = p?.shardId ?? p?.shard ?? "?";
+        const regionId = p?.regionId ?? p?.region ?? "?";
+        const roomId = p?.roomId ?? p?.room ?? "?";
+        const x = p?.x ?? p?.tileX ?? p?.posX ?? null;
+        const y = p?.y ?? p?.tileY ?? p?.posY ?? null;
+        const xy = x !== null && y !== null ? ` (${x},${y})` : "";
+        return `Location: shard=${shardId} region=${regionId} room=${roomId}${xy}`;
+      }
+
+      return typeof msg?.output === "string"
         ? msg.output
         : typeof msg?.text === "string"
           ? msg.text
@@ -1201,7 +1174,8 @@ class WsProbe {
             ? msg.payload.text
             : typeof msg?.payload?.output === "string"
               ? msg.payload.output
-              : "";
+              : null;
+    })();
 
     this.finishMudPending({ ok: true, output });
   }
@@ -1230,7 +1204,12 @@ class WsProbe {
       this.mudPending = { startedAt, resolve, timer };
 
       try {
-        ws.send(JSON.stringify({ op: "mud", payload: { text: command } }));
+                const cmd = String(command || "").trim();
+        if (cmd.toLowerCase() === "whereami") {
+          ws.send(JSON.stringify({ op: "whereami", payload: {} }));
+        } else {
+          ws.send(JSON.stringify({ op: "mud", payload: { text: cmd } }));
+        }
       } catch (e: unknown) {
         this.finishMudPending({ ok: false, error: e instanceof Error ? e.message : String(e) });
       }
@@ -1269,226 +1248,6 @@ function deriveGoalsReportDir(cfg: MotherBrainConfig): string | undefined {
   return undefined;
 }
 
-type MotherBrainWsState = {
-  characterId?: string;
-  createdAtIso?: string;
-  classId?: string;
-  shardId?: string;
-  name?: string;
-};
-
-const WsStateSchema = z
-  .object({
-    characterId: z.string().optional(),
-    createdAtIso: z.string().optional(),
-    classId: z.string().optional(),
-    shardId: z.string().optional(),
-    name: z.string().optional(),
-  })
-  .passthrough();
-
-function deriveWsStateFile(cfg: MotherBrainConfig, goalsReportDir: string | undefined): string | undefined {
-  if (cfg.wsStateFile && cfg.wsStateFile.trim().length > 0) return path.resolve(cfg.wsStateFile.trim());
-  if (goalsReportDir) return path.resolve(goalsReportDir, "mother-brain-ws-state.json");
-  return undefined;
-}
-
-function readWsState(filePath: string | undefined): MotherBrainWsState | null {
-  if (!filePath) return null;
-  try {
-    if (!fs.existsSync(filePath)) return null;
-    const raw = fs.readFileSync(filePath, "utf-8");
-    const parsed = WsStateSchema.safeParse(JSON.parse(raw));
-    if (!parsed.success) return null;
-    return parsed.data as MotherBrainWsState;
-  } catch {
-    return null;
-  }
-}
-
-function writeWsState(filePath: string | undefined, s: MotherBrainWsState): void {
-  if (!filePath) return;
-  try {
-    fs.mkdirSync(path.dirname(filePath), { recursive: true });
-    fs.writeFileSync(filePath, JSON.stringify(s, null, 2), "utf-8");
-  } catch {
-    // ignore
-  }
-}
-
-function signLocalWsJwt(cfg: MotherBrainConfig, userId: string, characterId?: string): string | null {
-  const secret = process.env.PW_AUTH_JWT_SECRET;
-  if (!secret || secret.trim().length === 0) return null;
-
-  const lifetimeSecRaw = process.env.PW_AUTH_JWT_LIFETIME;
-  const lifetimeSec = lifetimeSecRaw && !Number.isNaN(Number(lifetimeSecRaw)) ? Number(lifetimeSecRaw) : 60 * 60 * 24 * 7;
-
-  const payload: Record<string, unknown> = {
-    sub: userId,
-    displayName: "Mother Brain",
-    flags: ["mother_brain"],
-  };
-
-  // Optional conveniences (mmo-backend accepts these but does not require them)
-  if (cfg.wsAutoCreateShardId) payload.shardId = cfg.wsAutoCreateShardId;
-  if (characterId) payload.characterId = characterId;
-
-  try {
-    return jwt.sign(payload, secret, { expiresIn: lifetimeSec });
-  } catch {
-    return null;
-  }
-}
-
-function buildWsUrl(baseUrl: string, token: string | undefined, characterId: string | undefined): string {
-  try {
-    const u = new URL(baseUrl);
-    if (token && token.trim().length > 0) u.searchParams.set("token", token.trim());
-    if (characterId && characterId.trim().length > 0) u.searchParams.set("characterId", characterId.trim());
-    return u.toString();
-  } catch {
-    // If baseUrl isn't a valid WHATWG URL, fallback to naive append.
-    const hasQ = baseUrl.includes("?");
-    const parts: string[] = [];
-    if (token && token.trim().length > 0) parts.push(`token=${encodeURIComponent(token.trim())}`);
-    if (characterId && characterId.trim().length > 0) parts.push(`characterId=${encodeURIComponent(characterId.trim())}`);
-    if (parts.length === 0) return baseUrl;
-    return baseUrl + (hasQ ? "&" : "?") + parts.join("&");
-  }
-}
-
-async function httpPostJson<T>(urlStr: string, headers: Record<string, string>, body: unknown, timeoutMs: number): Promise<T> {
-  const url = new URL(urlStr);
-  const payload = JSON.stringify(body ?? {});
-
-  return await new Promise<T>((resolve, reject) => {
-    const req = http.request(
-      {
-        method: "POST",
-        hostname: url.hostname,
-        port: url.port ? Number(url.port) : url.protocol === "https:" ? 443 : 80,
-        path: url.pathname + url.search,
-        headers: {
-          "content-type": "application/json",
-          "content-length": Buffer.byteLength(payload),
-          ...headers,
-        },
-        timeout: timeoutMs,
-      },
-      (res) => {
-        const chunks: Buffer[] = [];
-        res.on("data", (c) => chunks.push(Buffer.isBuffer(c) ? c : Buffer.from(String(c))));
-        res.on("end", () => {
-          const raw = Buffer.concat(chunks).toString("utf-8").trim();
-          const code = res.statusCode ?? 0;
-          if (code < 200 || code >= 300) {
-            reject(new Error(`HTTP ${code}: ${raw.slice(0, 200)}`));
-            return;
-          }
-          try {
-            resolve((raw ? JSON.parse(raw) : null) as T);
-          } catch (e) {
-            reject(e);
-          }
-        });
-      }
-    );
-
-    req.on("timeout", () => {
-      try {
-        req.destroy(new Error(`timeout after ${timeoutMs}ms`));
-      } catch {
-        // ignore
-      }
-    });
-    req.on("error", reject);
-
-    req.write(payload);
-    req.end();
-  });
-}
-
-async function ensureWsCharacter(cfg: MotherBrainConfig, goalsReportDir: string | undefined, gatedLog: (l: LogLevel, m: string, e?: Record<string, unknown>) => void): Promise<{ characterId?: string; created?: boolean; stateFile?: string }> {
-  const stateFile = deriveWsStateFile(cfg, goalsReportDir);
-  const existingState = readWsState(stateFile);
-  if (cfg.wsCharacterId && cfg.wsCharacterId.trim().length > 0) {
-    // Explicit env wins; also refresh state file for convenience.
-    writeWsState(stateFile, { characterId: cfg.wsCharacterId.trim(), createdAtIso: nowIso(), shardId: cfg.wsAutoCreateShardId, classId: cfg.wsAutoCreateClassId, name: cfg.wsAutoCreateNamePrefix });
-    return { characterId: cfg.wsCharacterId.trim(), created: false, stateFile };
-  }
-
-  if (existingState?.characterId && existingState.characterId.trim().length > 0) {
-    return { characterId: existingState.characterId.trim(), created: false, stateFile };
-  }
-
-  if (!cfg.wsAutoCreate) return { characterId: undefined, created: false, stateFile };
-
-  const userId = process.env.MOTHER_BRAIN_TEST_USER_ID;
-  if (!userId || userId.trim().length === 0) {
-    gatedLog("warn", "WS auto-create enabled but MOTHER_BRAIN_TEST_USER_ID is not set");
-    return { characterId: undefined, created: false, stateFile };
-  }
-
-  const base = cfg.mmoBackendHttpBase;
-  const svc = cfg.mmoBackendServiceTokenEditor ?? cfg.mmoBackendServiceToken;
-  if (!base || !svc) {
-    gatedLog("warn", "WS auto-create enabled but missing mmo-backend admin config", {
-      hasMmoBackendHttpBase: Boolean(base),
-      hasMmoBackendServiceToken: Boolean(svc),
-    });
-    return { characterId: undefined, created: false, stateFile };
-  }
-
-  const name = `${cfg.wsAutoCreateNamePrefix}_${String(Date.now()).slice(-6)}`;
-  const createUrl = `${base}/api/admin/characters/create`;
-  try {
-    const resp = await httpPostJson<any>(
-      createUrl,
-      { "x-service-token": String(svc) },
-      { userId, shardId: cfg.wsAutoCreateShardId, name, classId: cfg.wsAutoCreateClassId },
-      5000
-    );
-
-    const characterId = typeof resp?.character?.id === "string" ? resp.character.id : typeof resp?.id === "string" ? resp.id : null;
-    if (!characterId) {
-      gatedLog("warn", "WS auto-create: mmo-backend did not return a character id", { resp });
-      return { characterId: undefined, created: false, stateFile };
-    }
-
-    writeWsState(stateFile, {
-      characterId,
-      createdAtIso: nowIso(),
-      shardId: cfg.wsAutoCreateShardId,
-      classId: cfg.wsAutoCreateClassId,
-      name,
-    });
-
-    gatedLog("info", "WS auto-created playtester character", { characterId, name, shardId: cfg.wsAutoCreateShardId, classId: cfg.wsAutoCreateClassId });
-    return { characterId, created: true, stateFile };
-  } catch (e: unknown) {
-    gatedLog("warn", "WS auto-create failed", { err: e instanceof Error ? e.message : String(e), url: createUrl });
-    return { characterId: undefined, created: false, stateFile };
-  }
-}
-
-async function deleteWsCharacterIfConfigured(cfg: MotherBrainConfig, characterId: string | undefined, gatedLog: (l: LogLevel, m: string, e?: Record<string, unknown>) => void): Promise<void> {
-  if (!cfg.wsAutoCreateDeleteOnExit) return;
-  if (!characterId) return;
-
-  const userId = process.env.MOTHER_BRAIN_TEST_USER_ID;
-  const base = cfg.mmoBackendHttpBase;
-  const svc = cfg.mmoBackendServiceTokenEditor ?? cfg.mmoBackendServiceToken;
-  if (!userId || !base || !svc) return;
-
-  const url = `${base}/api/admin/characters/delete`;
-  try {
-    await httpPostJson<any>(url, { "x-service-token": String(svc) }, { userId, charId: characterId }, 5000);
-    gatedLog("info", "Deleted WS auto-created playtester character (on exit)", { characterId });
-  } catch (e: unknown) {
-    gatedLog("warn", "Failed deleting WS auto-created playtester character (on exit)", { characterId, err: e instanceof Error ? e.message : String(e) });
-  }
-}
-
 async function readJsonBody(req: http.IncomingMessage, maxBytes = 128 * 1024): Promise<unknown> {
   const chunks: Buffer[] = [];
   let total = 0;
@@ -1525,17 +1284,26 @@ function startHttpServer(cfg: MotherBrainConfig, state: StatusState): http.Serve
   if (!cfg.httpPort || cfg.httpPort <= 0) return null;
 
   const server = http.createServer(async (req, res) => {
-    const url = req.url || "/";
-    if (url === "/healthz") {
+    const rawUrl = req.url || "/";
+    const parsedUrl = new URL(rawUrl, "http://localhost");
+    const pathname = parsedUrl.pathname;
+
+    if (pathname === "/healthz") {
       res.statusCode = 200;
       res.setHeader("content-type", "application/json");
       res.end(JSON.stringify({ ok: true, ts: nowIso() }));
       return;
     }
 
-    if (url === "/readyz") {
+    if (pathname === "/readyz") {
       const snap = state.lastSnapshot;
-      const ok = snap ? isReady(snap) : false;
+      const snapOk = snap ? isReady(snap) : false;
+
+      const goalsEnabled = state.goals.state.everyTicks > 0;
+      const goalsHealth = computeGoalsHealth(state.goals.state);
+      const goalsOk = goalsHealth.status === "OK";
+
+      const ok = cfg.readyRequiresGoalsOk && goalsEnabled ? snapOk && goalsOk : snapOk;
       res.statusCode = ok ? 200 : 503;
       res.setHeader("content-type", "application/json");
       res.end(
@@ -1544,12 +1312,21 @@ function startHttpServer(cfg: MotherBrainConfig, state: StatusState): http.Serve
           ts: nowIso(),
           lastSnapshotIso: state.lastSnapshotIso,
           signature: state.lastSignature,
+          goals: {
+            enabled: goalsEnabled,
+            requireOk: cfg.readyRequiresGoalsOk,
+            status: goalsHealth.status,
+            lastRunIso: goalsHealth.lastRunIso,
+            ageSec: goalsHealth.ageSec,
+            lastOk: state.goals.state.lastOk,
+            lastSummary: state.goals.state.lastSummary,
+          },
         })
       );
       return;
     }
 
-    if (url === "/status") {
+    if (pathname === "/status") {
       res.statusCode = 200;
       res.setHeader("content-type", "application/json");
       res.end(
@@ -1568,7 +1345,7 @@ function startHttpServer(cfg: MotherBrainConfig, state: StatusState): http.Serve
     // Goals runner endpoints (safe; observe-only)
     // ---------------------------------------------------------------------
 
-    if (url === "/goals" && req.method === "GET") {
+    if (pathname === "/goals" && req.method === "GET") {
       const suites = getGoalSuites(state.goals.state);
       const health = computeGoalsHealth(state.goals.state);
       res.statusCode = 200;
@@ -1594,7 +1371,161 @@ function startHttpServer(cfg: MotherBrainConfig, state: StatusState): http.Serve
       return;
     }
 
-    if (url === "/goals/set" && req.method === "POST") {
+    // Convenience: return the most recent goals run report (human-friendly JSON).
+    // This is written by the goals runner as mother-brain-goals-last.json under reportDir.
+    if (pathname === "/goals/last" && req.method === "GET") {
+      const reportDir = state.goals.state.reportDir;
+      const filePath = reportDir ? path.resolve(reportDir, "mother-brain-goals-last.json") : null;
+
+      if (!filePath || !fs.existsSync(filePath)) {
+        res.statusCode = 404;
+        res.setHeader("content-type", "application/json");
+        res.end(JSON.stringify({ ok: false, ts: nowIso(), error: "last report not found", reportDir }));
+        return;
+      }
+
+      try {
+        const raw = fs.readFileSync(filePath, "utf-8");
+        const parsed = JSON.parse(raw) as unknown;
+        res.statusCode = 200;
+        res.setHeader("content-type", "application/json");
+        res.end(JSON.stringify({ ok: true, ts: nowIso(), reportDir, filePath, report: parsed }));
+        return;
+      } catch (e: unknown) {
+        res.statusCode = 500;
+        res.setHeader("content-type", "application/json");
+        res.end(
+          JSON.stringify({
+            ok: false,
+            ts: nowIso(),
+            error: e instanceof Error ? e.message : String(e),
+            reportDir,
+            filePath,
+          })
+        );
+        return;
+      }
+    }
+
+    // List recent goals run files (JSONL) in reportDir.
+    // Useful for debugging historical runs without shell access.
+    //
+    // GET /goals/runs?limit=20
+    if (pathname === "/goals/runs" && req.method === "GET") {
+      const reportDir = state.goals.state.reportDir;
+      const limit = Math.max(1, Math.min(200, Number(parsedUrl.searchParams.get("limit") ?? "20") || 20));
+
+      if (!reportDir || !fs.existsSync(reportDir)) {
+        res.statusCode = 404;
+        res.setHeader("content-type", "application/json");
+        res.end(JSON.stringify({ ok: false, ts: nowIso(), error: "reportDir not configured", reportDir }));
+        return;
+      }
+
+      try {
+        const entries = fs
+          .readdirSync(reportDir, { withFileTypes: true })
+          .filter((d) => d.isFile())
+          .map((d) => d.name)
+          .filter((n) => n.endsWith(".jsonl") && n.startsWith("mother-brain-goals-"));
+
+        const files = entries
+          .map((name) => {
+            const filePath = path.resolve(reportDir, name);
+            const st = fs.statSync(filePath);
+            return {
+              name,
+              filePath,
+              sizeBytes: st.size,
+              mtimeIso: st.mtime.toISOString(),
+            };
+          })
+          .sort((a, b) => (a.mtimeIso < b.mtimeIso ? 1 : a.mtimeIso > b.mtimeIso ? -1 : 0))
+          .slice(0, limit);
+
+        res.statusCode = 200;
+        res.setHeader("content-type", "application/json");
+        res.end(JSON.stringify({ ok: true, ts: nowIso(), reportDir, files }));
+        return;
+      } catch (e: unknown) {
+        res.statusCode = 500;
+        res.setHeader("content-type", "application/json");
+        res.end(JSON.stringify({ ok: false, ts: nowIso(), reportDir, error: e instanceof Error ? e.message : String(e) }));
+        return;
+      }
+    }
+
+    // Tail a recent JSONL report file by suite id.
+    //
+    // GET /goals/recent?suite=all_smoke&limit=100
+    if (pathname === "/goals/recent" && req.method === "GET") {
+      const reportDir = state.goals.state.reportDir;
+      const suite = (parsedUrl.searchParams.get("suite") ?? "").trim();
+      const limit = Math.max(1, Math.min(500, Number(parsedUrl.searchParams.get("limit") ?? "100") || 100));
+
+      if (!reportDir || !fs.existsSync(reportDir)) {
+        res.statusCode = 404;
+        res.setHeader("content-type", "application/json");
+        res.end(JSON.stringify({ ok: false, ts: nowIso(), error: "reportDir not configured", reportDir }));
+        return;
+      }
+      if (!suite) {
+        res.statusCode = 400;
+        res.setHeader("content-type", "application/json");
+        res.end(JSON.stringify({ ok: false, ts: nowIso(), error: "missing suite param" }));
+        return;
+      }
+
+      // Match today's report file name convention.
+      // Note: suite is sanitized in Goals.ts the same way; keep it consistent here.
+      const safeSuite = suite
+        .toLowerCase()
+        .replace(/[^a-z0-9_-]+/g, "-")
+        .replace(/-+/g, "-")
+        .replace(/^-/g, "")
+        .replace(/-$/g, "")
+        .slice(0, 64);
+
+      const today = new Date().toISOString().slice(0, 10);
+      const filePath = path.resolve(reportDir, `mother-brain-goals-${safeSuite || "suite"}-${today}.jsonl`);
+
+      if (!fs.existsSync(filePath)) {
+        res.statusCode = 404;
+        res.setHeader("content-type", "application/json");
+        res.end(JSON.stringify({ ok: false, ts: nowIso(), error: "report file not found", reportDir, suite, filePath }));
+        return;
+      }
+
+      try {
+        const raw = fs.readFileSync(filePath, "utf-8");
+        const lines = raw
+          .split(/\r?\n/)
+          .map((l) => l.trim())
+          .filter((l) => l.length > 0);
+
+        const tail = lines.slice(-limit);
+        // Best-effort parse each line as JSON. If parse fails, include raw.
+        const parsed = tail.map((l) => {
+          try {
+            return JSON.parse(l) as unknown;
+          } catch {
+            return { raw: l };
+          }
+        });
+
+        res.statusCode = 200;
+        res.setHeader("content-type", "application/json");
+        res.end(JSON.stringify({ ok: true, ts: nowIso(), reportDir, suite, filePath, limit, lines: parsed }));
+        return;
+      } catch (e: unknown) {
+        res.statusCode = 500;
+        res.setHeader("content-type", "application/json");
+        res.end(JSON.stringify({ ok: false, ts: nowIso(), reportDir, suite, filePath, error: e instanceof Error ? e.message : String(e) }));
+        return;
+      }
+    }
+
+    if (pathname === "/goals/set" && req.method === "POST") {
       try {
         const body = await readJsonBody(req);
         const goals = Array.isArray(body) ? (body as GoalDefinition[]) : null;
@@ -1610,7 +1541,7 @@ function startHttpServer(cfg: MotherBrainConfig, state: StatusState): http.Serve
       return;
     }
 
-    if (url === "/goals/clear" && req.method === "POST") {
+    if (pathname === "/goals/clear" && req.method === "POST") {
       setInMemoryGoals(state.goals.state, null);
       res.statusCode = 200;
       res.setHeader("content-type", "application/json");
@@ -1618,7 +1549,7 @@ function startHttpServer(cfg: MotherBrainConfig, state: StatusState): http.Serve
       return;
     }
 
-    if (url === "/goals/run" && req.method === "POST") {
+    if (pathname === "/goals/run" && req.method === "POST") {
       // Run goals immediately using the last known snapshot context.
       // Note: DB querying is not available from this endpoint (by design).
       try {
@@ -1638,6 +1569,9 @@ function startHttpServer(cfg: MotherBrainConfig, state: StatusState): http.Serve
                 ? { ok: false, reason: wb.reason }
                 : null,
           wsState,
+          wsDisabledReason:
+            wsState === "disabled" ? (cfg.wsUrl ? "ws probe disabled" : "MOTHER_BRAIN_WS_URL not set") : undefined,
+          wsRequired: cfg.wsRequired,
           log,
         }, tick);
 
@@ -1663,6 +1597,114 @@ function startHttpServer(cfg: MotherBrainConfig, state: StatusState): http.Serve
   });
 
   return server;
+}
+
+
+async function prepareWsPlaytestUrl(
+  cfg: MotherBrainConfig,
+  gatedLog: (level: LogLevel, msg: string, extra?: Record<string, unknown>) => void
+): Promise<{ wsUrl: string | undefined; cleanup?: () => Promise<void> }> {
+  const baseWs = cfg.wsUrl;
+  if (!baseWs) return { wsUrl: baseWs };
+
+  const rawToken = (process.env.MOTHER_BRAIN_WS_TOKEN || "").trim() || undefined;
+  const rawCharId = (process.env.MOTHER_BRAIN_WS_CHARACTER_ID || "").trim() || undefined;
+
+  const wantAutocreate = String(process.env.MOTHER_BRAIN_WS_AUTOCREATE || "0").trim() === "1";
+  const deleteOnExit = String(process.env.MOTHER_BRAIN_WS_AUTOCREATE_DELETE_ON_EXIT || "1").trim() !== "0";
+
+  const userId = String(process.env.MOTHER_BRAIN_TEST_USER_ID || "").trim();
+  const jwtSecret = String(process.env.PW_AUTH_JWT_SECRET || "").trim();
+
+  let characterId = rawCharId;
+  let createdCharacterId: string | null = null;
+
+  const mmoBase = (cfg.mmoBackendHttpBase || "http://127.0.0.1:7777").replace(/\/$/, "");
+  const mmoSvc = (cfg.mmoBackendServiceTokenEditor || cfg.mmoBackendServiceToken || "").trim();
+
+  if (!characterId && wantAutocreate) {
+    if (!userId) {
+      gatedLog("warn", "WS autocreate requested but MOTHER_BRAIN_TEST_USER_ID is not set; skipping autocreate.");
+    } else if (!mmoSvc) {
+      gatedLog("warn", "WS autocreate requested but no MMO service token is configured; skipping autocreate.", {
+        expectedEnv: "MOTHER_BRAIN_MMO_BACKEND_SERVICE_TOKEN_EDITOR (or _SERVICE_TOKEN)",
+      });
+    } else {
+      const namePrefix = String(process.env.MOTHER_BRAIN_WS_AUTOCREATE_NAME_PREFIX || "MB").trim() || "MB";
+      const shardId = String(process.env.MOTHER_BRAIN_WS_AUTOCREATE_SHARD_ID || "prime_shard").trim() || "prime_shard";
+      const classId = String(process.env.MOTHER_BRAIN_WS_AUTOCREATE_CLASS_ID || "pw_class_adventurer").trim() || "pw_class_adventurer";
+      const name = `${namePrefix}_${Math.random().toString(36).slice(2, 8)}`;
+
+      try {
+        const r = await fetch(`${mmoBase}/api/admin/characters/create`, {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            authorization: `Bearer ${mmoSvc}`,
+          },
+          body: JSON.stringify({ userId, shardId, classId, name }),
+        });
+
+        const j: any = await r.json().catch(() => null);
+        if (!r.ok || !j?.ok || !j?.characterId) {
+          gatedLog("warn", "WS autocreate failed; continuing without WS player tests.", { status: r.status, body: j });
+        } else {
+          characterId = String(j.characterId);
+          createdCharacterId = characterId;
+          gatedLog("info", "WS autocreate OK", { characterId, name: j.name, shardId: j.shardId, classId: j.classId });
+        }
+      } catch (err: any) {
+        gatedLog("warn", "WS autocreate error; continuing without WS player tests.", { err: String(err?.message || err) });
+      }
+    }
+  }
+
+  // Build JWT token if not provided.
+  let token = rawToken;
+  if (!token && jwtSecret && userId) {
+    const nowSec = Math.floor(Date.now() / 1000);
+    const lifetimeSec = Number(process.env.PW_AUTH_JWT_LIFETIME || 60 * 60 * 24 * 7);
+    token = jwt.sign(
+      {
+        sub: userId,
+        displayName: "MotherBrain",
+        flags: {},
+        iat: nowSec,
+        exp: nowSec + lifetimeSec,
+      },
+      jwtSecret
+    );
+  }
+
+  // Attach auth + character via URL query (mmo-backend binds identity+character from query params).
+  let wsUrl: string | undefined = baseWs;
+  try {
+    const u = new URL(baseWs);
+    if (token) u.searchParams.set("token", token);
+    if (characterId) u.searchParams.set("characterId", characterId);
+    wsUrl = u.toString();
+  } catch {
+    wsUrl = baseWs;
+  }
+
+  const cleanup = async () => {
+    if (!deleteOnExit || !createdCharacterId) return;
+    if (!userId || !mmoSvc) return;
+    try {
+      await fetch(`${mmoBase}/api/admin/characters/delete`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          authorization: `Bearer ${mmoSvc}`,
+        },
+        body: JSON.stringify({ userId, charId: createdCharacterId }),
+      });
+    } catch {
+      // best-effort cleanup
+    }
+  };
+
+  return { wsUrl, cleanup: createdCharacterId ? cleanup : undefined };
 }
 
 async function main(): Promise<void> {
@@ -1693,24 +1735,15 @@ async function main(): Promise<void> {
   const goalsFileAbs = cfg.goalsFile ? path.resolve(cfg.goalsFile) : undefined;
   const goalsReportDir = deriveGoalsReportDir(cfg);
 
-
-const wsEnsure = await ensureWsCharacter(cfg, goalsReportDir, gatedLog);
-const wsCharacterId = wsEnsure.characterId;
-
-// Prefer explicit WS token, else auto-sign a local JWT (dev convenience).
-const wsToken =
-  cfg.wsToken ??
-  (() => {
-    const userId = process.env.MOTHER_BRAIN_TEST_USER_ID;
-    if (!userId) return undefined;
-    const t = signLocalWsJwt(cfg, userId, wsCharacterId ?? undefined);
-    return t ?? undefined;
-  })();
-
-const wsUrlWithAuth = cfg.wsUrl ? buildWsUrl(cfg.wsUrl, wsToken, wsCharacterId ?? undefined) : undefined;
-
-const dbProbe = new DbProbe(cfg.dbUrl, cfg.dbTimeoutMs);
-const wsProbe = new WsProbe(wsUrlWithAuth, cfg.wsTimeoutMs, { token: wsToken, characterId: wsCharacterId ?? undefined });
+  const dbProbe = new DbProbe(cfg.dbUrl, cfg.dbTimeoutMs);
+  const wsPrep = await prepareWsPlaytestUrl(cfg, gatedLog);
+  const wsProbe = new WsProbe(wsPrep.wsUrl, cfg.wsTimeoutMs);
+  if (wsPrep.cleanup) {
+    const runCleanup = () => void wsPrep.cleanup?.();
+    process.once("SIGINT", runCleanup);
+    process.once("SIGTERM", runCleanup);
+    process.once("exit", runCleanup);
+  }
 
   gatedLog("info", "Boot", {
     mode: cfg.mode,
@@ -1721,7 +1754,7 @@ const wsProbe = new WsProbe(wsUrlWithAuth, cfg.wsTimeoutMs, { token: wsToken, ch
     heartbeatEveryTicks: cfg.heartbeatEveryTicks,
     httpPort: cfg.httpPort,
     hasDbUrl: Boolean(cfg.dbUrl),
-    hasWsUrl: Boolean(cfg.wsUrl),
+    hasWsUrl: Boolean(wsPrep.wsUrl),
     goalsEveryTicks: cfg.goalsEveryTicks,
     goalsFile: goalsFileAbs,
     goalsPacks: cfg.goalsPacks,
@@ -1790,8 +1823,6 @@ const wsProbe = new WsProbe(wsUrlWithAuth, cfg.wsTimeoutMs, { token: wsToken, ch
         }
       });
     }
-
-    await deleteWsCharacterIfConfigured(cfg, wsCharacterId ?? undefined, gatedLog);
 
     gatedLog("info", "Shutdown complete");
     process.exit(0);
@@ -1865,6 +1896,8 @@ const wsProbe = new WsProbe(wsUrlWithAuth, cfg.wsTimeoutMs, { token: wsToken, ch
           },
           waveBudget: wbForGoals,
           wsState: wsProbe.isEnabled() ? wsProbe.getState() : "disabled",
+          wsDisabledReason: wsProbe.isEnabled() ? undefined : (wsPrep.wsUrl ? "ws probe disabled" : "MOTHER_BRAIN_WS_URL not set"),
+          wsRequired: cfg.wsRequired,
           wsMudCommand: wsProbe.isEnabled() ? (cmd: string, timeoutMs: number) => wsProbe.mudCommand(cmd, timeoutMs) : undefined,
           log,
         }, tick);
