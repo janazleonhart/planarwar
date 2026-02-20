@@ -437,6 +437,7 @@ export type GoalPackId =
   | "wave_budget"
   | "ws"
   | "player_smoke"
+  | "playtester"
   | "admin_smoke"
   | "web_smoke"
   | "all_smoke";
@@ -677,10 +678,11 @@ const mmoAdminSmoke: GoalDefinition[] =
       script: [
         {
           command: "quest board available",
-          expectRegexAny: ["Available quests:", "No available quests."],
+          // Accept either "available quests" output or any "none here" variant.
+          expectRegexAny: ["Available quests:", "No available quests.", "/no\\s+available\\s+quests/i", "/no\\s+quest\\s+board/i", "/not\\s+in\\s+a\\s+town/i"],
           rejectRegexAny: ["/\[error\]/i", "/unknown\s+command/i"],
-          // If no quests are available, end the script cleanly as OK.
-          stopOkIfIncludes: "No available quests.",
+          // If no quests (or no board) are available, end the script cleanly as OK.
+          stopOkIfRegexAny: ["/no\\s+available\\s+quests/i", "/no\\s+quest\\s+board/i", "/not\\s+in\\s+a\\s+town/i"],
           // Capture the first available quest id from the rendered board line.
           // Example: "  1. [ ] Some Quest Name (quest_id)"
           captureRegex: "/^\s*\d+\.\s+\[ \]\s+(?:\[NEW\]\s+)?[^\(]*\(([^\)]+)\)/m",
@@ -728,6 +730,60 @@ const mmoAdminSmoke: GoalDefinition[] =
     { id: "ws.mud.say", kind: "ws_mud", enabled: false, command: "say mother brain ping", expectIncludesAny: ["You say", "says"], timeoutMs: 2500 },
     { id: "ws.mud.move.north", kind: "ws_mud", enabled: false, command: "north", expectIncludesAny: ["You move", "You go", "You arrive", "Exits"], timeoutMs: 2500 },
   ];
+
+  // "Playtester" pack: same as all_smoke, but enables a few safe player-facing scripts by default.
+  // The enabled scripts are designed to stop-OK when prerequisites are missing (e.g. no quest board in the current room).
+  const playtesterOverrides: GoalDefinition[] = [
+    {
+      id: "ws.mud.quest.accept_one_if_any",
+      kind: "ws_mud_script",
+      enabled: true,
+      timeoutMs: 3000,
+      retries: 1,
+      retryDelayMs: 250,
+      scriptDelayMs: 75,
+      scriptStopOnFail: true,
+      script: [
+        {
+          command: "quest board available",
+          // Accept either "available quests" output or any "none here" variant.
+          expectRegexAny: ["Available quests:", "No available quests.", "/no\\s+available\\s+quests/i", "/no\\s+quest\\s+board/i", "/not\\s+in\\s+a\\s+town/i"],
+          rejectRegexAny: ["/\[error\]/i", "/unknown\s+command/i"],
+          // If no quests (or no board) are available, end the script cleanly as OK.
+          stopOkIfRegexAny: ["/no\\s+available\\s+quests/i", "/no\\s+quest\\s+board/i", "/not\\s+in\\s+a\\s+town/i"],
+          // Capture the first available quest id from the rendered board line.
+          // Example: "  1. [ ] Some Quest Name (quest_id)"
+          captureRegex: "/^\s*\d+\.\s+\[ \]\s+(?:\[NEW\]\s+)?[^\(]*\(([^\)]+)\)/m",
+          captureVar: "qid",
+          captureGroup: 1,
+        },
+        {
+          command: "quest board accept {{qid}}",
+          expectRegexAny: ["\[quest\] Accepted:"],
+          rejectRegexAny: ["/\[error\]/i", "/unknown\s+command/i"],
+          retries: 2,
+          retryDelayMs: 200,
+        },
+        { command: "quest", expectRegexAny: ["\[A\]", "{{qid}}"], rejectRegexAny: ["/\[error\]/i"] },
+        { command: "quest abandon {{qid}}", expectRegexAny: ["\[quest\] Abandoned:"], rejectRegexAny: ["/\[error\]/i", "/unknown\s+command/i"] },
+      ],
+    },
+    {
+      id: "ws.mud.player.profile.readonly",
+      kind: "ws_mud_script",
+      enabled: true,
+      timeoutMs: 2500,
+      retries: 1,
+      retryDelayMs: 200,
+      scriptDelayMs: 50,
+      scriptStopOnFail: true,
+      script: [
+        { command: "stats", expectRegexAny: ["HP", "Level", "/str|dex|int/i"] },
+        { command: "inventory", expectRegexAny: ["Inventory", "You are carrying", "/empty/i"] },
+      ],
+    },
+  ];
+
   return {
     core: corePack,
     db: [
@@ -741,6 +797,9 @@ const mmoAdminSmoke: GoalDefinition[] =
     // Only the first goal is enabled by default (very stable assertion). The others are optional and
     // intentionally disabled until your protocol/commands are confirmed for the target environment.
     player_smoke: playerSmoke,
+
+    // Playtester suite (defaults to enabling a few safe player-facing scripts).
+    playtester: [...corePack, ...webSmoke, ...adminSmoke, ...mmoAdminSmoke, ...playerSmoke, ...playtesterOverrides],
 
     admin_smoke: [...adminSmoke, ...mmoAdminSmoke],
     web_smoke: webSmoke,

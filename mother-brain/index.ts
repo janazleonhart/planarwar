@@ -395,7 +395,9 @@ const ConfigSchema = z
     MOTHER_BRAIN_GOALS_EVERY_TICKS: z
       .string()
       .optional()
-      .transform((v) => (v ? Number(v) : 0))
+      // Default ON: Mother Brain is expected to continuously run player-facing smoke goals.
+      // Set explicitly to 0 to disable.
+      .transform((v) => (v ? Number(v) : 12))
       .refine((n) => Number.isFinite(n) && n >= 0, {
         message: "MOTHER_BRAIN_GOALS_EVERY_TICKS must be a number >= 0",
       }),
@@ -406,6 +408,17 @@ const ConfigSchema = z
     // Optional comma-separated list of builtin goal packs (suites).
     // Ignored if GOALS_FILE exists with a non-empty array.
     MOTHER_BRAIN_GOALS_PACKS: z.string().optional(),
+
+    // Optional: if set, Mother Brain will exit non-zero when goals fail.
+    // - "0" disables (default)
+    // - "1" enables
+    MOTHER_BRAIN_GOALS_FAILFAST: z
+      .string()
+      .optional()
+      .transform((v) => (v ? String(v).trim() : "0"))
+      .refine((v) => v === "0" || v === "1", {
+        message: "MOTHER_BRAIN_GOALS_FAILFAST must be 0 or 1",
+      }),
 
     // Optional report directory. If unset, we will derive from PW_FILELOG.
     MOTHER_BRAIN_GOALS_REPORT_DIR: z.string().optional(),
@@ -473,6 +486,7 @@ type MotherBrainConfig = {
   goalsFile?: string;
   goalsPacks?: string;
   goalsReportDir?: string;
+  goalsFailfast: boolean;
   webBackendHttpBase?: string;
   webBackendAdminToken?: string;
   webBackendServiceToken?: string;
@@ -527,8 +541,9 @@ function parseConfig(): MotherBrainConfig {
 
     goalsEveryTicks: env.MOTHER_BRAIN_GOALS_EVERY_TICKS,
     goalsFile: env.MOTHER_BRAIN_GOALS_FILE,
-    goalsPacks: env.MOTHER_BRAIN_GOALS_PACKS,
+    goalsPacks: env.MOTHER_BRAIN_GOALS_PACKS ?? "player_smoke",
     goalsReportDir: env.MOTHER_BRAIN_GOALS_REPORT_DIR,
+    goalsFailfast: env.MOTHER_BRAIN_GOALS_FAILFAST === "1",
     webBackendHttpBase: env.MOTHER_BRAIN_WEB_BACKEND_HTTP_BASE,
     mmoBackendHttpBase: env.MOTHER_BRAIN_MMO_BACKEND_HTTP_BASE,
     // IMPORTANT: env is Zod-parsed and only contains keys declared in ConfigSchema.
@@ -1478,6 +1493,9 @@ async function main(): Promise<void> {
 
   let tick = 0;
 
+  // Alert dedupe: emit a loud failure summary once per goal run.
+  let lastGoalsAlertRunIso: string | null = null;
+
   while (!stopping) {
     tick += 1;
 
@@ -1543,6 +1561,38 @@ async function main(): Promise<void> {
         }, tick);
 
         state.goals.lastReport = suiteRun.overall;
+
+        // Always tell us when player testing fails, and why.
+        if (!suiteRun.ok) {
+          const runIso = state.goals.state.lastRunIso;
+          if (runIso && runIso !== lastGoalsAlertRunIso) {
+            lastGoalsAlertRunIso = runIso;
+
+            const failing = (suiteRun.overall.results ?? []).filter((r) => !r.ok && !(r.details as any)?.skipped);
+            const top = failing.slice(0, 8).map((r) => ({
+              id: r.id,
+              kind: r.kind,
+              error: r.error ?? null,
+              latencyMs: r.latencyMs ?? null,
+            }));
+
+            gatedLog("error", "Goals FAILED", {
+              tick,
+              runIso,
+              suites: Object.keys(suiteRun.bySuite ?? {}),
+              summary: suiteRun.overall.summary,
+              failingCount: failing.length,
+              topFailing: top,
+              reportDir: state.goals.state.reportDir,
+            });
+
+            if (cfg.goalsFailfast) {
+              // Some runtimes/type-defs widen exitCode to string|number; keep this assignment type-safe.
+              const curExit = typeof process.exitCode === "number" ? process.exitCode : 0;
+              process.exitCode = curExit < 2 ? 2 : curExit;
+            }
+          }
+        }
       } catch (e: unknown) {
         gatedLog("warn", "Goals runner failed", { error: e instanceof Error ? e.message : String(e) });
       }

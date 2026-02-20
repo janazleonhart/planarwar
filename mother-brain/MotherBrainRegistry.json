@@ -22,7 +22,8 @@
     "v0.35+ allow admin_smoke to send optional auth headers via MOTHER_BRAIN_WEB_BACKEND_ADMIN_TOKEN (human JWT; fallback PW_ADMIN_TOKEN) or MOTHER_BRAIN_WEB_BACKEND_SERVICE_TOKEN (daemon service token); improve hints for 401 missing_token vs fetch/network failures.",
     "v0.41+ adds retry/backoff for transient HTTP/WS startup flakes.",
     "v0.43 adds tools/genServiceToken.js to generate a random PW_SERVICE_TOKEN_SECRET and derive service tokens without shell quoting pitfalls (supports --secret).",
-    "v0.44 adds service token secret rotation support via PW_SERVICE_TOKEN_SECRET_PREV (web-backend accepts active+prev during cutovers)."
+    "v0.44 adds service token secret rotation support via PW_SERVICE_TOKEN_SECRET_PREV (web-backend accepts active+prev during cutovers).",
+    "v0.46 adds a 'playtester' goal pack that enables safe player-facing WS scripts (quest accept-if-any + basic profile checks) by default for regression smoke testing."
   ],
   "services": {},
   "entries": {
