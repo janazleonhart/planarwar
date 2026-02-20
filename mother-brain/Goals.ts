@@ -695,13 +695,13 @@ const mmoAdminSmoke: GoalDefinition[] =
           stopOkIfRegexAny: ["/no\\s+available\\s+quests/i", "/no\\s+quest\\s+board/i", "/not\\s+in\\s+a\\s+town/i"],
           // Capture the first available quest id from the rendered board line.
           // Example: "  1. [ ] Some Quest Name (quest_id)"
-          captureRegex: "/^\s*\d+\.\s+\[ \]\s+(?:\[NEW\]\s+)?[^\(]*\(([^\)]+)\)/m",
+          captureRegex: "/^\\s*\\d+\\.\\s+\\[[^\\]]*\\]\\s+(?:\\[NEW\\]\\s+)?[^\\(]*\\(([^\\)]+)\\)/m",
           captureVar: "qid",
           captureGroup: 1,
         },
         {
           command: "quest board accept {{qid}}",
-          expectRegexAny: ["\[quest\] Accepted:"],
+          expectRegexAny: ["/\\[quest\\]\\s+Accepted:/i"],
           rejectRegexAny: ["/\\[error\\]/i", "/unknown\\s+command/i"],
           // Sometimes state persistence can race a tiny bit in dev.
           retries: 2,
@@ -709,12 +709,12 @@ const mmoAdminSmoke: GoalDefinition[] =
         },
         {
           command: "quest",
-          expectRegexAny: ["\[A\]", "{{qid}}"],
+          expectRegexAny: ["/\\[A\\]/", "{{qid}}"],
           rejectRegexAny: ["/\\[error\\]/i"],
         },
         {
           command: "quest abandon {{qid}}",
-          expectRegexAny: ["\[quest\] Abandoned:"],
+          expectRegexAny: ["/\\[quest\\]\\s+Abandoned:/i"],
           rejectRegexAny: ["/\\[error\\]/i", "/unknown\\s+command/i"],
         },
       ],
@@ -763,19 +763,19 @@ const mmoAdminSmoke: GoalDefinition[] =
           stopOkIfRegexAny: ["/no\\s+available\\s+quests/i", "/no\\s+quest\\s+board/i", "/not\\s+in\\s+a\\s+town/i"],
           // Capture the first available quest id from the rendered board line.
           // Example: "  1. [ ] Some Quest Name (quest_id)"
-          captureRegex: "/^\s*\d+\.\s+\[ \]\s+(?:\[NEW\]\s+)?[^\(]*\(([^\)]+)\)/m",
+          captureRegex: "/^\\s*\\d+\\.\\s+\\[[^\\]]*\\]\\s+(?:\\[NEW\\]\\s+)?[^\\(]*\\(([^\\)]+)\\)/m",
           captureVar: "qid",
           captureGroup: 1,
         },
         {
           command: "quest board accept {{qid}}",
-          expectRegexAny: ["\[quest\] Accepted:"],
+          expectRegexAny: ["/\\[quest\\]\\s+Accepted:/i"],
           rejectRegexAny: ["/\\[error\\]/i", "/unknown\\s+command/i"],
           retries: 2,
           retryDelayMs: 200,
         },
-        { command: "quest", expectRegexAny: ["\[A\]", "{{qid}}"], rejectRegexAny: ["/\\[error\\]/i"] },
-        { command: "quest abandon {{qid}}", expectRegexAny: ["\[quest\] Abandoned:"], rejectRegexAny: ["/\\[error\\]/i", "/unknown\\s+command/i"] },
+        { command: "quest", expectRegexAny: ["/\\[A\\]/", "{{qid}}"], rejectRegexAny: ["/\\[error\\]/i"] },
+        { command: "quest abandon {{qid}}", expectRegexAny: ["/\\[quest\\]\\s+Abandoned:/i"], rejectRegexAny: ["/\\[error\\]/i", "/unknown\\s+command/i"] },
       ],
     },
     {
