@@ -591,7 +591,9 @@ const mmoAdminSmoke: GoalDefinition[] =
           kind: "http_post_json",
           url: `${ctx.mmoBackendHttpBase}/api/admin/characters/smoke_cycle`,
           requestHeaders: {
-            authorization: `Bearer ${ctx.mmoBackendServiceTokenEditor ?? ctx.mmoBackendServiceToken}`,
+            // IMPORTANT: service tokens must be sent via x-service-token.
+            // Do not also send Authorization, as that can trigger JWT verification first.
+            "x-service-token": `${ctx.mmoBackendServiceTokenEditor ?? ctx.mmoBackendServiceToken}`,
           },
           requestJson: {
             // NOTE: userId must be provided by your environment. For convenience, allow env override via MOTHER_BRAIN_TEST_USER_ID.
@@ -783,6 +785,67 @@ const mmoAdminSmoke: GoalDefinition[] =
       script: [
         { command: "stats", expectRegexAny: ["HP", "Level", "/str|dex|int/i"] },
         { command: "inventory", expectRegexAny: ["Inventory", "You are carrying", "/empty/i"] },
+      ],
+    },
+
+    // Safe quest loop: if there is a ready quest, attempt a turn-in.
+    // Stops OK when there are no ready quests (or no quest board / not in town).
+    {
+      id: "ws.mud.quest.turnin_one_if_ready",
+      kind: "ws_mud_script",
+      enabled: true,
+      timeoutMs: 3500,
+      retries: 1,
+      retryDelayMs: 250,
+      scriptDelayMs: 100,
+      scriptStopOnFail: true,
+      script: [
+        {
+          command: "quest board ready",
+          expectRegexAny: ["/Ready\\s+quests:/i", "/no\\s+ready\\s+quests/i", "/no\\s+quest\\s+board/i", "/not\\s+in\\s+a\\s+town/i"],
+          rejectRegexAny: ["/\\[error\\]/i", "/unknown\\s+command/i"],
+          stopOkIfRegexAny: ["/no\\s+ready\\s+quests/i", "/no\\s+quest\\s+board/i", "/not\\s+in\\s+a\\s+town/i"],
+          // Capture first ready quest id.
+          captureRegex: "/^\\s*\\d+\\.\\s+.*\\(([^\\)]+)\\)\\s*$/m",
+          captureVar: "rqid",
+          captureGroup: 1,
+        },
+        {
+          command: "quest board turnin {{rqid}}",
+          // Accept success or a reward selection prompt.
+          expectRegexAny: ["/Turned\\s+in/i", "/Reward\\s+choice/i", "/Choose\\s+a\\s+reward/i", "/\\[quest\\].*reward/i"],
+          rejectRegexAny: ["/\\[error\\]/i", "/unknown\\s+command/i"],
+          // If rewards are required, stop OK here (do not auto-pick rewards).
+          stopOkIfRegexAny: ["/Reward\\s+choice/i", "/Choose\\s+a\\s+reward/i"],
+          retries: 1,
+          retryDelayMs: 200,
+        },
+      ],
+    },
+
+    // Safe combat smoke: try to swing at a training dummy if present.
+    // Stops OK if no dummy exists in the current room.
+    {
+      id: "ws.mud.combat.training_dummy.swing",
+      kind: "ws_mud_script",
+      enabled: true,
+      timeoutMs: 3500,
+      retries: 1,
+      retryDelayMs: 250,
+      scriptDelayMs: 100,
+      scriptStopOnFail: true,
+      script: [
+        {
+          command: "attack training dummy",
+          stopOkIfRegexAny: ["/no\\s+training\\s+dummy/i", "/not\\s+here/i", "/cannot\\s+attack/i"],
+          expectRegexAny: ["/you\\s+(?:attack|strike|hit)/i", "/combat\\s+started/i", "/already\\s+in\\s+combat/i"],
+          rejectRegexAny: ["/\\[error\\]/i", "/unknown\\s+command/i"],
+        },
+        {
+          command: "attack",
+          expectRegexAny: ["/you\\s+(?:attack|strike|hit)/i", "/damage/i", "/absorbed/i"],
+          rejectRegexAny: ["/\\[error\\]/i", "/unknown\\s+command/i"],
+        },
       ],
     },
   ];

@@ -24,6 +24,8 @@
     "v0.43 adds tools/genServiceToken.js to generate a random PW_SERVICE_TOKEN_SECRET and derive service tokens without shell quoting pitfalls (supports --secret).",
     "v0.44 adds service token secret rotation support via PW_SERVICE_TOKEN_SECRET_PREV (web-backend accepts active+prev during cutovers).",
     "v0.46 adds a 'playtester' goal pack that enables safe player-facing WS scripts (quest accept-if-any + basic profile checks) by default for regression smoke testing."
+    ,
+    "v0.47 expands playtester smoke coverage with safe-by-default quest turn-in (ready quests) and training dummy combat swing scripts; also switches MMO admin smoke to service-token-only header usage (x-service-token)."
   ],
   "services": {},
   "entries": {
