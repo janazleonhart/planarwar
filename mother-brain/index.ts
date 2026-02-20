@@ -316,6 +316,13 @@ const ConfigSchema = z
       .optional()
       .transform((v) => (v ? v.toLowerCase() === "true" || v === "1" : false)),
 
+    // If true, /readyz will require goals health to be OK (when goals are enabled).
+    // This prevents the service from reporting ready while playtesting is blind/failed.
+    MOTHER_BRAIN_READY_REQUIRES_GOALS_OK: z
+      .string()
+      .optional()
+      .transform((v) => (v ? v.toLowerCase() === "true" || v === "1" : false)),
+
     MOTHER_BRAIN_DB_TIMEOUT_MS: z
       .string()
       .optional()
@@ -474,6 +481,7 @@ type MotherBrainConfig = {
   dbUrl?: string;
   wsUrl?: string;
   wsRequired: boolean;
+  readyRequiresGoalsOk: boolean;
 
   dbTimeoutMs: number;
   wsTimeoutMs: number;
@@ -531,6 +539,7 @@ function parseConfig(): MotherBrainConfig {
     dbUrl: env.MOTHER_BRAIN_DB_URL ?? env.PW_DATABASE_URL ?? env.DATABASE_URL,
     wsUrl: env.MOTHER_BRAIN_WS_URL,
     wsRequired: env.MOTHER_BRAIN_WS_REQUIRED,
+    readyRequiresGoalsOk: env.MOTHER_BRAIN_READY_REQUIRES_GOALS_OK,
 
     dbTimeoutMs: env.MOTHER_BRAIN_DB_TIMEOUT_MS,
     wsTimeoutMs: env.MOTHER_BRAIN_WS_TIMEOUT_MS,
@@ -1251,7 +1260,13 @@ function startHttpServer(cfg: MotherBrainConfig, state: StatusState): http.Serve
 
     if (url === "/readyz") {
       const snap = state.lastSnapshot;
-      const ok = snap ? isReady(snap) : false;
+      const snapOk = snap ? isReady(snap) : false;
+
+      const goalsEnabled = state.goals.state.everyTicks > 0;
+      const goalsHealth = computeGoalsHealth(state.goals.state);
+      const goalsOk = goalsHealth.status === "OK";
+
+      const ok = cfg.readyRequiresGoalsOk && goalsEnabled ? snapOk && goalsOk : snapOk;
       res.statusCode = ok ? 200 : 503;
       res.setHeader("content-type", "application/json");
       res.end(
@@ -1260,6 +1275,15 @@ function startHttpServer(cfg: MotherBrainConfig, state: StatusState): http.Serve
           ts: nowIso(),
           lastSnapshotIso: state.lastSnapshotIso,
           signature: state.lastSignature,
+          goals: {
+            enabled: goalsEnabled,
+            requireOk: cfg.readyRequiresGoalsOk,
+            status: goalsHealth.status,
+            lastRunIso: goalsHealth.lastRunIso,
+            ageSec: goalsHealth.ageSec,
+            lastOk: state.goals.state.lastOk,
+            lastSummary: state.goals.state.lastSummary,
+          },
         })
       );
       return;
