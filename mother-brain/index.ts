@@ -958,6 +958,8 @@ async function probeBrainWaveBudget(
 
 class WsProbe {
   private ws: WebSocket | null = null;
+  private characterAttached: boolean = false;
+  private lastHelloAck: any | null = null;
   private readonly url: string | undefined;
   private readonly connectTimeoutMs: number;
   private lastPongIso: string | null = null;
@@ -1079,16 +1081,31 @@ class WsProbe {
       const ws = new WebSocket(url);
 
       let settled = false;
-      const finishOk = () => {
+      const finishOk = async () => {
         if (settled) return;
         settled = true;
         cleanup();
 
         // Wire message handler once per connection.
         ws.on("message", (data) => this.onMessage(data));
+
         this.ws = ws;
+
+        // Best-effort: wait for hello_ack so we can tell whether auth+character attach succeeded.
+        // If character isn't attached, MUD commands will silently no-op server-side.
+        this.characterAttached = false;
+        this.lastHelloAck = null;
+        try {
+          const ack = await this.waitForOp("hello_ack", Math.min(1500, timeoutMs));
+          this.lastHelloAck = ack?.payload ?? null;
+          this.characterAttached = Boolean(ack?.payload?.characterAttached);
+        } catch {
+          // Older servers may not send this.
+        }
+
         resolve();
       };
+
       const finishErr = (e: unknown) => {
         if (settled) return;
         settled = true;
@@ -1188,10 +1205,56 @@ class WsProbe {
     pending.resolve({ ...r, latencyMs: Date.now() - pending.startedAt });
   }
 
+  private async waitForOp(op: string, timeoutMs: number): Promise<any> {
+    const ws = this.ws;
+    if (!ws) throw new Error('ws not connected');
+
+    return await new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        cleanup();
+        reject(new Error(`timeout after ${timeoutMs}ms`));
+      }, timeoutMs);
+
+      const onMessage = (data: any) => {
+        try {
+          const raw = typeof data === 'string' ? data : (data?.toString?.('utf-8') ?? String(data));
+          const msg = JSON.parse(raw);
+          if (msg && msg.op === op) {
+            cleanup();
+            resolve(msg);
+          }
+        } catch {
+          // ignore
+        }
+      };
+
+      const onClose = () => {
+        cleanup();
+        reject(new Error('ws closed'));
+      };
+
+      const cleanup = () => {
+        clearTimeout(timer);
+        try { ws.off('message', onMessage); } catch {}
+        try { ws.off('close', onClose); } catch {}
+      };
+
+      try { ws.on('message', onMessage); } catch {}
+      try { ws.on('close', onClose); } catch {}
+    });
+  }
+
+
   public async mudCommand(command: string, timeoutMs: number): Promise<{ ok: boolean; output?: string; error?: string }>
   {
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return { ok: false, error: "not connected" };
     if (this.mudPending) return { ok: false, error: "mud command already in flight" };
+
+
+    // If the server told us character attach failed, fail fast with a useful error.
+    if (this.lastHelloAck && this.characterAttached === false) {
+      return { ok: false, error: `character_not_attached (${String(this.lastHelloAck?.error ?? "unknown")})` };
+    }
 
     const ws = this.ws;
     const startedAt = Date.now();

@@ -863,6 +863,35 @@ if (pathname === "/api/admin/characters/delete") {
       });
     }
 
+
+
+    // Send a lightweight ack so automated clients (Mother Brain, smoke tests) can detect
+    // whether auth + character attach actually happened.
+    // Without this, MUD commands silently no-op when session.character is missing.
+    try {
+      const userId = attachedIdentity?.userId ?? null;
+      const authed = Boolean(attachedIdentity);
+      const characterAttached = Boolean(characterState);
+      const ack: any = {
+        ok: true,
+        authed,
+        userId,
+        requestedCharacterId: requestedCharacterId ?? null,
+        characterAttached,
+        characterId: characterState ? (characterState as any).id : null,
+        shardId: characterState ? (characterState as any).shardId : null,
+      };
+
+      if (!authed) {
+        ack.error = 'auth_missing_or_invalid';
+      } else if (requestedCharacterId && !characterAttached) {
+        ack.error = 'character_not_attached';
+      }
+
+      sessions.send(session, 'hello_ack', ack);
+    } catch {
+      // ignore
+    }
     // ---- Existing message handling ----
     socket.on(
       "message",
