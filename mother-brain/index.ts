@@ -310,6 +310,11 @@ const ConfigSchema = z
     PW_DATABASE_URL: z.string().optional(),
     DATABASE_URL: z.string().optional(),
     MOTHER_BRAIN_WS_URL: z.string().optional(),
+    // If true, WS must be configured and connected for player smoke (ws.connected will FAIL when disabled).
+    MOTHER_BRAIN_WS_REQUIRED: z
+      .string()
+      .optional()
+      .transform((v) => (v ? v.toLowerCase() === "true" || v === "1" : false)),
 
     MOTHER_BRAIN_DB_TIMEOUT_MS: z
       .string()
@@ -468,6 +473,7 @@ type MotherBrainConfig = {
 
   dbUrl?: string;
   wsUrl?: string;
+  wsRequired: boolean;
 
   dbTimeoutMs: number;
   wsTimeoutMs: number;
@@ -524,6 +530,7 @@ function parseConfig(): MotherBrainConfig {
 
     dbUrl: env.MOTHER_BRAIN_DB_URL ?? env.PW_DATABASE_URL ?? env.DATABASE_URL,
     wsUrl: env.MOTHER_BRAIN_WS_URL,
+    wsRequired: env.MOTHER_BRAIN_WS_REQUIRED,
 
     dbTimeoutMs: env.MOTHER_BRAIN_DB_TIMEOUT_MS,
     wsTimeoutMs: env.MOTHER_BRAIN_WS_TIMEOUT_MS,
@@ -1383,6 +1390,8 @@ function startHttpServer(cfg: MotherBrainConfig, state: StatusState): http.Serve
                 ? { ok: false, reason: wb.reason }
                 : null,
           wsState,
+          wsDisabledReason: wsState === "disabled" ? (cfg.wsUrl ? "ws probe disabled" : "MOTHER_BRAIN_WS_URL not set") : undefined,
+          wsRequired: cfg.wsRequired,
           log,
         }, tick);
 
@@ -1593,6 +1602,7 @@ async function main(): Promise<void> {
           waveBudget: wbForGoals,
           wsState: wsProbe.isEnabled() ? wsProbe.getState() : "disabled",
           wsDisabledReason: wsProbe.isEnabled() ? undefined : (cfg.wsUrl ? "ws probe disabled" : "MOTHER_BRAIN_WS_URL not set"),
+          wsRequired: cfg.wsRequired,
           wsMudCommand: wsProbe.isEnabled() ? (cmd: string, timeoutMs: number) => wsProbe.mudCommand(cmd, timeoutMs) : undefined,
           log,
         }, tick);

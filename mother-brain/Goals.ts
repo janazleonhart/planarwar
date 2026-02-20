@@ -273,6 +273,8 @@ export type GoalsDeps = {
   wsState: "disabled" | "closed" | "connecting" | "open";
   // If wsState === "disabled", an optional reason (e.g. missing MOTHER_BRAIN_WS_URL).
   wsDisabledReason?: string;
+  // If true, ws.connected will FAIL (not skip) when WS is disabled (e.g. missing WS URL).
+  wsRequired?: boolean;
   // Optional WS MUD command helper (if WS is configured).
   wsMudCommand?: (command: string, timeoutMs: number) => Promise<{ ok: boolean; output?: string; error?: string }>;
   // Logger
@@ -2069,8 +2071,20 @@ export async function runGoalsOnce(
     }
 
     if (goal.kind === "ws_connected") {
-      // If WS is disabled, treat as skip.
+      // If WS is disabled, treat as skip unless WS is required.
       if (deps.wsState === "disabled") {
+        if (deps.wsRequired) {
+          failCount += 1;
+          results.push({
+            id: goal.id,
+            kind: goal.kind,
+            ok: false,
+            latencyMs: Date.now() - start,
+            error: deps.wsDisabledReason ?? "ws disabled",
+            details: { state: deps.wsState, wsRequired: true },
+          });
+          continue;
+        }
         skippedCount += 1;
         results.push({
           id: goal.id,
