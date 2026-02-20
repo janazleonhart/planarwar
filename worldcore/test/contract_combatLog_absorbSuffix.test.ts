@@ -9,6 +9,10 @@ import {
 } from "../combat/CombatLog";
 
 test("[contract] CombatLog: absorbed damage is explicitly annotated in direct + DOT lines", () => {
+  const prev = process.env.PW_COMBAT_LOG_ABSORB_BREAKDOWN;
+  process.env.PW_COMBAT_LOG_ABSORB_BREAKDOWN = "1";
+
+  try {
   const directAbsorb = formatWorldSpellDirectDamageLine({
     spellName: "Arcane Bolt",
     targetName: "Sturdy Training Dummy",
@@ -69,4 +73,8 @@ test("[contract] CombatLog: absorbed damage is explicitly annotated in direct + 
     dotAbsorb,
     "[world] [spell:Ignite] Ignite deals 0 damage (5 absorbed) to Sturdy Training Dummy. (10000/10000 HP)",
   );
+  } finally {
+    if (prev === undefined) delete process.env.PW_COMBAT_LOG_ABSORB_BREAKDOWN;
+    else process.env.PW_COMBAT_LOG_ABSORB_BREAKDOWN = prev;
+  }
 });

@@ -17,6 +17,8 @@ import { formatWorldSpellDirectDamageLine } from "../combat/CombatLog";
 
 test("[contract] Absorb breakdown is priority-desc then oldest-first and log preserves order", () => {
   process.env.WORLDCORE_TEST = "1";
+  const prevBreakdown = process.env.PW_COMBAT_LOG_ABSORB_BREAKDOWN;
+  process.env.PW_COMBAT_LOG_ABSORB_BREAKDOWN = "1";
 
   const entities = new EntityManager();
   const sessions = new SessionManager();
@@ -126,6 +128,8 @@ test("[contract] Absorb breakdown is priority-desc then oldest-first and log pre
       `expected ordered breakdown, got: ${line}`,
     );
   } finally {
+    if (prevBreakdown === undefined) delete process.env.PW_COMBAT_LOG_ABSORB_BREAKDOWN;
+    else process.env.PW_COMBAT_LOG_ABSORB_BREAKDOWN = prevBreakdown;
     Date.now = realNow;
   }
 });

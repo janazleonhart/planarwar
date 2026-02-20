@@ -21,7 +21,10 @@ export function formatDamageExtras(opts: { absorbed?: number; overkill?: number;
   const parts: string[] = [];
   const absorbed = clampInt(opts.absorbed ?? 0, 0, 9_999_999);
   const overkill = clampInt(opts.overkill ?? 0, 0, 9_999_999);
-  const breakdown = Array.isArray(opts.absorbBreakdown) ? opts.absorbBreakdown : null;
+  // Keep UI surface minimal by default: breakdown lists are gated.
+  // Opt-in via PW_COMBAT_LOG_ABSORB_BREAKDOWN=1.
+  const allowBreakdown = process?.env?.PW_COMBAT_LOG_ABSORB_BREAKDOWN === "1";
+  const breakdown = allowBreakdown && Array.isArray(opts.absorbBreakdown) ? opts.absorbBreakdown : null;
   if (absorbed > 0) {
     if (breakdown && breakdown.length > 0) {
       const by = breakdown
