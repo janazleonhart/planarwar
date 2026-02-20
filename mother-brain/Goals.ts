@@ -271,6 +271,8 @@ export type GoalsDeps = {
     | null;
   // WS connection state.
   wsState: "disabled" | "closed" | "connecting" | "open";
+  // If wsState === "disabled", an optional reason (e.g. missing MOTHER_BRAIN_WS_URL).
+  wsDisabledReason?: string;
   // Optional WS MUD command helper (if WS is configured).
   wsMudCommand?: (command: string, timeoutMs: number) => Promise<{ ok: boolean; output?: string; error?: string }>;
   // Logger
@@ -2052,7 +2054,12 @@ export async function runGoalsOnce(
       // If WS is disabled, treat as skip.
       if (deps.wsState === "disabled") {
         skippedCount += 1;
-        results.push({ id: goal.id, kind: goal.kind, ok: true, details: { skipped: true } });
+        results.push({
+          id: goal.id,
+          kind: goal.kind,
+          ok: true,
+          details: { skipped: true, reason: deps.wsDisabledReason ?? "ws disabled" },
+        });
         continue;
       }
 
@@ -2074,9 +2081,27 @@ export async function runGoalsOnce(
       // If WS is disabled, treat as skip.
       if (deps.wsState === "disabled") {
         skippedCount += 1;
-        results.push({ id: goal.id, kind: goal.kind, ok: true, details: { skipped: true } });
+        results.push({
+          id: goal.id,
+          kind: goal.kind,
+          ok: true,
+          details: { skipped: true, reason: deps.wsDisabledReason ?? "ws disabled" },
+        });
         continue;
       }
+      // If WS isn't open yet, skip MUD commands (ws.connected will carry the failure).
+      if (deps.wsState !== "open") {
+        skippedCount += 1;
+        results.push({
+          id: goal.id,
+          kind: goal.kind,
+          ok: true,
+          latencyMs: Date.now() - start,
+          details: { skipped: true, reason: `ws not open (${deps.wsState})` },
+        });
+        continue;
+      }
+
 
       const command = goal.command;
       if (!command) {
@@ -2159,9 +2184,27 @@ export async function runGoalsOnce(
       // If WS is disabled, treat as skip.
       if (deps.wsState === "disabled") {
         skippedCount += 1;
-        results.push({ id: goal.id, kind: goal.kind, ok: true, details: { skipped: true } });
+        results.push({
+          id: goal.id,
+          kind: goal.kind,
+          ok: true,
+          details: { skipped: true, reason: deps.wsDisabledReason ?? "ws disabled" },
+        });
         continue;
       }
+      // If WS isn't open yet, skip scripts (ws.connected will carry the failure).
+      if (deps.wsState !== "open") {
+        skippedCount += 1;
+        results.push({
+          id: goal.id,
+          kind: goal.kind,
+          ok: true,
+          latencyMs: Date.now() - start,
+          details: { skipped: true, reason: `ws not open (${deps.wsState})` },
+        });
+        continue;
+      }
+
 
       const script = Array.isArray(goal.script) ? goal.script : [];
       if (script.length === 0) {
