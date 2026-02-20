@@ -26,6 +26,8 @@
     "v0.46 adds a 'playtester' goal pack that enables safe player-facing WS scripts (quest accept-if-any + basic profile checks) by default for regression smoke testing."
     ,
     "v0.47 expands playtester smoke coverage with safe-by-default quest turn-in (ready quests) and training dummy combat swing scripts; also switches MMO admin smoke to service-token-only header usage (x-service-token)."
+    ,
+    "v0.48 adds a class_playtest goal pack: Mother Brain can create a temporary character per class, attach over WS, run a small MUD smoke script, and delete the character (per-class playtest loop)."
   ],
   "services": {},
   "entries": {

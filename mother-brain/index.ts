@@ -1076,6 +1076,10 @@ class WsProbe {
     });
   }
 
+  public getHelloAck(): Record<string, unknown> | null {
+    return (this.lastHelloAck && typeof this.lastHelloAck === "object") ? (this.lastHelloAck as Record<string, unknown>) : null;
+  }
+
   private connectOnce(url: string, timeoutMs: number): Promise<void> {
     return new Promise<void>((resolve, reject) => {
       const ws = new WebSocket(url);
@@ -1950,6 +1954,78 @@ async function main(): Promise<void> {
               ? { ok: false as const, reason: brainWaveBudget.reason }
               : null;
 
+        // Optional: class playtest helpers.
+        const mmoBase = (cfg.mmoBackendHttpBase || "http://127.0.0.1:7777").replace(/\/$/, "");
+        const mmoSvc = (cfg.mmoBackendServiceTokenEditor || cfg.mmoBackendServiceToken || "").trim();
+        const userId = String(process.env.MOTHER_BRAIN_TEST_USER_ID || "").trim();
+
+        const wsBuildUrlForCharacter = (characterId: string): string | undefined => {
+          const base = wsPrep.wsUrl;
+          if (!base) return undefined;
+          try {
+            const u = new URL(base);
+            u.searchParams.set("characterId", characterId);
+            return u.toString();
+          } catch {
+            return base;
+          }
+        };
+
+        const wsCreateMudClient = async (wsUrl: string) => {
+          const p = new WsProbe(wsUrl, cfg.wsTimeoutMs);
+          const r = await p.ensureConnected();
+          if (!r.ok) {
+            await p.close();
+            return { ok: false as const, error: r.error ?? "ws_connect_failed", hello: p.getHelloAck() };
+          }
+          return {
+            ok: true as const,
+            mudCommand: (cmd: string, timeoutMs: number) => p.mudCommand(cmd, timeoutMs),
+            close: () => p.close(),
+            hello: p.getHelloAck(),
+          };
+        };
+
+        const mmoCreateCharacter = async (opts: { userId: string; shardId: string; classId: string; name: string }) => {
+          if (!mmoSvc) return { ok: false as const, error: "missing_mmo_service_token" };
+          try {
+            const r = await fetch(`${mmoBase}/api/admin/characters/create`, {
+              method: "POST",
+              headers: {
+                "content-type": "application/json",
+                "x-service-token": mmoSvc,
+              },
+              body: JSON.stringify(opts),
+            });
+            const j: any = await r.json().catch(() => null);
+            if (!r.ok || !j?.ok || !j?.characterId) {
+              return { ok: false as const, error: j?.error ? String(j.error) : `http_${r.status}` };
+            }
+            return { ok: true as const, characterId: String(j.characterId), name: String(j.name ?? opts.name) };
+          } catch (e: any) {
+            return { ok: false as const, error: String(e?.message || e) };
+          }
+        };
+
+        const mmoDeleteCharacter = async (opts: { userId: string; charId: string }) => {
+          if (!mmoSvc) return { ok: false as const, error: "missing_mmo_service_token" };
+          try {
+            const r = await fetch(`${mmoBase}/api/admin/characters/delete`, {
+              method: "POST",
+              headers: {
+                "content-type": "application/json",
+                "x-service-token": mmoSvc,
+              },
+              body: JSON.stringify(opts),
+            });
+            const j: any = await r.json().catch(() => null);
+            if (!r.ok) return { ok: false as const, error: j?.error ? String(j.error) : `http_${r.status}` };
+            return { ok: Boolean(j?.ok) as boolean, error: j?.ok ? undefined : "delete_failed" };
+          } catch (e: any) {
+            return { ok: false as const, error: String(e?.message || e) };
+          }
+        };
+
         const suiteRun = await runGoalSuites(state.goals.state, {
           nowIso,
           dbQuery: async (sql: string, params?: any[]) => {
@@ -1962,6 +2038,10 @@ async function main(): Promise<void> {
           wsDisabledReason: wsProbe.isEnabled() ? undefined : (cfg.wsUrl ? "ws probe disabled" : "MOTHER_BRAIN_WS_URL not set"),
           wsRequired: cfg.wsRequired,
           wsMudCommand: wsProbe.isEnabled() ? (cmd: string, timeoutMs: number) => wsProbe.mudCommand(cmd, timeoutMs) : undefined,
+          mmoCreateCharacter: userId ? mmoCreateCharacter : undefined,
+          mmoDeleteCharacter: userId ? mmoDeleteCharacter : undefined,
+          wsBuildUrlForCharacter,
+          wsCreateMudClient,
           log,
         }, tick);
 

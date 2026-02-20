@@ -18,6 +18,7 @@ export type GoalKind =
   | "ws_connected"
   | "ws_mud"
   | "ws_mud_script"
+  | "class_playtest_loop"
   | "http_get"
   | "http_json"
   | "http_post_json";
@@ -142,6 +143,14 @@ export type GoalDefinition = {
   script?: WsMudScriptStep[];
   scriptDelayMs?: number;
   scriptStopOnFail?: boolean;
+
+  // class_playtest_loop
+  // Run a per-class WS MUD smoke script by creating a temporary character for each class.
+  // Requires: deps.mmoCreateCharacter + deps.mmoDeleteCharacter + deps.wsBuildUrlForCharacter + deps.wsCreateMudClient.
+  classIds?: string[];
+  shardId?: string;
+  namePrefix?: string;
+  deleteOnFinish?: boolean;
 
   // Optional initial template variables for ws_mud_script.
   // These are merged into the script's runtime vars before executing steps.
@@ -277,6 +286,24 @@ export type GoalsDeps = {
   wsRequired?: boolean;
   // Optional WS MUD command helper (if WS is configured).
   wsMudCommand?: (command: string, timeoutMs: number) => Promise<{ ok: boolean; output?: string; error?: string }>;
+
+  // Optional class playtest helpers (used by class_playtest_loop).
+  // NOTE: implemented by the Mother Brain runtime (index.ts) so Goals.ts stays framework-light.
+  mmoCreateCharacter?: (opts: {
+    userId: string;
+    shardId: string;
+    classId: string;
+    name: string;
+  }) => Promise<{ ok: boolean; characterId?: string; name?: string; error?: string }>;
+  mmoDeleteCharacter?: (opts: { userId: string; charId: string }) => Promise<{ ok: boolean; error?: string }>;
+  wsBuildUrlForCharacter?: (characterId: string) => string | undefined;
+  wsCreateMudClient?: (wsUrl: string) => Promise<{
+    ok: boolean;
+    mudCommand?: (command: string, timeoutMs: number) => Promise<{ ok: boolean; output?: string; error?: string }>;
+    hello?: Record<string, unknown> | null;
+    close?: () => Promise<void>;
+    error?: string;
+  }>;
   // Logger
   log: (level: "debug" | "info" | "warn" | "error", msg: string, extra?: Record<string, unknown>) => void;
 };
@@ -413,6 +440,13 @@ function normalizeGoals(maybeGoals: unknown): GoalDefinition[] {
                 .map(([k, v]) => [k, v as string])
             )
           : undefined,
+
+      classIds: Array.isArray((o as any).classIds)
+        ? (o as any).classIds.map((x: any) => String(x)).filter((s: string) => s.trim().length > 0)
+        : undefined,
+      shardId: typeof (o as any).shardId === "string" ? ((o as any).shardId as string) : undefined,
+      namePrefix: typeof (o as any).namePrefix === "string" ? ((o as any).namePrefix as string) : undefined,
+      deleteOnFinish: typeof (o as any).deleteOnFinish === "boolean" ? ((o as any).deleteOnFinish as boolean) : undefined,
       maxBreaches: typeof o.maxBreaches === "number" ? o.maxBreaches : undefined,
     });
   }
@@ -444,7 +478,8 @@ export type GoalPackId =
   | "playtester"
   | "admin_smoke"
   | "web_smoke"
-  | "all_smoke";
+  | "all_smoke"
+  | "class_playtest";
 
 export function builtinGoalPacks(ctx?: {
   webBackendHttpBase?: string;
@@ -887,6 +922,35 @@ const mmoAdminSmoke: GoalDefinition[] =
 
   const playerSmokeWithPlaytester = mergeGoalsById(playerSmoke, playtesterOverrides);
 
+  // Class playtester suite: create/attach/smoke/delete per class.
+  // NOTE: requires MOTHER_BRAIN_MMO_BACKEND_HTTP_BASE + service token editor, and WS configured.
+  const classPlaytest: GoalDefinition[] = [
+    { id: "ws.connected", kind: "ws_connected" },
+    {
+      id: "class.playtest.loop",
+      kind: "class_playtest_loop",
+      enabled: true,
+      timeoutMs: 3000,
+      scriptDelayMs: 75,
+      retries: 0,
+      // By default the goal will read class ids from env: MOTHER_BRAIN_CLASS_PLAYTEST_CLASS_IDS
+      // and shard from MOTHER_BRAIN_CLASS_PLAYTEST_SHARD_ID.
+      // You can also set goal.classIds in a custom goals file.
+      deleteOnFinish: true,
+      // Per-class script: very small loop.
+      script: [
+        { command: "help", expectIncludes: "Available commands:", rejectRegexAny: ["/\\[error\\]/i"] },
+        { command: "stats", expectRegexAny: ["HP", "Level", "/str|dex|int/i"], rejectRegexAny: ["/\\[error\\]/i"] },
+        {
+          command: "attack dummy.1",
+          stopOkIfRegexAny: ["/no\\s+dummy/i", "/not\\s+here/i", "/no\\s+target/i"],
+          expectRegexAny: ["/hit/i", "/damage/i", "/combat/i"],
+          rejectRegexAny: ["/\\[error\\]/i"],
+        },
+      ],
+    },
+  ];
+
   return {
     core: corePack,
     db: [
@@ -911,6 +975,10 @@ const mmoAdminSmoke: GoalDefinition[] =
     // Convenience pack: combines core + web_smoke + admin_smoke + player_smoke.
     // Individual goals inside may be disabled (e.g. if MOTHER_BRAIN_WEB_BACKEND_HTTP_BASE is not set).
     all_smoke: [...corePack, ...webSmoke, ...adminSmoke, ...mmoAdminSmoke, ...playerSmokeWithPlaytester],
+
+    // Heavyweight: per-class create/attach/smoke/delete loop.
+    // Run this explicitly by setting MOTHER_BRAIN_GOALS_PACKS=class_playtest.
+    class_playtest: classPlaytest,
   };
 }
 
@@ -2474,6 +2542,264 @@ export async function runGoalsOnce(
           steps: stepReports,
           stepCount: stepReports.length,
           stepFailCount,
+        },
+      });
+      continue;
+    }
+
+    if (goal.kind === "class_playtest_loop") {
+      const userId = String(process.env.MOTHER_BRAIN_TEST_USER_ID || "").trim();
+      const shardId = String(goal.shardId || process.env.MOTHER_BRAIN_CLASS_PLAYTEST_SHARD_ID || "prime_shard").trim() || "prime_shard";
+      const deleteOnFinish = goal.deleteOnFinish !== false;
+
+      const classIds = (() => {
+        if (Array.isArray(goal.classIds) && goal.classIds.length > 0) {
+          return goal.classIds.map((s) => String(s).trim()).filter(Boolean);
+        }
+        const envList = String(process.env.MOTHER_BRAIN_CLASS_PLAYTEST_CLASS_IDS || "").trim();
+        if (!envList) return [];
+        return envList
+          .split(",")
+          .map((s) => s.trim())
+          .filter(Boolean);
+      })();
+
+      if (!classIds.length) {
+        skippedCount += 1;
+        results.push({
+          id: goal.id,
+          kind: goal.kind,
+          ok: true,
+          latencyMs: Date.now() - start,
+          details: { skipped: true, reason: "no class ids" },
+        });
+        continue;
+      }
+
+      if (!userId) {
+        failCount += 1;
+        results.push({
+          id: goal.id,
+          kind: goal.kind,
+          ok: false,
+          latencyMs: Date.now() - start,
+          error: "missing MOTHER_BRAIN_TEST_USER_ID",
+          details: { shardId, classCount: classIds.length },
+        });
+        continue;
+      }
+
+      if (!deps.mmoCreateCharacter || !deps.mmoDeleteCharacter || !deps.wsBuildUrlForCharacter || !deps.wsCreateMudClient) {
+        skippedCount += 1;
+        results.push({
+          id: goal.id,
+          kind: goal.kind,
+          ok: true,
+          latencyMs: Date.now() - start,
+          details: {
+            skipped: true,
+            reason: "class playtest deps not configured",
+            required: [
+              "mmoCreateCharacter",
+              "mmoDeleteCharacter",
+              "wsBuildUrlForCharacter",
+              "wsCreateMudClient",
+            ],
+          },
+        });
+        continue;
+      }
+
+      const script = Array.isArray(goal.script) && goal.script.length > 0 ? goal.script : [
+        { command: "help", expectIncludes: "Available commands:" },
+        { command: "stats", expectRegexAny: ["HP", "Level", "/str|dex|int/i"] },
+        { command: "attack dummy.1", stopOkIfRegexAny: ["/no\\s+dummy/i", "/not\\s+here/i"], expectRegexAny: ["/hit/i", "/damage/i", "/combat/i"] },
+      ];
+
+      const namePrefix = String(goal.namePrefix || process.env.MOTHER_BRAIN_CLASS_PLAYTEST_NAME_PREFIX || "MBClass").trim() || "MBClass";
+      const perClass: any[] = [];
+      let overallOk = true;
+
+      // Helper: run a ws_mud_script using a provided mudCommand.
+      const runScriptWithMudCommand = async (
+        mudCommand: (command: string, timeoutMs: number) => Promise<{ ok: boolean; output?: string; error?: string }>,
+        varsIn: Record<string, string>
+      ): Promise<{ ok: boolean; steps: any[]; error?: string } > => {
+        const goalRetries = Math.max(0, Math.min(10, goal.retries ?? 1));
+        const goalBaseDelayMs = Math.max(0, Math.min(10_000, goal.retryDelayMs ?? 200));
+        const stepDelayMs = Math.max(0, Math.min(10_000, goal.scriptDelayMs ?? 50));
+        const stopOnFail = goal.scriptStopOnFail !== false;
+
+        const stepReports: any[] = [];
+        const vars: TemplateVars = { ...(goal.scriptVars ?? {}), ...varsIn };
+        let okAll = true;
+
+        for (let i = 0; i < script.length; i += 1) {
+          const step = script[i];
+          const optional = step.optional === true;
+          const rawCmd = String(step.command ?? "").trim();
+          const cmdInterp = interpolateTemplate(rawCmd, vars);
+          const cmd = cmdInterp.text.trim();
+
+          if (cmdInterp.missing.length > 0 || !cmd) {
+            const errMsg = cmdInterp.missing.length > 0 ? `missing vars: ${cmdInterp.missing.join(", ")}` : "missing command";
+            stepReports.push({ index: i, command: rawCmd, ok: optional, optionalFailed: optional, hardFail: !optional, error: optional ? undefined : errMsg, optionalError: optional ? errMsg : undefined });
+            if (!optional) {
+              okAll = false;
+              if (stopOnFail) break;
+            }
+            continue;
+          }
+
+          const timeoutMs = step.timeoutMs ?? goal.timeoutMs ?? 2500;
+          const retries = Math.max(0, Math.min(10, step.retries ?? goalRetries));
+          const baseDelayMs = Math.max(0, Math.min(10_000, step.retryDelayMs ?? goalBaseDelayMs));
+
+          let res: { ok: boolean; output?: string; error?: string } = { ok: false, error: "not attempted" };
+          let out = "";
+          let ok = false;
+
+          for (let attempt = 0; attempt <= retries; attempt += 1) {
+            res = await mudCommand(cmd, timeoutMs);
+            ok = res.ok;
+            out = res.output ?? "";
+            if (ok) break;
+
+            const transient = isTransientWsError(res.error);
+            if (!transient || attempt === retries) break;
+            const jitter = Math.floor(Math.random() * 25);
+            const delay = Math.min(10_000, baseDelayMs * Math.pow(2, attempt) + jitter);
+            await sleep(delay);
+          }
+
+          const cookedExp = applyVarsToExpectations(step, vars);
+          if (cookedExp.missing.length > 0) {
+            ok = false;
+            res = { ok: false, error: `missing vars: ${cookedExp.missing.join(", ")}` };
+          }
+
+          const missing = ok ? validateMudExpectations(out, cookedExp.cooked) : [];
+          if (missing.length > 0) ok = false;
+
+          const stopOk = ok && shouldStopScriptOk(out, cookedExp.cooked as any);
+          if (stopOk) {
+            stepReports.push({ index: i, command: cmd, ok: true, stoppedOk: true, outputPreview: out.length > 220 ? `${out.slice(0, 220)}…` : out, vars: { ...vars } });
+            break;
+          }
+
+          if (ok && step.captureRegex && step.captureVar) {
+            const rx = parseRegexString(step.captureRegex);
+            if (!rx) {
+              ok = false;
+              res = { ok: false, error: `bad_regex:${step.captureRegex}` };
+            } else {
+              const m = out.match(rx);
+              if (!m) {
+                ok = false;
+                res = { ok: false, error: `capture_no_match:${step.captureRegex}` };
+              } else {
+                const group = Number.isFinite(step.captureGroup as any) ? Math.max(0, Math.floor(step.captureGroup as any)) : 1;
+                const val = (m[group] ?? m[0] ?? "").toString();
+                vars[step.captureVar] = val;
+              }
+            }
+          }
+
+          stepReports.push({
+            index: i,
+            command: cmd,
+            ok: optional ? true : ok,
+            optionalFailed: optional ? !ok : undefined,
+            hardFail: optional ? false : !ok,
+            error: optional ? undefined : ok ? undefined : res.error ?? (missing.length > 0 ? `missing expectation: ${missing.join(", ")}` : "failed"),
+            optionalError: optional && !ok ? res.error ?? (missing.length > 0 ? `missing expectation: ${missing.join(", ")}` : "failed") : undefined,
+            outputPreview: out.length > 220 ? `${out.slice(0, 220)}…` : out,
+            vars: Object.keys(vars).length > 0 ? { ...vars } : undefined,
+          });
+
+          if (!ok && !optional) {
+            okAll = false;
+            if (stopOnFail) break;
+          }
+
+          const delayAfterMs = ok ? Math.max(0, Math.min(10_000, step.delayAfterMs ?? stepDelayMs)) : 0;
+          if (delayAfterMs > 0 && i < script.length - 1) await sleep(delayAfterMs);
+        }
+
+        const firstFail = !okAll ? stepReports.find((s) => s && typeof s === "object" && (s as any).hardFail === true) : null;
+        const failMsg = firstFail ? `step ${(firstFail as any).index ?? "?"}: ${(firstFail as any).error ?? "failed"}` : undefined;
+        return { ok: okAll, steps: stepReports, error: failMsg };
+      };
+
+      for (const classId of classIds) {
+        const runStart = Date.now();
+        const name = `${namePrefix}_${classId.replace(/[^a-zA-Z0-9_-]+/g, "_")}_${Math.random().toString(36).slice(2, 6)}`;
+
+        let createdId: string | null = null;
+        let wsHello: Record<string, unknown> | null = null;
+
+        try {
+          const created = await deps.mmoCreateCharacter({ userId, shardId, classId, name });
+          if (!created.ok || !created.characterId) {
+            overallOk = false;
+            perClass.push({ classId, ok: false, phase: "create", error: created.error ?? "create_failed", latencyMs: Date.now() - runStart });
+            continue;
+          }
+
+          createdId = created.characterId;
+          const wsUrl = deps.wsBuildUrlForCharacter(createdId);
+          if (!wsUrl) {
+            overallOk = false;
+            perClass.push({ classId, ok: false, phase: "ws_url", error: "ws url unavailable", characterId: createdId, latencyMs: Date.now() - runStart });
+            continue;
+          }
+
+          const client = await deps.wsCreateMudClient(wsUrl);
+          if (!client.ok || !client.mudCommand || !client.close) {
+            overallOk = false;
+            perClass.push({ classId, ok: false, phase: "ws_connect", error: client.error ?? "ws_connect_failed", characterId: createdId, latencyMs: Date.now() - runStart, hello: client.hello ?? null });
+            continue;
+          }
+
+          wsHello = (client.hello as any) ?? null;
+          const scriptRes = await runScriptWithMudCommand(client.mudCommand, { classId, characterId: createdId });
+          await client.close();
+
+          if (!scriptRes.ok) {
+            overallOk = false;
+            perClass.push({ classId, ok: false, phase: "script", characterId: createdId, latencyMs: Date.now() - runStart, error: scriptRes.error ?? "script_failed", steps: scriptRes.steps, hello: wsHello });
+          } else {
+            perClass.push({ classId, ok: true, characterId: createdId, latencyMs: Date.now() - runStart, steps: scriptRes.steps, hello: wsHello });
+          }
+        } catch (e: unknown) {
+          overallOk = false;
+          perClass.push({ classId, ok: false, phase: "exception", error: e instanceof Error ? e.message : String(e), characterId: createdId, latencyMs: Date.now() - runStart });
+        } finally {
+          if (deleteOnFinish && createdId) {
+            const del = await deps.mmoDeleteCharacter({ userId, charId: createdId });
+            if (!del.ok) {
+              deps.log("warn", "Class playtest cleanup failed", { classId, charId: createdId, error: del.error ?? "delete_failed" });
+            }
+          }
+        }
+      }
+
+      const elapsedMs = Date.now() - start;
+      if (overallOk) okCount += 1;
+      else failCount += 1;
+
+      results.push({
+        id: goal.id,
+        kind: goal.kind,
+        ok: overallOk,
+        latencyMs: elapsedMs,
+        error: overallOk ? undefined : "one_or_more_classes_failed",
+        details: {
+          userId,
+          shardId,
+          classCount: classIds.length,
+          deleteOnFinish,
+          perClass,
         },
       });
       continue;
