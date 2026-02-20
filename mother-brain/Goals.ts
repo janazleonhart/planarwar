@@ -644,7 +644,8 @@ const mmoAdminSmoke: GoalDefinition[] =
       scriptStopOnFail: true,
       script: [
         { command: "help", expectIncludes: "Available commands:", rejectRegexAny: ["/\\[error\\]/i", "/unknown\\s+command/i"] },
-        { command: "quest help", expectIncludes: "Quest Board", rejectRegexAny: ["/\\[error\\]/i", "/unknown\\s+command/i"] },
+        // "quest help" outputs Usage text; don't hardcode "Quest Board".
+        { command: "quest help", expectRegexAny: ["/Usage:/i", "/quest\\s+ready/i", "/quest\\s+board/i"], rejectRegexAny: ["/\\[error\\]/i", "/unknown\\s+command/i"] },
         { command: "attack", expectIncludes: "[combat] You are not engaged", rejectRegexAny: ["/\\[error\\]/i", "/unknown\\s+command/i"] },
         { command: "pet", expectIncludes: "[pet] Commands:", rejectRegexAny: ["/\\[error\\]/i", "/unknown\\s+command/i"] },
       ],
@@ -689,7 +690,7 @@ const mmoAdminSmoke: GoalDefinition[] =
           command: "quest board available",
           // Accept either "available quests" output or any "none here" variant.
           expectRegexAny: ["Available quests:", "No available quests.", "/no\\s+available\\s+quests/i", "/no\\s+quest\\s+board/i", "/not\\s+in\\s+a\\s+town/i"],
-          rejectRegexAny: ["/\[error\]/i", "/unknown\s+command/i"],
+          rejectRegexAny: ["/\\[error\\]/i", "/unknown\\s+command/i"],
           // If no quests (or no board) are available, end the script cleanly as OK.
           stopOkIfRegexAny: ["/no\\s+available\\s+quests/i", "/no\\s+quest\\s+board/i", "/not\\s+in\\s+a\\s+town/i"],
           // Capture the first available quest id from the rendered board line.
@@ -701,7 +702,7 @@ const mmoAdminSmoke: GoalDefinition[] =
         {
           command: "quest board accept {{qid}}",
           expectRegexAny: ["\[quest\] Accepted:"],
-          rejectRegexAny: ["/\[error\]/i", "/unknown\s+command/i"],
+          rejectRegexAny: ["/\\[error\\]/i", "/unknown\\s+command/i"],
           // Sometimes state persistence can race a tiny bit in dev.
           retries: 2,
           retryDelayMs: 200,
@@ -709,12 +710,12 @@ const mmoAdminSmoke: GoalDefinition[] =
         {
           command: "quest",
           expectRegexAny: ["\[A\]", "{{qid}}"],
-          rejectRegexAny: ["/\[error\]/i"],
+          rejectRegexAny: ["/\\[error\\]/i"],
         },
         {
           command: "quest abandon {{qid}}",
           expectRegexAny: ["\[quest\] Abandoned:"],
-          rejectRegexAny: ["/\[error\]/i", "/unknown\s+command/i"],
+          rejectRegexAny: ["/\\[error\\]/i", "/unknown\\s+command/i"],
         },
       ],
     },
@@ -757,7 +758,7 @@ const mmoAdminSmoke: GoalDefinition[] =
           command: "quest board available",
           // Accept either "available quests" output or any "none here" variant.
           expectRegexAny: ["Available quests:", "No available quests.", "/no\\s+available\\s+quests/i", "/no\\s+quest\\s+board/i", "/not\\s+in\\s+a\\s+town/i"],
-          rejectRegexAny: ["/\[error\]/i", "/unknown\s+command/i"],
+          rejectRegexAny: ["/\\[error\\]/i", "/unknown\\s+command/i"],
           // If no quests (or no board) are available, end the script cleanly as OK.
           stopOkIfRegexAny: ["/no\\s+available\\s+quests/i", "/no\\s+quest\\s+board/i", "/not\\s+in\\s+a\\s+town/i"],
           // Capture the first available quest id from the rendered board line.
@@ -769,12 +770,12 @@ const mmoAdminSmoke: GoalDefinition[] =
         {
           command: "quest board accept {{qid}}",
           expectRegexAny: ["\[quest\] Accepted:"],
-          rejectRegexAny: ["/\[error\]/i", "/unknown\s+command/i"],
+          rejectRegexAny: ["/\\[error\\]/i", "/unknown\\s+command/i"],
           retries: 2,
           retryDelayMs: 200,
         },
-        { command: "quest", expectRegexAny: ["\[A\]", "{{qid}}"], rejectRegexAny: ["/\[error\]/i"] },
-        { command: "quest abandon {{qid}}", expectRegexAny: ["\[quest\] Abandoned:"], rejectRegexAny: ["/\[error\]/i", "/unknown\s+command/i"] },
+        { command: "quest", expectRegexAny: ["\[A\]", "{{qid}}"], rejectRegexAny: ["/\\[error\\]/i"] },
+        { command: "quest abandon {{qid}}", expectRegexAny: ["\[quest\] Abandoned:"], rejectRegexAny: ["/\\[error\\]/i", "/unknown\\s+command/i"] },
       ],
     },
     {
@@ -808,7 +809,7 @@ const mmoAdminSmoke: GoalDefinition[] =
           command: "quest board ready",
           expectRegexAny: ["/Ready\\s+quests:/i", "/no\\s+ready\\s+quests/i", "/no\\s+quest\\s+board/i", "/not\\s+in\\s+a\\s+town/i"],
           rejectRegexAny: ["/\\[error\\]/i", "/unknown\\s+command/i"],
-          stopOkIfRegexAny: ["/no\\s+ready\\s+quests/i", "/no\\s+quest\\s+board/i", "/not\\s+in\\s+a\\s+town/i"],
+          stopOkIfRegexAny: ["/Ready\\s+quests:\\s*0/i", "/no\\s+ready\\s+quests/i", "/no\\s+quest\\s+board/i", "/not\\s+in\\s+a\\s+town/i"],
           // Capture first ready quest id.
           captureRegex: "/^\\s*\\d+\\.\\s+.*\\(([^\\)]+)\\)\\s*$/m",
           captureVar: "rqid",
@@ -854,7 +855,8 @@ const mmoAdminSmoke: GoalDefinition[] =
           rejectRegexAny: ["/\\[error\\]/i", "/unknown\\s+command/i"],
         },
         {
-          command: "attack",
+          // Some environments require repeating the explicit target.
+          command: "attack dummy.1",
           expectRegexAny: ["/you\\s+(?:attack|strike|hit)/i", "/damage/i", "/absorbed/i"],
           rejectRegexAny: ["/\\[error\\]/i", "/unknown\\s+command/i"],
         },
@@ -2366,6 +2368,23 @@ export async function runGoalsOnce(
         const missing = ok ? validateMudExpectations(out, cookedExp.cooked) : [];
         if (missing.length > 0) ok = false;
 
+        // Stop-OK conditions should be evaluated *before* capture logic.
+        // This enables flows like "quest ready" where we stop cleanly when there are no ready quests,
+        // even if a captureRegex is present for the "has ready quests" path.
+        const stopOk = ok && shouldStopScriptOk(out, cookedExp.cooked as any);
+        if (stopOk) {
+          stepReports.push({
+            index: i,
+            command: cmd,
+            ok: true,
+            stoppedOk: true,
+            outputPreview: out.length > 220 ? `${out.slice(0, 220)}…` : out,
+            vars: Object.keys(vars).length > 0 ? { ...vars } : undefined,
+          });
+          // Script ends early as OK.
+          break;
+        }
+
         // Capture variable from output for later steps.
         if (ok && step.captureRegex && step.captureVar) {
           const rx = parseRegexString(step.captureRegex);
@@ -2383,21 +2402,6 @@ export async function runGoalsOnce(
               vars[step.captureVar] = val;
             }
           }
-        }
-
-
-        const stopOk = ok && shouldStopScriptOk(out, cookedExp.cooked as any);
-        if (stopOk) {
-          stepReports.push({
-            index: i,
-            command: cmd,
-            ok: true,
-            stoppedOk: true,
-            outputPreview: out.length > 220 ? `${out.slice(0, 220)}…` : out,
-            vars: Object.keys(vars).length > 0 ? { ...vars } : undefined,
-          });
-          // Script ends early as OK.
-          break;
         }
 
         stepReports.push({
