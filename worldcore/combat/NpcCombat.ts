@@ -1047,6 +1047,7 @@ if (phys.outcome !== "hit") {
   // Let NpcManager own HP + crime + pack calls when available
   let newHp = Math.max(0, prevHp - dmg);
   let absorbedForLog = 0;
+  let absorbBreakdownForLog: { name: string; priority: number; absorbed: number }[] | undefined = undefined;
 
   if (ctx.npcs) {
     // Prefer rich result so we can emit absorbed semantics.
@@ -1060,6 +1061,9 @@ if (phys.outcome !== "hit") {
 
     if (detailed && typeof detailed.hp === "number") {
       absorbedForLog = Math.max(0, Math.floor(Number(detailed.absorbed ?? 0)));
+      absorbBreakdownForLog = Array.isArray((detailed as any).absorbBreakdown)
+        ? (((detailed as any).absorbBreakdown as any[]) as any)
+        : undefined;
       dmg = Math.max(0, Math.floor(Number(detailed.effectiveDamage ?? Math.max(0, prevHp - detailed.hp))));
       newHp = detailed.hp;
     } else {
@@ -1153,6 +1157,7 @@ try {
       targetName: npc.name,
       damage: rawDamage,
       absorbed: absorbedForLog,
+      absorbBreakdown: absorbBreakdownForLog,
       overkill,
       hpAfter: newHp,
       maxHp,

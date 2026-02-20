@@ -550,6 +550,7 @@ export class NpcManager {
         absorbed: number;
         remainingDamage: number;
         effectiveDamage: number;
+        absorbBreakdown?: { name: string; priority: number; absorbed: number }[];
       }
     | null {
     const st = this.npcsByEntityId.get(entityId);
@@ -581,12 +582,20 @@ export class NpcManager {
 
     // Absorb shields (NPC status effects live on the entity).
     let absorbed = 0;
+    let absorbBreakdown: { name: string; priority: number; absorbed: number }[] | undefined = undefined;
     if (dmg > 0) {
       try {
         const school: any = (attacker as any)?.damageSchool ?? "physical";
         const res = absorbIncomingDamageFromEntityStatusEffects(e as any, dmg, school, Date.now());
         absorbed = Math.max(0, Math.floor(Number(res.absorbed ?? 0)));
         dmg = Math.max(0, Math.floor(Number(res.remainingDamage ?? dmg)));
+        absorbBreakdown = Array.isArray((res as any).breakdown)
+          ? ((res as any).breakdown as any[]).map((b) => ({
+              name: String((b as any)?.name ?? "shield"),
+              priority: Math.floor(Number((b as any)?.priority ?? 0)),
+              absorbed: Math.max(0, Math.floor(Number((b as any)?.absorbed ?? 0))),
+            }))
+          : undefined;
       } catch {
         // best-effort only
       }
@@ -648,7 +657,7 @@ export class NpcManager {
     }
 
     const effectiveDamage = Math.max(0, beforeHp - newHp);
-    return { hp: newHp, absorbed, remainingDamage: dmg, effectiveDamage };
+    return { hp: newHp, absorbed, remainingDamage: dmg, effectiveDamage, absorbBreakdown };
   }
 
   applyDamage(
@@ -686,12 +695,20 @@ export class NpcManager {
     // NOTE: absorbed damage should still count as a "hit" for CC break,
     // but it does not reduce HP.
     let absorbed = 0;
+    let absorbBreakdown: { name: string; priority: number; absorbed: number }[] | undefined = undefined;
     if (dmg > 0) {
       try {
         const school: any = (attacker as any)?.damageSchool ?? "physical";
         const res = absorbIncomingDamageFromEntityStatusEffects(e as any, dmg, school, Date.now());
         absorbed = Math.max(0, Math.floor(Number(res.absorbed ?? 0)));
         dmg = Math.max(0, Math.floor(Number(res.remainingDamage ?? dmg)));
+        absorbBreakdown = Array.isArray((res as any).breakdown)
+          ? ((res as any).breakdown as any[]).map((b) => ({
+              name: String((b as any)?.name ?? "shield"),
+              priority: Math.floor(Number((b as any)?.priority ?? 0)),
+              absorbed: Math.max(0, Math.floor(Number((b as any)?.absorbed ?? 0))),
+            }))
+          : undefined;
       } catch {
         // best-effort only
       }
@@ -799,6 +816,7 @@ export class NpcManager {
         hp: number;
         absorbed: number;
         effectiveDamage: number;
+        absorbBreakdown?: { name: string; priority: number; absorbed: number }[];
       }
     | null {
     const st = this.npcsByEntityId.get(npcEntityId);
@@ -852,6 +870,7 @@ export class NpcManager {
     const newHp = d.hp;
     const absorbed = Math.max(0, Math.floor(d.absorbed ?? 0));
     const effectiveDamage = Math.max(0, Math.floor(d.effectiveDamage ?? (beforeHp - newHp)));
+    const absorbBreakdown = Array.isArray((d as any).absorbBreakdown) ? ((d as any).absorbBreakdown as any[]) : undefined;
 
     // Best-effort threat attribution:
     //  - prefer effective damage
@@ -869,7 +888,7 @@ export class NpcManager {
     // Non-fatal tick: nothing else to do.
     if (!wasAlive || newHp > 0) {
       this.maybeEmitDotCombatLog(npcEntityId, effectiveDamage, absorbed, meta, attackerEntityId, newHp);
-      return { hp: newHp, absorbed, effectiveDamage };
+      return { hp: newHp, absorbed, effectiveDamage, absorbBreakdown };
     }
 
     // Fatal tick: route through canonical death pipeline if services are attached.
@@ -914,7 +933,7 @@ export class NpcManager {
 
     // Also emit per-tick log if enabled.
     this.maybeEmitDotCombatLog(npcEntityId, effectiveDamage, absorbed, meta, attackerEntityId, newHp);
-    return { hp: newHp, absorbed, effectiveDamage };
+    return { hp: newHp, absorbed, effectiveDamage, absorbBreakdown };
   }
 
   private maybeEmitDotCombatLog(

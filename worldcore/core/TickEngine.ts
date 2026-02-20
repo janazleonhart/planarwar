@@ -249,7 +249,7 @@ export class TickEngine {
             if (typeof nm.applyDotDamageDetailed === "function") {
               const d = nm.applyDotDamageDetailed((ent as any).id, amount, meta, attackerEntityId);
               if (d && typeof d.hp === "number") {
-                this.emitDotTickLine(meta as any, ent as any, d.effectiveDamage ?? amount, d.hp, d.absorbed);
+                this.emitDotTickLine(meta as any, ent as any, d.effectiveDamage ?? amount, d.hp, d.absorbed, (d as any).absorbBreakdown);
                 return;
               }
             }
@@ -303,7 +303,7 @@ export class TickEngine {
    * Emit a DOT tick combat line to the applier (caster).
    * Defaults ON; disable via PW_DOT_TICK_MESSAGES=0.
    */
-  private emitDotTickLine(meta: any, targetEnt: any, damage: number, hpAfter?: number, absorbed?: number): void {
+  private emitDotTickLine(meta: any, targetEnt: any, damage: number, hpAfter?: number, absorbed?: number, absorbBreakdown?: { name: string; priority: number; absorbed: number }[]): void {
     try {
       if (process.env.PW_DOT_TICK_MESSAGES === "0") return;
 

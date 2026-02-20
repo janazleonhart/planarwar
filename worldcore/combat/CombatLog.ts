@@ -17,11 +17,26 @@ export function formatHpPart(hpAfter?: number, maxHp?: number): string {
   return ` (${hp}/${max} HP)`;
 }
 
-export function formatDamageExtras(opts: { absorbed?: number; overkill?: number }): string {
+export function formatDamageExtras(opts: { absorbed?: number; overkill?: number; absorbBreakdown?: { name: string; priority: number; absorbed: number }[] }): string {
   const parts: string[] = [];
   const absorbed = clampInt(opts.absorbed ?? 0, 0, 9_999_999);
   const overkill = clampInt(opts.overkill ?? 0, 0, 9_999_999);
-  if (absorbed > 0) parts.push(`${absorbed} absorbed`);
+  const breakdown = Array.isArray(opts.absorbBreakdown) ? opts.absorbBreakdown : null;
+  if (absorbed > 0) {
+    if (breakdown && breakdown.length > 0) {
+      const by = breakdown
+        .map((b) => {
+          const name = String(b?.name ?? "shield");
+          const pr = clampInt((b as any)?.priority ?? 0, -99, 99);
+          const amt = clampInt((b as any)?.absorbed ?? 0, 0, 9_999_999);
+          return `${name}[p${pr}]=${amt}`;
+        })
+        .join(" > ");
+      parts.push(`${absorbed} absorbed by ${by}`);
+    } else {
+      parts.push(`${absorbed} absorbed`);
+    }
+  }
   if (overkill > 0) parts.push(`${overkill} overkill`);
   if (parts.length === 0) return "";
   return ` (${parts.join(", ")})`;
@@ -32,6 +47,7 @@ export function formatWorldSpellDotTickLine(opts: {
   targetName: string;
   damage: number;
   absorbed?: number;
+  absorbBreakdown?: { name: string; priority: number; absorbed: number }[];
   hpAfter?: number;
   maxHp?: number;
 }): string {
@@ -39,7 +55,7 @@ export function formatWorldSpellDotTickLine(opts: {
   const targetName = String(opts.targetName || "target");
   const dmg = clampInt(opts.damage, 0, 9_999_999);
   const hpPart = formatHpPart(opts.hpAfter, opts.maxHp);
-  const extras = formatDamageExtras({ absorbed: opts.absorbed });
+  const extras = formatDamageExtras({ absorbed: opts.absorbed, absorbBreakdown: (opts as any).absorbBreakdown });
   return `[world] [spell:${spellName}] ${spellName} deals ${dmg} damage${extras} to ${targetName}.${hpPart}`;
 }
 
@@ -65,6 +81,7 @@ export function formatWorldSpellDirectDamageLine(opts: {
   maxHp?: number;
   overkill?: number;
   absorbed?: number;
+  absorbBreakdown?: { name: string; priority: number; absorbed: number }[];
   abilityKind?: "spell" | "song";
 }): string {
   const spellName = String(opts.spellName || "Spell");
@@ -77,7 +94,7 @@ export function formatWorldSpellDirectDamageLine(opts: {
   const tag = `[world] [${kind}:${spellName}]`;
 
   let line = `${tag} You hit ${targetName} for ${dmg} damage`;
-  line += formatDamageExtras({ absorbed: opts.absorbed, overkill });
+  line += formatDamageExtras({ absorbed: opts.absorbed, overkill, absorbBreakdown: (opts as any).absorbBreakdown });
   line += `.${hpPart}`;
   return line;
 }

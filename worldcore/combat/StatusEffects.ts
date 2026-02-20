@@ -116,6 +116,18 @@ export interface AbsorbPayloadState extends AbsorbPayloadInput {
   remaining: number;
 }
 
+
+export interface AbsorbConsumptionDetail {
+  /** StatusEffectInstance.id */
+  id: string;
+  /** Human-friendly shield name when available. */
+  name: string;
+  /** Shield priority used for consumption (higher first). */
+  priority: number;
+  /** Amount absorbed by this shield during this hit. */
+  absorbed: number;
+}
+
 export interface StatusEffectInstance {
   id: StatusEffectId;
   sourceKind: StatusEffectSourceKind;
@@ -1709,7 +1721,7 @@ export function absorbIncomingDamageFromStatusEffects(
   amount: number,
   school: DamageSchool,
   now: number = Date.now(),
-): { remainingDamage: number; absorbed: number } {
+): { remainingDamage: number; absorbed: number; breakdown?: AbsorbConsumptionDetail[] } {
   const state = ensureStatusState(char);
   return absorbIncomingDamageFromState(state, amount, school, now);
 }
@@ -1719,7 +1731,7 @@ export function absorbIncomingDamageFromEntityStatusEffects(
   amount: number,
   school: DamageSchool,
   now: number = Date.now(),
-): { remainingDamage: number; absorbed: number } {
+): { remainingDamage: number; absorbed: number; breakdown?: AbsorbConsumptionDetail[] } {
   const state = ensureEntityStatusState(entity);
   return absorbIncomingDamageFromState(state, amount, school, now);
 }
@@ -1729,7 +1741,7 @@ function absorbIncomingDamageFromState(
   amount: number,
   school: DamageSchool,
   now: number,
-): { remainingDamage: number; absorbed: number } {
+): { remainingDamage: number; absorbed: number; breakdown?: AbsorbConsumptionDetail[] } {
   tickStatusEffectsInternal(state, now);
 
   let remaining = Math.max(0, Math.floor(Number(amount ?? 0)));
@@ -1764,10 +1776,10 @@ function absorbIncomingDamageFromState(
     const idb = b.inst.id ?? "";
     return ida.localeCompare(idb);
   });
+  let absorbed = 0;
+  const breakdown: AbsorbConsumptionDetail[] = [];
 
-    let absorbed = 0;
-
-  // NOTE: Do NOT track depleted instances by object identity.
+  // NOTE: Do NOT track depleted instances by object identity.  // NOTE: Do NOT track depleted instances by object identity.
   // StatusEffectInstances can be re-materialized across pipelines (same id, different object ref).
   // Track depletion by stable (bucketKey + id) so buckets actually prune deterministically.
   const depletedKeys = new Set<string>();
@@ -1784,6 +1796,21 @@ function absorbIncomingDamageFromState(
     remaining -= take;
     absorbed += take;
 
+    try {
+      const name = String(ref.inst.name ?? ref.inst.sourceId ?? "shield");
+      const priority = Math.floor(Number((ref.inst as any)?.absorb?.priority ?? 0));
+      const id = String(ref.inst.id ?? "");
+      const prev = breakdown.length > 0 ? breakdown[breakdown.length - 1] : null;
+      // Merge consecutive absorption from the same shield (shouldn't happen often, but keeps logs tidy).
+      if (prev && prev.id === id) {
+        prev.absorbed += take;
+      } else {
+        breakdown.push({ id, name, priority, absorbed: take });
+      }
+    } catch {
+      // ignore
+    }
+
     if (!Number.isFinite(abs.remaining) || abs.remaining <= 0) {
       abs.remaining = 0;
       depletedKeys.add(`${ref.bucketKey}:${ref.inst.id ?? ""}`);
@@ -1798,7 +1825,7 @@ function absorbIncomingDamageFromState(
     }
   }
 
-return { remainingDamage: remaining, absorbed };
+  return { remainingDamage: remaining, absorbed, breakdown: breakdown.length ? breakdown : undefined };
 }
 
 /**

@@ -23,6 +23,24 @@ test("[contract] CombatLog: absorbed damage is explicitly annotated in direct + 
     "[world] [spell:Arcane Bolt] You hit Sturdy Training Dummy for 10 damage (8 absorbed). (9990/10000 HP)",
   );
 
+  const directAbsorbBreakdown = formatWorldSpellDirectDamageLine({
+    spellName: "Arcane Bolt",
+    targetName: "Sturdy Training Dummy",
+    damage: 10,
+    absorbed: 8,
+    absorbBreakdown: [
+      { name: "Ward", priority: 2, absorbed: 5 },
+      { name: "Barrier", priority: 1, absorbed: 3 },
+    ],
+    hpAfter: 9990,
+    maxHp: 10000,
+  });
+
+  assert.equal(
+    directAbsorbBreakdown,
+    "[world] [spell:Arcane Bolt] You hit Sturdy Training Dummy for 10 damage (8 absorbed by Ward[p2]=5 > Barrier[p1]=3). (9990/10000 HP)",
+  );
+
   const directAbsorbOverkill = formatWorldSpellDirectDamageLine({
     spellName: "Arcane Bolt",
     targetName: "Sturdy Training Dummy",
