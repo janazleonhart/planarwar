@@ -1452,6 +1452,24 @@ function lastReportFilePath(state: GoalsState): string | undefined {
 }
 
 
+function computeSkipReasonCounts(report: GoalRunReport): Record<string, number> | null {
+  const counts: Record<string, number> = {};
+  for (const r of report.results) {
+    if (!r || r.ok !== true) continue;
+    const d: any = r.details;
+    if (!d || d.skipped !== true) continue;
+    const reason = typeof d.reason === "string" && d.reason.trim().length ? d.reason.trim() : "unspecified";
+    counts[reason] = (counts[reason] ?? 0) + 1;
+  }
+  const keys = Object.keys(counts);
+  if (!keys.length) return null;
+  keys.sort((a, b) => (counts[b] ?? 0) - (counts[a] ?? 0));
+  const out: Record<string, number> = {};
+  for (const k of keys) out[k] = counts[k]!;
+  return out;
+}
+
+
 type FetchErrorInfo = {
   message: string;
   details?: Record<string, unknown>;
@@ -2699,12 +2717,33 @@ export async function runGoalSuites(
   // can quickly inspect the most recent outcome without hunting timestamps.
   const lastPath = lastReportFilePath(state);
   if (lastPath) {
+    const skipReasonsBySuite: Record<string, Record<string, number> | null> = {};
+    for (const [suiteId, r] of Object.entries(bySuite)) {
+      skipReasonsBySuite[suiteId] = computeSkipReasonCounts(r);
+    }
+    const skipReasonsOverall = (() => {
+      // Overall report doesn't include per-goal results, so we aggregate from suites.
+      const agg: Record<string, number> = {};
+      for (const v of Object.values(skipReasonsBySuite)) {
+        if (!v) continue;
+        for (const [reason, n] of Object.entries(v)) agg[reason] = (agg[reason] ?? 0) + n;
+      }
+      const keys = Object.keys(agg);
+      if (!keys.length) return null;
+      keys.sort((a, b) => (agg[b] ?? 0) - (agg[a] ?? 0));
+      const out: Record<string, number> = {};
+      for (const k of keys) out[k] = agg[k]!;
+      return out;
+    })();
+
     safeWriteJson(lastPath, {
       ts: overall.ts,
       tick: overall.tick,
       ok: overall.ok,
       summary: overall.summary,
+      skipReasons: skipReasonsOverall,
       bySuite,
+      skipReasonsBySuite,
       failingGoalsBySuite: state.lastFailingGoalsBySuite ?? null,
     });
   }
