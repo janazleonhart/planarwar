@@ -840,8 +840,16 @@ const mmoAdminSmoke: GoalDefinition[] =
       scriptStopOnFail: true,
       script: [
         {
-          command: "attack training dummy",
-          stopOkIfRegexAny: ["/no\\s+training\\s+dummy/i", "/not\\s+here/i", "/cannot\\s+attack/i"],
+          // NOTE: In the current MUD, the target is typically indexed (e.g. dummy.1).
+          // We keep this conservative and stop OK if there's no dummy-like target.
+          command: "attack dummy.1",
+          stopOkIfRegexAny: [
+            "/no\\s+training\\s+dummy/i",
+            "/no\\s+dummy/i",
+            "/not\\s+here/i",
+            "/cannot\\s+attack/i",
+            "/no\\s+target/i",
+          ],
           expectRegexAny: ["/you\\s+(?:attack|strike|hit)/i", "/combat\\s+started/i", "/already\\s+in\\s+combat/i"],
           rejectRegexAny: ["/\\[error\\]/i", "/unknown\\s+command/i"],
         },

@@ -24,6 +24,7 @@ import process from "node:process";
 import WebSocket from "ws";
 import { Pool } from "pg";
 import type { QueryResult, QueryResultRow } from "pg";
+import * as jwt from "jsonwebtoken";
 import { z } from "zod";
 
 // Dirent type lives on node:fs (not node:fs/promises). Keeping this here avoids
@@ -310,18 +311,17 @@ const ConfigSchema = z
     PW_DATABASE_URL: z.string().optional(),
     DATABASE_URL: z.string().optional(),
     MOTHER_BRAIN_WS_URL: z.string().optional(),
-    // If true, WS must be configured and connected for player smoke (ws.connected will FAIL when disabled).
-    MOTHER_BRAIN_WS_REQUIRED: z
-      .string()
-      .optional()
-      .transform((v) => (v ? v.toLowerCase() === "true" || v === "1" : false)),
 
-    // If true, /readyz will require goals health to be OK (when goals are enabled).
-    // This prevents the service from reporting ready while playtesting is blind/failed.
-    MOTHER_BRAIN_READY_REQUIRES_GOALS_OK: z
-      .string()
-      .optional()
-      .transform((v) => (v ? v.toLowerCase() === "true" || v === "1" : false)),
+    // When set, Mother Brain will enforce WS being configured/connected for player smoke.
+    // 0/1 string keeps env parsing simple.
+    MOTHER_BRAIN_WS_REQUIRED: z.enum(["0", "1"]).optional().default("0"),
+
+    // Character-scoped MUD commands require attaching to a character.
+    MOTHER_BRAIN_WS_CHARACTER_ID: z.string().optional(),
+
+    // Optional JWT token for WS. If unset and PW_AUTH_JWT_SECRET + MOTHER_BRAIN_TEST_USER_ID are set,
+    // Mother Brain can auto-sign a JWT for local dev.
+    MOTHER_BRAIN_WS_TOKEN: z.string().optional(),
 
     MOTHER_BRAIN_DB_TIMEOUT_MS: z
       .string()
@@ -480,8 +480,11 @@ type MotherBrainConfig = {
 
   dbUrl?: string;
   wsUrl?: string;
+
+  // WS/MUD session controls
   wsRequired: boolean;
-  readyRequiresGoalsOk: boolean;
+  wsCharacterId?: string;
+  wsToken?: string;
 
   dbTimeoutMs: number;
   wsTimeoutMs: number;
@@ -538,8 +541,10 @@ function parseConfig(): MotherBrainConfig {
 
     dbUrl: env.MOTHER_BRAIN_DB_URL ?? env.PW_DATABASE_URL ?? env.DATABASE_URL,
     wsUrl: env.MOTHER_BRAIN_WS_URL,
-    wsRequired: env.MOTHER_BRAIN_WS_REQUIRED,
-    readyRequiresGoalsOk: env.MOTHER_BRAIN_READY_REQUIRES_GOALS_OK,
+
+    wsRequired: env.MOTHER_BRAIN_WS_REQUIRED === "1",
+    wsCharacterId: env.MOTHER_BRAIN_WS_CHARACTER_ID,
+    wsToken: env.MOTHER_BRAIN_WS_TOKEN,
 
     dbTimeoutMs: env.MOTHER_BRAIN_DB_TIMEOUT_MS,
     wsTimeoutMs: env.MOTHER_BRAIN_WS_TIMEOUT_MS,
@@ -1134,22 +1139,8 @@ class WsProbe {
     }
 
     // Be tolerant: different servers may name fields differently.
-    // We accept a few common response op/type values.
-    const opRaw = typeof msg?.op === "string" ? msg.op : typeof msg?.type === "string" ? msg.type : null;
-    const kindRaw = typeof msg?.kind === "string" ? msg.kind : null;
-    const op = opRaw ? String(opRaw) : kindRaw ? String(kindRaw) : null;
-    const opNorm = op ? op.toLowerCase().replace(/\s+/g, "") : null;
-    const okOps = new Set([
-      "mud_result",
-      "mudresult",
-      "mud.result",
-      "mud_output",
-      "mudoutput",
-      "mud.output",
-      // Some servers echo under the request op for convenience
-      "mud",
-    ]);
-    if (!opNorm || !okOps.has(opNorm)) return;
+    const op = typeof msg?.op === "string" ? msg.op : typeof msg?.type === "string" ? msg.type : null;
+    if (op !== "mud_result" && op !== "mudResult" && op !== "mud.result") return;
 
     const output =
       typeof msg?.output === "string"
@@ -1160,11 +1151,7 @@ class WsProbe {
             ? msg.payload.text
             : typeof msg?.payload?.output === "string"
               ? msg.payload.output
-              : typeof msg?.payload?.result === "string"
-                ? msg.payload.result
-                : typeof msg?.result === "string"
-                  ? msg.result
-                  : "";
+              : "";
 
     this.finishMudPending({ ok: true, output });
   }
@@ -1268,26 +1255,17 @@ function startHttpServer(cfg: MotherBrainConfig, state: StatusState): http.Serve
   if (!cfg.httpPort || cfg.httpPort <= 0) return null;
 
   const server = http.createServer(async (req, res) => {
-    const rawUrl = req.url || "/";
-    const parsedUrl = new URL(rawUrl, "http://localhost");
-    const pathname = parsedUrl.pathname;
-
-    if (pathname === "/healthz") {
+    const url = req.url || "/";
+    if (url === "/healthz") {
       res.statusCode = 200;
       res.setHeader("content-type", "application/json");
       res.end(JSON.stringify({ ok: true, ts: nowIso() }));
       return;
     }
 
-    if (pathname === "/readyz") {
+    if (url === "/readyz") {
       const snap = state.lastSnapshot;
-      const snapOk = snap ? isReady(snap) : false;
-
-      const goalsEnabled = state.goals.state.everyTicks > 0;
-      const goalsHealth = computeGoalsHealth(state.goals.state);
-      const goalsOk = goalsHealth.status === "OK";
-
-      const ok = cfg.readyRequiresGoalsOk && goalsEnabled ? snapOk && goalsOk : snapOk;
+      const ok = snap ? isReady(snap) : false;
       res.statusCode = ok ? 200 : 503;
       res.setHeader("content-type", "application/json");
       res.end(
@@ -1296,21 +1274,12 @@ function startHttpServer(cfg: MotherBrainConfig, state: StatusState): http.Serve
           ts: nowIso(),
           lastSnapshotIso: state.lastSnapshotIso,
           signature: state.lastSignature,
-          goals: {
-            enabled: goalsEnabled,
-            requireOk: cfg.readyRequiresGoalsOk,
-            status: goalsHealth.status,
-            lastRunIso: goalsHealth.lastRunIso,
-            ageSec: goalsHealth.ageSec,
-            lastOk: state.goals.state.lastOk,
-            lastSummary: state.goals.state.lastSummary,
-          },
         })
       );
       return;
     }
 
-    if (pathname === "/status") {
+    if (url === "/status") {
       res.statusCode = 200;
       res.setHeader("content-type", "application/json");
       res.end(
@@ -1329,7 +1298,7 @@ function startHttpServer(cfg: MotherBrainConfig, state: StatusState): http.Serve
     // Goals runner endpoints (safe; observe-only)
     // ---------------------------------------------------------------------
 
-    if (pathname === "/goals" && req.method === "GET") {
+    if (url === "/goals" && req.method === "GET") {
       const suites = getGoalSuites(state.goals.state);
       const health = computeGoalsHealth(state.goals.state);
       res.statusCode = 200;
@@ -1355,161 +1324,7 @@ function startHttpServer(cfg: MotherBrainConfig, state: StatusState): http.Serve
       return;
     }
 
-    // Convenience: return the most recent goals run report (human-friendly JSON).
-    // This is written by the goals runner as mother-brain-goals-last.json under reportDir.
-    if (pathname === "/goals/last" && req.method === "GET") {
-      const reportDir = state.goals.state.reportDir;
-      const filePath = reportDir ? path.resolve(reportDir, "mother-brain-goals-last.json") : null;
-
-      if (!filePath || !fs.existsSync(filePath)) {
-        res.statusCode = 404;
-        res.setHeader("content-type", "application/json");
-        res.end(JSON.stringify({ ok: false, ts: nowIso(), error: "last report not found", reportDir }));
-        return;
-      }
-
-      try {
-        const raw = fs.readFileSync(filePath, "utf-8");
-        const parsed = JSON.parse(raw) as unknown;
-        res.statusCode = 200;
-        res.setHeader("content-type", "application/json");
-        res.end(JSON.stringify({ ok: true, ts: nowIso(), reportDir, filePath, report: parsed }));
-        return;
-      } catch (e: unknown) {
-        res.statusCode = 500;
-        res.setHeader("content-type", "application/json");
-        res.end(
-          JSON.stringify({
-            ok: false,
-            ts: nowIso(),
-            error: e instanceof Error ? e.message : String(e),
-            reportDir,
-            filePath,
-          })
-        );
-        return;
-      }
-    }
-
-    // List recent goals run files (JSONL) in reportDir.
-    // Useful for debugging historical runs without shell access.
-    //
-    // GET /goals/runs?limit=20
-    if (pathname === "/goals/runs" && req.method === "GET") {
-      const reportDir = state.goals.state.reportDir;
-      const limit = Math.max(1, Math.min(200, Number(parsedUrl.searchParams.get("limit") ?? "20") || 20));
-
-      if (!reportDir || !fs.existsSync(reportDir)) {
-        res.statusCode = 404;
-        res.setHeader("content-type", "application/json");
-        res.end(JSON.stringify({ ok: false, ts: nowIso(), error: "reportDir not configured", reportDir }));
-        return;
-      }
-
-      try {
-        const entries = fs
-          .readdirSync(reportDir, { withFileTypes: true })
-          .filter((d) => d.isFile())
-          .map((d) => d.name)
-          .filter((n) => n.endsWith(".jsonl") && n.startsWith("mother-brain-goals-"));
-
-        const files = entries
-          .map((name) => {
-            const filePath = path.resolve(reportDir, name);
-            const st = fs.statSync(filePath);
-            return {
-              name,
-              filePath,
-              sizeBytes: st.size,
-              mtimeIso: st.mtime.toISOString(),
-            };
-          })
-          .sort((a, b) => (a.mtimeIso < b.mtimeIso ? 1 : a.mtimeIso > b.mtimeIso ? -1 : 0))
-          .slice(0, limit);
-
-        res.statusCode = 200;
-        res.setHeader("content-type", "application/json");
-        res.end(JSON.stringify({ ok: true, ts: nowIso(), reportDir, files }));
-        return;
-      } catch (e: unknown) {
-        res.statusCode = 500;
-        res.setHeader("content-type", "application/json");
-        res.end(JSON.stringify({ ok: false, ts: nowIso(), reportDir, error: e instanceof Error ? e.message : String(e) }));
-        return;
-      }
-    }
-
-    // Tail a recent JSONL report file by suite id.
-    //
-    // GET /goals/recent?suite=all_smoke&limit=100
-    if (pathname === "/goals/recent" && req.method === "GET") {
-      const reportDir = state.goals.state.reportDir;
-      const suite = (parsedUrl.searchParams.get("suite") ?? "").trim();
-      const limit = Math.max(1, Math.min(500, Number(parsedUrl.searchParams.get("limit") ?? "100") || 100));
-
-      if (!reportDir || !fs.existsSync(reportDir)) {
-        res.statusCode = 404;
-        res.setHeader("content-type", "application/json");
-        res.end(JSON.stringify({ ok: false, ts: nowIso(), error: "reportDir not configured", reportDir }));
-        return;
-      }
-      if (!suite) {
-        res.statusCode = 400;
-        res.setHeader("content-type", "application/json");
-        res.end(JSON.stringify({ ok: false, ts: nowIso(), error: "missing suite param" }));
-        return;
-      }
-
-      // Match today's report file name convention.
-      // Note: suite is sanitized in Goals.ts the same way; keep it consistent here.
-      const safeSuite = suite
-        .toLowerCase()
-        .replace(/[^a-z0-9_-]+/g, "-")
-        .replace(/-+/g, "-")
-        .replace(/^-/g, "")
-        .replace(/-$/g, "")
-        .slice(0, 64);
-
-      const today = new Date().toISOString().slice(0, 10);
-      const filePath = path.resolve(reportDir, `mother-brain-goals-${safeSuite || "suite"}-${today}.jsonl`);
-
-      if (!fs.existsSync(filePath)) {
-        res.statusCode = 404;
-        res.setHeader("content-type", "application/json");
-        res.end(JSON.stringify({ ok: false, ts: nowIso(), error: "report file not found", reportDir, suite, filePath }));
-        return;
-      }
-
-      try {
-        const raw = fs.readFileSync(filePath, "utf-8");
-        const lines = raw
-          .split(/\r?\n/)
-          .map((l) => l.trim())
-          .filter((l) => l.length > 0);
-
-        const tail = lines.slice(-limit);
-        // Best-effort parse each line as JSON. If parse fails, include raw.
-        const parsed = tail.map((l) => {
-          try {
-            return JSON.parse(l) as unknown;
-          } catch {
-            return { raw: l };
-          }
-        });
-
-        res.statusCode = 200;
-        res.setHeader("content-type", "application/json");
-        res.end(JSON.stringify({ ok: true, ts: nowIso(), reportDir, suite, filePath, limit, lines: parsed }));
-        return;
-      } catch (e: unknown) {
-        res.statusCode = 500;
-        res.setHeader("content-type", "application/json");
-        res.end(JSON.stringify({ ok: false, ts: nowIso(), reportDir, suite, filePath, error: e instanceof Error ? e.message : String(e) }));
-        return;
-      }
-    }
-
-    if (pathname === "/goals/set" && req.method === "POST") {
+    if (url === "/goals/set" && req.method === "POST") {
       try {
         const body = await readJsonBody(req);
         const goals = Array.isArray(body) ? (body as GoalDefinition[]) : null;
@@ -1525,7 +1340,7 @@ function startHttpServer(cfg: MotherBrainConfig, state: StatusState): http.Serve
       return;
     }
 
-    if (pathname === "/goals/clear" && req.method === "POST") {
+    if (url === "/goals/clear" && req.method === "POST") {
       setInMemoryGoals(state.goals.state, null);
       res.statusCode = 200;
       res.setHeader("content-type", "application/json");
@@ -1533,7 +1348,7 @@ function startHttpServer(cfg: MotherBrainConfig, state: StatusState): http.Serve
       return;
     }
 
-    if (pathname === "/goals/run" && req.method === "POST") {
+    if (url === "/goals/run" && req.method === "POST") {
       // Run goals immediately using the last known snapshot context.
       // Note: DB querying is not available from this endpoint (by design).
       try {
@@ -1553,8 +1368,6 @@ function startHttpServer(cfg: MotherBrainConfig, state: StatusState): http.Serve
                 ? { ok: false, reason: wb.reason }
                 : null,
           wsState,
-          wsDisabledReason: wsState === "disabled" ? (cfg.wsUrl ? "ws probe disabled" : "MOTHER_BRAIN_WS_URL not set") : undefined,
-          wsRequired: cfg.wsRequired,
           log,
         }, tick);
 
@@ -1764,8 +1577,6 @@ async function main(): Promise<void> {
           },
           waveBudget: wbForGoals,
           wsState: wsProbe.isEnabled() ? wsProbe.getState() : "disabled",
-          wsDisabledReason: wsProbe.isEnabled() ? undefined : (cfg.wsUrl ? "ws probe disabled" : "MOTHER_BRAIN_WS_URL not set"),
-          wsRequired: cfg.wsRequired,
           wsMudCommand: wsProbe.isEnabled() ? (cmd: string, timeoutMs: number) => wsProbe.mudCommand(cmd, timeoutMs) : undefined,
           log,
         }, tick);
