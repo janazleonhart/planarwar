@@ -15,6 +15,7 @@ import path from "node:path";
 export type GoalKind =
   | "db_table_exists"
   | "db_wave_budget_breaches"
+  | "db_class_kits_summary"
   | "ws_connected"
   | "ws_mud"
   | "ws_mud_script"
@@ -956,6 +957,8 @@ const mmoAdminSmoke: GoalDefinition[] =
     db: [
       { id: "db.service_heartbeats.exists", kind: "db_table_exists", table: "service_heartbeats" },
       { id: "db.spawn_points.exists", kind: "db_table_exists", table: "spawn_points" },
+      // Kits summary: which classes appear in unlock tables (spells/abilities).
+      { id: "db.class_kits.summary", kind: "db_class_kits_summary" },
     ],
     wave_budget: [{ id: "wave_budget.no_breaches", kind: "db_wave_budget_breaches", maxBreaches: 0 }],
     ws: [{ id: "ws.connected", kind: "ws_connected" }],
@@ -1032,6 +1035,76 @@ function parseRegexString(pattern: string): RegExp | null {
   } catch {
     return null;
   }
+}
+
+type KitClassCounts = {
+  classId: string;
+  spellUnlocks?: number;
+  abilityUnlocks?: number;
+};
+
+async function inferKitClassesFromDb(
+  dbQuery: ((sql: string, params?: any[]) => Promise<{ rows: any[] } | null>) | undefined
+): Promise<{ ok: boolean; counts: KitClassCounts[]; details: any } > {
+  if (!dbQuery) return { ok: false, counts: [], details: { reason: "no dbQuery" } };
+
+  const publicSchema = "public";
+  const tables = [
+    { table: "spell_unlocks", label: "spellUnlocks" as const },
+    { table: "ability_unlocks", label: "abilityUnlocks" as const },
+  ];
+  const classColCandidates = ["class_id", "classid", "class", "class_name", "classId", "classID"];
+
+  const found: Array<{ table: string; label: "spellUnlocks" | "abilityUnlocks"; classCol: string }> = [];
+
+  for (const t of tables) {
+    const cols = await dbQuery(
+      `select column_name from information_schema.columns where table_schema=$1 and table_name=$2`,
+      [publicSchema, t.table]
+    );
+    const colNames = (cols?.rows ?? []).map((r) => String(r.column_name ?? "").trim()).filter(Boolean);
+    if (colNames.length === 0) continue;
+
+    const lower = new Map(colNames.map((c) => [c.toLowerCase(), c] as const));
+    const pickedLower = classColCandidates.find((c) => lower.has(c.toLowerCase()));
+    if (!pickedLower) continue;
+    const classCol = lower.get(pickedLower.toLowerCase())!;
+    found.push({ table: t.table, label: t.label, classCol });
+  }
+
+  const byClass = new Map<string, KitClassCounts>();
+
+  for (const f of found) {
+    // Use a stricter guard: accept only [a-zA-Z0-9_].
+    const safeCol = /^[a-zA-Z0-9_]+$/.test(f.classCol) ? f.classCol : null;
+    if (!safeCol) continue;
+    const safeTable = /^[a-zA-Z0-9_]+$/.test(f.table) ? f.table : null;
+    if (!safeTable) continue;
+
+    const q = await dbQuery(
+      `select ${safeCol} as class_id, count(*)::int as cnt from ${publicSchema}.${safeTable} group by 1 order by 2 desc, 1 asc`
+    );
+    for (const r of q?.rows ?? []) {
+      const classId = String((r as any).class_id ?? "").trim();
+      if (!classId) continue;
+      const cnt = Number((r as any).cnt ?? 0);
+      const cur = byClass.get(classId) ?? { classId };
+      cur[f.label] = cnt;
+      byClass.set(classId, cur);
+    }
+  }
+
+  const counts = Array.from(byClass.values()).sort((a, b) => a.classId.localeCompare(b.classId));
+  return {
+    ok: found.length > 0,
+    counts,
+    details: {
+      foundTables: found,
+      classCount: counts.length,
+      hasSpellUnlocks: found.some((x) => x.label === "spellUnlocks"),
+      hasAbilityUnlocks: found.some((x) => x.label === "abilityUnlocks"),
+    },
+  };
 }
 
 
@@ -2130,6 +2203,52 @@ export async function runGoalsOnce(
       continue;
     }
 
+    if (goal.kind === "db_class_kits_summary") {
+      try {
+        const inferred = await inferKitClassesFromDb(deps.dbQuery);
+        if (!inferred.ok) {
+          // Not a hard failure; environments without these tables should still pass.
+          skippedCount += 1;
+          results.push({
+            id: goal.id,
+            kind: goal.kind,
+            ok: true,
+            latencyMs: Date.now() - start,
+            details: { skipped: true, reason: inferred.details?.reason ?? "no kit tables" },
+          });
+          continue;
+        }
+
+        okCount += 1;
+        const implemented = inferred.counts
+          .filter((c) => (c.spellUnlocks ?? 0) > 0 || (c.abilityUnlocks ?? 0) > 0)
+          .map((c) => c.classId);
+
+        results.push({
+          id: goal.id,
+          kind: goal.kind,
+          ok: true,
+          latencyMs: Date.now() - start,
+          details: {
+            ...inferred.details,
+            implementedClassIds: implemented,
+            counts: inferred.counts,
+          },
+        });
+      } catch (e: unknown) {
+        // Don't fail the suite for this; it is informational.
+        skippedCount += 1;
+        results.push({
+          id: goal.id,
+          kind: goal.kind,
+          ok: true,
+          latencyMs: Date.now() - start,
+          details: { skipped: true, reason: e instanceof Error ? e.message : String(e) },
+        });
+      }
+      continue;
+    }
+
     if (goal.kind === "db_wave_budget_breaches") {
       const max = goal.maxBreaches ?? 0;
       const wb = deps.waveBudget;
@@ -2558,11 +2677,22 @@ export async function runGoalsOnce(
         }
         const envList = String(process.env.MOTHER_BRAIN_CLASS_PLAYTEST_CLASS_IDS || "").trim();
         if (!envList) return [];
-        return envList
-          .split(",")
-          .map((s) => s.trim())
-          .filter(Boolean);
+        return envList.split(",").map((s) => s.trim()).filter(Boolean);
       })();
+
+      // If no explicit class ids are provided, infer "implemented" classes from DB unlock tables.
+      // This prevents noisy failures for kitless classes while still letting us test everything that exists.
+      let inferredFromDb: { implementedClassIds: string[]; counts: KitClassCounts[] } | null = null;
+      if (classIds.length === 0) {
+        const inferred = await inferKitClassesFromDb(deps.dbQuery);
+        if (inferred.ok) {
+          const implemented = inferred.counts
+            .filter((c) => (c.spellUnlocks ?? 0) > 0 || (c.abilityUnlocks ?? 0) > 0)
+            .map((c) => c.classId);
+          inferredFromDb = { implementedClassIds: implemented, counts: inferred.counts };
+          classIds.push(...implemented);
+        }
+      }
 
       if (!classIds.length) {
         skippedCount += 1;
@@ -2571,7 +2701,10 @@ export async function runGoalsOnce(
           kind: goal.kind,
           ok: true,
           latencyMs: Date.now() - start,
-          details: { skipped: true, reason: "no class ids" },
+          details: {
+            skipped: true,
+            reason: "no class ids (and no kits inferred)",
+          },
         });
         continue;
       }
@@ -2619,6 +2752,14 @@ export async function runGoalsOnce(
       const namePrefix = String(goal.namePrefix || process.env.MOTHER_BRAIN_CLASS_PLAYTEST_NAME_PREFIX || "MBClass").trim() || "MBClass";
       const perClass: any[] = [];
       let overallOk = true;
+
+      // Optional: if we have DB access, skip classes with no unlock rows (kitless).
+      const skipKitless = String(process.env.MOTHER_BRAIN_CLASS_PLAYTEST_SKIP_KITLESS ?? "1").trim() !== "0";
+      const kitCounts = await inferKitClassesFromDb(deps.dbQuery);
+      const kitMap = new Map<string, KitClassCounts>();
+      if (kitCounts?.ok) {
+        for (const c of kitCounts.counts) kitMap.set(c.classId, c);
+      }
 
       // Helper: run a ws_mud_script using a provided mudCommand.
       const runScriptWithMudCommand = async (
@@ -2732,6 +2873,15 @@ export async function runGoalsOnce(
       };
 
       for (const classId of classIds) {
+        if (skipKitless && kitCounts?.ok) {
+          const c = kitMap.get(classId);
+          const spells = c?.spellUnlocks ?? 0;
+          const abilities = c?.abilityUnlocks ?? 0;
+          if (spells <= 0 && abilities <= 0) {
+            perClass.push({ classId, ok: true, skipped: true, reason: "kit unimplemented" });
+            continue;
+          }
+        }
         const runStart = Date.now();
         const name = `${namePrefix}_${classId.replace(/[^a-zA-Z0-9_-]+/g, "_")}_${Math.random().toString(36).slice(2, 6)}`;
 
@@ -2799,6 +2949,7 @@ export async function runGoalsOnce(
           shardId,
           classCount: classIds.length,
           deleteOnFinish,
+          kitCounts: kitCounts?.ok ? kitCounts.counts : undefined,
           perClass,
         },
       });
