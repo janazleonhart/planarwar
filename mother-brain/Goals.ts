@@ -1107,6 +1107,108 @@ async function inferKitClassesFromDb(
   };
 }
 
+type UnlockPick = {
+  kind: "spell" | "ability";
+  id: string;
+  level?: number;
+};
+
+type UnlockPicks = {
+  spell?: UnlockPick;
+  ability?: UnlockPick;
+};
+
+async function pickFirstUnlocksForClass(
+  dbQuery: ((sql: string, params?: any[]) => Promise<{ rows: any[] } | null>) | undefined,
+  opts: {
+    classId: string;
+    levelMax: number;
+    schema?: string;
+  }
+): Promise<{ ok: boolean; picks: UnlockPicks; details: any }> {
+  if (!dbQuery) return { ok: false, picks: {}, details: { reason: "no dbQuery" } };
+
+  const schema = (opts.schema && String(opts.schema).trim()) || "public";
+  const classId = String(opts.classId || "").trim();
+  const levelMax = Number.isFinite(opts.levelMax as any) ? Math.max(0, Math.floor(opts.levelMax as any)) : 1;
+
+  if (!classId) return { ok: false, picks: {}, details: { reason: "missing classId" } };
+
+  const tables = [
+    {
+      table: "spell_unlocks",
+      kind: "spell" as const,
+      idCandidates: ["spell_id", "spellid", "spell", "spellId", "spellID"],
+      levelCandidates: ["level", "min_level", "level_req", "required_level", "req_level"],
+    },
+    {
+      table: "ability_unlocks",
+      kind: "ability" as const,
+      idCandidates: ["ability_id", "abilityid", "ability", "abilityId", "abilityID"],
+      levelCandidates: ["level", "min_level", "level_req", "required_level", "req_level"],
+    },
+  ];
+
+  const classColCandidates = ["class_id", "classid", "class", "class_name", "classId", "classID"];
+
+  const picks: UnlockPicks = {};
+  const details: any = { schema, classId, levelMax, found: [] as any[] };
+
+  for (const t of tables) {
+    const cols = await dbQuery(
+      `select column_name from information_schema.columns where table_schema=$1 and table_name=$2`,
+      [schema, t.table]
+    );
+    const colNames = (cols?.rows ?? []).map((r) => String((r as any).column_name ?? "").trim()).filter(Boolean);
+    if (colNames.length === 0) continue;
+
+    const lower = new Map(colNames.map((c) => [c.toLowerCase(), c] as const));
+
+    const classLower = classColCandidates.find((c) => lower.has(c.toLowerCase()));
+    const idLower = t.idCandidates.find((c) => lower.has(c.toLowerCase()));
+    const levelLower = t.levelCandidates.find((c) => lower.has(c.toLowerCase()));
+
+    const classCol = classLower ? lower.get(classLower.toLowerCase())! : null;
+    const idCol = idLower ? lower.get(idLower.toLowerCase())! : null;
+    const levelCol = levelLower ? lower.get(levelLower.toLowerCase())! : null;
+
+    if (!classCol || !idCol) continue;
+
+    const safeTable = /^[a-zA-Z0-9_]+$/.test(t.table) ? t.table : null;
+    const safeClassCol = /^[a-zA-Z0-9_]+$/.test(classCol) ? classCol : null;
+    const safeIdCol = /^[a-zA-Z0-9_]+$/.test(idCol) ? idCol : null;
+    const safeLevelCol = levelCol && /^[a-zA-Z0-9_]+$/.test(levelCol) ? levelCol : null;
+    if (!safeTable || !safeClassCol || !safeIdCol) continue;
+
+    details.found.push({ table: t.table, kind: t.kind, classCol, idCol, levelCol });
+
+    const where = safeLevelCol
+      ? `where ${safeClassCol}=$1 and ${safeLevelCol} <= $2`
+      : `where ${safeClassCol}=$1`;
+
+    const order = safeLevelCol ? `order by ${safeLevelCol} asc, ${safeIdCol} asc` : `order by ${safeIdCol} asc`;
+
+    const q = await dbQuery(
+      `select ${safeIdCol} as id${safeLevelCol ? `, ${safeLevelCol} as lvl` : ""} from ${schema}.${safeTable} ${where} ${order} limit 1`,
+      safeLevelCol ? [classId, levelMax] : [classId]
+    );
+
+    const row = (q?.rows ?? [])[0];
+    if (!row) continue;
+
+    const id = String((row as any).id ?? "").trim();
+    if (!id) continue;
+
+    const lvl = safeLevelCol ? Number((row as any).lvl ?? undefined) : undefined;
+
+    if (t.kind === "spell") picks.spell = { kind: "spell", id, level: Number.isFinite(lvl) ? lvl : undefined };
+    if (t.kind === "ability") picks.ability = { kind: "ability", id, level: Number.isFinite(lvl) ? lvl : undefined };
+  }
+
+  return { ok: details.found.length > 0, picks, details };
+}
+
+
 
 type TemplateVars = Record<string, string>;
 
@@ -2749,6 +2851,42 @@ export async function runGoalsOnce(
         { command: "attack dummy.1", stopOkIfRegexAny: ["/no\\s+dummy/i", "/not\\s+here/i"], expectRegexAny: ["/hit/i", "/damage/i", "/combat/i"] },
       ];
 
+      const kitSmokeEnabled = String(process.env.MOTHER_BRAIN_CLASS_PLAYTEST_KIT_SMOKE ?? "1").trim() !== "0";
+      const kitSmokeLevelMax = Number.isFinite(Number(process.env.MOTHER_BRAIN_CLASS_PLAYTEST_LEVEL))
+        ? Math.max(1, Math.floor(Number(process.env.MOTHER_BRAIN_CLASS_PLAYTEST_LEVEL)))
+        : 1;
+
+      // Optionally extend the per-class script with a "kit smoke" step: try to use one unlocked spell/ability (if any).
+      // This is intentionally optional and will not fail the class when a kit exists but the MUD command is not yet implemented.
+      const scriptToRun: WsMudScriptStep[] = (() => {
+        if (!kitSmokeEnabled) return script;
+        const extra: WsMudScriptStep[] = [
+          {
+            command: "cast {{spellId}} dummy.1",
+            optional: true,
+            rejectRegexAny: ["/\[error\]/i", "/unknown\s+command/i", "/not\s+learned/i"],
+          },
+          {
+            command: "use {{abilityId}} dummy.1",
+            optional: true,
+            rejectRegexAny: ["/\[error\]/i", "/unknown\s+command/i", "/not\s+learned/i"],
+          },
+        ];
+        const out: WsMudScriptStep[] = [];
+        let inserted = false;
+        for (const st of script) {
+          out.push(st);
+          if (!inserted && String((st as any).command ?? "").trim().toLowerCase() === "stats") {
+            out.push(...extra);
+            inserted = true;
+          }
+        }
+        if (!inserted) {
+          out.splice(1, 0, ...extra);
+        }
+        return out;
+      })();
+
       const namePrefix = String(goal.namePrefix || process.env.MOTHER_BRAIN_CLASS_PLAYTEST_NAME_PREFIX || "MBClass").trim() || "MBClass";
       const perClass: any[] = [];
       let overallOk = true;
@@ -2775,8 +2913,8 @@ export async function runGoalsOnce(
         const vars: TemplateVars = { ...(goal.scriptVars ?? {}), ...varsIn };
         let okAll = true;
 
-        for (let i = 0; i < script.length; i += 1) {
-          const step = script[i];
+        for (let i = 0; i < scriptToRun.length; i += 1) {
+          const step = scriptToRun[i];
           const optional = step.optional === true;
           const rawCmd = String(step.command ?? "").trim();
           const cmdInterp = interpolateTemplate(rawCmd, vars);
@@ -2864,7 +3002,7 @@ export async function runGoalsOnce(
           }
 
           const delayAfterMs = ok ? Math.max(0, Math.min(10_000, step.delayAfterMs ?? stepDelayMs)) : 0;
-          if (delayAfterMs > 0 && i < script.length - 1) await sleep(delayAfterMs);
+          if (delayAfterMs > 0 && i < scriptToRun.length - 1) await sleep(delayAfterMs);
         }
 
         const firstFail = !okAll ? stepReports.find((s) => s && typeof s === "object" && (s as any).hardFail === true) : null;
@@ -2912,14 +3050,23 @@ export async function runGoalsOnce(
           }
 
           wsHello = (client.hello as any) ?? null;
-          const scriptRes = await runScriptWithMudCommand(client.mudCommand, { classId, characterId: createdId });
+          // If kit smoke is enabled and DB access is available, pick a first unlocked spell/ability for this class.
+          // We don't hard-fail if no usable unlock exists at this level; the corresponding script steps are optional.
+          const kitPick = kitSmokeEnabled
+            ? await pickFirstUnlocksForClass(deps.dbQuery, { classId, levelMax: kitSmokeLevelMax, schema: "public" })
+            : { ok: false, picks: {}, details: { reason: "disabled" } };
+          const varsForScript: Record<string, string> = { classId, characterId: createdId };
+          if ((kitPick as any).picks?.spell?.id) varsForScript.spellId = String((kitPick as any).picks.spell.id);
+          if ((kitPick as any).picks?.ability?.id) varsForScript.abilityId = String((kitPick as any).picks.ability.id);
+
+          const scriptRes = await runScriptWithMudCommand(client.mudCommand, varsForScript);
           await client.close();
 
           if (!scriptRes.ok) {
             overallOk = false;
-            perClass.push({ classId, ok: false, phase: "script", characterId: createdId, latencyMs: Date.now() - runStart, error: scriptRes.error ?? "script_failed", steps: scriptRes.steps, hello: wsHello });
+            perClass.push({ classId, ok: false, phase: "script", characterId: createdId, latencyMs: Date.now() - runStart, error: scriptRes.error ?? "script_failed", steps: scriptRes.steps, kitPick: (kitPick as any), hello: wsHello });
           } else {
-            perClass.push({ classId, ok: true, characterId: createdId, latencyMs: Date.now() - runStart, steps: scriptRes.steps, hello: wsHello });
+            perClass.push({ classId, ok: true, characterId: createdId, latencyMs: Date.now() - runStart, steps: scriptRes.steps, kitPick: (kitPick as any), hello: wsHello });
           }
         } catch (e: unknown) {
           overallOk = false;
