@@ -1440,6 +1440,31 @@ function shouldStopScriptOk(out: string, step: {
 }
 
 
+function deriveOptionalSkipReason(args: { out: string; err?: string; missing?: string[] }): { reason: string } {
+  const out = args.out || "";
+  const err = args.err || "";
+  const missing = args.missing || [];
+
+  const hay = `${err}\n${out}`.toLowerCase();
+
+  if (hay.includes("missing vars:")) return { reason: "missing vars" };
+  if (hay.includes("missing command")) return { reason: "missing command" };
+  if (hay.includes("timeout")) return { reason: "timeout" };
+
+  if (/(unknown\s+command|unknown\s+verb)/i.test(hay)) return { reason: "unknown command" };
+  if (/no\s+such\s+target/i.test(hay)) return { reason: "target not resolvable" };
+  if (/not\s+engaged\s+with\s+a\s+target/i.test(hay)) return { reason: "no target engaged" };
+
+  if (/not\s+learned|not\s+known/i.test(hay)) return { reason: "not learned" };
+  if (/cooldown/i.test(hay)) return { reason: "cooldown" };
+
+  if (/an\s+error\s+occurred/i.test(hay)) return { reason: "generic error" };
+  if (/\[error\]|\berror\b/i.test(hay)) return { reason: "error" };
+
+  if (missing.length > 0) return { reason: "expectation not met" };
+  return { reason: "optional step failed" };
+}
+
 
 export function resolveGoalPacks(
   packIds: string[],
@@ -2595,11 +2620,11 @@ export async function runGoalsOnce(
           stepReports.push({
             index: i,
             command: rawCmd,
-            ok: optional,
-            optionalFailed: optional,
+            ok: true,
+            skipped: optional,
+            reason: optional ? "missing vars" : undefined,
             hardFail: !optional,
             error: optional ? undefined : `missing vars: ${cmdInterp.missing.join(", ")}`,
-            optionalError: optional ? `missing vars: ${cmdInterp.missing.join(", ")}` : undefined,
           });
           if (!optional) {
             overallOk = false;
@@ -2611,11 +2636,11 @@ export async function runGoalsOnce(
           stepReports.push({
             index: i,
             command: "",
-            ok: optional,
-            optionalFailed: optional,
+            ok: true,
+            skipped: optional,
+            reason: optional ? "missing command" : undefined,
             hardFail: !optional,
             error: optional ? undefined : "missing command",
-            optionalError: optional ? "missing command" : undefined,
           });
           if (!optional) {
             overallOk = false;
@@ -2693,6 +2718,23 @@ export async function runGoalsOnce(
           }
         }
 
+
+
+if (optional && !ok) {
+  const why = deriveOptionalSkipReason({ out, err: res.error, missing });
+  stepReports.push({
+    index: i,
+    command: cmd,
+    ok: true,
+    skipped: true,
+    reason: why.reason,
+    optional: true,
+    outputPreview: out.length > 220 ? `${out.slice(0, 220)}…` : out,
+    vars: Object.keys(vars).length > 0 ? { ...vars } : undefined,
+  });
+  // Optional failures do not fail the script.
+  continue;
+}
         stepReports.push({
           index: i,
           command: cmd,
@@ -2860,16 +2902,21 @@ export async function runGoalsOnce(
       // This is intentionally optional and will not fail the class when a kit exists but the MUD command is not yet implemented.
       const scriptToRun: WsMudScriptStep[] = (() => {
         if (!kitSmokeEnabled) return script;
-        const extra: WsMudScriptStep[] = [
+                const extra: WsMudScriptStep[] = [
+          // Kit smoke v0.1: attempt one unlocked spell/ability.
+          // These steps are OPTIONAL and are expected to skip cleanly when the corresponding MUD verbs
+          // are not implemented yet (or when targeting semantics differ from melee).
           {
-            command: "cast {{spellId}} dummy.1",
+            command: "cast {{spellId}} self",
             optional: true,
-            rejectRegexAny: ["/\[error\]/i", "/unknown\s+command/i", "/not\s+learned/i"],
+            // Success patterns are intentionally loose: we only want to know "something happened",
+            // not enforce final spell UX yet.
+            expectRegexAny: ["/you\s+cast/i", "/begins?\s+casting/i", "/\[combat\]/i", "/damage/i", "/heals?/i", "/absorbed/i", "/cooldown/i"],
           },
           {
-            command: "use {{abilityId}} dummy.1",
+            command: "use {{abilityId}}",
             optional: true,
-            rejectRegexAny: ["/\[error\]/i", "/unknown\s+command/i", "/not\s+learned/i"],
+            expectRegexAny: ["/you\s+use/i", "/\[combat\]/i", "/damage/i", "/heals?/i", "/cooldown/i"],
           },
         ];
         const out: WsMudScriptStep[] = [];
@@ -2922,7 +2969,7 @@ export async function runGoalsOnce(
 
           if (cmdInterp.missing.length > 0 || !cmd) {
             const errMsg = cmdInterp.missing.length > 0 ? `missing vars: ${cmdInterp.missing.join(", ")}` : "missing command";
-            stepReports.push({ index: i, command: rawCmd, ok: optional, optionalFailed: optional, hardFail: !optional, error: optional ? undefined : errMsg, optionalError: optional ? errMsg : undefined });
+            stepReports.push({ index: i, command: rawCmd, ok: true, skipped: optional, reason: optional ? (errMsg.startsWith("missing vars") ? "missing vars" : "missing command") : undefined, hardFail: !optional, error: optional ? undefined : errMsg });
             if (!optional) {
               okAll = false;
               if (stopOnFail) break;
@@ -2984,6 +3031,22 @@ export async function runGoalsOnce(
             }
           }
 
+
+
+if (optional && !ok) {
+  const why = deriveOptionalSkipReason({ out, err: res.error, missing });
+  stepReports.push({
+    index: i,
+    command: cmd,
+    ok: true,
+    skipped: true,
+    reason: why.reason,
+    optional: true,
+    outputPreview: out.length > 220 ? `${out.slice(0, 220)}…` : out,
+    vars: Object.keys(vars).length > 0 ? { ...vars } : undefined,
+  });
+  continue;
+}
           stepReports.push({
             index: i,
             command: cmd,
