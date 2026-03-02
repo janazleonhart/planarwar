@@ -73,6 +73,18 @@ export function resolveAbilityKey(raw: string): string | null {
     if (name === q || name.toLowerCase() === qLower) return String(key);
   }
 
+
+  // Shorthand suffix match:
+  // Allow callers/DB to reference `power_strike` and resolve to `warrior_power_strike`, etc.
+  // This is intentionally conservative: only matches whole-token suffixes like `_<raw>`.
+  for (const [key, def] of Object.entries(ABILITIES as any)) {
+    const k = String(key).toLowerCase();
+    if (k.endsWith("_" + qLower)) return String(key);
+
+    const id = String((def as any)?.id ?? "").trim().toLowerCase();
+    if (id && id.endsWith("_" + qLower)) return String(key);
+  }
+
   return null;
 }
 
