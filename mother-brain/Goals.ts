@@ -2911,47 +2911,70 @@ if (optional && !ok) {
       // This is intentionally optional and will not fail the class when a kit exists but the MUD command is not yet implemented.
       const scriptToRun: WsMudScriptStep[] = (() => {
         if (!kitSmokeEnabled) return script;
-                const extra: WsMudScriptStep[] = [
-          // Kit smoke v0.2: attempt one unlocked spell/ability with tolerant verb + target variants.
-          //
-          // Goals:
-          // - Prefer meaningful usage (after dummy engagement).
-          // - Avoid hard assumptions about self-target keywords ("self" vs "me") or ability verbs ("use" vs "ability").
-          // - Keep everything OPTIONAL so unimplemented verbs don't fail the class.
-          //
-          // Spell attempts (order matters):
-          // 1) No-target: often defaults to engaged target on MUD servers.
-          // 2) Explicit enemy target.
-          // 3) Explicit self target ("me") for buffs/heals.
-          {
-            command: "cast {{spellId}}",
-            optional: true,
-            expectRegexAny: ["/you\s+cast/i", "/begins?\s+casting/i", "/\[combat\]/i", "/damage/i", "/heals?/i", "/absorbed/i", "/cooldown/i"],
-          },
-          {
-            command: "cast {{spellId}} dummy.1",
-            optional: true,
-            expectRegexAny: ["/you\s+cast/i", "/begins?\s+casting/i", "/\[combat\]/i", "/damage/i", "/heals?/i", "/absorbed/i", "/cooldown/i"],
-          },
-          {
-            command: "cast {{spellId}} me",
-            optional: true,
-            expectRegexAny: ["/you\s+cast/i", "/begins?\s+casting/i", "/\[combat\]/i", "/damage/i", "/heals?/i", "/absorbed/i", "/cooldown/i"],
-          },
+                const failureRe = [
+  "/no\s+such\s+target/i",
+  "/unknown\s+spell/i",
+  "/unknown\s+ability/i",
+  "/usage:\s*(cast|ability|use)/i",
+  "/an\s+error\s+occurred/i",
+  "/not\s+learned/i",
+  "/cooldown/i", // still useful signal; treat as failure for "did it execute" purposes
+];
 
-          // Ability attempts: try both common verbs.
-          {
-            command: "ability {{abilityId}}",
-            optional: true,
-            expectRegexAny: ["/you\s+use/i", "/you\s+perform/i", "/\[combat\]/i", "/damage/i", "/heals?/i", "/cooldown/i"],
-          },
-          {
-            command: "use {{abilityId}}",
-            optional: true,
-            expectRegexAny: ["/you\s+use/i", "/you\s+perform/i", "/\[combat\]/i", "/damage/i", "/heals?/i", "/cooldown/i"],
-          },
-        ];
-        const out: WsMudScriptStep[] = [];
+// Common target spellings across commands. Attack seems to accept dummy.1 but cast/ability may not.
+const targetVariants = [
+  "dummy.1",
+  "dummy",
+  "training dummy",
+  "\"training dummy\"",
+  "Training Dummy",
+  "\"Training Dummy\"",
+];
+
+const extra: WsMudScriptStep[] = [
+  // Kit smoke v0.4:
+  // - Probe multiple target spellings for cast/ability.
+  // - Mark clearly-bad outcomes as optionalFailed (without failing the class).
+  // - Keep it "tolerant": servers can still be mid-implementation.
+  //
+  // Spell attempts:
+  // We intentionally try explicit targets first, because some servers default an omitted target to a placeholder
+  // (your logs show it trying 'rat' when no target is supplied).
+  ...targetVariants.map((t) => ({
+    command: `cast {{spellId}} ${t}`,
+    optional: true,
+    expectRegexAny: ["/you\s+cast/i", "/begins?\s+casting/i", "/\[combat\]/i", "/damage/i", "/heals?/i", "/absorbed/i"],
+    rejectRegexAny: failureRe,
+  })),
+
+  // Self-target variants (some MUDs use 'self'; others use 'me'; some require no target for self buffs).
+  { command: "cast {{spellId}} self", optional: true, expectRegexAny: ["/you\s+cast/i", "/begins?\s+casting/i", "/heals?/i", "/absorbed/i"], rejectRegexAny: failureRe },
+  { command: "cast {{spellId}} me", optional: true, expectRegexAny: ["/you\s+cast/i", "/begins?\s+casting/i", "/heals?/i", "/absorbed/i"], rejectRegexAny: failureRe },
+
+  // No-target last (may default to current target, but may also default to a bogus placeholder).
+  { command: "cast {{spellId}}", optional: true, expectRegexAny: ["/you\s+cast/i", "/begins?\s+casting/i", "/\[combat\]/i", "/damage/i", "/heals?/i", "/absorbed/i"], rejectRegexAny: failureRe },
+
+  // Ability attempts:
+  // Your logs show: "Usage: ability <name> <target>" so we try target variants first.
+  ...targetVariants.map((t) => ({
+    command: `ability {{abilityId}} ${t}`,
+    optional: true,
+    expectRegexAny: ["/you\s+use/i", "/you\s+perform/i", "/\[combat\]/i", "/damage/i", "/heals?/i"],
+    rejectRegexAny: failureRe,
+  })),
+  ...targetVariants.map((t) => ({
+    command: `use {{abilityId}} ${t}`,
+    optional: true,
+    expectRegexAny: ["/you\s+use/i", "/you\s+perform/i", "/\[combat\]/i", "/damage/i", "/heals?/i"],
+    rejectRegexAny: failureRe,
+  })),
+
+  // Fallback: no-target variants (some servers infer engaged target).
+  { command: "ability {{abilityId}}", optional: true, expectRegexAny: ["/you\s+use/i", "/you\s+perform/i", "/\[combat\]/i", "/damage/i", "/heals?/i"], rejectRegexAny: failureRe },
+  { command: "use {{abilityId}}", optional: true, expectRegexAny: ["/you\s+use/i", "/you\s+perform/i", "/\[combat\]/i", "/damage/i", "/heals?/i"], rejectRegexAny: failureRe },
+];
+const out: WsMudScriptStep[] = [];
+
         let inserted = false;
         let insertAfterIndex: number | null = null;
 
