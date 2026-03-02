@@ -552,8 +552,9 @@ export function builtinGoalPacks(ctx?: {
     : undefined;
   const serviceHeadersEditor: Record<string, string> | undefined = serviceTokenEditor ? mkAdminHeaders(serviceTokenEditor, "service") : undefined;
 
-  // Prefer: human admin token, else readonly service token, else editor service token.
-  const defaultAdminHeaders: Record<string, string> | undefined = adminHeaders ?? serviceHeadersReadonly ?? serviceHeadersEditor;
+  // Prefer: service tokens (daemon/prod), else human admin token.
+  const defaultAdminHeaders: Record<string, string> | undefined =
+    serviceHeadersEditor ?? serviceHeadersReadonly ?? adminHeaders;
 
   const serviceRoleReadonly = serviceTokenReadonly?.startsWith("svc:") ? String(serviceTokenReadonly.split(":")[2] ?? "") : "";
 

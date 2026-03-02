@@ -1707,7 +1707,7 @@ async function prepareWsPlaytestUrl(
           method: "POST",
           headers: {
             "content-type": "application/json",
-            authorization: `Bearer ${mmoSvc}`,
+            "x-service-token": mmoSvc,
           },
           body: JSON.stringify({ userId, shardId, classId, name }),
         });
@@ -1762,7 +1762,7 @@ async function prepareWsPlaytestUrl(
         method: "POST",
         headers: {
           "content-type": "application/json",
-          authorization: `Bearer ${mmoSvc}`,
+          "x-service-token": mmoSvc,
         },
         body: JSON.stringify({ userId, charId: createdCharacterId }),
       });

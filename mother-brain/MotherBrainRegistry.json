@@ -25,7 +25,8 @@
     "v0.46+ adds playtester packs for safe, player-facing WS scripts (quest accept/turn-in if available, profile checks, training dummy swing) for regression smoke testing.",
     "v0.48+ adds class_playtest goal pack: create \u2192 WS attach \u2192 per-class MUD script \u2192 delete loop.",
     "v0.49+ adds DB-derived class kit inference (spell_unlocks/ability_unlocks) so kitless classes are skipped (signal stays clean).",
-    "v0.50+ kit smoke improvements: tolerant spell/ability verb variants, better readiness probes to avoid first-command timeouts, and last-run report file kept always-current under logs/mother-brain/mother-brain-goals-last.json."
+    "v0.50+ kit smoke improvements: tolerant spell/ability verb variants, better readiness probes to avoid first-command timeouts, and last-run report file kept always-current under logs/mother-brain/mother-brain-goals-last.json.",
+    "v0.45 prefers daemon service tokens (x-service-token) over expiring human JWTs for web-backend admin_smoke; removes Bearer usage for service tokens in internal calls."
   ],
   "services": {},
   "entries": {
