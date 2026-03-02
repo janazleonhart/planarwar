@@ -39,6 +39,11 @@ import { resolvePhysicalHit, type PhysicalHitResult } from "../../combat/Physica
 import { computeDamage } from "../../combat/CombatEngine";
 
 import {
+  gainPowerResource,
+  getPrimaryPowerResourceForClass,
+} from "../../resources/PowerResources";
+
+import {
   performNpcAttack as performNpcAttackCore,
   scheduleNpcCorpseAndRespawn as scheduleNpcCorpseAndRespawnCore,
   announceSpawnToRoom as announceSpawnToRoomCore,
@@ -451,6 +456,24 @@ export async function handleAttackAction(
         { basePower: baseDmg, damageMultiplier: openerMult, damageSchool: "physical", rng: combatRng() },
       );
       const dmg = Math.max(1, roll.damage);
+
+      // Training dummy attacks do not route through NpcCombat, so mirror the
+      // attacker resource generation here (fury/runic power v1) so kit-smoke can
+      // actually execute spender abilities.
+      try {
+        const primaryRes = getPrimaryPowerResourceForClass(char.classId);
+        if (dmg > 0) {
+          if (primaryRes === "fury") {
+            const gain = 5 + Math.floor(dmg / 5); // 6–15ish at low levels
+            gainPowerResource(char, "fury", gain);
+          } else if (primaryRes === "runic_power") {
+            const gain = 6 + Math.floor(dmg / 6); // 6–18ish at low levels
+            gainPowerResource(char, "runic_power" as any, gain);
+          }
+        }
+      } catch {
+        // Never let resource generation break combat.
+      }
 
       dummyInstance.hp = Math.max(0, dummyInstance.hp - dmg);
 
