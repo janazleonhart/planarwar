@@ -2899,7 +2899,7 @@ if (optional && !ok) {
         { command: "stats", timeoutMs: 4000, retries: 1, retryDelayMs: 200, expectRegexAny: ["HP", "Level", "/str|dex|int/i"] },
 
         // Engage dummy so later "cast" / "ability" commands can often default to the engaged target.
-        { command: "attack dummy.1", timeoutMs: 4000, retries: 1, retryDelayMs: 200, stopOkIfRegexAny: ["/no\s+dummy/i", "/not\s+here/i"], expectRegexAny: ["/hit/i", "/damage/i", "/combat/i"] },
+        { command: "attack dummy.1", timeoutMs: 4000, retries: 1, retryDelayMs: 200, stopOkIfRegexAny: ["/no +dummy/i", "/not +here/i"], expectRegexAny: ["/hit/i", "/damage/i", "/combat/i"] },
       ];
 
       const kitSmokeEnabled = String(process.env.MOTHER_BRAIN_CLASS_PLAYTEST_KIT_SMOKE ?? "1").trim() !== "0";
@@ -2911,15 +2911,15 @@ if (optional && !ok) {
       // This is intentionally optional and will not fail the class when a kit exists but the MUD command is not yet implemented.
       const scriptToRun: WsMudScriptStep[] = (() => {
         if (!kitSmokeEnabled) return script;
-                const failureRe = [
-  "/no such target/i",
-  "/unknown spell/i",
-  "/unknown ability/i",
-  "/usage: *(cast|ability|use)/i",
-  "/an error occurred/i",
-  "/not learned/i",
-  "/cooldown/i", // useful signal; treat as failure for "did it execute" purposes
-];
+        const failureRe = [
+          "/no such target/i",
+          "/unknown spell/i",
+          "/unknown ability/i",
+          "/usage: *(cast|ability)/i",
+          "/an error occurred/i",
+          "/not learned/i",
+          "/cooldown/i", // useful signal; treat as failure for "did it execute" purposes
+        ];
 
 // Common target spellings across commands.
 // NOTE: Your current MUD parser treats multi-word targets as part of the spell/ability id.
@@ -2960,16 +2960,8 @@ const extra: WsMudScriptStep[] = [
     expectRegexAny: ["/you use/i", "/you perform/i", "/\[combat\]/i", "/damage/i", "/heals?/i"],
     rejectRegexAny: failureRe,
   })),
-  ...targetVariants.map((t) => ({
-    command: `use {{abilityId}} ${t}`,
-    optional: true,
-    expectRegexAny: ["/you use/i", "/you perform/i", "/\[combat\]/i", "/damage/i", "/heals?/i"],
-    rejectRegexAny: failureRe,
-  })),
-
-  // Fallback: no-target variants (some servers infer engaged target).
-  { command: "ability {{abilityId}}", optional: true, expectRegexAny: ["/you use/i", "/you perform/i", "/\[combat\]/i", "/damage/i", "/heals?/i"], rejectRegexAny: failureRe },
-  { command: "use {{abilityId}}", optional: true, expectRegexAny: ["/you use/i", "/you perform/i", "/\[combat\]/i", "/damage/i", "/heals?/i"], rejectRegexAny: failureRe },
+  // Fallback: no-target variant (some servers infer engaged target).
+  { command: "ability {{abilityId}}", optional: true, expectRegexAny: ["/you use/i", "/you perform/i", "/\[combat\]/i", "/hit/i", "/damage/i", "/heals?/i"], rejectRegexAny: failureRe },
 ];
 const out: WsMudScriptStep[] = [];
 
