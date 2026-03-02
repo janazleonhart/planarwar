@@ -40,6 +40,7 @@ import { computeDamage } from "../../combat/CombatEngine";
 
 import {
   gainPowerResource,
+  getOrInitPowerResource,
   getPrimaryPowerResourceForClass,
 } from "../../resources/PowerResources";
 
@@ -464,19 +465,40 @@ export async function handleAttackAction(
       // IMPORTANT: do not swallow errors here. If this fails, kit-smoke will
       // loop forever at 0/XX needed and we won't know why.
       const primaryRes = getPrimaryPowerResourceForClass(char.classId);
+
+      // Track dummy resource gains so we can optionally print them for debugging.
+      // Declared outside the dmg>0 block so the debug formatter can see them.
+      let gainedKind: string | null = null;
+      let gainedAmt = 0;
+
       if (dmg > 0) {
         if (primaryRes === "fury") {
           const gain = 5 + Math.floor(dmg / 5); // 6–15ish at low levels
+          gainedKind = "fury";
+          gainedAmt = gain;
           gainPowerResource(char, "fury", gain);
         } else if (primaryRes === "runic_power") {
           const gain = 6 + Math.floor(dmg / 6); // 6–18ish at low levels
+          gainedKind = "runic_power";
+          gainedAmt = gain;
           gainPowerResource(char, "runic_power", gain);
         } else if (primaryRes === "chi") {
           // v1: allow basic hits to trickle chi so Ascetic kit-smoke can reach spenders.
           const gain = 4 + Math.floor(dmg / 8);
+          gainedKind = "chi";
+          gainedAmt = gain;
           gainPowerResource(char, "chi", gain);
         }
       }
+
+      const debugDummyRes = (() => {
+        const raw = String((process.env as any)?.PW_DEBUG_DUMMY_RESOURCES ?? "").trim().toLowerCase();
+        const enabled = raw === "1" || raw === "true" || raw === "yes" || raw === "on";
+        if (!enabled) return "";
+        if (!gainedKind || gainedAmt <= 0) return "";
+        const pool = getOrInitPowerResource(char, gainedKind as any);
+        return ` (+${gainedKind} ${gainedAmt} => ${pool.current}/${pool.max})`;
+      })();
 
       dummyInstance.hp = Math.max(0, dummyInstance.hp - dmg);
 
@@ -488,8 +510,9 @@ export async function handleAttackAction(
         ctx.session.character = char as any;
 
         return (
-          `[combat] You hit the Training Dummy for ${dmg} damage. ` +
-          `(${dummyInstance.hp}/${dummyInstance.maxHp} HP)`
+          `[combat] You hit the Training Dummy for ${dmg} damage.` +
+          debugDummyRes +
+          ` (${dummyInstance.hp}/${dummyInstance.maxHp} HP)`
         );
       }
 
