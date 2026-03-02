@@ -492,7 +492,13 @@ export async function castSpellForCharacter(
   const ccPreErr = denySpellcastingByCrowdControl(char, spell, now);
   if (ccPreErr) return ccPreErr;
 
-  const roomId = ctx.session.roomId ?? char.shardId;
+  // Prefer live entity roomId as the source of truth (tests + MB sessions may not set session.roomId).
+  // Fall back to session.roomId and finally shardId.
+  const roomId =
+    String((selfEntity as any).roomId ?? "") ||
+    String((ctx as any)?.session?.roomId ?? "") ||
+    String((char as any)?.roomId ?? "") ||
+    String(char.shardId ?? "");
   const targetRaw = (targetNameRaw ?? "").trim();
 
   const isSong = (spell as any).isSong === true;
