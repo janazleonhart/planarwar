@@ -63,7 +63,29 @@ async function requireUser(req: Request): Promise<{ userId: string } | null> {
   const token = getBearerToken(req);
   if (!token) return null;
 
-  const payload = await auth.verifyToken(token);
+  let payload: any = null;
+  try {
+    payload = await auth.verifyToken(token);
+  } catch (err: any) {
+    // Expired/invalid JWT: treat as unauthenticated (401) and log minimal diagnostics.
+    try {
+      const crypto = await import("node:crypto");
+      const fp = crypto.createHash("sha256").update(String(token)).digest("hex").slice(0, 12);
+      log.warn("token verification failed", {
+        fp,
+        ip: (req as any).ip,
+        ua: String(req.headers["user-agent"] ?? ""),
+        method: String((req as any).method ?? ""),
+        path: String((req as any).originalUrl ?? (req as any).url ?? ""),
+        errName: String(err?.name ?? ""),
+        errMsg: String(err?.message ?? ""),
+      });
+    } catch {
+      // ignore
+    }
+    return null;
+  }
+
   if (!payload) return null;
 
   return { userId: payload.sub };

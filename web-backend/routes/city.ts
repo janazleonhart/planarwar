@@ -32,8 +32,28 @@ async function resolvePlayerId(req: Request): Promise<string> {
   if (!token) return DEMO_PLAYER_ID;
 
   const auth = new PostgresAuthService();
-  const payload = await auth.verifyToken(token);
-  if (payload?.sub) return payload.sub;
+  try {
+    const payload = await auth.verifyToken(token);
+    if (payload?.sub) return payload.sub;
+  } catch (err: any) {
+    // Treat expired/invalid tokens as demo access for the CityBuilder prototype.
+    // Log minimal diagnostics so we can identify the caller without leaking the token.
+    try {
+      const crypto = await import("node:crypto");
+      const fp = crypto.createHash("sha256").update(String(token)).digest("hex").slice(0, 12);
+      console.warn("[AUTH:WARN] /city token verification failed", {
+        fp,
+        ip: (req as any).ip,
+        ua: String(req.headers["user-agent"] ?? ""),
+        method: String((req as any).method ?? ""),
+        path: String((req as any).originalUrl ?? (req as any).url ?? ""),
+        errName: String(err?.name ?? ""),
+        errMsg: String(err?.message ?? ""),
+      });
+    } catch {
+      // ignore
+    }
+  }
 
   return DEMO_PLAYER_ID;
 }

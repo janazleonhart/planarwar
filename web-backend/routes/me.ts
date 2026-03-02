@@ -21,7 +21,31 @@ async function resolveViewer(req: Request): Promise<{ userId: string; username: 
   const token = getBearerToken(req);
   if (!token) return { userId: "demo", username: "Demo", playerId: DEMO_PLAYER_ID };
 
-  const payload = await auth.verifyToken(token);
+  let payload: any = null;
+  try {
+    payload = await auth.verifyToken(token);
+  } catch (err: any) {
+    // Token errors are common in dev (expired browser token, rotated secret, etc.).
+    // Treat as demo viewer and log minimal diagnostics.
+    try {
+      const crypto = await import("node:crypto");
+      const fp = crypto.createHash("sha256").update(String(token)).digest("hex").slice(0, 12);
+
+      console.warn("[AUTH:WARN] /me token verification failed", {
+        fp,
+        ip: (req as any).ip,
+        ua: String(req.headers["user-agent"] ?? ""),
+        method: String((req as any).method ?? ""),
+        path: String((req as any).originalUrl ?? (req as any).url ?? ""),
+        errName: String(err?.name ?? ""),
+        errMsg: String(err?.message ?? ""),
+      });
+    } catch {
+      // ignore
+    }
+    return { userId: "demo", username: "Demo", playerId: DEMO_PLAYER_ID };
+  }
+
   if (!payload) return { userId: "demo", username: "Demo", playerId: DEMO_PLAYER_ID };
 
   const anyPayload = payload as any;
