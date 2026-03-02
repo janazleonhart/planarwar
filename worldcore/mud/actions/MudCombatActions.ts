@@ -458,21 +458,24 @@ export async function handleAttackAction(
       const dmg = Math.max(1, roll.damage);
 
       // Training dummy attacks do not route through NpcCombat, so mirror the
-      // attacker resource generation here (fury/runic power v1) so kit-smoke can
-      // actually execute spender abilities.
-      try {
-        const primaryRes = getPrimaryPowerResourceForClass(char.classId);
-        if (dmg > 0) {
-          if (primaryRes === "fury") {
-            const gain = 5 + Math.floor(dmg / 5); // 6–15ish at low levels
-            gainPowerResource(char, "fury", gain);
-          } else if (primaryRes === "runic_power") {
-            const gain = 6 + Math.floor(dmg / 6); // 6–18ish at low levels
-            gainPowerResource(char, "runic_power" as any, gain);
-          }
+      // attacker resource generation here so kit-smoke can actually execute
+      // spender abilities.
+      //
+      // IMPORTANT: do not swallow errors here. If this fails, kit-smoke will
+      // loop forever at 0/XX needed and we won't know why.
+      const primaryRes = getPrimaryPowerResourceForClass(char.classId);
+      if (dmg > 0) {
+        if (primaryRes === "fury") {
+          const gain = 5 + Math.floor(dmg / 5); // 6–15ish at low levels
+          gainPowerResource(char, "fury", gain);
+        } else if (primaryRes === "runic_power") {
+          const gain = 6 + Math.floor(dmg / 6); // 6–18ish at low levels
+          gainPowerResource(char, "runic_power", gain);
+        } else if (primaryRes === "chi") {
+          // v1: allow basic hits to trickle chi so Ascetic kit-smoke can reach spenders.
+          const gain = 4 + Math.floor(dmg / 8);
+          gainPowerResource(char, "chi", gain);
         }
-      } catch {
-        // Never let resource generation break combat.
       }
 
       dummyInstance.hp = Math.max(0, dummyInstance.hp - dmg);
