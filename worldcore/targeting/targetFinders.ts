@@ -151,16 +151,44 @@ function normalize(s: string) {
   return s.toLowerCase().trim();
 }
 
+type EntitySource =
+  | { getAll?: () => Iterable<Entity> | Entity[]; getEntitiesInRoom?: (roomId: string) => Iterable<Entity> | Entity[] }
+  | { entities?: { getAll?: () => Iterable<Entity> | Entity[]; getEntitiesInRoom?: (roomId: string) => Iterable<Entity> | Entity[] } };
+
+function getEntityManager(
+  source: any
+): { getAll?: () => Iterable<Entity> | Entity[]; getEntitiesInRoom?: (roomId: string) => Iterable<Entity> | Entity[] } | null {
+  if (!source) return null;
+  if (typeof source.getAll === "function" || typeof source.getEntitiesInRoom === "function") return source;
+  const nested = (source as any).entities;
+  if (nested && (typeof nested.getAll === "function" || typeof nested.getEntitiesInRoom === "function")) return nested;
+  return null;
+}
+
 export function findNpcTargetByName(
-  entities: { getAll(): Iterable<Entity> | Entity[] },
+  source: EntitySource | any,
   roomId: string,
   targetNameRaw: string
 ): Entity | null {
   const raw = targetNameRaw.trim();
   if (!raw) return null;
 
-  const all: Entity[] = toArray(entities.getAll())
-    .filter((ent) => (ent as any).type === "npc" && String((ent as any).roomId ?? "") === String(roomId) && !!(ent as any).name);
+  const entities = getEntityManager(source);
+  if (!entities) return null;
+
+  const roomCandidates: Entity[] = (() => {
+    if (typeof entities.getEntitiesInRoom === "function") {
+      return toArray(entities.getEntitiesInRoom(String(roomId)) as any);
+    }
+    if (typeof entities.getAll === "function") {
+      return toArray(entities.getAll() as any);
+    }
+    return [];
+  })();
+
+  const all: Entity[] = roomCandidates.filter(
+    (ent) => (ent as any).type === "npc" && String((ent as any).roomId ?? "") === String(roomId) && !!(ent as any).name
+  );
 
   // stable ordering
   all.sort((a: any, b: any) => String((a as any).name).localeCompare(String((b as any).name)) || String((a as any).id).localeCompare(String((b as any).id)));
