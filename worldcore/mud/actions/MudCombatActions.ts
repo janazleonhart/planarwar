@@ -457,6 +457,23 @@ export async function handleAttackAction(
       );
       const dmg = Math.max(1, roll.damage);
 
+      // Mirror attacker resource generation (fury/runic power v1) for training dummy ranged hits.
+      // This keeps kit-smoke deterministic even when the test harness uses ranged verbs.
+      try {
+        const primaryRes = getPrimaryPowerResourceForClass((char as any).classId);
+        if (dmg > 0) {
+          if (primaryRes === "fury") {
+            const gain = 5 + Math.floor(dmg / 5);
+            gainPowerResource(char, "fury", gain);
+          } else if (primaryRes === "runic_power") {
+            const gain = 6 + Math.floor(dmg / 6);
+            gainPowerResource(char, "runic_power" as any, gain);
+          }
+        }
+      } catch {
+        // Never let resource generation break combat.
+      }
+
       // Training dummy attacks do not route through NpcCombat, so mirror the
       // attacker resource generation here (fury/runic power v1) so kit-smoke can
       // actually execute spender abilities.
@@ -478,6 +495,12 @@ export async function handleAttackAction(
       dummyInstance.hp = Math.max(0, dummyInstance.hp - dmg);
 
       if (dummyInstance.hp > 0) {
+        // IMPORTANT:
+        // The router treats CharacterState as a snapshot unless the handler explicitly
+        // updates ctx.session.character. Commit our mutated state so powerResources
+        // (fury/runic power) persists across subsequent commands (kit-smoke spenders).
+        ctx.session.character = char as any;
+
         return (
           `[combat] You hit the Training Dummy for ${dmg} damage. ` +
           `(${dummyInstance.hp}/${dummyInstance.maxHp} HP)`
@@ -508,6 +531,9 @@ export async function handleAttackAction(
         extra;
 
       dummyInstance.hp = dummyInstance.maxHp;
+
+      // Persist powerResources gains across commands.
+      ctx.session.character = char as any;
       return line;
     }
 
@@ -1015,6 +1041,7 @@ export async function handleRangedAttackAction(
       dummyInstance.hp = Math.max(0, dummyInstance.hp - dmg);
 
       if (dummyInstance.hp > 0) {
+        ctx.session.character = char as any;
         return (
           `[combat] You shoot the Training Dummy for ${dmg} damage. ` +
           `(${dummyInstance.hp}/${dummyInstance.maxHp} HP)`
@@ -1045,6 +1072,7 @@ export async function handleRangedAttackAction(
         extra;
 
       dummyInstance.hp = dummyInstance.maxHp;
+      ctx.session.character = char as any;
       return line;
     }
 
