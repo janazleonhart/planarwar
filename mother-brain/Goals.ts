@@ -2888,9 +2888,17 @@ if (optional && !ok) {
       }
 
       const script = Array.isArray(goal.script) && goal.script.length > 0 ? goal.script : [
-        { command: "help", expectIncludes: "Available commands:" },
-        { command: "stats", expectRegexAny: ["HP", "Level", "/str|dex|int/i"] },
-        { command: "attack dummy.1", stopOkIfRegexAny: ["/no\\s+dummy/i", "/not\\s+here/i"], expectRegexAny: ["/hit/i", "/damage/i", "/combat/i"] },
+        // First command can race the server right after character creation/attach.
+        // Give it a longer timeout + retries to avoid noisy flakes.
+        { command: "help", timeoutMs: 8000, retries: 2, retryDelayMs: 250, expectIncludes: "Available commands:" },
+
+        // Cheap readiness probe (also helps older servers that don't emit hello_ack).
+        { command: "whereami", timeoutMs: 4000, retries: 1, retryDelayMs: 200, optional: true, expectIncludes: "Location:" },
+
+        { command: "stats", timeoutMs: 4000, retries: 1, retryDelayMs: 200, expectRegexAny: ["HP", "Level", "/str|dex|int/i"] },
+
+        // Engage dummy so later "cast" / "ability" commands can often default to the engaged target.
+        { command: "attack dummy.1", timeoutMs: 4000, retries: 1, retryDelayMs: 200, stopOkIfRegexAny: ["/no\s+dummy/i", "/not\s+here/i"], expectRegexAny: ["/hit/i", "/damage/i", "/combat/i"] },
       ];
 
       const kitSmokeEnabled = String(process.env.MOTHER_BRAIN_CLASS_PLAYTEST_KIT_SMOKE ?? "1").trim() !== "0";
@@ -2903,34 +2911,72 @@ if (optional && !ok) {
       const scriptToRun: WsMudScriptStep[] = (() => {
         if (!kitSmokeEnabled) return script;
                 const extra: WsMudScriptStep[] = [
-          // Kit smoke v0.1: attempt one unlocked spell/ability.
-          // These steps are OPTIONAL and are expected to skip cleanly when the corresponding MUD verbs
-          // are not implemented yet (or when targeting semantics differ from melee).
+          // Kit smoke v0.2: attempt one unlocked spell/ability with tolerant verb + target variants.
+          //
+          // Goals:
+          // - Prefer meaningful usage (after dummy engagement).
+          // - Avoid hard assumptions about self-target keywords ("self" vs "me") or ability verbs ("use" vs "ability").
+          // - Keep everything OPTIONAL so unimplemented verbs don't fail the class.
+          //
+          // Spell attempts (order matters):
+          // 1) No-target: often defaults to engaged target on MUD servers.
+          // 2) Explicit enemy target.
+          // 3) Explicit self target ("me") for buffs/heals.
           {
-            command: "cast {{spellId}} self",
+            command: "cast {{spellId}}",
             optional: true,
-            // Success patterns are intentionally loose: we only want to know "something happened",
-            // not enforce final spell UX yet.
             expectRegexAny: ["/you\s+cast/i", "/begins?\s+casting/i", "/\[combat\]/i", "/damage/i", "/heals?/i", "/absorbed/i", "/cooldown/i"],
+          },
+          {
+            command: "cast {{spellId}} dummy.1",
+            optional: true,
+            expectRegexAny: ["/you\s+cast/i", "/begins?\s+casting/i", "/\[combat\]/i", "/damage/i", "/heals?/i", "/absorbed/i", "/cooldown/i"],
+          },
+          {
+            command: "cast {{spellId}} me",
+            optional: true,
+            expectRegexAny: ["/you\s+cast/i", "/begins?\s+casting/i", "/\[combat\]/i", "/damage/i", "/heals?/i", "/absorbed/i", "/cooldown/i"],
+          },
+
+          // Ability attempts: try both common verbs.
+          {
+            command: "ability {{abilityId}}",
+            optional: true,
+            expectRegexAny: ["/you\s+use/i", "/you\s+perform/i", "/\[combat\]/i", "/damage/i", "/heals?/i", "/cooldown/i"],
           },
           {
             command: "use {{abilityId}}",
             optional: true,
-            expectRegexAny: ["/you\s+use/i", "/\[combat\]/i", "/damage/i", "/heals?/i", "/cooldown/i"],
+            expectRegexAny: ["/you\s+use/i", "/you\s+perform/i", "/\[combat\]/i", "/damage/i", "/heals?/i", "/cooldown/i"],
           },
         ];
         const out: WsMudScriptStep[] = [];
         let inserted = false;
+        let insertAfterIndex: number | null = null;
+
         for (const st of script) {
           out.push(st);
-          if (!inserted && String((st as any).command ?? "").trim().toLowerCase() === "stats") {
+
+          const cmdLower = String((st as any).command ?? "").trim().toLowerCase();
+
+          // Prefer inserting after we engage a target (if present).
+          if (!inserted && (cmdLower === "attack dummy.1" || cmdLower.startsWith("attack "))) {
             out.push(...extra);
             inserted = true;
+            continue;
+          }
+
+          // Fallback: remember where "stats" is so we can insert after it if we never attacked.
+          if (insertAfterIndex === null && cmdLower === "stats") {
+            insertAfterIndex = out.length;
           }
         }
+
         if (!inserted) {
-          out.splice(1, 0, ...extra);
+          const idx = insertAfterIndex !== null ? insertAfterIndex : 1;
+          out.splice(idx, 0, ...extra);
         }
+
         return out;
       })();
 

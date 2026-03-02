@@ -2,7 +2,7 @@
   "registryVersion": "1.0",
   "scope": "mother-brain",
   "notes": [
-    "Mother Brain is a long-running daemon/service for world simulation decisions.",
+    "Mother Brain is a long-running daemon/service for world simulation decisions and automated canary testing.",
     "v0.1 runnable skeleton (heartbeat + env validation).",
     "v0.2 DB/WS connectivity snapshots (read-only).",
     "v0.3 bridges PW_DB_* env to Postgres URL + logs DB metadata.",
@@ -12,22 +12,20 @@
     "v0.7 fixes schema probe false-positives by parsing Postgres array strings and only emitting probe results on probe ticks.",
     "v0.8 adds tick log rate limiting (cadence + on-change).",
     "v0.9 adds optional HTTP status server (/healthz, /readyz, /status) for systemd-friendly liveness/readiness.",
-    "v0.9.1 fixes TS compile issues for the HTTP status server wiring.",
-    "v0.10 writes DB heartbeats into service_heartbeats so the web-backend admin panel can poll Mother Brain status without requiring a dedicated HTTP server.",
-    "v0.11-v0.19 add wave-budget snapshots/caps/breach awareness + Admin UI support + logging polish.",
+    "v0.10 writes heartbeats into service_heartbeats so the web-backend admin panel can poll Mother Brain status without requiring a dedicated HTTP server.",
+    "v0.11\u2013v0.19 add wave-budget snapshots/caps/breach awareness + Admin UI support + logging polish.",
     "v0.20 adds an observe-only Goals Runner: cadence-based checks, optional hot-reload goals file, and structured JSONL goal-run reports under the log directory.",
-    "v0.21 adds ws_mud goal kind (MUD command roundtrip over WS for player-facing smoke checks).",
-    "v0.22-v0.34 add builtin goal packs (admin_smoke/web_smoke/all_smoke), admin-safe fixtures support, and goal report tail tooling for the admin UI.",
-    "v0.45 adds ws_mud_script goal kind (multi-step WS MUD scripts with optional steps, stop-ok branching, capture vars, templating, per-step retry/delay, and maxLatencyMs budgets).",
-    "v0.35+ allow admin_smoke to send optional auth headers via MOTHER_BRAIN_WEB_BACKEND_ADMIN_TOKEN (human JWT; fallback PW_ADMIN_TOKEN) or MOTHER_BRAIN_WEB_BACKEND_SERVICE_TOKEN (daemon service token); improve hints for 401 missing_token vs fetch/network failures.",
+    "v0.21 adds ws_mud goal kind (single MUD command roundtrip over WS for player-facing smoke checks).",
+    "v0.22\u2013v0.34 add builtin goal packs (admin_smoke/web_smoke/all_smoke), admin-safe fixtures support, and goal report tail tooling for the admin UI.",
+    "v0.35+ allow admin_smoke to send optional auth headers via MOTHER_BRAIN_WEB_BACKEND_ADMIN_TOKEN (human JWT; fallback PW_ADMIN_TOKEN) or daemon service tokens; improves hints for auth vs fetch/network failures.",
     "v0.41+ adds retry/backoff for transient HTTP/WS startup flakes.",
-    "v0.43 adds tools/genServiceToken.js to generate a random PW_SERVICE_TOKEN_SECRET and derive service tokens without shell quoting pitfalls (supports --secret).",
+    "v0.43 adds tools/genServiceToken.js to mint PW_SERVICE_TOKEN_SECRET and derive service tokens without shell quoting pitfalls (supports --secret).",
     "v0.44 adds service token secret rotation support via PW_SERVICE_TOKEN_SECRET_PREV (web-backend accepts active+prev during cutovers).",
-    "v0.46 adds a 'playtester' goal pack that enables safe player-facing WS scripts (quest accept-if-any + basic profile checks) by default for regression smoke testing."
-    ,
-    "v0.47 expands playtester smoke coverage with safe-by-default quest turn-in (ready quests) and training dummy combat swing scripts; also switches MMO admin smoke to service-token-only header usage (x-service-token)."
-    ,
-    "v0.48 adds a class_playtest goal pack: Mother Brain can create a temporary character per class, attach over WS, run a small MUD smoke script, and delete the character (per-class playtest loop)."
+    "v0.45 adds ws_mud_script goal kind (multi-step WS MUD scripts with optional steps, stop-ok branching, capture vars, templating, per-step retry/delay, and maxLatencyMs budgets).",
+    "v0.46+ adds playtester packs for safe, player-facing WS scripts (quest accept/turn-in if available, profile checks, training dummy swing) for regression smoke testing.",
+    "v0.48+ adds class_playtest goal pack: create \u2192 WS attach \u2192 per-class MUD script \u2192 delete loop.",
+    "v0.49+ adds DB-derived class kit inference (spell_unlocks/ability_unlocks) so kitless classes are skipped (signal stays clean).",
+    "v0.50+ kit smoke improvements: tolerant spell/ability verb variants, better readiness probes to avoid first-command timeouts, and last-run report file kept always-current under logs/mother-brain/mother-brain-goals-last.json."
   ],
   "services": {},
   "entries": {
@@ -43,7 +41,27 @@
         "mother-brain:daemon"
       ],
       "owns": [
-        "Mother Brain runtime loop"
+        "Mother Brain runtime loop",
+        "Goals Runner cadence + reports"
+      ]
+    },
+    "mother-brain.module.Goals": {
+      "kind": "module",
+      "service": "mother-brain",
+      "path": "mother-brain/Goals.ts",
+      "class": null,
+      "lifecycle": "static",
+      "ctorArgs": [],
+      "dependsOn": [
+        "node:fs",
+        "node:path"
+      ],
+      "provides": [
+        "Goal packs + suite runner",
+        "ws_mud_script + class_playtest_loop goal kinds"
+      ],
+      "owns": [
+        "Goal normalization + execution + reporting formats"
       ]
     },
     "mother-brain.tool.genServiceToken": {

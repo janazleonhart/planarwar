@@ -1978,6 +1978,20 @@ async function main(): Promise<void> {
             await p.close();
             return { ok: false as const, error: r.error ?? "ws_connect_failed", hello: p.getHelloAck() };
           }
+
+          // Best-effort readiness probe: newly created characters can race room join/attach.
+          // Some failures in the logs were "help" timing out immediately; this pre-check makes that deterministic.
+          let readyErr: string | undefined;
+          for (let attempt = 0; attempt < 3; attempt += 1) {
+            const rr = await p.mudCommand("whereami", 2500);
+            if (rr.ok) { readyErr = undefined; break; }
+            readyErr = rr.error ?? "whereami_failed";
+            await new Promise((res) => setTimeout(res, 200));
+          }
+          if (readyErr) {
+            await p.close();
+            return { ok: false as const, error: `ws_not_ready (${readyErr})`, hello: p.getHelloAck() };
+          }
           return {
             ok: true as const,
             mudCommand: (cmd: string, timeoutMs: number) => p.mudCommand(cmd, timeoutMs),
