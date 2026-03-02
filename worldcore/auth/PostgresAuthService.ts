@@ -213,7 +213,15 @@ export class PostgresAuthService implements AuthService {
       const decoded = jwt.verify(token, JWT_SECRET) as AuthTokenPayload;
       return decoded;
     } catch (err) {
-      log.warn("Token verification failed", { err: String(err) });
+      // Token expiry is a normal event (especially in dev) and can be extremely
+      // noisy for optional-auth routes. Only warn on non-expiry failures unless
+      // logging is explicitly enabled.
+      const logFailures = String(process.env.PW_AUTH_LOG_FAILURES ?? "1").trim() !== "0";
+      const name = String((err as any)?.name ?? "");
+
+      if (name !== "TokenExpiredError" && logFailures) {
+        log.warn("Token verification failed", { err: String(err) });
+      }
       return null;
     }
   }
