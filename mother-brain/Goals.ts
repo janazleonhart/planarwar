@@ -2912,23 +2912,21 @@ if (optional && !ok) {
       const scriptToRun: WsMudScriptStep[] = (() => {
         if (!kitSmokeEnabled) return script;
                 const failureRe = [
-  "/no\s+such\s+target/i",
-  "/unknown\s+spell/i",
-  "/unknown\s+ability/i",
-  "/usage:\s*(cast|ability|use)/i",
-  "/an\s+error\s+occurred/i",
-  "/not\s+learned/i",
-  "/cooldown/i", // still useful signal; treat as failure for "did it execute" purposes
+  "/no such target/i",
+  "/unknown spell/i",
+  "/unknown ability/i",
+  "/usage: *(cast|ability|use)/i",
+  "/an error occurred/i",
+  "/not learned/i",
+  "/cooldown/i", // useful signal; treat as failure for "did it execute" purposes
 ];
 
-// Common target spellings across commands. Attack seems to accept dummy.1 but cast/ability may not.
+// Common target spellings across commands.
+// NOTE: Your current MUD parser treats multi-word targets as part of the spell/ability id.
+// So we only probe single-token variants here.
 const targetVariants = [
-  "dummy.1",
-  "dummy",
-  "training dummy",
-  "\"training dummy\"",
-  "Training Dummy",
-  "\"Training Dummy\"",
+  "dummy.1", // attack supports it; cast/ability may not (still useful signal)
+  "dummy",   // cast supports it (per logs)
 ];
 
 const extra: WsMudScriptStep[] = [
@@ -2943,35 +2941,35 @@ const extra: WsMudScriptStep[] = [
   ...targetVariants.map((t) => ({
     command: `cast {{spellId}} ${t}`,
     optional: true,
-    expectRegexAny: ["/you\s+cast/i", "/begins?\s+casting/i", "/\[combat\]/i", "/damage/i", "/heals?/i", "/absorbed/i"],
+    expectRegexAny: ["/you cast/i", "/casting/i", "/\[combat\]/i", "/damage/i", "/heals?/i", "/absorbed/i"],
     rejectRegexAny: failureRe,
   })),
 
   // Self-target variants (some MUDs use 'self'; others use 'me'; some require no target for self buffs).
-  { command: "cast {{spellId}} self", optional: true, expectRegexAny: ["/you\s+cast/i", "/begins?\s+casting/i", "/heals?/i", "/absorbed/i"], rejectRegexAny: failureRe },
-  { command: "cast {{spellId}} me", optional: true, expectRegexAny: ["/you\s+cast/i", "/begins?\s+casting/i", "/heals?/i", "/absorbed/i"], rejectRegexAny: failureRe },
+  { command: "cast {{spellId}} self", optional: true, expectRegexAny: ["/you cast/i", "/casting/i", "/heals?/i", "/absorbed/i"], rejectRegexAny: failureRe },
+  { command: "cast {{spellId}} me", optional: true, expectRegexAny: ["/you cast/i", "/casting/i", "/heals?/i", "/absorbed/i"], rejectRegexAny: failureRe },
 
   // No-target last (may default to current target, but may also default to a bogus placeholder).
-  { command: "cast {{spellId}}", optional: true, expectRegexAny: ["/you\s+cast/i", "/begins?\s+casting/i", "/\[combat\]/i", "/damage/i", "/heals?/i", "/absorbed/i"], rejectRegexAny: failureRe },
+  { command: "cast {{spellId}}", optional: true, expectRegexAny: ["/you cast/i", "/casting/i", "/\[combat\]/i", "/damage/i", "/heals?/i", "/absorbed/i"], rejectRegexAny: failureRe },
 
   // Ability attempts:
   // Your logs show: "Usage: ability <name> <target>" so we try target variants first.
   ...targetVariants.map((t) => ({
     command: `ability {{abilityId}} ${t}`,
     optional: true,
-    expectRegexAny: ["/you\s+use/i", "/you\s+perform/i", "/\[combat\]/i", "/damage/i", "/heals?/i"],
+    expectRegexAny: ["/you use/i", "/you perform/i", "/\[combat\]/i", "/damage/i", "/heals?/i"],
     rejectRegexAny: failureRe,
   })),
   ...targetVariants.map((t) => ({
     command: `use {{abilityId}} ${t}`,
     optional: true,
-    expectRegexAny: ["/you\s+use/i", "/you\s+perform/i", "/\[combat\]/i", "/damage/i", "/heals?/i"],
+    expectRegexAny: ["/you use/i", "/you perform/i", "/\[combat\]/i", "/damage/i", "/heals?/i"],
     rejectRegexAny: failureRe,
   })),
 
   // Fallback: no-target variants (some servers infer engaged target).
-  { command: "ability {{abilityId}}", optional: true, expectRegexAny: ["/you\s+use/i", "/you\s+perform/i", "/\[combat\]/i", "/damage/i", "/heals?/i"], rejectRegexAny: failureRe },
-  { command: "use {{abilityId}}", optional: true, expectRegexAny: ["/you\s+use/i", "/you\s+perform/i", "/\[combat\]/i", "/damage/i", "/heals?/i"], rejectRegexAny: failureRe },
+  { command: "ability {{abilityId}}", optional: true, expectRegexAny: ["/you use/i", "/you perform/i", "/\[combat\]/i", "/damage/i", "/heals?/i"], rejectRegexAny: failureRe },
+  { command: "use {{abilityId}}", optional: true, expectRegexAny: ["/you use/i", "/you perform/i", "/\[combat\]/i", "/damage/i", "/heals?/i"], rejectRegexAny: failureRe },
 ];
 const out: WsMudScriptStep[] = [];
 
