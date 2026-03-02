@@ -1459,6 +1459,9 @@ function deriveOptionalSkipReason(args: { out: string; err?: string; missing?: s
   if (/not\s+learned|not\s+known/i.test(hay)) return { reason: "not learned" };
   if (/cooldown/i.test(hay)) return { reason: "cooldown" };
 
+  if (/not\s+enough\s+fury/i.test(hay)) return { reason: "insufficient fury" };
+  if (/not\s+enough\s+(mana|energy|rage|stamina)/i.test(hay)) return { reason: "insufficient resource" };
+
   if (/an\s+error\s+occurred/i.test(hay)) return { reason: "generic error" };
   if (/\[error\]|\berror\b/i.test(hay)) return { reason: "error" };
 
@@ -2929,6 +2932,23 @@ const targetVariants = [
   "dummy",   // cast supports it (per logs)
 ];
 
+const abilitySuccessRe = ["/you use/i", "/you perform/i", "/\\[combat\\]/i", "/hit/i", "/damage/i", "/heals?/i"];
+
+const abilitySteps: WsMudScriptStep[] = [
+  // Probe target handle vs plain token (dummy.1 vs dummy)
+  { command: "ability {{abilityId}} dummy.1", optional: true, expectRegexAny: abilitySuccessRe, rejectRegexAny: failureRe, stopOkIfRegexAny: abilitySuccessRe },
+  { command: "ability {{abilityId}} dummy", optional: true, expectRegexAny: abilitySuccessRe, rejectRegexAny: failureRe, stopOkIfRegexAny: abilitySuccessRe },
+
+  // Build resource by attacking, then retry against plain 'dummy' (the most consistent single-token target today)
+  ...Array.from({ length: 5 }).flatMap(() => ([
+    { command: "attack dummy.1", optional: true, timeoutMs: 4000, retries: 1, retryDelayMs: 200, delayAfterMs: 150, stopOkIfRegexAny: ["/no +dummy/i", "/not +here/i"] },
+    { command: "ability {{abilityId}} dummy", optional: true, expectRegexAny: abilitySuccessRe, rejectRegexAny: failureRe, stopOkIfRegexAny: abilitySuccessRe },
+  ])),
+
+  // Final fallback (some servers infer engaged target)
+  { command: "ability {{abilityId}}", optional: true, expectRegexAny: abilitySuccessRe, rejectRegexAny: failureRe, stopOkIfRegexAny: abilitySuccessRe },
+];
+
 const extra: WsMudScriptStep[] = [
   // Kit smoke v0.4:
   // - Probe multiple target spellings for cast/ability.
@@ -2952,16 +2972,7 @@ const extra: WsMudScriptStep[] = [
   // No-target last (may default to current target, but may also default to a bogus placeholder).
   { command: "cast {{spellId}}", optional: true, expectRegexAny: ["/you cast/i", "/casting/i", "/\[combat\]/i", "/damage/i", "/heals?/i", "/absorbed/i"], rejectRegexAny: failureRe },
 
-  // Ability attempts:
-  // Your logs show: "Usage: ability <name> <target>" so we try target variants first.
-  ...targetVariants.map((t) => ({
-    command: `ability {{abilityId}} ${t}`,
-    optional: true,
-    expectRegexAny: ["/you use/i", "/you perform/i", "/\[combat\]/i", "/damage/i", "/heals?/i"],
-    rejectRegexAny: failureRe,
-  })),
-  // Fallback: no-target variant (some servers infer engaged target).
-  { command: "ability {{abilityId}}", optional: true, expectRegexAny: ["/you use/i", "/you perform/i", "/\[combat\]/i", "/hit/i", "/damage/i", "/heals?/i"], rejectRegexAny: failureRe },
+  ...abilitySteps,
 ];
 const out: WsMudScriptStep[] = [];
 
