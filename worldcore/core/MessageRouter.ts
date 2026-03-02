@@ -585,11 +585,17 @@ this.sessions.send(session, "mud_result", mudPayload);
             }
           })
           .catch((err) => {
+            const e =
+              err instanceof Error
+                ? { name: err.name, message: err.message, stack: err.stack }
+                : err;
+
             log.error("MUD command failed", {
-              err,
+              err: e,
               sessionId: session.id,
               input: text,
             });
+
             this.sessions.send(session, "mud_result", {
               text: "An error occurred.",
             });
