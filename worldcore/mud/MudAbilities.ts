@@ -277,11 +277,15 @@ export async function handleAbilityCommand(
   const raw = (abilityNameRaw ?? "").trim();
   if (!raw) return "Usage: ability <name> [target]";
 
-  const ability = findAbilityByNameOrId(raw);
+  // Resolve ability using the same canonicalization rules as DB unlocks.
+  // This allows players (and Mother Brain kit-smoke) to use shorthand IDs like
+  // `power_strike` and have it resolve to `warrior_power_strike`, etc.
+  const resolvedKey = resolveAbilityKey(raw);
+  const ability = resolvedKey ? (ABILITIES as any)[resolvedKey] : null;
   if (!ability) return `[world] Unknown ability '${raw}'.`;
 
   // Resolve canonical id/key early so it matches unlock rules + persistence.
-  const abilityKey = normalizeAbilityKey(String((ability as any).id ?? raw));
+  const abilityKey = normalizeAbilityKey(String((ability as any).id ?? resolvedKey ?? raw));
 
   // Gate "known" (DB/test mode) without breaking legacy fallback.
   if (!isAbilityKnownForChar(char as any, abilityKey)) {
