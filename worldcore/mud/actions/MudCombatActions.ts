@@ -444,7 +444,7 @@ export async function handleAttackAction(
 
       if (wasStealthed) breakStealthForCombat(char);
 
-    markInCombat(selfEntity);
+      markInCombat(selfEntity);
       markInCombat(dummyInstance as any);
       startTrainingDummyAi(ctx, ctx.session.id, roomId);
 
@@ -456,23 +456,6 @@ export async function handleAttackAction(
         { basePower: baseDmg, damageMultiplier: openerMult, damageSchool: "physical", rng: combatRng() },
       );
       const dmg = Math.max(1, roll.damage);
-
-      // Mirror attacker resource generation (fury/runic power v1) for training dummy ranged hits.
-      // This keeps kit-smoke deterministic even when the test harness uses ranged verbs.
-      try {
-        const primaryRes = getPrimaryPowerResourceForClass((char as any).classId);
-        if (dmg > 0) {
-          if (primaryRes === "fury") {
-            const gain = 5 + Math.floor(dmg / 5);
-            gainPowerResource(char, "fury", gain);
-          } else if (primaryRes === "runic_power") {
-            const gain = 6 + Math.floor(dmg / 6);
-            gainPowerResource(char, "runic_power" as any, gain);
-          }
-        }
-      } catch {
-        // Never let resource generation break combat.
-      }
 
       // Training dummy attacks do not route through NpcCombat, so mirror the
       // attacker resource generation here (fury/runic power v1) so kit-smoke can
@@ -661,7 +644,7 @@ export async function handleAttackAction(
 
     const absorbPart = absorbed > 0 ? ` (${absorbed} absorbed)` : "";
 
-    markInCombat(selfEntity);
+      markInCombat(selfEntity);
     markInCombat(playerTarget as any);
 
     // Notify the target (best-effort).
@@ -750,7 +733,7 @@ export async function handleAttackAction(
   if (targetName.toLowerCase().includes("dummy")) {
     const dummyInstance = getTrainingDummyForRoom(roomId);
 
-    markInCombat(selfEntity);
+      markInCombat(selfEntity);
     markInCombat(dummyInstance as any);
     startTrainingDummyAi(ctx, ctx.session.id, roomId);
 
@@ -1128,7 +1111,7 @@ export async function handleRangedAttackAction(
 
     const absorbPart = absorbed > 0 ? ` (${absorbed} absorbed)` : "";
 
-    markInCombat(selfEntity);
+      markInCombat(selfEntity);
     markInCombat(playerTarget as any);
 
     if (targetSession && ctx.sessions) {
