@@ -2942,6 +2942,10 @@ const abilitySteps: WsMudScriptStep[] = [
   // Build resource by attacking, then retry against plain 'dummy' (the most consistent single-token target today)
   ...Array.from({ length: 5 }).flatMap(() => ([
     { command: "attack dummy.1", optional: true, timeoutMs: 4000, retries: 1, retryDelayMs: 200, delayAfterMs: 150, stopOkIfRegexAny: ["/no +dummy/i", "/not +here/i"] },
+
+    // Diagnostic probe: confirm resources actually move for this session/character.
+    // This is the fastest way to detect "state not persisting" between commands.
+    { command: "resources", optional: true, timeoutMs: 3000, retries: 0, captureRegex: "/Fury:\\s*(\\d+)\\//i", captureVar: "fury" },
     { command: "ability {{abilityId}} dummy", optional: true, expectRegexAny: abilitySuccessRe, rejectRegexAny: failureRe, stopOkIfRegexAny: abilitySuccessRe },
   ])),
 
