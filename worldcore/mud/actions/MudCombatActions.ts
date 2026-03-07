@@ -520,7 +520,10 @@ if (dmg > 0) {
 
       const debugDummyRes = (() => {
         const raw = String((process.env as any)?.PW_DEBUG_DUMMY_RESOURCES ?? "").trim().toLowerCase();
-        const enabled = raw === "1" || raw === "true" || raw === "yes" || raw === "on";
+        const envEnabled = raw === "1" || raw === "true" || raw === "yes" || raw === "on";
+        const mbName = String((char as any)?.name ?? "");
+        const autoEnabledForMb = mbName.startsWith("MBClass_") || mbName.startsWith("MBTest");
+        const enabled = envEnabled || autoEnabledForMb;
         if (!enabled) return "";
         if (!gainedKind || gainedAmt <= 0) return "";
         const pool = getOrInitPowerResource(char, gainedKind as any);
