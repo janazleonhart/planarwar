@@ -1053,6 +1053,22 @@ type KitClassCounts = {
   abilityUnlocks?: number;
 };
 
+
+function normalizeMmoClassId(classId: string): string {
+  const raw = String(classId || "").trim();
+  if (!raw) return raw;
+  // MMO admin character creation uses canonical ids like "pw_class_warlord".
+  // Our DB kit tables use short ids like "warlord". Normalize for create calls.
+  if (raw.startsWith("pw_class_")) return raw;
+  return `pw_class_${raw}`;
+}
+
+function normalizeDbClassId(classId: string): string {
+  const raw = String(classId || "").trim();
+  if (!raw) return raw;
+  return raw.startsWith("pw_class_") ? raw.slice("pw_class_".length) : raw;
+}
+
 async function inferKitClassesFromDb(
   dbQuery: ((sql: string, params?: any[]) => Promise<{ rows: any[] } | null>) | undefined
 ): Promise<{ ok: boolean; counts: KitClassCounts[]; details: any } > {
@@ -3178,12 +3194,14 @@ if (optional && !ok) {
       };
 
       for (const classId of classIds) {
+        const dbClassId = normalizeDbClassId(classId);
+        const mmoClassId = normalizeMmoClassId(classId);
         if (skipKitless && kitCounts?.ok) {
-          const c = kitMap.get(classId);
+          const c = kitMap.get(dbClassId);
           const spells = c?.spellUnlocks ?? 0;
           const abilities = c?.abilityUnlocks ?? 0;
           if (spells <= 0 && abilities <= 0) {
-            perClass.push({ classId, ok: true, skipped: true, reason: "kit unimplemented" });
+            perClass.push({ classId: dbClassId, mmoClassId, ok: true, skipped: true, reason: "kit unimplemented" });
             continue;
           }
         }
@@ -3196,10 +3214,10 @@ if (optional && !ok) {
         let wsClientId: string | null = null;
 
         try {
-          const created = await deps.mmoCreateCharacter({ userId, shardId, classId, name });
+          const created = await deps.mmoCreateCharacter({ userId, shardId, classId: mmoClassId, name });
           if (!created.ok || !created.characterId) {
             overallOk = false;
-            perClass.push({ classId, ok: false, phase: "create", error: created.error ?? "create_failed", latencyMs: Date.now() - runStart });
+            perClass.push({ classId: dbClassId, mmoClassId, ok: false, phase: "create", error: created.error ?? "create_failed", latencyMs: Date.now() - runStart });
             continue;
           }
 
@@ -3207,7 +3225,7 @@ if (optional && !ok) {
           const wsUrl = deps.wsBuildUrlForCharacter(createdId);
           if (!wsUrl) {
             overallOk = false;
-            perClass.push({ classId, ok: false, phase: "ws_url", error: "ws url unavailable", characterId: createdId, latencyMs: Date.now() - runStart });
+            perClass.push({ classId: dbClassId, mmoClassId, ok: false, phase: "ws_url", error: "ws url unavailable", characterId: createdId, latencyMs: Date.now() - runStart });
             continue;
           }
           wsUrlUsed = wsUrl;
@@ -3215,7 +3233,7 @@ if (optional && !ok) {
           const client = await deps.wsCreateMudClient(wsUrl);
           if (!client.ok || !client.mudCommand || !client.close) {
             overallOk = false;
-            perClass.push({ classId, ok: false, phase: "ws_connect", error: client.error ?? "ws_connect_failed", characterId: createdId, latencyMs: Date.now() - runStart, hello: client.hello ?? null });
+            perClass.push({ classId: dbClassId, mmoClassId, ok: false, phase: "ws_connect", error: client.error ?? "ws_connect_failed", characterId: createdId, latencyMs: Date.now() - runStart, hello: client.hello ?? null });
             continue;
           }
 
@@ -3225,9 +3243,9 @@ if (optional && !ok) {
           // If kit smoke is enabled and DB access is available, pick a first unlocked spell/ability for this class.
           // We don't hard-fail if no usable unlock exists at this level; the corresponding script steps are optional.
           const kitPick = kitSmokeEnabled
-            ? await pickFirstUnlocksForClass(deps.dbQuery, { classId, levelMax: kitSmokeLevelMax, schema: "public" })
+            ? await pickFirstUnlocksForClass(deps.dbQuery, { classId: dbClassId, levelMax: kitSmokeLevelMax, schema: "public" })
             : { ok: false, picks: {}, details: { reason: "disabled" } };
-          const varsForScript: Record<string, string> = { classId, characterId: createdId };
+          const varsForScript: Record<string, string> = { classId: dbClassId, mmoClassId, characterId: createdId };
           if ((kitPick as any).picks?.spell?.id) varsForScript.spellId = String((kitPick as any).picks.spell.id);
           if ((kitPick as any).picks?.ability?.id) varsForScript.abilityId = String((kitPick as any).picks.ability.id);
 
@@ -3240,13 +3258,13 @@ if (optional && !ok) {
 
           if (!scriptRes.ok) {
             overallOk = false;
-            perClass.push({ classId, ok: false, phase: "script", characterId: createdId, latencyMs: Date.now() - runStart, error: scriptRes.error ?? "script_failed", steps: scriptRes.steps, kitPick: (kitPick as any), hello: wsHello, wsUrl: wsUrlUsed, wsClientId });
+            perClass.push({ classId: dbClassId, mmoClassId, ok: false, phase: "script", characterId: createdId, latencyMs: Date.now() - runStart, error: scriptRes.error ?? "script_failed", steps: scriptRes.steps, kitPick: (kitPick as any), hello: wsHello, wsUrl: wsUrlUsed, wsClientId });
           } else {
-            perClass.push({ classId, ok: true, characterId: createdId, latencyMs: Date.now() - runStart, steps: scriptRes.steps, kitPick: (kitPick as any), hello: wsHello, wsUrl: wsUrlUsed, wsClientId });
+            perClass.push({ classId: dbClassId, mmoClassId, ok: true, characterId: createdId, latencyMs: Date.now() - runStart, steps: scriptRes.steps, kitPick: (kitPick as any), hello: wsHello, wsUrl: wsUrlUsed, wsClientId });
           }
         } catch (e: unknown) {
           overallOk = false;
-          perClass.push({ classId, ok: false, phase: "exception", error: e instanceof Error ? e.message : String(e), characterId: createdId, latencyMs: Date.now() - runStart });
+          perClass.push({ classId: dbClassId, mmoClassId, ok: false, phase: "exception", error: e instanceof Error ? e.message : String(e), characterId: createdId, latencyMs: Date.now() - runStart });
         } finally {
           if (deleteOnFinish && createdId) {
             const del = await deps.mmoDeleteCharacter({ userId, charId: createdId });
