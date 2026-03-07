@@ -464,7 +464,9 @@ export async function handleAttackAction(
       //
       // IMPORTANT: do not swallow errors here. If this fails, kit-smoke will
       // loop forever at 0/XX needed and we won't know why.
-      const primaryRes = getPrimaryPowerResourceForClass(char.classId);
+      const rawClassId = String((char as any).classId ?? "");
+      const normalizedClassId = rawClassId.startsWith("pw_class_") ? rawClassId.slice("pw_class_".length) : rawClassId;
+      const primaryRes = getPrimaryPowerResourceForClass(normalizedClassId);
 
       // Track dummy resource gains so we can optionally print them for debugging.
       // Declared outside the dmg>0 block so the debug formatter can see them.
