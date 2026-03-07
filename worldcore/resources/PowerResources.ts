@@ -31,6 +31,13 @@ function clamp(n: number, lo: number, hi: number): number {
   return Math.min(hi, Math.max(lo, n));
 }
 
+function normalizeClassIdForLookup(classId: string | undefined | null): string {
+  const raw = String(classId ?? "").toLowerCase().trim();
+  if (raw.startsWith("pw_class_")) return raw.slice("pw_class_".length);
+  if (raw.startsWith("pwclass_")) return raw.slice("pwclass_".length);
+  return raw;
+}
+
 function normalizePool(kind: PowerResourceKind, pool: PowerResourcePool): PowerResourcePool {
   const max = Number.isFinite(pool.max) && pool.max > 0 ? pool.max : DEFAULT_MAX;
   const current = Number.isFinite(pool.current) ? pool.current : 0;
@@ -108,16 +115,11 @@ export function gainPowerResource(char: CharacterState, kind: PowerResourceKind,
   pool.current = clamp(pool.current + a, 0, pool.max);
 }
 
-function normalizeClassId(raw: string): string {
-  const id = (raw || "").toLowerCase();
-  return id.startsWith("pw_class_") ? id.slice("pw_class_".length) : id;
-}
-
 /**
  * Primary resource mapping by class id.
  */
 export function getPrimaryPowerResourceForClass(classId: string | undefined | null): PowerResourceKind {
-  const id = normalizeClassId(String(classId ?? ""));
+  const id = normalizeClassIdForLookup(classId);
 
   // Runic power users
   if (id === "runic_knight") return "runic_power";
