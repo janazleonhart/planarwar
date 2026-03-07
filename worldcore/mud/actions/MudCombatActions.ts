@@ -495,6 +495,11 @@ if (dmg > 0) {
     gainPowerResource(char, "chi", gain);
   }
 
+	  // Commit mutated character state to the session immediately so any subsequent
+	  // commands in the same WS session (e.g. Mother Brain kit-smoke loops) observe
+	  // updated power resources, even if the dummy is downed on this swing.
+	  ctx.session.character = char as any;
+
   // Persist training-dummy resource gains for environments that rehydrate the character
   // snapshot per command (e.g. automation/MB). Normal NPC combat does this in NpcCombat,
   // but training dummies bypass that pipeline.
