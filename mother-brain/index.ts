@@ -1972,11 +1972,18 @@ async function main(): Promise<void> {
         };
 
         const wsCreateMudClient = async (wsUrl: string) => {
+          const clientId = `mbws_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
           const p = new WsProbe(wsUrl, cfg.wsTimeoutMs);
           const r = await p.ensureConnected();
           if (!r.ok) {
             await p.close();
-            return { ok: false as const, error: r.error ?? "ws_connect_failed", hello: p.getHelloAck() };
+            return {
+              ok: false as const,
+              error: r.error ?? "ws_connect_failed",
+              hello: p.getHelloAck(),
+              wsUrl,
+              clientId,
+            };
           }
 
           // Best-effort readiness probe: newly created characters can race room join/attach.
@@ -1990,13 +1997,21 @@ async function main(): Promise<void> {
           }
           if (readyErr) {
             await p.close();
-            return { ok: false as const, error: `ws_not_ready (${readyErr})`, hello: p.getHelloAck() };
+            return {
+              ok: false as const,
+              error: `ws_not_ready (${readyErr})`,
+              hello: p.getHelloAck(),
+              wsUrl,
+              clientId,
+            };
           }
           return {
             ok: true as const,
             mudCommand: (cmd: string, timeoutMs: number) => p.mudCommand(cmd, timeoutMs),
             close: () => p.close(),
             hello: p.getHelloAck(),
+            wsUrl,
+            clientId,
           };
         };
 

@@ -302,11 +302,20 @@ export type GoalsDeps = {
     ok: boolean;
     mudCommand?: (command: string, timeoutMs: number) => Promise<{ ok: boolean; output?: string; error?: string }>;
     hello?: Record<string, unknown> | null;
+    wsUrl?: string;
+    clientId?: string;
     close?: () => Promise<void>;
     error?: string;
   }>;
   // Logger
   log: (level: "debug" | "info" | "warn" | "error", msg: string, extra?: Record<string, unknown>) => void;
+};
+
+type WsClientTrace = {
+  wsUrl?: string;
+  clientId?: string;
+  characterId?: string;
+  hello?: Record<string, unknown> | null;
 };
 
 function safeReadJsonFile(filePath: string): unknown {
@@ -3024,7 +3033,8 @@ const out: WsMudScriptStep[] = [];
       // Helper: run a ws_mud_script using a provided mudCommand.
       const runScriptWithMudCommand = async (
         mudCommand: (command: string, timeoutMs: number) => Promise<{ ok: boolean; output?: string; error?: string }>,
-        varsIn: Record<string, string>
+        varsIn: Record<string, string>,
+        trace?: WsClientTrace
       ): Promise<{ ok: boolean; steps: any[]; error?: string } > => {
         const goalRetries = Math.max(0, Math.min(10, goal.retries ?? 1));
         const goalBaseDelayMs = Math.max(0, Math.min(10_000, goal.retryDelayMs ?? 200));
@@ -3044,7 +3054,16 @@ const out: WsMudScriptStep[] = [];
 
           if (cmdInterp.missing.length > 0 || !cmd) {
             const errMsg = cmdInterp.missing.length > 0 ? `missing vars: ${cmdInterp.missing.join(", ")}` : "missing command";
-            stepReports.push({ index: i, command: rawCmd, ok: true, skipped: optional, reason: optional ? (errMsg.startsWith("missing vars") ? "missing vars" : "missing command") : undefined, hardFail: !optional, error: optional ? undefined : errMsg });
+            stepReports.push({
+              index: i,
+              command: rawCmd,
+              ok: true,
+              skipped: optional,
+              reason: optional ? (errMsg.startsWith("missing vars") ? "missing vars" : "missing command") : undefined,
+              hardFail: !optional,
+              error: optional ? undefined : errMsg,
+              trace: trace && (trace.wsUrl || trace.clientId || trace.characterId) ? { ...trace } : undefined,
+            });
             if (!optional) {
               okAll = false;
               if (stopOnFail) break;
@@ -3084,7 +3103,15 @@ const out: WsMudScriptStep[] = [];
 
           const stopOk = ok && shouldStopScriptOk(out, cookedExp.cooked as any);
           if (stopOk) {
-            stepReports.push({ index: i, command: cmd, ok: true, stoppedOk: true, outputPreview: out.length > 220 ? `${out.slice(0, 220)}…` : out, vars: { ...vars } });
+            stepReports.push({
+              index: i,
+              command: cmd,
+              ok: true,
+              stoppedOk: true,
+              trace: trace && (trace.wsUrl || trace.clientId || trace.characterId) ? { ...trace } : undefined,
+              outputPreview: out.length > 220 ? `${out.slice(0, 220)}…` : out,
+              vars: { ...vars },
+            });
             break;
           }
 
@@ -3117,6 +3144,7 @@ if (optional && !ok) {
     skipped: true,
     reason: why.reason,
     optional: true,
+    trace: trace && (trace.wsUrl || trace.clientId || trace.characterId) ? { ...trace } : undefined,
     outputPreview: out.length > 220 ? `${out.slice(0, 220)}…` : out,
     vars: Object.keys(vars).length > 0 ? { ...vars } : undefined,
   });
@@ -3130,6 +3158,7 @@ if (optional && !ok) {
             hardFail: optional ? false : !ok,
             error: optional ? undefined : ok ? undefined : res.error ?? (missing.length > 0 ? `missing expectation: ${missing.join(", ")}` : "failed"),
             optionalError: optional && !ok ? res.error ?? (missing.length > 0 ? `missing expectation: ${missing.join(", ")}` : "failed") : undefined,
+            trace: trace && (trace.wsUrl || trace.clientId || trace.characterId) ? { ...trace } : undefined,
             outputPreview: out.length > 220 ? `${out.slice(0, 220)}…` : out,
             vars: Object.keys(vars).length > 0 ? { ...vars } : undefined,
           });
@@ -3163,6 +3192,8 @@ if (optional && !ok) {
 
         let createdId: string | null = null;
         let wsHello: Record<string, unknown> | null = null;
+        let wsUrlUsed: string | null = null;
+        let wsClientId: string | null = null;
 
         try {
           const created = await deps.mmoCreateCharacter({ userId, shardId, classId, name });
@@ -3179,6 +3210,7 @@ if (optional && !ok) {
             perClass.push({ classId, ok: false, phase: "ws_url", error: "ws url unavailable", characterId: createdId, latencyMs: Date.now() - runStart });
             continue;
           }
+          wsUrlUsed = wsUrl;
 
           const client = await deps.wsCreateMudClient(wsUrl);
           if (!client.ok || !client.mudCommand || !client.close) {
@@ -3188,6 +3220,8 @@ if (optional && !ok) {
           }
 
           wsHello = (client.hello as any) ?? null;
+          wsClientId = (client as any).clientId ? String((client as any).clientId) : null;
+          if ((client as any).wsUrl) wsUrlUsed = String((client as any).wsUrl);
           // If kit smoke is enabled and DB access is available, pick a first unlocked spell/ability for this class.
           // We don't hard-fail if no usable unlock exists at this level; the corresponding script steps are optional.
           const kitPick = kitSmokeEnabled
@@ -3197,14 +3231,18 @@ if (optional && !ok) {
           if ((kitPick as any).picks?.spell?.id) varsForScript.spellId = String((kitPick as any).picks.spell.id);
           if ((kitPick as any).picks?.ability?.id) varsForScript.abilityId = String((kitPick as any).picks.ability.id);
 
-          const scriptRes = await runScriptWithMudCommand(client.mudCommand, varsForScript);
+          const scriptRes = await runScriptWithMudCommand(
+            client.mudCommand,
+            varsForScript,
+            { wsUrl: wsUrlUsed ?? undefined, clientId: wsClientId ?? undefined, characterId: createdId, hello: wsHello }
+          );
           await client.close();
 
           if (!scriptRes.ok) {
             overallOk = false;
-            perClass.push({ classId, ok: false, phase: "script", characterId: createdId, latencyMs: Date.now() - runStart, error: scriptRes.error ?? "script_failed", steps: scriptRes.steps, kitPick: (kitPick as any), hello: wsHello });
+            perClass.push({ classId, ok: false, phase: "script", characterId: createdId, latencyMs: Date.now() - runStart, error: scriptRes.error ?? "script_failed", steps: scriptRes.steps, kitPick: (kitPick as any), hello: wsHello, wsUrl: wsUrlUsed, wsClientId });
           } else {
-            perClass.push({ classId, ok: true, characterId: createdId, latencyMs: Date.now() - runStart, steps: scriptRes.steps, kitPick: (kitPick as any), hello: wsHello });
+            perClass.push({ classId, ok: true, characterId: createdId, latencyMs: Date.now() - runStart, steps: scriptRes.steps, kitPick: (kitPick as any), hello: wsHello, wsUrl: wsUrlUsed, wsClientId });
           }
         } catch (e: unknown) {
           overallOk = false;
