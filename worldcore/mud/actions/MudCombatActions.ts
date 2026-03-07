@@ -464,48 +464,54 @@ export async function handleAttackAction(
       //
       // IMPORTANT: do not swallow errors here. If this fails, kit-smoke will
       // loop forever at 0/XX needed and we won't know why.
-      const rawClassId = String((char as any).classId ?? "");
-      const normalizedClassId = rawClassId.startsWith("pw_class_") ? rawClassId.slice("pw_class_".length) : rawClassId;
-      const primaryRes = getPrimaryPowerResourceForClass(normalizedClassId);
+      
+const rawClassId = String((char as any).classId ?? "");
+const normalizedClassId = rawClassId.startsWith("pw_class_")
+  ? rawClassId.slice("pw_class_".length)
+  : rawClassId;
+const primaryRes = getPrimaryPowerResourceForClass(normalizedClassId);
 
-      // Track dummy resource gains so we can optionally print them for debugging.
-      // Declared outside the dmg>0 block so the debug formatter can see them.
-      let gainedKind: string | null = null;
-      let gainedAmt = 0;
+// Track dummy resource gains so we can optionally print them for debugging.
+// Declared outside the dmg>0 block so the debug formatter can see them.
+let gainedKind: string | null = null;
+let gainedAmt = 0;
 
-      if (dmg > 0) {
-        if (primaryRes === "fury") {
-          const gain = 5 + Math.floor(dmg / 5); // 6–15ish at low levels
-          gainedKind = "fury";
-          gainedAmt = gain;
-          gainPowerResource(char, "fury", gain);
-        } else if (primaryRes === "runic_power") {
-          const gain = 6 + Math.floor(dmg / 6); // 6–18ish at low levels
-          gainedKind = "runic_power";
-          gainedAmt = gain;
-          gainPowerResource(char, "runic_power", gain);
-        } else if (primaryRes === "chi") {
-          // v1: allow basic hits to trickle chi so Ascetic kit-smoke can reach spenders.
-          const gain = 4 + Math.floor(dmg / 8);
-          gainedKind = "chi";
-          gainedAmt = gain;
-          gainPowerResource(char, "chi", gain);
-        }
+if (dmg > 0) {
+  if (primaryRes === "fury") {
+    const gain = 5 + Math.floor(dmg / 5); // 5–13ish at low levels
+    gainedKind = "fury";
+    gainedAmt = gain;
+    gainPowerResource(char, "fury", gain);
+  } else if (primaryRes === "runic_power") {
+    const gain = 6 + Math.floor(dmg / 6); // 6–18ish at low levels
+    gainedKind = "runic_power";
+    gainedAmt = gain;
+    gainPowerResource(char, "runic_power", gain);
+  } else if (primaryRes === "chi") {
+    // v1: allow basic hits to trickle chi so Ascetic kit-smoke can reach spenders.
+    const gain = 4 + Math.floor(dmg / 8);
+    gainedKind = "chi";
+    gainedAmt = gain;
+    gainPowerResource(char, "chi", gain);
+  }
 
-      // Persist training-dummy resource gains for environments that rehydrate the character
-      // snapshot per command (e.g. automation/MB). Normal NPC combat does this in NpcCombat,
-      // but training dummies bypass that pipeline.
-      if (dmg > 0 && gainedKind && gainedAmt > 0) {
-        try {
-          await (ctx as any)?.characters?.saveCharacter?.(char);
-        } catch (err) {
-          // eslint-disable-next-line no-console
-          console.warn("saveCharacter (training dummy resource gain) failed", { err, charId: (char as any)?.id, gainedKind, gainedAmt });
-        }
-      }
-      }
-
-      const debugDummyRes = (() => {
+  // Persist training-dummy resource gains for environments that rehydrate the character
+  // snapshot per command (e.g. automation/MB). Normal NPC combat does this in NpcCombat,
+  // but training dummies bypass that pipeline.
+  if (gainedKind && gainedAmt > 0) {
+    try {
+      await (ctx as any)?.characters?.saveCharacter?.(char);
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.warn("saveCharacter (training dummy resource gain) failed", {
+        err,
+        charId: (char as any)?.id,
+        gainedKind,
+        gainedAmt,
+      });
+    }
+  }
+}const debugDummyRes = (() => {
         const raw = String((process.env as any)?.PW_DEBUG_DUMMY_RESOURCES ?? "").trim().toLowerCase();
         const enabled = raw === "1" || raw === "true" || raw === "yes" || raw === "on";
         if (!enabled) return "";
