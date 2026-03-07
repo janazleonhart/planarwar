@@ -114,6 +114,108 @@ export function findTargetPlayerEntityByName(
   return null;
 }
 
+
+
+type NpcTargetResolveContext = {
+  session: { id: string };
+  entities?: {
+    getAll?: () => Iterable<Entity> | Entity[];
+    getEntitiesInRoom?: (roomId: string) => Iterable<Entity> | Entity[];
+    getEntityByOwner?: (ownerId: string) => Entity | null | undefined;
+    getEntity?: (id: string) => Entity | null | undefined;
+  };
+};
+
+function getRoomEntities(entities: any, roomId: string): Entity[] {
+  if (!entities) return [];
+  try {
+    if (typeof entities.getEntitiesInRoom === "function") {
+      return toArray(entities.getEntitiesInRoom(String(roomId ?? "")) as any);
+    }
+  } catch {
+    // ignore
+  }
+  try {
+    if (typeof entities.getAll === "function") {
+      return toArray<Entity>(entities.getAll() as Iterable<Entity> | Entity[]).filter(
+        (ent) => String((ent as any)?.roomId ?? "") === String(roomId ?? "")
+      );
+    }
+  } catch {
+    // ignore
+  }
+  return [];
+}
+
+function isNpcLikeEntity(ent: any): boolean {
+  const t = String(ent?.type ?? "").toLowerCase();
+  return t === "npc" || t === "mob";
+}
+
+function tokenLooksNearbyHandleLike(raw: string): boolean {
+  const token = String(raw ?? "").trim().toLowerCase();
+  if (!token) return false;
+  return /^\d+$/.test(token) || /^[a-z0-9_]+(?:[.#]\d+)?$/i.test(token);
+}
+
+export function resolveNpcTargetEntityInRoom(
+  ctx: NpcTargetResolveContext,
+  roomId: string,
+  targetTokenRaw: string
+): Entity | null {
+  const token = String(targetTokenRaw ?? "").trim();
+  if (!token) return null;
+
+  const entities = ctx.entities;
+  if (!entities) return null;
+
+  const selfSessionId = String(ctx.session?.id ?? "");
+  const selfEnt =
+    typeof entities.getEntityByOwner === "function"
+      ? entities.getEntityByOwner(selfSessionId) ?? null
+      : null;
+
+  const roomEntities = getRoomEntities(entities, roomId);
+  const candidates = roomEntities.filter((ent: any) => isNpcLikeEntity(ent));
+  if (!candidates.length) return null;
+
+  const originX = Number((selfEnt as any)?.x ?? (selfEnt as any)?.posX ?? 0);
+  const originZ = Number((selfEnt as any)?.z ?? (selfEnt as any)?.posZ ?? 0);
+
+  const picked = resolveTargetInRoom(candidates as any, String(roomId ?? ""), token, {
+    selfId: selfEnt ? String((selfEnt as any).id ?? "") : undefined,
+    viewerSessionId: selfSessionId,
+    radius: 30,
+    originX,
+    originZ,
+  });
+  if (picked) return picked;
+
+  // Defensive parity fallback:
+  // if the player just engaged a nearby NPC via attack/ability, let spell casts reuse
+  // that target when the typed token is a nearby-style handle/base/index for it.
+  const engagedId = String((selfEnt as any)?.engagedTargetId ?? "").trim();
+  const engaged = engagedId
+    ? roomEntities.find((ent: any) => String((ent as any)?.id ?? "") === engagedId) ?? null
+    : null;
+  if (engaged && isNpcLikeEntity(engaged) && tokenLooksNearbyHandleLike(token)) {
+    const engagedPicked = resolveTargetInRoom([engaged] as any, String(roomId ?? ""), token, {
+      viewerSessionId: selfSessionId,
+      radius: 30,
+      originX,
+      originZ,
+    });
+    if (engagedPicked) return engagedPicked;
+
+    const engagedName = normalizeName(String((engaged as any)?.name ?? ""));
+    const tokenNorm = normalizeName(token.replace(/#/g, ".").replace(/\.\d+$/, ""));
+    if (engagedName && tokenNorm && engagedName.includes(tokenNorm)) {
+      return engaged;
+    }
+  }
+
+  return null;
+}
 export function findNearestNpcByName(
   ctx: TargetingContext,
   roomId: string,

@@ -11,7 +11,7 @@ import { applyProfileToPetVitals } from "../pets/PetProfiles";
 import { applyPetGearToVitals } from "../pets/PetGear";
 import { performNpcAttack } from "./MudActions";
 import { resolveTargetInRoom } from "../targeting/TargetResolver";
-import { findTargetPlayerEntityByName } from "../targeting/targetFinders";
+import { findTargetPlayerEntityByName, resolveNpcTargetEntityInRoom } from "../targeting/targetFinders";
 import { getNpcPrototype } from "../npc/NpcTypes";
 import {
   isServiceProtectedEntity,
@@ -697,11 +697,7 @@ export async function castSpellForCharacter(
 case "damage_single_npc": {
       const targetName = targetRaw || "rat";
 
-      const npc = resolveTargetInRoom(ctx.entities as any, roomId, targetName, {
-        selfId: selfEntity.id,
-        filter: (e: any) => e?.type === "npc" || e?.type === "mob",
-        radius: 30,
-      });
+      const npc = resolveNpcTargetEntityInRoom(ctx as any, roomId, targetName);
 
       // Targeting helpers return { entity, name } (for stable display names). Normalize here.
       const playerFound = !npc ? findTargetPlayerEntityByName(ctx, roomId, targetRaw) : null;
@@ -1346,11 +1342,7 @@ applyStatusEffect(char, {
 
 case "dispel_single_npc": {
   const targetName = targetRaw || "rat";
-  const npc = resolveTargetInRoom(ctx.entities as any, roomId, targetName, {
-    selfId: selfEntity.id,
-    filter: (e: any) => e?.type === "npc" || e?.type === "mob",
-    radius: 30,
-  });
+  const npc = resolveNpcTargetEntityInRoom(ctx as any, roomId, targetName);
 
   if (!npc) {
     const denyToken = targetRaw || targetName;
@@ -1529,11 +1521,7 @@ case "buff_self": {
     case "dot_single_npc":
     case "damage_dot_single_npc": {
       const targetName = targetRaw || "rat";
-      const npc = resolveTargetInRoom(ctx.entities as any, roomId, targetName, {
-        selfId: selfEntity.id,
-        filter: (e: any) => e?.type === "npc" || e?.type === "mob",
-        radius: 30,
-      });
+      const npc = resolveNpcTargetEntityInRoom(ctx as any, roomId, targetName);
 
       if (!npc) {
         const denyToken = targetRaw || targetName;
