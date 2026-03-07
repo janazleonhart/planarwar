@@ -84,6 +84,14 @@ test("[contract] resolveNpcTargetEntityInRoom accepts nearby handle token when g
   assert.equal((picked as any)?.id, npc.id);
 });
 
+test("[contract] resolveNpcTargetEntityInRoom accepts training dummy alias token without engaged target fallback", () => {
+  const { ctx, npc, selfEnt } = makeCtx();
+  delete (selfEnt as any).engagedTargetId;
+  const picked = resolveNpcTargetEntityInRoom(ctx, "prime_shard:0,0", "dummy.1", selfEnt);
+  assert.equal((picked as any)?.id, npc.id);
+});
+
+
 test("[contract] ability command accepts nearby handle token with same dummy targeting semantics as attack", async () => {
   const { ctx } = makeCtx();
   const line = await handleAbilityMudCommand(ctx as any, ctx.session.character as any, {

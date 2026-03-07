@@ -158,6 +158,27 @@ function tokenLooksNearbyHandleLike(raw: string): boolean {
   return /^\d+$/.test(token) || /^[a-z0-9_]+(?:[.#]\d+)?$/i.test(token);
 }
 
+function normalizeNearbyHandleBase(raw: string): string {
+  return normalizeName(String(raw ?? "").replace(/#/g, ".").replace(/\.\d+$/, ""));
+}
+
+function isTrainingDummyLikeEntity(ent: any): boolean {
+  if (!ent || !isNpcLikeEntity(ent)) return false;
+  const protoId = normalizeName(String(ent?.protoId ?? ent?.templateId ?? ""));
+  const name = normalizeName(String(ent?.name ?? ""));
+  return (
+    protoId === "training_dummy" ||
+    protoId === "training_dummy_big" ||
+    name.includes("training dummy")
+  );
+}
+
+function tokenLooksTrainingDummyLike(raw: string): boolean {
+  const base = normalizeNearbyHandleBase(raw);
+  if (!base) return false;
+  return base === "dummy" || base === "training_dummy" || base === "training dummy" || base.includes("dummy");
+}
+
 export function resolveNpcTargetEntityInRoom(
   ctx: NpcTargetResolveContext,
   roomId: string,
@@ -210,10 +231,28 @@ export function resolveNpcTargetEntityInRoom(
     if (engagedPicked) return engagedPicked;
 
     const engagedName = normalizeName(String((engaged as any)?.name ?? ""));
-    const tokenNorm = normalizeName(token.replace(/#/g, ".").replace(/\.\d+$/, ""));
+    const tokenNorm = normalizeNearbyHandleBase(token);
     if (engagedName && tokenNorm && engagedName.includes(tokenNorm)) {
       return engaged;
     }
+  }
+
+  // Training-dummy alias parity:
+  // attack accepts loose dummy tokens via the room-local dummy service fallback,
+  // so spells/abilities should treat dummy / dummy.1 similarly when a live
+  // training dummy NPC is present in the room.
+  if (tokenLooksTrainingDummyLike(token)) {
+    const dummyByNameOrProto = candidates.find((ent: any) => {
+      if (!isTrainingDummyLikeEntity(ent)) return false;
+      const protoId = normalizeName(String(ent?.protoId ?? ent?.templateId ?? ""));
+      const name = normalizeName(String(ent?.name ?? ""));
+      return (
+        protoId === "training_dummy_big" ||
+        protoId === "training_dummy" ||
+        name.includes("training dummy")
+      );
+    });
+    if (dummyByNameOrProto) return dummyByNameOrProto;
   }
 
   return null;

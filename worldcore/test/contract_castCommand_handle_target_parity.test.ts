@@ -83,6 +83,14 @@ test("[contract] resolveNpcTargetEntityInRoom accepts nearby handle token for en
   assert.equal((picked as any)?.id, npc.id);
 });
 
+test("[contract] resolveNpcTargetEntityInRoom accepts training dummy alias token without engaged target fallback", () => {
+  const { ctx, npc, char } = makeCtx();
+  delete (char as any).engagedTargetId;
+  const picked = resolveNpcTargetEntityInRoom(ctx, "prime_shard:0,0", "dummy.1", char as any);
+  assert.equal((picked as any)?.id, npc.id);
+});
+
+
 test("[contract] cast command accepts nearby handle token with same dummy targeting semantics as attack", async () => {
   const { ctx } = makeCtx();
   const line = await handleCastMudCommand(ctx as any, ctx.session.character as any, {
