@@ -117,7 +117,7 @@ export function findTargetPlayerEntityByName(
 
 
 type NpcTargetResolveContext = {
-  session: { id: string };
+  session?: { id: string };
   entities?: {
     getAll?: () => Iterable<Entity> | Entity[];
     getEntitiesInRoom?: (roomId: string) => Iterable<Entity> | Entity[];
@@ -161,7 +161,8 @@ function tokenLooksNearbyHandleLike(raw: string): boolean {
 export function resolveNpcTargetEntityInRoom(
   ctx: NpcTargetResolveContext,
   roomId: string,
-  targetTokenRaw: string
+  targetTokenRaw: string,
+  selfEntity?: Entity | null
 ): Entity | null {
   const token = String(targetTokenRaw ?? "").trim();
   if (!token) return null;
@@ -171,9 +172,10 @@ export function resolveNpcTargetEntityInRoom(
 
   const selfSessionId = String(ctx.session?.id ?? "");
   const selfEnt =
-    typeof entities.getEntityByOwner === "function"
+    selfEntity ??
+    (typeof entities.getEntityByOwner === "function" && selfSessionId
       ? entities.getEntityByOwner(selfSessionId) ?? null
-      : null;
+      : null);
 
   const roomEntities = getRoomEntities(entities, roomId);
   const candidates = roomEntities.filter((ent: any) => isNpcLikeEntity(ent));

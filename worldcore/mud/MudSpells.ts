@@ -697,7 +697,7 @@ export async function castSpellForCharacter(
 case "damage_single_npc": {
       const targetName = targetRaw || "rat";
 
-      const npc = resolveNpcTargetEntityInRoom(ctx as any, roomId, targetName);
+      const npc = resolveNpcTargetEntityInRoom(ctx as any, roomId, targetName, selfEntity as any);
 
       // Targeting helpers return { entity, name } (for stable display names). Normalize here.
       const playerFound = !npc ? findTargetPlayerEntityByName(ctx, roomId, targetRaw) : null;
@@ -1342,7 +1342,7 @@ applyStatusEffect(char, {
 
 case "dispel_single_npc": {
   const targetName = targetRaw || "rat";
-  const npc = resolveNpcTargetEntityInRoom(ctx as any, roomId, targetName);
+  const npc = resolveNpcTargetEntityInRoom(ctx as any, roomId, targetName, selfEntity as any);
 
   if (!npc) {
     const denyToken = targetRaw || targetName;
@@ -1521,7 +1521,7 @@ case "buff_self": {
     case "dot_single_npc":
     case "damage_dot_single_npc": {
       const targetName = targetRaw || "rat";
-      const npc = resolveNpcTargetEntityInRoom(ctx as any, roomId, targetName);
+      const npc = resolveNpcTargetEntityInRoom(ctx as any, roomId, targetName, selfEntity as any);
 
       if (!npc) {
         const denyToken = targetRaw || targetName;

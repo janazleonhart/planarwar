@@ -17,7 +17,7 @@ import type { CharacterState } from "../characters/CharacterTypes";
 import { Logger } from "../utils/logger";
 import { applyActionCostAndCooldownGates } from "../combat/CastingGates";
 
-import { resolveTargetInRoom } from "../targeting/TargetResolver";
+import { resolveNpcTargetEntityInRoom } from "../targeting/targetFinders";
 
 import {
   ABILITIES,
@@ -383,11 +383,7 @@ export async function handleAbilityCommand(
         return `[world] You must be in stealth to use '${(ability as any).name}'.`;
       }
 
-      const npc = resolveTargetInRoom(entities as any, roomId, targetRaw, {
-        selfId: String(selfEntity.id),
-        filter: (e: any) => e?.type === "npc" || e?.type === "mob",
-        radius: 30,
-      });
+      const npc = resolveNpcTargetEntityInRoom(ctx as any, roomId, targetRaw, selfEntity as any);
 
       if (!npc) return `[world] No such target: '${targetRaw}'.`;
 
@@ -560,11 +556,7 @@ export async function handleAbilityCommand(
       const targetRaw = (targetNameRaw ?? "").trim();
       if (!targetRaw) return "Usage: ability <name> <target>";
 
-      const npc = resolveTargetInRoom(entities as any, roomId, targetRaw, {
-        selfId: String(selfEntity.id),
-        filter: (e: any) => e?.type === "npc" || e?.type === "mob",
-        radius: 30,
-      });
+      const npc = resolveNpcTargetEntityInRoom(ctx as any, roomId, targetRaw, selfEntity as any);
       if (!npc) return `[world] No such target: '${targetRaw}'.`;
 
       const now = Number((ctx as any).nowMs ?? Date.now());
@@ -703,11 +695,7 @@ export async function handleAbilityCommand(
         return `[world] You must be in stealth to use '${(ability as any).name}'.`;
       }
 
-      const npc = resolveTargetInRoom(entities as any, roomId, targetRaw, {
-        selfId: String(selfEntity.id),
-        filter: (e: any) => e?.type === "npc" || e?.type === "mob",
-        radius: 30,
-      });
+      const npc = resolveNpcTargetEntityInRoom(ctx as any, roomId, targetRaw, selfEntity as any);
 
       if (!npc) return `[world] No such target: '${targetRaw}'.`;
 
@@ -787,11 +775,7 @@ case "damage_dot_single_npc": {
   const targetRaw = (targetNameRaw ?? "").trim();
   if (!targetRaw) return "Usage: ability <name> <target>";
 
-  const npc = resolveTargetInRoom(entities as any, roomId, targetRaw, {
-    selfId: String(selfEntity.id),
-    filter: (e: any) => e?.type === "npc" || e?.type === "mob",
-    radius: 30,
-  });
+      const npc = resolveNpcTargetEntityInRoom(ctx as any, roomId, targetRaw, selfEntity as any);
 
   if (!npc) return `[world] No such target: '${targetRaw}'.`;
 
