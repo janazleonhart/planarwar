@@ -511,7 +511,9 @@ if (dmg > 0) {
       });
     }
   }
-}const debugDummyRes = (() => {
+}
+
+      const debugDummyRes = (() => {
         const raw = String((process.env as any)?.PW_DEBUG_DUMMY_RESOURCES ?? "").trim().toLowerCase();
         const enabled = raw === "1" || raw === "true" || raw === "yes" || raw === "on";
         if (!enabled) return "";
