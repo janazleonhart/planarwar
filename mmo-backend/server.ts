@@ -28,6 +28,7 @@ import {
   type WorldServicesOptions,
 } from "../worldcore/world/WorldServices";
 import { updateRegionDangerAuraForCharacter } from "../worldcore/combat/RegionDangerAuras";
+import { normalizeRuntimeCharacterClassInPlace } from "../worldcore/classes/ClassId";
 
 installFileLogTap();
 
@@ -690,6 +691,7 @@ if (pathname === "/api/admin/characters/delete") {
             attachedIdentity.characterId = requestedCharacterId;
             session.identity = attachedIdentity;
 
+            normalizeRuntimeCharacterClassInPlace(characterState);
             characterState = hydrateCharacterRegion(characterState, world);
             (session as any).character = characterState;
 

@@ -33,6 +33,7 @@ import { applyRankBossDropGrantsForKill } from "../../ranks/RankBossDropGrantSer
 import { applySimpleDamageToPlayer, markInCombat, isDeadEntity } from "../../combat/entityCombat";
 import { gatePlayerDamageFromPlayerEntity } from "../MudCombatGates";
 import { DUEL_SERVICE } from "../../pvp/DuelService";
+import { normalizeRuntimeClassId } from "../../classes/ClassId";
 
 import { resolvePhysicalHit, type PhysicalHitResult } from "../../combat/PhysicalHitResolver";
 
@@ -466,9 +467,7 @@ export async function handleAttackAction(
       // loop forever at 0/XX needed and we won't know why.
       
 const rawClassId = String((char as any).classId ?? "");
-const normalizedClassId = rawClassId.startsWith("pw_class_")
-  ? rawClassId.slice("pw_class_".length)
-  : rawClassId;
+const normalizedClassId = normalizeRuntimeClassId(rawClassId);
 const primaryRes = getPrimaryPowerResourceForClass(normalizedClassId);
 
 // Track dummy resource gains so we can optionally print them for debugging.

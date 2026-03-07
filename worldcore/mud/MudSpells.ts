@@ -40,6 +40,7 @@ import { applyStatusEffect, applyStatusEffectToEntity, wouldCcDiminishingReturns
 import { applyActionCostAndCooldownGates } from "../combat/CastingGates";
 import { computeSongScalar } from "../songs/SongScaling";
 import { isCombatEnabledForRegion } from "../world/RegionFlags";
+import { normalizeRuntimeCharacterClassInPlace, normalizeRuntimeClassId } from "../classes/ClassId";
 const log = Logger.scope("MUD_SPELLS");
 
 function ensureStatusEffectsSpineForCombat(char: CharacterState): void {
@@ -249,8 +250,8 @@ function canUseSpell(char: CharacterState, spell: SpellDefinition, now: number):
     }
   }
 
-  const cls = (char.classId ?? "").toLowerCase();
-  const spellClass = spell.classId.toLowerCase();
+  const cls = normalizeRuntimeClassId(char.classId);
+  const spellClass = normalizeRuntimeClassId(spell.classId);
 
   if (spellClass !== "any" && cls && cls !== spellClass) {
     return `You cannot cast ${spell.name} (class restricted to ${spellClass}).`;
@@ -283,11 +284,11 @@ function startSpellCooldown(char: CharacterState, spell: SpellDefinition, now: n
 }
 
 export function listKnownSpellsForChar(char: CharacterState): SpellDefinition[] {
-  const cls = (char.classId ?? "").toLowerCase();
+  const cls = normalizeRuntimeClassId(char.classId);
   const level = char.level ?? 1;
 
   return Object.values(SPELLS).filter((s) => {
-    const spellClass = s.classId.toLowerCase();
+    const spellClass = normalizeRuntimeClassId(s.classId);
     if (spellClass !== "any" && cls && spellClass !== cls) return false;
     if (level < s.minLevel) return false;
     return true;
@@ -509,7 +510,7 @@ export async function castSpellForCharacter(
   const instrumentBonusPct = isSong && songSchool ? getEquippedInstrumentBonusPct(char, ctx.items, songSchool) : 0;
 
   const spellResourceType =
-    spell.resourceType ?? getPrimaryPowerResourceForClass(char.classId);
+    spell.resourceType ?? getPrimaryPowerResourceForClass(normalizeRuntimeClassId(char.classId));
   const spellResourceCost = spell.resourceCost ?? 0;
 
   const applySchoolGains = () => {
@@ -1687,6 +1688,8 @@ export async function handleCastCommand(
   spellNameRaw: string,
   targetNameRaw?: string,
 ): Promise<any> {
+  normalizeRuntimeCharacterClassInPlace(char);
+
   const spell = findSpellByNameOrId(spellNameRaw);
   if (!spell) {
     return `You don't know a spell called '${spellNameRaw}'.`;
