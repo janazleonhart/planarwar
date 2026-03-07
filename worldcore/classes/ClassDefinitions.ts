@@ -298,7 +298,7 @@ export const CLASS_DEFINITIONS: Record<ClassId, ClassDefinition> = {
       "mace_2h",
     ],
     favoredWeaponSkills: ["one_handed", "two_handed"],
-    powerResources: [{ id: "mana", max: 100 }],
+    powerResources: [{ id: "fury", max: 100 }],
   },
 
   templar: {
