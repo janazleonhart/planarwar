@@ -108,11 +108,16 @@ export function gainPowerResource(char: CharacterState, kind: PowerResourceKind,
   pool.current = clamp(pool.current + a, 0, pool.max);
 }
 
+function normalizeClassId(raw: string): string {
+  const id = (raw || "").toLowerCase();
+  return id.startsWith("pw_class_") ? id.slice("pw_class_".length) : id;
+}
+
 /**
  * Primary resource mapping by class id.
  */
 export function getPrimaryPowerResourceForClass(classId: string | undefined | null): PowerResourceKind {
-  const id = String(classId ?? "").toLowerCase();
+  const id = normalizeClassId(String(classId ?? ""));
 
   // Runic power users
   if (id === "runic_knight") return "runic_power";

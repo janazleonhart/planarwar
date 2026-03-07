@@ -2,6 +2,13 @@
 
 import type { Attributes } from "../characters/CharacterTypes";
 
+
+function normalizeClassId(raw: string): string {
+  const id = (raw || "").toLowerCase();
+  // MMO-facing class ids are prefixed (e.g. pw_class_warlord). WorldCore expects bare kit ids (e.g. warlord).
+  return id.startsWith("pw_class_") ? id.slice("pw_class_".length) : id;
+}
+
 export type CombatRole = "tank" | "healer" | "dps";
 
 export type ClassId =
@@ -589,7 +596,8 @@ function inferCombatRoleFromArchetype(archetype: ClassArchetype): CombatRole | u
 }
 
 export function getClassDefinition(id: string): ClassDefinition {
-  const key = ((id || "default").toLowerCase() as ClassId) || "default";
+  const norm = normalizeClassId(id);
+  const key = ((norm || "default").toLowerCase() as ClassId) || "default";
   return CLASS_DEFINITIONS[key] ?? CLASS_DEFINITIONS.default;
 }
 
@@ -599,7 +607,8 @@ export function getCombatRoleForClass(id: string): CombatRole | undefined {
 }
 
 export function getPerLevelAttributesForClass(id: string): Attributes {
-  const key = ((id || "default").toLowerCase() as ClassId) || "default";
+  const norm = normalizeClassId(id);
+  const key = ((norm || "default").toLowerCase() as ClassId) || "default";
   return CLASS_PER_LEVEL[key] ?? CLASS_PER_LEVEL.default;
 }
 
