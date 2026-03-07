@@ -525,7 +525,10 @@ if (dmg > 0) {
         const autoEnabledForMb = mbName.startsWith("MBClass_") || mbName.startsWith("MBTest");
         const enabled = envEnabled || autoEnabledForMb;
         if (!enabled) return "";
-        if (!gainedKind || gainedAmt <= 0) return "";
+        if (!gainedKind || gainedAmt <= 0) {
+          // Debug help: show why no resource gain happened (e.g. primaryRes=mana).
+          return ` (no_gain primary=${primaryRes} classId=${rawClassId})`;
+        }
         const pool = getOrInitPowerResource(char, gainedKind as any);
         return ` (+${gainedKind} ${gainedAmt} => ${pool.current}/${pool.max})`;
       })();
