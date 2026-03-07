@@ -1137,6 +1137,8 @@ type UnlockPick = {
   kind: "spell" | "ability";
   id: string;
   level?: number;
+  resourceCost?: number;
+  autoGrant?: boolean;
 };
 
 type UnlockPicks = {
@@ -1180,6 +1182,36 @@ async function pickFirstUnlocksForClass(
   const picks: UnlockPicks = {};
   const details: any = { schema, classId, levelMax, found: [] as any[] };
 
+  const catalogMetaByKind = new Map<"spell" | "ability", {
+    table: string;
+    idCol: string;
+    resourceCostCol?: string;
+  }>();
+
+  for (const kind of ["spell", "ability"] as const) {
+    const table = kind === "spell" ? "spells" : "abilities";
+    const cols = await dbQuery(
+      `select column_name from information_schema.columns where table_schema=$1 and table_name=$2`,
+      [schema, table]
+    );
+    const colNames = (cols?.rows ?? []).map((r) => String((r as any).column_name ?? "").trim()).filter(Boolean);
+    if (colNames.length === 0) continue;
+
+    const lower = new Map(colNames.map((c) => [c.toLowerCase(), c] as const));
+    const idCandidates = ["id", `${kind}_id`, `${kind}Id`, `${kind}ID`];
+    const resourceCostCandidates = ["resource_cost", "resourceCost", "cost"];
+    const idLower = idCandidates.find((c) => lower.has(c.toLowerCase()));
+    if (!idLower) continue;
+    const idCol = lower.get(idLower.toLowerCase())!;
+    const resourceCostLower = resourceCostCandidates.find((c) => lower.has(c.toLowerCase()));
+    const resourceCostCol = resourceCostLower ? lower.get(resourceCostLower.toLowerCase())! : undefined;
+
+    if (!/^[a-zA-Z0-9_]+$/.test(idCol)) continue;
+    if (resourceCostCol && !/^[a-zA-Z0-9_]+$/.test(resourceCostCol)) continue;
+
+    catalogMetaByKind.set(kind, { table, idCol, resourceCostCol });
+  }
+
   for (const t of tables) {
     const cols = await dbQuery(
       `select column_name from information_schema.columns where table_schema=$1 and table_name=$2`,
@@ -1214,44 +1246,57 @@ async function pickFirstUnlocksForClass(
 
     details.found.push({ table: t.table, kind: t.kind, classCol, idCol, levelCol, autoGrantCol });
 
-const baseWhere = safeLevelCol
-  ? `where ${safeClassCol}=$1 and ${safeLevelCol} <= $2`
-  : `where ${safeClassCol}=$1`;
+    const catalogMeta = catalogMetaByKind.get(t.kind);
+    const catalogJoin = catalogMeta
+      ? ` left join ${schema}.${catalogMeta.table} c on c.${catalogMeta.idCol} = u.${safeIdCol}`
+      : "";
+    const selectResourceCost = catalogMeta?.resourceCostCol ? `, c.${catalogMeta.resourceCostCol} as resource_cost` : "";
+    const orderParts = [
+      catalogMeta?.resourceCostCol ? `coalesce(c.${catalogMeta.resourceCostCol}, 2147483647) asc` : null,
+      safeLevelCol ? `${safeLevelCol} asc` : null,
+      `${safeIdCol} asc`,
+    ].filter(Boolean).join(", ");
+    const selectOrder = orderParts ? `order by ${orderParts}` : "";
 
-const order = safeLevelCol ? `order by ${safeLevelCol} asc, ${safeIdCol} asc` : `order by ${safeIdCol} asc`;
+    // Prefer auto_grant=true unlocks when the column exists. Within that pool,
+    // prefer the cheapest unlock first so kit-smoke picks something more likely usable now.
+    let q = null as any;
 
-// Prefer auto_grant=true unlocks when the column exists. This keeps kit-smoke focused on
-// unlocks that should already be usable at the chosen level.
-let q = null as any;
+    if (safeAutoGrantCol) {
+      const whereAuto = safeLevelCol
+        ? `where u.${safeClassCol}=$1 and u.${safeLevelCol} <= $2 and u.${safeAutoGrantCol}=true`
+        : `where u.${safeClassCol}=$1 and u.${safeAutoGrantCol}=true`;
 
-if (safeAutoGrantCol) {
-  const whereAuto = safeLevelCol
-    ? `where ${safeClassCol}=$1 and ${safeLevelCol} <= $2 and ${safeAutoGrantCol}=true`
-    : `where ${safeClassCol}=$1 and ${safeAutoGrantCol}=true`;
+      q = await dbQuery(
+        `select u.${safeIdCol} as id${safeLevelCol ? `, u.${safeLevelCol} as lvl` : ""}${selectResourceCost}, true as auto_grant from ${schema}.${safeTable} u${catalogJoin} ${whereAuto} ${selectOrder} limit 1`,
+        safeLevelCol ? [classId, levelMax] : [classId]
+      );
+    }
 
-  q = await dbQuery(
-    `select ${safeIdCol} as id${safeLevelCol ? `, ${safeLevelCol} as lvl` : ""} from ${schema}.${safeTable} ${whereAuto} ${order} limit 1`,
-    safeLevelCol ? [classId, levelMax] : [classId]
-  );
-}
+    if (!q || (q.rows ?? []).length === 0) {
+      const baseWhere = safeLevelCol
+        ? `where u.${safeClassCol}=$1 and u.${safeLevelCol} <= $2`
+        : `where u.${safeClassCol}=$1`;
 
-if (!q || (q.rows ?? []).length === 0) {
-  q = await dbQuery(
-    `select ${safeIdCol} as id${safeLevelCol ? `, ${safeLevelCol} as lvl` : ""} from ${schema}.${safeTable} ${baseWhere} ${order} limit 1`,
-    safeLevelCol ? [classId, levelMax] : [classId]
-  );
-}
+      q = await dbQuery(
+        `select u.${safeIdCol} as id${safeLevelCol ? `, u.${safeLevelCol} as lvl` : ""}${selectResourceCost}${safeAutoGrantCol ? `, u.${safeAutoGrantCol} as auto_grant` : ", false as auto_grant"} from ${schema}.${safeTable} u${catalogJoin} ${baseWhere} ${selectOrder} limit 1`,
+        safeLevelCol ? [classId, levelMax] : [classId]
+      );
+    }
 
-const row = (q?.rows ?? [])[0];
+    const row = (q?.rows ?? [])[0];
     if (!row) continue;
 
     const id = String((row as any).id ?? "").trim();
     if (!id) continue;
 
     const lvl = safeLevelCol ? Number((row as any).lvl ?? undefined) : undefined;
+    const resourceCostRaw = Number((row as any).resource_cost ?? NaN);
+    const resourceCost = Number.isFinite(resourceCostRaw) ? Math.max(0, Math.floor(resourceCostRaw)) : undefined;
+    const autoGrant = Boolean((row as any).auto_grant ?? false);
 
-    if (t.kind === "spell") picks.spell = { kind: "spell", id, level: Number.isFinite(lvl) ? lvl : undefined };
-    if (t.kind === "ability") picks.ability = { kind: "ability", id, level: Number.isFinite(lvl) ? lvl : undefined };
+    if (t.kind === "spell") picks.spell = { kind: "spell", id, level: Number.isFinite(lvl) ? lvl : undefined, resourceCost, autoGrant };
+    if (t.kind === "ability") picks.ability = { kind: "ability", id, level: Number.isFinite(lvl) ? lvl : undefined, resourceCost, autoGrant };
   }
 
   return { ok: details.found.length > 0, picks, details };
@@ -3001,11 +3046,12 @@ const abilitySteps: WsMudScriptStep[] = [
   { command: "ability {{abilityId}}", optional: true, expectRegexAny: abilitySuccessRe, rejectRegexAny: failureRe, stopOkIfRegexAny: abilitySuccessRe },
 ];
 
+const spellSuccessRe = ["/you cast/i", "/casting/i", "/\[combat\]/i", "/damage/i", "/heals?/i", "/absorbed/i"];
+
 const extra: WsMudScriptStep[] = [
-  // Kit smoke v0.4:
-  // - Probe multiple target spellings for cast/ability.
-  // - Mark clearly-bad outcomes as optionalFailed (without failing the class).
-  // - Keep it "tolerant": servers can still be mid-implementation.
+  // Kit smoke v0.5:
+  // - Prefer the first successful cast, then stop instead of spamming cooldown retries.
+  // - Keep the ability branch optional and resource-aware via picked unlock metadata.
   //
   // Spell attempts:
   // We intentionally try explicit targets first, because some servers default an omitted target to a placeholder
@@ -3013,16 +3059,17 @@ const extra: WsMudScriptStep[] = [
   ...targetVariants.map((t) => ({
     command: `cast {{spellId}} ${t}`,
     optional: true,
-    expectRegexAny: ["/you cast/i", "/casting/i", "/\[combat\]/i", "/damage/i", "/heals?/i", "/absorbed/i"],
+    expectRegexAny: spellSuccessRe,
     rejectRegexAny: failureRe,
+    stopOkIfRegexAny: spellSuccessRe,
   })),
 
   // Self-target variants (some MUDs use 'self'; others use 'me'; some require no target for self buffs).
-  { command: "cast {{spellId}} self", optional: true, expectRegexAny: ["/you cast/i", "/casting/i", "/heals?/i", "/absorbed/i"], rejectRegexAny: failureRe },
-  { command: "cast {{spellId}} me", optional: true, expectRegexAny: ["/you cast/i", "/casting/i", "/heals?/i", "/absorbed/i"], rejectRegexAny: failureRe },
+  { command: "cast {{spellId}} self", optional: true, expectRegexAny: spellSuccessRe, rejectRegexAny: failureRe, stopOkIfRegexAny: spellSuccessRe },
+  { command: "cast {{spellId}} me", optional: true, expectRegexAny: spellSuccessRe, rejectRegexAny: failureRe, stopOkIfRegexAny: spellSuccessRe },
 
   // No-target last (may default to current target, but may also default to a bogus placeholder).
-  { command: "cast {{spellId}}", optional: true, expectRegexAny: ["/you cast/i", "/casting/i", "/\[combat\]/i", "/damage/i", "/heals?/i", "/absorbed/i"], rejectRegexAny: failureRe },
+  { command: "cast {{spellId}}", optional: true, expectRegexAny: spellSuccessRe, rejectRegexAny: failureRe, stopOkIfRegexAny: spellSuccessRe },
 
   ...abilitySteps,
 ];
@@ -3269,8 +3316,30 @@ if (optional && !ok) {
             ? await pickFirstUnlocksForClass(deps.dbQuery, { classId: dbClassId, levelMax: kitSmokeLevelMax, schema: "public" })
             : { ok: false, picks: {}, details: { reason: "disabled" } };
           const varsForScript: Record<string, string> = { classId: dbClassId, mmoClassId, characterId: createdId };
-          if ((kitPick as any).picks?.spell?.id) varsForScript.spellId = String((kitPick as any).picks.spell.id);
-          if ((kitPick as any).picks?.ability?.id) varsForScript.abilityId = String((kitPick as any).picks.ability.id);
+          const pickedSpell = (kitPick as any).picks?.spell;
+          const pickedAbility = (kitPick as any).picks?.ability;
+          const maxAbilityResourceCost = Number.isFinite(Number(process.env.MOTHER_BRAIN_CLASS_PLAYTEST_MAX_ABILITY_RESOURCE_COST))
+            ? Math.max(0, Math.floor(Number(process.env.MOTHER_BRAIN_CLASS_PLAYTEST_MAX_ABILITY_RESOURCE_COST)))
+            : 7;
+          if (pickedSpell?.id) varsForScript.spellId = String(pickedSpell.id);
+          if (pickedAbility?.id) {
+            const pickedAbilityCost = Number.isFinite(Number(pickedAbility.resourceCost))
+              ? Math.max(0, Math.floor(Number(pickedAbility.resourceCost)))
+              : null;
+            if (pickedAbilityCost === null || pickedAbilityCost <= maxAbilityResourceCost) {
+              varsForScript.abilityId = String(pickedAbility.id);
+            } else {
+              (kitPick as any).details = {
+                ...((kitPick as any).details ?? {}),
+                skippedAbility: {
+                  reason: "resource_cost_too_high",
+                  maxAbilityResourceCost,
+                  pickedAbilityId: String(pickedAbility.id),
+                  pickedAbilityCost,
+                },
+              };
+            }
+          }
 
           const scriptRes = await runScriptWithMudCommand(
             client.mudCommand,
