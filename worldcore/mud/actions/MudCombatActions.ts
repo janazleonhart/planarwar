@@ -491,6 +491,18 @@ export async function handleAttackAction(
           gainedAmt = gain;
           gainPowerResource(char, "chi", gain);
         }
+
+      // Persist training-dummy resource gains for environments that rehydrate the character
+      // snapshot per command (e.g. automation/MB). Normal NPC combat does this in NpcCombat,
+      // but training dummies bypass that pipeline.
+      if (dmg > 0 && gainedKind && gainedAmt > 0) {
+        try {
+          await (ctx as any)?.characters?.saveCharacter?.(char);
+        } catch (err) {
+          // eslint-disable-next-line no-console
+          console.warn("saveCharacter (training dummy resource gain) failed", { err, charId: (char as any)?.id, gainedKind, gainedAmt });
+        }
+      }
       }
 
       const debugDummyRes = (() => {
