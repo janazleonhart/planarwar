@@ -1198,28 +1198,51 @@ async function pickFirstUnlocksForClass(
     const idCol = idLower ? lower.get(idLower.toLowerCase())! : null;
     const levelCol = levelLower ? lower.get(levelLower.toLowerCase())! : null;
 
+    const autoGrantCandidates = ["auto_grant", "autogrant", "autoGrant", "auto_granted", "is_auto_grant"]; 
+    const autoLower = autoGrantCandidates.find((c) => lower.has(c.toLowerCase()));
+    const autoGrantCol = autoLower ? lower.get(autoLower.toLowerCase())! : null;
+
+
     if (!classCol || !idCol) continue;
 
     const safeTable = /^[a-zA-Z0-9_]+$/.test(t.table) ? t.table : null;
     const safeClassCol = /^[a-zA-Z0-9_]+$/.test(classCol) ? classCol : null;
     const safeIdCol = /^[a-zA-Z0-9_]+$/.test(idCol) ? idCol : null;
     const safeLevelCol = levelCol && /^[a-zA-Z0-9_]+$/.test(levelCol) ? levelCol : null;
+    const safeAutoGrantCol = autoGrantCol && /^[a-zA-Z0-9_]+$/.test(autoGrantCol) ? autoGrantCol : null;
     if (!safeTable || !safeClassCol || !safeIdCol) continue;
 
-    details.found.push({ table: t.table, kind: t.kind, classCol, idCol, levelCol });
+    details.found.push({ table: t.table, kind: t.kind, classCol, idCol, levelCol, autoGrantCol });
 
-    const where = safeLevelCol
-      ? `where ${safeClassCol}=$1 and ${safeLevelCol} <= $2`
-      : `where ${safeClassCol}=$1`;
+const baseWhere = safeLevelCol
+  ? `where ${safeClassCol}=$1 and ${safeLevelCol} <= $2`
+  : `where ${safeClassCol}=$1`;
 
-    const order = safeLevelCol ? `order by ${safeLevelCol} asc, ${safeIdCol} asc` : `order by ${safeIdCol} asc`;
+const order = safeLevelCol ? `order by ${safeLevelCol} asc, ${safeIdCol} asc` : `order by ${safeIdCol} asc`;
 
-    const q = await dbQuery(
-      `select ${safeIdCol} as id${safeLevelCol ? `, ${safeLevelCol} as lvl` : ""} from ${schema}.${safeTable} ${where} ${order} limit 1`,
-      safeLevelCol ? [classId, levelMax] : [classId]
-    );
+// Prefer auto_grant=true unlocks when the column exists. This keeps kit-smoke focused on
+// unlocks that should already be usable at the chosen level.
+let q = null as any;
 
-    const row = (q?.rows ?? [])[0];
+if (safeAutoGrantCol) {
+  const whereAuto = safeLevelCol
+    ? `where ${safeClassCol}=$1 and ${safeLevelCol} <= $2 and ${safeAutoGrantCol}=true`
+    : `where ${safeClassCol}=$1 and ${safeAutoGrantCol}=true`;
+
+  q = await dbQuery(
+    `select ${safeIdCol} as id${safeLevelCol ? `, ${safeLevelCol} as lvl` : ""} from ${schema}.${safeTable} ${whereAuto} ${order} limit 1`,
+    safeLevelCol ? [classId, levelMax] : [classId]
+  );
+}
+
+if (!q || (q.rows ?? []).length === 0) {
+  q = await dbQuery(
+    `select ${safeIdCol} as id${safeLevelCol ? `, ${safeLevelCol} as lvl` : ""} from ${schema}.${safeTable} ${baseWhere} ${order} limit 1`,
+    safeLevelCol ? [classId, levelMax] : [classId]
+  );
+}
+
+const row = (q?.rows ?? [])[0];
     if (!row) continue;
 
     const id = String((row as any).id ?? "").trim();
