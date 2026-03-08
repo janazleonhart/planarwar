@@ -1965,6 +1965,13 @@ async function main(): Promise<void> {
           try {
             const u = new URL(base);
             u.searchParams.set("characterId", characterId);
+            const wsSvc = String(
+              process.env.MOTHER_BRAIN_MMO_BACKEND_WS_SERVICE_TOKEN ||
+              cfg.mmoBackendServiceTokenEditor ||
+              cfg.mmoBackendServiceToken ||
+              ""
+            ).trim();
+            if (wsSvc) u.searchParams.set("serviceToken", wsSvc);
             return u.toString();
           } catch {
             return base;

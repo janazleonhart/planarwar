@@ -5,30 +5,18 @@ import { requireDebug } from "../../../auth/debugGate";
 
 /**
  * Wrap a debug/admin command with staff gating.
- *
- * We intentionally avoid being overly strict about the Session shape here,
- * because Session may evolve and AuthTypes are the canonical source of flags.
  */
 export function withDebugGate(
   handler: MudCommandHandlerFn,
   minRole: "guide" | "gm" | "dev" | "owner" = "dev",
 ): MudCommandHandlerFn {
   return async (ctx: any, char: any, input: any) => {
-    try {
-      // Prefer the canonical identity flags if present.
-      const flags =
-        ctx?.session?.identity?.flags ??
-        ctx?.session?.accountFlags ??
-        ctx?.session?.flags ??
-        ctx?.session;
-
-      // requireDebug() is the authority; it throws on failure.
-      requireDebug(flags as any, minRole as any);
-    } catch (err: any) {
-      return "[debug] Permission denied.";
+    const commandId = String(input?.cmd ?? input?.parts?.[0] ?? "").trim().toLowerCase();
+    const denied = requireDebug(ctx, minRole as any, commandId);
+    if (denied) {
+      return `[debug] ${denied}`;
     }
 
-    // Preserve the handler return (string or null).
     return await handler(ctx, char, input);
   };
 }

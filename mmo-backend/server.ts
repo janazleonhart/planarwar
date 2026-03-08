@@ -120,6 +120,63 @@ function writeJson(res: http.ServerResponse, status: number, obj: any): void {
   res.end(body);
 }
 
+function parseCsvSet(raw: string | undefined | null): Set<string> {
+  return new Set(
+    String(raw ?? "")
+      .split(",")
+      .map((s) => s.trim().toLowerCase())
+      .filter(Boolean)
+  );
+}
+
+function envBool(raw: string | undefined | null, fallback = false): boolean {
+  const v = String(raw ?? "").trim().toLowerCase();
+  if (!v) return fallback;
+  return v === "1" || v === "true" || v === "yes" || v === "on";
+}
+
+function getWsServiceAttachIds(): Set<string> {
+  return parseCsvSet(process.env.PW_MMO_WS_SERVICE_ATTACH_IDS);
+}
+
+function getWsServiceDebugIds(): Set<string> {
+  return parseCsvSet(process.env.PW_MMO_WS_SERVICE_DEBUG_IDS);
+}
+
+function getWsServiceDebugCommandAllowlist(): string[] {
+  return Array.from(parseCsvSet(process.env.PW_MMO_WS_SERVICE_DEBUG_COMMAND_ALLOWLIST || "debug_xp"));
+}
+
+function canServiceUseWsAttach(serviceId: string, role: ServiceTokenRole): boolean {
+  if (!envBool(process.env.PW_MMO_WS_SERVICE_TOKENS_ENABLED, true)) return false;
+  const allow = getWsServiceAttachIds();
+  if (!allow.has(String(serviceId).trim().toLowerCase())) return false;
+  return role === "editor" || role === "root";
+}
+
+function buildServiceIdentityForCharacter(opts: {
+  serviceId: string;
+  role: ServiceTokenRole;
+  characterId: string;
+  userId: string;
+  shardId?: string;
+}): AttachedIdentity {
+  const debugIds = getWsServiceDebugIds();
+  const serviceIdNorm = String(opts.serviceId).trim().toLowerCase();
+  const allowDebug = debugIds.has(serviceIdNorm);
+  return {
+    userId: opts.userId,
+    displayName: `svc:${opts.serviceId}`,
+    flags: allowDebug ? ({ isDev: true } as any) : {},
+    shardId: opts.shardId,
+    characterId: opts.characterId,
+    authKind: "service",
+    serviceId: opts.serviceId,
+    serviceRole: opts.role,
+    serviceCommandAllowlist: allowDebug ? getWsServiceDebugCommandAllowlist() : [],
+  };
+}
+
 function getBearerOrServiceHeader(req: http.IncomingMessage): string | null {
   const auth = String(req.headers["authorization"] || "");
   const m = auth.match(/^bearer\s+(.+)$/i);
@@ -619,6 +676,7 @@ if (pathname === "/api/admin/characters/delete") {
 
     // ---- auth + character attach state ----
     let attachedIdentity: AttachedIdentity | undefined;
+    let attachedService: { serviceId: string; role: ServiceTokenRole } | undefined;
     let characterState: CharacterState | null = null;
     let requestedCharacterId: string | null = null;
 
@@ -630,6 +688,7 @@ if (pathname === "/api/admin/characters/delete") {
 
       const url = new URL(base);
       const token = url.searchParams.get("token");
+      const serviceToken = url.searchParams.get("serviceToken") ?? url.searchParams.get("svcToken");
       requestedCharacterId = url.searchParams.get("characterId") ?? url.searchParams.get("charId");
 
       if (token) {
@@ -662,6 +721,26 @@ if (pathname === "/api/admin/characters/delete") {
           socket.close(4001, "invalid_token");
           return;
         }
+      } else if (serviceToken) {
+        const svc = verifyServiceToken(serviceToken);
+        if (svc.ok && canServiceUseWsAttach(svc.serviceId, svc.role)) {
+          attachedService = { serviceId: svc.serviceId, role: svc.role };
+          session.displayName = `svc:${svc.serviceId}`;
+          log.info("WS service session authenticated", {
+            sessionId: session.id,
+            serviceId: svc.serviceId,
+            role: svc.role,
+            requestedCharacterId,
+          });
+        } else if (!netConfig.authOptional) {
+          log.warn("Rejecting WS service connection", {
+            remote: req.socket.remoteAddress,
+            requestedCharacterId,
+            error: svc.ok ? "service_not_allowed" : svc.error,
+          });
+          socket.close(4003, "invalid_service_token");
+          return;
+        }
       } else if (!netConfig.authOptional) {
         log.warn("Rejecting connection: missing token", {
           remote: req.socket.remoteAddress,
@@ -672,24 +751,34 @@ if (pathname === "/api/admin/characters/delete") {
 
       // If we’re authenticated and have a characterId in the URL,
       // load the character from DB.
-      if (attachedIdentity && requestedCharacterId) {
+      if ((attachedIdentity || attachedService) && requestedCharacterId) {
         try {
           const state = await characters.loadCharacter(requestedCharacterId);
           if (!state) {
             log.warn("Character not found for attach", {
               characterId: requestedCharacterId,
-              userId: attachedIdentity.userId,
+              userId: attachedIdentity?.userId ?? attachedService?.serviceId ?? null,
             });
-          } else if (state.userId !== attachedIdentity.userId) {
+          } else if (attachedIdentity && state.userId !== attachedIdentity.userId) {
             log.warn("Character does not belong to user", {
               characterId: requestedCharacterId,
-              userId: attachedIdentity.userId,
+              userId: attachedIdentity?.userId ?? attachedService?.serviceId ?? null,
               owner: state.userId,
             });
           } else {
             characterState = state;
-            attachedIdentity.characterId = requestedCharacterId;
-            session.identity = attachedIdentity;
+            if (attachedIdentity) {
+              attachedIdentity.characterId = requestedCharacterId;
+              session.identity = attachedIdentity;
+            } else if (attachedService) {
+              session.identity = buildServiceIdentityForCharacter({
+                serviceId: attachedService.serviceId,
+                role: attachedService.role,
+                characterId: requestedCharacterId,
+                userId: state.userId,
+                shardId: state.shardId,
+              });
+            }
 
             normalizeRuntimeCharacterClassInPlace(characterState);
             characterState = hydrateCharacterRegion(characterState, world);
@@ -702,7 +791,7 @@ if (pathname === "/api/admin/characters/delete") {
 
             log.info("Character loaded for session", {
               sessionId: session.id,
-              userId: attachedIdentity.userId,
+              userId: attachedIdentity?.userId ?? attachedService?.serviceId ?? null,
               characterId: requestedCharacterId,
               shardId: state.shardId,
             });
@@ -722,7 +811,7 @@ if (pathname === "/api/admin/characters/delete") {
       }
     }
 
-    if (!attachedIdentity && netConfig.authOptional) {
+    if (!attachedIdentity && !attachedService && netConfig.authOptional) {
       log.info("Session connected without auth (dev mode)", {
         sessionId: session.id,
       });
@@ -871,14 +960,16 @@ if (pathname === "/api/admin/characters/delete") {
     // whether auth + character attach actually happened.
     // Without this, MUD commands silently no-op when session.character is missing.
     try {
-      const userId = attachedIdentity?.userId ?? null;
-      const authed = Boolean(attachedIdentity);
+      const userId = attachedIdentity?.userId ?? session.identity?.userId ?? null;
+      const authed = Boolean(attachedIdentity || attachedService);
       const characterAttached = Boolean(characterState);
       const ack: any = {
         ok: true,
         authed,
         userId,
         requestedCharacterId: requestedCharacterId ?? null,
+        authKind: (session.identity as any)?.authKind ?? (attachedIdentity ? "player" : attachedService ? "service" : null),
+        serviceId: attachedService?.serviceId ?? (session.identity as any)?.serviceId ?? null,
         characterAttached,
         characterId: characterState ? (characterState as any).id : null,
         shardId: characterState ? (characterState as any).shardId : null,

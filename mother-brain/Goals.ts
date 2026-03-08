@@ -3028,24 +3028,42 @@ if (optional && !ok) {
         continue;
       }
 
-      const script = Array.isArray(goal.script) && goal.script.length > 0 ? goal.script : [
-        // First command can race the server right after character creation/attach.
-        // Give it a longer timeout + retries to avoid noisy flakes.
-        { command: "help", timeoutMs: 8000, retries: 2, retryDelayMs: 250, expectIncludes: "Available commands:" },
-
-        // Cheap readiness probe (also helps older servers that don't emit hello_ack).
-        { command: "whereami", timeoutMs: 4000, retries: 1, retryDelayMs: 200, optional: true, expectIncludes: "Location:" },
-
-        { command: "stats", timeoutMs: 4000, retries: 1, retryDelayMs: 200, expectRegexAny: ["HP", "Level", "/str|dex|int/i"] },
-
-        // Engage dummy so later "cast" / "ability" commands can often default to the engaged target.
-        { command: "attack dummy.1", timeoutMs: 4000, retries: 1, retryDelayMs: 200, stopOkIfRegexAny: ["/no +dummy/i", "/not +here/i"], expectRegexAny: ["/hit/i", "/damage/i", "/combat/i"] },
-      ];
-
       const kitSmokeEnabled = String(process.env.MOTHER_BRAIN_CLASS_PLAYTEST_KIT_SMOKE ?? "1").trim() !== "0";
       const kitSmokeLevelMax = Number.isFinite(Number(process.env.MOTHER_BRAIN_CLASS_PLAYTEST_LEVEL))
         ? Math.max(1, Math.floor(Number(process.env.MOTHER_BRAIN_CLASS_PLAYTEST_LEVEL)))
         : 1;
+      const boostedKitSmokeEnabled = String(process.env.MOTHER_BRAIN_CLASS_PLAYTEST_USE_DEV_XP ?? "0").trim() === "1";
+      const boostedKitSmokeXp = Number.isFinite(Number(process.env.MOTHER_BRAIN_CLASS_PLAYTEST_DEV_XP ?? "9000"))
+        ? Math.max(1, Math.floor(Number(process.env.MOTHER_BRAIN_CLASS_PLAYTEST_DEV_XP ?? "9000")))
+        : 9000;
+
+      const script = Array.isArray(goal.script) && goal.script.length > 0 ? goal.script : (() => {
+        const base: WsMudScriptStep[] = [
+          // First command can race the server right after character creation/attach.
+          // Give it a longer timeout + retries to avoid noisy flakes.
+          { command: "help", timeoutMs: 8000, retries: 2, retryDelayMs: 250, expectIncludes: "Available commands:" },
+
+          // Cheap readiness probe (also helps older servers that don't emit hello_ack).
+          { command: "whereami", timeoutMs: 4000, retries: 1, retryDelayMs: 200, optional: true, expectIncludes: "Location:" },
+
+          { command: "stats", timeoutMs: 4000, retries: 1, retryDelayMs: 200, expectRegexAny: ["HP", "Level", "/str|dex|int/i"] },
+        ];
+
+        if (boostedKitSmokeEnabled) {
+          base.push(
+            { command: `debug_xp ${boostedKitSmokeXp}`, timeoutMs: 5000, retries: 1, retryDelayMs: 200, optional: true, expectRegexAny: ["/granted/i", "/\[debug\]/i"] },
+            { command: "stats", timeoutMs: 4000, retries: 1, retryDelayMs: 200, optional: true, expectRegexAny: ["HP", "Level", "/str|dex|int/i"] },
+            { command: "spells", timeoutMs: 4000, retries: 0, optional: true },
+            { command: "abilities", timeoutMs: 4000, retries: 0, optional: true },
+          );
+        }
+
+        base.push(
+          // Engage dummy so later "cast" / "ability" commands can often default to the engaged target.
+          { command: "attack dummy.1", timeoutMs: 4000, retries: 1, retryDelayMs: 200, stopOkIfRegexAny: ["/no +dummy/i", "/not +here/i"], expectRegexAny: ["/hit/i", "/damage/i", "/combat/i"] },
+        );
+        return base;
+      })();
 
       // Optionally extend the per-class script with a "kit smoke" step: try to use one unlocked spell/ability (if any).
       // This is intentionally optional and will not fail the class when a kit exists but the MUD command is not yet implemented.

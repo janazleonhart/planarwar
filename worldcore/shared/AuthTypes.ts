@@ -99,6 +99,18 @@ export interface AttachedIdentity {
 
   shardId?: ShardId;
   characterId?: CharacterId;
+
+  /** Human JWT/session auth vs internal daemon/service auth. */
+  authKind?: "player" | "service";
+
+  /** Internal daemon/service id when authKind === "service". */
+  serviceId?: string;
+
+  /** Service token coarse role, when relevant. */
+  serviceRole?: "readonly" | "editor" | "root";
+
+  /** Optional per-session mud command allowlist for daemon actors. */
+  serviceCommandAllowlist?: string[];
 }
 
 /**
