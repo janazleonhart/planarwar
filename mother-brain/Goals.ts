@@ -960,17 +960,9 @@ const mmoAdminSmoke: GoalDefinition[] =
       // and shard from MOTHER_BRAIN_CLASS_PLAYTEST_SHARD_ID.
       // You can also set goal.classIds in a custom goals file.
       deleteOnFinish: true,
-      // Per-class script: very small loop.
-      script: [
-        { command: "help", expectIncludes: "Available commands:", rejectRegexAny: ["/\\[error\\]/i"] },
-        { command: "stats", expectRegexAny: ["HP", "Level", "/str|dex|int/i"], rejectRegexAny: ["/\\[error\\]/i"] },
-        {
-          command: "attack dummy.1",
-          stopOkIfRegexAny: ["/no\\s+dummy/i", "/not\\s+here/i", "/no\\s+target/i"],
-          expectRegexAny: ["/hit/i", "/damage/i", "/combat/i"],
-          rejectRegexAny: ["/\\[error\\]/i"],
-        },
-      ],
+      // Intentionally omit a baked-in script here.
+      // The runtime class_playtest_loop builder generates the real script so
+      // boosted/dev-XP and kit-smoke branches can be injected from env.
     },
   ];
 
