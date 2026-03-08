@@ -1676,6 +1676,13 @@ async function prepareWsPlaytestUrl(
 
   const rawToken = (process.env.MOTHER_BRAIN_WS_TOKEN || "").trim() || undefined;
   const rawCharId = (process.env.MOTHER_BRAIN_WS_CHARACTER_ID || "").trim() || undefined;
+  const wsServiceToken = String(
+    process.env.MOTHER_BRAIN_MMO_BACKEND_WS_SERVICE_TOKEN ||
+    process.env.MOTHER_BRAIN_MMO_BACKEND_SERVICE_TOKEN_EDITOR ||
+    process.env.MOTHER_BRAIN_MMO_BACKEND_SERVICE_TOKEN ||
+    ""
+  ).trim() || undefined;
+  const boostedClassPlaytest = String(process.env.MOTHER_BRAIN_CLASS_PLAYTEST_USE_DEV_XP || "0").trim() === "1";
 
   const wantAutocreate = String(process.env.MOTHER_BRAIN_WS_AUTOCREATE || "0").trim() === "1";
   const deleteOnExit = String(process.env.MOTHER_BRAIN_WS_AUTOCREATE_DELETE_ON_EXIT || "1").trim() !== "0";
@@ -1744,12 +1751,28 @@ async function prepareWsPlaytestUrl(
   }
 
   // Attach auth + character via URL query (mmo-backend binds identity+character from query params).
+  // Important: boosted class playtests must use service-only WS auth, otherwise the player JWT wins
+  // and the daemon-scoped debug path never activates.
   let wsUrl: string | undefined = baseWs;
   try {
     const u = new URL(baseWs);
-    if (token) u.searchParams.set("token", token);
+    const useServiceOnlyWsAuth = boostedClassPlaytest && Boolean(wsServiceToken);
+    u.searchParams.delete("token");
+    u.searchParams.delete("serviceToken");
+    u.searchParams.delete("svcToken");
+    if (useServiceOnlyWsAuth) {
+      u.searchParams.set("serviceToken", wsServiceToken!);
+    } else if (token) {
+      u.searchParams.set("token", token);
+    }
     if (characterId) u.searchParams.set("characterId", characterId);
     wsUrl = u.toString();
+    gatedLog("info", "Prepared WS playtest auth mode", {
+      authMode: useServiceOnlyWsAuth ? "service" : token ? "player" : "anonymous",
+      boostedClassPlaytest,
+      hasWsServiceToken: Boolean(wsServiceToken),
+      characterId: characterId ?? null,
+    });
   } catch {
     wsUrl = baseWs;
   }
@@ -1967,11 +1990,23 @@ async function main(): Promise<void> {
             u.searchParams.set("characterId", characterId);
             const wsSvc = String(
               process.env.MOTHER_BRAIN_MMO_BACKEND_WS_SERVICE_TOKEN ||
+              process.env.MOTHER_BRAIN_MMO_BACKEND_SERVICE_TOKEN_EDITOR ||
               cfg.mmoBackendServiceTokenEditor ||
+              process.env.MOTHER_BRAIN_MMO_BACKEND_SERVICE_TOKEN ||
               cfg.mmoBackendServiceToken ||
               ""
             ).trim();
-            if (wsSvc) u.searchParams.set("serviceToken", wsSvc);
+            const boostedClassPlaytest = String(process.env.MOTHER_BRAIN_CLASS_PLAYTEST_USE_DEV_XP || "0").trim() === "1";
+            u.searchParams.delete("token");
+            u.searchParams.delete("serviceToken");
+            u.searchParams.delete("svcToken");
+            if (boostedClassPlaytest && wsSvc) {
+              u.searchParams.set("serviceToken", wsSvc);
+            } else {
+              const token = String(u.searchParams.get("token") || "").trim();
+              if (token) u.searchParams.set("token", token);
+              if (wsSvc) u.searchParams.set("serviceToken", wsSvc);
+            }
             return u.toString();
           } catch {
             return base;
