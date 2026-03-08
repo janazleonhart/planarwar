@@ -1253,8 +1253,8 @@ async function pickFirstUnlocksForClass(
     const selectResourceCost = catalogMeta?.resourceCostCol ? `, c.${catalogMeta.resourceCostCol} as resource_cost` : "";
     const orderParts = [
       catalogMeta?.resourceCostCol ? `coalesce(c.${catalogMeta.resourceCostCol}, 2147483647) asc` : null,
-      safeLevelCol ? `${safeLevelCol} asc` : null,
-      `${safeIdCol} asc`,
+      safeLevelCol ? `u.${safeLevelCol} asc` : null,
+      `u.${safeIdCol} asc`,
     ].filter(Boolean).join(", ");
     const selectOrder = orderParts ? `order by ${orderParts}` : "";
 
