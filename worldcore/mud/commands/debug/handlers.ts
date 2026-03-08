@@ -6,6 +6,8 @@ import { logStaffAction } from "../../../auth/StaffAuditLog";
 import { canGrantItemToPlayer } from "../../../items/ItemGrantRules";
 import { getItemTemplate, listAllItems } from "../../../items/ItemCatalog";
 import { defaultAttributes } from "../../../characters/CharacterTypes";
+import { hydrateCharacterRegion } from "../../../characters/CharacterStateGuard";
+import { normalizeRuntimeCharacterClassInPlace } from "../../../classes/ClassId";
 import {
   applySimpleDamageToPlayer,
   isDeadEntity,
@@ -168,7 +170,20 @@ export async function handleDebugXp(
       char.id,
       amount
     );
-    if (updated) ctx.session.character = updated;
+    if (updated) {
+      normalizeRuntimeCharacterClassInPlace(updated as any);
+      const hydrated = hydrateCharacterRegion(
+        {
+          ...updated,
+          lastRegionId: (updated as any).lastRegionId ?? (char as any)?.lastRegionId ?? null,
+        } as any,
+        ctx.world
+      );
+      if ((hydrated as any)?.lastRegionId == null && (char as any)?.lastRegionId != null) {
+        (hydrated as any).lastRegionId = (char as any).lastRegionId;
+      }
+      ctx.session.character = hydrated;
+    }
     return `[debug] Granted ${amount} XP.`;
   }
 

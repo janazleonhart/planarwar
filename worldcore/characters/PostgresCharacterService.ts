@@ -24,6 +24,7 @@ import {
 
 import { applyXp } from "./Leveling";
 import { getPerLevelAttributesForClass } from "../classes/ClassDefinitions";
+import { normalizeRuntimeCharacterClassInPlace } from "../classes/ClassId";
 
 function normalizeClassKey(classId: string): string {
   const raw = (classId || "").toLowerCase().trim();
@@ -373,11 +374,14 @@ export class PostgresCharacterService {
       attributes: newAttributes,
     };
 
+    normalizeRuntimeCharacterClassInPlace(updated);
+
     // Reference-kit L1–10 grants should appear as you level.
     this.applyReferenceKitAutograntsInPlace(updated);
 
     await this.saveCharacter(updated);
-    return await this.loadCharacter(charId);
+    const reloaded = await this.loadCharacter(charId);
+    return reloaded ? normalizeRuntimeCharacterClassInPlace(reloaded) : reloaded;
   }
 
   /**

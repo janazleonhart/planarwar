@@ -3,6 +3,7 @@
 import { isDeadEntity } from "../combat/entityCombat";
 import { prettyRegionName } from "../world/regionText";
 import { computeEffectiveAttributes } from "./Stats";
+import { normalizeRuntimeClassId } from "../classes/ClassId";
 
 export type CharacterSheetArgs = {
   items?: any;
@@ -49,7 +50,7 @@ export function buildCharacterSheetLine(char: any, args: CharacterSheetArgs = {}
 
   return (
     `Name: ${char.name}${titleFragment} ` +
-    `Class: ${char.classId} ` +
+    `Class: ${normalizeRuntimeClassId(char.classId)} ` +
     `Level: ${char.level} XP: ${char.xp}` +
     hpFragment +
     statusFragment +
