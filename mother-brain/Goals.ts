@@ -1147,7 +1147,9 @@ type UnlockPick = {
 
 type UnlockPicks = {
   spell?: UnlockPick;
+  spellAlt?: UnlockPick;
   ability?: UnlockPick;
+  abilityAlt?: UnlockPick;
 };
 
 async function pickFirstUnlocksForClass(
@@ -1262,45 +1264,52 @@ async function pickFirstUnlocksForClass(
     ].filter(Boolean).join(", ");
     const selectOrder = orderParts ? `order by ${orderParts}` : "";
 
-    // Prefer auto_grant=true unlocks when the column exists. Within that pool,
-    // prefer the cheapest unlock first so kit-smoke picks something more likely usable now.
-    let q = null as any;
+    const baseWhere = safeLevelCol
+      ? `where u.${safeClassCol}=$1 and u.${safeLevelCol} <= $2`
+      : `where u.${safeClassCol}=$1`;
+    const selectAutoGrant = safeAutoGrantCol ? `, u.${safeAutoGrantCol} as auto_grant` : ", false as auto_grant";
+    const preferenceOrder = [
+      safeAutoGrantCol ? `case when u.${safeAutoGrantCol}=true then 0 else 1 end` : null,
+      orderParts || null,
+    ].filter(Boolean).join(", ");
+    const selectOrderWithPreference = preferenceOrder ? `order by ${preferenceOrder}` : "";
 
-    if (safeAutoGrantCol) {
-      const whereAuto = safeLevelCol
-        ? `where u.${safeClassCol}=$1 and u.${safeLevelCol} <= $2 and u.${safeAutoGrantCol}=true`
-        : `where u.${safeClassCol}=$1 and u.${safeAutoGrantCol}=true`;
+    const q = await dbQuery(
+      `select u.${safeIdCol} as id${safeLevelCol ? `, u.${safeLevelCol} as lvl` : ""}${selectResourceCost}${selectAutoGrant} from ${schema}.${safeTable} u${catalogJoin} ${baseWhere} ${selectOrderWithPreference} limit 4`,
+      safeLevelCol ? [classId, levelMax] : [classId]
+    );
 
-      q = await dbQuery(
-        `select u.${safeIdCol} as id${safeLevelCol ? `, u.${safeLevelCol} as lvl` : ""}${selectResourceCost}, true as auto_grant from ${schema}.${safeTable} u${catalogJoin} ${whereAuto} ${selectOrder} limit 1`,
-        safeLevelCol ? [classId, levelMax] : [classId]
-      );
+    const rows = Array.isArray(q?.rows) ? q!.rows : [];
+    if (rows.length === 0) continue;
+
+    const seenIds = new Set<string>();
+    const normalizedRows = rows
+      .map((row) => {
+        const id = String((row as any).id ?? "").trim();
+        if (!id || seenIds.has(id)) return null;
+        seenIds.add(id);
+        const lvl = safeLevelCol ? Number((row as any).lvl ?? undefined) : undefined;
+        const resourceCostRaw = Number((row as any).resource_cost ?? NaN);
+        const resourceCost = Number.isFinite(resourceCostRaw) ? Math.max(0, Math.floor(resourceCostRaw)) : undefined;
+        const autoGrant = Boolean((row as any).auto_grant ?? false);
+        return { kind: t.kind, id, level: Number.isFinite(lvl) ? lvl : undefined, resourceCost, autoGrant } as UnlockPick;
+      })
+      .filter((row): row is UnlockPick => Boolean(row));
+
+    if (normalizedRows.length === 0) continue;
+
+    details[`${t.kind}Candidates`] = normalizedRows.slice(0, 2);
+
+    const primary = normalizedRows[0];
+    const secondary = normalizedRows[1];
+    if (t.kind === "spell") {
+      picks.spell = primary;
+      if (secondary) picks.spellAlt = secondary;
     }
-
-    if (!q || (q.rows ?? []).length === 0) {
-      const baseWhere = safeLevelCol
-        ? `where u.${safeClassCol}=$1 and u.${safeLevelCol} <= $2`
-        : `where u.${safeClassCol}=$1`;
-
-      q = await dbQuery(
-        `select u.${safeIdCol} as id${safeLevelCol ? `, u.${safeLevelCol} as lvl` : ""}${selectResourceCost}${safeAutoGrantCol ? `, u.${safeAutoGrantCol} as auto_grant` : ", false as auto_grant"} from ${schema}.${safeTable} u${catalogJoin} ${baseWhere} ${selectOrder} limit 1`,
-        safeLevelCol ? [classId, levelMax] : [classId]
-      );
+    if (t.kind === "ability") {
+      picks.ability = primary;
+      if (secondary) picks.abilityAlt = secondary;
     }
-
-    const row = (q?.rows ?? [])[0];
-    if (!row) continue;
-
-    const id = String((row as any).id ?? "").trim();
-    if (!id) continue;
-
-    const lvl = safeLevelCol ? Number((row as any).lvl ?? undefined) : undefined;
-    const resourceCostRaw = Number((row as any).resource_cost ?? NaN);
-    const resourceCost = Number.isFinite(resourceCostRaw) ? Math.max(0, Math.floor(resourceCostRaw)) : undefined;
-    const autoGrant = Boolean((row as any).auto_grant ?? false);
-
-    if (t.kind === "spell") picks.spell = { kind: "spell", id, level: Number.isFinite(lvl) ? lvl : undefined, resourceCost, autoGrant };
-    if (t.kind === "ability") picks.ability = { kind: "ability", id, level: Number.isFinite(lvl) ? lvl : undefined, resourceCost, autoGrant };
   }
 
   return { ok: details.found.length > 0, picks, details };
@@ -3110,29 +3119,31 @@ const abilitySteps: WsMudScriptStep[] = [
 
 const spellSuccessRe = ["/you cast/i", "/casting/i", "/\[combat\]/i", "/damage/i", "/heals?/i", "/absorbed/i"];
 
-const extra: WsMudScriptStep[] = [
-  // Kit smoke v0.5:
-  // - Prefer the first successful cast, then stop instead of spamming cooldown retries.
-  // - Keep the ability branch optional and resource-aware via picked unlock metadata.
-  //
-  // Spell attempts:
+const buildSpellCoverageSteps = (spellVarName: string): WsMudScriptStep[] => ([
   // We intentionally try explicit targets first, because some servers default an omitted target to a placeholder
   // (your logs show it trying 'rat' when no target is supplied).
   ...targetVariants.map((t) => ({
-    command: `cast {{spellId}} ${t}`,
+    command: `cast {{${spellVarName}}} ${t}`,
     optional: true,
     expectRegexAny: spellSuccessRe,
     rejectRegexAny: failureRe,
-    stopOkIfRegexAny: spellSuccessRe,
   })),
 
   // Self-target variants (some MUDs use 'self'; others use 'me'; some require no target for self buffs).
-  { command: "cast {{spellId}} self", optional: true, expectRegexAny: spellSuccessRe, rejectRegexAny: failureRe, stopOkIfRegexAny: spellSuccessRe },
-  { command: "cast {{spellId}} me", optional: true, expectRegexAny: spellSuccessRe, rejectRegexAny: failureRe, stopOkIfRegexAny: spellSuccessRe },
+  { command: `cast {{${spellVarName}}} self`, optional: true, expectRegexAny: spellSuccessRe, rejectRegexAny: failureRe },
+  { command: `cast {{${spellVarName}}} me`, optional: true, expectRegexAny: spellSuccessRe, rejectRegexAny: failureRe },
 
   // No-target last (may default to current target, but may also default to a bogus placeholder).
-  { command: "cast {{spellId}}", optional: true, expectRegexAny: spellSuccessRe, rejectRegexAny: failureRe, stopOkIfRegexAny: spellSuccessRe },
+  { command: `cast {{${spellVarName}}}`, optional: true, expectRegexAny: spellSuccessRe, rejectRegexAny: failureRe },
+]);
 
+const extra: WsMudScriptStep[] = [
+  // Kit smoke v0.6:
+  // - Probe the primary unlocked spell/ability path.
+  // - When boosted kits expose multiple cheap unlocks, probe one alternate spell too.
+  // - Keep the ability branch optional and resource-aware via picked unlock metadata.
+  ...buildSpellCoverageSteps("spellId"),
+  ...buildSpellCoverageSteps("spellId2"),
   ...abilitySteps,
 ];
 const out: WsMudScriptStep[] = [];
@@ -3435,6 +3446,14 @@ if (optional && !ok) {
               : null;
             if (pickedSpellCost !== null) varsForScript.spellResourceCost = String(pickedSpellCost);
           }
+          const pickedSpellAlt = (kitPick as any).picks?.spellAlt;
+          if (pickedSpellAlt?.id) {
+            varsForScript.spellId2 = String(pickedSpellAlt.id);
+            const pickedSpellAltCost = Number.isFinite(Number(pickedSpellAlt.resourceCost))
+              ? Math.max(0, Math.floor(Number(pickedSpellAlt.resourceCost)))
+              : null;
+            if (pickedSpellAltCost !== null) varsForScript.spellResourceCost2 = String(pickedSpellAltCost);
+          }
           if (pickedAbility?.id) {
             varsForScript.abilityId = String(pickedAbility.id);
             const pickedAbilityCost = Number.isFinite(Number(pickedAbility.resourceCost))
@@ -3452,6 +3471,14 @@ if (optional && !ok) {
                 },
               };
             }
+          }
+          const pickedAbilityAlt = (kitPick as any).picks?.abilityAlt;
+          if (pickedAbilityAlt?.id) {
+            varsForScript.abilityId2 = String(pickedAbilityAlt.id);
+            const pickedAbilityAltCost = Number.isFinite(Number(pickedAbilityAlt.resourceCost))
+              ? Math.max(0, Math.floor(Number(pickedAbilityAlt.resourceCost)))
+              : null;
+            if (pickedAbilityAltCost !== null) varsForScript.abilityResourceCost2 = String(pickedAbilityAltCost);
           }
 
           const scriptRes = await runScriptWithMudCommand(

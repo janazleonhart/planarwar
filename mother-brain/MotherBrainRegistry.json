@@ -59,10 +59,13 @@
       ],
       "provides": [
         "Goal packs + suite runner",
-        "ws_mud_script + class_playtest_loop goal kinds"
+        "ws_mud_script + class_playtest_loop goal kinds",
+        "Boosted class playtest dynamic scripts",
+        "Usable-first unlock candidate selection"
       ],
       "owns": [
-        "Goal normalization + execution + reporting formats"
+        "Goal normalization + execution + reporting formats",
+        "Boosted kit-smoke coverage breadth + resource-aware priming"
       ]
     },
     "mother-brain.tool.genServiceToken": {
