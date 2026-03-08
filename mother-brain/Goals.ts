@@ -73,6 +73,12 @@ export type WsMudScriptStep = {
   captureRegex?: string;
   captureVar?: string;
   captureGroup?: number;
+
+  // Optional dynamic guard: skip the step cleanly unless Number(vars[guardVar]) >= min.
+  // min comes from guardMinVar when set, otherwise guardMin.
+  guardVar?: string;
+  guardMin?: number;
+  guardMinVar?: string;
 };
 
 export type GoalDefinition = {
@@ -3028,9 +3034,12 @@ const targetVariants = [
 const abilitySuccessRe = ["/you use/i", "/you perform/i", "/\\[combat\\]/i", "/hit/i", "/damage/i", "/heals?/i"];
 
 const abilitySteps: WsMudScriptStep[] = [
+  // Snapshot the active primary resource pool first so we only probe abilities when they are live-usable.
+  { command: "resources", optional: true, timeoutMs: 3000, retries: 0, captureRegex: "/-\\s*[A-Za-z ][A-Za-z ':-]*:\\s*(\\d+)\\/(\\d+)/i", captureVar: "primaryResourceCurrent" },
+
   // Probe target handle vs plain token (dummy.1 vs dummy)
-  { command: "ability {{abilityId}} dummy.1", optional: true, expectRegexAny: abilitySuccessRe, rejectRegexAny: failureRe, stopOkIfRegexAny: abilitySuccessRe },
-  { command: "ability {{abilityId}} dummy", optional: true, expectRegexAny: abilitySuccessRe, rejectRegexAny: failureRe, stopOkIfRegexAny: abilitySuccessRe },
+  { command: "ability {{abilityId}} dummy.1", optional: true, guardVar: "primaryResourceCurrent", guardMinVar: "abilityResourceCost", expectRegexAny: abilitySuccessRe, rejectRegexAny: failureRe, stopOkIfRegexAny: abilitySuccessRe },
+  { command: "ability {{abilityId}} dummy", optional: true, guardVar: "primaryResourceCurrent", guardMinVar: "abilityResourceCost", expectRegexAny: abilitySuccessRe, rejectRegexAny: failureRe, stopOkIfRegexAny: abilitySuccessRe },
 
   // Build resource by attacking, then retry against plain 'dummy' (the most consistent single-token target today)
   ...Array.from({ length: 5 }).flatMap(() => ([
@@ -3038,12 +3047,12 @@ const abilitySteps: WsMudScriptStep[] = [
 
     // Diagnostic probe: confirm resources actually move for this session/character.
     // This is the fastest way to detect "state not persisting" between commands.
-    { command: "resources", optional: true, timeoutMs: 3000, retries: 0, captureRegex: "/Fury:\\s*(\\d+)\\//i", captureVar: "fury" },
-    { command: "ability {{abilityId}} dummy", optional: true, expectRegexAny: abilitySuccessRe, rejectRegexAny: failureRe, stopOkIfRegexAny: abilitySuccessRe },
+    { command: "resources", optional: true, timeoutMs: 3000, retries: 0, captureRegex: "/-\\s*[A-Za-z ][A-Za-z ':-]*:\\s*(\\d+)\\/(\\d+)/i", captureVar: "primaryResourceCurrent" },
+    { command: "ability {{abilityId}} dummy", optional: true, guardVar: "primaryResourceCurrent", guardMinVar: "abilityResourceCost", expectRegexAny: abilitySuccessRe, rejectRegexAny: failureRe, stopOkIfRegexAny: abilitySuccessRe },
   ])),
 
   // Final fallback (some servers infer engaged target)
-  { command: "ability {{abilityId}}", optional: true, expectRegexAny: abilitySuccessRe, rejectRegexAny: failureRe, stopOkIfRegexAny: abilitySuccessRe },
+  { command: "ability {{abilityId}}", optional: true, guardVar: "primaryResourceCurrent", guardMinVar: "abilityResourceCost", expectRegexAny: abilitySuccessRe, rejectRegexAny: failureRe, stopOkIfRegexAny: abilitySuccessRe },
 ];
 
 const spellSuccessRe = ["/you cast/i", "/casting/i", "/\[combat\]/i", "/damage/i", "/heals?/i", "/absorbed/i"];
@@ -3137,6 +3146,32 @@ const out: WsMudScriptStep[] = [];
           const rawCmd = String(step.command ?? "").trim();
           const cmdInterp = interpolateTemplate(rawCmd, vars);
           const cmd = cmdInterp.text.trim();
+
+          const guardVarName = typeof step.guardVar === "string" ? step.guardVar.trim() : "";
+          if (guardVarName) {
+            const currentRaw = vars[guardVarName];
+            const currentNum = Number(currentRaw ?? NaN);
+            const guardMinVarName = typeof step.guardMinVar === "string" ? step.guardMinVar.trim() : "";
+            const minRaw = guardMinVarName ? vars[guardMinVarName] : step.guardMin;
+            const minNum = Number(minRaw ?? NaN);
+            if (!Number.isFinite(currentNum) || !Number.isFinite(minNum) || currentNum < minNum) {
+              stepReports.push({
+                index: i,
+                command: rawCmd,
+                ok: true,
+                skipped: true,
+                reason: !Number.isFinite(currentNum)
+                  ? `guard_missing_or_non_numeric:${guardVarName}`
+                  : !Number.isFinite(minNum)
+                    ? `guard_missing_or_non_numeric:${guardMinVarName || "guardMin"}`
+                    : `guard_below_minimum:${guardVarName}:${currentNum}<${guardMinVarName || String(step.guardMin ?? "")}:${minNum}`,
+                optional: true,
+                trace: trace && (trace.wsUrl || trace.clientId || trace.characterId) ? { ...trace } : undefined,
+                vars: Object.keys(vars).length > 0 ? { ...vars } : undefined,
+              });
+              continue;
+            }
+          }
 
           if (cmdInterp.missing.length > 0 || !cmd) {
             const errMsg = cmdInterp.missing.length > 0 ? `missing vars: ${cmdInterp.missing.join(", ")}` : "missing command";
@@ -3321,18 +3356,24 @@ if (optional && !ok) {
           const maxAbilityResourceCost = Number.isFinite(Number(process.env.MOTHER_BRAIN_CLASS_PLAYTEST_MAX_ABILITY_RESOURCE_COST))
             ? Math.max(0, Math.floor(Number(process.env.MOTHER_BRAIN_CLASS_PLAYTEST_MAX_ABILITY_RESOURCE_COST)))
             : 7;
-          if (pickedSpell?.id) varsForScript.spellId = String(pickedSpell.id);
+          if (pickedSpell?.id) {
+            varsForScript.spellId = String(pickedSpell.id);
+            const pickedSpellCost = Number.isFinite(Number(pickedSpell.resourceCost))
+              ? Math.max(0, Math.floor(Number(pickedSpell.resourceCost)))
+              : null;
+            if (pickedSpellCost !== null) varsForScript.spellResourceCost = String(pickedSpellCost);
+          }
           if (pickedAbility?.id) {
+            varsForScript.abilityId = String(pickedAbility.id);
             const pickedAbilityCost = Number.isFinite(Number(pickedAbility.resourceCost))
               ? Math.max(0, Math.floor(Number(pickedAbility.resourceCost)))
               : null;
-            if (pickedAbilityCost === null || pickedAbilityCost <= maxAbilityResourceCost) {
-              varsForScript.abilityId = String(pickedAbility.id);
-            } else {
+            if (pickedAbilityCost !== null) varsForScript.abilityResourceCost = String(pickedAbilityCost);
+            if (pickedAbilityCost !== null && pickedAbilityCost > maxAbilityResourceCost) {
               (kitPick as any).details = {
                 ...((kitPick as any).details ?? {}),
-                skippedAbility: {
-                  reason: "resource_cost_too_high",
+                highCostAbility: {
+                  reason: "resource_cost_above_soft_threshold",
                   maxAbilityResourceCost,
                   pickedAbilityId: String(pickedAbility.id),
                   pickedAbilityCost,
