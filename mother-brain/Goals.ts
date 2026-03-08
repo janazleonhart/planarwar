@@ -73,6 +73,12 @@ export type WsMudScriptStep = {
   captureRegex?: string;
   captureVar?: string;
   captureGroup?: number;
+  captureAlsoVarIfUnset?: string;
+
+  // Optional variable-based early-stop checks. If all configured comparisons pass, the script stops cleanly as OK.
+  stopOkIfVarEqualsVar?: [string, string];
+  stopOkIfVarLessThanVar?: [string, string];
+  stopOkReason?: string;
 
   // Optional dynamic guard: skip the step cleanly unless Number(vars[guardVar]) >= min.
   // min comes from guardMinVar when set, otherwise guardMin.
@@ -1539,6 +1545,38 @@ function shouldStopScriptOk(out: string, step: {
   return false;
 }
 
+function shouldStopScriptOkByVars(vars: TemplateVars, step: {
+  stopOkIfVarEqualsVar?: [string, string];
+  stopOkIfVarLessThanVar?: [string, string];
+  stopOkReason?: string;
+}): { stop: boolean; reason?: string } {
+  const eq = Array.isArray(step.stopOkIfVarEqualsVar) && step.stopOkIfVarEqualsVar.length >= 2
+    ? [String(step.stopOkIfVarEqualsVar[0] ?? "").trim(), String(step.stopOkIfVarEqualsVar[1] ?? "").trim()] as const
+    : null;
+  const lt = Array.isArray(step.stopOkIfVarLessThanVar) && step.stopOkIfVarLessThanVar.length >= 2
+    ? [String(step.stopOkIfVarLessThanVar[0] ?? "").trim(), String(step.stopOkIfVarLessThanVar[1] ?? "").trim()] as const
+    : null;
+  if (!eq && !lt) return { stop: false };
+
+  if (eq) {
+    const [aName, bName] = eq;
+    if (!aName || !bName) return { stop: false };
+    if (String(vars[aName] ?? "") !== String(vars[bName] ?? "")) return { stop: false };
+  }
+
+  if (lt) {
+    const [aName, bName] = lt;
+    if (!aName || !bName) return { stop: false };
+    const aNum = Number(vars[aName] ?? NaN);
+    const bNum = Number(vars[bName] ?? NaN);
+    if (!Number.isFinite(aNum) || !Number.isFinite(bNum) || !(aNum < bNum)) return { stop: false };
+  }
+
+  return {
+    stop: true,
+    reason: typeof step.stopOkReason === "string" && step.stopOkReason.trim().length > 0 ? step.stopOkReason.trim() : undefined,
+  };
+}
 
 function deriveOptionalSkipReason(args: { out: string; err?: string; missing?: string[] }): { reason: string } {
   const out = args.out || "";
@@ -3035,19 +3073,24 @@ const abilitySuccessRe = ["/you use/i", "/you perform/i", "/\\[combat\\]/i", "/h
 
 const abilitySteps: WsMudScriptStep[] = [
   // Snapshot the active primary resource pool first so we only probe abilities when they are live-usable.
-  { command: "resources", optional: true, timeoutMs: 3000, retries: 0, captureRegex: "/-\\s*[A-Za-z ][A-Za-z ':-]*:\\s*(\\d+)\\/(\\d+)/i", captureVar: "primaryResourceCurrent" },
+  // Also preserve the first observed value as a baseline so we can stop priming early when the pool stays flat.
+  { command: "resources", optional: true, timeoutMs: 3000, retries: 0, captureRegex: "/-\\s*[A-Za-z ][A-Za-z ' :-]*:\\s*(\\d+)\/(\\d+)/i", captureVar: "primaryResourceCurrent", captureAlsoVarIfUnset: "primaryResourceBaseline" },
 
   // Probe target handle vs plain token (dummy.1 vs dummy)
   { command: "ability {{abilityId}} dummy.1", optional: true, guardVar: "primaryResourceCurrent", guardMinVar: "abilityResourceCost", expectRegexAny: abilitySuccessRe, rejectRegexAny: failureRe, stopOkIfRegexAny: abilitySuccessRe },
   { command: "ability {{abilityId}} dummy", optional: true, guardVar: "primaryResourceCurrent", guardMinVar: "abilityResourceCost", expectRegexAny: abilitySuccessRe, rejectRegexAny: failureRe, stopOkIfRegexAny: abilitySuccessRe },
 
-  // Build resource by attacking, then retry against plain 'dummy' (the most consistent single-token target today)
-  ...Array.from({ length: 5 }).flatMap(() => ([
-    { command: "attack dummy.1", optional: true, timeoutMs: 4000, retries: 1, retryDelayMs: 200, delayAfterMs: 150, stopOkIfRegexAny: ["/no +dummy/i", "/not +here/i"] },
+  // Priming pass: land a couple of safe attacks, then re-check the pool.
+  // If the resource is still unchanged from baseline and still below the ability cost, stop cleanly early.
+  { command: "attack dummy.1", optional: true, timeoutMs: 4000, retries: 1, retryDelayMs: 200, delayAfterMs: 150, stopOkIfRegexAny: ["/no +dummy/i", "/not +here/i"] },
+  { command: "attack dummy.1", optional: true, timeoutMs: 4000, retries: 1, retryDelayMs: 200, delayAfterMs: 150, stopOkIfRegexAny: ["/no +dummy/i", "/not +here/i"] },
+  { command: "resources", optional: true, timeoutMs: 3000, retries: 0, captureRegex: "/-\\s*[A-Za-z ][A-Za-z ' :-]*:\\s*(\\d+)\/(\\d+)/i", captureVar: "primaryResourceCurrent", stopOkIfVarEqualsVar: ["primaryResourceCurrent", "primaryResourceBaseline"], stopOkIfVarLessThanVar: ["primaryResourceCurrent", "abilityResourceCost"], stopOkReason: "resource_priming_stagnant" },
+  { command: "ability {{abilityId}} dummy", optional: true, guardVar: "primaryResourceCurrent", guardMinVar: "abilityResourceCost", expectRegexAny: abilitySuccessRe, rejectRegexAny: failureRe, stopOkIfRegexAny: abilitySuccessRe },
 
-    // Diagnostic probe: confirm resources actually move for this session/character.
-    // This is the fastest way to detect "state not persisting" between commands.
-    { command: "resources", optional: true, timeoutMs: 3000, retries: 0, captureRegex: "/-\\s*[A-Za-z ][A-Za-z ':-]*:\\s*(\\d+)\\/(\\d+)/i", captureVar: "primaryResourceCurrent" },
+  // If we saw some movement, give the class a few more priming swings and re-check after each.
+  ...Array.from({ length: 3 }).flatMap(() => ([
+    { command: "attack dummy.1", optional: true, timeoutMs: 4000, retries: 1, retryDelayMs: 200, delayAfterMs: 150, stopOkIfRegexAny: ["/no +dummy/i", "/not +here/i"] },
+    { command: "resources", optional: true, timeoutMs: 3000, retries: 0, captureRegex: "/-\\s*[A-Za-z ][A-Za-z ' :-]*:\\s*(\\d+)\/(\\d+)/i", captureVar: "primaryResourceCurrent" },
     { command: "ability {{abilityId}} dummy", optional: true, guardVar: "primaryResourceCurrent", guardMinVar: "abilityResourceCost", expectRegexAny: abilitySuccessRe, rejectRegexAny: failureRe, stopOkIfRegexAny: abilitySuccessRe },
   ])),
 
@@ -3250,11 +3293,30 @@ const out: WsMudScriptStep[] = [];
                 const group = Number.isFinite(step.captureGroup as any) ? Math.max(0, Math.floor(step.captureGroup as any)) : 1;
                 const val = (m[group] ?? m[0] ?? "").toString();
                 vars[step.captureVar] = val;
+                if (typeof step.captureAlsoVarIfUnset === "string") {
+                  const mirrorName = step.captureAlsoVarIfUnset.trim();
+                  if (mirrorName && !(mirrorName in vars)) vars[mirrorName] = val;
+                }
               }
             }
           }
 
-
+          if (ok) {
+            const stopByVars = shouldStopScriptOkByVars(vars, step as any);
+            if (stopByVars.stop) {
+              stepReports.push({
+                index: i,
+                command: cmd,
+                ok: true,
+                stoppedOk: true,
+                stopReason: stopByVars.reason,
+                trace: trace && (trace.wsUrl || trace.clientId || trace.characterId) ? { ...trace } : undefined,
+                outputPreview: out.length > 220 ? `${out.slice(0, 220)}…` : out,
+                vars: { ...vars },
+              });
+              break;
+            }
+          }
 
 if (optional && !ok) {
   const why = deriveOptionalSkipReason({ out, err: res.error, missing });
