@@ -61,11 +61,12 @@
         "Goal packs + suite runner",
         "ws_mud_script + class_playtest_loop goal kinds",
         "Boosted class playtest dynamic scripts",
-        "Usable-first unlock candidate selection"
+        "Usable-first unlock candidate selection",
+        "Post-boost learned-kit validation for alternate spell coverage"
       ],
       "owns": [
         "Goal normalization + execution + reporting formats",
-        "Boosted kit-smoke coverage breadth + resource-aware priming"
+        "Boosted kit-smoke coverage breadth + post-boost learned-kit validation + resource-aware priming"
       ]
     },
     "mother-brain.tool.genServiceToken": {

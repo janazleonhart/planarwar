@@ -74,6 +74,7 @@ export type WsMudScriptStep = {
   captureVar?: string;
   captureGroup?: number;
   captureAlsoVarIfUnset?: string;
+  captureOutputVar?: string;
 
   // Optional variable-based early-stop checks. If all configured comparisons pass, the script stops cleanly as OK.
   stopOkIfVarEqualsVar?: [string, string];
@@ -85,6 +86,10 @@ export type WsMudScriptStep = {
   guardVar?: string;
   guardMin?: number;
   guardMinVar?: string;
+
+  // Optional string guard: skip unless vars[guardSourceVar] includes the interpolated template text.
+  guardSourceVar?: string;
+  guardIncludesTemplate?: string;
 };
 
 export type GoalDefinition = {
@@ -3054,8 +3059,8 @@ if (optional && !ok) {
           base.push(
             { command: `debug_xp ${boostedKitSmokeXp}`, timeoutMs: 5000, retries: 1, retryDelayMs: 200, optional: true, expectRegexAny: ["/granted/i", "/\[debug\]/i"] },
             { command: "stats", timeoutMs: 4000, retries: 1, retryDelayMs: 200, optional: true, expectRegexAny: ["HP", "Level", "/str|dex|int/i"] },
-            { command: "spells", timeoutMs: 4000, retries: 0, optional: true },
-            { command: "abilities", timeoutMs: 4000, retries: 0, optional: true },
+            { command: "spells", timeoutMs: 4000, retries: 0, optional: true, captureOutputVar: "knownSpellsOutput" },
+            { command: "abilities", timeoutMs: 4000, retries: 0, optional: true, captureOutputVar: "knownAbilitiesOutput" },
           );
         }
 
@@ -3119,31 +3124,37 @@ const abilitySteps: WsMudScriptStep[] = [
 
 const spellSuccessRe = ["/you cast/i", "/casting/i", "/\[combat\]/i", "/damage/i", "/heals?/i", "/absorbed/i"];
 
-const buildSpellCoverageSteps = (spellVarName: string): WsMudScriptStep[] => ([
-  // We intentionally try explicit targets first, because some servers default an omitted target to a placeholder
-  // (your logs show it trying 'rat' when no target is supplied).
-  ...targetVariants.map((t) => ({
-    command: `cast {{${spellVarName}}} ${t}`,
+const buildSpellCoverageSteps = (spellVarName: string, knownListVar?: string): WsMudScriptStep[] => {
+  const gated = (command: string): WsMudScriptStep => ({
+    command,
     optional: true,
     expectRegexAny: spellSuccessRe,
     rejectRegexAny: failureRe,
-  })),
+    guardSourceVar: knownListVar,
+    guardIncludesTemplate: knownListVar ? `{{${spellVarName}}}` : undefined,
+  });
 
-  // Self-target variants (some MUDs use 'self'; others use 'me'; some require no target for self buffs).
-  { command: `cast {{${spellVarName}}} self`, optional: true, expectRegexAny: spellSuccessRe, rejectRegexAny: failureRe },
-  { command: `cast {{${spellVarName}}} me`, optional: true, expectRegexAny: spellSuccessRe, rejectRegexAny: failureRe },
+  return [
+    // We intentionally try explicit targets first, because some servers default an omitted target to a placeholder
+    // (your logs show it trying 'rat' when no target is supplied).
+    ...targetVariants.map((t) => gated(`cast {{${spellVarName}}} ${t}`)),
 
-  // No-target last (may default to current target, but may also default to a bogus placeholder).
-  { command: `cast {{${spellVarName}}}`, optional: true, expectRegexAny: spellSuccessRe, rejectRegexAny: failureRe },
-]);
+    // Self-target variants (some MUDs use 'self'; others use 'me'; some require no target for self buffs).
+    gated(`cast {{${spellVarName}}} self`),
+    gated(`cast {{${spellVarName}}} me`),
+
+    // No-target last (may default to current target, but may also default to a bogus placeholder).
+    gated(`cast {{${spellVarName}}}`),
+  ];
+};
 
 const extra: WsMudScriptStep[] = [
   // Kit smoke v0.6:
   // - Probe the primary unlocked spell/ability path.
   // - When boosted kits expose multiple cheap unlocks, probe one alternate spell too.
   // - Keep the ability branch optional and resource-aware via picked unlock metadata.
-  ...buildSpellCoverageSteps("spellId"),
-  ...buildSpellCoverageSteps("spellId2"),
+  ...buildSpellCoverageSteps("spellId", boostedKitSmokeEnabled ? "knownSpellsOutput" : undefined),
+  ...buildSpellCoverageSteps("spellId2", boostedKitSmokeEnabled ? "knownSpellsOutput" : undefined),
   ...abilitySteps,
 ];
 const out: WsMudScriptStep[] = [];
@@ -3229,6 +3240,31 @@ const out: WsMudScriptStep[] = [];
                   : !Number.isFinite(minNum)
                     ? `guard_missing_or_non_numeric:${guardMinVarName || "guardMin"}`
                     : `guard_below_minimum:${guardVarName}:${currentNum}<${guardMinVarName || String(step.guardMin ?? "")}:${minNum}`,
+                optional: true,
+                trace: trace && (trace.wsUrl || trace.clientId || trace.characterId) ? { ...trace } : undefined,
+                vars: Object.keys(vars).length > 0 ? { ...vars } : undefined,
+              });
+              continue;
+            }
+          }
+
+          const guardSourceVarName = typeof step.guardSourceVar === "string" ? step.guardSourceVar.trim() : "";
+          const guardTemplateRaw = typeof step.guardIncludesTemplate === "string" ? step.guardIncludesTemplate : "";
+          if (guardSourceVarName && guardTemplateRaw) {
+            const haystack = String(vars[guardSourceVarName] ?? "");
+            const needleInterp = interpolateTemplate(guardTemplateRaw, vars);
+            const needle = needleInterp.text.trim();
+            if (needleInterp.missing.length > 0 || !needle || !haystack.toLowerCase().includes(needle.toLowerCase())) {
+              stepReports.push({
+                index: i,
+                command: rawCmd,
+                ok: true,
+                skipped: true,
+                reason: needleInterp.missing.length > 0
+                  ? `missing vars: ${needleInterp.missing.join(", ")}`
+                  : !needle
+                    ? `guard_missing_template:${guardSourceVarName}`
+                    : `guard_not_listed:${guardSourceVarName}:${needle}`,
                 optional: true,
                 trace: trace && (trace.wsUrl || trace.clientId || trace.characterId) ? { ...trace } : undefined,
                 vars: Object.keys(vars).length > 0 ? { ...vars } : undefined,
