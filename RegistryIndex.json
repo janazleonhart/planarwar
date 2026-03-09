@@ -15,14 +15,6 @@
       ]
     },
     {
-      "scope": "mother-brain",
-      "path": "mother-brain/MotherBrainRegistry.json",
-      "kind": "code_registry",
-      "notes": [
-        "Long-running world simulation daemon (Mother Brain)."
-      ]
-    },
-    {
       "scope": "web-backend",
       "path": "web-backend/WebBackendRegistry.json",
       "kind": "code_registry",
@@ -44,6 +36,14 @@
       "kind": "code_registry",
       "notes": [
         "WebSocket shard server."
+      ]
+    },
+    {
+      "scope": "mother-brain",
+      "path": "mother-brain/MotherBrainRegistry.json",
+      "kind": "code_registry",
+      "notes": [
+        "Mother Brain daemon, goals runner, class playtests, and world-simulation support metadata."
       ]
     },
     {

@@ -399,36 +399,19 @@
       "ctorArgs": [],
       "dependsOn": [
         "npm:cors",
-        "npm:dotenv",
         "npm:express",
-        "web-backend.routes.abilities",
-        "web-backend.routes.adminItems",
-        "web-backend.routes.adminNpcs",
-        "web-backend.routes.adminQuests",
-        "web-backend.routes.adminSpawnPoints",
-        "web-backend.routes.armies",
-        "web-backend.routes.auth",
-        "web-backend.routes.buildings",
-        "web-backend.routes.characters",
-        "web-backend.routes.city",
-        "web-backend.routes.garrisons",
-        "web-backend.routes.heroes",
-        "web-backend.routes.items",
-        "web-backend.routes.me",
-        "web-backend.routes.missions",
-        "web-backend.routes.policies",
-        "web-backend.routes.resources",
-        "web-backend.routes.spells",
-        "web-backend.routes.tech",
-        "web-backend.routes.warfront",
-        "web-backend.routes.workshop"
+        "web-backend.bootstrap.env",
+        "web-backend.server.healthRoutes",
+        "web-backend.server.routeGroups",
+        "web-backend.server.heartbeat",
+        "web-backend.routes.adminSpawnPoints"
       ],
       "kind": "entrypoint",
       "lifecycle": "process",
       "notes": [
-        "This server is a thin Express host that exposes both: (1) web-city-builder demo endpoints (gameState/domain/*), and (2) worldcore-backed admin APIs (quests/npcs/items/spawn_points/auth).",
-        "Technical debt: index.ts mounts /api/characters twice (harmless but redundant).",
-        "2026-01-28: Env bridge: loads .env and maps PW_DB_* to DATABASE_URL/PW_DATABASE_URL so /api/items,/api/spells,/api/abilities can connect without requiring a full URL."
+        "HTTP entrypoint for the web-backend Express process.",
+        "Behavior-preserving boundary cleanup extracted env bootstrap, health routes, grouped route mounting, and heartbeat writing into dedicated modules.",
+        "Spawn snapshot retention scheduler still starts from the adminSpawnPoints module during server startup."
       ],
       "owns": [
         "Express app instance",
@@ -436,28 +419,12 @@
       ],
       "path": "web-backend/index.ts",
       "provides": [
-        "GET / -> { ok: true, message: ... }",
-        "Mount /api/me",
-        "Mount /api/missions",
-        "Mount /api/city",
-        "Mount /api/policies",
-        "Mount /api/tech",
-        "Mount /api/warfront",
-        "Mount /api/armies",
-        "Mount /api/garrisons",
-        "Mount /api/buildings",
-        "Mount /api/heroes",
-        "Mount /api/workshop",
-        "Mount /api/resources",
-        "Mount /api/characters",
-        "Mount /api/auth",
-        "Mount /api/admin/quests",
-        "Mount /api/admin/npcs",
-        "Mount /api/admin/items",
-        "Mount /api/admin/spawn_points",
-        "REST: /api/spells (bulk metadata)",
-        "REST: /api/items (bulk metadata)",
-        "REST: /api/abilities (metadata)"
+        "Bootstraps web-backend env",
+        "Registers health/readiness endpoints",
+        "Mounts grouped player/catalog/admin routes",
+        "Starts HTTP listener",
+        "Starts spawn snapshot retention scheduler",
+        "Starts service heartbeat writer"
       ],
       "service": "http.server"
     },
@@ -1225,12 +1192,11 @@
       "kind": "module",
       "lifecycle": "singleton",
       "notes": [
-        "Lightweight liveness/readiness endpoints for web-backend.",
-        "healthz is always 200 if process is alive; readyz is 200 when DB env is configured, otherwise 503.",
-        "Mounted directly in web-backend/index.ts."
+        "Legacy registry alias for lightweight liveness/readiness endpoints now hosted in web-backend/server/healthRoutes.ts.",
+        "healthz is always 200 if process is alive; readyz is 200 when DB env is configured, otherwise 503."
       ],
       "owns": [],
-      "path": "web-backend/index.ts",
+      "path": "web-backend/server/healthRoutes.ts",
       "provides": [
         "GET /api/healthz",
         "GET /api/readyz"
@@ -1256,6 +1222,126 @@
         "GET /api/admin/heartbeats"
       ],
       "service": "web-backend.routes"
+    },
+    "web-backend.bootstrap.env": {
+      "class": null,
+      "ctorArgs": [],
+      "dependsOn": [
+        "npm:dotenv",
+        "node:fs",
+        "node:path"
+      ],
+      "kind": "module",
+      "lifecycle": "singleton",
+      "notes": [
+        "Loads .env/.env.local by searching upward from cwd and __dirname.",
+        "Bridges PW_DB_* variables into standard DATABASE_URL/PW_DATABASE_URL and PG* process env fields."
+      ],
+      "owns": [
+        "process.env bootstrap for web-backend"
+      ],
+      "path": "web-backend/bootstrap/env.ts",
+      "provides": [
+        "bootstrapWebBackendEnv()"
+      ],
+      "service": "bootstrap.env"
+    },
+    "web-backend.server.healthRoutes": {
+      "class": null,
+      "ctorArgs": [],
+      "dependsOn": [
+        "npm:express",
+        "node:process"
+      ],
+      "kind": "module",
+      "lifecycle": "singleton",
+      "notes": [
+        "Registers lightweight liveness and readiness endpoints for web-backend.",
+        "healthz is always 200 if process is alive; readyz is 200 when DB env is configured, otherwise 503."
+      ],
+      "owns": [],
+      "path": "web-backend/server/healthRoutes.ts",
+      "provides": [
+        "registerHealthRoutes(app)",
+        "GET /",
+        "GET /api/healthz",
+        "GET /api/readyz"
+      ],
+      "service": "http.health"
+    },
+    "web-backend.server.routeGroups": {
+      "class": null,
+      "ctorArgs": [],
+      "dependsOn": [
+        "npm:express",
+        "web-backend.middleware.adminAuth",
+        "web-backend.routes.me",
+        "web-backend.routes.missions",
+        "web-backend.routes.city",
+        "web-backend.routes.policies",
+        "web-backend.routes.tech",
+        "web-backend.routes.warfront",
+        "web-backend.routes.armies",
+        "web-backend.routes.garrisons",
+        "web-backend.routes.buildings",
+        "web-backend.routes.heroes",
+        "web-backend.routes.workshop",
+        "web-backend.routes.resources",
+        "web-backend.routes.characters",
+        "web-backend.routes.auth",
+        "web-backend.routes.spells",
+        "web-backend.routes.items",
+        "web-backend.routes.abilities",
+        "web-backend.routes.adminQuests",
+        "web-backend.routes.adminNpcs",
+        "web-backend.routes.adminItems",
+        "web-backend.routes.adminSpells",
+        "web-backend.routes.adminAbilities",
+        "web-backend.routes.adminAbilityUnlocks",
+        "web-backend.routes.adminSpawnPoints",
+        "web-backend.routes.adminVendorAudit",
+        "web-backend.routes.adminVendorEconomy",
+        "web-backend.routes.adminMotherBrain",
+        "web-backend.routes.admin-heartbeats",
+        "web-backend.routes.adminTestFixtures"
+      ],
+      "kind": "module",
+      "lifecycle": "singleton",
+      "notes": [
+        "Groups route mounting by boundary: player/demo, catalog metadata, and admin surfaces.",
+        "Behavior-preserving extraction from web-backend/index.ts to reduce entrypoint coupling."
+      ],
+      "owns": [],
+      "path": "web-backend/server/routeGroups.ts",
+      "provides": [
+        "mountPlayerAndDemoRoutes(app)",
+        "mountCatalogRoutes(app)",
+        "mountAdminRoutes(app)",
+        "mountRouteGroups(app)"
+      ],
+      "service": "http.routes"
+    },
+    "web-backend.server.heartbeat": {
+      "class": null,
+      "ctorArgs": [],
+      "dependsOn": [
+        "node:process",
+        "worldcore.db.Database"
+      ],
+      "kind": "module",
+      "lifecycle": "singleton",
+      "notes": [
+        "Writes coarse service heartbeat rows into public.service_heartbeats for ops visibility.",
+        "Best-effort writer: DB failures are logged and never crash the HTTP server."
+      ],
+      "owns": [
+        "web-backend heartbeat interval"
+      ],
+      "path": "web-backend/server/heartbeat.ts",
+      "provides": [
+        "startServiceHeartbeat({ port })"
+      ],
+      "service": "ops.heartbeat"
     }
   }
 }
