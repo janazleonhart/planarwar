@@ -1521,6 +1521,36 @@
         "buildWipeListRows()"
       ],
       "service": "spawnPoints.motherBrainOps"
+    },
+    "web-backend.routes.adminSpawnPoints.snapshotResponses": {
+      "class": null,
+      "ctorArgs": [],
+      "dependsOn": [
+        "node:buffer",
+        "node:fs",
+        "node:path",
+        "web-backend.routes.adminSpawnPoints.snapshotStore"
+      ],
+      "kind": "module",
+      "lifecycle": "static",
+      "notes": [
+        "Shared snapshot query/save/list/update response shaping helpers for admin spawn snapshot workflows.",
+        "Keeps route-level HTTP handlers thinner without changing endpoint behavior."
+      ],
+      "owns": [
+        "Snapshot response shaping helpers",
+        "Snapshot list filter/sort helpers",
+        "Snapshot metadata write helper"
+      ],
+      "path": "web-backend/routes/adminSpawnPoints/snapshotResponses.ts",
+      "provides": [
+        "buildSnapshotFromQuery(args)",
+        "makeSnapshotQueryFilename(args)",
+        "saveStoredSnapshotDoc(doc)",
+        "filterAndSortSnapshots(args)",
+        "buildUpdatedSnapshotDoc(args)"
+      ],
+      "service": "admin.spawnPoints.snapshotResponses"
     }
   }
 }

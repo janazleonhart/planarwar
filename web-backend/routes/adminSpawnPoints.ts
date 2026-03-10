@@ -30,6 +30,13 @@ import {
   startSpawnSnapshotsRetentionScheduler,
 } from "./adminSpawnPoints/snapshotRetention";
 import {
+  buildSnapshotFromQuery,
+  buildUpdatedSnapshotDoc,
+  filterAndSortSnapshots,
+  makeSnapshotQueryFilename,
+  saveStoredSnapshotDoc,
+} from "./adminSpawnPoints/snapshotResponses";
+import {
   parseCellBounds,
   toWorldBox,
   type AdminSummary,
@@ -2538,41 +2545,8 @@ router.post("/snapshot_query", async (req, res) => {
       townTier: r.town_tier === null || r.town_tier === undefined ? null : Number(r.town_tier),
     }));
 
-    // bounds: compute from coords so restore workflows still get a meaningful slice envelope.
-    let minX = 0, maxX = 0, minZ = 0, maxZ = 0;
-    if (spawns.length) {
-      minX = Math.min(...spawns.map((s) => s.x));
-      maxX = Math.max(...spawns.map((s) => s.x));
-      minZ = Math.min(...spawns.map((s) => s.z));
-      maxZ = Math.max(...spawns.map((s) => s.z));
-    }
-
-    const toCell = (v: number) => Math.floor(v / cellSize);
-    const bounds: CellBounds = {
-      minCx: toCell(minX) - pad,
-      maxCx: toCell(maxX) + pad,
-      minCz: toCell(minZ) - pad,
-      maxCz: toCell(maxZ) + pad,
-    };
-
-    // types: if filtered by typeQ use it, otherwise infer unique types (capped).
-    const types = typeQ ? [typeQ] : Array.from(new Set(spawns.map((s) => s.type))).slice(0, 50);
-
-    const snapshot: SpawnSliceSnapshot = {
-      kind: "admin.snapshot-spawns",
-      version: 1,
-      createdAt: new Date().toISOString(),
-      shardId,
-      bounds,
-      cellSize,
-      pad,
-      types,
-      rows: spawns.length,
-      spawns,
-    };
-
-    const safeRegion = regionId ? `region_${regionId}` : x !== null && z !== null && radius !== null ? `r${radius}_x${x}_z${z}` : "query";
-    const filename = `snapshot_query_${new Date().toISOString().replace(/[:.]/g, "-")}_${shardId}_${safeRegion}.json`;
+    const snapshot = buildSnapshotFromQuery({ shardId, spawns, cellSize, pad, typeQ });
+    const filename = makeSnapshotQueryFilename({ shardId, regionId, x, z, radius });
 
     return res.json({ kind: "spawn_points.snapshot_query", ok: true, filename, snapshot, total: spawns.length });
   } catch (err: any) {
@@ -2702,37 +2676,7 @@ router.post("/snapshots/save_query", async (req, res) => {
       townTier: r.town_tier === null || r.town_tier === undefined ? null : Number(r.town_tier),
     }));
 
-    let minX = 0, maxX = 0, minZ = 0, maxZ = 0;
-    if (spawns.length) {
-      minX = Math.min(...spawns.map((s) => s.x));
-      maxX = Math.max(...spawns.map((s) => s.x));
-      minZ = Math.min(...spawns.map((s) => s.z));
-      maxZ = Math.max(...spawns.map((s) => s.z));
-    }
-
-    const toCell = (v: number) => Math.floor(v / cellSize);
-    const bounds: CellBounds = {
-      minCx: toCell(minX) - pad,
-      maxCx: toCell(maxX) + pad,
-      minCz: toCell(minZ) - pad,
-      maxCz: toCell(maxZ) + pad,
-    };
-
-    const types = typeQ ? [typeQ] : Array.from(new Set(spawns.map((s) => s.type))).slice(0, 50);
-
-    const snapshot: SpawnSliceSnapshot = {
-      kind: "admin.snapshot-spawns",
-      version: 1,
-      createdAt: new Date().toISOString(),
-      shardId,
-      bounds,
-      cellSize,
-      pad,
-      types,
-      rows: spawns.length,
-      spawns,
-    };
-
+    const snapshot = buildSnapshotFromQuery({ shardId, spawns, cellSize, pad, typeQ });
     const name = safeSnapshotName(nameRaw);
     const id = makeSnapshotId(name, shardId, snapshot.bounds, snapshot.types);
     const savedAt = new Date().toISOString();
@@ -2751,12 +2695,7 @@ router.post("/snapshots/save_query", async (req, res) => {
       snapshot,
     };
 
-    const dir = await ensureSnapshotDir();
-    const file = path.join(dir, `${id}.json`);
-    const raw = JSON.stringify(doc, null, 2);
-    await fs.writeFile(file, raw, "utf8");
-
-    const meta = metaFromStoredDoc(doc, Buffer.byteLength(raw, "utf8"));
+    const meta = await saveStoredSnapshotDoc(doc);
     return res.json({ kind: "spawn_points.snapshots.save_query", ok: true, snapshot: meta, total: spawns.length });
   } catch (err: any) {
     console.error("[ADMIN/SPAWN_POINTS] snapshots save_query error", err);
@@ -2777,68 +2716,16 @@ router.post("/snapshots/save_query", async (req, res) => {
 //   limit=250
 router.get("/snapshots", async (req, res) => {
   try {
-    let snapshots = await listStoredSnapshots();
-
-    const tagRaw = strOrNull((req as any).query?.tag);
-    const qRaw = strOrNull((req as any).query?.q);
-    const sortRaw = (strOrNull((req as any).query?.sort) || "newest").toLowerCase();
-    const limitRaw = Number((req as any).query?.limit);
-
-    const pinnedOnly = boolish((req as any).query?.pinnedOnly) === true;
-    const includeArchived = boolish((req as any).query?.includeArchived) === true;
-    const includeExpired = boolish((req as any).query?.includeExpired) === true;
-
-    const tag = tagRaw ? normalizeSnapshotTags(tagRaw)[0] : null;
-    const q = qRaw ? qRaw.trim().toLowerCase() : "";
-
-    const nowMs = Date.now();
-
-    // Defaults: hide archived + expired.
-    if (!includeArchived) {
-      snapshots = snapshots.filter((s) => !Boolean((s as any).isArchived));
-    }
-    if (!includeExpired) {
-      snapshots = snapshots.filter((s) => !isExpired((s as any).expiresAt, nowMs));
-    }
-
-    if (pinnedOnly) {
-      snapshots = snapshots.filter((s) => Boolean((s as any).isPinned));
-    }
-
-    if (tag) {
-      snapshots = snapshots.filter((s) => Array.isArray((s as any).tags) && (s as any).tags.includes(tag));
-    }
-
-    if (q) {
-      snapshots = snapshots.filter((s) => {
-        const name = String((s as any).name || "").toLowerCase();
-        const notes = String((s as any).notes || "").toLowerCase();
-        const tags = Array.isArray((s as any).tags) ? (s as any).tags.join(" ").toLowerCase() : "";
-        return name.includes(q) || notes.includes(q) || tags.includes(q);
-      });
-    }
-
-    const savedAtDesc = (a: any, b: any) => String(b.savedAt).localeCompare(String(a.savedAt));
-
-    if (sortRaw === "oldest") {
-      snapshots = snapshots.slice().sort((a, b) => String(a.savedAt).localeCompare(String(b.savedAt)));
-    } else if (sortRaw === "name") {
-      snapshots = snapshots.slice().sort((a, b) => String(a.name).localeCompare(String(b.name)));
-    } else if (sortRaw === "pinned") {
-      // pinned first, then newest
-      snapshots = snapshots.slice().sort((a, b) => {
-        const ap = Boolean((a as any).isPinned);
-        const bp = Boolean((b as any).isPinned);
-        if (ap !== bp) return ap ? -1 : 1;
-        return savedAtDesc(a, b);
-      });
-    } else {
-      // newest (default)
-      snapshots = snapshots.slice().sort(savedAtDesc);
-    }
-
-    const limit = Number.isFinite(limitRaw) ? Math.max(0, Math.min(500, Math.floor(limitRaw))) : 0;
-    if (limit > 0) snapshots = snapshots.slice(0, limit);
+    const snapshots = filterAndSortSnapshots({
+      snapshots: await listStoredSnapshots(),
+      tag: (strOrNull((req as any).query?.tag) ? normalizeSnapshotTags(strOrNull((req as any).query?.tag))[0] : null),
+      q: (strOrNull((req as any).query?.q) || "").trim().toLowerCase(),
+      sortRaw: (strOrNull((req as any).query?.sort) || "newest").toLowerCase(),
+      limitRaw: Number((req as any).query?.limit),
+      pinnedOnly: boolish((req as any).query?.pinnedOnly) === true,
+      includeArchived: boolish((req as any).query?.includeArchived) === true,
+      includeExpired: boolish((req as any).query?.includeExpired) === true,
+    });
 
     return res.json({ kind: "spawn_points.snapshots", ok: true, snapshots });
   } catch (err: any) {
@@ -2887,12 +2774,7 @@ router.post("/snapshots/save", async (req, res) => {
       snapshot,
     };
 
-    const dir = await ensureSnapshotDir();
-    const file = path.join(dir, `${id}.json`);
-    const raw = JSON.stringify(doc, null, 2);
-    await fs.writeFile(file, raw, "utf8");
-
-    const meta = metaFromStoredDoc(doc, Buffer.byteLength(raw, "utf8"));
+    const meta = await saveStoredSnapshotDoc(doc);
     return res.json({ kind: "spawn_points.snapshots.save", ok: true, snapshot: meta });
   } catch (err: any) {
     console.error("[ADMIN/SPAWN_POINTS] snapshots save error", err);
