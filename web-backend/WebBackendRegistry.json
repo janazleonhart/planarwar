@@ -698,7 +698,8 @@
         "web-backend.routes.adminSpawnPoints.opsPreview",
         "web-backend.routes.adminSpawnPoints.motherBrainOps",
         "web-backend.routes.adminSpawnPoints.townBaselineResponses",
-        "web-backend.routes.adminSpawnPoints.townBaselineApply"
+        "web-backend.routes.adminSpawnPoints.townBaselineApply",
+        "web-backend.routes.adminSpawnPoints.restoreSnapshot"
       ],
       "kind": "module",
       "lifecycle": "singleton",
@@ -725,7 +726,8 @@
         "Boundary cleanup slice 2b extracted ops preview/reason helpers and Mother Brain bounds/response type helpers into routes/adminSpawnPoints/opsPreview.ts.",
         "Boundary cleanup slice 2c extracted Mother Brain wave/wipe preview shaping and protected-row preview helpers into routes/adminSpawnPoints/motherBrainOps.ts.",
         "Boundary cleanup slice 2d extracted town baseline plan/apply response shaping into routes/adminSpawnPoints/townBaselineResponses.ts.",
-        "Boundary cleanup slice 2e extracted town baseline apply mutation loop helpers into routes/adminSpawnPoints/townBaselineApply.ts."
+        "Boundary cleanup slice 2e extracted town baseline apply mutation loop helpers into routes/adminSpawnPoints/townBaselineApply.ts.",
+        "Boundary cleanup slice 2f extracted snapshot restore preload/planning/apply helpers into routes/adminSpawnPoints/restoreSnapshot.ts."
       ],
       "owns": [],
       "path": "web-backend/routes/adminSpawnPoints.ts",
@@ -1392,6 +1394,29 @@
         "applyTownBaselinePlan({ plan, isSpawnEditable })"
       ],
       "service": "admin.spawn_points"
+    },
+    "web-backend.routes.adminSpawnPoints.restoreSnapshot": {
+      "class": null,
+      "ctorArgs": [],
+      "dependsOn": [
+        "worldcore:db/Database",
+        "worldcore:world/spawnAuthority",
+        "web-backend.routes.adminSpawnPoints.opsPreview",
+        "web-backend.routes.adminSpawnPoints.snapshotStore"
+      ],
+      "kind": "module",
+      "lifecycle": "singleton",
+      "notes": [
+        "Boundary cleanup slice 2f extracted snapshot restore preload, diff preview, plan building, and apply mutation helpers here so adminSpawnPoints.ts can stay focused on request validation and response assembly."
+      ],
+      "owns": [],
+      "path": "web-backend/routes/adminSpawnPoints/restoreSnapshot.ts",
+      "provides": [
+        "restore snapshot preload helpers",
+        "restore snapshot opsPreview planning",
+        "restore snapshot apply mutation loop"
+      ],
+      "service": "http.adminRoutes"
     },
     "web-backend.routes.adminSpawnPoints.snapshotStore": {
       "class": null,

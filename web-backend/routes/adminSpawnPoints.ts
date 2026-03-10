@@ -30,12 +30,7 @@ import {
   startSpawnSnapshotsRetentionScheduler,
 } from "./adminSpawnPoints/snapshotRetention";
 import {
-  addReasonExplainStep,
-  buildSpawnSliceOpsPreview,
-  makeReasonMaps,
   parseCellBounds,
-  protectedReason,
-  readOnlyReason,
   toWorldBox,
   type AdminSummary,
   type DuplicateSnapshotResponse,
@@ -64,6 +59,13 @@ import {
   buildTownBaselineSuccessResponse,
 } from "./adminSpawnPoints/townBaselineResponses";
 import { applyTownBaselinePlan } from "./adminSpawnPoints/townBaselineApply";
+import {
+  applyRestoreSnapshot,
+  computeRestoreExtraTargetDiff,
+  planRestoreSnapshot,
+  preloadExistingSpawnIds,
+  preloadProtectedSpawnMap,
+} from "./adminSpawnPoints/restoreSnapshot";
 import { db } from "../../worldcore/db/Database";
 import { clearSpawnPointCache } from "../../worldcore/world/SpawnPointCache";
 import { getSpawnAuthority, isSpawnEditable } from "../../worldcore/world/spawnAuthority";
@@ -3407,160 +3409,37 @@ router.post("/restore", async (req, res) => {
       return res.status(400).json({ kind: "spawn_points.restore", ok: false, error: "empty_snapshot" });
     }
 
-    // Preload which spawnIds already exist in target shard
-    const client = await db.connect();
-    let existingSet = new Set<string>();
-    try {
-      const q = await client.query(
-        `SELECT spawn_id FROM spawn_points WHERE shard_id = $1 AND spawn_id = ANY($2::text[])`,
-        [targetShard, spawnIds],
-      );
-      for (const r of q.rows as any[]) existingSet.add(String(r.spawn_id));
-    } finally {
-      client.release();
-    }
+    const existingSet = await preloadExistingSpawnIds(targetShard, spawnIds);
 
-    // Preload which existing rows are protected (locked or editor-owned)
-    let protectedMap = new Map<string, { ownerKind: string | null; isLocked: boolean }>();
-    if (updateExisting && !allowProtected) {
-      const pclient = await db.connect();
-      try {
-        const pq = await pclient.query(
-          `SELECT spawn_id, owner_kind, is_locked FROM spawn_points WHERE shard_id = $1 AND spawn_id = ANY($2::text[]) AND (is_locked = TRUE OR owner_kind = 'editor')`,
-          [targetShard, spawnIds],
-        );
-        for (const r of pq.rows as any[]) protectedMap.set(String(r.spawn_id), { ownerKind: (r as any).owner_kind ?? null, isLocked: Boolean((r as any).is_locked) });
-      } finally {
-        pclient.release();
-      }
-    }
-    // P5: mismatch diff — if the snapshot includes bounds/cellSize/pad/types, compare it to the current target slice.
-    // This does NOT imply deletion; it simply highlights rows currently in the target slice that are not present in the snapshot.
-    let extraTargetIds: string[] = [];
-    let extraTargetCount: number | undefined;
+    const protectedMap = await preloadProtectedSpawnMap({
+      targetShard,
+      spawnIds,
+      updateExisting,
+      allowProtected,
+    });
 
-    const haveSliceMeta =
-      !!snapshotBounds &&
-      Number.isFinite(Number(snapshotCellSize)) &&
-      Number.isFinite(Number(snapshotPad)) &&
-      Array.isArray(snapshotTypes) &&
-      snapshotTypes.length > 0;
+    const { extraTargetIds, extraTargetCount } = await computeRestoreExtraTargetDiff({
+      targetShard,
+      snapshotBounds,
+      snapshotCellSize,
+      snapshotPad,
+      snapshotTypes,
+      spawnIds,
+      limit: 75,
+    });
 
-    if (haveSliceMeta) {
-      const cellSize = Math.max(1, Math.floor(Number(snapshotCellSize)));
-      const pad = Math.max(0, Math.floor(Number(snapshotPad)));
-
-      const minX = snapshotBounds.minCx * cellSize - pad;
-      const maxX = (snapshotBounds.maxCx + 1) * cellSize + pad;
-      const minZ = snapshotBounds.minCz * cellSize - pad;
-      const maxZ = (snapshotBounds.maxCz + 1) * cellSize + pad;
-
-      const snapshotIdSet = new Set<string>(spawnIds);
-
-      const sliceClient = await db.connect();
-      try {
-        const q = await sliceClient.query(
-          `
-            SELECT spawn_id
-            FROM spawn_points
-            WHERE shard_id = $1
-              AND type = ANY($2::text[])
-              AND x >= $3 AND x <= $4
-              AND z >= $5 AND z <= $6
-            ORDER BY spawn_id
-          `,
-          [targetShard, snapshotTypes, minX, maxX, minZ, maxZ],
-        );
-
-        let count = 0;
-        const list: string[] = [];
-        for (const r of q.rows as any[]) {
-          const sid = String(r.spawn_id ?? "");
-          if (!sid) continue;
-          if (snapshotIdSet.has(sid)) continue;
-          count++;
-          if (list.length < 75) list.push(sid);
-        }
-        extraTargetCount = count;
-        extraTargetIds = list;
-      } finally {
-        sliceClient.release();
-      }
-    }
-
-    const insertIds: string[] = [];
-
-    const updateIds: string[] = [];
-    const protectedUpdateIds: string[] = [];
-    const skipIds: string[] = [];
-    const readOnlyIds: string[] = [];
-
-    for (const s of spawns) {
-      const sid = String(s.spawnId);
-      if (!sid) continue;
-
-      if (!allowBrainOwned && !isSpawnEditable(sid)) {
-        readOnlyIds.push(sid);
-        continue;
-      }
-
-      const exists = existingSet.has(sid);
-      if (!exists) insertIds.push(sid);
-      else if (updateExisting) {
-        updateIds.push(sid);
-        if (!allowProtected && protectedMap.has(sid)) protectedUpdateIds.push(sid);
-      }
-      else skipIds.push(sid);
-    }
-
-    
-    const explain = makeReasonMaps();
-    for (const sid of readOnlyIds) {
-      addReasonExplainStep(explain, sid, readOnlyReason(sid), "spawn is not editable in this mode", { spawnId: sid });
-
-      const meta = protectedMap.get(sid);
-      if (meta && (meta.ownerKind === "editor" || Boolean(meta.isLocked))) {
-        addReasonExplainStep(
-          explain,
-          sid,
-          protectedReason(meta?.ownerKind, meta?.isLocked),
-          "row is also protected (locked or editor-owned)",
-          { spawnId: sid, ownerKind: meta?.ownerKind ?? null, isLocked: Boolean(meta?.isLocked) },
-        );
-      }
-    }
-    if (protectedUpdateIds.length) {
-      for (const sid of protectedUpdateIds) {
-        const meta = protectedMap.get(sid);
-        addReasonExplainStep(
-          explain,
-          sid,
-          protectedReason(meta?.ownerKind, meta?.isLocked),
-          "existing row is protected (locked or editor-owned)",
-          { spawnId: sid, ownerKind: meta?.ownerKind ?? null, isLocked: Boolean(meta?.isLocked) },
-        );
-      }
-    }
-
-const opsPreview = buildSpawnSliceOpsPreview({
-      insertIds,
-      updateIds,
-      skipIds,
-      readOnlyIds,
+    const { insertIds, updateIds, skipIds, readOnlyIds, opsPreview } = planRestoreSnapshot({
+      spawns,
+      existingSet,
+      protectedMap,
+      updateExisting,
+      allowBrainOwned,
+      allowProtected,
       extraTargetIds,
       extraTargetCount,
       limit: 75,
     });
 
-    (opsPreview as any).reasons = explain.reasons;
-    (opsPreview as any).reasonCounts = explain.reasonCounts;
-    (opsPreview as any).reasonDetails = explain.reasonDetails;
-    (opsPreview as any).reasonChains = explain.reasonChains;
-
-    if (protectedUpdateIds.length > 0) {
-      (opsPreview as any).protectedUpdateSpawnIds = protectedUpdateIds.slice(0, 75);
-      (opsPreview as any).skippedProtected = protectedUpdateIds.length;
-    }
     const expectedConfirmToken =
       updateExisting && updateIds.length > 0
         ? makeConfirmToken("REPLACE", targetShard, { op: "restore", updateIds, rows: spawns.length })
@@ -3623,81 +3502,16 @@ const opsPreview = buildSpawnSliceOpsPreview({
       });
     }
 
-    const txn = await db.connect();
-    let inserted = 0;
-    let updated = 0;
-    let skipped = 0;
-    let skippedReadOnly = 0;
-    let skippedProtected = 0;
-
-    try {
-      await txn.query("BEGIN");
-
-      for (const s of spawns) {
-        const sid = String(s.spawnId);
-        if (!sid) continue;
-
-        if (!allowBrainOwned && !isSpawnEditable(sid)) {
-          skippedReadOnly++;
-          continue;
-        }
-
-        const exists = existingSet.has(sid);
-        const protoId = String(s.protoId ?? sid);
-        const archetype = String(s.archetype ?? "");
-        const type = String(s.type ?? "");
-        const variantId = s.variantId == null ? null : String(s.variantId);
-        const x = Number.isFinite(s.x) ? Number(s.x) : 0;
-        const y = Number.isFinite(s.y) ? Number(s.y) : 0;
-        const z = Number.isFinite(s.z) ? Number(s.z) : 0;
-        const regionId = String(s.regionId ?? "");
-        const townTier = s.townTier == null || !Number.isFinite(Number(s.townTier)) ? null : Number(s.townTier);
-
-        if (!exists) {
-          await txn.query(
-            `
-            INSERT INTO spawn_points (shard_id, spawn_id, type, archetype, proto_id, variant_id, x, y, z, region_id, town_tier)
-            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
-          `,
-            [targetShard, sid, type, archetype, protoId, variantId, x, y, z, regionId, townTier],
-          );
-          inserted++;
-          continue;
-        }
-
-        if (updateExisting) {
-          if (!allowProtected && protectedMap.has(sid)) {
-            skippedProtected++;
-            continue;
-          }
-
-          await txn.query(
-            `
-            UPDATE spawn_points
-            SET type=$3, archetype=$4, proto_id=$5, variant_id=$6, x=$7, y=$8, z=$9, region_id=$10, town_tier=$11
-            WHERE shard_id=$1 AND spawn_id=$2
-          `,
-            [targetShard, sid, type, archetype, protoId, variantId, x, y, z, regionId, townTier],
-          );
-          updated++;
-        } else {
-          skipped++;
-        }
-      }
-
-      if (commit) {
-        await txn.query("COMMIT");
-      } else {
-        await txn.query("ROLLBACK");
-      }
-    } catch (err) {
-      try {
-        await txn.query("ROLLBACK");
-      } catch {}
-      throw err;
-    } finally {
-      txn.release();
-    }
+    const { inserted, updated, skipped, skippedReadOnly, skippedProtected } = await applyRestoreSnapshot({
+      targetShard,
+      spawns,
+      existingSet,
+      protectedMap,
+      updateExisting,
+      allowBrainOwned,
+      allowProtected,
+      commit,
+    });
 
     if (commit) {
       clearSpawnPointCache();
