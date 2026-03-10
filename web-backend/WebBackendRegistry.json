@@ -692,7 +692,9 @@
         "worldcore:sim/MotherBrainWavePlanner",
         "worldcore:sim/MotherBrainWaveOps",
         "worldcore:sim/TownBaselinePlanner",
-        "worldcore:world/TownTierRules"
+        "worldcore:world/TownTierRules",
+        "web-backend.routes.adminSpawnPoints.snapshotStore",
+        "web-backend.routes.adminSpawnPoints.snapshotRetention"
       ],
       "kind": "module",
       "lifecycle": "singleton",
@@ -714,7 +716,8 @@
         "P2\u2013P3: Server-side spawn snapshot storage under web-backend (admin-owned JSON docs).",
         "GET /api/admin/spawn_points/snapshots supports query params: sort=(newest|oldest|name), tag=<tag>, q=<search>, limit=<n>.",
         "POST /api/admin/spawn_points/snapshots/save accepts optional metadata: tags (comma list or array) + notes (string).",
-        "Adds /proto_options endpoint to supply resource + station protoId autocomplete options (decorated with item names when available)."
+        "Adds /proto_options endpoint to supply resource + station protoId autocomplete options (decorated with item names when available).",
+        "Boundary cleanup slice 2a extracted snapshot storage/metadata helpers and retention scheduler into dedicated helper modules under routes/adminSpawnPoints/."
       ],
       "owns": [],
       "path": "web-backend/routes/adminSpawnPoints.ts",
@@ -1342,6 +1345,62 @@
         "startServiceHeartbeat({ port })"
       ],
       "service": "ops.heartbeat"
+    },
+    "web-backend.routes.adminSpawnPoints.snapshotStore": {
+      "class": null,
+      "ctorArgs": [],
+      "dependsOn": [
+        "node:buffer",
+        "node:crypto",
+        "node:fs",
+        "node:path"
+      ],
+      "kind": "module",
+      "lifecycle": "singleton",
+      "notes": [
+        "Shared snapshot storage helpers for admin spawn point routes.",
+        "Owns JSON snapshot file naming, metadata extraction, listing, and coercion/parsing utilities.",
+        "Storage root defaults to data/spawn_snapshots and may be overridden by PLANARWAR_SPAWN_SNAPSHOT_DIR."
+      ],
+      "owns": [
+        "server-side stored spawn snapshot documents"
+      ],
+      "path": "web-backend/routes/adminSpawnPoints/snapshotStore.ts",
+      "provides": [
+        "ensureSnapshotDir()",
+        "listStoredSnapshots()",
+        "readStoredSnapshotById(id)",
+        "allocateSnapshotIdUnique(name, shardId, bounds, types)",
+        "snapshot metadata + normalization helpers"
+      ],
+      "service": "spawnSnapshots.storage"
+    },
+    "web-backend.routes.adminSpawnPoints.snapshotRetention": {
+      "class": null,
+      "ctorArgs": [],
+      "dependsOn": [
+        "node:fs",
+        "node:path",
+        "web-backend.routes.adminSpawnPoints.snapshotStore"
+      ],
+      "kind": "module",
+      "lifecycle": "singleton",
+      "notes": [
+        "Encapsulates spawn snapshot retention status, scheduled purge/dry-run configuration, and deletion job execution.",
+        "Scheduler configuration is driven by PW_SPAWN_SNAPSHOT_RETENTION_* environment variables.",
+        "Retains in-memory last-run status for the admin retention_status endpoint."
+      ],
+      "owns": [
+        "in-process snapshot retention timer",
+        "last retention run status cache"
+      ],
+      "path": "web-backend/routes/adminSpawnPoints/snapshotRetention.ts",
+      "provides": [
+        "startSpawnSnapshotsRetentionScheduler()",
+        "runSpawnSnapshotsRetentionJob(opts)",
+        "getSpawnSnapshotsRetentionStatus()"
+      ],
+      "service": "spawnSnapshots.retention"
     }
   }
 }

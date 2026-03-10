@@ -5,6 +5,30 @@ import { createHash } from "crypto";
 import { promises as fs } from "node:fs";
 import { Buffer } from "node:buffer";
 import path from "node:path";
+import {
+  allocateSnapshotIdUnique,
+  boolish,
+  coerceExpiresAt,
+  coerceSnapshotSpawns,
+  ensureSnapshotDir,
+  isExpired,
+  listStoredSnapshots,
+  makeSnapshotId,
+  metaFromStoredDoc,
+  normalizeSnapshotTags,
+  readStoredSnapshotById,
+  safeSnapshotName,
+  safeSnapshotNotes,
+  type CellBounds,
+  type SnapshotSpawnRow,
+  type SpawnSliceSnapshot,
+  type StoredSpawnSnapshotDoc,
+  type StoredSpawnSnapshotMeta,
+} from "./adminSpawnPoints/snapshotStore";
+import {
+  getSpawnSnapshotsRetentionStatus,
+  startSpawnSnapshotsRetentionScheduler,
+} from "./adminSpawnPoints/snapshotRetention";
 import { db } from "../../worldcore/db/Database";
 import { clearSpawnPointCache } from "../../worldcore/world/SpawnPointCache";
 import { getSpawnAuthority, isSpawnEditable } from "../../worldcore/world/spawnAuthority";
@@ -102,6 +126,104 @@ type AdminSummary = {
   byProtoId?: Record<string, number>;
 };
 
+type SpawnSliceOpsPreview = {
+  limit: number;
+  truncated: boolean;
+  insertSpawnIds: string[];
+  insertCount: number;
+  updateSpawnIds: string[];
+  updateCount: number;
+  skipSpawnIds: string[];
+  skipCount: number;
+  readOnlySpawnIds: string[];
+  readOnlyCount: number;
+  extraTargetSpawnIds?: string[];
+  extraTargetCount?: number;
+  protectedUpdateSpawnIds?: string[];
+  skippedProtected?: number;
+};
+
+type ReasonCode = "read_only" | "protected_locked" | "protected_editor_owned" | "protected";
+
+type ReasonDetail = {
+  code: ReasonCode;
+  message: string;
+  spawnId?: string;
+  ownerKind?: string | null;
+  isLocked?: boolean;
+};
+
+type ReasonMaps = {
+  reasons: Record<string, string>;
+  reasonCounts: Record<string, number>;
+  reasonDetails: Record<string, ReasonDetail>;
+  reasonChains: Record<string, ReasonDetail[]>;
+};
+
+type DuplicateSnapshotResponse =
+  | { kind: "spawn_points.snapshots.duplicate"; ok: true; snapshot: StoredSpawnSnapshotMeta }
+  | { kind: "spawn_points.snapshots.duplicate"; ok: false; error: string };
+
+function makeReasonMaps(): ReasonMaps {
+  return { reasons: {}, reasonCounts: {}, reasonDetails: {}, reasonChains: {} };
+}
+
+function readOnlyReason(spawnId: string): ReasonCode {
+  return "read_only";
+}
+
+function protectedReason(ownerKind?: string | null, isLocked?: boolean | null): ReasonCode {
+  if (Boolean(isLocked)) return "protected_locked";
+  if (String(ownerKind ?? "").trim().toLowerCase() === "editor") return "protected_editor_owned";
+  return "protected";
+}
+
+function reasonMessage(code: ReasonCode): string {
+  switch (code) {
+    case "read_only":
+      return "spawn is not editable in this mode";
+    case "protected_locked":
+      return "row is locked";
+    case "protected_editor_owned":
+      return "row is editor-owned";
+    default:
+      return "row is protected by ownership/lock rules";
+  }
+}
+
+function addReasonExplainStep(
+  explain: ReasonMaps,
+  spawnId: string,
+  code: ReasonCode,
+  fallbackMessage: string,
+  detail?: Partial<ReasonDetail>,
+): void {
+  const sid = String(spawnId ?? "").trim();
+  if (!sid) return;
+
+  const full: ReasonDetail = {
+    code,
+    message: String(fallbackMessage || reasonMessage(code)),
+    ...(detail ?? {}),
+    spawnId: sid,
+  };
+
+  explain.reasons[sid] = full.message;
+  explain.reasonCounts[code] = (explain.reasonCounts[code] ?? 0) + 1;
+  explain.reasonDetails[sid] = full;
+  const chain = explain.reasonChains[sid] ?? [];
+  chain.push(full);
+  explain.reasonChains[sid] = chain;
+}
+
+function makeProtectedReasonFromRow(row: unknown): ReasonCode {
+  const r = row as { owner_kind?: unknown; is_locked?: unknown };
+  return protectedReason(
+    r?.owner_kind == null ? null : String(r.owner_kind),
+    Boolean(r?.is_locked),
+  );
+}
+
 function summarizePlannedSpawns(
   spawns: Array<{ type?: string | null; protoId?: string | null }>,
 ): AdminSummary {
@@ -165,399 +287,6 @@ function buildTownBaselineOpsPreview(planItems: TownBaselinePlanItem[], limit = 
   };
 }
 
-
-type SnapshotSpawnRow = {
-  shardId: string;
-  spawnId: string;
-  type: string;
-  protoId: string;
-  archetype: string;
-  variantId: string | null;
-  x: number;
-  y: number;
-  z: number;
-  regionId: string;
-  townTier?: number | null;
-};
-
-type SpawnSliceSnapshot = {
-  kind: "admin.snapshot-spawns";
-  version: 1;
-  createdAt: string;
-  shardId: string;
-  bounds: CellBounds;
-  cellSize: number;
-  pad: number;
-  types: string[];
-  rows: number;
-  spawns: SnapshotSpawnRow[];
-};
-
-type SpawnSliceOpsPreview = {
-  limit: number;
-  truncated: boolean;
-
-  // list-style (truncated IDs) + full counts for accurate UI summaries
-  insertSpawnIds: string[];
-  insertCount: number;
-  updateSpawnIds: string[];
-  updateCount: number;
-  skipSpawnIds: string[];
-  skipCount: number;
-  readOnlySpawnIds: string[];
-  readOnlyCount: number;
-
-  // Explainability
-  reasons?: Record<string, string>;
-  reasonCounts?: Record<string, number>;
-  reasonChains?: Record<string, ReasonDetail[]>;
-
-  // P5: mismatch signal (rows currently in target slice but not present in snapshot)
-  extraTargetSpawnIds?: string[];
-  extraTargetCount?: number;
-};
-
-type StoredSpawnSnapshotDoc = {
-  kind: "admin.stored-spawn-snapshot";
-  version: 1 | 2 | 3;
-  id: string;
-  name: string;
-  savedAt: string;
-
-  // P3: metadata for discoverability
-  tags: string[];
-  notes?: string | null;
-
-  // P6: retention + organization
-  isArchived?: boolean;
-  isPinned?: boolean;
-  expiresAt?: string | null;
-
-  snapshot: SpawnSliceSnapshot;
-};
-
-type DuplicateSnapshotResponse =
-  | { kind: "spawn_points.snapshots.duplicate"; ok: true; snapshot: StoredSpawnSnapshotMeta }
-  | { kind: "spawn_points.snapshots.duplicate"; ok: false; error: string };
-
-type StoredSpawnSnapshotMeta = {
-  id: string;
-  name: string;
-  savedAt: string;
-  shardId: string;
-  rows: number;
-  bounds: CellBounds;
-  cellSize: number;
-  pad: number;
-  types: string[];
-  bytes: number;
-
-  // P3: metadata for discoverability
-  tags: string[];
-  notes?: string | null;
-
-  // P6: retention + organization
-  isArchived?: boolean;
-  isPinned?: boolean;
-  expiresAt?: string | null;
-};
-
-const SNAPSHOT_DIR =
-  typeof process.env.PLANARWAR_SPAWN_SNAPSHOT_DIR === "string" && process.env.PLANARWAR_SPAWN_SNAPSHOT_DIR.trim()
-    ? path.resolve(process.env.PLANARWAR_SPAWN_SNAPSHOT_DIR.trim())
-    : path.resolve(process.cwd(), "data", "spawn_snapshots");
-
-async function ensureSnapshotDir(): Promise<string> {
-  await fs.mkdir(SNAPSHOT_DIR, { recursive: true });
-  return SNAPSHOT_DIR;
-}
-
-function safeSnapshotName(name: string): string {
-  const base = name.trim().slice(0, 80);
-  const cleaned = base.replace(/[^a-zA-Z0-9._ -]+/g, "_").replace(/\s+/g, " ");
-  return cleaned || "snapshot";
-}
-
-
-function normalizeSnapshotTags(input: unknown): string[] {
-  // Accept: ["tag1", "tag2"] OR "tag1, tag2" OR single string.
-  // Normalize: lowercase, trim, spaces -> "-", allow [a-z0-9._-], dedupe, cap.
-  const raw: string[] = [];
-  if (Array.isArray(input)) {
-    for (const it of input) raw.push(String(it ?? ""));
-  } else if (typeof input === "string") {
-    raw.push(...input.split(","));
-  } else if (input != null) {
-    raw.push(String(input));
-  }
-
-  const out: string[] = [];
-  const seen = new Set<string>();
-  for (const r of raw) {
-    const t0 = String(r ?? "").trim().toLowerCase();
-    if (!t0) continue;
-    const t1 = t0.replace(/\s+/g, "-").replace(/[^a-z0-9._-]+/g, "");
-    const t = t1.slice(0, 32);
-    if (!t) continue;
-    if (seen.has(t)) continue;
-    seen.add(t);
-    out.push(t);
-    if (out.length >= 12) break;
-  }
-  return out;
-}
-
-function safeSnapshotNotes(input: unknown): string | null {
-  const s = String(input ?? "").trim();
-  if (!s) return null;
-  // Keep it boring: strip control chars, cap length.
-  const cleaned = s.replace(/[\u0000-\u001F\u007F]/g, " ").replace(/\s+/g, " ").trim();
-  return cleaned.slice(0, 600);
-}
-
-function boolish(input: unknown): boolean | null {
-  if (input === undefined || input === null) return null;
-  if (typeof input === "boolean") return input;
-  const s = String(input).trim().toLowerCase();
-  if (!s) return null;
-  if (s === "1" || s === "true" || s === "yes" || s === "y" || s === "on") return true;
-  if (s === "0" || s === "false" || s === "no" || s === "n" || s === "off") return false;
-  return null;
-}
-
-function coerceExpiresAt(input: unknown): string | null | undefined {
-  // undefined => "no change" in updates; null => "clear"; string => ISO
-  if (input === undefined) return undefined;
-  if (input === null) return null;
-
-  // Accept a direct ISO string or a number of days (e.g. "14" => now+14d).
-  if (typeof input === "number" && Number.isFinite(input)) {
-    const days = Math.max(0, Math.min(3650, Math.floor(input)));
-    const dt = new Date(Date.now() + days * 24 * 60 * 60 * 1000);
-    return dt.toISOString();
-  }
-
-  const raw = String(input).trim();
-  if (!raw) return null;
-
-  const asNum = Number(raw);
-  if (Number.isFinite(asNum) && /^\d+(\.0+)?$/.test(raw)) {
-    const days = Math.max(0, Math.min(3650, Math.floor(asNum)));
-    const dt = new Date(Date.now() + days * 24 * 60 * 60 * 1000);
-    return dt.toISOString();
-  }
-
-  const t = Date.parse(raw);
-  if (!Number.isFinite(t)) throw new Error("Invalid expiresAt (expected ISO date or days number).");
-  return new Date(t).toISOString();
-}
-
-function isExpired(expiresAt: unknown, nowMs = Date.now()): boolean {
-  if (expiresAt == null) return false;
-  const t = Date.parse(String(expiresAt));
-  if (!Number.isFinite(t)) return false;
-  return t <= nowMs;
-}
-
-function readOnlyReason(spawnId: string): string {
-  return String(spawnId ?? "").toLowerCase().startsWith("brain:") ? "brain_authority" : "read_only";
-}
-
-function protectedReason(ownerKind: unknown, locked: unknown): string {
-  if (Boolean(locked)) return "locked";
-  if (String(ownerKind ?? "").trim().toLowerCase() === "editor") return "editor_owned";
-  return "protected";
-}
-
-function bumpReasonCount(map: Record<string, number>, reason: string) {
-  map[reason] = (map[reason] ?? 0) + 1;
-}
-
-type ReasonDetail = {
-  reason: string;
-  note?: string;
-  meta?: any;
-};
-
-type ReasonExplain = {
-  reasons: Record<string, string>;
-  reasonCounts: Record<string, number>;
-  reasonDetails: Record<string, ReasonDetail>;
-  reasonChains: Record<string, ReasonDetail[]>;
-};
-
-function addReasonExplainStep(explain: ReasonExplain, spawnId: string, reason: string, note?: string, meta?: any) {
-  const r = makeReasonNote(reason);
-
-  const step: ReasonDetail = { reason: r, note: note ?? undefined, meta: meta ?? undefined };
-  const chain = (explain.reasonChains[spawnId] ??= []);
-  chain.push(step);
-
-  // First step is the "headline" reason used in summaries and row labels.
-  if (!explain.reasons[spawnId]) {
-    explain.reasons[spawnId] = r;
-    bumpReasonCount(explain.reasonCounts, r);
-  }
-
-  // Keep the legacy single-detail shape around (last step wins).
-  explain.reasonDetails[spawnId] = step;
-}
-
-function makeReasonMaps(): ReasonExplain {
-  return { reasons: {}, reasonCounts: {}, reasonDetails: {}, reasonChains: {} };
-}
-
-function makeReasonNote(reason: string): string {
-  // Keep these stable; UI uses them as labels.
-  return reason;
-}
-
-function makeProtectedReasonFromRow(row: any): string {
-  return protectedReason(row?.owner_kind ?? row?.ownerKind, row?.is_locked ?? row?.isLocked);
-}
-
-function makeSnapshotId(name: string, shardId: string, bounds: CellBounds, types: string[]): string {
-  const seed = { name: safeSnapshotName(name), shardId, bounds, types: [...types].sort() };
-  return `snap_${Date.now()}_${hashToken(seed).slice(0, 12)}`;
-}
-
-function metaFromStoredDoc(doc: StoredSpawnSnapshotDoc, bytes: number): StoredSpawnSnapshotMeta {
-  return {
-    id: doc.id,
-    name: doc.name,
-    savedAt: doc.savedAt,
-    shardId: doc.snapshot.shardId,
-    rows: doc.snapshot.rows,
-    bounds: doc.snapshot.bounds,
-    cellSize: doc.snapshot.cellSize,
-    pad: doc.snapshot.pad,
-    types: doc.snapshot.types,
-    bytes,
-    tags: Array.isArray((doc as any).tags) ? (doc as any).tags : [],
-    notes: (doc as any).notes ?? null,
-    isArchived: Boolean((doc as any).isArchived),
-    isPinned: Boolean((doc as any).isPinned),
-    expiresAt: ((doc as any).expiresAt ?? null) as any,
-  };
-}
-
-async function readStoredSnapshotById(id: string): Promise<{ doc: StoredSpawnSnapshotDoc; bytes: number }> {
-  const dir = await ensureSnapshotDir();
-  const file = path.join(dir, `${id}.json`);
-  const raw = await fs.readFile(file, "utf8");
-  const bytes = Buffer.byteLength(raw, "utf8");
-  const doc = JSON.parse(raw) as StoredSpawnSnapshotDoc;
-  if (!doc || doc.kind !== "admin.stored-spawn-snapshot") {
-    throw new Error("Invalid stored snapshot file.");
-  }
-  return { doc, bytes };
-}
-
-async function listStoredSnapshots(): Promise<StoredSpawnSnapshotMeta[]> {
-  const dir = await ensureSnapshotDir();
-  const names = await fs.readdir(dir).catch(() => []);
-  const metas: StoredSpawnSnapshotMeta[] = [];
-  for (const n of names) {
-    if (!n.endsWith(".json")) continue;
-    const file = path.join(dir, n);
-    try {
-      const raw = await fs.readFile(file, "utf8");
-      const bytes = Buffer.byteLength(raw, "utf8");
-      const doc = JSON.parse(raw) as StoredSpawnSnapshotDoc;
-      if (!doc || doc.kind !== "admin.stored-spawn-snapshot") continue;
-      metas.push(metaFromStoredDoc(doc, bytes));
-    } catch {
-      // ignore junk
-    }
-  }
-  metas.sort((a, b) => String(b.savedAt).localeCompare(String(a.savedAt)));
-  return metas;
-}
-
-async function fileExists(p: string): Promise<boolean> {
-  try {
-    await fs.access(p);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-async function allocateSnapshotIdUnique(name: string, shardId: string, bounds: CellBounds, types: string[]): Promise<string> {
-  // Extremely low contention; keep it simple but deterministic enough.
-  const dir = await ensureSnapshotDir();
-  for (let i = 0; i < 6; i++) {
-    const baseName = i === 0 ? name : `${name} copy ${i + 1}`;
-    const id = makeSnapshotId(baseName, shardId, bounds, types);
-    const file = path.join(dir, `${id}.json`);
-    if (!(await fileExists(file))) return id;
-    // If collision (very unlikely), try again.
-    await new Promise((r) => setTimeout(r, 2));
-  }
-  // Final fallback: add entropy.
-  const id = `snap_${Date.now()}_${Math.random().toString(16).slice(2, 10)}_${hashToken({ name, shardId, bounds, types }).slice(0, 8)}`;
-  return id;
-}
-
-
-function coerceSnapshotSpawns(doc: unknown): { snapshotShard: string; bounds?: CellBounds; cellSize?: number; pad?: number; types?: string[]; spawns: SnapshotSpawnRow[] } {
-  if (!doc || typeof doc !== "object") throw new Error("Invalid snapshot: not an object.");
-  const anyDoc = doc as Record<string, unknown>;
-
-  const shardIdRaw = anyDoc["shardId"];
-  const snapshotShard = typeof shardIdRaw === "string" && shardIdRaw.length ? shardIdRaw : "prime_shard";
-
-  const spawnsRaw = anyDoc["spawns"];
-  if (!Array.isArray(spawnsRaw)) throw new Error("Invalid snapshot: missing 'spawns' array.");
-
-  const spawns: SnapshotSpawnRow[] = [];
-  for (const it of spawnsRaw) {
-    const o = it as Record<string, unknown>;
-    const spawnId = String(o["spawnId"] ?? "");
-    if (!spawnId) continue;
-
-    spawns.push({
-      shardId: String(o["shardId"] ?? snapshotShard),
-      spawnId,
-      type: String(o["type"] ?? "unknown"),
-      protoId: String(o["protoId"] ?? o["proto_id"] ?? "unknown"),
-      archetype: String(o["archetype"] ?? "unknown"),
-      variantId: o["variantId"] == null ? null : String(o["variantId"]),
-      x: Number(o["x"] ?? 0),
-      y: Number(o["y"] ?? 0),
-      z: Number(o["z"] ?? 0),
-      regionId: String(o["regionId"] ?? o["region_id"] ?? ""),
-      townTier: o["townTier"] == null ? null : Number(o["townTier"]),
-    });
-  }
-
-  // Optional passthrough metadata (used only for UI display)
-  let bounds: CellBounds | undefined;
-  const boundsRaw = anyDoc["bounds"];
-  if (boundsRaw && typeof boundsRaw === "object") {
-    const b = boundsRaw as any;
-    const minCx = Number(b.minCx);
-    const maxCx = Number(b.maxCx);
-    const minCz = Number(b.minCz);
-    const maxCz = Number(b.maxCz);
-    if ([minCx, maxCx, minCz, maxCz].every((n) => Number.isFinite(n))) {
-      bounds = { minCx, maxCx, minCz, maxCz };
-    }
-  }
-
-  const cellSize = Number(anyDoc["cellSize"]);
-  const pad = Number(anyDoc["pad"]);
-  const types = Array.isArray(anyDoc["types"]) ? (anyDoc["types"] as any[]).map((t) => String(t)) : undefined;
-
-  return {
-    snapshotShard,
-    bounds,
-    cellSize: Number.isFinite(cellSize) ? cellSize : undefined,
-    pad: Number.isFinite(pad) ? pad : undefined,
-    types,
-    spawns,
-  };
-}
 
 function buildSpawnSliceOpsPreview(args: {
   insertIds: string[];
@@ -1840,7 +1569,6 @@ router.post("/bulk_move", async (req, res) => {
 });
 
 
-
 // ------------------------------
 
 // ------------------------------
@@ -2880,7 +2608,6 @@ router.post("/town_baseline/apply", async (req, res) => {
 // Mother Brain façade endpoints
 // ------------------------------
 
-type CellBounds = { minCx: number; maxCx: number; minCz: number; maxCz: number };
 
 type WorldBox = {
   minX: number;
@@ -3023,7 +2750,6 @@ type MotherBrainWaveResponse = {
   expectedConfirmToken?: string;
   error?: string;
 };
-
 
 
 type MotherBrainWipeRequest = {
@@ -3236,9 +2962,6 @@ router.post("/snapshot", async (req, res) => {
     return res.status(500).json({ kind: "spawn_points.snapshot", ok: false, error: err.message || String(err) });
   }
 });
-
-
-
 
 
 // POST /api/admin/spawn_points/snapshot_query
@@ -3667,7 +3390,6 @@ router.get("/snapshots", async (req, res) => {
 });
 
 
-
 // POST /api/admin/spawn_points/snapshots/save
 router.post("/snapshots/save", async (req, res) => {
   try {
@@ -3912,9 +3634,6 @@ router.delete("/snapshots/:id", async (req, res) => {
     return res.status(status).json({ kind: "spawn_points.snapshots.delete", ok: false, error: msg });
   }
 });
-
-
-
 
 
 // POST /api/admin/spawn_points/snapshots/bulk_delete
@@ -4195,37 +3914,10 @@ router.post("/snapshots/purge", async (req, res) => {
 });
 
 
-
 // GET /api/admin/spawn_points/snapshots/retention_status
 router.get("/snapshots/retention_status", (_req, res) => {
   try {
-    const cfg =
-      _spawnSnapshotsRetentionConfig ??
-      ({
-        enabled: false,
-        intervalMinutes: 0,
-        dryRun: true,
-        includeArchived: false,
-        includePinned: false,
-        olderThanDays: 0,
-        runOnBoot: false,
-      } as const);
-
-    const payload: SpawnSnapshotsRetentionStatusResponse = {
-      kind: "spawn_points.snapshots.retention_status",
-      ok: true,
-      enabled: cfg.enabled,
-      intervalMinutes: cfg.intervalMinutes,
-      dryRun: cfg.dryRun,
-      includeArchived: cfg.includeArchived,
-      includePinned: cfg.includePinned,
-      olderThanDays: cfg.olderThanDays,
-      runOnBoot: cfg.runOnBoot,
-      ...( _spawnSnapshotsRetentionLastRunAt ? { lastRunAt: _spawnSnapshotsRetentionLastRunAt } : null),
-      ...( _spawnSnapshotsRetentionLastResult ? { lastResult: _spawnSnapshotsRetentionLastResult } : null),
-    };
-
-    return res.json(payload);
+    return res.json(getSpawnSnapshotsRetentionStatus());
   } catch (err: any) {
     return res.status(500).json({
       kind: "spawn_points.snapshots.retention_status",
@@ -4234,235 +3926,6 @@ router.get("/snapshots/retention_status", (_req, res) => {
     });
   }
 });
-
-
-
-type SpawnSnapshotsRetentionStatusResponse = {
-  kind: "spawn_points.snapshots.retention_status";
-  ok: boolean;
-  error?: string;
-
-  enabled: boolean;
-  intervalMinutes: number;
-  dryRun: boolean;
-
-  includeArchived: boolean;
-  includePinned: boolean;
-  olderThanDays: number;
-  runOnBoot: boolean;
-
-  // server memory (since boot)
-  lastRunAt?: string;
-  lastResult?: SpawnSnapshotsRetentionJobResult;
-};
-
-let _spawnSnapshotsRetentionLastRunAt: string | null = null;
-let _spawnSnapshotsRetentionLastResult: SpawnSnapshotsRetentionJobResult | null = null;
-
-let _spawnSnapshotsRetentionConfig: {
-  enabled: boolean;
-  intervalMinutes: number;
-  dryRun: boolean;
-  includeArchived: boolean;
-  includePinned: boolean;
-  olderThanDays: number;
-  runOnBoot: boolean;
-} | null = null;
-
-// ---------------------------------------------------------------------------
-// Snapshot retention scheduler (server-side hygiene; safe defaults)
-// Env vars:
-//   PW_SPAWN_SNAPSHOT_RETENTION_ENABLED=1
-//   PW_SPAWN_SNAPSHOT_RETENTION_INTERVAL_MINUTES=60
-//   PW_SPAWN_SNAPSHOT_RETENTION_DRY_RUN=1          (default 1)
-//   PW_SPAWN_SNAPSHOT_RETENTION_INCLUDE_ARCHIVED=0
-//   PW_SPAWN_SNAPSHOT_RETENTION_ARCHIVED_OLDER_THAN_DAYS=30
-//   PW_SPAWN_SNAPSHOT_RETENTION_INCLUDE_PINNED=0
-//   PW_SPAWN_SNAPSHOT_RETENTION_RUN_ON_BOOT=0
-// ---------------------------------------------------------------------------
-
-export type SpawnSnapshotsRetentionJobOptions = {
-  includeArchived: boolean;
-  includePinned: boolean;
-  olderThanDays: number;
-  dryRun: boolean;
-};
-
-export type SpawnSnapshotsRetentionJobResult = {
-  ok: boolean;
-  dryRun: boolean;
-  includeArchived: boolean;
-  includePinned: boolean;
-  olderThanDays: number;
-
-  skippedPinned: number;
-  count: number;
-  bytes: number;
-  ids: string[];
-
-  deleted?: number;
-  failed?: number;
-};
-
-export async function runSpawnSnapshotsRetentionJob(
-  opts: SpawnSnapshotsRetentionJobOptions,
-): Promise<SpawnSnapshotsRetentionJobResult> {
-  const includeArchived = Boolean(opts.includeArchived);
-  const includePinned = Boolean(opts.includePinned);
-  const olderThanDays = Math.max(0, Math.min(3650, Math.floor(Number(opts.olderThanDays) || 0)));
-  const dryRun = Boolean(opts.dryRun);
-
-  const nowMs = Date.now();
-  const metas = await listStoredSnapshots();
-  const candidates: StoredSpawnSnapshotMeta[] = [];
-  let skippedPinned = 0;
-
-  for (const m of metas) {
-    if (!includePinned && Boolean((m as any).isPinned)) {
-      skippedPinned += 1;
-      continue;
-    }
-
-    const expired = isExpired((m as any).expiresAt, nowMs);
-    if (expired) {
-      candidates.push(m);
-      continue;
-    }
-
-    if (includeArchived && Boolean((m as any).isArchived)) {
-      const savedAtMs = new Date(String((m as any).savedAt ?? "")).getTime();
-      const ageDays = Number.isFinite(savedAtMs) ? Math.floor((nowMs - savedAtMs) / (24 * 60 * 60 * 1000)) : 999999;
-      if (ageDays >= olderThanDays) candidates.push(m);
-    }
-  }
-
-  const ids = candidates.map((c) => c.id).sort((a, b) => a.localeCompare(b));
-  const totalBytes = candidates.reduce((acc, c) => acc + Number((c as any).bytes ?? 0), 0);
-
-  if (dryRun) {
-    return {
-      ok: true,
-      dryRun: true,
-      includeArchived,
-      includePinned,
-      olderThanDays,
-      skippedPinned,
-      count: ids.length,
-      bytes: totalBytes,
-      ids,
-    };
-  }
-
-  const dir = await ensureSnapshotDir();
-  let deleted = 0;
-  let failed = 0;
-
-  for (const id of ids) {
-    const file = path.join(dir, `${id}.json`);
-    try {
-      await fs.unlink(file);
-      deleted += 1;
-    } catch {
-      failed += 1;
-    }
-  }
-
-  return {
-    ok: true,
-    dryRun: false,
-    includeArchived,
-    includePinned,
-    olderThanDays,
-    skippedPinned,
-    count: ids.length,
-    bytes: totalBytes,
-    ids,
-    deleted,
-    failed,
-  };
-}
-
-let _spawnSnapshotsRetentionTimer: NodeJS.Timeout | null = null;
-
-export function startSpawnSnapshotsRetentionScheduler(): void {
-  const enabled = String(process.env.PW_SPAWN_SNAPSHOT_RETENTION_ENABLED ?? "").trim();
-  const isEnabled = enabled === "1" || enabled.toLowerCase() === "true" || enabled.toLowerCase() === "yes";
-  if (!isEnabled) {
-    _spawnSnapshotsRetentionConfig = {
-      enabled: false,
-      intervalMinutes: 0,
-      dryRun: true,
-      includeArchived: false,
-      includePinned: false,
-      olderThanDays: 0,
-      runOnBoot: false,
-    };
-    return;
-  }
-
-  const intervalMinRaw = Number(process.env.PW_SPAWN_SNAPSHOT_RETENTION_INTERVAL_MINUTES ?? 60);
-  const intervalMin = Number.isFinite(intervalMinRaw) ? Math.max(1, Math.min(7 * 24 * 60, Math.floor(intervalMinRaw))) : 60;
-
-  const dryRunEnv = String(process.env.PW_SPAWN_SNAPSHOT_RETENTION_DRY_RUN ?? "1").trim().toLowerCase();
-  const dryRun = !(dryRunEnv === "0" || dryRunEnv === "false" || dryRunEnv === "no");
-
-  const includeArchivedEnv = String(process.env.PW_SPAWN_SNAPSHOT_RETENTION_INCLUDE_ARCHIVED ?? "").trim().toLowerCase();
-  const includeArchived = includeArchivedEnv === "1" || includeArchivedEnv === "true" || includeArchivedEnv === "yes";
-
-  const includePinnedEnv = String(process.env.PW_SPAWN_SNAPSHOT_RETENTION_INCLUDE_PINNED ?? "").trim().toLowerCase();
-  const includePinned = includePinnedEnv === "1" || includePinnedEnv === "true" || includePinnedEnv === "yes";
-
-  const olderThanDaysRaw = Number(process.env.PW_SPAWN_SNAPSHOT_RETENTION_ARCHIVED_OLDER_THAN_DAYS ?? 30);
-  const olderThanDays = Number.isFinite(olderThanDaysRaw) ? Math.max(0, Math.min(3650, Math.floor(olderThanDaysRaw))) : 30;
-
-  const runOnBootEnv = String(process.env.PW_SPAWN_SNAPSHOT_RETENTION_RUN_ON_BOOT ?? "").trim().toLowerCase();
-  const runOnBoot = runOnBootEnv === "1" || runOnBootEnv === "true" || runOnBootEnv === "yes";
-
-
-_spawnSnapshotsRetentionConfig = {
-  enabled: true,
-  intervalMinutes: intervalMin,
-  dryRun,
-  includeArchived,
-  includePinned,
-  olderThanDays,
-  runOnBoot,
-};
-
-  const opts: SpawnSnapshotsRetentionJobOptions = {
-    includeArchived,
-    includePinned,
-    olderThanDays,
-    dryRun,
-  };
-
-  const logPrefix = "[web-backend][snapshots][retention]";
-
-  const tick = async () => {
-    try {
-      const r = await runSpawnSnapshotsRetentionJob(opts);
-_spawnSnapshotsRetentionLastRunAt = new Date().toISOString();
-_spawnSnapshotsRetentionLastResult = r;
-
-      const mode = r.dryRun ? "DRY_RUN" : "DELETE";
-      console.log(
-        `${logPrefix} ${mode} candidates=${r.count} bytes=${r.bytes} skippedPinned=${r.skippedPinned} includeArchived=${r.includeArchived ? "1" : "0"} includePinned=${r.includePinned ? "1" : "0"} olderThanDays=${r.olderThanDays}`,
-      );
-      if (!r.dryRun && (r.deleted || r.failed)) {
-        console.log(`${logPrefix} deleted=${r.deleted ?? 0} failed=${r.failed ?? 0}`);
-      }
-    } catch (e: any) {
-      console.error(`${logPrefix} error`, e?.message || e);
-    }
-  };
-
-  if (runOnBoot) void tick();
-
-  if (_spawnSnapshotsRetentionTimer) clearInterval(_spawnSnapshotsRetentionTimer);
-  _spawnSnapshotsRetentionTimer = setInterval(() => void tick(), intervalMin * 60 * 1000);
-
-  console.log(`${logPrefix} enabled intervalMin=${intervalMin} dryRun=${dryRun ? "1" : "0"}`);
-}
 
 
 // POST /api/admin/spawn_points/restore
@@ -5170,7 +4633,6 @@ if (commit && expectedConfirmToken && confirm !== expectedConfirmToken) {
     }
 
 
-
 // Build a small diff/preview list for UI. (Truncated to avoid huge payloads.)
 const PREVIEW_LIMIT = 75;
 const trunc = (arr: string[]) => arr.slice(0, PREVIEW_LIMIT);
@@ -5560,5 +5022,7 @@ if (commit && expectedConfirmToken && confirm !== expectedConfirmToken) {
     } satisfies MotherBrainWipeResponse);
   }
 });
+
+export { startSpawnSnapshotsRetentionScheduler };
 
 export default router;
