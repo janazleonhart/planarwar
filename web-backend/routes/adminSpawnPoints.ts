@@ -32,12 +32,10 @@ import {
 import {
   addReasonExplainStep,
   buildSpawnSliceOpsPreview,
-  buildTownBaselineOpsPreview,
   makeReasonMaps,
   parseCellBounds,
   protectedReason,
   readOnlyReason,
-  summarizePlannedSpawns,
   toWorldBox,
   type AdminSummary,
   type DuplicateSnapshotResponse,
@@ -61,6 +59,10 @@ import {
   buildMotherBrainWipeOpsPreview,
   buildWipeListRows,
 } from "./adminSpawnPoints/motherBrainOps";
+import {
+  buildTownBaselineErrorResponse,
+  buildTownBaselineSuccessResponse,
+} from "./adminSpawnPoints/townBaselineResponses";
 import { db } from "../../worldcore/db/Database";
 import { clearSpawnPointCache } from "../../worldcore/world/SpawnPointCache";
 import { getSpawnAuthority, isSpawnEditable } from "../../worldcore/world/spawnAuthority";
@@ -2180,32 +2182,16 @@ router.post("/town_baseline/plan", async (req, res) => {
   try {
     const plan = await computeTownBaselinePlan(body);
 
-    const allPlannedSpawns = plan.planItems.map((p) => p.spawn);
-    const response: TownBaselinePlanResponse = {
+    const response: TownBaselinePlanResponse = buildTownBaselineSuccessResponse({
       kind: "town_baseline.plan",
-      summary: summarizePlannedSpawns(allPlannedSpawns),
-      ok: true,
-      shardId: plan.shardId,
-      bounds: plan.bounds,
-      cellSize: plan.cellSize,
-      seedBase: plan.seedBase,
-      spawnIdMode: plan.spawnIdMode,
-      includeStations: plan.includeStations,
-      respectTownTierStations: plan.respectTownTierStations,
-      townTierOverride: plan.townTierOverride,
-      wouldInsert: plan.wouldInsert,
-      wouldUpdate: plan.wouldUpdate,
-      wouldSkip: plan.wouldSkip,
-      skippedProtected: (plan).skippedProtected ?? 0,
-            opsPreview: buildTownBaselineOpsPreview(plan.planItems, isSpawnEditable),
-      plan: plan.planItems,
-    };
+      plan,
+      isSpawnEditable,
+    });
 
     return res.json(response);
   } catch (err: any) {
     const shardId = strOrNull(body.shardId) ?? "prime_shard";
-    const response: TownBaselinePlanResponse = {
-      ok: false,
+    const response: TownBaselinePlanResponse = buildTownBaselineErrorResponse({
       shardId,
       bounds: strOrNull(body.bounds) ?? "",
       cellSize: Number.isFinite(Number(body.cellSize)) ? Number(body.cellSize) : 64,
@@ -2215,7 +2201,7 @@ router.post("/town_baseline/plan", async (req, res) => {
       respectTownTierStations: body.respectTownTierStations === true,
       townTierOverride: body.townTierOverride != null ? numOrNull(body.townTierOverride) : null,
       error: String(err?.message ?? "internal_error"),
-    };
+    });
 
     return res.status(400).json(response);
   }
@@ -2232,27 +2218,11 @@ router.post("/town_baseline/apply", async (req, res) => {
     const plan = await computeTownBaselinePlan(body);
 
     if (!commit) {
-      const allPlannedSpawns = plan.planItems.map((p) => p.spawn);
-
-      const response: TownBaselinePlanResponse = {
+      const response: TownBaselinePlanResponse = buildTownBaselineSuccessResponse({
         kind: "town_baseline.apply",
-        summary: summarizePlannedSpawns(allPlannedSpawns),
-        ok: true,
-        shardId: plan.shardId,
-        bounds: plan.bounds,
-        cellSize: plan.cellSize,
-        seedBase: plan.seedBase,
-        spawnIdMode: plan.spawnIdMode,
-        includeStations: plan.includeStations,
-        respectTownTierStations: plan.respectTownTierStations,
-        townTierOverride: plan.townTierOverride,
-        wouldInsert: plan.wouldInsert,
-        wouldUpdate: plan.wouldUpdate,
-        wouldSkip: plan.wouldSkip,
-        skippedProtected: (plan).skippedProtected ?? 0,
-              opsPreview: buildTownBaselineOpsPreview(plan.planItems, isSpawnEditable),
-      plan: plan.planItems,
-      };
+        plan,
+        isSpawnEditable,
+      });
       return res.json(response);
     }
 
@@ -2365,27 +2335,18 @@ router.post("/town_baseline/apply", async (req, res) => {
 
     clearSpawnPointCache();
 
-    const allPlannedSpawns = plan.planItems.map((p) => p.spawn);
-    const response: TownBaselinePlanResponse = {
+    const response: TownBaselinePlanResponse = buildTownBaselineSuccessResponse({
       kind: "town_baseline.apply",
-      summary: summarizePlannedSpawns(allPlannedSpawns),
-      ok: true,
-      shardId: plan.shardId,
-      bounds: plan.bounds,
-      cellSize: plan.cellSize,
-      seedBase: plan.seedBase,
-      spawnIdMode: plan.spawnIdMode,
-      includeStations: plan.includeStations,
-      respectTownTierStations: plan.respectTownTierStations,
-      townTierOverride: plan.townTierOverride,
-      wouldInsert: inserted,
-      wouldUpdate: updated,
-      wouldSkip: skipped,
-      skippedReadOnly,
-      skippedProtected,
-            opsPreview: buildTownBaselineOpsPreview(plan.planItems, isSpawnEditable),
-      plan: plan.planItems,
-    };
+      plan,
+      isSpawnEditable,
+      counts: {
+        wouldInsert: inserted,
+        wouldUpdate: updated,
+        wouldSkip: skipped,
+        skippedReadOnly,
+        skippedProtected,
+      },
+    });
 
     return res.json(response);
   } catch (err: any) {
@@ -2396,8 +2357,7 @@ router.post("/town_baseline/apply", async (req, res) => {
     }
 
     const shardId = strOrNull(body.shardId) ?? "prime_shard";
-    const response: TownBaselinePlanResponse = {
-      ok: false,
+    const response: TownBaselinePlanResponse = buildTownBaselineErrorResponse({
       shardId,
       bounds: strOrNull(body.bounds) ?? "",
       cellSize: Number.isFinite(Number(body.cellSize)) ? Number(body.cellSize) : 64,
@@ -2407,7 +2367,7 @@ router.post("/town_baseline/apply", async (req, res) => {
       respectTownTierStations: body.respectTownTierStations === true,
       townTierOverride: body.townTierOverride != null ? numOrNull(body.townTierOverride) : null,
       error: String(err?.message ?? "internal_error"),
-    };
+    });
 
     return res.status(500).json(response);
   }
