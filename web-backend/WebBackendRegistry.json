@@ -694,7 +694,8 @@
         "worldcore:sim/TownBaselinePlanner",
         "worldcore:world/TownTierRules",
         "web-backend.routes.adminSpawnPoints.snapshotStore",
-        "web-backend.routes.adminSpawnPoints.snapshotRetention"
+        "web-backend.routes.adminSpawnPoints.snapshotRetention",
+        "web-backend.routes.adminSpawnPoints.opsPreview"
       ],
       "kind": "module",
       "lifecycle": "singleton",
@@ -717,7 +718,8 @@
         "GET /api/admin/spawn_points/snapshots supports query params: sort=(newest|oldest|name), tag=<tag>, q=<search>, limit=<n>.",
         "POST /api/admin/spawn_points/snapshots/save accepts optional metadata: tags (comma list or array) + notes (string).",
         "Adds /proto_options endpoint to supply resource + station protoId autocomplete options (decorated with item names when available).",
-        "Boundary cleanup slice 2a extracted snapshot storage/metadata helpers and retention scheduler into dedicated helper modules under routes/adminSpawnPoints/."
+        "Boundary cleanup slice 2a extracted snapshot storage/metadata helpers and retention scheduler into dedicated helper modules under routes/adminSpawnPoints/.",
+        "Boundary cleanup slice 2b extracted ops preview/reason helpers and Mother Brain bounds/response type helpers into routes/adminSpawnPoints/opsPreview.ts."
       ],
       "owns": [],
       "path": "web-backend/routes/adminSpawnPoints.ts",
@@ -1401,6 +1403,31 @@
         "getSpawnSnapshotsRetentionStatus()"
       ],
       "service": "spawnSnapshots.retention"
+    },
+    "web-backend.routes.adminSpawnPoints.opsPreview": {
+      "class": null,
+      "ctorArgs": [],
+      "dependsOn": [
+        "web-backend.routes.adminSpawnPoints.snapshotStore"
+      ],
+      "kind": "module",
+      "lifecycle": "singleton",
+      "notes": [
+        "Shared ops-preview, explainability, and response helper types for admin spawn point routes.",
+        "Encapsulates spawn/town-baseline preview shaping plus Mother Brain bounds parsing helpers.",
+        "Behavior-preserving extraction for boundary cleanup slice 2b."
+      ],
+      "owns": [],
+      "path": "web-backend/routes/adminSpawnPoints/opsPreview.ts",
+      "provides": [
+        "summarizePlannedSpawns()",
+        "buildSpawnSliceOpsPreview()",
+        "buildTownBaselineOpsPreview()",
+        "parseCellBounds()",
+        "toWorldBox()",
+        "reason/explainability helper types + builders"
+      ],
+      "service": "spawnPoints.opsPreview"
     }
   }
 }
