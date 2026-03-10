@@ -697,7 +697,8 @@
         "web-backend.routes.adminSpawnPoints.snapshotRetention",
         "web-backend.routes.adminSpawnPoints.opsPreview",
         "web-backend.routes.adminSpawnPoints.motherBrainOps",
-        "web-backend.routes.adminSpawnPoints.townBaselineResponses"
+        "web-backend.routes.adminSpawnPoints.townBaselineResponses",
+        "web-backend.routes.adminSpawnPoints.townBaselineApply"
       ],
       "kind": "module",
       "lifecycle": "singleton",
@@ -723,7 +724,8 @@
         "Boundary cleanup slice 2a extracted snapshot storage/metadata helpers and retention scheduler into dedicated helper modules under routes/adminSpawnPoints/.",
         "Boundary cleanup slice 2b extracted ops preview/reason helpers and Mother Brain bounds/response type helpers into routes/adminSpawnPoints/opsPreview.ts.",
         "Boundary cleanup slice 2c extracted Mother Brain wave/wipe preview shaping and protected-row preview helpers into routes/adminSpawnPoints/motherBrainOps.ts.",
-        "Boundary cleanup slice 2d extracted town baseline plan/apply response shaping into routes/adminSpawnPoints/townBaselineResponses.ts."
+        "Boundary cleanup slice 2d extracted town baseline plan/apply response shaping into routes/adminSpawnPoints/townBaselineResponses.ts.",
+        "Boundary cleanup slice 2e extracted town baseline apply mutation loop helpers into routes/adminSpawnPoints/townBaselineApply.ts."
       ],
       "owns": [],
       "path": "web-backend/routes/adminSpawnPoints.ts",
@@ -1369,6 +1371,25 @@
       "provides": [
         "buildTownBaselineSuccessResponse(...)",
         "buildTownBaselineErrorResponse(...)"
+      ],
+      "service": "admin.spawn_points"
+    },
+    "web-backend.routes.adminSpawnPoints.townBaselineApply": {
+      "class": null,
+      "ctorArgs": [],
+      "dependsOn": [
+        "worldcore:db/Database"
+      ],
+      "kind": "module",
+      "lifecycle": "static",
+      "notes": [
+        "Applies town baseline planner results inside a transaction and returns inserted/updated/skipped counters.",
+        "Boundary cleanup slice 2e extracted the apply mutation loop here so adminSpawnPoints.ts can focus on request validation and response assembly."
+      ],
+      "owns": [],
+      "path": "web-backend/routes/adminSpawnPoints/townBaselineApply.ts",
+      "provides": [
+        "applyTownBaselinePlan({ plan, isSpawnEditable })"
       ],
       "service": "admin.spawn_points"
     },

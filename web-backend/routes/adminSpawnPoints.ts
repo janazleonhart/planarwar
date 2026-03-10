@@ -63,6 +63,7 @@ import {
   buildTownBaselineErrorResponse,
   buildTownBaselineSuccessResponse,
 } from "./adminSpawnPoints/townBaselineResponses";
+import { applyTownBaselinePlan } from "./adminSpawnPoints/townBaselineApply";
 import { db } from "../../worldcore/db/Database";
 import { clearSpawnPointCache } from "../../worldcore/world/SpawnPointCache";
 import { getSpawnAuthority, isSpawnEditable } from "../../worldcore/world/spawnAuthority";
@@ -2226,112 +2227,10 @@ router.post("/town_baseline/apply", async (req, res) => {
       return res.json(response);
     }
 
-    let inserted = 0;
-    let updated = 0;
-    let skipped = 0;
-    let skippedReadOnly = 0;
-    let skippedProtected = 0;
-
-    await db.query("BEGIN");
-    try {
-      for (const item of plan.planItems) {
-        const sp = item.spawn;
-        const sid = String(sp.spawnId ?? "");
-
-        // Safety: never mutate brain-owned points.
-        if (!isSpawnEditable(sid)) {
-          skippedReadOnly += 1;
-          continue;
-        }
-
-        // Lock existing row by spawnId.
-        const lockRes = await db.query(
-          `
-          SELECT id, shard_id, spawn_id, type, archetype, proto_id, variant_id, x, y, z, region_id, town_tier, owner_kind, owner_id, is_locked
-          FROM spawn_points
-          WHERE shard_id = $1 AND spawn_id = $2
-          LIMIT 1
-          FOR UPDATE
-          `,
-          [plan.shardId, sid],
-        );
-
-        const ex = lockRes.rows?.[0];
-        if (!ex) {
-          await db.query(
-            `
-            INSERT INTO spawn_points
-              (shard_id, spawn_id, type, archetype, proto_id, variant_id, x, y, z, region_id, town_tier, owner_kind, source_kind, source_id)
-            VALUES
-              ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
-            `,
-            [
-              plan.shardId,
-              sid,
-              sp.type,
-              sp.archetype,
-              strOrNull(sp.protoId),
-              strOrNull(sp.variantId),
-              numOrNull(sp.x),
-              numOrNull(sp.y) ?? 0,
-              numOrNull(sp.z),
-              strOrNull(sp.regionId),
-              numOrNull(sp.townTier),
-              "baseline",
-              "town_baseline",
-              "planner",
-            ],
-          );
-          inserted += 1;
-          continue;
-        }
-
-        if (String(ex.owner_kind ?? "") === "editor" || Boolean(ex.is_locked)) {
-          skippedProtected += 1;
-          continue;
-        }
-
-        if (sameSpawnRow(ex, sp)) {
-          skipped += 1;
-          continue;
-        }
-
-        await db.query(
-          `
-          UPDATE spawn_points
-          SET type = $3,
-              archetype = $4,
-              proto_id = $5,
-              variant_id = $6,
-              x = $7,
-              y = $8,
-              z = $9,
-              region_id = $10,
-              town_tier = $11
-          WHERE shard_id = $1 AND id = $2
-          `,
-          [
-            plan.shardId,
-            Number(ex.id),
-            sp.type,
-            sp.archetype,
-            strOrNull(sp.protoId),
-            strOrNull(sp.variantId),
-            numOrNull(sp.x),
-            numOrNull(sp.y) ?? 0,
-            numOrNull(sp.z),
-            strOrNull(sp.regionId),
-            numOrNull(sp.townTier),
-          ],
-        );
-        updated += 1;
-      }
-
-      await db.query("COMMIT");
-    } catch (err) {
-      await db.query("ROLLBACK");
-      throw err;
-    }
+    const { inserted, updated, skipped, skippedReadOnly, skippedProtected } = await applyTownBaselinePlan({
+      plan,
+      isSpawnEditable,
+    });
 
     clearSpawnPointCache();
 
