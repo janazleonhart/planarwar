@@ -695,7 +695,8 @@
         "worldcore:world/TownTierRules",
         "web-backend.routes.adminSpawnPoints.snapshotStore",
         "web-backend.routes.adminSpawnPoints.snapshotRetention",
-        "web-backend.routes.adminSpawnPoints.opsPreview"
+        "web-backend.routes.adminSpawnPoints.opsPreview",
+        "web-backend.routes.adminSpawnPoints.motherBrainOps"
       ],
       "kind": "module",
       "lifecycle": "singleton",
@@ -719,7 +720,8 @@
         "POST /api/admin/spawn_points/snapshots/save accepts optional metadata: tags (comma list or array) + notes (string).",
         "Adds /proto_options endpoint to supply resource + station protoId autocomplete options (decorated with item names when available).",
         "Boundary cleanup slice 2a extracted snapshot storage/metadata helpers and retention scheduler into dedicated helper modules under routes/adminSpawnPoints/.",
-        "Boundary cleanup slice 2b extracted ops preview/reason helpers and Mother Brain bounds/response type helpers into routes/adminSpawnPoints/opsPreview.ts."
+        "Boundary cleanup slice 2b extracted ops preview/reason helpers and Mother Brain bounds/response type helpers into routes/adminSpawnPoints/opsPreview.ts.",
+        "Boundary cleanup slice 2c extracted Mother Brain wave/wipe preview shaping and protected-row preview helpers into routes/adminSpawnPoints/motherBrainOps.ts."
       ],
       "owns": [],
       "path": "web-backend/routes/adminSpawnPoints.ts",
@@ -1428,6 +1430,29 @@
         "reason/explainability helper types + builders"
       ],
       "service": "spawnPoints.opsPreview"
+    },
+    "web-backend.routes.adminSpawnPoints.motherBrainOps": {
+      "class": null,
+      "ctorArgs": [],
+      "dependsOn": [
+        "web-backend.routes.adminSpawnPoints.opsPreview"
+      ],
+      "kind": "module",
+      "lifecycle": "singleton",
+      "notes": [
+        "Shared Mother Brain wave/wipe preview shaping helpers for admin spawn point routes.",
+        "Encapsulates ops preview construction, protected-row preview tagging, and wipe list-row shaping.",
+        "Behavior-preserving extraction for boundary cleanup slice 2c."
+      ],
+      "owns": [],
+      "path": "web-backend/routes/adminSpawnPoints/motherBrainOps.ts",
+      "provides": [
+        "buildMotherBrainWaveOpsPreview()",
+        "buildMotherBrainWipeOpsPreview()",
+        "applyProtectedPreviewRows()",
+        "buildWipeListRows()"
+      ],
+      "service": "spawnPoints.motherBrainOps"
     }
   }
 }

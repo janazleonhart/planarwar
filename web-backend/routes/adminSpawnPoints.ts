@@ -33,7 +33,6 @@ import {
   addReasonExplainStep,
   buildSpawnSliceOpsPreview,
   buildTownBaselineOpsPreview,
-  makeProtectedReasonFromRow,
   makeReasonMaps,
   parseCellBounds,
   protectedReason,
@@ -56,6 +55,12 @@ import {
   type TownBaselineOpsPreview,
   type WorldBox,
 } from "./adminSpawnPoints/opsPreview";
+import {
+  applyProtectedPreviewRows,
+  buildMotherBrainWaveOpsPreview,
+  buildMotherBrainWipeOpsPreview,
+  buildWipeListRows,
+} from "./adminSpawnPoints/motherBrainOps";
 import { db } from "../../worldcore/db/Database";
 import { clearSpawnPointCache } from "../../worldcore/world/SpawnPointCache";
 import { getSpawnAuthority, isSpawnEditable } from "../../worldcore/world/spawnAuthority";
@@ -4225,82 +4230,15 @@ if (commit && expectedConfirmToken && confirm !== expectedConfirmToken) {
     }
 
 
-// Build a small diff/preview list for UI. (Truncated to avoid huge payloads.)
-const PREVIEW_LIMIT = 75;
-const trunc = (arr: string[]) => arr.slice(0, PREVIEW_LIMIT);
+const opsPreview: MotherBrainOpsPreview = buildMotherBrainWaveOpsPreview({
+  plannedActions: plannedActions as any[],
+  filteredActions: budgetFilter.filteredActions as any[],
+  effectiveExistingSpawnIds,
+  existingBrainSpawnIds,
+  append,
+  updateExisting,
+});
 
-const plannedAllSpawnIds: string[] = (plannedActions ?? [])
-  .map((a: any) => String(a?.spawn?.spawnId ?? ""))
-  .filter(Boolean);
-
-const filteredSpawnIds: string[] = (budgetFilter.filteredActions ?? [])
-  .filter((a: any) => a && a.kind === "place_spawn")
-  .map((a: any) => String(a?.spawn?.spawnId ?? ""))
-  .filter(Boolean);
-
-const uniq = (arr: string[]) => {
-  const out: string[] = [];
-  const seen = new Set<string>();
-  for (const x of arr) {
-    const k = String(x ?? "");
-    if (!k) continue;
-    if (seen.has(k)) continue;
-    seen.add(k);
-    out.push(k);
-  }
-  return out;
-};
-
-const filteredUnique = uniq(filteredSpawnIds);
-const plannedUnique = uniq(plannedAllSpawnIds);
-const filteredSet = new Set<string>(filteredUnique);
-
-const dupCounts = new Map<string, number>();
-for (const sid of filteredSpawnIds) dupCounts.set(sid, (dupCounts.get(sid) ?? 0) + 1);
-const duplicatePlannedSpawnIds = Array.from(dupCounts.entries())
-  .filter(([_, n]) => n > 1)
-  .map(([sid]) => sid)
-  .sort((a, b) => a.localeCompare(b));
-
-const insertSpawnIds: string[] = [];
-const updateSpawnIds: string[] = [];
-const skipSpawnIds: string[] = [];
-
-for (const sid of filteredUnique) {
-  const exists = effectiveExistingSpawnIds.has(sid);
-  if (exists) {
-    if (updateExisting) updateSpawnIds.push(sid);
-    else skipSpawnIds.push(sid);
-  } else {
-    insertSpawnIds.push(sid);
-  }
-}
-
-// "Dropped" means planned but not present after budget filtering (approx; duplicates collapse to uniq).
-const droppedPlannedSpawnIds = plannedUnique.filter((sid) => !filteredSet.has(sid));
-
-const deleteSpawnIds = !append
-  ? [...existingBrainSpawnIds].map((s: any) => String(s ?? "")).filter(Boolean).sort((a, b) => a.localeCompare(b))
-  : [];
-
-const opsPreview: MotherBrainOpsPreview = {
-  limit: PREVIEW_LIMIT,
-  truncated:
-    deleteSpawnIds.length > PREVIEW_LIMIT ||
-    insertSpawnIds.length > PREVIEW_LIMIT ||
-    updateSpawnIds.length > PREVIEW_LIMIT ||
-    skipSpawnIds.length > PREVIEW_LIMIT ||
-    duplicatePlannedSpawnIds.length > PREVIEW_LIMIT ||
-    droppedPlannedSpawnIds.length > PREVIEW_LIMIT,
-  deleteSpawnIds: deleteSpawnIds.length ? trunc(deleteSpawnIds) : undefined,
-  insertSpawnIds: insertSpawnIds.length ? trunc(insertSpawnIds) : undefined,
-  updateSpawnIds: updateSpawnIds.length ? trunc(updateSpawnIds) : undefined,
-  skipSpawnIds: skipSpawnIds.length ? trunc(skipSpawnIds) : undefined,
-  duplicatePlannedSpawnIds: duplicatePlannedSpawnIds.length ? trunc(duplicatePlannedSpawnIds) : undefined,
-  droppedPlannedSpawnIds: droppedPlannedSpawnIds.length ? trunc(droppedPlannedSpawnIds) : undefined,
-};
-
-    // Compute protected IDs (editor-owned or locked) for preview visibility.
     const protectIds = Array.from(new Set([...(opsPreview.deleteSpawnIds ?? []), ...(opsPreview.updateSpawnIds ?? [])]));
     if (protectIds.length) {
       const pr = await client.query(
@@ -4308,34 +4246,10 @@ const opsPreview: MotherBrainOpsPreview = {
         [shardId, protectIds],
       );
 
-      const explain = makeReasonMaps();
-      const pset = new Set<string>();
-      for (const r of pr.rows ?? []) {
-        const sid = String((r as any).spawn_id ?? "");
-        if (!sid) continue;
-        pset.add(sid);
-
-        addReasonExplainStep(
-          explain,
-          sid,
-          makeProtectedReasonFromRow(r),
-          "row is protected by ownership/lock rules",
-          { spawnId: sid, ownerKind: (r as any).owner_kind ?? null, isLocked: Boolean((r as any).is_locked) },
-        );
-      }
-
-      const pDel = (opsPreview.deleteSpawnIds ?? []).filter((id) => pset.has(String(id)));
-      const pUpd = (opsPreview.updateSpawnIds ?? []).filter((id) => pset.has(String(id)));
-      if (pDel.length) opsPreview.protectedDeleteSpawnIds = trunc(pDel);
-      if (pUpd.length) opsPreview.protectedUpdateSpawnIds = trunc(pUpd);
-      if (pDel.length > PREVIEW_LIMIT || pUpd.length > PREVIEW_LIMIT) opsPreview.truncated = true;
-
-      if (Object.keys(explain.reasons).length) {
-        (opsPreview as any).reasons = explain.reasons;
-        (opsPreview as any).reasonCounts = explain.reasonCounts;
-        (opsPreview as any).reasonDetails = explain.reasonDetails;
-        (opsPreview as any).reasonChains = explain.reasonChains;
-      }
+      applyProtectedPreviewRows({
+        opsPreview,
+        rows: (pr.rows ?? []) as Array<{ spawn_id?: unknown; owner_kind?: unknown; is_locked?: unknown }>,
+      });
     }
 
     const wouldDelete = append ? 0 : existingBrainIds.length;
@@ -4470,45 +4384,29 @@ router.post("/mother_brain/wipe", async (req, res) => {
       const selectedSpawnIds = (plan.selected ?? []).slice();
       selectedSpawnIds.sort((a, b) => a.localeCompare(b));
 
-      const ids: number[] = [];
-      const listRows: MotherBrainListRow[] = [];
-      for (const sid of selectedSpawnIds) {
-        const hit = bySpawnId.get(sid);
-        if (!hit) continue;
-        ids.push(hit.id);
-        if (wantList && listRows.length < limit) listRows.push(hit.row);
-      }
+      const { ids, listRows } = buildWipeListRows({
+        selectedSpawnIds,
+        bySpawnId,
+        wantList,
+        limit,
+      });
 
       const wouldDelete = ids.length;
       let deleted = 0;
 
+      const opsPreview: MotherBrainOpsPreview = buildMotherBrainWipeOpsPreview(selectedSpawnIds);
 
-const PREVIEW_LIMIT = 75;
-const deleteSpawnIds = selectedSpawnIds.slice();
-const opsPreview: MotherBrainOpsPreview = {
-  limit: PREVIEW_LIMIT,
-  truncated: deleteSpawnIds.length > PREVIEW_LIMIT,
-  deleteSpawnIds: deleteSpawnIds.length ? deleteSpawnIds.slice(0, PREVIEW_LIMIT) : undefined,
-};
-
-    // Compute protected IDs (editor-owned or locked) for preview visibility.
-    const protectIds = Array.from(new Set([...(opsPreview.deleteSpawnIds ?? []), ...(opsPreview.updateSpawnIds ?? [])]));
-    if (protectIds.length) {
-      const pr = await db.query(
-        `SELECT spawn_id, owner_kind, is_locked FROM spawn_points WHERE shard_id = $1 AND spawn_id = ANY($2::text[]) AND (is_locked = TRUE OR owner_kind = 'editor')`,
-        [shardId, protectIds],
-      );
-      const pset = new Set((pr.rows ?? []).map((r: any) => String(r.spawn_id)));
-      const pDel = (opsPreview.deleteSpawnIds ?? []).filter((id: any) => pset.has(String(id)));
-      const pUpd = (opsPreview.updateSpawnIds ?? []).filter((id: any) => pset.has(String(id)));
-      // Keep this inline (vs a helper) so this block can't ever end up
-      // below a const helper definition during future refactors.
-      if (pDel.length)
-        opsPreview.protectedDeleteSpawnIds = (pDel as any).slice(0, PREVIEW_LIMIT);
-      if (pUpd.length)
-        opsPreview.protectedUpdateSpawnIds = (pUpd as any).slice(0, PREVIEW_LIMIT);
-      if (pDel.length > PREVIEW_LIMIT || pUpd.length > PREVIEW_LIMIT) opsPreview.truncated = true;
-    }
+      const protectIds = Array.from(new Set([...(opsPreview.deleteSpawnIds ?? []), ...(opsPreview.updateSpawnIds ?? [])]));
+      if (protectIds.length) {
+        const pr = await db.query(
+          `SELECT spawn_id, owner_kind, is_locked FROM spawn_points WHERE shard_id = $1 AND spawn_id = ANY($2::text[]) AND (is_locked = TRUE OR owner_kind = 'editor')`,
+          [shardId, protectIds],
+        );
+        applyProtectedPreviewRows({
+          opsPreview,
+          rows: (pr.rows ?? []) as Array<{ spawn_id?: unknown; owner_kind?: unknown; is_locked?: unknown }>,
+        });
+      }
 
 
 const expectedConfirmToken =
