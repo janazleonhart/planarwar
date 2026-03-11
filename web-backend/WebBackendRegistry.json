@@ -710,7 +710,8 @@
         "web-backend.routes.adminSpawnPoints.snapshotQueryFilters",
         "web-backend.routes.adminSpawnPoints.snapshotRequestParsers",
         "web-backend.routes.adminSpawnPoints.snapshotCaptureOps",
-        "web-backend.routes.adminSpawnPoints.restoreRequestOps"
+        "web-backend.routes.adminSpawnPoints.restoreRequestOps",
+        "web-backend.routes.adminSpawnPoints.motherBrainStatusOps"
       ],
       "kind": "module",
       "lifecycle": "singleton",
@@ -747,7 +748,8 @@
         "Boundary cleanup slice 2o extracted shared spawn-point query filter/list/snapshot row helpers into routes/adminSpawnPoints/snapshotQueryFilters.ts.",
         "Boundary cleanup slice 2p extracted shared snapshot/list request parsing and limit normalization helpers into routes/adminSpawnPoints/snapshotRequestParsers.ts.",
         "Boundary cleanup slice 2q extracted DB-backed snapshot capture and stored snapshot document assembly helpers into routes/adminSpawnPoints/snapshotCaptureOps.ts.",
-        "Boundary cleanup slice 2r extracted restore request parsing and confirm-gate response helpers into routes/adminSpawnPoints/restoreRequestOps.ts."
+        "Boundary cleanup slice 2r extracted restore request parsing and confirm-gate response helpers into routes/adminSpawnPoints/restoreRequestOps.ts.",
+        "Boundary cleanup slice 2s extracted Mother Brain status request parsing and summary/list shaping into motherBrainStatusOps.ts."
       ],
       "owns": [],
       "path": "web-backend/routes/adminSpawnPoints.ts",
@@ -1858,6 +1860,30 @@
         "buildRestoreConfirmTokenError()"
       ],
       "service": "admin.spawnPoints.restoreRequestOps"
+    },
+    "web-backend.routes.adminSpawnPoints.motherBrainStatusOps": {
+      "class": null,
+      "ctorArgs": [],
+      "dependsOn": [
+        "web-backend.routes.adminSpawnPoints.opsPreview"
+      ],
+      "kind": "module",
+      "lifecycle": "static",
+      "notes": [
+        "Mother Brain status request parsing and response-shaping helpers extracted from adminSpawnPoints.ts.",
+        "Encapsulates bounds/list/theme/epoch normalization plus filtered status summary/list payload construction.",
+        "Behavior-preserving extraction for boundary cleanup slice 2s."
+      ],
+      "owns": [
+        "Mother Brain status request normalization",
+        "Mother Brain status summary and list shaping"
+      ],
+      "path": "web-backend/routes/adminSpawnPoints/motherBrainStatusOps.ts",
+      "provides": [
+        "parseMotherBrainStatusRequest(query)",
+        "buildMotherBrainStatusResponse(args)"
+      ],
+      "service": "admin.spawn_points"
     }
   }
 }

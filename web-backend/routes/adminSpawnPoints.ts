@@ -77,6 +77,10 @@ import {
   parseRestoreRequest,
 } from "./adminSpawnPoints/restoreRequestOps";
 import {
+  buildMotherBrainStatusResponse,
+  parseMotherBrainStatusRequest,
+} from "./adminSpawnPoints/motherBrainStatusOps";
+import {
   deleteEditableSpawnPoints,
   moveEditableSpawnPoints,
 } from "./adminSpawnPoints/bulkMutationOps";
@@ -1709,37 +1713,6 @@ router.post("/town_baseline/apply", async (req, res) => {
 // Mother Brain façade endpoints
 // ------------------------------
 
-function isBrainSpawnId(spawnId: string): boolean {
-  return spawnId.startsWith("brain:");
-}
-
-function parseBrainSpawnId(spawnId: string): { epoch: number | null; theme: string | null } {
-  // We *prefer* the canonical format:
-  //   brain:<epoch>:<theme>:...
-  // ...but older/experimental branches sometimes emitted:
-  //   brain:<theme>:<epoch>:...
-  // or even:
-  //   brain:<theme>:...
-  const parts = spawnId.split(":");
-  if (parts.length < 2) return { epoch: null, theme: null };
-
-  const a = parts[1] ?? null;
-  const b = parts[2] ?? null;
-
-  const epochA = Number(a);
-  if (Number.isFinite(epochA)) {
-    return { epoch: epochA, theme: b };
-  }
-
-  const epochB = Number(b);
-  if (Number.isFinite(epochB)) {
-    return { epoch: epochB, theme: a };
-  }
-
-  // Fall back: brain:<theme>:...
-  return { epoch: null, theme: a };
-}
-
 // ------------------------------
 // Snapshot / Restore spawn slices (admin UX)
 // ------------------------------
@@ -2380,17 +2353,7 @@ router.post("/restore", async (req, res) => {
 
 router.get("/mother_brain/status", async (req, res) => {
   try {
-    const shardId = strOrNull(req.query.shardId) ?? "prime_shard";
-    const bounds = strOrNull(req.query.bounds) ?? "-1..1,-1..1";
-    const cellSize = Number(req.query.cellSize ?? 64);
-    const themeQ = strOrNull(req.query.theme);
-    const epochQ = strOrNull(req.query.epoch);
-    const listRaw = String(req.query.list ?? "").trim().toLowerCase();
-    const wantList = listRaw === "true" || listRaw === "1" || listRaw === "yes" || listRaw === "y";
-    const limit = Math.max(1, Math.min(200, Number(req.query.limit ?? 15)));
-
-    const parsedBounds = parseCellBounds(bounds);
-    const box = toWorldBox(parsedBounds, Number.isFinite(cellSize) ? cellSize : 64, 0);
+    const request = parseMotherBrainStatusRequest((req.query ?? {}) as Record<string, unknown>);
 
     const rowsRes = await db.query(
       `
@@ -2401,72 +2364,15 @@ router.get("/mother_brain/status", async (req, res) => {
         AND x >= $2 AND x <= $3
         AND z >= $4 AND z <= $5
       `,
-      [shardId, box.minX, box.maxX, box.minZ, box.maxZ],
+      [request.shardId, request.box.minX, request.box.maxX, request.box.minZ, request.box.maxZ],
     );
 
-    const byTheme: Record<string, number> = {};
-    const byEpoch: Record<string, number> = {};
-    const byType: Record<string, number> = {};
-    const topProto: Record<string, number> = {};
-
-    const filtered = (rowsRes.rows ?? []).filter((r: any) => {
-      const sid = String(r.spawn_id ?? "");
-      if (!isBrainSpawnId(sid)) return false;
-      const meta = parseBrainSpawnId(sid);
-      if (themeQ && meta.theme !== themeQ) return false;
-      if (epochQ != null) {
-        const want = Number(epochQ);
-        if (Number.isFinite(want) && meta.epoch !== want) return false;
-      }
-      return true;
-    });
-
-    for (const r of filtered) {
-      const sid = String(r.spawn_id ?? "");
-      const meta = parseBrainSpawnId(sid);
-      const tTheme = meta.theme ?? "(unknown)";
-      const tEpoch = meta.epoch != null ? String(meta.epoch) : "(unknown)";
-      const tType = String(r.type ?? "(unknown)");
-      const tProto = String(r.proto_id ?? "(none)");
-
-      byTheme[tTheme] = (byTheme[tTheme] ?? 0) + 1;
-      byEpoch[tEpoch] = (byEpoch[tEpoch] ?? 0) + 1;
-      byType[tType] = (byType[tType] ?? 0) + 1;
-      topProto[tProto] = (topProto[tProto] ?? 0) + 1;
-    }
-
-    const response: MotherBrainStatusResponse = {
-      kind: "mother_brain.status",
-      summary: { total: filtered.length, byType, byProtoId: topProto },
-      ok: true,
-      shardId,
-      bounds,
-      cellSize: Number.isFinite(cellSize) ? cellSize : 64,
-      theme: themeQ ?? null,
-      epoch: epochQ != null && Number.isFinite(Number(epochQ)) ? Number(epochQ) : null,
-      total: filtered.length,
-      box,
-      byTheme,
-      byEpoch,
-      byType,
-      topProto,
-    };
-
-    if (wantList) {
-      const list: MotherBrainListRow[] = filtered
-        .slice()
-        .sort((a: any, b: any) => String(a.spawn_id ?? "").localeCompare(String(b.spawn_id ?? "")))
-        .slice(0, limit)
-        .map((r: any) => ({
-          spawnId: String(r.spawn_id ?? ""),
-          type: String(r.type ?? ""),
-          protoId: strOrNull(r.proto_id),
-          regionId: strOrNull(r.region_id),
-        }));
-      response.list = list;
-    }
-
-    res.json(response);
+    res.json(
+      buildMotherBrainStatusResponse({
+        rows: rowsRes.rows ?? [],
+        request,
+      }),
+    );
   } catch (err: any) {
     console.error("[ADMIN/SPAWN_POINTS] mother_brain/status error", err);
     res.status(400).json({ ok: false, error: String(err?.message ?? "bad_request") });
