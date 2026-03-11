@@ -11,7 +11,6 @@ import {
   coerceExpiresAt,
   coerceSnapshotSpawns,
   ensureSnapshotDir,
-  isExpired,
   listStoredSnapshots,
   makeSnapshotId,
   metaFromStoredDoc,
@@ -23,12 +22,18 @@ import {
   type SnapshotSpawnRow,
   type SpawnSliceSnapshot,
   type StoredSpawnSnapshotDoc,
-  type StoredSpawnSnapshotMeta,
 } from "./adminSpawnPoints/snapshotStore";
 import {
   getSpawnSnapshotsRetentionStatus,
   startSpawnSnapshotsRetentionScheduler,
 } from "./adminSpawnPoints/snapshotRetention";
+import {
+  buildSnapshotBulkDeletePlan,
+  buildSnapshotPurgePlan,
+  deleteSnapshotFile,
+  deleteSnapshotFiles,
+  prepareSnapshotDeleteConfirm,
+} from "./adminSpawnPoints/snapshotDeleteOps";
 import {
   buildSnapshotFromQuery,
   buildUpdatedSnapshotDoc,
@@ -2940,19 +2945,7 @@ router.delete("/snapshots/:id", async (req, res) => {
     // This avoids accidental deletes from mis-clicks or stale UI state.
     const confirm = String((req.query as any)?.confirm ?? "").trim() || null;
 
-    const dir = await ensureSnapshotDir();
-    const file = path.join(dir, `${id}.json`);
-
-    // Compute a deterministic token based on the current on-disk snapshot.
-    // If the file changes between preview and commit, the token changes.
-    const stat = await fs.stat(file);
-    const raw = await fs.readFile(file, "utf8");
-    const parsed = JSON.parse(raw) as Partial<StoredSpawnSnapshotDoc>;
-    const savedAt = String((parsed as any)?.savedAt ?? "");
-    const expectedConfirmToken = createHash("sha256")
-      .update(`snapdel:v1:${id}:${savedAt}:${stat.size}`)
-      .digest("hex")
-      .slice(0, 20);
+    const { expectedConfirmToken } = await prepareSnapshotDeleteConfirm(id);
 
     if (!confirm || confirm !== expectedConfirmToken) {
       return res.status(409).json({
@@ -2964,7 +2957,7 @@ router.delete("/snapshots/:id", async (req, res) => {
       });
     }
 
-    await fs.unlink(file);
+    await deleteSnapshotFile(id);
 
     return res.json({ kind: "spawn_points.snapshots.delete", ok: true, id });
   } catch (err: any) {
@@ -3005,121 +2998,63 @@ router.post("/snapshots/bulk_delete", async (req, res) => {
       return res.status(400).json({ kind: "spawn_points.snapshots.bulk_delete", ok: false, error: "missing_ids" });
     }
 
-    // Compute current candidates from disk state.
-    const nowMs = Date.now();
-    const metas = await listStoredSnapshots();
-    const metaById = new Map<string, StoredSpawnSnapshotMeta>();
-    for (const m of metas) metaById.set(String(m.id), m);
-
-    const missingIds: string[] = [];
-    const candidate: StoredSpawnSnapshotMeta[] = [];
-    let skippedPinned = 0;
-    let activeCount = 0;
-
-    for (const id of ids) {
-      const m = metaById.get(id);
-      if (!m) {
-        missingIds.push(id);
-        continue;
-      }
-
-      if (!includePinned && Boolean((m as any).isPinned)) {
-        skippedPinned += 1;
-        continue;
-      }
-
-      const expired = isExpired((m as any).expiresAt, nowMs);
-      const archived = Boolean((m as any).isArchived);
-      if (!expired && !archived) activeCount += 1;
-
-      candidate.push(m);
-    }
-
-    const candidateIds = candidate.map((m) => String(m.id)).sort((a, b) => a.localeCompare(b));
-    const totalBytes = candidate.reduce((acc, m) => acc + Number((m as any).bytes ?? 0), 0);
-
-    // Confirm-token is a function of the *current* on-disk metadata for the candidate set.
-    // If anything changes between preview and commit (even file size), the token changes.
-    const tokenMaterial = candidate
-      .slice()
-      .sort((a, b) => String(a.id).localeCompare(String(b.id)))
-      .map((m) => `${m.id}:${String((m as any).savedAt ?? "")}:${Number((m as any).bytes ?? 0)}`)
-      .join("|");
-
-    const token = createHash("sha1")
-      .update(`bulkdel|${includePinned ? "P" : "p"}|${tokenMaterial}|missing:${missingIds.length}|active:${activeCount}`)
-      .digest("hex")
-      .slice(0, 10)
-      .toUpperCase();
-
+    const plan = await buildSnapshotBulkDeletePlan({ ids, includePinned });
     if (!commit) {
       return res.json({
         kind: "spawn_points.snapshots.bulk_delete",
         ok: true,
         commit: false,
-        includePinned,
-        requested: ids.length,
-        found: ids.length - missingIds.length,
-        missing: missingIds.length,
-        missingIds: missingIds.slice(0, 250),
-        skippedPinned,
-        activeCount,
-        count: candidateIds.length,
-        bytes: totalBytes,
-        ids: candidateIds,
-        confirmToken: token,
+        includePinned: plan.includePinned,
+        requested: plan.requested,
+        found: plan.found,
+        missing: plan.missing,
+        missingIds: plan.missingIds.slice(0, 250),
+        skippedPinned: plan.skippedPinned,
+        activeCount: plan.activeCount,
+        count: plan.count,
+        bytes: plan.bytes,
+        ids: plan.ids,
+        confirmToken: plan.confirmToken,
       });
     }
 
-    if (!confirm || confirm !== token) {
+    if (!confirm || confirm !== plan.confirmToken) {
       return res.status(400).json({
         kind: "spawn_points.snapshots.bulk_delete",
         ok: false,
         commit: true,
         requiresConfirm: true,
-        includePinned,
-        requested: ids.length,
-        found: ids.length - missingIds.length,
-        missing: missingIds.length,
-        missingIds: missingIds.slice(0, 250),
-        skippedPinned,
-        activeCount,
-        count: candidateIds.length,
-        bytes: totalBytes,
-        ids: candidateIds.slice(0, 250),
-        confirmToken: token,
+        includePinned: plan.includePinned,
+        requested: plan.requested,
+        found: plan.found,
+        missing: plan.missing,
+        missingIds: plan.missingIds.slice(0, 250),
+        skippedPinned: plan.skippedPinned,
+        activeCount: plan.activeCount,
+        count: plan.count,
+        bytes: plan.bytes,
+        ids: plan.ids.slice(0, 250),
+        confirmToken: plan.confirmToken,
       });
     }
 
-    const dir = await ensureSnapshotDir();
-    let deleted = 0;
-    let failed = 0;
-
-    for (const id of candidateIds) {
-      const file = path.join(dir, `${id}.json`);
-      try {
-        await fs.unlink(file);
-        deleted += 1;
-      } catch (e: any) {
-        failed += 1;
-      }
-    }
+    const { deleted, failed } = await deleteSnapshotFiles(plan.ids);
 
     return res.json({
       kind: "spawn_points.snapshots.bulk_delete",
       ok: true,
       commit: true,
-      includePinned,
-      requested: ids.length,
-      found: ids.length - missingIds.length,
-      missing: missingIds.length,
-      missingIds: missingIds.slice(0, 250),
-      skippedPinned,
-      activeCount,
+      includePinned: plan.includePinned,
+      requested: plan.requested,
+      found: plan.found,
+      missing: plan.missing,
+      missingIds: plan.missingIds.slice(0, 250),
+      skippedPinned: plan.skippedPinned,
+      activeCount: plan.activeCount,
       deleted,
       failed,
-      bytes: totalBytes,
-      ids: candidateIds.slice(0, 250),
+      bytes: plan.bytes,
+      ids: plan.ids.slice(0, 250),
     });
   } catch (err: any) {
     console.error("[ADMIN/SPAWN_POINTS] snapshots bulk_delete error", err);
@@ -3149,99 +3084,54 @@ router.post("/snapshots/purge", async (req, res) => {
 
     const confirm = String(req.body?.confirm ?? "").trim() || null;
 
-    // We intentionally compute candidates from current disk state each time.
-    const nowMs = Date.now();
-    const metas = await listStoredSnapshots();
-    const candidates: StoredSpawnSnapshotMeta[] = [];
-    let skippedPinned = 0;
-
-    for (const m of metas) {
-      if (!includePinned && Boolean((m as any).isPinned)) {
-        skippedPinned += 1;
-        continue;
-      }
-
-      const expired = isExpired((m as any).expiresAt, nowMs);
-      if (expired) {
-        candidates.push(m);
-        continue;
-      }
-
-      if (includeArchived && Boolean((m as any).isArchived)) {
-        const savedAtMs = new Date(String((m as any).savedAt ?? "")).getTime();
-        const ageDays = Number.isFinite(savedAtMs) ? Math.floor((nowMs - savedAtMs) / (24 * 60 * 60 * 1000)) : 999999;
-        if (ageDays >= olderThanDays) candidates.push(m);
-      }
-    }
-
-    const ids = candidates.map((c) => c.id).sort((a, b) => a.localeCompare(b));
-    const totalBytes = candidates.reduce((acc, c) => acc + Number((c as any).bytes ?? 0), 0);
-
-    const token = createHash("sha1")
-      .update(`purge|${includeArchived ? "A" : "a"}|${includePinned ? "P" : "p"}|${olderThanDays}|${ids.join(",")}`)
-      .digest("hex")
-      .slice(0, 10)
-      .toUpperCase();
-
+    const plan = await buildSnapshotPurgePlan({ includeArchived, includePinned, olderThanDays });
     if (!commit) {
       return res.json({
         kind: "spawn_points.snapshots.purge",
         ok: true,
         commit: false,
-        includeArchived,
-        includePinned,
-        olderThanDays,
-        skippedPinned,
-        count: ids.length,
-        bytes: totalBytes,
-        ids,
-        confirmToken: token,
+        includeArchived: plan.includeArchived,
+        includePinned: plan.includePinned,
+        olderThanDays: plan.olderThanDays,
+        skippedPinned: plan.skippedPinned,
+        count: plan.count,
+        bytes: plan.bytes,
+        ids: plan.ids,
+        confirmToken: plan.confirmToken,
       });
     }
 
-    if (!confirm || confirm !== token) {
+    if (!confirm || confirm !== plan.confirmToken) {
       return res.status(400).json({
         kind: "spawn_points.snapshots.purge",
         ok: false,
         commit: true,
         requiresConfirm: true,
-        includeArchived,
-        includePinned,
-        olderThanDays,
-        skippedPinned,
-        count: ids.length,
-        bytes: totalBytes,
-        ids: ids.slice(0, 250),
-        confirmToken: token,
+        includeArchived: plan.includeArchived,
+        includePinned: plan.includePinned,
+        olderThanDays: plan.olderThanDays,
+        skippedPinned: plan.skippedPinned,
+        count: plan.count,
+        bytes: plan.bytes,
+        ids: plan.ids.slice(0, 250),
+        confirmToken: plan.confirmToken,
       });
     }
 
-    const dir = await ensureSnapshotDir();
-    let deleted = 0;
-    let failed = 0;
-
-    for (const id of ids) {
-      const file = path.join(dir, `${id}.json`);
-      try {
-        await fs.unlink(file);
-        deleted += 1;
-      } catch (e: any) {
-        failed += 1;
-      }
-    }
+    const { deleted, failed } = await deleteSnapshotFiles(plan.ids);
 
     return res.json({
       kind: "spawn_points.snapshots.purge",
       ok: true,
       commit: true,
-      includeArchived,
-      includePinned,
-      olderThanDays,
-      skippedPinned,
+      includeArchived: plan.includeArchived,
+      includePinned: plan.includePinned,
+      olderThanDays: plan.olderThanDays,
+      skippedPinned: plan.skippedPinned,
       deleted,
       failed,
-      bytes: totalBytes,
-      ids: ids.slice(0, 250),
+      bytes: plan.bytes,
+      ids: plan.ids.slice(0, 250),
     });
   } catch (err: any) {
     console.error("[ADMIN/SPAWN_POINTS] snapshots purge error", err);

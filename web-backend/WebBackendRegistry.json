@@ -699,7 +699,9 @@
         "web-backend.routes.adminSpawnPoints.motherBrainOps",
         "web-backend.routes.adminSpawnPoints.townBaselineResponses",
         "web-backend.routes.adminSpawnPoints.townBaselineApply",
-        "web-backend.routes.adminSpawnPoints.restoreSnapshot"
+        "web-backend.routes.adminSpawnPoints.restoreSnapshot",
+        "web-backend.routes.adminSpawnPoints.snapshotResponses",
+        "web-backend.routes.adminSpawnPoints.snapshotDeleteOps"
       ],
       "kind": "module",
       "lifecycle": "singleton",
@@ -727,7 +729,9 @@
         "Boundary cleanup slice 2c extracted Mother Brain wave/wipe preview shaping and protected-row preview helpers into routes/adminSpawnPoints/motherBrainOps.ts.",
         "Boundary cleanup slice 2d extracted town baseline plan/apply response shaping into routes/adminSpawnPoints/townBaselineResponses.ts.",
         "Boundary cleanup slice 2e extracted town baseline apply mutation loop helpers into routes/adminSpawnPoints/townBaselineApply.ts.",
-        "Boundary cleanup slice 2f extracted snapshot restore preload/planning/apply helpers into routes/adminSpawnPoints/restoreSnapshot.ts."
+        "Boundary cleanup slice 2f extracted snapshot restore preload/planning/apply helpers into routes/adminSpawnPoints/restoreSnapshot.ts.",
+        "Boundary cleanup slice 2g extracted snapshot query/save/list/update response shaping into routes/adminSpawnPoints/snapshotResponses.ts.",
+        "Boundary cleanup slice 2h extracted snapshot delete/bulk-delete/purge confirm-token planning and file deletion helpers into routes/adminSpawnPoints/snapshotDeleteOps.ts."
       ],
       "owns": [],
       "path": "web-backend/routes/adminSpawnPoints.ts",
@@ -1551,6 +1555,37 @@
         "buildUpdatedSnapshotDoc(args)"
       ],
       "service": "admin.spawnPoints.snapshotResponses"
+    },
+    "web-backend.routes.adminSpawnPoints.snapshotDeleteOps": {
+      "class": null,
+      "ctorArgs": [],
+      "dependsOn": [
+        "node:crypto",
+        "node:fs",
+        "node:path",
+        "web-backend.routes.adminSpawnPoints.snapshotStore"
+      ],
+      "kind": "module",
+      "lifecycle": "static",
+      "notes": [
+        "Shared snapshot delete, bulk-delete, and purge planning/apply helpers for admin spawn snapshot routes.",
+        "Encapsulates confirm-token generation, candidate selection from current disk metadata, and file delete loops.",
+        "Behavior-preserving extraction for boundary cleanup slice 2h."
+      ],
+      "owns": [
+        "Snapshot delete confirm-token helpers",
+        "Snapshot bulk-delete preview/commit planning helpers",
+        "Snapshot purge preview/commit planning helpers"
+      ],
+      "path": "web-backend/routes/adminSpawnPoints/snapshotDeleteOps.ts",
+      "provides": [
+        "prepareSnapshotDeleteConfirm(id)",
+        "deleteSnapshotFile(id)",
+        "buildSnapshotBulkDeletePlan(args)",
+        "buildSnapshotPurgePlan(args)",
+        "deleteSnapshotFiles(ids)"
+      ],
+      "service": "admin.spawnPoints.snapshotDeleteOps"
     }
   }
 }
