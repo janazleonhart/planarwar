@@ -702,7 +702,10 @@
         "web-backend.routes.adminSpawnPoints.restoreSnapshot",
         "web-backend.routes.adminSpawnPoints.snapshotResponses",
         "web-backend.routes.adminSpawnPoints.snapshotDeleteOps",
-        "web-backend.routes.adminSpawnPoints.snapshotWriteOps"
+        "web-backend.routes.adminSpawnPoints.snapshotWriteOps",
+        "web-backend.routes.adminSpawnPoints.bulkMutationOps",
+        "web-backend.routes.adminSpawnPoints.bulkOwnershipOps",
+        "web-backend.routes.adminSpawnPoints.singleOwnershipOps"
       ],
       "kind": "module",
       "lifecycle": "singleton",
@@ -733,7 +736,8 @@
         "Boundary cleanup slice 2f extracted snapshot restore preload/planning/apply helpers into routes/adminSpawnPoints/restoreSnapshot.ts.",
         "Boundary cleanup slice 2g extracted snapshot query/save/list/update response shaping into routes/adminSpawnPoints/snapshotResponses.ts.",
         "Boundary cleanup slice 2h extracted snapshot delete/bulk-delete/purge confirm-token planning and file deletion helpers into routes/adminSpawnPoints/snapshotDeleteOps.ts.",
-        "Boundary cleanup slice 2i extracted snapshot update/duplicate write-path helpers into routes/adminSpawnPoints/snapshotWriteOps.ts."
+        "Boundary cleanup slice 2i extracted snapshot update/duplicate write-path helpers into routes/adminSpawnPoints/snapshotWriteOps.ts.",
+        "Boundary cleanup slice 2m extracted single-row adopt/release/lock/unlock helpers into routes/adminSpawnPoints/singleOwnershipOps.ts."
       ],
       "owns": [],
       "path": "web-backend/routes/adminSpawnPoints.ts",
@@ -1689,6 +1693,32 @@
         "buildWhereFromQueryFilters(args)",
         "planBulkOwnershipAction(args)",
         "applyBulkOwnershipAction(args)"
+      ],
+      "service": "admin.spawn_points"
+    },
+    "web-backend.routes.adminSpawnPoints.singleOwnershipOps": {
+      "class": null,
+      "ctorArgs": [],
+      "dependsOn": [
+        "worldcore.db.Database",
+        "web-backend.routes.adminSpawnPoints"
+      ],
+      "kind": "module",
+      "lifecycle": "static",
+      "notes": [
+        "Shared single-row ownership/adopt/release/lock/unlock helpers extracted from adminSpawnPoints.ts.",
+        "Encapsulates row lookup, default owner-kind fallback for release, and single-row ownership/lock mutation SQL.",
+        "Behavior-preserving extraction for boundary cleanup slice 2m."
+      ],
+      "owns": [
+        "Single-row ownership lookup helpers",
+        "Single-row adopt/release/lock/unlock mutation helpers"
+      ],
+      "path": "web-backend/routes/adminSpawnPoints/singleOwnershipOps.ts",
+      "provides": [
+        "readSpawnPointRowById(id)",
+        "computeDefaultOwnerKindForSpawnId(spawnId)",
+        "applySingleOwnershipAction(args)"
       ],
       "service": "admin.spawn_points"
     }

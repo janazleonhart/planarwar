@@ -90,6 +90,11 @@ import {
   type BulkOwnershipQueryRequest,
   type BulkOwnershipQueryResponse,
 } from "./adminSpawnPoints/bulkOwnershipOps";
+import {
+  applySingleOwnershipAction,
+  readSpawnPointRowById,
+  type SpawnOwnerKind,
+} from "./adminSpawnPoints/singleOwnershipOps";
 import { db } from "../../worldcore/db/Database";
 import { clearSpawnPointCache } from "../../worldcore/world/SpawnPointCache";
 import { getSpawnAuthority, isSpawnEditable } from "../../worldcore/world/spawnAuthority";
@@ -107,8 +112,6 @@ import { getStationProtoIdsForTier } from "../../worldcore/world/TownTierRules";
 const router = Router();
 
 type SpawnAuthority = "anchor" | "seed" | "brain" | "manual";
-
-type SpawnOwnerKind = "brain" | "baseline" | "editor" | "system";
 
 type AdminSpawnPoint = {
   id?: number | null;
@@ -676,41 +679,6 @@ type OwnershipUpdateResponse = {
   error?: string;
 };
 
-async function readSpawnPointRowById(id: number): Promise<any | null> {
-  const r = await db.query(
-    `
-    SELECT
-      id,
-      shard_id,
-      spawn_id,
-      type,
-      archetype,
-      proto_id,
-      variant_id,
-      x,
-      y,
-      z,
-      region_id,
-      town_tier,
-      owner_kind,
-      owner_id,
-      is_locked
-    FROM spawn_points
-    WHERE id = $1
-    LIMIT 1
-    `,
-    [id],
-  );
-  return r.rows?.[0] ?? null;
-}
-
-function computeDefaultOwnerKindForSpawnId(spawnId: string): SpawnOwnerKind | null {
-  const sid = String(spawnId ?? "").trim().toLowerCase();
-  if (sid.startsWith("seed:")) return "baseline";
-  if (sid.startsWith("brain:")) return "brain";
-  return null;
-}
-
 // POST /api/admin/spawn_points/:id/adopt
 // Body: { ownerId?: string }
 router.post("/:id/adopt", async (req, res) => {
@@ -728,17 +696,7 @@ router.post("/:id/adopt", async (req, res) => {
     }
 
     // Locked rows can still be adopted (ownership is metadata), but remain protected by the lock.
-    await db.query(
-      `
-      UPDATE spawn_points
-      SET
-        owner_kind = 'editor',
-        owner_id = $2,
-        updated_at = NOW()
-      WHERE id = $1
-      `,
-      [id, ownerId],
-    );
+    await applySingleOwnershipAction({ id, action: "adopt", ownerId });
 
     const updated = await readSpawnPointRowById(id);
     clearSpawnPointCache();
@@ -764,19 +722,7 @@ router.post("/:id/release", async (req, res) => {
     }
 
     const spawnId = String(found.spawn_id ?? "");
-    const nextOwner = computeDefaultOwnerKindForSpawnId(spawnId);
-
-    await db.query(
-      `
-      UPDATE spawn_points
-      SET
-        owner_kind = $2,
-        owner_id = NULL,
-        updated_at = NOW()
-      WHERE id = $1
-      `,
-      [id, nextOwner],
-    );
+    await applySingleOwnershipAction({ id, action: "release", spawnId });
 
     const updated = await readSpawnPointRowById(id);
     clearSpawnPointCache();
@@ -801,16 +747,7 @@ router.post("/:id/lock", async (req, res) => {
       return res.status(404).json({ ok: false, kind: "spawn_points.ownership", error: "not_found" } satisfies OwnershipUpdateResponse);
     }
 
-    await db.query(
-      `
-      UPDATE spawn_points
-      SET
-        is_locked = TRUE,
-        updated_at = NOW()
-      WHERE id = $1
-      `,
-      [id],
-    );
+    await applySingleOwnershipAction({ id, action: "lock" });
 
     const updated = await readSpawnPointRowById(id);
     clearSpawnPointCache();
@@ -834,16 +771,7 @@ router.post("/:id/unlock", async (req, res) => {
       return res.status(404).json({ ok: false, kind: "spawn_points.ownership", error: "not_found" } satisfies OwnershipUpdateResponse);
     }
 
-    await db.query(
-      `
-      UPDATE spawn_points
-      SET
-        is_locked = FALSE,
-        updated_at = NOW()
-      WHERE id = $1
-      `,
-      [id],
-    );
+    await applySingleOwnershipAction({ id, action: "unlock" });
 
     const updated = await readSpawnPointRowById(id);
     clearSpawnPointCache();
