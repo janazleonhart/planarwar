@@ -82,6 +82,12 @@ import {
 } from "./adminSpawnPoints/motherBrainStatusOps";
 import { parseMotherBrainWaveRequest } from "./adminSpawnPoints/motherBrainWaveRequestOps";
 import {
+  buildMotherBrainWipeBadBoundsResponse,
+  buildMotherBrainWipeConfirmRequiredResponse,
+  buildMotherBrainWipeConfirmToken,
+  parseMotherBrainWipeRequest,
+} from "./adminSpawnPoints/motherBrainWipeRequestOps";
+import {
   deleteEditableSpawnPoints,
   moveEditableSpawnPoints,
 } from "./adminSpawnPoints/bulkMutationOps";
@@ -2691,36 +2697,33 @@ const opsPreview: MotherBrainOpsPreview = buildMotherBrainWaveOpsPreview({
 router.post("/mother_brain/wipe", async (req, res) => {
   const body: MotherBrainWipeRequest = (req.body ?? {}) as any;
 
-  const shardId = strOrNull(body.shardId) ?? "prime_shard";
-  const bounds = strOrNull(body.bounds) ?? "-1..1,-1..1";
-  const cellSize = Number(body.cellSize ?? 64);
-  const borderMargin = Math.max(0, Math.min(25, Number(body.borderMargin ?? 0)));
-  const theme = strOrNull(body.theme);
-  const epoch = body.epoch != null && Number.isFinite(Number(body.epoch)) ? Number(body.epoch) : null;
-  const commit = Boolean(body.commit ?? false);
-  const wantList = Boolean(body.list ?? false);
-  const limit = Math.max(1, Math.min(500, Number(body.limit ?? 25)));
-
-  let parsedBounds: CellBounds;
-  let box: WorldBox;
-
+  let parsed;
   try {
-    parsedBounds = parseCellBounds(bounds);
-    box = toWorldBox(parsedBounds, Number.isFinite(cellSize) ? cellSize : 64, borderMargin);
+    parsed = parseMotherBrainWipeRequest(body);
   } catch (err: any) {
-    res.status(400).json({
-      ok: false,
-      shardId,
-      bounds,
-      cellSize: Number.isFinite(cellSize) ? cellSize : 64,
-      borderMargin,
-      theme,
-      epoch,
-      commit,
-      error: String(err?.message ?? "bad_bounds"),
-    } satisfies MotherBrainWipeResponse);
+    const shardId = strOrNull(body.shardId) ?? "prime_shard";
+    const bounds = strOrNull(body.bounds) ?? "-1..1,-1..1";
+    const cellSize = Math.max(1, Math.min(256, Number(body.cellSize ?? 64) || 64));
+    const borderMargin = Math.max(0, Math.min(25, Number(body.borderMargin ?? 0) || 0));
+    const theme = strOrNull(body.theme);
+    const epoch = body.epoch != null && Number.isFinite(Number(body.epoch)) ? Number(body.epoch) : null;
+    const commit = Boolean(body.commit ?? false);
+    res.status(400).json(
+      buildMotherBrainWipeBadBoundsResponse({
+        shardId,
+        bounds,
+        cellSize,
+        borderMargin,
+        theme,
+        epoch,
+        commit,
+        error: err,
+      }),
+    );
     return;
   }
+
+  const { shardId, bounds, cellSize, borderMargin, theme, epoch, commit, wantList, limit, confirm, box } = parsed;
 
   try {
     const client = await db.connect();
@@ -2792,39 +2795,33 @@ router.post("/mother_brain/wipe", async (req, res) => {
       }
 
 
-const expectedConfirmToken =
-  commit && wouldDelete > 0
-    ? makeConfirmToken("WIPE", shardId, {
-        bounds,
-        cellSize: Number.isFinite(cellSize) ? cellSize : 64,
-        borderMargin,
-        theme,
-        epoch,
-        box,
-        deleteScope: "brain:* selection (filtered by theme/epoch)",
-      })
-    : null;
-
-const confirm = strOrNull((body as any).confirm);
+const expectedConfirmToken = buildMotherBrainWipeConfirmToken({
+  commit,
+  wouldDelete,
+  shardId,
+  bounds,
+  cellSize,
+  borderMargin,
+  theme,
+  epoch,
+  box,
+});
 
 if (commit && expectedConfirmToken && confirm !== expectedConfirmToken) {
   await client.query("ROLLBACK");
-  const payload: MotherBrainWipeResponse = {
-    kind: "mother_brain.wipe",
-    ok: false,
-    error: "confirm_required",
+  const payload = buildMotherBrainWipeConfirmRequiredResponse({
     expectedConfirmToken,
     shardId,
     bounds,
-    cellSize: Number.isFinite(cellSize) ? cellSize : 64,
+    cellSize,
     borderMargin,
     theme,
     epoch,
     commit,
     wouldDelete,
     opsPreview,
-    ...(wantList ? { list: listRows } : null),
-  };
+    listRows: wantList ? listRows : undefined,
+  });
   res.status(409).json(payload);
   return;
 }
