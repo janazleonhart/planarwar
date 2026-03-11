@@ -701,7 +701,8 @@
         "web-backend.routes.adminSpawnPoints.townBaselineApply",
         "web-backend.routes.adminSpawnPoints.restoreSnapshot",
         "web-backend.routes.adminSpawnPoints.snapshotResponses",
-        "web-backend.routes.adminSpawnPoints.snapshotDeleteOps"
+        "web-backend.routes.adminSpawnPoints.snapshotDeleteOps",
+        "web-backend.routes.adminSpawnPoints.snapshotWriteOps"
       ],
       "kind": "module",
       "lifecycle": "singleton",
@@ -731,7 +732,8 @@
         "Boundary cleanup slice 2e extracted town baseline apply mutation loop helpers into routes/adminSpawnPoints/townBaselineApply.ts.",
         "Boundary cleanup slice 2f extracted snapshot restore preload/planning/apply helpers into routes/adminSpawnPoints/restoreSnapshot.ts.",
         "Boundary cleanup slice 2g extracted snapshot query/save/list/update response shaping into routes/adminSpawnPoints/snapshotResponses.ts.",
-        "Boundary cleanup slice 2h extracted snapshot delete/bulk-delete/purge confirm-token planning and file deletion helpers into routes/adminSpawnPoints/snapshotDeleteOps.ts."
+        "Boundary cleanup slice 2h extracted snapshot delete/bulk-delete/purge confirm-token planning and file deletion helpers into routes/adminSpawnPoints/snapshotDeleteOps.ts.",
+        "Boundary cleanup slice 2i extracted snapshot update/duplicate write-path helpers into routes/adminSpawnPoints/snapshotWriteOps.ts."
       ],
       "owns": [],
       "path": "web-backend/routes/adminSpawnPoints.ts",
@@ -1586,6 +1588,34 @@
         "deleteSnapshotFiles(ids)"
       ],
       "service": "admin.spawnPoints.snapshotDeleteOps"
+    },
+    "web-backend.routes.adminSpawnPoints.snapshotWriteOps": {
+      "class": null,
+      "ctorArgs": [],
+      "dependsOn": [
+        "node:buffer",
+        "node:fs",
+        "node:path",
+        "web-backend.routes.adminSpawnPoints.snapshotStore",
+        "web-backend.routes.adminSpawnPoints.snapshotResponses"
+      ],
+      "kind": "module",
+      "lifecycle": "static",
+      "notes": [
+        "Shared snapshot update and duplicate write-path helpers for admin spawn snapshot routes.",
+        "Encapsulates metadata normalization, file writes, and returned stored snapshot meta shaping.",
+        "Behavior-preserving extraction for boundary cleanup slice 2i."
+      ],
+      "owns": [
+        "Snapshot update write helpers",
+        "Snapshot duplicate write helpers"
+      ],
+      "path": "web-backend/routes/adminSpawnPoints/snapshotWriteOps.ts",
+      "provides": [
+        "updateStoredSnapshotFromBody(args)",
+        "duplicateStoredSnapshotFromBody(args)"
+      ],
+      "service": "admin.spawnPoints.snapshotWriteOps"
     }
   }
 }

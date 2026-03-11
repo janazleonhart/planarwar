@@ -3,17 +3,12 @@
 import { Router } from "express";
 import { createHash } from "crypto";
 import { promises as fs } from "node:fs";
-import { Buffer } from "node:buffer";
 import path from "node:path";
 import {
-  allocateSnapshotIdUnique,
   boolish,
-  coerceExpiresAt,
   coerceSnapshotSpawns,
-  ensureSnapshotDir,
   listStoredSnapshots,
   makeSnapshotId,
-  metaFromStoredDoc,
   normalizeSnapshotTags,
   readStoredSnapshotById,
   safeSnapshotName,
@@ -35,8 +30,11 @@ import {
   prepareSnapshotDeleteConfirm,
 } from "./adminSpawnPoints/snapshotDeleteOps";
 import {
+  duplicateStoredSnapshotFromBody,
+  updateStoredSnapshotFromBody,
+} from "./adminSpawnPoints/snapshotWriteOps";
+import {
   buildSnapshotFromQuery,
-  buildUpdatedSnapshotDoc,
   filterAndSortSnapshots,
   makeSnapshotQueryFilename,
   saveStoredSnapshotDoc,
@@ -2814,56 +2812,11 @@ router.put("/snapshots/:id", async (req, res) => {
 
     const { doc } = await readStoredSnapshotById(id);
 
-    const nameRaw = strOrNull(req.body?.name);
-    const tagsRaw = req.body?.tags;
-    const notesRaw = req.body?.notes;
-    const isArchivedRaw = req.body?.isArchived;
-    const isPinnedRaw = req.body?.isPinned;
-    const expiresAtRaw = req.body?.expiresAt;
-
-    const nextName = nameRaw ? safeSnapshotName(nameRaw) : doc.name;
-    const nextTags = tagsRaw !== undefined ? normalizeSnapshotTags(tagsRaw) : (Array.isArray((doc as any).tags) ? (doc as any).tags : []);
-    const nextNotes =
-      notesRaw === undefined
-        ? ((doc as any).notes ?? null)
-        : notesRaw === null
-          ? null
-          : String(notesRaw).slice(0, 2000);
-
-
-    const prevArchived = Boolean((doc as any).isArchived);
-    const prevPinned = Boolean((doc as any).isPinned);
-    const prevExpiresAt = ((doc as any).expiresAt ?? null) as any;
-
-    const archivedBool = boolish(isArchivedRaw);
-    const pinnedBool = boolish(isPinnedRaw);
-
-    const nextArchived = archivedBool === null ? prevArchived : archivedBool;
-    const nextPinned = pinnedBool === null ? prevPinned : pinnedBool;
-
-    let nextExpiresAt: string | null = prevExpiresAt;
-    const expiresAtCoerced = coerceExpiresAt(expiresAtRaw);
-    if (expiresAtCoerced !== undefined) nextExpiresAt = expiresAtCoerced;
-
-
-    const updated: StoredSpawnSnapshotDoc = {
-      ...doc,
-      version: 3,
-      name: nextName,
-      tags: nextTags,
-      notes: nextNotes,
-      isArchived: nextArchived,
-      isPinned: nextPinned,
-      expiresAt: nextExpiresAt,
-    };
-
-    const dir = await ensureSnapshotDir();
-    const file = path.join(dir, `${id}.json`);
-    await fs.writeFile(file, JSON.stringify(updated, null, 2) + "\n", "utf8");
-
-    const raw = await fs.readFile(file, "utf8");
-    const bytes = Buffer.byteLength(raw, "utf8");
-    const meta = metaFromStoredDoc(updated, bytes);
+    const meta = await updateStoredSnapshotFromBody({
+      doc,
+      id,
+      body: req.body,
+    });
 
     return res.json({ kind: "spawn_points.snapshots.update", ok: true, snapshot: meta });
   } catch (err: any) {
@@ -2887,42 +2840,10 @@ router.post("/snapshots/:id/duplicate", async (req, res) => {
 
     const { doc } = await readStoredSnapshotById(id);
 
-    const nameRaw = strOrNull(req.body?.name);
-    const tagsRaw = req.body?.tags;
-    const notesRaw = req.body?.notes;
-
-    const baseName = safeSnapshotName(nameRaw ? nameRaw : `${doc.name} copy`);
-    const shardId = doc.snapshot.shardId;
-    const bounds = doc.snapshot.bounds;
-    const types = Array.isArray(doc.snapshot.types) ? doc.snapshot.types : [];
-
-    const newId = await allocateSnapshotIdUnique(baseName, shardId, bounds, types);
-    const now = new Date().toISOString();
-
-    const tags = tagsRaw === undefined ? (Array.isArray((doc as any).tags) ? (doc as any).tags : []) : normalizeSnapshotTags(tagsRaw);
-    const notes = notesRaw === undefined ? ((doc as any).notes ?? null) : safeSnapshotNotes(notesRaw);
-
-    const cloned: StoredSpawnSnapshotDoc = {
-      kind: "admin.stored-spawn-snapshot",
-      version: 3,
-      id: newId,
-      name: baseName,
-      savedAt: now,
-      tags,
-      notes,
-      isArchived: false,
-      isPinned: false,
-      expiresAt: null,
-      snapshot: doc.snapshot,
-    };
-
-    const dir = await ensureSnapshotDir();
-    const file = path.join(dir, `${newId}.json`);
-    const raw = JSON.stringify(cloned, null, 2) + "\n";
-    await fs.writeFile(file, raw, "utf8");
-
-    const bytes = Buffer.byteLength(raw, "utf8");
-    const meta = metaFromStoredDoc(cloned, bytes);
+    const meta = await duplicateStoredSnapshotFromBody({
+      doc,
+      body: req.body,
+    });
 
     return res.json({ kind: "spawn_points.snapshots.duplicate", ok: true, snapshot: meta } satisfies DuplicateSnapshotResponse);
   } catch (err: any) {
