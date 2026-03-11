@@ -707,7 +707,8 @@
         "web-backend.routes.adminSpawnPoints.bulkOwnershipOps",
         "web-backend.routes.adminSpawnPoints.singleOwnershipOps",
         "web-backend.routes.adminSpawnPoints.protoCatalogOps",
-        "web-backend.routes.adminSpawnPoints.snapshotQueryFilters"
+        "web-backend.routes.adminSpawnPoints.snapshotQueryFilters",
+        "web-backend.routes.adminSpawnPoints.snapshotRequestParsers"
       ],
       "kind": "module",
       "lifecycle": "singleton",
@@ -741,7 +742,8 @@
         "Boundary cleanup slice 2i extracted snapshot update/duplicate write-path helpers into routes/adminSpawnPoints/snapshotWriteOps.ts.",
         "Boundary cleanup slice 2m extracted single-row adopt/release/lock/unlock helpers into routes/adminSpawnPoints/singleOwnershipOps.ts.",
         "Proto-options resource/station catalog helper extraction added in boundary cleanup slice 2n.",
-        "Boundary cleanup slice 2o extracted shared spawn-point query filter/list/snapshot row helpers into routes/adminSpawnPoints/snapshotQueryFilters.ts."
+        "Boundary cleanup slice 2o extracted shared spawn-point query filter/list/snapshot row helpers into routes/adminSpawnPoints/snapshotQueryFilters.ts.",
+        "Boundary cleanup slice 2p extracted shared snapshot/list request parsing and limit normalization helpers into routes/adminSpawnPoints/snapshotRequestParsers.ts."
       ],
       "owns": [],
       "path": "web-backend/routes/adminSpawnPoints.ts",
@@ -1778,6 +1780,30 @@
         "loadSnapshotRowsByQuery(args)"
       ],
       "service": "admin.spawn_points"
+    },
+    "web-backend.routes.adminSpawnPoints.snapshotRequestParsers": {
+      "class": null,
+      "ctorArgs": [],
+      "dependsOn": [
+        "web-backend.routes.adminSpawnPoints.snapshotStore",
+        "web-backend.routes.adminSpawnPoints.snapshotQueryFilters"
+      ],
+      "kind": "module",
+      "lifecycle": "static",
+      "notes": [
+        "Parses shared snapshot capture/query/save/list request payloads for admin spawn-point routes.",
+        "Centralizes cellSize/pad clamping, query max-row cap, and stored snapshot list filter normalization."
+      ],
+      "owns": [],
+      "path": "web-backend/routes/adminSpawnPoints/snapshotRequestParsers.ts",
+      "provides": [
+        "parseSnapshotCaptureRequest()",
+        "parseSnapshotQueryRequest()",
+        "parseSnapshotSaveQueryRequest()",
+        "parseStoredSnapshotListRequest()",
+        "SNAPSHOT_QUERY_MAX_ROWS"
+      ],
+      "service": "admin.spawnPoints.snapshotRequestParsers"
     }
   }
 }

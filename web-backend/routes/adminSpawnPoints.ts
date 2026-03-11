@@ -112,6 +112,12 @@ import {
   loadSnapshotRowsByQuery,
   parseSpawnPointQueryFilters,
 } from "./adminSpawnPoints/snapshotQueryFilters";
+import {
+  parseSnapshotCaptureRequest,
+  parseSnapshotQueryRequest,
+  parseSnapshotSaveQueryRequest,
+  parseStoredSnapshotListRequest,
+} from "./adminSpawnPoints/snapshotRequestParsers";
 
 const router = Router();
 
@@ -1832,15 +1838,14 @@ async function computeSpawnSliceSnapshot(args: {
 
 router.post("/snapshot", async (req, res) => {
   try {
-    const shardId = strOrNull(req.body?.shardId) ?? "prime_shard";
-    const boundsRaw = strOrNull(req.body?.bounds);
+    const { shardId, boundsRaw, types, cellSize, pad } = parseSnapshotCaptureRequest(req.body, {
+      boolish,
+      numOrNull,
+      strOrNull,
+      normalizeAuthority,
+    });
     if (!boundsRaw) return res.status(400).json({ kind: "spawn_points.snapshot", ok: false, error: "missing_bounds" });
-
-    const types = Array.isArray(req.body?.types) ? (req.body.types as any[]).map((t) => String(t)).filter(Boolean) : [];
     if (!types.length) return res.status(400).json({ kind: "spawn_points.snapshot", ok: false, error: "missing_types" });
-
-    const cellSize = Math.max(1, Number(req.body?.cellSize) || 512);
-    const pad = Math.max(0, Number(req.body?.pad) || 0);
 
     const { snapshot, filename } = await computeSpawnSliceSnapshot({ shardId, boundsRaw, cellSize, pad, types });
 
@@ -1856,27 +1861,26 @@ router.post("/snapshot", async (req, res) => {
 // Snapshot rows based on the same filters as list endpoint (region OR radius + filters).
 router.post("/snapshot_query", async (req, res) => {
   try {
-    const filters = parseSpawnPointQueryFilters(req.body, { numOrNull, strOrNull, normalizeAuthority });
-
-    const cellSize = Math.max(1, Math.min(1024, Number(req.body?.cellSize ?? 64)));
-    const pad = Math.max(0, Math.min(1000, Number(req.body?.pad ?? 0)));
-
-    // Hard cap: snapshots by query are for operator workflows, not data exfiltration.
-    const MAX_ROWS = 5000;
+    const { filters, cellSize, pad, maxRows } = parseSnapshotQueryRequest(req.body, {
+      boolish,
+      numOrNull,
+      strOrNull,
+      normalizeAuthority,
+    });
 
     const { total, spawns } = await loadSnapshotRowsByQuery({
       db,
       filters,
-      maxRows: MAX_ROWS,
+      maxRows,
       helpers: { numOrNull, strOrNull, normalizeAuthority },
     });
-    if (total > MAX_ROWS) {
+    if (total > maxRows) {
       return res.status(400).json({
         kind: "spawn_points.snapshot_query",
         ok: false,
         error: "too_many_rows",
         total,
-        max: MAX_ROWS,
+        max: maxRows,
       });
     }
 
@@ -1900,32 +1904,27 @@ router.post("/snapshot_query", async (req, res) => {
 // POST /api/admin/spawn_points/snapshots/save_query
 router.post("/snapshots/save_query", async (req, res) => {
   try {
-    const nameRaw = strOrNull(req.body?.name);
+    const { nameRaw, tags, notes, filters, cellSize, pad, maxRows } = parseSnapshotSaveQueryRequest(req.body, {
+      boolish,
+      numOrNull,
+      strOrNull,
+      normalizeAuthority,
+    });
     if (!nameRaw) return res.status(400).json({ kind: "spawn_points.snapshots.save_query", ok: false, error: "missing_name" });
-
-    const filters = parseSpawnPointQueryFilters(req.body, { numOrNull, strOrNull, normalizeAuthority });
-
-    const cellSize = Math.max(1, Math.min(1024, Number(req.body?.cellSize ?? 64)));
-    const pad = Math.max(0, Math.min(1000, Number(req.body?.pad ?? 0)));
-
-    const tags = normalizeSnapshotTags(req.body?.tags);
-    const notes = safeSnapshotNotes(req.body?.notes);
-
-    const MAX_ROWS = 5000;
 
     const { total, spawns } = await loadSnapshotRowsByQuery({
       db,
       filters,
-      maxRows: MAX_ROWS,
+      maxRows,
       helpers: { numOrNull, strOrNull, normalizeAuthority },
     });
-    if (total > MAX_ROWS) {
+    if (total > maxRows) {
       return res.status(400).json({
         kind: "spawn_points.snapshots.save_query",
         ok: false,
         error: "too_many_rows",
         total,
-        max: MAX_ROWS,
+        max: maxRows,
       });
     }
 
@@ -1971,13 +1970,12 @@ router.get("/snapshots", async (req, res) => {
   try {
     const snapshots = filterAndSortSnapshots({
       snapshots: await listStoredSnapshots(),
-      tag: (strOrNull((req as any).query?.tag) ? normalizeSnapshotTags(strOrNull((req as any).query?.tag))[0] : null),
-      q: (strOrNull((req as any).query?.q) || "").trim().toLowerCase(),
-      sortRaw: (strOrNull((req as any).query?.sort) || "newest").toLowerCase(),
-      limitRaw: Number((req as any).query?.limit),
-      pinnedOnly: boolish((req as any).query?.pinnedOnly) === true,
-      includeArchived: boolish((req as any).query?.includeArchived) === true,
-      includeExpired: boolish((req as any).query?.includeExpired) === true,
+      ...parseStoredSnapshotListRequest((req as any).query, {
+        boolish,
+        numOrNull,
+        strOrNull,
+        normalizeAuthority,
+      }),
     });
 
     return res.json({ kind: "spawn_points.snapshots", ok: true, snapshots });
@@ -1994,15 +1992,14 @@ router.post("/snapshots/save", async (req, res) => {
     const nameRaw = strOrNull(req.body?.name);
     if (!nameRaw) return res.status(400).json({ kind: "spawn_points.snapshots.save", ok: false, error: "missing_name" });
 
-    const shardId = strOrNull(req.body?.shardId) ?? "prime_shard";
-    const boundsRaw = strOrNull(req.body?.bounds);
+    const { shardId, boundsRaw, types, cellSize, pad } = parseSnapshotCaptureRequest(req.body, {
+      boolish,
+      numOrNull,
+      strOrNull,
+      normalizeAuthority,
+    });
     if (!boundsRaw) return res.status(400).json({ kind: "spawn_points.snapshots.save", ok: false, error: "missing_bounds" });
-
-    const types = Array.isArray(req.body?.types) ? (req.body.types as any[]).map((t) => String(t)).filter(Boolean) : [];
     if (!types.length) return res.status(400).json({ kind: "spawn_points.snapshots.save", ok: false, error: "missing_types" });
-
-    const cellSize = Math.max(1, Number(req.body?.cellSize) || 512);
-    const pad = Math.max(0, Number(req.body?.pad) || 0);
 
     const { snapshot } = await computeSpawnSliceSnapshot({ shardId, boundsRaw, cellSize, pad, types });
 
