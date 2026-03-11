@@ -80,6 +80,7 @@ import {
   buildMotherBrainStatusResponse,
   parseMotherBrainStatusRequest,
 } from "./adminSpawnPoints/motherBrainStatusOps";
+import { parseMotherBrainWaveRequest } from "./adminSpawnPoints/motherBrainWaveRequestOps";
 import {
   deleteEditableSpawnPoints,
   moveEditableSpawnPoints,
@@ -2383,52 +2384,23 @@ router.get("/mother_brain/status", async (req, res) => {
 router.post("/mother_brain/wave", async (req, res) => {
   const body: MotherBrainWaveRequest = (req.body ?? {}) as any;
 
-  const shardId = (body.shardId ?? "prime_shard").toString();
-  const rawBounds = (body.bounds ?? "-4..4,-4..4").toString();
-
-  const cellSize = Math.max(1, Math.min(256, Number(body.cellSize ?? 64) || 64));
-
-  // CELLS padding for selection/deletion.
-  const borderMargin = Math.max(0, Math.min(25, Number(body.borderMargin ?? 0) || 0));
-
-  // WORLD inset for placement within each cell.
-  const placeInset = Math.max(0, Math.min(Math.floor(cellSize / 2), Number(body.placeInset ?? 0) || 0));
-
-  const seed = (body.seed ?? "seed:mother").toString();
-  const epoch = Math.max(0, Number(body.epoch ?? 0) || 0);
-  const theme = (body.theme ?? "goblins").toString();
-  const count = Math.max(1, Math.min(5000, Number(body.count ?? 8) || 8));
-  const append = Boolean(body.append ?? false);
-  const updateExisting = Boolean(body.updateExisting ?? false);
-  const commit = Boolean(body.commit ?? false);
-
-  const parsedBounds = parseCellBounds(rawBounds);
-  const box = toWorldBox(parsedBounds, cellSize, borderMargin);
-
-  const capOrNull = (n: any, fallback: number | null): number | null => {
-    if (n === null) return null;
-    if (n === undefined) return fallback;
-    const v = Number(n);
-    if (!Number.isFinite(v)) return fallback;
-    const i = Math.floor(v);
-    if (i <= 0) return null;
-    return i;
-  };
-
-  // Safe defaults (hardening). Send <=0 or null to disable a cap.
-  const defaultBudget = {
-    maxTotalInBounds: 5000,
-    maxThemeInBounds: 2500,
-    maxEpochThemeInBounds: 2000,
-    maxNewInserts: 1000,
-  };
-
-  const budget = {
-    maxTotalInBounds: capOrNull(body.budget?.maxTotalInBounds, defaultBudget.maxTotalInBounds),
-    maxThemeInBounds: capOrNull(body.budget?.maxThemeInBounds, defaultBudget.maxThemeInBounds),
-    maxEpochThemeInBounds: capOrNull(body.budget?.maxEpochThemeInBounds, defaultBudget.maxEpochThemeInBounds),
-    maxNewInserts: capOrNull(body.budget?.maxNewInserts, defaultBudget.maxNewInserts),
-  };
+  const {
+    shardId,
+    rawBounds,
+    cellSize,
+    borderMargin,
+    placeInset,
+    seed,
+    epoch,
+    theme,
+    count,
+    append,
+    updateExisting,
+    commit,
+    parsedBounds,
+    box,
+    budget,
+  } = parseMotherBrainWaveRequest(body);
 
   const client = await db.connect();
   try {

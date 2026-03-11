@@ -1,6 +1,7 @@
 //web-backend/routes/adminSpawnPoints/opsPreview.ts
 
 import type { CellBounds, StoredSpawnSnapshotMeta } from "./snapshotStore";
+export type { CellBounds } from "./snapshotStore";
 
 export type AdminSummary = {
   total: number;
