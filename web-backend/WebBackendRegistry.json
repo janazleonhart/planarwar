@@ -1640,6 +1640,31 @@
         "normalizeSeedBase()"
       ],
       "service": "admin.spawn_points"
+    },
+    "web-backend.routes.adminSpawnPoints.bulkMutationOps": {
+      "class": null,
+      "ctorArgs": [],
+      "dependsOn": [
+        "worldcore.db.Database",
+        "web-backend.routes.adminSpawnPoints"
+      ],
+      "kind": "module",
+      "lifecycle": "static",
+      "notes": [
+        "Shared bulk delete and bulk move mutation helpers extracted from adminSpawnPoints.ts.",
+        "Encapsulates editable-row filtering, delete application, and coordinate offset updates.",
+        "Behavior-preserving extraction for boundary cleanup slice 2k."
+      ],
+      "owns": [
+        "Bulk delete editable-row filtering",
+        "Bulk move editable-row filtering and offset mutation"
+      ],
+      "path": "web-backend/routes/adminSpawnPoints/bulkMutationOps.ts",
+      "provides": [
+        "deleteEditableSpawnPoints(args)",
+        "moveEditableSpawnPoints(args)"
+      ],
+      "service": "admin.spawn_points"
     }
   }
 }

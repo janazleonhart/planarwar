@@ -76,6 +76,10 @@ import {
   preloadExistingSpawnIds,
   preloadProtectedSpawnMap,
 } from "./adminSpawnPoints/restoreSnapshot";
+import {
+  deleteEditableSpawnPoints,
+  moveEditableSpawnPoints,
+} from "./adminSpawnPoints/bulkMutationOps";
 import { db } from "../../worldcore/db/Database";
 import { clearSpawnPointCache } from "../../worldcore/world/SpawnPointCache";
 import { getSpawnAuthority, isSpawnEditable } from "../../worldcore/world/spawnAuthority";
@@ -1271,42 +1275,18 @@ router.post("/bulk_delete", async (req, res) => {
       return res.status(400).json({ ok: false, error: "no_ids" });
     }
 
-    // Enforce readonly at server side (don’t trust UI).
-    const rows = await db.query(
-      `
-      SELECT id, spawn_id, owner_kind, is_locked
-      FROM spawn_points
-      WHERE shard_id = $1 AND id = ANY($2::int[])
-      `,
-      [shardId, ids],
-    );
-
-    const deletable = (rows.rows ?? [])
-      .filter((r: any) => {
-        if (Boolean(r.is_locked)) return false;
-        const spawnId = String(r.spawn_id ?? "");
-        const ownerKind = String(r.owner_kind ?? "").trim().toLowerCase();
-        const isEditorOwned = ownerKind === "editor";
-        return isEditorOwned || isSpawnEditable(spawnId);
-      })
-      .map((r: any) => Number(r.id))
-      .filter((n: number) => Number.isFinite(n) && n > 0);
-
-    if (deletable.length === 0) {
-      return res.json({ ok: true, deleted: 0, skipped: ids.length });
-    }
-
-    const del = await db.query(
-      `DELETE FROM spawn_points WHERE shard_id = $1 AND id = ANY($2::int[])`,
-      [shardId, deletable],
-    );
+    const result = await deleteEditableSpawnPoints({
+      shardId,
+      ids,
+      isSpawnEditable,
+    });
 
     clearSpawnPointCache();
 
     res.json({
       ok: true,
-      deleted: Number(del.rowCount ?? deletable.length),
-      skipped: ids.length - deletable.length,
+      deleted: result.deleted,
+      skipped: result.skipped,
     });
   } catch (err) {
     console.error("[ADMIN/SPAWN_POINTS] bulk_delete error", err);
@@ -1338,52 +1318,21 @@ router.post("/bulk_move", async (req, res) => {
       return res.status(400).json({ ok: false, error: "no_delta" });
     }
 
-    // Filter out readonly ids (server-side enforcement).
-    const rows = await db.query(
-      `
-      SELECT id, spawn_id, owner_kind, is_locked
-      FROM spawn_points
-      WHERE shard_id = $1 AND id = ANY($2::int[])
-      `,
-      [shardId, ids],
-    );
-
-    const movable = (rows.rows ?? [])
-      .filter((r: any) => !Boolean(r.is_locked))
-      .filter((r: any) => {
-        const spawnId = String(r.spawn_id ?? "");
-        const ownerKind = String(r.owner_kind ?? "").trim().toLowerCase();
-        const isEditorOwned = ownerKind === "editor";
-        return isEditorOwned || isSpawnEditable(spawnId);
-      })
-      .map((r: any) => Number(r.id))
-      .filter((n: number) => Number.isFinite(n) && n > 0);
-
-    if (movable.length === 0) {
-      return res.json({ ok: true, moved: 0, skipped: ids.length });
-    }
-
-    // Only move rows with coordinates present (x/z). y is optional.
-    // If y is null, we treat it as 0 then add dy, resulting in dy.
-    const upd = await db.query(
-      `
-      UPDATE spawn_points
-      SET
-        x = CASE WHEN x IS NULL THEN NULL ELSE x + $3 END,
-        y = CASE WHEN y IS NULL THEN (CASE WHEN $4 = 0 THEN NULL ELSE $4 END) ELSE y + $4 END,
-        z = CASE WHEN z IS NULL THEN NULL ELSE z + $5 END
-      WHERE shard_id = $1
-        AND id = ANY($2::int[])
-      `,
-      [shardId, movable, Number.isFinite(dx) ? dx : 0, Number.isFinite(dy) ? dy : 0, Number.isFinite(dz) ? dz : 0],
-    );
+    const result = await moveEditableSpawnPoints({
+      shardId,
+      ids,
+      dx,
+      dy,
+      dz,
+      isSpawnEditable,
+    });
 
     clearSpawnPointCache();
 
     res.json({
       ok: true,
-      moved: Number(upd.rowCount ?? movable.length),
-      skipped: ids.length - movable.length,
+      moved: result.moved,
+      skipped: result.skipped,
     });
   } catch (err) {
     console.error("[ADMIN/SPAWN_POINTS] bulk_move error", err);
