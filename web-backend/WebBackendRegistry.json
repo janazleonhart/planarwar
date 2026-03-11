@@ -1616,6 +1616,30 @@
         "duplicateStoredSnapshotFromBody(args)"
       ],
       "service": "admin.spawnPoints.snapshotWriteOps"
+    },
+    "web-backend.routes.adminSpawnPoints.cloneScatterOps": {
+      "class": null,
+      "ctorArgs": [],
+      "dependsOn": [
+        "worldcore.db.Database",
+        "web-backend.routes.adminSpawnPoints"
+      ],
+      "kind": "module",
+      "lifecycle": "static",
+      "notes": [
+        "Holds clone/scatter placement helpers extracted from adminSpawnPoints.ts.",
+        "Owns spacing sampling, nearby-point lookup, spawn id creation, and clone/scatter DB insert loops."
+      ],
+      "owns": [],
+      "path": "web-backend/routes/adminSpawnPoints/cloneScatterOps.ts",
+      "provides": [
+        "cloneSpawnPoints()",
+        "scatterSpawnPoints()",
+        "finiteOr()",
+        "clamp()",
+        "normalizeSeedBase()"
+      ],
+      "service": "admin.spawn_points"
     }
   }
 }

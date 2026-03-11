@@ -1462,8 +1462,8 @@ function normalizeSeedBase(v: any): string {
   return s;
 }
 
-function getActorIdFromReq(req: any): string | null {
-  const sub = String(req?.auth?.sub ?? "").trim();
+function getActorIdFromReq(req: unknown): string | null {
+  const sub = String((req as any)?.auth?.sub ?? "").trim();
   return sub ? sub : null;
 }
 
