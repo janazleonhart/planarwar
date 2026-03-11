@@ -88,6 +88,12 @@ import {
   parseMotherBrainWipeRequest,
 } from "./adminSpawnPoints/motherBrainWipeRequestOps";
 import {
+  buildMotherBrainWaveConfirmRequiredResponse,
+  buildMotherBrainWaveResponse,
+  buildMotherBrainWipeInternalError,
+  buildMotherBrainWipeResponse,
+} from "./adminSpawnPoints/motherBrainResponses";
+import {
   deleteEditableSpawnPoints,
   moveEditableSpawnPoints,
 } from "./adminSpawnPoints/bulkMutationOps";
@@ -2450,29 +2456,20 @@ const expectedConfirmToken =
 const confirm = strOrNull((body as any).confirm);
 if (commit && expectedConfirmToken && confirm !== expectedConfirmToken) {
   await client.query("ROLLBACK");
-  res.status(409).json({
-    kind: "mother_brain.wave",
-    ok: false,
-    error: "confirm_required",
-    expectedConfirmToken,
-    shardId,
-    bounds: rawBounds,
-    cellSize,
-    borderMargin,
-    theme,
-    epoch,
-    append,
-    wouldDelete: existingBrainIds.length,
-    opsPreview: {
-      limit: 75,
-      truncated: existingBrainSpawnIds.length > 75,
-      deleteSpawnIds: [...existingBrainSpawnIds]
-        .map((s: any) => String(s ?? ""))
-        .filter(Boolean)
-        .sort((a, b) => a.localeCompare(b))
-        .slice(0, 75),
-    },
-  } satisfies MotherBrainWaveResponse);
+  res.status(409).json(
+    buildMotherBrainWaveConfirmRequiredResponse({
+      expectedConfirmToken,
+      shardId,
+      bounds: rawBounds,
+      cellSize,
+      borderMargin,
+      theme,
+      epoch,
+      append,
+      wouldDelete: existingBrainIds.length,
+      existingBrainSpawnIds,
+    }),
+  );
   return;
 }
 
@@ -2642,45 +2639,23 @@ const opsPreview: MotherBrainOpsPreview = buildMotherBrainWaveOpsPreview({
     }
 
     const wouldDelete = append ? 0 : existingBrainIds.length;
-    const out: MotherBrainWaveResponse = commit
-      ? {
-          kind: "mother_brain.wave",
-          summary: { total: inserted + updated + deleted },
-          ok: true,
-          deleted,
-          inserted,
-          updated,
-          skipped,
-          theme,
-          epoch,
-          append,
-          expectedConfirmToken: expectedConfirmToken ?? undefined,
-          budget,
-          budgetReport,
-          budgetFilter,
-          applyPlan,
-          opsPreview,
-        }
-      : {
-          kind: "mother_brain.wave",
-          summary: { total: wouldDelete + applyPlan.wouldInsert + applyPlan.wouldUpdate },
-          ok: true,
-          wouldDelete: append ? 0 : existingBrainIds.length,
-          wouldInsert: applyPlan.wouldInsert,
-          wouldUpdate: applyPlan.wouldUpdate,
-          wouldSkip: applyPlan.wouldSkip,
-          duplicatePlanned: applyPlan.duplicatePlanned,
-          droppedDueToBudget: budgetFilter.droppedDueToBudget,
-          theme,
-          epoch,
-          append,
-          expectedConfirmToken: expectedConfirmToken ?? undefined,
-          budget,
-          budgetReport,
-          budgetFilter,
-          applyPlan,
-          opsPreview,
-        };
+    const out: MotherBrainWaveResponse = buildMotherBrainWaveResponse({
+      commit,
+      append,
+      theme,
+      epoch,
+      expectedConfirmToken,
+      budget,
+      budgetReport,
+      budgetFilter,
+      applyPlan,
+      opsPreview,
+      wouldDelete,
+      deleted,
+      inserted,
+      updated,
+      skipped,
+    });
 
     res.json(out);
   } catch (err) {
@@ -2839,39 +2814,21 @@ if (commit && expectedConfirmToken && confirm !== expectedConfirmToken) {
         await client.query("ROLLBACK");
       }
 
-      const payload: MotherBrainWipeResponse = commit
-        ? {
-            kind: "mother_brain.wipe",
-            summary: { total: deleted },
-            ok: true,
-            shardId,
-            bounds,
-            cellSize: Number.isFinite(cellSize) ? cellSize : 64,
-            borderMargin,
-            theme,
-            epoch,
-            commit,
-            deleted,
-            opsPreview,
-            expectedConfirmToken: expectedConfirmToken ?? undefined,
-            ...(wantList ? { list: listRows } : null),
-          }
-        : {
-            kind: "mother_brain.wipe",
-            summary: { total: wouldDelete },
-            ok: true,
-            shardId,
-            bounds,
-            cellSize: Number.isFinite(cellSize) ? cellSize : 64,
-            borderMargin,
-            theme,
-            epoch,
-            commit,
-            wouldDelete,
-            opsPreview,
-            expectedConfirmToken: expectedConfirmToken ?? undefined,
-            ...(wantList ? { list: listRows } : null),
-          };
+      const payload: MotherBrainWipeResponse = buildMotherBrainWipeResponse({
+        commit,
+        shardId,
+        bounds,
+        cellSize,
+        borderMargin,
+        theme,
+        epoch,
+        deleted,
+        wouldDelete,
+        opsPreview,
+        expectedConfirmToken,
+        wantList,
+        listRows,
+      });
 
       res.json(payload);
     } finally {
@@ -2879,17 +2836,17 @@ if (commit && expectedConfirmToken && confirm !== expectedConfirmToken) {
     }
   } catch (err: any) {
     console.error("[ADMIN/SPAWN_POINTS] mother_brain/wipe error", err);
-    res.status(500).json({
-      ok: false,
-      shardId,
-      bounds,
-      cellSize: Number.isFinite(cellSize) ? cellSize : 64,
-      borderMargin,
-      theme,
-      epoch,
-      commit,
-      error: "internal_error",
-    } satisfies MotherBrainWipeResponse);
+    res.status(500).json(
+      buildMotherBrainWipeInternalError({
+        shardId,
+        bounds,
+        cellSize,
+        borderMargin,
+        theme,
+        epoch,
+        commit,
+      }),
+    );
   }
 });
 
