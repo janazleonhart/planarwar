@@ -714,7 +714,8 @@
         "web-backend.routes.adminSpawnPoints.motherBrainStatusOps",
         "web-backend.routes.adminSpawnPoints.motherBrainWaveRequestOps",
         "web-backend.routes.adminSpawnPoints.motherBrainWipeRequestOps",
-        "web-backend.routes.adminSpawnPoints.motherBrainResponses"
+        "web-backend.routes.adminSpawnPoints.motherBrainResponses",
+        "web-backend.routes.adminSpawnPoints.motherBrainWaveApply"
       ],
       "kind": "module",
       "lifecycle": "singleton",
@@ -755,7 +756,8 @@
         "Boundary cleanup slice 2s extracted Mother Brain status request parsing and summary/list shaping into motherBrainStatusOps.ts.",
         "Mother Brain wave request/budget normalization now routes through motherBrainWaveRequestOps helper (slice 2t).",
         "Slice 2u extracts Mother Brain wipe request parsing and confirm payload helpers into motherBrainWipeRequestOps.",
-        "Slice 2v extracts shared Mother Brain success/error/confirm response shaping into motherBrainResponses.ts."
+        "Slice 2v extracts shared Mother Brain success/error/confirm response shaping into motherBrainResponses.ts.",
+        "Slice 2w extracts Mother Brain wave effective-existing-set and apply mutation loop helpers into motherBrainWaveApply.ts."
       ],
       "owns": [],
       "path": "web-backend/routes/adminSpawnPoints.ts",
@@ -1961,6 +1963,27 @@
         "buildMotherBrainWipeInternalError(args)"
       ],
       "service": "admin.spawn_points"
+    },
+    "web-backend.routes.adminSpawnPoints.motherBrainWaveApply": {
+      "service": "admin.spawn_points",
+      "kind": "module",
+      "path": "web-backend/routes/adminSpawnPoints/motherBrainWaveApply.ts",
+      "class": null,
+      "lifecycle": "static",
+      "ctorArgs": [],
+      "dependsOn": [],
+      "provides": [
+        "buildEffectiveExistingSpawnIds(args)",
+        "applyMotherBrainWaveMutations(args)"
+      ],
+      "owns": [
+        "Mother Brain wave replace-mode effective-existing-set adjustment and commit-time delete/update/insert loop"
+      ],
+      "notes": [
+        "Behavior-preserving Mother Brain wave helper extraction from adminSpawnPoints.ts.",
+        "Encapsulates replace-mode existing spawn_id adjustment and commit-time delete/update/insert loop for planned wave actions.",
+        "Boundary cleanup slice 2w."
+      ]
     }
   }
 }
