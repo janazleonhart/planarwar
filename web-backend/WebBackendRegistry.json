@@ -1665,6 +1665,32 @@
         "moveEditableSpawnPoints(args)"
       ],
       "service": "admin.spawn_points"
+    },
+    "web-backend.routes.adminSpawnPoints.bulkOwnershipOps": {
+      "class": null,
+      "ctorArgs": [],
+      "dependsOn": [
+        "worldcore.db.Database",
+        "web-backend.routes.adminSpawnPoints"
+      ],
+      "kind": "module",
+      "lifecycle": "static",
+      "notes": [
+        "Shared bulk ownership query/apply helpers extracted from adminSpawnPoints.ts.",
+        "Encapsulates query filter -> WHERE building, preview planning, confirm-token scope calculation, and apply mutation SQL.",
+        "Behavior-preserving extraction for boundary cleanup slice 2l."
+      ],
+      "owns": [
+        "Bulk ownership query filter planning",
+        "Bulk ownership preview and apply helpers"
+      ],
+      "path": "web-backend/routes/adminSpawnPoints/bulkOwnershipOps.ts",
+      "provides": [
+        "buildWhereFromQueryFilters(args)",
+        "planBulkOwnershipAction(args)",
+        "applyBulkOwnershipAction(args)"
+      ],
+      "service": "admin.spawn_points"
     }
   }
 }

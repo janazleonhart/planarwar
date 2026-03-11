@@ -80,6 +80,16 @@ import {
   deleteEditableSpawnPoints,
   moveEditableSpawnPoints,
 } from "./adminSpawnPoints/bulkMutationOps";
+import {
+  applyBulkOwnershipAction,
+  buildWhereFromQueryFilters,
+  planBulkOwnershipAction,
+  type BulkOwnershipOpsPreview,
+  type BulkOwnershipQuery,
+  type BulkOwnershipQueryAction,
+  type BulkOwnershipQueryRequest,
+  type BulkOwnershipQueryResponse,
+} from "./adminSpawnPoints/bulkOwnershipOps";
 import { db } from "../../worldcore/db/Database";
 import { clearSpawnPointCache } from "../../worldcore/world/SpawnPointCache";
 import { getSpawnAuthority, isSpawnEditable } from "../../worldcore/world/spawnAuthority";
@@ -849,150 +859,6 @@ router.post("/:id/unlock", async (req, res) => {
 // Bulk ownership ops (from current query) (v0.8)
 // ------------------------------
 
-type BulkOwnershipQueryAction = "adopt" | "release" | "lock" | "unlock";
-
-type BulkOwnershipQuery = {
-  shardId?: string;
-  // Match the list endpoint filters (region OR radius) + optional filters
-  regionId?: string | null;
-  x?: number | null;
-  z?: number | null;
-  radius?: number | null;
-  authority?: SpawnAuthority | null;
-  type?: string | null;
-  archetype?: string | null;
-  protoId?: string | null;
-  spawnId?: string | null;
-};
-
-type BulkOwnershipQueryRequest = {
-  shardId?: string;
-  action: BulkOwnershipQueryAction;
-  query?: BulkOwnershipQuery;
-  ownerId?: string | null;
-  commit?: boolean;
-  confirm?: string | null;
-};
-
-type BulkOwnershipOpsPreview = {
-  limit: number;
-  truncated: boolean;
-  changeSpawnIds: string[];
-  changeCount: number;
-  readOnlySpawnIds: string[];
-  readOnlyCount: number;
-  noOpCount: number;
-  sampleRows?: Array<{
-    spawnId: string;
-    ownerKind: string | null;
-    ownerId: string | null;
-    isLocked: boolean;
-    wouldChange: boolean;
-    reason: "change" | "readOnly" | "noOp";
-  }>;
-};
-
-type BulkOwnershipQueryResponseOk = {
-  kind: "spawn_points.bulk_ownership";
-  ok: true;
-  action: BulkOwnershipQueryAction;
-  shardId: string;
-  matched: number;
-  wouldChange: number;
-  skippedReadOnly: number;
-  skippedNoOp: number;
-  expectedConfirmToken?: string;
-  opsPreview?: BulkOwnershipOpsPreview;
-  commit?: boolean;
-  changed?: number;
-};
-
-type BulkOwnershipQueryResponseErr = {
-  kind: "spawn_points.bulk_ownership";
-  ok: false;
-  error: string;
-  // Optional context fields so callers can still include useful counts without fighting TS.
-  action?: BulkOwnershipQueryAction;
-  shardId?: string;
-  matched?: number;
-  wouldChange?: number;
-  skippedReadOnly?: number;
-  skippedNoOp?: number;
-  expectedConfirmToken?: string;
-  opsPreview?: BulkOwnershipOpsPreview;
-  commit?: boolean;
-  changed?: number;
-};
-
-type BulkOwnershipQueryResponse = BulkOwnershipQueryResponseOk | BulkOwnershipQueryResponseErr;
-
-function buildWhereFromQueryFilters(shardId: string, q: BulkOwnershipQuery): { whereSql: string; args: any[] } {
-  const regionId = strOrNull(q.regionId);
-  const x = numOrNull(q.x);
-  const z = numOrNull(q.z);
-  const radius = numOrNull(q.radius);
-
-  const authority = normalizeAuthority(q.authority);
-  const typeQ = strOrNull(q.type);
-  const archetypeQ = strOrNull(q.archetype);
-  const protoQ = strOrNull(q.protoId);
-  const spawnQ = strOrNull(q.spawnId);
-
-  const where: string[] = ["shard_id = $1"];
-  const args: any[] = [shardId];
-  let i = 2;
-
-  // Mode: region
-  if (regionId) {
-    where.push(`region_id = $${i++}`);
-    args.push(regionId);
-  }
-
-  // Mode: radius (only if no regionId)
-  if (!regionId && x !== null && z !== null && radius !== null) {
-    const safeRadius = Math.max(0, Math.min(radius, 10_000));
-    const r2 = safeRadius * safeRadius;
-
-    where.push(`x IS NOT NULL AND z IS NOT NULL`);
-    where.push(`((x - $${i}) * (x - $${i}) + (z - $${i + 1}) * (z - $${i + 1})) <= $${i + 2}`);
-    args.push(x, z, r2);
-    i += 3;
-  }
-
-  // Filters
-  if (authority) {
-    if (authority === "anchor") where.push(`spawn_id LIKE 'anchor:%'`);
-    else if (authority === "seed") where.push(`spawn_id LIKE 'seed:%'`);
-    else if (authority === "brain") where.push(`spawn_id LIKE 'brain:%'`);
-    else {
-      // manual = not any of the known prefixes
-      where.push(`spawn_id NOT LIKE 'anchor:%' AND spawn_id NOT LIKE 'seed:%' AND spawn_id NOT LIKE 'brain:%'`);
-    }
-  }
-
-  if (typeQ) {
-    where.push(`LOWER(type) = LOWER($${i++})`);
-    args.push(typeQ);
-  }
-
-  if (archetypeQ) {
-    where.push(`LOWER(archetype) = LOWER($${i++})`);
-    args.push(archetypeQ);
-  }
-
-  if (protoQ) {
-    where.push(`proto_id ILIKE $${i++}`);
-    args.push(`%${protoQ}%`);
-  }
-
-  if (spawnQ) {
-    where.push(`spawn_id ILIKE $${i++}`);
-    args.push(`%${spawnQ}%`);
-  }
-
-  return { whereSql: where.join(" AND "), args };
-}
-
 // POST /api/admin/spawn_points/bulk_ownership_query
 router.post("/bulk_ownership_query", async (req, res) => {
   try {
@@ -1005,7 +871,13 @@ router.post("/bulk_ownership_query", async (req, res) => {
     }
 
     const q: BulkOwnershipQuery = (body.query ?? {}) as any;
-    const { whereSql, args } = buildWhereFromQueryFilters(shardId, q);
+    const { whereSql, args } = buildWhereFromQueryFilters({
+      shardId,
+      query: q,
+      numOrNull,
+      strOrNull,
+      normalizeAuthority,
+    });
 
     const MAX_ROWS = 5000;
     const rows = await db.query(
@@ -1034,139 +906,34 @@ router.post("/bulk_ownership_query", async (req, res) => {
       } satisfies BulkOwnershipQueryResponse);
     }
 
-    // Determine which rows can be modified. For metadata-only ops we’re lenient, but still keep a readOnly bucket
-    // so the UI can explain why certain rows were not touched.
-    const isRowEditable = (spawnId: string, ownerKind: string): boolean => {
-      const okOwner = String(ownerKind ?? "").trim().toLowerCase() === "editor";
-      return okOwner || isSpawnEditable(String(spawnId ?? ""));
-    };
-
-    const ownerId = strOrNull(body.ownerId);
-    const targetIds: number[] = [];
-    const targetSpawnIds: string[] = [];
-
-    const readOnlySpawnIds: string[] = [];
-    let noOpCount = 0;
-
-    for (const r of found as any[]) {
-      const id = Number(r.id ?? 0);
-      const spawnId = String(r.spawn_id ?? "");
-      const ownerKind = String(r.owner_kind ?? "");
-      const locked = Boolean(r.is_locked);
-      if (!Number.isFinite(id) || id <= 0 || !spawnId) continue;
-
-      if (action !== "adopt" && !isRowEditable(spawnId, ownerKind)) {
-        readOnlySpawnIds.push(spawnId);
-        continue;
-      }
-
-      if (action === "adopt") {
-        const isAlready = String(ownerKind).trim().toLowerCase() === "editor" && (strOrNull(r.owner_id) ?? null) === ownerId;
-        if (isAlready) {
-          noOpCount++;
-          continue;
-        }
-      }
-
-      if (action === "release") {
-        const isEditor = String(ownerKind).trim().toLowerCase() === "editor";
-        if (!isEditor && !strOrNull(r.owner_id)) {
-          noOpCount++;
-          continue;
-        }
-      }
-
-      if (action === "lock") {
-        if (locked) {
-          noOpCount++;
-          continue;
-        }
-      }
-
-      if (action === "unlock") {
-        if (!locked) {
-          noOpCount++;
-          continue;
-        }
-      }
-
-      targetIds.push(id);
-      targetSpawnIds.push(spawnId);
-    }
-
-    // Provide a small sample so the UI can show "what exactly will happen" without dumping huge JSON.
-    const SAMPLE_LIMIT = 25;
-    const sampleRows = (found as any[]).slice(0, SAMPLE_LIMIT).map((r: any) => {
-      const spawnId = String(r.spawn_id ?? "");
-      const ownerKind = (strOrNull(r.owner_kind) ?? null) as string | null;
-      const rowOwnerId = (strOrNull(r.owner_id) ?? null) as string | null;
-      const locked = Boolean(r.is_locked);
-
-      const editable = action === "adopt" ? true : isRowEditable(spawnId, ownerKind ?? "");
-      if (!editable) {
-        return {
-          spawnId,
-          ownerKind,
-          ownerId: rowOwnerId,
-          isLocked: locked,
-          wouldChange: false,
-          reason: "readOnly" as const,
-        };
-      }
-
-      // Mirror the same no-op checks used above.
-      let isNoOp = false;
-      if (action === "adopt") {
-        isNoOp = String(ownerKind ?? "").trim().toLowerCase() === "editor" && rowOwnerId === ownerId;
-      } else if (action === "release") {
-        const isEditor = String(ownerKind ?? "").trim().toLowerCase() === "editor";
-        isNoOp = !isEditor && !rowOwnerId;
-      } else if (action === "lock") {
-        isNoOp = locked;
-      } else if (action === "unlock") {
-        isNoOp = !locked;
-      }
-
-      return {
-        spawnId,
-        ownerKind,
-        ownerId: rowOwnerId,
-        isLocked: locked,
-        wouldChange: !isNoOp,
-        reason: isNoOp ? ("noOp" as const) : ("change" as const),
-      };
+    const plan = planBulkOwnershipAction({
+      found: found as any[],
+      action,
+      ownerId: strOrNull(body.ownerId),
+      shardId,
+      whereSql,
+      whereArgs: args,
+      strOrNull,
+      isSpawnEditable: (spawnId: string) => isSpawnEditable(String(spawnId ?? "")),
+      makeConfirmToken,
     });
-
-    const PREVIEW_LIMIT = 75;
-    const opsPreview: BulkOwnershipOpsPreview = {
-      limit: PREVIEW_LIMIT,
-      truncated: targetSpawnIds.length > PREVIEW_LIMIT || readOnlySpawnIds.length > PREVIEW_LIMIT,
-      changeSpawnIds: targetSpawnIds.slice(0, PREVIEW_LIMIT),
-      changeCount: targetSpawnIds.length,
-      readOnlySpawnIds: readOnlySpawnIds.slice(0, PREVIEW_LIMIT),
-      readOnlyCount: readOnlySpawnIds.length,
-      noOpCount,
-      sampleRows,
-    };
 
     const commit = Boolean(body.commit);
     const confirm = strOrNull(body.confirm);
 
-    const expectedConfirmToken = targetIds.length > 0 ? makeConfirmToken("REPLACE", shardId, { op: "bulk_ownership", action, whereSql, args, count: targetIds.length }) : null;
-
-    if (commit && expectedConfirmToken && confirm !== expectedConfirmToken) {
+    if (commit && plan.expectedConfirmToken && confirm !== plan.expectedConfirmToken) {
       return res.status(409).json({
         kind: "spawn_points.bulk_ownership",
         ok: false,
         action,
         shardId,
         matched: found.length,
-        wouldChange: targetIds.length,
-        skippedReadOnly: readOnlySpawnIds.length,
-        skippedNoOp: noOpCount,
+        wouldChange: plan.targetIds.length,
+        skippedReadOnly: plan.readOnlySpawnIds.length,
+        skippedNoOp: plan.noOpCount,
         error: "confirm_required",
-        expectedConfirmToken,
-        opsPreview,
+        expectedConfirmToken: plan.expectedConfirmToken,
+        opsPreview: plan.opsPreview,
       } satisfies BulkOwnershipQueryResponse);
     }
 
@@ -1177,15 +944,15 @@ router.post("/bulk_ownership_query", async (req, res) => {
         action,
         shardId,
         matched: found.length,
-        wouldChange: targetIds.length,
-        skippedReadOnly: readOnlySpawnIds.length,
-        skippedNoOp: noOpCount,
-        expectedConfirmToken: expectedConfirmToken ?? undefined,
-        opsPreview,
+        wouldChange: plan.targetIds.length,
+        skippedReadOnly: plan.readOnlySpawnIds.length,
+        skippedNoOp: plan.noOpCount,
+        expectedConfirmToken: plan.expectedConfirmToken ?? undefined,
+        opsPreview: plan.opsPreview,
       } satisfies BulkOwnershipQueryResponse);
     }
 
-    if (targetIds.length === 0) {
+    if (plan.targetIds.length === 0) {
       return res.json({
         kind: "spawn_points.bulk_ownership",
         ok: true,
@@ -1193,51 +960,21 @@ router.post("/bulk_ownership_query", async (req, res) => {
         shardId,
         matched: found.length,
         wouldChange: 0,
-        skippedReadOnly: readOnlySpawnIds.length,
-        skippedNoOp: noOpCount,
+        skippedReadOnly: plan.readOnlySpawnIds.length,
+        skippedNoOp: plan.noOpCount,
         commit: true,
         changed: 0,
-        opsPreview,
+        opsPreview: plan.opsPreview,
       } satisfies BulkOwnershipQueryResponse);
     }
 
-    let changed = 0;
-    if (action === "adopt") {
-      const upd = await db.query(
-        `UPDATE spawn_points SET owner_kind='editor', owner_id=$3, updated_at=NOW() WHERE shard_id=$1 AND id = ANY($2::int[])`,
-        [shardId, targetIds, ownerId],
-      );
-      changed = Number(upd.rowCount ?? targetIds.length);
-    } else if (action === "release") {
-      const upd = await db.query(
-        `
-        UPDATE spawn_points
-        SET
-          owner_kind = CASE
-            WHEN spawn_id LIKE 'seed:%' THEN 'baseline'
-            WHEN spawn_id LIKE 'brain:%' THEN 'brain'
-            ELSE NULL
-          END,
-          owner_id = NULL,
-          updated_at = NOW()
-        WHERE shard_id=$1 AND id = ANY($2::int[])
-        `,
-        [shardId, targetIds],
-      );
-      changed = Number(upd.rowCount ?? targetIds.length);
-    } else if (action === "lock") {
-      const upd = await db.query(
-        `UPDATE spawn_points SET is_locked=TRUE, updated_at=NOW() WHERE shard_id=$1 AND id = ANY($2::int[])`,
-        [shardId, targetIds],
-      );
-      changed = Number(upd.rowCount ?? targetIds.length);
-    } else if (action === "unlock") {
-      const upd = await db.query(
-        `UPDATE spawn_points SET is_locked=FALSE, updated_at=NOW() WHERE shard_id=$1 AND id = ANY($2::int[])`,
-        [shardId, targetIds],
-      );
-      changed = Number(upd.rowCount ?? targetIds.length);
-    }
+    const changed = await applyBulkOwnershipAction({
+      db,
+      shardId,
+      action,
+      targetIds: plan.targetIds,
+      ownerId: strOrNull(body.ownerId),
+    });
 
     clearSpawnPointCache();
 
@@ -1247,18 +984,19 @@ router.post("/bulk_ownership_query", async (req, res) => {
       action,
       shardId,
       matched: found.length,
-      wouldChange: targetIds.length,
-      skippedReadOnly: readOnlySpawnIds.length,
-      skippedNoOp: noOpCount,
+      wouldChange: plan.targetIds.length,
+      skippedReadOnly: plan.readOnlySpawnIds.length,
+      skippedNoOp: plan.noOpCount,
       commit: true,
       changed,
-      opsPreview,
+      opsPreview: plan.opsPreview,
     } satisfies BulkOwnershipQueryResponse);
   } catch (err: any) {
     console.error("[ADMIN/SPAWN_POINTS] bulk_ownership_query error", err);
     return res.status(500).json({ kind: "spawn_points.bulk_ownership", ok: false, error: "internal_error" } satisfies BulkOwnershipQueryResponse);
   }
 });
+
 
 type BulkDeleteRequest = {
   shardId?: string;
