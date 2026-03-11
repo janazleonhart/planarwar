@@ -705,7 +705,8 @@
         "web-backend.routes.adminSpawnPoints.snapshotWriteOps",
         "web-backend.routes.adminSpawnPoints.bulkMutationOps",
         "web-backend.routes.adminSpawnPoints.bulkOwnershipOps",
-        "web-backend.routes.adminSpawnPoints.singleOwnershipOps"
+        "web-backend.routes.adminSpawnPoints.singleOwnershipOps",
+        "web-backend.routes.adminSpawnPoints.protoCatalogOps"
       ],
       "kind": "module",
       "lifecycle": "singleton",
@@ -737,7 +738,8 @@
         "Boundary cleanup slice 2g extracted snapshot query/save/list/update response shaping into routes/adminSpawnPoints/snapshotResponses.ts.",
         "Boundary cleanup slice 2h extracted snapshot delete/bulk-delete/purge confirm-token planning and file deletion helpers into routes/adminSpawnPoints/snapshotDeleteOps.ts.",
         "Boundary cleanup slice 2i extracted snapshot update/duplicate write-path helpers into routes/adminSpawnPoints/snapshotWriteOps.ts.",
-        "Boundary cleanup slice 2m extracted single-row adopt/release/lock/unlock helpers into routes/adminSpawnPoints/singleOwnershipOps.ts."
+        "Boundary cleanup slice 2m extracted single-row adopt/release/lock/unlock helpers into routes/adminSpawnPoints/singleOwnershipOps.ts.",
+        "Proto-options resource/station catalog helper extraction added in boundary cleanup slice 2n."
       ],
       "owns": [],
       "path": "web-backend/routes/adminSpawnPoints.ts",
@@ -1719,6 +1721,32 @@
         "readSpawnPointRowById(id)",
         "computeDefaultOwnerKindForSpawnId(spawnId)",
         "applySingleOwnershipAction(args)"
+      ],
+      "service": "admin.spawn_points"
+    },
+    "web-backend.routes.adminSpawnPoints.protoCatalogOps": {
+      "class": null,
+      "ctorArgs": [],
+      "dependsOn": [
+        "node:fs",
+        "node:path",
+        "worldcore.db.Database",
+        "worldcore.world.TownTierRules"
+      ],
+      "kind": "module",
+      "lifecycle": "static",
+      "notes": [
+        "Proto-options catalog helpers extracted from adminSpawnPoints.ts.",
+        "Encapsulates resources-dir resolution, JSON proto-id discovery, station tier proto aggregation, item label decoration, and response payload shaping for /proto_options.",
+        "Behavior-preserving extraction for boundary cleanup slice 2n."
+      ],
+      "owns": [
+        "Proto options payload shaping",
+        "Resource/station proto catalog discovery helpers"
+      ],
+      "path": "web-backend/routes/adminSpawnPoints/protoCatalogOps.ts",
+      "provides": [
+        "loadProtoOptionsPayload(args)"
       ],
       "service": "admin.spawn_points"
     }
