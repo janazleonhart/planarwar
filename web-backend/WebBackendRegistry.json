@@ -709,7 +709,8 @@
         "web-backend.routes.adminSpawnPoints.protoCatalogOps",
         "web-backend.routes.adminSpawnPoints.snapshotQueryFilters",
         "web-backend.routes.adminSpawnPoints.snapshotRequestParsers",
-        "web-backend.routes.adminSpawnPoints.snapshotCaptureOps"
+        "web-backend.routes.adminSpawnPoints.snapshotCaptureOps",
+        "web-backend.routes.adminSpawnPoints.restoreRequestOps"
       ],
       "kind": "module",
       "lifecycle": "singleton",
@@ -745,7 +746,8 @@
         "Proto-options resource/station catalog helper extraction added in boundary cleanup slice 2n.",
         "Boundary cleanup slice 2o extracted shared spawn-point query filter/list/snapshot row helpers into routes/adminSpawnPoints/snapshotQueryFilters.ts.",
         "Boundary cleanup slice 2p extracted shared snapshot/list request parsing and limit normalization helpers into routes/adminSpawnPoints/snapshotRequestParsers.ts.",
-        "Boundary cleanup slice 2q extracted DB-backed snapshot capture and stored snapshot document assembly helpers into routes/adminSpawnPoints/snapshotCaptureOps.ts."
+        "Boundary cleanup slice 2q extracted DB-backed snapshot capture and stored snapshot document assembly helpers into routes/adminSpawnPoints/snapshotCaptureOps.ts.",
+        "Boundary cleanup slice 2r extracted restore request parsing and confirm-gate response helpers into routes/adminSpawnPoints/restoreRequestOps.ts."
       ],
       "owns": [],
       "path": "web-backend/routes/adminSpawnPoints.ts",
@@ -1832,6 +1834,30 @@
         "buildStoredSnapshotDoc(args)"
       ],
       "service": "admin.spawnPoints.snapshotCaptureOps"
+    },
+    "web-backend.routes.adminSpawnPoints.restoreRequestOps": {
+      "class": null,
+      "ctorArgs": [],
+      "dependsOn": [
+        "node:crypto",
+        "web-backend.routes.adminSpawnPoints.snapshotStore",
+        "web-backend.routes.adminSpawnPoints.opsPreview"
+      ],
+      "kind": "module",
+      "lifecycle": "static",
+      "notes": [
+        "Parses restore request payloads and centralizes restore confirm-token / confirm-phrase requirements.",
+        "Builds the 409 confirm_required / confirm_phrase_required response bodies for admin spawn-point restore flows."
+      ],
+      "owns": [],
+      "path": "web-backend/routes/adminSpawnPoints/restoreRequestOps.ts",
+      "provides": [
+        "parseRestoreRequest()",
+        "buildRestoreConfirmRequirements()",
+        "buildRestoreConfirmPhraseError()",
+        "buildRestoreConfirmTokenError()"
+      ],
+      "service": "admin.spawnPoints.restoreRequestOps"
     }
   }
 }

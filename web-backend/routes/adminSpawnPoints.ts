@@ -1,10 +1,8 @@
 // web-backend/routes/adminSpawnPoints.ts
 
 import { Router } from "express";
-import { createHash } from "crypto";
 import {
   boolish,
-  coerceSnapshotSpawns,
   listStoredSnapshots,
   normalizeSnapshotTags,
   readStoredSnapshotById,
@@ -71,6 +69,13 @@ import {
   preloadExistingSpawnIds,
   preloadProtectedSpawnMap,
 } from "./adminSpawnPoints/restoreSnapshot";
+import {
+  buildRestoreConfirmPhraseError,
+  buildRestoreConfirmRequirements,
+  buildRestoreConfirmTokenError,
+  makeConfirmToken,
+  parseRestoreRequest,
+} from "./adminSpawnPoints/restoreRequestOps";
 import {
   deleteEditableSpawnPoints,
   moveEditableSpawnPoints,
@@ -194,16 +199,6 @@ type AdminApiKind =
   | "mother_brain.status"
   | "mother_brain.wave"
   | "mother_brain.wipe";
-
-function hashToken(input: unknown): string {
-  const s = typeof input === "string" ? input : JSON.stringify(input);
-  return createHash("sha256").update(s).digest("hex").slice(0, 10);
-}
-
-function makeConfirmToken(prefix: "WIPE" | "REPLACE", shardId: string, scope: unknown): string {
-  // Token format: PREFIX:<shardId>:<shortHash>
-  return `${prefix}:${shardId}:${hashToken(scope)}`;
-}
 
 function cloneScatterFail(error: string): CloneScatterFailure {
   return {
@@ -2227,18 +2222,21 @@ router.get("/snapshots/retention_status", (_req, res) => {
 //   snapshot (object|string), targetShard?, updateExisting?, allowBrainOwned?, commit?, confirm?
 router.post("/restore", async (req, res) => {
   try {
-    const snapshotRaw = req.body?.snapshot ?? req.body;
-    const snapshotObj =
-      typeof snapshotRaw === "string" ? JSON.parse(snapshotRaw) : snapshotRaw;
-
-    const { snapshotShard, bounds: snapshotBounds, cellSize: snapshotCellSize, pad: snapshotPad, types: snapshotTypes, spawns } = coerceSnapshotSpawns(snapshotObj);
-
-    const targetShard = String(req.body?.targetShard ?? snapshotShard ?? "prime_shard").trim() || "prime_shard";
-    const updateExisting = Boolean(req.body?.updateExisting);
-    const allowBrainOwned = Boolean(req.body?.allowBrainOwned);
-    const allowProtected = Boolean(req.body?.allowProtected);
-    const commit = Boolean(req.body?.commit);
-    const confirm = String(req.body?.confirm ?? "").trim() || null;
+    const {
+      snapshotShard,
+      snapshotBounds,
+      snapshotCellSize,
+      snapshotPad,
+      snapshotTypes,
+      spawns,
+      targetShard,
+      updateExisting,
+      allowBrainOwned,
+      allowProtected,
+      commit,
+      confirm,
+      confirmPhrase,
+    } = parseRestoreRequest(req.body);
 
     const spawnIds = spawns.map((s) => String(s.spawnId)).filter(Boolean);
     if (spawnIds.length === 0) {
@@ -2276,66 +2274,64 @@ router.post("/restore", async (req, res) => {
       limit: 75,
     });
 
-    const expectedConfirmToken =
-      updateExisting && updateIds.length > 0
-        ? makeConfirmToken("REPLACE", targetShard, { op: "restore", updateIds, rows: spawns.length })
-        : null;
-
-    // Additional destructive safety: when committing a restore that (a) crosses shards or (b) allows brain-owned spawn_ids,
-    // require a human-confirm phrase in addition to any token gate.
-    const expectedConfirmPhrase =
-      commit && (targetShard !== snapshotShard || allowBrainOwned || allowProtected) ? "RESTORE" : null;
-    const confirmPhrase = String(req.body?.confirmPhrase ?? "").trim() || null;
-
-    // Confirm phrase gate (high-risk restore modes)
-    if (commit && expectedConfirmPhrase && confirmPhrase !== expectedConfirmPhrase) {
-      return res.status(409).json({
-        kind: "spawn_points.restore",
-        ok: false,
-        error: "confirm_phrase_required",
-        expectedConfirmPhrase,
-        expectedConfirmToken: expectedConfirmToken ?? undefined,
-        opsPreview,
-        snapshotShard,
+    const { expectedConfirmToken, expectedConfirmPhrase, crossShard } =
+      buildRestoreConfirmRequirements({
+        commit,
         targetShard,
-        rows: spawns.length,
-        snapshotBounds: snapshotBounds ?? undefined,
-        snapshotCellSize: snapshotCellSize ?? undefined,
-        snapshotPad: snapshotPad ?? undefined,
-        snapshotTypes: snapshotTypes ?? undefined,
-        crossShard: targetShard !== snapshotShard,
+        snapshotShard,
         allowBrainOwned,
-      allowProtected,
-        wouldInsert: insertIds.length,
-        wouldUpdate: updateIds.length,
-        wouldSkip: skipIds.length,
-        wouldReadOnly: readOnlyIds.length,
+        allowProtected,
+        updateExisting,
+        updateIds,
+        rowCount: spawns.length,
       });
+
+    if (commit && expectedConfirmPhrase && confirmPhrase !== expectedConfirmPhrase) {
+      return res.status(409).json(
+        buildRestoreConfirmPhraseError({
+          expectedConfirmToken,
+          expectedConfirmPhrase,
+          opsPreview,
+          snapshotShard,
+          targetShard,
+          rows: spawns.length,
+          snapshotBounds,
+          snapshotCellSize,
+          snapshotPad,
+          snapshotTypes,
+          crossShard,
+          allowBrainOwned,
+          allowProtected,
+          wouldInsert: insertIds.length,
+          wouldUpdate: updateIds.length,
+          wouldSkip: skipIds.length,
+          wouldReadOnly: readOnlyIds.length,
+        }),
+      );
     }
 
-    // Confirm token gate (destructive updates to existing rows)
     if (commit && expectedConfirmToken && confirm !== expectedConfirmToken) {
-      return res.status(409).json({
-        kind: "spawn_points.restore",
-        ok: false,
-        error: "confirm_required",
-        expectedConfirmToken,
-        expectedConfirmPhrase: expectedConfirmPhrase ?? undefined,
-        opsPreview,
-        snapshotShard,
-        targetShard,
-        rows: spawns.length,
-        snapshotBounds: snapshotBounds ?? undefined,
-        snapshotCellSize: snapshotCellSize ?? undefined,
-        snapshotPad: snapshotPad ?? undefined,
-        snapshotTypes: snapshotTypes ?? undefined,
-        crossShard: targetShard !== snapshotShard,
-        allowBrainOwned,
-        wouldInsert: insertIds.length,
-        wouldUpdate: updateIds.length,
-        wouldSkip: skipIds.length,
-        wouldReadOnly: readOnlyIds.length,
-      });
+      return res.status(409).json(
+        buildRestoreConfirmTokenError({
+          expectedConfirmToken,
+          expectedConfirmPhrase,
+          opsPreview,
+          snapshotShard,
+          targetShard,
+          rows: spawns.length,
+          snapshotBounds,
+          snapshotCellSize,
+          snapshotPad,
+          snapshotTypes,
+          crossShard,
+          allowBrainOwned,
+          allowProtected,
+          wouldInsert: insertIds.length,
+          wouldUpdate: updateIds.length,
+          wouldSkip: skipIds.length,
+          wouldReadOnly: readOnlyIds.length,
+        }),
+      );
     }
 
     const { inserted, updated, skipped, skippedReadOnly, skippedProtected } = await applyRestoreSnapshot({
