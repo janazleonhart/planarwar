@@ -107,6 +107,11 @@ import { planTownBaselines } from "../../worldcore/sim/TownBaselinePlanner";
 import type { TownBaselinePlanOptions, TownLikeSpawnRow } from "../../worldcore/sim/TownBaselinePlanner";
 import { getStationProtoIdsForTier } from "../../worldcore/world/TownTierRules";
 import { loadProtoOptionsPayload } from "./adminSpawnPoints/protoCatalogOps";
+import {
+  buildSpawnPointListQuery,
+  loadSnapshotRowsByQuery,
+  parseSpawnPointQueryFilters,
+} from "./adminSpawnPoints/snapshotQueryFilters";
 
 const router = Router();
 
@@ -331,97 +336,13 @@ router.get("/proto_options", async (_req, res) => {
 
 router.get("/", async (req, res) => {
   try {
-    const shardId = String(req.query.shardId ?? "prime_shard").trim();
-
-    const regionId = strOrNull(req.query.regionId);
-    const x = numOrNull(req.query.x);
-    const z = numOrNull(req.query.z);
-    const radius = numOrNull(req.query.radius);
-
-    const authority = normalizeAuthority(req.query.authority);
-    const typeQ = strOrNull(req.query.type);
-    const archetypeQ = strOrNull(req.query.archetype);
-    const protoQ = strOrNull(req.query.protoId);
-    const spawnQ = strOrNull(req.query.spawnId);
-
+    const filters = parseSpawnPointQueryFilters(req.query, { numOrNull, strOrNull, normalizeAuthority });
     const limit = Math.max(1, Math.min(1000, Number(req.query.limit ?? 200)));
-
-    const where: string[] = ["shard_id = $1"];
-    const args: any[] = [shardId];
-    let i = 2;
-
-    // Mode: region
-    if (regionId) {
-      where.push(`region_id = $${i++}`);
-      args.push(regionId);
-    }
-
-    // Mode: radius (only if no regionId)
-    if (!regionId && x !== null && z !== null && radius !== null) {
-      const safeRadius = Math.max(0, Math.min(radius, 10_000));
-      const r2 = safeRadius * safeRadius;
-
-      where.push(`x IS NOT NULL AND z IS NOT NULL`);
-      where.push(`((x - $${i}) * (x - $${i}) + (z - $${i + 1}) * (z - $${i + 1})) <= $${i + 2}`);
-      args.push(x, z, r2);
-      i += 3;
-    }
-
-    // Filters
-    if (authority) {
-      if (authority === "anchor") where.push(`spawn_id LIKE 'anchor:%'`);
-      else if (authority === "seed") where.push(`spawn_id LIKE 'seed:%'`);
-      else if (authority === "brain") where.push(`spawn_id LIKE 'brain:%'`);
-      else {
-        // manual = not any of the known prefixes
-        where.push(`spawn_id NOT LIKE 'anchor:%' AND spawn_id NOT LIKE 'seed:%' AND spawn_id NOT LIKE 'brain:%'`);
-      }
-    }
-
-    if (typeQ) {
-      where.push(`LOWER(type) = LOWER($${i++})`);
-      args.push(typeQ);
-    }
-
-    if (archetypeQ) {
-      where.push(`LOWER(archetype) = LOWER($${i++})`);
-      args.push(archetypeQ);
-    }
-
-    if (protoQ) {
-      where.push(`proto_id ILIKE $${i++}`);
-      args.push(`%${protoQ}%`);
-    }
-
-    if (spawnQ) {
-      where.push(`spawn_id ILIKE $${i++}`);
-      args.push(`%${spawnQ}%`);
-    }
-
-    const sql = `
-      SELECT
-        id,
-        shard_id,
-        spawn_id,
-        type,
-        archetype,
-        proto_id,
-        variant_id,
-        x,
-        y,
-        z,
-        region_id,
-        town_tier,
-        owner_kind,
-        owner_id,
-        is_locked
-      FROM spawn_points
-      WHERE ${where.join(" AND ")}
-      ORDER BY id ASC
-      LIMIT $${i}
-    `;
-
-    args.push(limit);
+    const { sql, args } = buildSpawnPointListQuery({
+      filters,
+      limit,
+      helpers: { numOrNull, strOrNull, normalizeAuthority },
+    });
 
     const r = await db.query(sql, args);
     const rows = r.rows ?? [];
@@ -1935,18 +1856,7 @@ router.post("/snapshot", async (req, res) => {
 // Snapshot rows based on the same filters as list endpoint (region OR radius + filters).
 router.post("/snapshot_query", async (req, res) => {
   try {
-    const shardId = String(req.body?.shardId ?? "prime_shard").trim();
-
-    const regionId = strOrNull(req.body?.regionId);
-    const x = numOrNull(req.body?.x);
-    const z = numOrNull(req.body?.z);
-    const radius = numOrNull(req.body?.radius);
-
-    const authority = normalizeAuthority(req.body?.authority);
-    const typeQ = strOrNull(req.body?.type);
-    const archetypeQ = strOrNull(req.body?.archetype);
-    const protoQ = strOrNull(req.body?.protoId);
-    const spawnQ = strOrNull(req.body?.spawnId);
+    const filters = parseSpawnPointQueryFilters(req.body, { numOrNull, strOrNull, normalizeAuthority });
 
     const cellSize = Math.max(1, Math.min(1024, Number(req.body?.cellSize ?? 64)));
     const pad = Math.max(0, Math.min(1000, Number(req.body?.pad ?? 0)));
@@ -1954,55 +1864,12 @@ router.post("/snapshot_query", async (req, res) => {
     // Hard cap: snapshots by query are for operator workflows, not data exfiltration.
     const MAX_ROWS = 5000;
 
-    const where: string[] = ["shard_id = $1"];
-    const args: any[] = [shardId];
-    let i = 2;
-
-    if (regionId) {
-      where.push(`region_id = $${i++}`);
-      args.push(regionId);
-    }
-
-    if (!regionId && x !== null && z !== null && radius !== null) {
-      const safeRadius = Math.max(0, Math.min(radius, 10_000));
-      const r2 = safeRadius * safeRadius;
-
-      where.push(`x IS NOT NULL AND z IS NOT NULL`);
-      where.push(`((x - $${i}) * (x - $${i}) + (z - $${i + 1}) * (z - $${i + 1})) <= $${i + 2}`);
-      args.push(x, z, r2);
-      i += 3;
-    }
-
-    if (authority) {
-      if (authority === "anchor") where.push(`spawn_id LIKE 'anchor:%'`);
-      else if (authority === "seed") where.push(`spawn_id LIKE 'seed:%'`);
-      else if (authority === "brain") where.push(`spawn_id LIKE 'brain:%'`);
-      else where.push(`spawn_id NOT LIKE 'anchor:%' AND spawn_id NOT LIKE 'seed:%' AND spawn_id NOT LIKE 'brain:%'`);
-    }
-
-    if (typeQ) {
-      where.push(`LOWER(type) = LOWER($${i++})`);
-      args.push(typeQ);
-    }
-
-    if (archetypeQ) {
-      where.push(`LOWER(archetype) = LOWER($${i++})`);
-      args.push(archetypeQ);
-    }
-
-    if (protoQ) {
-      where.push(`proto_id ILIKE $${i++}`);
-      args.push(`%${protoQ}%`);
-    }
-
-    if (spawnQ) {
-      where.push(`spawn_id ILIKE $${i++}`);
-      args.push(`%${spawnQ}%`);
-    }
-
-    const countSql = `SELECT COUNT(1)::int AS n FROM spawn_points WHERE ${where.join(" AND ")}`;
-    const countRes = await db.query(countSql, args);
-    const total = Number(countRes.rows?.[0]?.n ?? 0);
+    const { total, spawns } = await loadSnapshotRowsByQuery({
+      db,
+      filters,
+      maxRows: MAX_ROWS,
+      helpers: { numOrNull, strOrNull, normalizeAuthority },
+    });
     if (total > MAX_ROWS) {
       return res.status(400).json({
         kind: "spawn_points.snapshot_query",
@@ -2013,42 +1880,14 @@ router.post("/snapshot_query", async (req, res) => {
       });
     }
 
-    const sql = `
-      SELECT
-        shard_id,
-        spawn_id,
-        type,
-        archetype,
-        proto_id,
-        variant_id,
-        x,
-        y,
-        z,
-        region_id,
-        town_tier
-      FROM spawn_points
-      WHERE ${where.join(" AND ")}
-      ORDER BY id ASC
-      LIMIT ${MAX_ROWS}
-    `;
-
-    const rowsRes = await db.query(sql, args);
-    const spawns: SnapshotSpawnRow[] = (rowsRes.rows || []).map((r: any) => ({
-      shardId: String(r.shard_id),
-      spawnId: String(r.spawn_id),
-      type: String(r.type),
-      protoId: String(r.proto_id ?? ""),
-      archetype: String(r.archetype),
-      variantId: r.variant_id ? String(r.variant_id) : null,
-      x: Number(r.x ?? 0),
-      y: Number(r.y ?? 0),
-      z: Number(r.z ?? 0),
-      regionId: String(r.region_id ?? ""),
-      townTier: r.town_tier === null || r.town_tier === undefined ? null : Number(r.town_tier),
-    }));
-
-    const snapshot = buildSnapshotFromQuery({ shardId, spawns, cellSize, pad, typeQ });
-    const filename = makeSnapshotQueryFilename({ shardId, regionId, x, z, radius });
+    const snapshot = buildSnapshotFromQuery({ shardId: filters.shardId, spawns, cellSize, pad, typeQ: filters.type ?? null });
+    const filename = makeSnapshotQueryFilename({
+      shardId: filters.shardId,
+      regionId: filters.regionId ?? null,
+      x: filters.x ?? null,
+      z: filters.z ?? null,
+      radius: filters.radius ?? null,
+    });
 
     return res.json({ kind: "spawn_points.snapshot_query", ok: true, filename, snapshot, total: spawns.length });
   } catch (err: any) {
@@ -2064,18 +1903,7 @@ router.post("/snapshots/save_query", async (req, res) => {
     const nameRaw = strOrNull(req.body?.name);
     if (!nameRaw) return res.status(400).json({ kind: "spawn_points.snapshots.save_query", ok: false, error: "missing_name" });
 
-    const shardId = String(req.body?.shardId ?? "prime_shard").trim();
-
-    const regionId = strOrNull(req.body?.regionId);
-    const x = numOrNull(req.body?.x);
-    const z = numOrNull(req.body?.z);
-    const radius = numOrNull(req.body?.radius);
-
-    const authority = normalizeAuthority(req.body?.authority);
-    const typeQ = strOrNull(req.body?.type);
-    const archetypeQ = strOrNull(req.body?.archetype);
-    const protoQ = strOrNull(req.body?.protoId);
-    const spawnQ = strOrNull(req.body?.spawnId);
+    const filters = parseSpawnPointQueryFilters(req.body, { numOrNull, strOrNull, normalizeAuthority });
 
     const cellSize = Math.max(1, Math.min(1024, Number(req.body?.cellSize ?? 64)));
     const pad = Math.max(0, Math.min(1000, Number(req.body?.pad ?? 0)));
@@ -2085,55 +1913,12 @@ router.post("/snapshots/save_query", async (req, res) => {
 
     const MAX_ROWS = 5000;
 
-    const where: string[] = ["shard_id = $1"];
-    const args: any[] = [shardId];
-    let i = 2;
-
-    if (regionId) {
-      where.push(`region_id = $${i++}`);
-      args.push(regionId);
-    }
-
-    if (!regionId && x !== null && z !== null && radius !== null) {
-      const safeRadius = Math.max(0, Math.min(radius, 10_000));
-      const r2 = safeRadius * safeRadius;
-
-      where.push(`x IS NOT NULL AND z IS NOT NULL`);
-      where.push(`((x - $${i}) * (x - $${i}) + (z - $${i + 1}) * (z - $${i + 1})) <= $${i + 2}`);
-      args.push(x, z, r2);
-      i += 3;
-    }
-
-    if (authority) {
-      if (authority === "anchor") where.push(`spawn_id LIKE 'anchor:%'`);
-      else if (authority === "seed") where.push(`spawn_id LIKE 'seed:%'`);
-      else if (authority === "brain") where.push(`spawn_id LIKE 'brain:%'`);
-      else where.push(`spawn_id NOT LIKE 'anchor:%' AND spawn_id NOT LIKE 'seed:%' AND spawn_id NOT LIKE 'brain:%'`);
-    }
-
-    if (typeQ) {
-      where.push(`LOWER(type) = LOWER($${i++})`);
-      args.push(typeQ);
-    }
-
-    if (archetypeQ) {
-      where.push(`LOWER(archetype) = LOWER($${i++})`);
-      args.push(archetypeQ);
-    }
-
-    if (protoQ) {
-      where.push(`proto_id ILIKE $${i++}`);
-      args.push(`%${protoQ}%`);
-    }
-
-    if (spawnQ) {
-      where.push(`spawn_id ILIKE $${i++}`);
-      args.push(`%${spawnQ}%`);
-    }
-
-    const countSql = `SELECT COUNT(1)::int AS n FROM spawn_points WHERE ${where.join(" AND ")}`;
-    const countRes = await db.query(countSql, args);
-    const total = Number(countRes.rows?.[0]?.n ?? 0);
+    const { total, spawns } = await loadSnapshotRowsByQuery({
+      db,
+      filters,
+      maxRows: MAX_ROWS,
+      helpers: { numOrNull, strOrNull, normalizeAuthority },
+    });
     if (total > MAX_ROWS) {
       return res.status(400).json({
         kind: "spawn_points.snapshots.save_query",
@@ -2144,43 +1929,9 @@ router.post("/snapshots/save_query", async (req, res) => {
       });
     }
 
-    const sql = `
-      SELECT
-        shard_id,
-        spawn_id,
-        type,
-        archetype,
-        proto_id,
-        variant_id,
-        x,
-        y,
-        z,
-        region_id,
-        town_tier
-      FROM spawn_points
-      WHERE ${where.join(" AND ")}
-      ORDER BY id ASC
-      LIMIT ${MAX_ROWS}
-    `;
-
-    const rowsRes = await db.query(sql, args);
-    const spawns: SnapshotSpawnRow[] = (rowsRes.rows || []).map((r: any) => ({
-      shardId: String(r.shard_id),
-      spawnId: String(r.spawn_id),
-      type: String(r.type),
-      protoId: String(r.proto_id ?? ""),
-      archetype: String(r.archetype),
-      variantId: r.variant_id ? String(r.variant_id) : null,
-      x: Number(r.x ?? 0),
-      y: Number(r.y ?? 0),
-      z: Number(r.z ?? 0),
-      regionId: String(r.region_id ?? ""),
-      townTier: r.town_tier === null || r.town_tier === undefined ? null : Number(r.town_tier),
-    }));
-
-    const snapshot = buildSnapshotFromQuery({ shardId, spawns, cellSize, pad, typeQ });
+    const snapshot = buildSnapshotFromQuery({ shardId: filters.shardId, spawns, cellSize, pad, typeQ: filters.type ?? null });
     const name = safeSnapshotName(nameRaw);
-    const id = makeSnapshotId(name, shardId, snapshot.bounds, snapshot.types);
+    const id = makeSnapshotId(name, filters.shardId, snapshot.bounds, snapshot.types);
     const savedAt = new Date().toISOString();
 
     const doc: StoredSpawnSnapshotDoc = {
