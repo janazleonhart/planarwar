@@ -1195,18 +1195,31 @@
       "dependsOn": [
         "express",
         "worldcore/db/Database.ts",
-        "infra.schema.079_service_heartbeats"
+        "infra.schema.079_service_heartbeats",
+        "web-backend.routes.adminMotherBrain.motherBrainProxy",
+        "web-backend.routes.adminMotherBrain.motherBrainReports",
+        "web-backend.routes.adminMotherBrain.motherBrainShared"
       ],
       "kind": "module",
       "lifecycle": "singleton",
       "notes": [
-        "Admin route for Mother Brain status, backed by service_heartbeats table.",
-        "Mounted at /api/admin/mother_brain (see web-backend/index.ts)."
+        "Admin route for Mother Brain status, wave budget controls, goal proxy endpoints, and JSONL report tail viewing.",
+        "Mounted at /api/admin/mother_brain (see web-backend/index.ts).",
+        "Delegates HTTP proxy, report-tail file IO, and shared parsing helpers to focused route helper modules."
       ],
       "owns": [],
       "path": "web-backend/routes/adminMotherBrain.ts",
       "provides": [
-        "GET /api/admin/mother_brain/status"
+        "GET /api/admin/mother_brain/status",
+        "GET /api/admin/mother_brain/wave_budget",
+        "POST /api/admin/mother_brain/wave_budget",
+        "DELETE /api/admin/mother_brain/wave_budget/:shardId/:type",
+        "GET /api/admin/mother_brain/goals/report_tail",
+        "GET /api/admin/mother_brain/goals_proxy_info",
+        "GET /api/admin/mother_brain/goals",
+        "POST /api/admin/mother_brain/goals/run",
+        "POST /api/admin/mother_brain/goals/clear",
+        "POST /api/admin/mother_brain/goals/set"
       ],
       "service": "web-backend.routes"
     },
@@ -2055,6 +2068,68 @@
         "Encapsulates boxed spawn_points query reuse for status, wave, and wipe flows plus normalized row shaping.",
         "Boundary cleanup slice 2z."
       ]
+    },
+    "web-backend.routes.adminMotherBrain.motherBrainProxy": {
+      "class": null,
+      "ctorArgs": [],
+      "dependsOn": [
+        "node:process",
+        "global.fetch"
+      ],
+      "kind": "module",
+      "lifecycle": "singleton",
+      "notes": [
+        "Resolves Mother Brain HTTP base URL from PW_MOTHER_BRAIN_HTTP_URL or MOTHER_BRAIN_HTTP_HOST/MOTHER_BRAIN_HTTP_PORT.",
+        "Provides a small proxy wrapper with timeout, JSON parsing, and normalized error envelopes for admin route forwarding."
+      ],
+      "owns": [],
+      "path": "web-backend/routes/adminMotherBrain/motherBrainProxy.ts",
+      "provides": [
+        "motherBrainHttpBase()",
+        "proxyMotherBrain(method, routePath, body?)"
+      ],
+      "service": "web-backend.routes"
+    },
+    "web-backend.routes.adminMotherBrain.motherBrainReports": {
+      "class": null,
+      "ctorArgs": [],
+      "dependsOn": [
+        "node:fs/promises",
+        "node:path",
+        "web-backend.routes.adminMotherBrain.motherBrainShared"
+      ],
+      "kind": "module",
+      "lifecycle": "singleton",
+      "notes": [
+        "Resolves the Mother Brain goals report directory from PW_MOTHER_BRAIN_GOALS_REPORT_DIR or PW_FILELOG.",
+        "Validates suite ids and reads date-based JSONL goal reports for admin tail viewing."
+      ],
+      "owns": [],
+      "path": "web-backend/routes/adminMotherBrain/motherBrainReports.ts",
+      "provides": [
+        "motherBrainGoalsReportDir()",
+        "safeSuiteId(value)",
+        "readGoalsReportTail(args)"
+      ],
+      "service": "web-backend.routes"
+    },
+    "web-backend.routes.adminMotherBrain.motherBrainShared": {
+      "class": null,
+      "ctorArgs": [],
+      "dependsOn": [],
+      "kind": "module",
+      "lifecycle": "singleton",
+      "notes": [
+        "Shared low-level parsing helpers for adminMotherBrain route helpers.",
+        "Keeps integer coercion and Postgres error-code extraction consistent across route modules."
+      ],
+      "owns": [],
+      "path": "web-backend/routes/adminMotherBrain/motherBrainShared.ts",
+      "provides": [
+        "pgErrCode(err)",
+        "toInt(value)"
+      ],
+      "service": "web-backend.routes"
     }
   }
 }

@@ -7,111 +7,11 @@
 
 import { Router } from "express";
 import { db } from "../../worldcore/db/Database";
-import fs from "node:fs/promises";
-import path from "node:path";
+import { motherBrainHttpBase, proxyMotherBrain } from "./adminMotherBrain/motherBrainProxy";
+import { readGoalsReportTail } from "./adminMotherBrain/motherBrainReports";
+import { pgErrCode, toInt } from "./adminMotherBrain/motherBrainShared";
 
 const router = Router();
-
-function motherBrainHttpBase(): string | null {
-  const explicit = typeof process.env.PW_MOTHER_BRAIN_HTTP_URL === "string" ? process.env.PW_MOTHER_BRAIN_HTTP_URL.trim() : "";
-  if (explicit) return explicit.replace(/\/+$/, "");
-
-  const portRaw = process.env.MOTHER_BRAIN_HTTP_PORT;
-  const port = portRaw && String(portRaw).trim() !== "" ? Number(portRaw) : NaN;
-  if (Number.isFinite(port) && port > 0) {
-    const host = typeof process.env.MOTHER_BRAIN_HTTP_HOST === "string" && process.env.MOTHER_BRAIN_HTTP_HOST.trim()
-      ? process.env.MOTHER_BRAIN_HTTP_HOST.trim()
-      : "127.0.0.1";
-    return `http://${host}:${port}`;
-  }
-
-  return null;
-}
-
-async function proxyMotherBrain(method: "GET" | "POST", path: string, body?: unknown): Promise<{ ok: boolean; status: number; json: any }> {
-  const base = motherBrainHttpBase();
-  if (!base) {
-    return {
-      ok: false,
-      status: 409,
-      json: {
-        ok: false,
-        error: "mother_brain_http_proxy_disabled",
-        detail: "Set PW_MOTHER_BRAIN_HTTP_URL or MOTHER_BRAIN_HTTP_PORT on web-backend to enable proxy.",
-      },
-    };
-  }
-
-  const url = `${base}${path.startsWith("/") ? "" : "/"}${path}`;
-  const ac = new AbortController();
-  const t = setTimeout(() => ac.abort(), 2500);
-
-  try {
-    const res = await fetch(url, {
-      method,
-      headers: body === undefined ? undefined : { "content-type": "application/json" },
-      body: body === undefined ? undefined : JSON.stringify(body),
-      signal: ac.signal,
-    } as any);
-
-    let json: any = null;
-    try {
-      json = await res.json();
-    } catch {
-      json = { ok: false, error: "non_json_response" };
-    }
-
-    return { ok: res.ok, status: res.status, json };
-  } catch (err: unknown) {
-    return {
-      ok: false,
-      status: 502,
-      json: {
-        ok: false,
-        error: "mother_brain_http_proxy_failed",
-        detail: err instanceof Error ? err.message : String(err),
-      },
-    };
-  } finally {
-    clearTimeout(t);
-  }
-}
-
-function pgErrCode(err: unknown): string | null {
-  if (!err || typeof err !== "object") return null;
-  const anyErr = err as any;
-  return typeof anyErr.code === "string" ? anyErr.code : null;
-}
-
-function toInt(v: unknown): number | null {
-  if (typeof v === "number" && Number.isFinite(v)) return Math.trunc(v);
-  if (typeof v === "string" && v.trim() !== "") {
-    const n = Number(v);
-    if (Number.isFinite(n)) return Math.trunc(n);
-  }
-  return null;
-}
-
-function motherBrainGoalsReportDir(): string | null {
-  const explicit = typeof process.env.PW_MOTHER_BRAIN_GOALS_REPORT_DIR === "string" ? process.env.PW_MOTHER_BRAIN_GOALS_REPORT_DIR.trim() : "";
-  if (explicit) return explicit;
-
-  const filelog = typeof process.env.PW_FILELOG === "string" ? process.env.PW_FILELOG.trim() : "";
-  if (!filelog) return null;
-
-  // PW_FILELOG typically looks like /path/to/log/{scope}.log
-  const base = path.dirname(filelog);
-  return path.join(base, "mother-brain");
-}
-
-function safeSuiteId(v: unknown): string | null {
-  if (typeof v !== "string") return null;
-  const s = v.trim();
-  if (!s) return null;
-  // Prevent path traversal or weirdness.
-  if (!/^[A-Za-z0-9_-]+$/.test(s)) return null;
-  return s;
-}
 
 router.get("/status", async (_req, res) => {
   try {
@@ -140,10 +40,6 @@ router.get("/status", async (_req, res) => {
     const row = q.rows?.[0] ?? null;
     res.json({ ok: true, status: row });
   } catch (err: unknown) {
-    // If migration hasn't been applied yet, don't 500 the UI.
-    // Postgres codes:
-    //  - 42P01 undefined_table
-    //  - 42703 undefined_column
     const code = pgErrCode(err);
     if (code === "42P01" || code === "42703") {
       res.json({
@@ -158,9 +54,6 @@ router.get("/status", async (_req, res) => {
     res.status(500).json({ ok: false, error: err instanceof Error ? err.message : String(err) });
   }
 });
-
-// Optional wave-budget caps table (spawn_wave_budgets).
-// Mother Brain reads this table (if present) to compute remaining budget.
 
 router.get("/wave_budget", async (_req, res) => {
   try {
@@ -242,57 +135,9 @@ router.post("/wave_budget", async (req, res) => {
   }
 });
 
-// Tail Mother Brain JSONL goal reports (optional).
-// This is a safe, admin-only convenience so you don't have to SSH into logs.
-// Enabled only when PW_MOTHER_BRAIN_GOALS_REPORT_DIR or PW_FILELOG is set.
-
 router.get("/goals/report_tail", async (req, res) => {
-  const reportDir = motherBrainGoalsReportDir();
-  if (!reportDir) {
-    res.status(409).json({
-      ok: false,
-      error: "mother_brain_goals_report_dir_not_configured",
-      detail: "Set PW_MOTHER_BRAIN_GOALS_REPORT_DIR or PW_FILELOG on web-backend to enable JSONL tail viewing.",
-    });
-    return;
-  }
-
-  const suite = safeSuiteId(req.query?.suite);
-  if (!suite) {
-    res.status(400).json({ ok: false, error: "suite_required", detail: "Provide suite=<suiteId> (letters/numbers/_/- only)." });
-    return;
-  }
-
-  const linesRaw = req.query?.lines;
-  const lines = Math.max(1, Math.min(500, toInt(linesRaw) ?? 200));
-
-  // Mother Brain uses date-based filenames. We use UTC date to match most deployments.
-  const date = new Date().toISOString().slice(0, 10);
-  const filename = `mother-brain-goals-${suite}-${date}.jsonl`;
-  const full = path.join(reportDir, filename);
-
-  try {
-    const txt = await fs.readFile(full, "utf8");
-    const all = txt.split(/\r?\n/).filter((l) => l.trim() !== "");
-    const tail = all.slice(Math.max(0, all.length - lines));
-
-    const parsed: any[] = [];
-    for (const line of tail) {
-      try {
-        parsed.push(JSON.parse(line));
-      } catch {
-        parsed.push({ _parseError: true, line });
-      }
-    }
-
-    res.json({ ok: true, suite, date, filename, lines: parsed });
-  } catch (err: any) {
-    if (err && (err.code === "ENOENT" || err.code === "ENOTDIR")) {
-      res.status(404).json({ ok: false, error: "report_not_found", detail: `${filename} not found in ${reportDir}` });
-      return;
-    }
-    res.status(500).json({ ok: false, error: err instanceof Error ? err.message : String(err) });
-  }
+  const result = await readGoalsReportTail({ suiteQuery: req.query?.suite, linesQuery: req.query?.lines });
+  res.status(result.status).json(result.json);
 });
 
 router.delete("/wave_budget/:shardId/:type", async (req, res) => {
@@ -361,7 +206,6 @@ router.post("/goals/clear", async (_req, res) => {
 });
 
 router.post("/goals/set", async (req, res) => {
-  // body must be a JSON array of goals (forwarded verbatim)
   const r = await proxyMotherBrain("POST", "/goals/set", req.body);
   res.status(r.status).json(r.json);
 });
