@@ -211,14 +211,20 @@ export interface GameEvent {
 }
 
 export interface CityStressState {
-  hunger: number;
-  unrest: number;
-  corruption: number;
-  arcaneHazard: number;
+  stage: "stable" | "strained" | "crisis" | "lockdown";
+  total: number;
+  foodPressure: number;
+  threatPressure: number;
+  unityPressure: number;
+  lastUpdatedAt: string;
 }
 
 export interface MeProfile {
   ok?: boolean;
+  isDemo?: boolean;
+  hasCity?: boolean;
+  canCreateCity?: boolean;
+  suggestedCityName?: string;
   userId: string;
   username: string;
   city: CitySummary | null;
@@ -226,6 +232,7 @@ export interface MeProfile {
   policies: PoliciesState;
   heroes: Hero[];
   armies: Army[];
+  activeMissions?: ActiveMission[];
   researchedTechIds: string[];
   availableTechs: TechSummary[];
   activeResearch: ActiveResearchView | null;
@@ -300,6 +307,23 @@ export async function cityMorph(specializationId: string): Promise<CityMorphResu
 
 export async function fetchCityDebug(): Promise<CityDebugResult> {
   return api<CityDebugResult>("/api/city");
+}
+
+export type CityBootstrapResult = { ok: boolean; created?: boolean; playerId?: string; city?: CitySummary; resources?: Resources; error?: string };
+export type CityRenameResult = { ok: boolean; city?: CitySummary; error?: string };
+
+export async function bootstrapCity(name: string, shardId?: string): Promise<CityBootstrapResult> {
+  return api<CityBootstrapResult>("/api/city/bootstrap", {
+    method: "POST",
+    body: JSON.stringify({ name, shardId }),
+  });
+}
+
+export async function renameCity(name: string): Promise<CityRenameResult> {
+  return api<CityRenameResult>("/api/city/rename", {
+    method: "POST",
+    body: JSON.stringify({ name }),
+  });
 }
 // Auth token helper used across MUD / City Builder / Admin tools.
 // Stored by the login UI under localStorage key 'pw_auth_v1'.

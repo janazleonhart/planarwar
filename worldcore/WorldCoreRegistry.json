@@ -8020,6 +8020,25 @@
       "provides": [
         "service_heartbeats table"
       ]
+    },
+    "infra.schema.082_city_names_unique_v0": {
+      "class": "(sql) infra schema migration",
+      "ctorArgs": [],
+      "dependsOn": [
+        "infra.schema.048_create_cities"
+      ],
+      "kind": "service",
+      "lifecycle": "singleton",
+      "notes": [
+        "Repairs duplicate legacy city names before creating the case-insensitive unique index.",
+        "Supports player-facing city bootstrap and rename flows by guaranteeing unique public city names at the database layer."
+      ],
+      "owns": [],
+      "path": "worldcore/infra/schema/082_city_names_unique_v0.sql",
+      "provides": [
+        "Case-insensitive unique index on public.cities(lower(name))",
+        "Duplicate city-name repair pass for pre-bootstrap data"
+      ]
     }
   }
 }

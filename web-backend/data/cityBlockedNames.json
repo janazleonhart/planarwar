@@ -1,0 +1,26 @@
+{
+  "exactNames": [
+    "admin",
+    "administrator",
+    "developer",
+    "gm",
+    "gamemaster",
+    "moderator",
+    "mod",
+    "support",
+    "system",
+    "official",
+    "planar war",
+    "openai"
+  ],
+  "blockedFragments": [
+    "nazi",
+    "hitler",
+    "kkk",
+    "racist",
+    "rapist",
+    "genocide",
+    "slur",
+    "pedo"
+  ]
+}

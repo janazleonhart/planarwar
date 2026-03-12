@@ -74,7 +74,7 @@ export function OperationsPage() {
   const city = me?.city ?? null;
   const resources = (me as any)?.resources ?? null;
 
-  const cityName = city?.name ?? "City";
+  const cityName = city?.name ?? "No City";
   const cityTier = city?.tier ?? null;
   const specLabel = city?.specializationId ? city.specializationId : "none";
 
@@ -138,10 +138,10 @@ export function OperationsPage() {
               borderRadius: 6,
               border: "1px solid #777",
               background: "#111",
-              cursor: busy ? "not-allowed" : "pointer",
-              opacity: busy ? 0.6 : 1,
+              cursor: busy || !city ? "not-allowed" : "pointer",
+              opacity: busy || !city ? 0.6 : 1,
             }}
-            disabled={busy}
+            disabled={busy || !city}
             onClick={() => void refresh()}
           >
             Refresh
@@ -153,6 +153,12 @@ export function OperationsPage() {
         <div style={{ marginBottom: 12, padding: 10, border: "1px solid #552", borderRadius: 8, background: "#221" }}>
           <strong style={{ color: "salmon" }}>Error:</strong>{" "}
           <span style={{ color: "salmon" }}>{error}</span>
+        </div>
+      ) : null}
+
+      {!city ? (
+        <div style={{ marginBottom: 12, padding: 10, border: "1px solid #335", borderRadius: 8, background: "#112" }}>
+          No city is attached to this account yet. Bootstrap one from the Me page first, then the operations panel will stop glaring at you.
         </div>
       ) : null}
 
@@ -174,10 +180,10 @@ export function OperationsPage() {
                 borderRadius: 6,
                 border: "1px solid #777",
                 background: "#111",
-                cursor: busy ? "not-allowed" : "pointer",
-                opacity: busy ? 0.6 : 1,
+                cursor: busy || !city ? "not-allowed" : "pointer",
+                opacity: busy || !city ? 0.6 : 1,
               }}
-              disabled={busy}
+              disabled={busy || !city}
               onClick={() => void doTierUp()}
               title="POST /api/city/tier-up"
             >
@@ -208,8 +214,8 @@ export function OperationsPage() {
               borderRadius: 6,
               border: "1px solid #777",
               background: "#111",
-              cursor: busy ? "not-allowed" : "pointer",
-              opacity: busy ? 0.6 : 1,
+              cursor: busy || !city ? "not-allowed" : "pointer",
+              opacity: busy || !city ? 0.6 : 1,
             }}
             disabled={busy}
             onClick={() => void doMorph()}

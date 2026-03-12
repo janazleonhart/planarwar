@@ -1,50 +1,27 @@
-//backend/src/routes/garrisons.ts
+//web-backend/routes/garrisons.ts
 
 import { Router } from "express";
-import {
-  DEMO_PLAYER_ID,
-  getPlayerState,
-  startGarrisonStrikeForPlayer,
-} from "../gameState";
+import { getPlayerState, startGarrisonStrikeForPlayer } from "../gameState";
+import { resolvePlayerAccess } from "./playerCityAccess";
 
 const router = Router();
 
-// Hero-focused lair/instance strike in a given region
-router.post("/strike", (req, res) => {
+router.post("/strike", async (req, res) => {
   const { regionId } = req.body as { regionId?: string };
+  if (!regionId) return res.status(400).json({ error: "regionId is required" });
 
-  if (!regionId) {
-    return res.status(400).json({ error: "regionId is required" });
-  }
+  const access = await resolvePlayerAccess(req, { requireCity: true });
+  if (access.ok === false) return res.status(access.status).json({ error: access.error });
 
-  const now = new Date();
-  const result = startGarrisonStrikeForPlayer(
-    DEMO_PLAYER_ID,
-    regionId as any,
-    now
-  );
-
+  const result = startGarrisonStrikeForPlayer(access.access.playerId, regionId as any, new Date());
   if (result.status !== "ok" || !result.activeMission) {
-    return res.status(400).json({
-      error: result.message ?? "Unable to start garrison strike.",
-      status: result.status,
-    });
+    return res.status(400).json({ error: result.message ?? "Unable to start garrison strike.", status: result.status });
   }
 
-  const ps = getPlayerState(DEMO_PLAYER_ID);
-  if (!ps) {
-    return res.status(500).json({ error: "Player state missing." });
-  }
+  const ps = getPlayerState(access.access.playerId);
+  if (!ps) return res.status(500).json({ error: "Player state missing." });
 
-  res.json({
-    ok: true,
-    activeMission: result.activeMission,
-    activeMissions: ps.activeMissions,
-    heroes: ps.heroes,
-    armies: ps.armies,
-    resources: ps.resources,
-    regionWar: ps.regionWar,
-  });
+  res.json({ ok: true, activeMission: result.activeMission, activeMissions: ps.activeMissions, heroes: ps.heroes, armies: ps.armies, resources: ps.resources, regionWar: ps.regionWar });
 });
 
 export default router;

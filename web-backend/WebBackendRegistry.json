@@ -878,12 +878,14 @@
       "ctorArgs": [],
       "dependsOn": [
         "npm:express",
-        "web-backend.gameState"
+        "web-backend.gameState",
+        "web-backend.routes.playerCityAccess"
       ],
       "kind": "module",
       "lifecycle": "singleton",
       "notes": [
-        "Army raise/reinforce endpoints for demo city builder."
+        "Army raise/reinforce endpoints for demo city builder.",
+        "Now resolves account-owned player/city state via web-backend.routes.playerCityAccess instead of hardcoding DEMO_PLAYER_ID."
       ],
       "owns": [],
       "path": "web-backend/routes/armies.ts",
@@ -922,12 +924,14 @@
       "ctorArgs": [],
       "dependsOn": [
         "npm:express",
-        "web-backend.gameState"
+        "web-backend.gameState",
+        "web-backend.routes.playerCityAccess"
       ],
       "kind": "module",
       "lifecycle": "singleton",
       "notes": [
-        "Alternate building endpoints (construct/upgrade) for demo city builder."
+        "Alternate building endpoints (construct/upgrade) for demo city builder.",
+        "Now resolves account-owned player/city state via web-backend.routes.playerCityAccess instead of hardcoding DEMO_PLAYER_ID."
       ],
       "owns": [],
       "path": "web-backend/routes/buildings.ts",
@@ -967,13 +971,15 @@
       "dependsOn": [
         "npm:express",
         "web-backend.gameState",
-        "web-backend.config.cityTier"
+        "web-backend.config.cityTier",
+        "web-backend.routes.playerCityAccess"
       ],
       "kind": "module",
       "lifecycle": "singleton",
       "notes": [
-        "City operations for demo city builder (build/upgrade/tier/morph).",
-        "Supports Authorization: Bearer token; city builder endpoints resolve playerId from account id when authed, otherwise fall back to DEMO."
+        "City operations for the CityBuilder prototype now support account-owned city bootstrap, rename, tier-up, morph, and debug reads.",
+        "Authenticated accounts can create exactly one city backed by public.cities; unauthenticated callers still fall back to the demo city for read-only prototype access.",
+        "Bootstrap and rename enforce validated names and rely on DB case-insensitive uniqueness for final conflict protection."
       ],
       "owns": [],
       "path": "web-backend/routes/city.ts",
@@ -981,7 +987,10 @@
         "POST /api/city/upgrade-building",
         "POST /api/city/build",
         "POST /api/city/tier-up",
-        "POST /api/city/morph"
+        "POST /api/city/morph",
+        "POST /api/city/bootstrap",
+        "POST /api/city/rename",
+        "GET /api/city"
       ],
       "service": "http.routes"
     },
@@ -990,12 +999,14 @@
       "ctorArgs": [],
       "dependsOn": [
         "npm:express",
-        "web-backend.gameState"
+        "web-backend.gameState",
+        "web-backend.routes.playerCityAccess"
       ],
       "kind": "module",
       "lifecycle": "singleton",
       "notes": [
-        "Garrison strike endpoint for demo city builder."
+        "Garrison strike endpoint for demo city builder.",
+        "Now resolves account-owned player/city state via web-backend.routes.playerCityAccess instead of hardcoding DEMO_PLAYER_ID."
       ],
       "owns": [],
       "path": "web-backend/routes/garrisons.ts",
@@ -1009,12 +1020,14 @@
       "ctorArgs": [],
       "dependsOn": [
         "npm:express",
-        "web-backend.gameState"
+        "web-backend.gameState",
+        "web-backend.routes.playerCityAccess"
       ],
       "kind": "module",
       "lifecycle": "singleton",
       "notes": [
-        "Hero recruit + equipment endpoints for demo city builder."
+        "Hero recruit + equipment endpoints for demo city builder.",
+        "Now resolves account-owned player/city state via web-backend.routes.playerCityAccess instead of hardcoding DEMO_PLAYER_ID."
       ],
       "owns": [],
       "path": "web-backend/routes/heroes.ts",
@@ -1051,20 +1064,20 @@
       "ctorArgs": [],
       "dependsOn": [
         "npm:express",
-        "web-backend.gameState"
+        "web-backend.gameState",
+        "web-backend.routes.playerCityAccess"
       ],
       "kind": "module",
       "lifecycle": "singleton",
       "notes": [
-        "Demo endpoint(s) for player state.",
-        "Supports Authorization: Bearer token; if present+valid, /api/me returns the authenticated account id/displayName and uses per-account CityBuilder state.",
-        "When authed, ensures a cities row exists for the account (DB-enforced: 1 city per account). Falls back to DEMO player when unauthenticated."
+        "Auth-aware CityBuilder profile endpoint used by the City Builder shell.",
+        "GET /api/me now mounts correctly at /api/me (router root path) instead of the accidental /api/me/me mismatch.",
+        "Returns full CityBuilder profile data when a city exists, or hasCity=false/canCreateCity=true plus a suggested city name when an authenticated account has not bootstrapped a city yet."
       ],
       "owns": [],
       "path": "web-backend/routes/me.ts",
       "provides": [
-        "GET /api/me -> demo playerP state snapshot",
-        "GET /api/me (auth-aware)"
+        "GET /api/me -> demo or authed CityBuilder profile snapshot"
       ],
       "service": "http.routes"
     },
@@ -1073,12 +1086,14 @@
       "ctorArgs": [],
       "dependsOn": [
         "npm:express",
-        "web-backend.gameState"
+        "web-backend.gameState",
+        "web-backend.routes.playerCityAccess"
       ],
       "kind": "module",
       "lifecycle": "singleton",
       "notes": [
-        "Mission offer listing + start/complete for the demo city builder."
+        "Mission offer listing + start/complete for the demo city builder.",
+        "Now resolves account-owned player/city state via web-backend.routes.playerCityAccess instead of hardcoding DEMO_PLAYER_ID."
       ],
       "owns": [],
       "path": "web-backend/routes/missions.ts",
@@ -1095,12 +1110,14 @@
       "ctorArgs": [],
       "dependsOn": [
         "npm:express",
-        "web-backend.gameState"
+        "web-backend.gameState",
+        "web-backend.routes.playerCityAccess"
       ],
       "kind": "module",
       "lifecycle": "singleton",
       "notes": [
-        "Policy toggles for demo city builder."
+        "Policy toggles for demo city builder.",
+        "Now resolves account-owned player/city state via web-backend.routes.playerCityAccess instead of hardcoding DEMO_PLAYER_ID."
       ],
       "owns": [],
       "path": "web-backend/routes/policies.ts",
@@ -1159,12 +1176,14 @@
       "dependsOn": [
         "npm:express",
         "web-backend.gameState",
-        "web-backend.domain.tech"
+        "web-backend.domain.tech",
+        "web-backend.routes.playerCityAccess"
       ],
       "kind": "module",
       "lifecycle": "singleton",
       "notes": [
-        "Tech start endpoint for demo city builder."
+        "Tech start endpoint for demo city builder.",
+        "Now resolves account-owned player/city state via web-backend.routes.playerCityAccess instead of hardcoding DEMO_PLAYER_ID."
       ],
       "owns": [],
       "path": "web-backend/routes/tech.ts",
@@ -1178,12 +1197,14 @@
       "ctorArgs": [],
       "dependsOn": [
         "npm:express",
-        "web-backend.gameState"
+        "web-backend.gameState",
+        "web-backend.routes.playerCityAccess"
       ],
       "kind": "module",
       "lifecycle": "singleton",
       "notes": [
-        "Warfront assault endpoint for demo city builder."
+        "Warfront assault endpoint for demo city builder.",
+        "Now resolves account-owned player/city state via web-backend.routes.playerCityAccess instead of hardcoding DEMO_PLAYER_ID."
       ],
       "owns": [],
       "path": "web-backend/routes/warfront.ts",
@@ -1197,12 +1218,14 @@
       "ctorArgs": [],
       "dependsOn": [
         "npm:express",
-        "web-backend.gameState"
+        "web-backend.gameState",
+        "web-backend.routes.playerCityAccess"
       ],
       "kind": "module",
       "lifecycle": "singleton",
       "notes": [
-        "Workshop crafting job endpoints for demo city builder."
+        "Workshop crafting job endpoints for demo city builder.",
+        "Now resolves account-owned player/city state via web-backend.routes.playerCityAccess instead of hardcoding DEMO_PLAYER_ID."
       ],
       "owns": [],
       "path": "web-backend/routes/workshop.ts",
@@ -2415,6 +2438,34 @@
         "Shared helper for in-memory gameState bootstrap and player-state creation.",
         "Keeps gameState.ts focused on public exports and delegation seams rather than initialization plumbing."
       ]
+    },
+    "web-backend.routes.playerCityAccess": {
+      "class": null,
+      "ctorArgs": [],
+      "dependsOn": [
+        "npm:express",
+        "worldcore.auth.PostgresAuthService",
+        "worldcore.db.Database",
+        "web-backend.gameState"
+      ],
+      "kind": "module",
+      "lifecycle": "singleton",
+      "notes": [
+        "Shared CityBuilder request identity helper for demo-vs-auth account routing.",
+        "Resolves Bearer-token viewers, loads account-owned cities from Postgres, syncs runtime player state, and validates/creates/renames city names.",
+        "Blocks reserved/offensive city names via web-backend/data/cityBlockedNames.json and relies on DB unique index for case-insensitive city name uniqueness."
+      ],
+      "owns": [],
+      "path": "web-backend/routes/playerCityAccess.ts",
+      "provides": [
+        "resolveViewer(req)",
+        "resolvePlayerAccess(req, opts)",
+        "createCityForViewer(viewer, args)",
+        "renameCityForViewer(viewer, nextName)",
+        "suggestCityName(displayName)",
+        "validateCityName(input)"
+      ],
+      "service": "http.routes"
     }
   }
 }

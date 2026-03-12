@@ -1,118 +1,111 @@
 // web-backend/routes/city.ts
-//
-// CityBuilder prototype routes.
-// These are intentionally lightweight wrappers around the demo-style gameState module.
 
-import { Router, type Request } from "express";
+import { Router } from "express";
 
+import { getPlayerState, morphCityForPlayer, tierUpCityForPlayer } from "../gameState";
 import {
-  getPlayerState,
-  tierUpCityForPlayer,
-  morphCityForPlayer,
-  DEMO_PLAYER_ID,
-} from "../gameState";
-
-import { PostgresAuthService } from "../../worldcore/auth/PostgresAuthService";
+  createCityForViewer,
+  renameCityForViewer,
+  resolvePlayerAccess,
+  resolveViewer,
+  suggestCityName,
+} from "./playerCityAccess";
 
 const router = Router();
 
-// ----------------------------
-// Auth helper (Bearer token)
-// ----------------------------
-
-function getBearerToken(req: Request): string | null {
-  const raw = req.headers.authorization;
-  if (typeof raw !== "string") return null;
-  const m = raw.match(/^Bearer\s+(.+)$/i);
-  return m ? m[1] : null;
-}
-
-async function resolvePlayerId(req: Request): Promise<string> {
-  const token = getBearerToken(req);
-  if (!token) return DEMO_PLAYER_ID;
-
-  const auth = new PostgresAuthService();
+router.post("/bootstrap", async (req, res) => {
   try {
-    const payload = await auth.verifyToken(token);
-    if (payload?.sub) return payload.sub;
-  } catch (err: any) {
-    // Treat expired/invalid tokens as demo access for the CityBuilder prototype.
-    // Log minimal diagnostics so we can identify the caller without leaking the token.
-    try {
-      const crypto = await import("node:crypto");
-      const fp = crypto.createHash("sha256").update(String(token)).digest("hex").slice(0, 12);
-      console.warn("[AUTH:WARN] /city token verification failed", {
-        fp,
-        ip: (req as any).ip,
-        ua: String(req.headers["user-agent"] ?? ""),
-        method: String((req as any).method ?? ""),
-        path: String((req as any).originalUrl ?? (req as any).url ?? ""),
-        errName: String(err?.name ?? ""),
-        errMsg: String(err?.message ?? ""),
-      });
-    } catch {
-      // ignore
+    const viewer = await resolveViewer(req);
+    if (!viewer.isAuthenticated || viewer.isDemo) {
+      return res.status(401).json({ ok: false, error: "auth_required" });
     }
+
+    const rawName = String(req.body?.name ?? "").trim() || suggestCityName(viewer.username);
+    const shardId = String(req.body?.shardId ?? "").trim() || "prime_shard";
+    const result = await createCityForViewer(viewer, { name: rawName, shardId });
+
+    return res.status(result.created ? 201 : 200).json({
+      ok: true,
+      created: result.created,
+      playerId: viewer.playerId,
+      city: result.playerState.city,
+      resources: result.playerState.resources,
+    });
+  } catch (err: any) {
+    const code = String(err?.message ?? "internal_error");
+    const status =
+      code === "city_name_taken" ? 409 :
+      code === "city_exists" ? 409 :
+      code.startsWith("city_name_") ? 400 :
+      code === "auth_required" ? 401 : 500;
+    return res.status(status).json({ ok: false, error: code });
   }
+});
 
-  return DEMO_PLAYER_ID;
-}
+router.post("/rename", async (req, res) => {
+  try {
+    const viewer = await resolveViewer(req);
+    if (!viewer.isAuthenticated || viewer.isDemo) {
+      return res.status(401).json({ ok: false, error: "auth_required" });
+    }
 
-// ----------------------------
-// Routes
-// ----------------------------
+    const rawName = String(req.body?.name ?? "").trim();
+    const result = await renameCityForViewer(viewer, rawName);
+    return res.json({ ok: true, city: result.playerState.city });
+  } catch (err: any) {
+    const code = String(err?.message ?? "internal_error");
+    const status =
+      code === "city_name_taken" ? 409 :
+      code.startsWith("city_name_") ? 400 :
+      code === "no_city" ? 409 :
+      code === "auth_required" ? 401 : 500;
+    return res.status(status).json({ ok: false, error: code });
+  }
+});
 
-// POST /api/city/tier-up
 router.post("/tier-up", async (req, res) => {
   try {
-    const playerId = await resolvePlayerId(req);
+    const access = await resolvePlayerAccess(req, { requireCity: true });
+    if (access.ok === false) return res.status(access.status).json({ ok: false, error: access.error });
+
     const now = new Date();
-
-    // tierUpCityForPlayer() already ticks internally.
-    const result = tierUpCityForPlayer(playerId, now);
-
+    const result = tierUpCityForPlayer(access.access.playerId, now);
     if (result.status === "ok") return res.json({ ok: true, result });
     return res.json({ ok: false, result });
   } catch (err: any) {
-    console.error(err);
     return res.status(500).json({ ok: false, error: String(err?.message ?? err) });
   }
 });
 
-// POST /api/city/morph
-// body: { specializationId: string }
 router.post("/morph", async (req, res) => {
   try {
-    const playerId = await resolvePlayerId(req);
-    const now = new Date();
+    const access = await resolvePlayerAccess(req, { requireCity: true });
+    if (access.ok === false) return res.status(access.status).json({ ok: false, error: access.error });
 
     const specializationId = String(req.body?.specializationId ?? "").trim();
     if (!specializationId) {
       return res.status(400).json({ ok: false, error: "specializationId is required" });
     }
 
-    // morphCityForPlayer() already ticks internally.
-    const result = morphCityForPlayer(playerId, specializationId, now);
-
+    const now = new Date();
+    const result = morphCityForPlayer(access.access.playerId, specializationId, now);
     if (result.status === "ok") return res.json({ ok: true, result });
     return res.json({ ok: false, result });
   } catch (err: any) {
-    console.error(err);
     return res.status(500).json({ ok: false, error: String(err?.message ?? err) });
   }
 });
 
-// GET /api/city (debug)
 router.get("/", async (req, res) => {
   try {
-    const playerId = await resolvePlayerId(req);
-    const ps = getPlayerState(playerId);
+    const access = await resolvePlayerAccess(req, { requireCity: true });
+    if (access.ok === false) return res.status(access.status).json({ ok: false, error: access.error });
 
+    const ps = getPlayerState(access.access.playerId);
     if (!ps) return res.status(404).json({ ok: false, error: "no_player_state" });
 
-    return res.json({ ok: true, playerId, city: ps.city, resources: ps.resources });
+    return res.json({ ok: true, playerId: access.access.playerId, city: ps.city, resources: ps.resources });
   } catch (err: any) {
-    console.error(err);
     return res.status(500).json({ ok: false, error: String(err?.message ?? err) });
   }
 });

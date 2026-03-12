@@ -116,7 +116,7 @@
         "Used by vendor admin pages (AdminVendorEconomyPage/AdminVendorAuditPage) and city-builder pages (MePage/OperationsPage).",
         "Caution: keep secrets out of repo .env; Vite only exposes VITE_* at runtime, but secrets in-repo are still a security risk.",
         "Now attaches Authorization: Bearer <token> automatically if localStorage pw_auth_v1 is present (shared auth across MUD/CityBuilder).",
-        "Adds helpers for CityBuilder city ops endpoints (/api/city/*)."
+        "Adds helpers for CityBuilder city bootstrap/rename endpoints and extends fetchMe() payload metadata for hasCity/canCreateCity flow."
       ],
       "owns": [],
       "path": "web-frontend/lib/api.ts",
@@ -127,7 +127,9 @@
         "auth header injection (pw_auth_v1)",
         "cityTierUp()",
         "cityMorph(specializationId)",
-        "fetchCityDebug()"
+        "fetchCityDebug()",
+        "bootstrapCity(name, shardId?)",
+        "renameCity(name)"
       ],
       "service": "api.client"
     },
@@ -451,7 +453,8 @@
       "notes": [
         "Uses same-origin /api requests (dev via Vite proxy; prod via reverse proxy / same host).",
         "Not currently routed from App.tsx.",
-        "Endpoints used include: /api/me, /api/tech/start, /api/missions/start, /api/missions/complete, /api/missions/refresh_region, /api/buildings/construct, /api/buildings/upgrade, /api/city/tier-up, /api/warfront/assault, /api/armies/raise, /api/armies/reinforce, /api/garrisons/strike, /api/heroes/equip_attachment, /api/heroes/recruit, /api/workshop/craft, /api/workshop/collect, /api/policies/toggle."
+        "Now acts as the city bootstrap funnel when an authenticated account has no city yet, and exposes authenticated city rename controls.",
+        "Endpoints used include: /api/me, /api/city/bootstrap, /api/city/rename, /api/tech/start, /api/missions/start, /api/missions/complete, /api/missions/refresh_region, /api/buildings/construct, /api/buildings/upgrade, /api/city/tier-up, /api/warfront/assault, /api/armies/raise, /api/armies/reinforce, /api/garrisons/strike, /api/heroes/equip_attachment, /api/heroes/recruit, /api/workshop/craft, /api/workshop/collect, /api/policies/toggle."
       ],
       "owns": [
         "client-side UI state for selected actions",

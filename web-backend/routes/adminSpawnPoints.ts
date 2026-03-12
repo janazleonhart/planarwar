@@ -49,6 +49,7 @@ import {
   type SpawnSliceOpsPreview,
   type TownBaselineOpsPreview,
   type WorldBox,
+  buildTownBaselineOpsPreview,
 } from "./adminSpawnPoints/opsPreview";
 import {
   applyProtectedPreviewRows,
@@ -99,7 +100,6 @@ import {
 } from "./adminSpawnPoints/motherBrainResponses";
 import {
   applyMotherBrainWaveMutations,
-  buildEffectiveExistingSpawnIds,
 } from "./adminSpawnPoints/motherBrainWaveApply";
 import {
   applyMotherBrainWipeDelete,
@@ -1646,11 +1646,14 @@ router.post("/town_baseline/plan", async (req, res) => {
   try {
     const plan = await computeTownBaselinePlan(body);
 
-    const response: TownBaselinePlanResponse = buildTownBaselineSuccessResponse({
-      kind: "town_baseline.plan",
-      plan,
-      isSpawnEditable,
-    });
+    const response: TownBaselinePlanResponse = {
+      ...buildTownBaselineSuccessResponse({
+        kind: "town_baseline.plan",
+        plan,
+        isSpawnEditable,
+      }),
+      opsPreview: buildTownBaselineOpsPreview(plan.planItems, isSpawnEditable),
+    };
 
     return res.json(response);
   } catch (err: any) {
@@ -1682,11 +1685,14 @@ router.post("/town_baseline/apply", async (req, res) => {
     const plan = await computeTownBaselinePlan(body);
 
     if (!commit) {
-      const response: TownBaselinePlanResponse = buildTownBaselineSuccessResponse({
-        kind: "town_baseline.apply",
-        plan,
-        isSpawnEditable,
-      });
+      const response: TownBaselinePlanResponse = {
+        ...buildTownBaselineSuccessResponse({
+          kind: "town_baseline.apply",
+          plan,
+          isSpawnEditable,
+        }),
+        opsPreview: buildTownBaselineOpsPreview(plan.planItems, isSpawnEditable),
+      };
       return res.json(response);
     }
 
@@ -1697,18 +1703,21 @@ router.post("/town_baseline/apply", async (req, res) => {
 
     clearSpawnPointCache();
 
-    const response: TownBaselinePlanResponse = buildTownBaselineSuccessResponse({
-      kind: "town_baseline.apply",
-      plan,
-      isSpawnEditable,
-      counts: {
-        wouldInsert: inserted,
-        wouldUpdate: updated,
-        wouldSkip: skipped,
-        skippedReadOnly,
-        skippedProtected,
-      },
-    });
+    const response: TownBaselinePlanResponse = {
+      ...buildTownBaselineSuccessResponse({
+        kind: "town_baseline.apply",
+        plan,
+        isSpawnEditable,
+        counts: {
+          wouldInsert: inserted,
+          wouldUpdate: updated,
+          wouldSkip: skipped,
+          skippedReadOnly,
+          skippedProtected,
+        },
+      }),
+      opsPreview: buildTownBaselineOpsPreview(plan.planItems, isSpawnEditable),
+    };
 
     return res.json(response);
   } catch (err: any) {
@@ -2492,11 +2501,12 @@ if (commit && expectedConfirmToken && confirm !== expectedConfirmToken) {
     // If append=false, we will delete existing brain:* spawns in the box before applying the wave.
     // Those spawn_ids must be treated as "non-existing" for insert/skip/update decisions,
     // otherwise we can accidentally delete everything and then skip re-inserting it.
-    const effectiveExistingSpawnIds = buildEffectiveExistingSpawnIds({
-      existingSpawnIds,
-      existingBrainSpawnIds,
-      append,
-    });
+    const effectiveExistingSpawnIds = new Set<string>(existingSpawnIds);
+    if (!append) {
+      for (const existingBrainSpawnId of existingBrainSpawnIds ?? []) {
+        effectiveExistingSpawnIds.delete(String(existingBrainSpawnId ?? ""));
+      }
+    }
 
     const budgetReport = computeBrainWaveBudgetReport({
       existingBrainSpawnIdsInBox: existingBrainSpawnIds,

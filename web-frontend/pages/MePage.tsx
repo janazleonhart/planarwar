@@ -3,7 +3,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   api,
+  bootstrapCity,
   fetchMe,
+  renameCity,
   startTech,
   type MeProfile,
   type CityBuilding,
@@ -83,6 +85,7 @@ export function MePage() {
   const [loading, setLoading] = useState(true);
 
   const [busyAction, setBusyAction] = useState<string | null>(null);
+  const [cityNameDraft, setCityNameDraft] = useState("");
   const [notice, setNotice] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
 
   const noticeTimer = useRef<number | null>(null);
@@ -98,6 +101,7 @@ export function MePage() {
     try {
       const data = await fetchMe();
       setMe(data);
+      setCityNameDraft(data.city?.name ?? data.suggestedCityName ?? "");
     } catch (err: any) {
       console.error(err);
       setError(err?.message ?? "Failed to refresh /api/me");
@@ -155,6 +159,17 @@ export function MePage() {
         method: "POST",
         body: JSON.stringify({}),
       });
+    });
+
+
+  const handleCreateCity = () =>
+    runAction("Create city", async () => {
+      await bootstrapCity(cityNameDraft);
+    });
+
+  const handleRenameCity = () =>
+    runAction("Rename city", async () => {
+      await renameCity(cityNameDraft);
     });
 
   const handleRaiseArmy = (type: ArmyType) =>
@@ -349,10 +364,50 @@ export function MePage() {
         <h3 style={{ marginTop: 0 }}>City</h3>
 
         {!city ? (
-          <p style={{ opacity: 0.85 }}>
-            No city attached to this profile yet. (Now that you have DB-enforced 1-city-per-account,
-            this page can safely become the “create city” funnel later.)
-          </p>
+          <div style={{ display: "grid", gap: 10 }}>
+            <p style={{ opacity: 0.85, margin: 0 }}>
+              No city attached to this profile yet. This account can bootstrap one now instead of staring at a sad 404 goblin.
+            </p>
+            {me?.canCreateCity ? (
+              <>
+                <label style={{ display: "grid", gap: 6 }}>
+                  <span>City name</span>
+                  <input
+                    value={cityNameDraft}
+                    onChange={(e) => setCityNameDraft(e.target.value)}
+                    maxLength={24}
+                    placeholder={me?.suggestedCityName ?? "Founder's Hold"}
+                    style={{
+                      padding: "8px 10px",
+                      borderRadius: 6,
+                      border: "1px solid #666",
+                      background: "#111",
+                      color: "#eee",
+                    }}
+                  />
+                </label>
+                <div style={{ fontSize: 12, opacity: 0.7 }}>
+                  3–24 characters. Letters, numbers, spaces, apostrophes, and hyphens only.
+                  Reserved/admin and obviously hateful names are blocked.
+                </div>
+                <button
+                  onClick={handleCreateCity}
+                  disabled={disabled || cityNameDraft.trim().length < 3}
+                  style={{
+                    padding: "8px 12px",
+                    borderRadius: 6,
+                    border: "1px solid #777",
+                    background: "#111",
+                    cursor: disabled ? "not-allowed" : "pointer",
+                    width: "fit-content",
+                    opacity: disabled ? 0.6 : 1,
+                  }}
+                >
+                  Create City
+                </button>
+              </>
+            ) : null}
+          </div>
         ) : (
           <>
             <div style={{ display: "grid", gap: 4 }}>
@@ -375,6 +430,42 @@ export function MePage() {
                   ? `${city.specializationId} (★${city.specializationStars})`
                   : "None"}
               </div>
+              <label style={{ display: "grid", gap: 6, maxWidth: 320 }}>
+                <span><strong>City name</strong></span>
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  <input
+                    value={cityNameDraft}
+                    onChange={(e) => setCityNameDraft(e.target.value)}
+                    maxLength={24}
+                    disabled={!!me?.isDemo}
+                    style={{
+                      padding: "8px 10px",
+                      borderRadius: 6,
+                      border: "1px solid #666",
+                      background: "#111",
+                      color: "#eee",
+                      minWidth: 220,
+                    }}
+                  />
+                  {!me?.isDemo ? (
+                    <button
+                      onClick={handleRenameCity}
+                      disabled={disabled || cityNameDraft.trim().length < 3 || cityNameDraft.trim() === city.name}
+                      style={{
+                        padding: "6px 10px",
+                        borderRadius: 6,
+                        border: "1px solid #777",
+                        background: "#111",
+                        cursor: disabled ? "not-allowed" : "pointer",
+                        opacity: disabled ? 0.6 : 1,
+                      }}
+                    >
+                      Rename City
+                    </button>
+                  ) : null}
+                </div>
+              </label>
+
               <div>
                 <strong>Slots:</strong> {city.buildingSlotsUsed} / {city.buildingSlotsMax}
               </div>

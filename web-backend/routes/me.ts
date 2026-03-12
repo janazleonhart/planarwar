@@ -1,83 +1,146 @@
 //web-backend/routes/me.ts
 
-import type { Request } from "express";
 import { Router } from "express";
 
-import { PostgresAuthService } from "../../worldcore/auth/PostgresAuthService";
-import { DEMO_PLAYER_ID, getOrCreatePlayerState } from "../gameState";
+import { defaultPolicies, tickPlayerState, type PlayerState } from "../gameState";
+import { getAvailableTechsForPlayer, getTechById } from "../domain/tech";
+import { getCityProductionPerTick, maxBuildingSlotsForTier } from "../domain/city";
+import { resolvePlayerAccess, resolveViewer, suggestCityName } from "./playerCityAccess";
 
 const router = Router();
 
-const auth = new PostgresAuthService();
-
-function getBearerToken(req: Request): string | null {
-  const raw = req.headers.authorization;
-  if (!raw || typeof raw !== "string") return null;
-  const m = /^Bearer\s+(.+)$/i.exec(raw.trim());
-  return m?.[1] ?? null;
+function emptyResources() {
+  return {
+    food: 0,
+    materials: 0,
+    wealth: 0,
+    mana: 0,
+    knowledge: 0,
+    unity: 0,
+  };
 }
 
-async function resolveViewer(req: Request): Promise<{ userId: string; username: string; playerId: string }> {
-  const token = getBearerToken(req);
-  if (!token) return { userId: "demo", username: "Demo", playerId: DEMO_PLAYER_ID };
+function buildCitySummary(ps: PlayerState) {
+  const production = getCityProductionPerTick(ps.city);
+  return {
+    id: ps.city.id,
+    name: ps.city.name,
+    shardId: ps.city.shardId,
+    regionId: ps.city.regionId,
+    tier: ps.city.tier,
+    maxBuildingSlots: ps.city.maxBuildingSlots,
+    stats: ps.city.stats,
+    buildings: ps.city.buildings,
+    specializationId: ps.city.specializationId ?? null,
+    specializationStars: ps.city.specializationStars ?? 0,
+    specializationStarsHistory: ps.city.specializationStarsHistory ?? {},
+    buildingSlotsUsed: ps.city.buildings.length,
+    buildingSlotsMax: maxBuildingSlotsForTier(ps.city.tier),
+    production: {
+      foodPerTick: production.food ?? 0,
+      materialsPerTick: production.materials ?? 0,
+      wealthPerTick: production.wealth ?? 0,
+      manaPerTick: production.mana ?? 0,
+      knowledgePerTick: production.knowledge ?? 0,
+      unityPerTick: production.unity ?? 0,
+    },
+  };
+}
 
-  let payload: any = null;
-  try {
-    payload = await auth.verifyToken(token);
-  } catch (err: any) {
-    // Token errors are common in dev (expired browser token, rotated secret, etc.).
-    // Treat as demo viewer and log minimal diagnostics.
-    try {
-      const crypto = await import("node:crypto");
-      const fp = crypto.createHash("sha256").update(String(token)).digest("hex").slice(0, 12);
-
-      console.warn("[AUTH:WARN] /me token verification failed", {
-        fp,
-        ip: (req as any).ip,
-        ua: String(req.headers["user-agent"] ?? ""),
-        method: String((req as any).method ?? ""),
-        path: String((req as any).originalUrl ?? (req as any).url ?? ""),
-        errName: String(err?.name ?? ""),
-        errMsg: String(err?.message ?? ""),
-      });
-    } catch {
-      // ignore
-    }
-    return { userId: "demo", username: "Demo", playerId: DEMO_PLAYER_ID };
+function buildMePayload(viewer: Awaited<ReturnType<typeof resolveViewer>>, ps: PlayerState | null) {
+  if (!ps) {
+    return {
+      ok: true,
+      isDemo: viewer.isDemo,
+      userId: viewer.userId,
+      username: viewer.username,
+      city: null,
+      hasCity: false,
+      canCreateCity: viewer.isAuthenticated,
+      suggestedCityName: viewer.isAuthenticated ? suggestCityName(viewer.username) : undefined,
+      resources: emptyResources(),
+      policies: { ...defaultPolicies },
+      heroes: [],
+      armies: [],
+      activeMissions: [],
+      researchedTechIds: [],
+      availableTechs: [],
+      activeResearch: null,
+      regionWar: [],
+      events: [],
+      workshopJobs: [],
+      cityStress: null,
+      specializationId: null,
+      specializationStars: 0,
+      specializationStarsHistory: {},
+    };
   }
 
-  if (!payload) return { userId: "demo", username: "Demo", playerId: DEMO_PLAYER_ID };
+  tickPlayerState(ps, new Date());
+  const availableTechs = getAvailableTechsForPlayer(ps, {
+    currentAge: ps.techAge,
+    currentEpoch: ps.techEpoch,
+    enabledFlags: ps.techFlags,
+    categoryAges: ps.techCategoryAges,
+  }).map((tech) => ({
+    id: tech.id,
+    name: tech.name,
+    description: tech.description,
+    category: tech.category,
+    cost: tech.cost,
+  }));
 
-  const anyPayload = payload as any;
+  const activeResearch = ps.activeResearch
+    ? (() => {
+        const tech = getTechById(ps.activeResearch!.techId);
+        return {
+          techId: ps.activeResearch!.techId,
+          name: tech?.name ?? ps.activeResearch!.techId,
+          description: tech?.description ?? "",
+          category: tech?.category ?? "infrastructure",
+          cost: tech?.cost ?? 0,
+          progress: ps.activeResearch!.progress,
+        };
+      })()
+    : null;
 
-  const userId =
-    String(anyPayload.sub ?? anyPayload.account?.id ?? anyPayload.userId ?? anyPayload.accountId ?? "").trim() ||
-    "demo";
-
-  const username =
-    String(
-      anyPayload.account?.displayName ??
-        anyPayload.account?.display_name ??
-        anyPayload.displayName ??
-        anyPayload.username ??
-        anyPayload.email ??
-        ""
-    ).trim() || "User";
-
-  return { userId, username, playerId: userId !== "demo" ? userId : DEMO_PLAYER_ID };
-}
-
-router.get("/me", async (req, res) => {
-  const viewer = await resolveViewer(req);
-  const ps = getOrCreatePlayerState(viewer.playerId);
-
-  return res.json({
+  return {
     ok: true,
+    isDemo: viewer.isDemo,
     userId: viewer.userId,
     username: viewer.username,
+    city: buildCitySummary(ps),
+    hasCity: true,
+    canCreateCity: false,
+    suggestedCityName: undefined,
     resources: ps.resources,
-    city: ps.city,
-  });
+    policies: ps.policies,
+    heroes: ps.heroes,
+    armies: ps.armies,
+    activeMissions: ps.activeMissions,
+    researchedTechIds: ps.researchedTechIds,
+    availableTechs,
+    activeResearch,
+    regionWar: ps.regionWar,
+    events: ps.eventLog,
+    workshopJobs: ps.workshopJobs,
+    cityStress: ps.cityStress,
+    specializationId: ps.city.specializationId ?? null,
+    specializationStars: ps.city.specializationStars ?? 0,
+    specializationStarsHistory: ps.city.specializationStarsHistory ?? {},
+  };
+}
+
+router.get("/", async (req, res) => {
+  const access = await resolvePlayerAccess(req, { requireCity: false });
+  if (access.ok === false) {
+    if (access.viewer.isAuthenticated && access.error === "no_city") {
+      return res.json(buildMePayload(access.viewer, null));
+    }
+    return res.json(buildMePayload(access.viewer, null));
+  }
+
+  return res.json(buildMePayload(access.access.viewer, access.access.playerState));
 });
 
 export default router;

@@ -1,8 +1,6 @@
 //web-backend/server/routeGroups.ts
 
 import type { Express } from "express";
-import { maybeRequireAdmin } from "../middleware/adminAuth";
-
 import meRouter from "../routes/me";
 import missionsRouter from "../routes/missions";
 import cityRouter from "../routes/city";
@@ -20,18 +18,6 @@ import authRouter from "../routes/auth";
 import spellsRouter from "../routes/spells";
 import itemsRouter from "../routes/items";
 import abilitiesRouter from "../routes/abilities";
-import adminQuestsRouter from "../routes/adminQuests";
-import adminNpcsRouter from "../routes/adminNpcs";
-import { adminItemsRouter } from "../routes/adminItems";
-import { adminSpellsRouter } from "../routes/adminSpells";
-import { adminAbilitiesRouter } from "../routes/adminAbilities";
-import { adminAbilityUnlocksRouter } from "../routes/adminAbilityUnlocks";
-import adminSpawnPointsRouter from "../routes/adminSpawnPoints";
-import { adminVendorAuditRouter } from "../routes/adminVendorAudit";
-import { adminVendorEconomyRouter } from "../routes/adminVendorEconomy";
-import adminMotherBrainRouter from "../routes/adminMotherBrain";
-import adminHeartbeatsRouter from "../routes/adminHeartbeats";
-import adminTestFixturesRouter from "../routes/adminTestFixtures";
 
 export function mountPlayerAndDemoRoutes(app: Express): void {
   app.use("/api/me", meRouter);
@@ -56,31 +42,9 @@ export function mountCatalogRoutes(app: Express): void {
   app.use("/api/abilities", abilitiesRouter);
 }
 
-export function mountAdminRoutes(app: Express): void {
-  app.use("/api/admin/quests", maybeRequireAdmin("/api/admin/quests"), adminQuestsRouter);
-  app.use("/api/admin/npcs", maybeRequireAdmin("/api/admin/npcs"), adminNpcsRouter);
-  app.use("/api/admin/items", maybeRequireAdmin("/api/admin/items"), adminItemsRouter);
-  app.use("/api/admin/spells", maybeRequireAdmin("/api/admin/spells"), adminSpellsRouter);
-  app.use("/api/admin/abilities", maybeRequireAdmin("/api/admin/abilities"), adminAbilitiesRouter);
-  app.use(
-    "/api/admin/ability_unlocks",
-    maybeRequireAdmin("/api/admin/ability_unlocks"),
-    adminAbilityUnlocksRouter,
-  );
-  app.use("/api/admin/spawn_points", maybeRequireAdmin("/api/admin/spawn_points"), adminSpawnPointsRouter);
-  app.use("/api/admin/vendor_audit", maybeRequireAdmin("/api/admin/vendor_audit"), adminVendorAuditRouter);
-  app.use(
-    "/api/admin/vendor_economy",
-    maybeRequireAdmin("/api/admin/vendor_economy"),
-    adminVendorEconomyRouter,
-  );
-  app.use("/api/admin/mother_brain", maybeRequireAdmin("/api/admin/mother_brain"), adminMotherBrainRouter);
-  app.use("/api/admin/heartbeats", maybeRequireAdmin("/api/admin/heartbeats"), adminHeartbeatsRouter);
-  app.use(
-    "/api/admin/test_fixtures",
-    maybeRequireAdmin("/api/admin/test_fixtures"),
-    adminTestFixturesRouter,
-  );
+export function mountAdminRoutes(_app: Express): void {
+  // Admin routes are mounted explicitly in web-backend/index.ts so structural contract tests
+  // can verify the gated app.use(...) declarations at the entrypoint.
 }
 
 export function mountRouteGroups(app: Express): void {

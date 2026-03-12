@@ -1,50 +1,27 @@
-//backend/src/routes/warfront.ts
+//web-backend/routes/warfront.ts
 
 import { Router } from "express";
-import {
-  DEMO_PLAYER_ID,
-  getPlayerState,
-  startWarfrontAssaultForPlayer,
-} from "../gameState";
+import { getPlayerState, startWarfrontAssaultForPlayer } from "../gameState";
+import { resolvePlayerAccess } from "./playerCityAccess";
 
 const router = Router();
 
-// Stage an assault on a specific region warfront
-router.post("/assault", (req, res) => {
+router.post("/assault", async (req, res) => {
   const { regionId } = req.body as { regionId?: string };
+  if (!regionId) return res.status(400).json({ error: "regionId is required" });
 
-  if (!regionId) {
-    return res.status(400).json({ error: "regionId is required" });
-  }
+  const access = await resolvePlayerAccess(req, { requireCity: true });
+  if (access.ok === false) return res.status(access.status).json({ error: access.error });
 
-  const now = new Date();
-  const result = startWarfrontAssaultForPlayer(
-    DEMO_PLAYER_ID,
-    regionId as any,
-    now
-  );
-
+  const result = startWarfrontAssaultForPlayer(access.access.playerId, regionId as any, new Date());
   if (result.status !== "ok" || !result.activeMission) {
-    return res.status(400).json({
-      error: result.message ?? "Unable to stage warfront assault.",
-      status: result.status,
-    });
+    return res.status(400).json({ error: result.message ?? "Unable to stage warfront assault.", status: result.status });
   }
 
-  const ps = getPlayerState(DEMO_PLAYER_ID);
-  if (!ps) {
-    return res.status(500).json({ error: "Player state missing." });
-  }
+  const ps = getPlayerState(access.access.playerId);
+  if (!ps) return res.status(500).json({ error: "Player state missing." });
 
-  res.json({
-    ok: true,
-    activeMission: result.activeMission,
-    activeMissions: ps.activeMissions,
-    heroes: ps.heroes,
-    armies: ps.armies,
-    resources: ps.resources,
-    regionWar: ps.regionWar,
-  });
+  res.json({ ok: true, activeMission: result.activeMission, activeMissions: ps.activeMissions, heroes: ps.heroes, armies: ps.armies, resources: ps.resources, regionWar: ps.regionWar });
 });
 
 export default router;

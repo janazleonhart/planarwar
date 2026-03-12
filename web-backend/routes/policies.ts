@@ -1,54 +1,34 @@
-//backend/src/routes/policies.ts
+//web-backend/routes/policies.ts
 
 import { Router } from "express";
-import { DEMO_PLAYER_ID, getPlayerState, tickPlayerState } from "../gameState";
-
-import type { PoliciesState } from "../gameState";
+import { tickPlayerState } from "../gameState";
+import { resolvePlayerAccess } from "./playerCityAccess";
 
 const router = Router();
 
-// Get current policies state
-router.get("/", (_req, res) => {
-  const ps = getPlayerState(DEMO_PLAYER_ID);
-  if (!ps) {
-    return res.status(404).json({ error: "Player not found" });
-  }
+router.get("/", async (req, res) => {
+  const access = await resolvePlayerAccess(req, { requireCity: true });
+  if (access.ok === false) return res.status(access.status).json({ error: access.error });
 
-  // apply tick so stats reflect current policies
-  tickPlayerState(ps, new Date());
-
-  res.json({
-    policies: ps.policies,
-  });
+  tickPlayerState(access.access.playerState, new Date());
+  res.json({ policies: access.access.playerState.policies });
 });
 
-// Toggle a single policy
-router.post("/toggle", (req, res) => {
+router.post("/toggle", async (req, res) => {
   const { key, value } = req.body ?? {};
+  const access = await resolvePlayerAccess(req, { requireCity: true });
+  if (access.ok === false) return res.status(access.status).json({ error: access.error });
 
-  const ps = getPlayerState(DEMO_PLAYER_ID);
-  if (!ps) {
-    return res.status(404).json({ error: "Player not found" });
-  }
-
+  const ps = access.access.playerState;
   if (typeof key !== "string" || typeof value !== "boolean") {
-    return res
-      .status(400)
-      .json({ error: "key (string) and value (boolean) are required" });
+    return res.status(400).json({ error: "key (string) and value (boolean) are required" });
   }
-
   if (!(key in ps.policies)) {
     return res.status(400).json({ error: `Unknown policy: ${key}` });
   }
 
   (ps.policies as any)[key] = value;
-
-  console.log(`[Policies] Set ${key} = ${value}`);
-
-  res.json({
-    ok: true,
-    policies: ps.policies,
-  });
+  res.json({ ok: true, policies: ps.policies });
 });
 
 export default router;
