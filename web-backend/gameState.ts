@@ -1,15 +1,9 @@
 //web-backend/gameState.ts
 
-import { seedWorld } from "./domain/world";
-import { seedStarterCity } from "./domain/city";
-import { seedStarterHeroes } from "./domain/heroes";
-import { seedStarterArmies } from "./domain/armies";
 import { generateMissionOffers } from "./domain/missions";
-import { getAvailableTechsForPlayer } from "./domain/tech";
 import { addResources } from "./domain/resources";
 import {
   tickConfig,
-  startingResourcesConfig,
 } from "./config";
 import {
   type ResourceTierState,
@@ -63,6 +57,11 @@ import {
   tierUpCityForPlayer as tierUpCityForPlayerHelper,
   morphCityForPlayer as morphCityForPlayerHelper,
 } from "./gameState/gameStateCityProgression";
+import {
+  createInitialGameState,
+  getOrCreatePlayerState as getOrCreatePlayerStateHelper,
+  pushEvent as pushEventHelper,
+} from "./gameState/gameStateCore";
 
 import type { World, RegionId } from "./domain/world";
 import type { City, BuildingProduction } from "./domain/city";
@@ -295,99 +294,9 @@ function applyResourceTiersToProduction(
   return applyResourceTiersToProductionHelper(ps, base);
 }
 
-// ---- Warfront seeding ----
-
-function seedRegionWar(world: World, city: City): RegionWarState[] {
-  const shard = world.shards[0];
-  return shard.regions.map((region) => ({
-    regionId: region.id,
-    control: region.id === city.regionId ? 70 : 40,
-    threat: region.dangerLevel * 5,
-  }));
-}
-
 // ---- Game state singleton ----
 
-const gameState: GameState = (() => {
-  const world = seedWorld();
-
-  const nowIso = new Date().toISOString();
-  const playerId = DEMO_PLAYER_ID;
-  const city = seedStarterCity(playerId);
-  const heroes = seedStarterHeroes(playerId);
-  const armies = seedStarterArmies(city.id);
-
-  const resources: Resources = {
-    food: startingResourcesConfig.food,
-    materials: startingResourcesConfig.materials,
-    wealth: startingResourcesConfig.wealth,
-    mana: startingResourcesConfig.mana,
-    knowledge: startingResourcesConfig.knowledge,
-    unity: startingResourcesConfig.unity,
-  };
-
-  // 🔹 Internal multi-resource breakdown – for now just mirror the basics
-  const stockpile: ResourceVector = {
-    food: startingResourcesConfig.food,
-    materials_generic: startingResourcesConfig.materials,
-    wealth: startingResourcesConfig.wealth,
-    mana_arcane: startingResourcesConfig.mana,
-    knowledge: startingResourcesConfig.knowledge,
-    unity: startingResourcesConfig.unity,
-  };
-
-  // 🔹 Initial city storage: treat all starting resources as secure,
-  // and set capacity to that same baseline.
-  // Later, storehouse buildings / tech will raise protectedCapacity,
-  // and new production will overflow into vulnerableStock.
-  const storage: CityStorage = {
-    protectedCapacity: { ...stockpile },
-    protectedStock: { ...stockpile },
-    vulnerableStock: {},
-  };
-
-  const regionWar = seedRegionWar(world, city);
-
-  const playerState: PlayerState = {
-    playerId,
-    city,
-    heroes,
-    armies,
-    resources,
-    stockpile,
-    storage,
-    resourceTiers: {},      // 🔹 start blank; we’ll lazy-init per key
-    currentOffers: [],
-    activeMissions: [],
-    policies: { ...defaultPolicies },
-    lastTickAt: nowIso,
-
-    researchedTechIds: [],
-    techAge: "wood",
-    techEpoch: "genesis",
-    techCategoryAges: {},    // per-category override later
-    techFlags: [],           // black market / lair flags later
-    regionWar,
-    eventLog: [],
-    workshopJobs: [],
-    cityStress: {
-        stage: "stable",
-        total: 0,
-        foodPressure: 0,
-        threatPressure: 0,
-        unityPressure: 0,
-        lastUpdatedAt: nowIso,
-      },
-  };
-
-  const players = new Map<string, PlayerState>();
-  players.set(playerId, playerState);
-
-  return {
-    world,
-    players,
-  };
-})();
+const gameState: GameState = createInitialGameState(DEMO_PLAYER_ID, defaultPolicies);
 
 export function getGameState(): GameState {
   return gameState;
@@ -405,81 +314,8 @@ export function getDemoPlayer(): PlayerState {
   return ps;
 }
 
-const MAX_EVENT_LOG = 100;
-
 export function getOrCreatePlayerState(playerId: string): PlayerState {
-  const existing = gameState.players.get(playerId);
-  if (existing) return existing;
-
-  const nowIso = new Date().toISOString();
-  const world = gameState.world;
-
-  const city = seedStarterCity(playerId);
-  const heroes = seedStarterHeroes(playerId);
-  const armies = seedStarterArmies(city.id);
-
-  const resources: Resources = {
-    food: startingResourcesConfig.food,
-    materials: startingResourcesConfig.materials,
-    wealth: startingResourcesConfig.wealth,
-    mana: startingResourcesConfig.mana,
-    knowledge: startingResourcesConfig.knowledge,
-    unity: startingResourcesConfig.unity,
-  };
-
-  // Internal multi-resource breakdown – mirror the basics for now.
-  const stockpile: ResourceVector = {
-    food: startingResourcesConfig.food,
-    materials_generic: startingResourcesConfig.materials,
-    wealth: startingResourcesConfig.wealth,
-    mana_arcane: startingResourcesConfig.mana,
-    knowledge: startingResourcesConfig.knowledge,
-    unity: startingResourcesConfig.unity,
-  };
-
-  // City storage starts with everything protected.
-  const storage: CityStorage = {
-    protectedCapacity: { ...stockpile },
-    protectedStock: { ...stockpile },
-    vulnerableStock: {},
-  };
-
-  const regionWar = seedRegionWar(world, city);
-
-  const ps: PlayerState = {
-    playerId,
-    city,
-    heroes,
-    armies,
-    resources,
-    stockpile,
-    storage,
-    resourceTiers: {},
-    currentOffers: [],
-    activeMissions: [],
-    policies: { ...defaultPolicies },
-    lastTickAt: nowIso,
-
-    researchedTechIds: [],
-    techAge: "wood",
-    techEpoch: "genesis",
-    techCategoryAges: {},
-    techFlags: [],
-    regionWar,
-    eventLog: [],
-    workshopJobs: [],
-    cityStress: {
-      stage: "stable",
-      total: 0,
-      foodPressure: 0,
-      threatPressure: 0,
-      unityPressure: 0,
-      lastUpdatedAt: nowIso,
-    },
-  };
-
-  gameState.players.set(playerId, ps);
-  return ps;
+  return getOrCreatePlayerStateHelper(gameState, playerId, defaultPolicies);
 }
 
 export interface GameEventInput {
@@ -494,16 +330,7 @@ export interface GameEventInput {
 }
 
 function pushEvent(ps: PlayerState, input: GameEventInput): void {
-  const evt: GameEvent = {
-    id: `evt_${Date.now()}_${Math.floor(Math.random() * 100000)}`,
-    timestamp: new Date().toISOString(),
-    ...input,
-  };
-
-  ps.eventLog.push(evt);
-  if (ps.eventLog.length > MAX_EVENT_LOG) {
-    ps.eventLog.splice(0, ps.eventLog.length - MAX_EVENT_LOG);
-  }
+  pushEventHelper(ps, input);
 }
 
 // City Stress
