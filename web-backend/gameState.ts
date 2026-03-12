@@ -1,11 +1,11 @@
 //web-backend/gameState.ts
 
 import { seedWorld } from "./domain/world";
-import { seedStarterCity, getCityProductionPerTick } from "./domain/city";
+import { seedStarterCity } from "./domain/city";
 import { seedStarterHeroes } from "./domain/heroes";
 import { seedStarterArmies } from "./domain/armies";
 import { generateMissionOffers } from "./domain/missions";
-import { getAvailableTechsForPlayer, getTechById } from "./domain/tech";
+import { getAvailableTechsForPlayer } from "./domain/tech";
 import { addResources } from "./domain/resources";
 import {
   tickConfig,
@@ -51,6 +51,7 @@ import {
   recruitHeroForPlayer as recruitHeroForPlayerHelper,
   startWorkshopJobForPlayer as startWorkshopJobForPlayerHelper,
 } from "./gameState/gameStateHeroes";
+import { tickPlayerState as tickPlayerStateHelper } from "./gameState/gameStateEconomy";
 
 import type { World, RegionId } from "./domain/world";
 import type { City, BuildingProduction } from "./domain/city";
@@ -61,7 +62,7 @@ import type {
   MissionDifficulty,
   RewardBundle,
 } from "./domain/missions";
-import type { TechDefinition, TechAge, TechEpoch, TechCategory } from "./domain/tech";
+import type { TechAge, TechEpoch, TechCategory } from "./domain/tech";
 import type { ResourceKey, ResourceVector } from "./domain/resources";
 
 
@@ -712,6 +713,22 @@ const gameState: GameState = (() => {
   };
 })();
 
+export function getGameState(): GameState {
+  return gameState;
+}
+
+export function getPlayerState(playerId: string): PlayerState | undefined {
+  return gameState.players.get(playerId);
+}
+
+export function getDemoPlayer(): PlayerState {
+  const ps = gameState.players.get(DEMO_PLAYER_ID);
+  if (!ps) {
+    throw new Error("Demo player state missing");
+  }
+  return ps;
+}
+
 const MAX_EVENT_LOG = 100;
 
 export function getOrCreatePlayerState(playerId: string): PlayerState {
@@ -816,403 +833,21 @@ function pushEvent(ps: PlayerState, input: GameEventInput): void {
 
 // City Stress
 
-function recomputeCityStress(ps: PlayerState, now: Date): void {
-    const r = ps.resources;
-    const war = ps.regionWar;
-  
-    // Food pressure: below 100 food starts to hurt, 0 food = 100 pressure
-    const foodPressure =
-      r.food >= 100
-        ? 0
-        : Math.min(100, Math.round(((100 - r.food) / 100) * 100));
-  
-    // Threat pressure: use max regional threat directly 0–100
-    const maxThreat = war.reduce((m, rw) => Math.max(m, rw.threat), 0);
-    const threatPressure = Math.round(maxThreat);
-  
-    // Unity pressure: unity below 70 hurts; 0 unity = 100 pressure, 70+ = 0
-    const unityPressure =
-      r.unity >= 70
-        ? 0
-        : Math.min(
-            100,
-            Math.round(((70 - r.unity) / 70) * 100)
-          );
-  
-    // Weighted total
-    const totalRaw =
-      foodPressure * 0.4 + threatPressure * 0.4 + unityPressure * 0.2;
-    const total = Math.round(Math.min(100, totalRaw));
-  
-    let stage: CityStressStage;
-    if (total < 25) stage = "stable";
-    else if (total < 50) stage = "strained";
-    else if (total < 75) stage = "crisis";
-    else stage = "lockdown";
-  
-    const prevStage = ps.cityStress?.stage;
-  
-    ps.cityStress = {
-      stage,
-      total,
-      foodPressure,
-      threatPressure,
-      unityPressure,
-      lastUpdatedAt: now.toISOString(),
-    };
-  
-    if (prevStage && prevStage !== stage) {
-      let msg: string;
-      switch (stage) {
-        case "stable":
-          msg = "City tension has eased. Streets are calmer.";
-          break;
-        case "strained":
-          msg = "The city is growing uneasy. Grumbling and rumors spread.";
-          break;
-        case "crisis":
-          msg =
-            "Crisis in the streets: unrest is rising and discipline is fraying.";
-          break;
-        case "lockdown":
-        default:
-          msg =
-            "Lockdown: riots, curfews, and crackdowns are spreading through the city.";
-          break;
-      }
-  
-      pushEvent(ps, {
-        kind: "city_stress_change",
-        message: msg,
-      });
-    }
-  }
-
-export function getGameState(): GameState {
-  return gameState;
+export function tickPlayerState(ps: PlayerState, now: Date): void {
+  tickPlayerStateHelper(
+    {
+      tickMs: TICK_MS,
+      maxTicksPerRequest: MAX_TICKS_PER_REQUEST,
+      getWorld: () => gameState.world,
+      clampStat,
+      pushEvent,
+      applySpecializationToProduction,
+      applyResourceTiersToProduction,
+    },
+    ps,
+    now
+  );
 }
-
-export function getPlayerState(playerId: string): PlayerState | undefined {
-  return gameState.players.get(playerId);
-}
-
-export function getDemoPlayer(): PlayerState {
-  const ps = gameState.players.get(DEMO_PLAYER_ID);
-  if (!ps) {
-    throw new Error("Demo player state missing");
-  }
-  return ps;
-}
-
-// ---- Passive tick ----
-
-function applyProductionToResources(
-    ps: PlayerState,
-    prod: BuildingProduction,
-    ticks: number
-  ): void {
-    const mult = ticks;
-    const res = ps.resources;
-  
-    const delta: ResourceVector = {};
-  
-    if (prod.food) {
-      const v = prod.food * mult;
-      res.food += v;
-      delta.food = (delta.food ?? 0) + v;
-    }
-    if (prod.materials) {
-      const v = prod.materials * mult;
-      res.materials += v;
-      delta.materials_generic = (delta.materials_generic ?? 0) + v;
-    }
-    if (prod.wealth) {
-      const v = prod.wealth * mult;
-      res.wealth += v;
-      delta.wealth = (delta.wealth ?? 0) + v;
-    }
-    if (prod.mana) {
-      const v = prod.mana * mult;
-      res.mana += v;
-      // For now, route all mana into arcane; we’ll split aspects later.
-      delta.mana_arcane = (delta.mana_arcane ?? 0) + v;
-    }
-    if (prod.knowledge) {
-      const v = prod.knowledge * mult;
-      res.knowledge += v;
-      delta.knowledge = (delta.knowledge ?? 0) + v;
-    }
-    if (prod.unity) {
-      const v = prod.unity * mult;
-      res.unity += v;
-      delta.unity = (delta.unity ?? 0) + v;
-    }
-  
-    if (Object.keys(delta).length > 0) {
-      ps.stockpile = addResources(ps.stockpile, delta);
-    }
-  }
-
-// apply policy side-effects each tick (small nudges on stats/resources)
-function applyPolicyTickEffects(
-  ps: PlayerState,
-  prod: BuildingProduction,
-  ticks: number
-): void {
-  const p = ps.policies;
-  const s = ps.city.stats;
-  const r = ps.resources;
-  const mult = ticks;
-
-  const wealthBase = prod.wealth ?? 0;
-  const manaBase = prod.mana ?? 0;
-
-  if (p.highTaxes) {
-    r.wealth += Math.round(wealthBase * 0.5 * mult);
-    s.stability = clampStat(s.stability - 0.2 * mult);
-  }
-
-  if (p.openTrade) {
-    r.wealth += Math.round(wealthBase * 0.25 * mult);
-    s.prosperity = clampStat(s.prosperity + 0.15 * mult);
-  }
-
-  if (p.conscription) {
-    s.security = clampStat(s.security + 0.2 * mult);
-    s.unity = clampStat(s.unity - 0.1 * mult);
-  }
-
-  if (p.arcaneFreedom) {
-    r.mana += Math.round(manaBase * 0.5 * mult);
-    s.arcaneSaturation = clampStat(s.arcaneSaturation + 0.2 * mult);
-    s.stability = clampStat(s.stability - 0.1 * mult);
-  }
-}
-
-// city growth + upkeep based on food & stability
-function applyCityGrowthAndUpkeep(
-    ps: PlayerState,
-    prod: BuildingProduction,
-    ticks: number
-  ): void {
-    const s = ps.city.stats;
-    const r = ps.resources;
-  
-    if (ticks <= 0) return;
-  
-    const population = s.population;
-  
-    // Very simple model:
-    // - each point of population eats 0.1 food per tick
-    // - food is already being increased by prod.food in applyProductionToResources
-    const consumptionPerTick = Math.max(0, population * 0.1);
-    const totalConsumption = consumptionPerTick * ticks;
-  
-    // Subtract consumption from the global food pool
-    r.food -= totalConsumption;
-  
-    if (r.food < 0) {
-      // We have a deficit: starvation & unrest
-      const deficit = -r.food;
-      r.food = 0;
-  
-      // Turn deficit into population + stat hits (very rough)
-      const popLoss = Math.floor(deficit / 10);
-      if (popLoss > 0) {
-        s.population = Math.max(10, s.population - popLoss);
-      }
-  
-      s.stability = clampStat(s.stability - 0.3 * ticks);
-      s.prosperity = clampStat(s.prosperity - 0.2 * ticks);
-      s.unity = clampStat(s.unity - 0.2 * ticks);
-    } else {
-      // We are feeding everyone. If we have *consistent* surplus, grow slowly.
-      // Approximate surplus: production - consumption (per tick).
-      const foodOut = prod.food ?? 0;
-      const surplusPerTick = foodOut - consumptionPerTick;
-  
-      if (surplusPerTick > 5 && s.stability > 40) {
-        // gentle growth over time
-        const growth = Math.floor((surplusPerTick / 10) * ticks);
-        if (growth > 0) {
-          s.population += growth;
-          s.prosperity = clampStat(s.prosperity + 0.1 * ticks);
-        }
-      }
-    }
-  }
-
-// research progress: use building knowledge output as "research points"
-function applyResearchProgress(
-  ps: PlayerState,
-  prod: BuildingProduction,
-  ticks: number
-): void {
-  if (!ps.activeResearch) return;
-
-  const tech = getTechById(ps.activeResearch.techId);
-  if (!tech) {
-    // unknown tech, clear it
-    ps.activeResearch = undefined;
-    return;
-  }
-
-  const knowledgePerTick = prod.knowledge ?? 0;
-  if (knowledgePerTick <= 0) return;
-
-  const delta = knowledgePerTick * ticks;
-  ps.activeResearch.progress += delta;
-
-  if (ps.activeResearch.progress >= tech.cost) {
-    // complete tech
-    if (!ps.researchedTechIds.includes(tech.id)) {
-      ps.researchedTechIds.push(tech.id);
-      applyTechCompletion(ps, tech);
-    }
-    ps.activeResearch = undefined;
-  }
-}
-
-// warfront pressure: regions get more dangerous over time if ignored
-function applyWarfrontDrift(ps: PlayerState, ticks: number): void {
-    if (ticks <= 0) return;
-  
-    // for now we just look at the first shard
-    const shard = gameState.world.shards[0];
-    if (!shard) return;
-  
-    const stats = ps.city.stats;
-  
-    for (const rw of ps.regionWar) {
-      const region = shard.regions.find((r) => r.id === rw.regionId);
-      if (!region) continue;
-  
-      const danger = region.dangerLevel; // 1–10
-      const security = stats.security;   // 0–100
-      const stability = stats.stability; // 0–100
-  
-      // 0..1 where 1 = very good defenses
-      const defenseFactor = (security + stability) / 200;
-  
-      // base threat gain per tick from region danger
-      const baseThreatGain = danger * 0.03 * ticks; // tweakable
-      // mitigated by how secure/stable you are
-      const threatGain = baseThreatGain * (1 - defenseFactor);
-  
-      // threat creeps up
-      rw.threat = clampStat(rw.threat + threatGain);
-  
-      // if threat is high, you start losing control
-      if (rw.threat > 60) {
-        const over = rw.threat - 60;
-        const controlLoss = over * 0.02 * ticks;
-        rw.control = clampStat(rw.control - controlLoss);
-      }
-    }
-  }
-
-// simple tech effects v1 – small but tangible bonuses
-function applyTechCompletion(ps: PlayerState, tech: TechDefinition): void {
-    const stats = ps.city.stats;
-    const res = ps.resources;
-  
-    switch (tech.id) {
-      // --- Urban Planning chain: building slots + city resilience ---
-  
-      case "urban_planning_1":
-        ps.city.maxBuildingSlots += 2;
-        stats.infrastructure = clampStat(stats.infrastructure + 3);
-        stats.prosperity = clampStat(stats.prosperity + 1);
-        break;
-  
-      case "urban_planning_2":
-        ps.city.maxBuildingSlots += 2;
-        stats.infrastructure = clampStat(stats.infrastructure + 4);
-        stats.prosperity = clampStat(stats.prosperity + 2);
-        stats.stability = clampStat(stats.stability + 1);
-        break;
-  
-      case "urban_planning_3":
-        ps.city.maxBuildingSlots += 3;
-        stats.infrastructure = clampStat(stats.infrastructure + 6);
-        stats.prosperity = clampStat(stats.prosperity + 3);
-        stats.stability = clampStat(stats.stability + 2);
-        break;
-  
-      // --- Agriculture chain: more food, kinder stress ---
-  
-      case "advanced_agriculture_1":
-        stats.prosperity = clampStat(stats.prosperity + 2);
-        stats.stability = clampStat(stats.stability + 1);
-        res.food += 50;
-        break;
-  
-      case "advanced_agriculture_2":
-        stats.prosperity = clampStat(stats.prosperity + 3);
-        res.food += 100;
-        res.unity += 10;
-        break;
-  
-      // --- Military chain: safer city + stronger armies ---
-  
-      case "militia_training_1":
-        stats.security = clampStat(stats.security + 4);
-        stats.stability = clampStat(stats.stability + 1);
-        break;
-  
-      case "militia_training_2":
-        stats.security = clampStat(stats.security + 6);
-        // small passive buff to existing armies
-        ps.armies.forEach((a) => {
-          a.power = Math.max(5, Math.round(a.power * 1.1));
-        });
-        break;
-  
-      default:
-        break;
-    }
-  }
-
-  export function tickPlayerState(ps: PlayerState, now: Date): void {
-    const last = new Date(ps.lastTickAt).getTime();
-    const nowTime = now.getTime();
-    const diff = nowTime - last;
-    if (diff <= 0) return;
-  
-    let ticks = Math.floor(diff / TICK_MS);
-    if (ticks <= 0) return;
-    if (ticks > MAX_TICKS_PER_REQUEST) {
-      ticks = MAX_TICKS_PER_REQUEST;
-    }
-  
-    // 1) compute per-tick production with city + specialization + resource tiers
-    const rawProd = getCityProductionPerTick(ps.city);
-    const specProd = applySpecializationToProduction(ps.city, rawProd);
-    const tieredProd = applyResourceTiersToProduction(ps, specProd);
-    const prodPerTick = tieredProd;
-  
-    // 2) base resource gain
-    applyProductionToResources(ps, tieredProd, ticks);
-  
-    // 3) policy side-effects
-    applyPolicyTickEffects(ps, tieredProd, ticks);
-  
-    // 4) city growth / upkeep using the final production picture
-    applyCityGrowthAndUpkeep(ps, prodPerTick, ticks);
-  
-    // 5) regions drift over time
-    applyWarfrontDrift(ps, ticks);
-  
-    // 6) research progress
-    applyResearchProgress(ps, tieredProd, ticks);
-  
-    // 7) advance clock & recompute stress
-    const advancedTime = last + ticks * TICK_MS;
-    const advancedDate = new Date(advancedTime);
-    ps.lastTickAt = advancedDate.toISOString();
-  
-    recomputeCityStress(ps, advancedDate);
-  }
 
 // ---- Missions / offers helpers ----
 

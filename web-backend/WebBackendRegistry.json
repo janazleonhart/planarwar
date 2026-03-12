@@ -444,7 +444,8 @@
         "web-backend.gameState.gameStateMissions",
         "web-backend.gameState.gameStateCityDevelopment",
         "web-backend.gameState.gameStateArmies",
-        "web-backend.gameState.gameStateHeroes"
+        "web-backend.gameState.gameStateHeroes",
+        "web-backend.gameState.gameStateEconomy"
       ],
       "kind": "module",
       "lifecycle": "singleton",
@@ -455,7 +456,8 @@
         "Mission orchestration now delegates to web-backend.gameState.gameStateMissions while preserving the public gameState API.",
         "Building construction/upgrades and research start now delegate to web-backend.gameState.gameStateCityDevelopment while preserving the public gameState API.",
         "Army raising and reinforcement now delegate to web-backend.gameState.gameStateArmies while preserving the public gameState API.",
-        "Hero recruitment, hero attachment equipment, and workshop crafting now delegate to web-backend.gameState.gameStateHeroes while preserving the public gameState API."
+        "Hero recruitment, hero attachment equipment, and workshop crafting now delegate to web-backend.gameState.gameStateHeroes while preserving the public gameState API.",
+        "Passive ticking, resource progression, research completion, and city-stress recomputation now delegate to web-backend.gameState.gameStateEconomy while preserving the public gameState API."
       ],
       "owns": [
         "in-memory GameState (demo)",
@@ -2303,6 +2305,29 @@
       ],
       "notes": [
         "Extracted from web-backend/gameState.ts to isolate hero/workshop flows behind injected game-state dependencies while preserving the public gameState API."
+      ]
+    },
+    "web-backend.gameState.gameStateEconomy": {
+      "kind": "module",
+      "service": "demo.gameState.economy",
+      "path": "web-backend/gameState/gameStateEconomy.ts",
+      "class": null,
+      "lifecycle": "singleton",
+      "ctorArgs": [],
+      "dependsOn": [
+        "web-backend.domain.city",
+        "web-backend.domain.resources",
+        "web-backend.domain.tech",
+        "web-backend.domain.world"
+      ],
+      "provides": [
+        "tickPlayerState(deps, ps, now)"
+      ],
+      "owns": [
+        "Passive ticking, resource progression, research completion, warfront drift, and city-stress recomputation for the in-memory city-builder state"
+      ],
+      "notes": [
+        "Extracted from web-backend/gameState.ts to isolate passive economy/time progression behind injected game-state dependencies while preserving the public gameState API."
       ]
     }
   }
