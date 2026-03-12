@@ -443,7 +443,8 @@
         "web-backend.domain.resources",
         "web-backend.gameState.gameStateMissions",
         "web-backend.gameState.gameStateCityDevelopment",
-        "web-backend.gameState.gameStateArmies"
+        "web-backend.gameState.gameStateArmies",
+        "web-backend.gameState.gameStateHeroes"
       ],
       "kind": "module",
       "lifecycle": "singleton",
@@ -453,7 +454,8 @@
         "Now supports per-account CityBuilder state via getOrCreatePlayerState(playerId, displayName).",
         "Mission orchestration now delegates to web-backend.gameState.gameStateMissions while preserving the public gameState API.",
         "Building construction/upgrades and research start now delegate to web-backend.gameState.gameStateCityDevelopment while preserving the public gameState API.",
-        "Army raising and reinforcement now delegate to web-backend.gameState.gameStateArmies while preserving the public gameState API."
+        "Army raising and reinforcement now delegate to web-backend.gameState.gameStateArmies while preserving the public gameState API.",
+        "Hero recruitment, hero attachment equipment, and workshop crafting now delegate to web-backend.gameState.gameStateHeroes while preserving the public gameState API."
       ],
       "owns": [
         "in-memory GameState (demo)",
@@ -2278,6 +2280,29 @@
       ],
       "notes": [
         "Extracted from web-backend/gameState.ts to isolate army recruitment and reinforcement flows behind injected game-state dependencies while preserving the public gameState API."
+      ]
+    },
+    "web-backend.gameState.gameStateHeroes": {
+      "kind": "module",
+      "service": "demo.gameState.heroes",
+      "path": "web-backend/gameState/gameStateHeroes.ts",
+      "class": null,
+      "lifecycle": "singleton",
+      "ctorArgs": [],
+      "dependsOn": [
+        "web-backend.domain.heroes"
+      ],
+      "provides": [
+        "equipHeroAttachmentForPlayer(deps, playerId, heroId, kind, now)",
+        "startWorkshopJobForPlayer(deps, playerId, kind, now)",
+        "completeWorkshopJobForPlayer(deps, playerId, jobId, now)",
+        "recruitHeroForPlayer(deps, playerId, role, now)"
+      ],
+      "owns": [
+        "Hero recruitment, hero attachment equipment, and workshop crafting orchestration for the in-memory city-builder state"
+      ],
+      "notes": [
+        "Extracted from web-backend/gameState.ts to isolate hero/workshop flows behind injected game-state dependencies while preserving the public gameState API."
       ]
     }
   }
