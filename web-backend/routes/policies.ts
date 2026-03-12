@@ -2,7 +2,7 @@
 
 import { Router } from "express";
 import { tickPlayerState } from "../gameState";
-import { resolvePlayerAccess } from "./playerCityAccess";
+import { persistPlayerStateForCity, resolvePlayerAccess } from "./playerCityAccess";
 
 const router = Router();
 
@@ -11,6 +11,7 @@ router.get("/", async (req, res) => {
   if (access.ok === false) return res.status(access.status).json({ error: access.error });
 
   tickPlayerState(access.access.playerState, new Date());
+  await persistPlayerStateForCity(access.access);
   res.json({ policies: access.access.playerState.policies });
 });
 
@@ -28,6 +29,7 @@ router.post("/toggle", async (req, res) => {
   }
 
   (ps.policies as any)[key] = value;
+  await persistPlayerStateForCity(access.access);
   res.json({ ok: true, policies: ps.policies });
 });
 

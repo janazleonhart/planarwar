@@ -36,6 +36,32 @@ export interface PlayerAccess {
   city: CityRow | null;
 }
 
+interface CityRuntimeSnapshotV1 {
+  version: 1;
+  savedAt: string;
+  city: Record<string, any>;
+  heroes: any[];
+  armies: any[];
+  resources: Record<string, any>;
+  stockpile: Record<string, any>;
+  resourceTiers: Record<string, any>;
+  currentOffers: any[];
+  activeMissions: any[];
+  policies: Record<string, any>;
+  lastTickAt: string;
+  researchedTechIds: string[];
+  activeResearch?: Record<string, any>;
+  regionWar: any[];
+  eventLog: any[];
+  workshopJobs: any[];
+  cityStress: Record<string, any>;
+  storage: Record<string, any>;
+  techAge: string;
+  techEpoch: string;
+  techCategoryAges: Record<string, any>;
+  techFlags: string[];
+}
+
 export type PlayerAccessResult =
   | { ok: true; access: PlayerAccess }
   | { ok: false; status: number; error: string; viewer: ViewerIdentity };
@@ -107,6 +133,113 @@ function normalizeCityMeta(meta: any): Record<string, any> {
   return { ...meta };
 }
 
+function deepCloneJson<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value));
+}
+
+function normalizeSnapshot(meta: Record<string, any> | null | undefined): CityRuntimeSnapshotV1 | null {
+  if (!meta || typeof meta !== "object") return null;
+  if (meta.runtimeStateVersion !== 1) return null;
+  const state = meta.runtimeState;
+  if (!state || typeof state !== "object" || Array.isArray(state)) return null;
+  return state as CityRuntimeSnapshotV1;
+}
+
+function buildRuntimeSnapshot(ps: PlayerState): CityRuntimeSnapshotV1 {
+  return {
+    version: 1,
+    savedAt: new Date().toISOString(),
+    city: deepCloneJson({
+      tier: ps.city.tier,
+      regionId: ps.city.regionId,
+      maxBuildingSlots: ps.city.maxBuildingSlots,
+      stats: ps.city.stats,
+      buildings: ps.city.buildings,
+      specializationId: ps.city.specializationId ?? null,
+      specializationStars: ps.city.specializationStars ?? 0,
+      specializationStarsHistory: ps.city.specializationStarsHistory ?? {},
+    }),
+    heroes: deepCloneJson(ps.heroes),
+    armies: deepCloneJson(ps.armies),
+    resources: deepCloneJson(ps.resources),
+    stockpile: deepCloneJson(ps.stockpile),
+    resourceTiers: deepCloneJson(ps.resourceTiers),
+    currentOffers: deepCloneJson(ps.currentOffers),
+    activeMissions: deepCloneJson(ps.activeMissions),
+    policies: deepCloneJson(ps.policies),
+    lastTickAt: ps.lastTickAt,
+    researchedTechIds: deepCloneJson(ps.researchedTechIds),
+    activeResearch: ps.activeResearch ? deepCloneJson(ps.activeResearch) : undefined,
+    regionWar: deepCloneJson(ps.regionWar),
+    eventLog: deepCloneJson(ps.eventLog),
+    workshopJobs: deepCloneJson(ps.workshopJobs),
+    cityStress: deepCloneJson(ps.cityStress),
+    storage: deepCloneJson(ps.storage),
+    techAge: ps.techAge,
+    techEpoch: ps.techEpoch,
+    techCategoryAges: deepCloneJson(ps.techCategoryAges),
+    techFlags: deepCloneJson(ps.techFlags),
+  };
+}
+
+function applyRuntimeSnapshot(ps: PlayerState, snapshot: CityRuntimeSnapshotV1): PlayerState {
+  const city = snapshot.city ?? {};
+  ps.city = {
+    ...ps.city,
+    tier: typeof city.tier === "number" ? city.tier : ps.city.tier,
+    regionId: typeof city.regionId === "string" && city.regionId.trim() ? (city.regionId as any) : ps.city.regionId,
+    maxBuildingSlots: typeof city.maxBuildingSlots === "number" ? city.maxBuildingSlots : ps.city.maxBuildingSlots,
+    stats: city.stats ? (deepCloneJson(city.stats) as PlayerState["city"]["stats"]) : ps.city.stats,
+    buildings: Array.isArray(city.buildings) ? (deepCloneJson(city.buildings) as PlayerState["city"]["buildings"]) : ps.city.buildings,
+    specializationId: city.specializationId ?? null,
+    specializationStars: typeof city.specializationStars === "number" ? city.specializationStars : 0,
+    specializationStarsHistory: city.specializationStarsHistory ? (deepCloneJson(city.specializationStarsHistory) as PlayerState["city"]["specializationStarsHistory"]) : {},
+  };
+  ps.heroes = Array.isArray(snapshot.heroes) ? (deepCloneJson(snapshot.heroes) as PlayerState["heroes"]) : ps.heroes;
+  ps.armies = Array.isArray(snapshot.armies) ? (deepCloneJson(snapshot.armies) as PlayerState["armies"]) : ps.armies;
+  ps.resources = snapshot.resources ? (deepCloneJson(snapshot.resources) as PlayerState["resources"]) : ps.resources;
+  ps.stockpile = snapshot.stockpile ? (deepCloneJson(snapshot.stockpile) as PlayerState["stockpile"]) : ps.stockpile;
+  ps.resourceTiers = snapshot.resourceTiers ? (deepCloneJson(snapshot.resourceTiers) as PlayerState["resourceTiers"]) : ps.resourceTiers;
+  ps.currentOffers = Array.isArray(snapshot.currentOffers) ? (deepCloneJson(snapshot.currentOffers) as PlayerState["currentOffers"]) : ps.currentOffers;
+  ps.activeMissions = Array.isArray(snapshot.activeMissions) ? (deepCloneJson(snapshot.activeMissions) as PlayerState["activeMissions"]) : ps.activeMissions;
+  ps.policies = snapshot.policies ? (deepCloneJson(snapshot.policies) as PlayerState["policies"]) : ps.policies;
+  ps.lastTickAt = typeof snapshot.lastTickAt === "string" && snapshot.lastTickAt ? snapshot.lastTickAt : ps.lastTickAt;
+  ps.researchedTechIds = Array.isArray(snapshot.researchedTechIds) ? (deepCloneJson(snapshot.researchedTechIds) as PlayerState["researchedTechIds"]) : ps.researchedTechIds;
+  ps.activeResearch = snapshot.activeResearch ? (deepCloneJson(snapshot.activeResearch) as NonNullable<PlayerState["activeResearch"]>) : undefined;
+  ps.regionWar = Array.isArray(snapshot.regionWar) ? (deepCloneJson(snapshot.regionWar) as PlayerState["regionWar"]) : ps.regionWar;
+  ps.eventLog = Array.isArray(snapshot.eventLog) ? (deepCloneJson(snapshot.eventLog) as PlayerState["eventLog"]) : ps.eventLog;
+  ps.workshopJobs = Array.isArray(snapshot.workshopJobs) ? (deepCloneJson(snapshot.workshopJobs) as PlayerState["workshopJobs"]) : ps.workshopJobs;
+  ps.cityStress = snapshot.cityStress ? (deepCloneJson(snapshot.cityStress) as PlayerState["cityStress"]) : ps.cityStress;
+  ps.storage = snapshot.storage ? (deepCloneJson(snapshot.storage) as PlayerState["storage"]) : ps.storage;
+  ps.techAge = typeof snapshot.techAge === "string" && snapshot.techAge ? snapshot.techAge as any : ps.techAge;
+  ps.techEpoch = typeof snapshot.techEpoch === "string" && snapshot.techEpoch ? snapshot.techEpoch as any : ps.techEpoch;
+  ps.techCategoryAges = snapshot.techCategoryAges ? (deepCloneJson(snapshot.techCategoryAges) as PlayerState["techCategoryAges"]) : ps.techCategoryAges;
+  ps.techFlags = Array.isArray(snapshot.techFlags) ? (deepCloneJson(snapshot.techFlags) as PlayerState["techFlags"]) : ps.techFlags;
+  return ps;
+}
+
+export async function persistPlayerStateForCity(access: PlayerAccess): Promise<void> {
+  if (access.viewer.isDemo || !access.city) return;
+  const existingMeta = normalizeCityMeta(access.city.meta);
+  const nextMeta = {
+    ...existingMeta,
+    runtimeStateVersion: 1,
+    runtimeState: buildRuntimeSnapshot(access.playerState),
+  };
+
+  await db.query(
+    `
+      UPDATE public.cities
+      SET meta = $2::jsonb,
+          updated_at = NOW()
+      WHERE id = $1::uuid
+    `,
+    [access.city.id, JSON.stringify(nextMeta)],
+  );
+
+  access.city.meta = nextMeta;
+}
+
 export function syncPlayerStateFromCityRow(ps: PlayerState, row: CityRow, viewer: ViewerIdentity): PlayerState {
   const meta = normalizeCityMeta(row.meta);
   ps.playerId = viewer.playerId;
@@ -153,7 +286,10 @@ export async function resolvePlayerAccess(
     return { ok: false, status: 404, error: "no_city", viewer };
   }
 
-  const ps = syncPlayerStateFromCityRow(getOrCreatePlayerState(viewer.playerId), city, viewer);
+  const ps = getOrCreatePlayerState(viewer.playerId);
+  const snapshot = normalizeSnapshot(city.meta);
+  if (snapshot) applyRuntimeSnapshot(ps, snapshot);
+  syncPlayerStateFromCityRow(ps, city, viewer);
   return {
     ok: true,
     access: {
@@ -247,6 +383,8 @@ export async function createCityForViewer(
     if (!row) throw new Error("city_create_failed");
 
     const ps = syncPlayerStateFromCityRow(getOrCreatePlayerState(viewer.playerId), row, viewer);
+    const access: PlayerAccess = { viewer, playerId: viewer.playerId, playerState: ps, city: row };
+    await persistPlayerStateForCity(access);
     return { city: row, playerState: ps, created: true };
   } catch (err: any) {
     const code = pgErrCode(err);
@@ -287,6 +425,8 @@ export async function renameCityForViewer(
     if (!row) throw new Error("city_rename_failed");
 
     const ps = syncPlayerStateFromCityRow(getOrCreatePlayerState(viewer.playerId), row, viewer);
+    const access: PlayerAccess = { viewer, playerId: viewer.playerId, playerState: ps, city: row };
+    await persistPlayerStateForCity(access);
     return { city: row, playerState: ps };
   } catch (err: any) {
     const code = pgErrCode(err);

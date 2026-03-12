@@ -6,7 +6,7 @@ import { getPlayerState, morphCityForPlayer, tierUpCityForPlayer } from "../game
 import {
   createCityForViewer,
   renameCityForViewer,
-  resolvePlayerAccess,
+  persistPlayerStateForCity, resolvePlayerAccess,
   resolveViewer,
   suggestCityName,
 } from "./playerCityAccess";
@@ -70,7 +70,10 @@ router.post("/tier-up", async (req, res) => {
 
     const now = new Date();
     const result = tierUpCityForPlayer(access.access.playerId, now);
-    if (result.status === "ok") return res.json({ ok: true, result });
+    if (result.status === "ok") {
+      await persistPlayerStateForCity(access.access);
+      return res.json({ ok: true, result });
+    }
     return res.json({ ok: false, result });
   } catch (err: any) {
     return res.status(500).json({ ok: false, error: String(err?.message ?? err) });
@@ -89,7 +92,10 @@ router.post("/morph", async (req, res) => {
 
     const now = new Date();
     const result = morphCityForPlayer(access.access.playerId, specializationId, now);
-    if (result.status === "ok") return res.json({ ok: true, result });
+    if (result.status === "ok") {
+      await persistPlayerStateForCity(access.access);
+      return res.json({ ok: true, result });
+    }
     return res.json({ ok: false, result });
   } catch (err: any) {
     return res.status(500).json({ ok: false, error: String(err?.message ?? err) });

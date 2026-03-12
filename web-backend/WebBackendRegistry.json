@@ -463,7 +463,8 @@
         "City tier-up and specialization morph progression now delegate to web-backend.gameState.gameStateCityProgression while preserving the public gameState API.",
         "Passive ticking, resource progression, research completion, and city-stress recomputation now delegate to web-backend.gameState.gameStateEconomy while preserving the public gameState API.",
         "gameState.ts now delegates specialization/resource-tier production logic to web-backend.gameState.gameStateProduction while preserving the public API.",
-        "gameState.ts now delegates singleton bootstrap, player-state creation, and event log plumbing to web-backend.gameState.gameStateCore while preserving the public API."
+        "gameState.ts now delegates singleton bootstrap, player-state creation, and event log plumbing to web-backend.gameState.gameStateCore while preserving the public API.",
+        "Runtime city state is now hydrated/persisted through route-level snapshot writes via web-backend.routes.playerCityAccess."
       ],
       "owns": [
         "in-memory GameState (demo)",
@@ -979,7 +980,8 @@
       "notes": [
         "City operations for the CityBuilder prototype now support account-owned city bootstrap, rename, tier-up, morph, and debug reads.",
         "Authenticated accounts can create exactly one city backed by public.cities; unauthenticated callers still fall back to the demo city for read-only prototype access.",
-        "Bootstrap and rename enforce validated names and rely on DB case-insensitive uniqueness for final conflict protection."
+        "Bootstrap and rename enforce validated names and rely on DB case-insensitive uniqueness for final conflict protection.",
+        "Bootstrap/rename flows now seed and preserve per-account city runtime snapshots in public.cities.meta."
       ],
       "owns": [],
       "path": "web-backend/routes/city.ts",
@@ -1072,7 +1074,8 @@
       "notes": [
         "Auth-aware CityBuilder profile endpoint used by the City Builder shell.",
         "GET /api/me now mounts correctly at /api/me (router root path) instead of the accidental /api/me/me mismatch.",
-        "Returns full CityBuilder profile data when a city exists, or hasCity=false/canCreateCity=true plus a suggested city name when an authenticated account has not bootstrapped a city yet."
+        "Returns full CityBuilder profile data when a city exists, or hasCity=false/canCreateCity=true plus a suggested city name when an authenticated account has not bootstrapped a city yet.",
+        "Persists per-account CityBuilder runtime snapshots after profile/tick hydration so city state survives process restarts."
       ],
       "owns": [],
       "path": "web-backend/routes/me.ts",
@@ -2440,32 +2443,26 @@
       ]
     },
     "web-backend.routes.playerCityAccess": {
-      "class": null,
-      "ctorArgs": [],
+      "kind": "ts_module",
+      "service": "routes.playerCityAccess",
+      "path": "web-backend/routes/playerCityAccess.ts",
       "dependsOn": [
-        "npm:express",
         "worldcore.auth.PostgresAuthService",
         "worldcore.db.Database",
         "web-backend.gameState"
       ],
-      "kind": "module",
-      "lifecycle": "singleton",
-      "notes": [
-        "Shared CityBuilder request identity helper for demo-vs-auth account routing.",
-        "Resolves Bearer-token viewers, loads account-owned cities from Postgres, syncs runtime player state, and validates/creates/renames city names.",
-        "Blocks reserved/offensive city names via web-backend/data/cityBlockedNames.json and relies on DB unique index for case-insensitive city name uniqueness."
-      ],
-      "owns": [],
-      "path": "web-backend/routes/playerCityAccess.ts",
       "provides": [
         "resolveViewer(req)",
-        "resolvePlayerAccess(req, opts)",
+        "resolvePlayerAccess(req, opts?)",
         "createCityForViewer(viewer, args)",
         "renameCityForViewer(viewer, nextName)",
+        "persistPlayerStateForCity(access)",
         "suggestCityName(displayName)",
         "validateCityName(input)"
       ],
-      "service": "http.routes"
+      "notes": [
+        "Owns authenticated CityBuilder account-to-city resolution, city name validation, and v1 runtime snapshot persistence through public.cities.meta."
+      ]
     }
   }
 }

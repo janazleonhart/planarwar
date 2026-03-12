@@ -8,7 +8,7 @@ import {
   startMissionForPlayer,
   tickPlayerState,
 } from "../gameState";
-import { resolvePlayerAccess } from "./playerCityAccess";
+import { persistPlayerStateForCity, resolvePlayerAccess } from "./playerCityAccess";
 
 const router = Router();
 
@@ -23,6 +23,7 @@ router.get("/offers", async (req, res) => {
     regenerateRegionMissionsForPlayer(access.access.playerId, ps.city.regionId as any, now);
   }
 
+  await persistPlayerStateForCity(access.access);
   res.json({ missions: ps.currentOffers, activeMissions: ps.activeMissions });
 });
 
@@ -40,6 +41,7 @@ router.post("/start", async (req, res) => {
   const ps = getPlayerState(access.access.playerId);
   if (!ps) return res.status(500).json({ error: "Player state missing." });
 
+  await persistPlayerStateForCity({ ...access.access, playerState: ps });
   res.json({
     ok: true,
     activeMission: active,
@@ -65,6 +67,7 @@ router.post("/complete", async (req, res) => {
   const ps = getPlayerState(access.access.playerId);
   if (!ps) return res.status(500).json({ error: "Player state missing." });
 
+  await persistPlayerStateForCity({ ...access.access, playerState: ps });
   res.json({ ok: true, result, activeMissions: ps.activeMissions, heroes: ps.heroes, armies: ps.armies, resources: ps.resources, regionWar: ps.regionWar });
 });
 
@@ -79,6 +82,7 @@ router.post("/refresh_region", async (req, res) => {
     const offers = regenerateRegionMissionsForPlayer(access.access.playerId, regionId as any, new Date());
     if (!offers) return res.status(404).json({ error: "Player not found" });
 
+    await persistPlayerStateForCity(access.access);
     return res.json({ ok: true, regionId, offers });
   } catch (err) {
     console.error("refresh_region error:", err);

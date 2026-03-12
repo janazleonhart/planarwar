@@ -5,7 +5,7 @@ import { Router } from "express";
 import { defaultPolicies, tickPlayerState, type PlayerState } from "../gameState";
 import { getAvailableTechsForPlayer, getTechById } from "../domain/tech";
 import { getCityProductionPerTick, maxBuildingSlotsForTier } from "../domain/city";
-import { resolvePlayerAccess, resolveViewer, suggestCityName } from "./playerCityAccess";
+import { persistPlayerStateForCity, resolvePlayerAccess, resolveViewer, suggestCityName } from "./playerCityAccess";
 
 const router = Router();
 
@@ -140,7 +140,9 @@ router.get("/", async (req, res) => {
     return res.json(buildMePayload(access.viewer, null));
   }
 
-  return res.json(buildMePayload(access.access.viewer, access.access.playerState));
+  const payload = buildMePayload(access.access.viewer, access.access.playerState);
+  await persistPlayerStateForCity(access.access);
+  return res.json(payload);
 });
 
 export default router;

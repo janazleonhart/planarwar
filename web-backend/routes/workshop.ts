@@ -7,7 +7,7 @@ import {
   HeroAttachmentKind,
   startWorkshopJobForPlayer,
 } from "../gameState";
-import { resolvePlayerAccess } from "./playerCityAccess";
+import { persistPlayerStateForCity, resolvePlayerAccess } from "./playerCityAccess";
 
 const router = Router();
 
@@ -26,6 +26,7 @@ router.post("/craft", async (req, res) => {
   const ps = getPlayerState(access.access.playerId);
   if (!ps) return res.status(500).json({ error: "Player state missing." });
 
+  await persistPlayerStateForCity({ ...access.access, playerState: ps });
   res.json({ ok: true, job: result.job, workshopJobs: ps.workshopJobs, resources: ps.resources });
 });
 
@@ -44,6 +45,7 @@ router.post("/collect", async (req, res) => {
   const ps = getPlayerState(access.access.playerId);
   if (!ps) return res.status(500).json({ error: "Player state missing." });
 
+  await persistPlayerStateForCity({ ...access.access, playerState: ps });
   res.json({ ok: true, job: result.job, workshopJobs: ps.workshopJobs, heroes: ps.heroes, resources: ps.resources });
 });
 

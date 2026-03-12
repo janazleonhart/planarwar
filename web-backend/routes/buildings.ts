@@ -3,7 +3,7 @@
 import { Router } from "express";
 import { buildBuildingForPlayer, getPlayerState, upgradeBuildingForPlayer } from "../gameState";
 import type { BuildingKind } from "../gameState";
-import { resolvePlayerAccess } from "./playerCityAccess";
+import { persistPlayerStateForCity, resolvePlayerAccess } from "./playerCityAccess";
 
 const router = Router();
 
@@ -23,6 +23,7 @@ router.post("/construct", async (req, res) => {
   const ps = getPlayerState(access.access.playerId);
   if (!ps) return res.status(500).json({ error: "Player state missing." });
 
+  await persistPlayerStateForCity({ ...access.access, playerState: ps });
   res.json({ ok: true, building: result.building, city: ps.city, resources: ps.resources });
 });
 
@@ -42,6 +43,7 @@ router.post("/upgrade", async (req, res) => {
   const ps = getPlayerState(access.access.playerId);
   if (!ps) return res.status(500).json({ error: "Player state missing." });
 
+  await persistPlayerStateForCity({ ...access.access, playerState: ps });
   res.json({ ok: true, building: result.building, city: ps.city, resources: ps.resources });
 });
 

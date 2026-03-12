@@ -3,7 +3,7 @@
 import { Router } from "express";
 import { getPlayerState, raiseArmyForPlayer, reinforceArmyForPlayer } from "../gameState";
 import type { ArmyType } from "../domain/armies";
-import { resolvePlayerAccess } from "./playerCityAccess";
+import { persistPlayerStateForCity, resolvePlayerAccess } from "./playerCityAccess";
 
 const router = Router();
 
@@ -23,6 +23,7 @@ router.post("/raise", async (req, res) => {
   const ps = getPlayerState(access.access.playerId);
   if (!ps) return res.status(500).json({ error: "Player state missing." });
 
+  await persistPlayerStateForCity({ ...access.access, playerState: ps });
   res.json({ ok: true, army: result.army, armies: ps.armies, resources: ps.resources });
 });
 
@@ -42,6 +43,7 @@ router.post("/reinforce", async (req, res) => {
   const ps = getPlayerState(access.access.playerId);
   if (!ps) return res.status(500).json({ error: "Player state missing." });
 
+  await persistPlayerStateForCity({ ...access.access, playerState: ps });
   res.json({ ok: true, army: result.army, armies: ps.armies, resources: ps.resources });
 });
 

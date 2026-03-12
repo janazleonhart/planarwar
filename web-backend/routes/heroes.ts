@@ -8,7 +8,7 @@ import {
   recruitHeroForPlayer,
 } from "../gameState";
 import type { HeroRole } from "../domain/heroes";
-import { resolvePlayerAccess } from "./playerCityAccess";
+import { persistPlayerStateForCity, resolvePlayerAccess } from "./playerCityAccess";
 
 const router = Router();
 
@@ -28,6 +28,7 @@ router.post("/equip_attachment", async (req, res) => {
   const ps = getPlayerState(access.access.playerId);
   if (!ps) return res.status(500).json({ error: "Player state missing." });
 
+  await persistPlayerStateForCity({ ...access.access, playerState: ps });
   res.json({ ok: true, hero: result.hero, heroes: ps.heroes, resources: ps.resources });
 });
 
@@ -47,6 +48,7 @@ router.post("/recruit", async (req, res) => {
   const ps = getPlayerState(access.access.playerId);
   if (!ps) return res.status(500).json({ error: "Player state missing." });
 
+  await persistPlayerStateForCity({ ...access.access, playerState: ps });
   res.json({ ok: true, hero: result.hero, heroes: ps.heroes, resources: ps.resources });
 });
 

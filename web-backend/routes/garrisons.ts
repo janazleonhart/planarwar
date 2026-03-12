@@ -2,7 +2,7 @@
 
 import { Router } from "express";
 import { getPlayerState, startGarrisonStrikeForPlayer } from "../gameState";
-import { resolvePlayerAccess } from "./playerCityAccess";
+import { persistPlayerStateForCity, resolvePlayerAccess } from "./playerCityAccess";
 
 const router = Router();
 
@@ -21,6 +21,7 @@ router.post("/strike", async (req, res) => {
   const ps = getPlayerState(access.access.playerId);
   if (!ps) return res.status(500).json({ error: "Player state missing." });
 
+  await persistPlayerStateForCity({ ...access.access, playerState: ps });
   res.json({ ok: true, activeMission: result.activeMission, activeMissions: ps.activeMissions, heroes: ps.heroes, armies: ps.armies, resources: ps.resources, regionWar: ps.regionWar });
 });
 

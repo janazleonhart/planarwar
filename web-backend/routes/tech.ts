@@ -2,7 +2,7 @@
 
 import { Router } from "express";
 import { startResearchForPlayer } from "../gameState";
-import { resolvePlayerAccess } from "./playerCityAccess";
+import { persistPlayerStateForCity, resolvePlayerAccess } from "./playerCityAccess";
 
 const router = Router();
 
@@ -18,6 +18,7 @@ router.post("/start", async (req, res) => {
     return res.status(400).json({ error: result.message ?? result.status, status: result.status });
   }
 
+  await persistPlayerStateForCity(access.access);
   return res.json({ status: "ok", research: result.research });
 });
 
