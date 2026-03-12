@@ -443,6 +443,7 @@
         "web-backend.domain.resources",
         "web-backend.gameState.gameStateMissions",
         "web-backend.gameState.gameStateCityDevelopment",
+        "web-backend.gameState.gameStateCityProgression",
         "web-backend.gameState.gameStateArmies",
         "web-backend.gameState.gameStateHeroes",
         "web-backend.gameState.gameStateEconomy"
@@ -457,6 +458,7 @@
         "Building construction/upgrades and research start now delegate to web-backend.gameState.gameStateCityDevelopment while preserving the public gameState API.",
         "Army raising and reinforcement now delegate to web-backend.gameState.gameStateArmies while preserving the public gameState API.",
         "Hero recruitment, hero attachment equipment, and workshop crafting now delegate to web-backend.gameState.gameStateHeroes while preserving the public gameState API.",
+        "City tier-up and specialization morph progression now delegate to web-backend.gameState.gameStateCityProgression while preserving the public gameState API.",
         "Passive ticking, resource progression, research completion, and city-stress recomputation now delegate to web-backend.gameState.gameStateEconomy while preserving the public gameState API."
       ],
       "owns": [
@@ -477,7 +479,9 @@
         "upgradeBuildingForPlayer(...)",
         "startResearchForPlayer(...)",
         "raiseArmyForPlayer(...)",
-        "reinforceArmyForPlayer(...)"
+        "reinforceArmyForPlayer(...)",
+        "tierUpCityForPlayer(...)",
+        "morphCityForPlayer(...)"
       ],
       "service": "demo.gameState"
     },
@@ -2328,6 +2332,28 @@
       ],
       "notes": [
         "Extracted from web-backend/gameState.ts to isolate passive economy/time progression behind injected game-state dependencies while preserving the public gameState API."
+      ]
+    },
+    "web-backend.gameState.gameStateCityProgression": {
+      "service": "demo.gameState.cityProgression",
+      "kind": "module",
+      "path": "web-backend/gameState/gameStateCityProgression.ts",
+      "class": null,
+      "lifecycle": "singleton",
+      "ctorArgs": [],
+      "dependsOn": [
+        "web-backend.config.cityTier"
+      ],
+      "provides": [
+        "tierUpCityForPlayer(...)",
+        "morphCityForPlayer(...)"
+      ],
+      "owns": [
+        "city tier-up cost/eligibility logic",
+        "city specialization morph/prestige progression"
+      ],
+      "notes": [
+        "Extracted from web-backend.gameState to keep city progression rules isolated while preserving the public gameState API."
       ]
     }
   }
