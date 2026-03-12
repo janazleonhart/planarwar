@@ -713,6 +713,7 @@
         "web-backend.routes.adminSpawnPoints.restoreRequestOps",
         "web-backend.routes.adminSpawnPoints.motherBrainStatusOps",
         "web-backend.routes.adminSpawnPoints.motherBrainStatusQuery",
+        "web-backend.routes.adminSpawnPoints.motherBrainBoxQuery",
         "web-backend.routes.adminSpawnPoints.motherBrainWaveRequestOps",
         "web-backend.routes.adminSpawnPoints.motherBrainWipeRequestOps",
         "web-backend.routes.adminSpawnPoints.motherBrainResponses",
@@ -761,7 +762,8 @@
         "Slice 2v extracts shared Mother Brain success/error/confirm response shaping into motherBrainResponses.ts.",
         "Slice 2w extracts Mother Brain wave effective-existing-set and apply mutation loop helpers into motherBrainWaveApply.ts.",
         "Boundary cleanup slice 2x extracted Mother Brain wipe spawn-row map and commit-time delete helpers into motherBrainWipeApply.ts.",
-        "Boundary cleanup slice 2y extracted Mother Brain status DB query and row normalization into motherBrainStatusQuery.ts."
+        "Boundary cleanup slice 2y extracted Mother Brain status DB query and row normalization into motherBrainStatusQuery.ts.",
+        "Boundary cleanup slice 2z extracted shared Mother Brain boxed query preload helpers into routes/adminSpawnPoints/motherBrainBoxQuery.ts for wave/wipe/status reuse."
       ],
       "owns": [],
       "path": "web-backend/routes/adminSpawnPoints.ts",
@@ -2028,6 +2030,30 @@
         "Behavior-preserving Mother Brain status helper extraction from adminSpawnPoints.ts.",
         "Encapsulates boxed spawn_points query for brain:% rows and normalized status row shaping.",
         "Boundary cleanup slice 2y."
+      ]
+    },
+    "web-backend.routes.adminSpawnPoints.motherBrainBoxQuery": {
+      "service": "admin.spawn_points",
+      "kind": "module",
+      "path": "web-backend/routes/adminSpawnPoints/motherBrainBoxQuery.ts",
+      "class": null,
+      "lifecycle": "static",
+      "ctorArgs": [],
+      "dependsOn": [
+        "web-backend.routes.adminSpawnPoints.opsPreview"
+      ],
+      "provides": [
+        "queryMotherBrainBoxRows(dbLike, args)",
+        "queryMotherBrainBoxIds(dbLike, args)",
+        "normalizeMotherBrainBoxRow(row)"
+      ],
+      "owns": [
+        "Shared Mother Brain boxed spawn_points query preload helpers and normalized row coercion"
+      ],
+      "notes": [
+        "Behavior-preserving shared Mother Brain preload helper extraction from adminSpawnPoints.ts.",
+        "Encapsulates boxed spawn_points query reuse for status, wave, and wipe flows plus normalized row shaping.",
+        "Boundary cleanup slice 2z."
       ]
     }
   }

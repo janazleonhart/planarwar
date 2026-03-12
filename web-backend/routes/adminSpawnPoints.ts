@@ -80,6 +80,10 @@ import {
   parseMotherBrainStatusRequest,
 } from "./adminSpawnPoints/motherBrainStatusOps";
 import { queryMotherBrainStatusRows } from "./adminSpawnPoints/motherBrainStatusQuery";
+import {
+  queryMotherBrainBoxIds,
+  queryMotherBrainBoxRows,
+} from "./adminSpawnPoints/motherBrainBoxQuery";
 import { parseMotherBrainWaveRequest } from "./adminSpawnPoints/motherBrainWaveRequestOps";
 import {
   buildMotherBrainWipeBadBoundsResponse,
@@ -2420,25 +2424,10 @@ router.post("/mother_brain/wave", async (req, res) => {
     await client.query("BEGIN");
 
     // Existing brain:* spawn_ids inside the selection box (for replace-mode deletion + budgeting).
-    const existingBrainRes = await client.query(
-      `
-        SELECT id, spawn_id
-        FROM spawn_points
-        WHERE shard_id = $1
-          AND spawn_id LIKE 'brain:%'
-          AND x >= $2 AND x <= $3
-          AND z >= $4 AND z <= $5
-      `,
-      [shardId, box.minX, box.maxX, box.minZ, box.maxZ],
-    );
-
-    const existingBrainIds: number[] = (existingBrainRes.rows ?? [])
-      .map((r: any) => Number(r.id))
-      .filter((n: number) => Number.isFinite(n));
-
-    const existingBrainSpawnIds: string[] = (existingBrainRes.rows ?? [])
-      .map((r: any) => String(r.spawn_id ?? ""))
-      .filter(Boolean);
+    const { ids: existingBrainIds, spawnIds: existingBrainSpawnIds } = await queryMotherBrainBoxIds(client, {
+      shardId,
+      box,
+    });
 
 const expectedConfirmToken =
   !append && existingBrainIds.length > 0
@@ -2649,25 +2638,9 @@ router.post("/mother_brain/wipe", async (req, res) => {
     try {
       await client.query("BEGIN");
 
-      const existing = await client.query(
-        `
-        SELECT id, spawn_id, type, proto_id, region_id
-        FROM spawn_points
-        WHERE shard_id = $1
-          AND spawn_id LIKE 'brain:%'
-          AND x >= $2 AND x <= $3
-          AND z >= $4 AND z <= $5
-        `,
-        [shardId, box.minX, box.maxX, box.minZ, box.maxZ],
-      );
+      const existingRows = await queryMotherBrainBoxRows(client, { shardId, box });
 
-      const bySpawnId = buildMotherBrainWipeSpawnMap((existing.rows ?? []) as Array<{
-        id?: unknown;
-        spawn_id?: unknown;
-        type?: unknown;
-        proto_id?: unknown;
-        region_id?: unknown;
-      }>);
+      const bySpawnId = buildMotherBrainWipeSpawnMap(existingRows);
 
       const plan = computeBrainWipePlan({
         existingBrainSpawnIdsInBox: bySpawnId.keys(),
