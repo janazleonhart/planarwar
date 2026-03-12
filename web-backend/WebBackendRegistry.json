@@ -715,7 +715,8 @@
         "web-backend.routes.adminSpawnPoints.motherBrainWaveRequestOps",
         "web-backend.routes.adminSpawnPoints.motherBrainWipeRequestOps",
         "web-backend.routes.adminSpawnPoints.motherBrainResponses",
-        "web-backend.routes.adminSpawnPoints.motherBrainWaveApply"
+        "web-backend.routes.adminSpawnPoints.motherBrainWaveApply",
+        "web-backend.routes.adminSpawnPoints.motherBrainWipeApply"
       ],
       "kind": "module",
       "lifecycle": "singleton",
@@ -757,7 +758,8 @@
         "Mother Brain wave request/budget normalization now routes through motherBrainWaveRequestOps helper (slice 2t).",
         "Slice 2u extracts Mother Brain wipe request parsing and confirm payload helpers into motherBrainWipeRequestOps.",
         "Slice 2v extracts shared Mother Brain success/error/confirm response shaping into motherBrainResponses.ts.",
-        "Slice 2w extracts Mother Brain wave effective-existing-set and apply mutation loop helpers into motherBrainWaveApply.ts."
+        "Slice 2w extracts Mother Brain wave effective-existing-set and apply mutation loop helpers into motherBrainWaveApply.ts.",
+        "Boundary cleanup slice 2x extracted Mother Brain wipe spawn-row map and commit-time delete helpers into motherBrainWipeApply.ts."
       ],
       "owns": [],
       "path": "web-backend/routes/adminSpawnPoints.ts",
@@ -1984,6 +1986,27 @@
         "Encapsulates replace-mode existing spawn_id adjustment and commit-time delete/update/insert loop for planned wave actions.",
         "Boundary cleanup slice 2w."
       ]
+    },
+    "web-backend.routes.adminSpawnPoints.motherBrainWipeApply": {
+      "class": null,
+      "ctorArgs": [],
+      "dependsOn": [],
+      "kind": "module",
+      "lifecycle": "static",
+      "notes": [
+        "Behavior-preserving Mother Brain wipe helper extraction from adminSpawnPoints.ts.",
+        "Encapsulates wipe row-to-spawn map construction and commit-time delete application for selected ids.",
+        "Boundary cleanup slice 2x."
+      ],
+      "owns": [
+        "Mother Brain wipe spawn-row map construction and commit-time delete helper"
+      ],
+      "path": "web-backend/routes/adminSpawnPoints/motherBrainWipeApply.ts",
+      "provides": [
+        "buildMotherBrainWipeSpawnMap(rows)",
+        "applyMotherBrainWipeDelete(args)"
+      ],
+      "service": "admin.spawn_points"
     }
   }
 }

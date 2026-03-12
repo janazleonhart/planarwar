@@ -37,7 +37,6 @@ import {
   toWorldBox,
   type AdminSummary,
   type DuplicateSnapshotResponse,
-  type MotherBrainListRow,
   type MotherBrainOpsPreview,
   type MotherBrainStatusResponse,
   type MotherBrainWaveBudgetConfig,
@@ -97,6 +96,10 @@ import {
   applyMotherBrainWaveMutations,
   buildEffectiveExistingSpawnIds,
 } from "./adminSpawnPoints/motherBrainWaveApply";
+import {
+  applyMotherBrainWipeDelete,
+  buildMotherBrainWipeSpawnMap,
+} from "./adminSpawnPoints/motherBrainWipeApply";
 import {
   deleteEditableSpawnPoints,
   moveEditableSpawnPoints,
@@ -2664,23 +2667,13 @@ router.post("/mother_brain/wipe", async (req, res) => {
         [shardId, box.minX, box.maxX, box.minZ, box.maxZ],
       );
 
-      const rows = (existing.rows ?? []).map((r: any) => ({
-        id: Number(r.id),
-        spawnId: String(r.spawn_id ?? ""),
-        type: String(r.type ?? ""),
-        protoId: strOrNull(r.proto_id),
-        regionId: strOrNull(r.region_id),
-      }));
-
-      const bySpawnId = new Map<string, { id: number; row: MotherBrainListRow }>();
-      for (const r of rows) {
-        if (!r.spawnId) continue;
-        if (!Number.isFinite(r.id)) continue;
-        bySpawnId.set(r.spawnId, {
-          id: r.id,
-          row: { spawnId: r.spawnId, type: r.type, protoId: r.protoId, regionId: r.regionId },
-        });
-      }
+      const bySpawnId = buildMotherBrainWipeSpawnMap((existing.rows ?? []) as Array<{
+        id?: unknown;
+        spawn_id?: unknown;
+        type?: unknown;
+        proto_id?: unknown;
+        region_id?: unknown;
+      }>);
 
       const plan = computeBrainWipePlan({
         existingBrainSpawnIdsInBox: bySpawnId.keys(),
@@ -2748,10 +2741,11 @@ if (commit && expectedConfirmToken && confirm !== expectedConfirmToken) {
 }
 
 
-      if (commit && ids.length > 0) {
-        await client.query(`DELETE FROM spawn_points WHERE id = ANY($1::int[])`, [ids]);
-        deleted = ids.length;
-      }
+      deleted = await applyMotherBrainWipeDelete({
+        client,
+        ids,
+        commit,
+      });
 
       if (commit) {
         await client.query("COMMIT");
