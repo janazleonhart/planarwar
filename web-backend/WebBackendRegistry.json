@@ -440,14 +440,18 @@
         "web-backend.domain.armies",
         "web-backend.domain.missions",
         "web-backend.domain.tech",
-        "web-backend.domain.resources"
+        "web-backend.domain.resources",
+        "web-backend.gameState.gameStateMissions",
+        "web-backend.gameState.gameStateCityDevelopment"
       ],
       "kind": "module",
       "lifecycle": "singleton",
       "notes": [
         "In-memory, demo-style state manager for the web-city-builder prototype.",
         "Routes call tickPlayerState(...) before reads/writes to keep time-based progression consistent.",
-        "Now supports per-account CityBuilder state via getOrCreatePlayerState(playerId, displayName)."
+        "Now supports per-account CityBuilder state via getOrCreatePlayerState(playerId, displayName).",
+        "Mission orchestration now delegates to web-backend.gameState.gameStateMissions while preserving the public gameState API.",
+        "Building construction/upgrades and research start now delegate to web-backend.gameState.gameStateCityDevelopment while preserving the public gameState API."
       ],
       "owns": [
         "in-memory GameState (demo)",
@@ -2202,6 +2206,54 @@
         "upsertAdminQuest(input, questService)"
       ],
       "service": "http.adminRoutes"
+    },
+    "web-backend.gameState.gameStateMissions": {
+      "kind": "module",
+      "service": "demo.gameState.missions",
+      "path": "web-backend/gameState/gameStateMissions.ts",
+      "class": null,
+      "lifecycle": "singleton",
+      "ctorArgs": [],
+      "dependsOn": [
+        "web-backend.domain.missions",
+        "web-backend.domain.world",
+        "web-backend.config.demo"
+      ],
+      "provides": [
+        "startMissionForPlayer(deps, playerId, missionId, now)",
+        "regenerateRegionMissionsForPlayer(deps, playerId, targetRegionId, now)",
+        "startWarfrontAssaultForPlayer(deps, playerId, regionId, now)",
+        "startGarrisonStrikeForPlayer(deps, playerId, regionId, now)",
+        "completeMissionForPlayer(deps, playerId, instanceId, now)"
+      ],
+      "owns": [
+        "Mission offer orchestration and mission completion flow for the in-memory city-builder state"
+      ],
+      "notes": [
+        "Extracted from web-backend/gameState.ts to keep mission/warfront/garrison orchestration isolated behind injected game-state dependencies."
+      ]
+    },
+    "web-backend.gameState.gameStateCityDevelopment": {
+      "kind": "module",
+      "service": "demo.gameState.cityDevelopment",
+      "path": "web-backend/gameState/gameStateCityDevelopment.ts",
+      "class": null,
+      "lifecycle": "singleton",
+      "ctorArgs": [],
+      "dependsOn": [
+        "web-backend.domain.tech"
+      ],
+      "provides": [
+        "buildBuildingForPlayer(deps, playerId, kind, now)",
+        "upgradeBuildingForPlayer(deps, playerId, buildingId, now)",
+        "startResearchForPlayer(deps, playerId, techId, now)"
+      ],
+      "owns": [
+        "Building construction/upgrades and research-start orchestration for the in-memory city-builder state"
+      ],
+      "notes": [
+        "Extracted from web-backend/gameState.ts to isolate city development actions behind injected game-state dependencies while preserving the public gameState API."
+      ]
     }
   }
 }
