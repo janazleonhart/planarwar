@@ -446,7 +446,8 @@
         "web-backend.gameState.gameStateCityProgression",
         "web-backend.gameState.gameStateArmies",
         "web-backend.gameState.gameStateHeroes",
-        "web-backend.gameState.gameStateEconomy"
+        "web-backend.gameState.gameStateEconomy",
+        "web-backend.gameState.gameStateProduction"
       ],
       "kind": "module",
       "lifecycle": "singleton",
@@ -459,7 +460,8 @@
         "Army raising and reinforcement now delegate to web-backend.gameState.gameStateArmies while preserving the public gameState API.",
         "Hero recruitment, hero attachment equipment, and workshop crafting now delegate to web-backend.gameState.gameStateHeroes while preserving the public gameState API.",
         "City tier-up and specialization morph progression now delegate to web-backend.gameState.gameStateCityProgression while preserving the public gameState API.",
-        "Passive ticking, resource progression, research completion, and city-stress recomputation now delegate to web-backend.gameState.gameStateEconomy while preserving the public gameState API."
+        "Passive ticking, resource progression, research completion, and city-stress recomputation now delegate to web-backend.gameState.gameStateEconomy while preserving the public gameState API.",
+        "gameState.ts now delegates specialization/resource-tier production logic to web-backend.gameState.gameStateProduction while preserving the public API."
       ],
       "owns": [
         "in-memory GameState (demo)",
@@ -2354,6 +2356,31 @@
       ],
       "notes": [
         "Extracted from web-backend.gameState to keep city progression rules isolated while preserving the public gameState API."
+      ]
+    },
+    "web-backend.gameState.gameStateProduction": {
+      "kind": "module",
+      "service": "demo.gameState.production",
+      "path": "web-backend/gameState/gameStateProduction.ts",
+      "class": null,
+      "lifecycle": "singleton",
+      "ctorArgs": [],
+      "dependsOn": [
+        "web-backend.config.cityTier",
+        "web-backend.domain.city",
+        "web-backend.domain.resources"
+      ],
+      "provides": [
+        "getOrInitResourceTier(ps, key)",
+        "applySpecializationToProduction(city, base)",
+        "applyResourceTiersToProduction(ps, base)"
+      ],
+      "owns": [
+        "City specialization production scaling",
+        "Resource-tier initialization and production scaling for the in-memory city-builder state"
+      ],
+      "notes": [
+        "Extracted from web-backend/gameState.ts to isolate specialization and resource-tier production modifiers behind a dedicated helper module while preserving the public gameState API."
       ]
     }
   }

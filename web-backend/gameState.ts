@@ -11,7 +11,12 @@ import {
   tickConfig,
   startingResourcesConfig,
 } from "./config";
-import { getMorphConfig } from "./config/cityTierConfig";
+import {
+  type ResourceTierState,
+  applyResourceTiersToProduction as applyResourceTiersToProductionHelper,
+  applySpecializationToProduction as applySpecializationToProductionHelper,
+  getOrInitResourceTier as getOrInitResourceTierHelper,
+} from "./gameState/gameStateProduction";
 import {
   type CompleteMissionResult,
   type GarrisonStrikeResult,
@@ -70,7 +75,6 @@ import type {
 } from "./domain/missions";
 import type { TechAge, TechEpoch, TechCategory } from "./domain/tech";
 import type { ResourceKey, ResourceVector } from "./domain/resources";
-
 
 // ---- helpers ----
 
@@ -268,169 +272,28 @@ export function morphCityForPlayer(
   return morphCityForPlayerHelper(cityProgressionDeps, playerId, morphId, now);
 }
 
-  function applySpecializationToProduction(
-    city: City,
-    base: BuildingProduction
-  ): BuildingProduction {
-    const specId = city.specializationId;
-    const stars = city.specializationStars ?? 0;
-  
-    if (!specId || stars <= 0) {
-      return base;
-    }
-  
-    const morphCfg = getMorphConfig();
-    const option = morphCfg.options.find((o) => o.id === specId);
-    if (!option) {
-      return base;
-    }
-  
-    const bonusPct = option.bonusPerStarPct ?? 0;
-    if (bonusPct <= 0) {
-      return base;
-    }
-  
-    const mult = 1 + (stars * bonusPct) / 100;
-  
-    const scaled: BuildingProduction = { ...base };
-  
-    switch (option.resourceFocus) {
-      case "food":
-        if (scaled.food != null) {
-          scaled.food = Math.round(scaled.food * mult);
-        }
-        break;
-      case "materials":
-        if (scaled.materials != null) {
-          scaled.materials = Math.round(scaled.materials * mult);
-        }
-        break;
-      case "wealth":
-        if (scaled.wealth != null) {
-          scaled.wealth = Math.round(scaled.wealth * mult);
-        }
-        break;
-      case "mana":
-        if (scaled.mana != null) {
-          scaled.mana = Math.round(scaled.mana * mult);
-        }
-        break;
-      case "knowledge":
-        if (scaled.knowledge != null) {
-          scaled.knowledge = Math.round(scaled.knowledge * mult);
-        }
-        break;
-      case "unity":
-        if (scaled.unity != null) {
-          scaled.unity = Math.round(scaled.unity * mult);
-        }
-        break;
-      default:
-        // future: if we add more granular types (fire mana, ancient wood), we can
-        // map specializations to stockpile keys instead of the coarse stats.
-        break;
-    }
-  
-    return scaled;
-  }
-  
-  export interface ResourceTierState {
-    resourceKey: ResourceKey;
-    tier: number;          // 0+; baseline is 0
-    stars: number;         // prestige later, start at 0
-    totalInvested: number; // total spent to reach this tier
-  }
+export type { ResourceTierState } from "./gameState/gameStateProduction";
 
-  export function getOrInitResourceTier(
-    ps: PlayerState,
-    key: ResourceKey
-  ): ResourceTierState {
-    if (!ps.resourceTiers[key]) {
-      ps.resourceTiers[key] = {
-        resourceKey: key,
-        tier: 0,
-        stars: 0,
-        totalInvested: 0,
-      };
-    }
-    return ps.resourceTiers[key]!; // non-null, we just set it
-  }
-  
-  function getResourceTierMultiplier(tier: number): number {
-    if (tier <= 0) return 1;
-    return 1 + tier * 0.1; // +10% per tier for now
-  }
+export function getOrInitResourceTier(
+  ps: PlayerState,
+  key: ResourceKey
+): ResourceTierState {
+  return getOrInitResourceTierHelper(ps, key);
+}
 
-  function applyResourceTiersToProduction(
-    ps: PlayerState,
-    base: BuildingProduction
-  ): BuildingProduction {
-    const scaled: BuildingProduction = { ...base };
-  
-    const tiers = ps.resourceTiers;
-    if (!tiers) return scaled;
-  
-    for (const [key, track] of Object.entries(tiers)) {
-      if (!track) continue;
-      const mult = getResourceTierMultiplier(track.tier);
-      if (mult <= 1) continue;
-  
-      const rk = key as ResourceKey;
-  
-      switch (rk) {
-        // fish → food / wealth
-        case "fish_common":
-          if (scaled.food != null) {
-            scaled.food = Math.round(scaled.food * mult);
-          }
-          break;
-        case "fish_rare":
-          if (scaled.wealth != null) {
-            scaled.wealth = Math.round(scaled.wealth * mult);
-          }
-          break;
-  
-        // herbs → knowledge
-        case "herb_common":
-        case "herb_rare":
-          if (scaled.knowledge != null) {
-            scaled.knowledge = Math.round(scaled.knowledge * mult);
-          }
-          break;
-  
-        // bulk materials → materials
-        case "wood_common":
-        case "wood_hard":
-        case "stone_common":
-        case "stone_fine":
-        case "ore_iron":
-        case "ore_mithril":
-          if (scaled.materials != null) {
-            scaled.materials = Math.round(scaled.materials * mult);
-          }
-          break;
-  
-        // mana types → mana
-        case "mana_arcane":
-        case "mana_primal":
-        case "mana_shadow":
-        case "mana_radiant":
-        case "mana_ice":
-        case "mana_tidal":
-          if (scaled.mana != null) {
-            scaled.mana = Math.round(scaled.mana * mult);
-          }
-          break;
-  
-        default:
-          // leave others alone for now
-          break;
-      }
-    }
-  
-    return scaled;
-  }
+function applySpecializationToProduction(
+  city: City,
+  base: BuildingProduction
+): BuildingProduction {
+  return applySpecializationToProductionHelper(city, base);
+}
 
+function applyResourceTiersToProduction(
+  ps: PlayerState,
+  base: BuildingProduction
+): BuildingProduction {
+  return applyResourceTiersToProductionHelper(ps, base);
+}
 
 // ---- Warfront seeding ----
 
@@ -618,7 +481,6 @@ export function getOrCreatePlayerState(playerId: string): PlayerState {
   gameState.players.set(playerId, ps);
   return ps;
 }
-
 
 export interface GameEventInput {
   kind: GameEventKind;
