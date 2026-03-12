@@ -33,6 +33,12 @@ import {
   startResearchForPlayer as startResearchForPlayerHelper,
   upgradeBuildingForPlayer as upgradeBuildingForPlayerHelper,
 } from "./gameState/gameStateCityDevelopment";
+import {
+  type RaiseArmyResult,
+  type ReinforceArmyResult,
+  raiseArmyForPlayer as raiseArmyForPlayerHelper,
+  reinforceArmyForPlayer as reinforceArmyForPlayerHelper,
+} from "./gameState/gameStateArmies";
 
 import type { World, RegionId } from "./domain/world";
 import type { City, BuildingProduction } from "./domain/city";
@@ -1945,184 +1951,29 @@ export interface RecruitHeroResult {
 
 // ---- Army recruitment & reinforcement ----
 
-export interface RaiseArmyResult {
-    status: "ok" | "not_found" | "invalid_type" | "insufficient_resources";
-    message?: string;
-    army?: Army;
-    resources?: Resources;
-  }
-  
-  export interface ReinforceArmyResult {
-    status:
-      | "ok"
-      | "not_found"
-      | "insufficient_resources"
-      | "not_idle";
-    message?: string;
-    army?: Army;
-    resources?: Resources;
-  }
-  
-  const ARMY_BASE_CONFIG: Record<
-    ArmyType,
-    { baseSize: number; basePower: number; baseMaterials: number; baseWealth: number }
-  > = {
-    militia: {
-      baseSize: 100,
-      basePower: 60,
-      baseMaterials: 80,
-      baseWealth: 40,
-    },
-    line: {
-      baseSize: 150,
-      basePower: 100,
-      baseMaterials: 130,
-      baseWealth: 80,
-    },
-    vanguard: {
-      baseSize: 80,
-      basePower: 140,
-      baseMaterials: 160,
-      baseWealth: 120,
-    },
-  };
-  
-  export function raiseArmyForPlayer(
-    playerId: string,
-    type: ArmyType,
-    now: Date
-  ): RaiseArmyResult {
-    const ps = getPlayerState(playerId);
-    if (!ps) {
-      return { status: "not_found", message: "Player not found" };
-    }
-  
-    const cfg = ARMY_BASE_CONFIG[type];
-    if (!cfg) {
-      return { status: "invalid_type", message: "Unknown army type" };
-    }
-  
-    // advance simulation
-    tickPlayerState(ps, now);
-  
-    const tier = ps.city.tier;
-    const tierMult = 1 + (tier - 1) * 0.25;
-  
-    const size = Math.round(cfg.baseSize * tierMult);
-    const power = Math.round(cfg.basePower * tierMult);
-  
-    const materialsCost = Math.round(cfg.baseMaterials * tierMult);
-    const wealthCost = Math.round(cfg.baseWealth * tierMult);
-  
-    if (
-      ps.resources.materials < materialsCost ||
-      ps.resources.wealth < wealthCost
-    ) {
-      return {
-        status: "insufficient_resources",
-        message: `Need ${materialsCost} materials and ${wealthCost} wealth to raise this army.`,
-      };
-    }
-  
-    // pay the cost
-    ps.resources.materials -= materialsCost;
-    ps.resources.wealth -= wealthCost;
-  
-    const index = ps.armies.length + 1;
-    const nameBase =
-      type === "militia"
-        ? "Militia Cohort"
-        : type === "line"
-        ? "Line Regiment"
-        : "Vanguard Spear";
-  
-    const army: Army = {
-      id: `army_${Date.now()}_${Math.floor(Math.random() * 100000)}`,
-      cityId: ps.city.id,
-      name: `${nameBase} ${index}`,
-      type,
-      power,
-      size,
-      status: "idle",
-    };
-  
-    ps.armies.push(army);
+export type { RaiseArmyResult, ReinforceArmyResult } from "./gameState/gameStateArmies";
 
-    pushEvent(ps, {
-        kind: "army_raised",
-        message: `Raised ${army.name} (${army.type})`,
-        armyId: army.id,
-      });
-  
-    return {
-      status: "ok",
-      army,
-      resources: ps.resources,
-    };
-  }
-  
-  export function reinforceArmyForPlayer(
-    playerId: string,
-    armyId: string,
-    now: Date
-  ): ReinforceArmyResult {
-    const ps = getPlayerState(playerId);
-    if (!ps) {
-      return { status: "not_found", message: "Player not found" };
-    }
-  
-    // advance simulation
-    tickPlayerState(ps, now);
-  
-    const army = ps.armies.find((a) => a.id === armyId);
-    if (!army) {
-      return { status: "not_found", message: "Army not found" };
-    }
-  
-    if (army.status !== "idle") {
-      return {
-        status: "not_idle",
-        message: "Army must be idle to be reinforced.",
-      };
-    }
-  
-    // reinforcement is a % of current size, with a minimum
-    const deltaSize = Math.max(30, Math.round(army.size * 0.3));
-    const materialsCost = Math.round(deltaSize * 0.6); // 0.6 materials per head
-    const wealthCost = Math.round(deltaSize * 0.35);   // 0.35 wealth per head
-  
-    if (
-      ps.resources.materials < materialsCost ||
-      ps.resources.wealth < wealthCost
-    ) {
-      return {
-        status: "insufficient_resources",
-        message: `Need ${materialsCost} materials and ${wealthCost} wealth to reinforce this army.`,
-      };
-    }
-  
-    // pay the cost
-    ps.resources.materials -= materialsCost;
-    ps.resources.wealth -= wealthCost;
-  
-    // buff the army
-    army.size += deltaSize;
-    // some of these are veterans, so power increases slightly more
-    const deltaPower = Math.max(10, Math.round(army.power * 0.25));
-    army.power += deltaPower;
-  
-    pushEvent(ps, {
-        kind: "army_reinforced",
-        message: `Reinforced ${army.name} by ${deltaSize} troops`,
-        armyId: army.id,
-      });
+const armyStateDeps = {
+  getPlayerState,
+  tickPlayerState,
+  pushEvent,
+};
 
-    return {
-      status: "ok",
-      army,
-      resources: ps.resources,
-    };
-  }  
+export function raiseArmyForPlayer(
+  playerId: string,
+  type: ArmyType,
+  now: Date
+): RaiseArmyResult {
+  return raiseArmyForPlayerHelper(armyStateDeps, playerId, type, now);
+}
+
+export function reinforceArmyForPlayer(
+  playerId: string,
+  armyId: string,
+  now: Date
+): ReinforceArmyResult {
+  return reinforceArmyForPlayerHelper(armyStateDeps, playerId, armyId, now);
+}
 
   function applyRewards(ps: PlayerState, rewards: RewardBundle): void {
     const resources = ps.resources;

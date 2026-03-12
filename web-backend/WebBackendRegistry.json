@@ -442,7 +442,8 @@
         "web-backend.domain.tech",
         "web-backend.domain.resources",
         "web-backend.gameState.gameStateMissions",
-        "web-backend.gameState.gameStateCityDevelopment"
+        "web-backend.gameState.gameStateCityDevelopment",
+        "web-backend.gameState.gameStateArmies"
       ],
       "kind": "module",
       "lifecycle": "singleton",
@@ -451,7 +452,8 @@
         "Routes call tickPlayerState(...) before reads/writes to keep time-based progression consistent.",
         "Now supports per-account CityBuilder state via getOrCreatePlayerState(playerId, displayName).",
         "Mission orchestration now delegates to web-backend.gameState.gameStateMissions while preserving the public gameState API.",
-        "Building construction/upgrades and research start now delegate to web-backend.gameState.gameStateCityDevelopment while preserving the public gameState API."
+        "Building construction/upgrades and research start now delegate to web-backend.gameState.gameStateCityDevelopment while preserving the public gameState API.",
+        "Army raising and reinforcement now delegate to web-backend.gameState.gameStateArmies while preserving the public gameState API."
       ],
       "owns": [
         "in-memory GameState (demo)",
@@ -469,7 +471,9 @@
         "regenerateRegionMissionsForPlayer(...)",
         "buildBuildingForPlayer(...)",
         "upgradeBuildingForPlayer(...)",
-        "startResearchForPlayer(...)"
+        "startResearchForPlayer(...)",
+        "raiseArmyForPlayer(...)",
+        "reinforceArmyForPlayer(...)"
       ],
       "service": "demo.gameState"
     },
@@ -2253,6 +2257,27 @@
       ],
       "notes": [
         "Extracted from web-backend/gameState.ts to isolate city development actions behind injected game-state dependencies while preserving the public gameState API."
+      ]
+    },
+    "web-backend.gameState.gameStateArmies": {
+      "kind": "module",
+      "service": "demo.gameState.armies",
+      "path": "web-backend/gameState/gameStateArmies.ts",
+      "class": null,
+      "lifecycle": "singleton",
+      "ctorArgs": [],
+      "dependsOn": [
+        "web-backend.domain.armies"
+      ],
+      "provides": [
+        "raiseArmyForPlayer(deps, playerId, type, now)",
+        "reinforceArmyForPlayer(deps, playerId, armyId, now)"
+      ],
+      "owns": [
+        "Army raising and reinforcement orchestration for the in-memory city-builder state"
+      ],
+      "notes": [
+        "Extracted from web-backend/gameState.ts to isolate army recruitment and reinforcement flows behind injected game-state dependencies while preserving the public gameState API."
       ]
     }
   }
