@@ -10,9 +10,20 @@ import { addResources } from "./domain/resources";
 import {
   tickConfig,
   startingResourcesConfig,
-  missionDurationConfig,
 } from "./config";
 import { getTierConfig, getMorphConfig } from "./config/cityTierConfig";
+import {
+  type CompleteMissionResult,
+  type GarrisonStrikeResult,
+  type MissionOutcome,
+  type MissionOutcomeKind,
+  type WarfrontAssaultResult,
+  completeMissionForPlayer as completeMissionForPlayerHelper,
+  regenerateRegionMissionsForPlayer as regenerateRegionMissionsForPlayerHelper,
+  startGarrisonStrikeForPlayer as startGarrisonStrikeForPlayerHelper,
+  startMissionForPlayer as startMissionForPlayerHelper,
+  startWarfrontAssaultForPlayer as startWarfrontAssaultForPlayerHelper,
+} from "./gameState/gameStateMissions";
 
 import type { World, RegionId } from "./domain/world";
 import type { City, BuildingProduction } from "./domain/city";
@@ -752,7 +763,7 @@ export function getOrCreatePlayerState(playerId: string): PlayerState {
 }
 
 
-interface GameEventInput {
+export interface GameEventInput {
   kind: GameEventKind;
   message: string;
   techId?: string;
@@ -1199,415 +1210,95 @@ export function getDemoPlayerWithOffers(): PlayerState {
   return ps;
 }
 
-function durationMinutesForDifficulty(diff: MissionDifficulty): number {
-  const cfg = missionDurationConfig;
-  switch (diff) {
-    case "low":
-      return cfg.low;
-    case "medium":
-      return cfg.medium;
-    case "high":
-      return cfg.high;
-    case "extreme":
-      return cfg.extreme;
-    default:
-      return cfg.medium;
-  }
-}
-
-// helpers to auto-pick a force
-
-function pickHeroForMission(
-  ps: PlayerState,
-  mission: MissionOffer
-): Hero | null {
-  const idle = ps.heroes.filter((h) => h.status === "idle");
-  if (idle.length === 0) return null;
-  idle.sort((a, b) => b.power - a.power);
-  return idle[0];
-}
-
-function pickArmyForMission(
-  ps: PlayerState,
-  mission: MissionOffer
-): Army | null {
-  const idle = ps.armies.filter((a) => a.status === "idle");
-  if (idle.length === 0) return null;
-  idle.sort((a, b) => b.power - a.power);
-  return idle[0];
-}
+const missionStateDeps = {
+  gameState,
+  getPlayerState,
+  tickPlayerState,
+  pushEvent,
+  applyRewards,
+};
 
 export function startMissionForPlayer(
   playerId: string,
   missionId: string,
   now: Date
 ): ActiveMission | null {
-  const ps = getPlayerState(playerId);
-  if (!ps) return null;
-
-  tickPlayerState(ps, now);
-  ensureOffers(ps);
-
-  const mission = ps.currentOffers.find((m) => m.id === missionId);
-  if (!mission) {
-    return null;
-  }
-
-  let assignedHeroId: string | undefined;
-  let assignedArmyId: string | undefined;
-
-  if (mission.kind === "hero") {
-    const hero = pickHeroForMission(ps, mission);
-    if (!hero) {
-      return null;
-    }
-    hero.status = "on_mission";
-    hero.currentMissionId = missionId;
-    assignedHeroId = hero.id;
-  } else if (mission.kind === "army") {
-    const army = pickArmyForMission(ps, mission);
-    if (!army) {
-      return null;
-    }
-    army.status = "on_mission";
-    army.currentMissionId = missionId;
-    assignedArmyId = army.id;
-  }
-
-  const startedAt = now.toISOString();
-  const minutes = durationMinutesForDifficulty(mission.difficulty);
-  const finishesAt = new Date(
-    now.getTime() + minutes * 60 * 1000
-  ).toISOString();
-
-  const instanceId = `active_${Date.now()}_${Math.floor(
-    Math.random() * 100000
-  )}`;
-
-  const active: ActiveMission = {
-    instanceId,
-    mission,
-    startedAt,
-    finishesAt,
-    assignedHeroId,
-    assignedArmyId,
-  };
-
-  ps.activeMissions.push(active);
-
-  pushEvent(ps, {
-    kind: "mission_start",
-    message: `Mission started: ${mission.title}`,
-    missionId: mission.id,
-    heroId: assignedHeroId,
-    armyId: assignedArmyId,
-    regionId: mission.regionId as RegionId,
-  });
-
-  return active;
+  return startMissionForPlayerImpl(playerId, missionId, now);
 }
 
-// ---- Region Specific Missions ----
+function startMissionForPlayerImpl(
+  playerId: string,
+  missionId: string,
+  now: Date
+): ActiveMission | null {
+  return startMissionForPlayerHelper(missionStateDeps, playerId, missionId, now);
+}
 
 export function regenerateRegionMissionsForPlayer(
-    playerId: string,
-    targetRegionId: RegionId,
-    now: Date
-  ): MissionOffer[] | null {
-    const ps = getPlayerState(playerId);
-    if (!ps) return null;
-  
-    // Make sure passive tick is applied first
-    tickPlayerState(ps, now);
-  
-    // Keep offers from other regions, drop those from this region
-    const remaining = ps.currentOffers.filter(
-      (m) => m.regionId !== targetRegionId
-    );
-  
-    const newOffers = generateMissionOffers({
-      city: ps.city,
-      heroes: ps.heroes,
-      armies: ps.armies,
-      // 🔹 explicitly pass the override region id
-      regionId: targetRegionId,
-    });
-  
-    ps.currentOffers = [...remaining, ...newOffers];
-  
-    // Optional: log an event
-     pushEvent(ps, {
-       kind: "mission_refresh_region",
-       message: `Operations refreshed in ${targetRegionId}`,
-     });
-  
-    return newOffers;
-  }
+  playerId: string,
+  targetRegionId: RegionId,
+  now: Date
+): MissionOffer[] | null {
+  return regenerateRegionMissionsForPlayerImpl(playerId, targetRegionId, now);
+}
 
-// ---- Warfront assault missions ----
+function regenerateRegionMissionsForPlayerImpl(
+  playerId: string,
+  targetRegionId: RegionId,
+  now: Date
+): MissionOffer[] | null {
+  return regenerateRegionMissionsForPlayerHelper(missionStateDeps, playerId, targetRegionId, now);
+}
 
-export interface WarfrontAssaultResult {
-    status: "ok" | "not_found" | "no_region" | "no_forces";
-    message?: string;
-    activeMission?: ActiveMission;
-  }
-  
-  function difficultyFromDanger(
-    dangerLevel: number,
-    threat: number
-  ): MissionDifficulty {
-    const score = dangerLevel * 10 + threat * 0.5; // 0–something
-  
-    if (score < 40) return "low";
-    if (score < 80) return "medium";
-    if (score < 130) return "high";
-    return "extreme";
-  }
-  
-  export function startWarfrontAssaultForPlayer(
-    playerId: string,
-    regionId: RegionId,
-    now: Date
-  ): WarfrontAssaultResult {
-    const ps = getPlayerState(playerId);
-    if (!ps) {
-      return { status: "not_found", message: "Player not found" };
-    }
-  
-    // Make sure region + warfront entry exist
-    const shard = gameState.world.shards[0];
-    if (!shard) {
-      return { status: "no_region", message: "World shard missing" };
-    }
-  
-    const region = shard.regions.find((r) => r.id === regionId);
-    if (!region) {
-      return { status: "no_region", message: "Region not found" };
-    }
-  
-    const rw = ps.regionWar.find((r) => r.regionId === regionId);
-    if (!rw) {
-      return {
-        status: "no_region",
-        message: "No warfront state for that region",
-      };
-    }
-  
-    // Advance ticks before staging
-    tickPlayerState(ps, now);
-  
-    const difficulty = difficultyFromDanger(region.dangerLevel, rw.threat);
-    const minutes = durationMinutesForDifficulty(difficulty);
-  
-    // Recommended power scales with danger + threat
-    const recommendedPower =
-      region.dangerLevel * 120 + Math.round(rw.threat * 2);
-  
-    const missionId = `warfront_${region.id}_${Date.now()}`;
-  
-    const offer: MissionOffer = {
-      id: missionId,
-      kind: "army",
-      difficulty,
-      title: `Frontline Assault: ${region.name}`,
-      description: `Commit forces to push back hostile presence in ${region.name}.`,
-      regionId: region.id,
-      recommendedPower,
-      expectedRewards: {
-        materials: 40 + region.dangerLevel * 20,
-        wealth: 30 + region.dangerLevel * 15,
-        influence: 2 + Math.floor(region.dangerLevel * 1.5),
-      },
-      risk: {
-        casualtyRisk:
-          difficulty === "low"
-            ? "Low"
-            : difficulty === "medium"
-            ? "Moderate"
-            : difficulty === "high"
-            ? "Severe"
-            : "Catastrophic",
-        notes:
-          "Assaulting a fortified warfront. Casualties scale with enemy threat and your army strength.",
-      },
-    };
-  
-    // Pick an army and create an active mission, same style as startMissionForPlayer
-    const army = pickArmyForMission(ps, offer);
-    if (!army) {
-      return {
-        status: "no_forces",
-        message: "No idle armies available to assault this region.",
-      };
-    }
-  
-    army.status = "on_mission";
-    army.currentMissionId = missionId;
-  
-    const startedAt = now.toISOString();
-    const finishesAt = new Date(
-      now.getTime() + minutes * 60 * 1000
-    ).toISOString();
-  
-    const instanceId = `active_${Date.now()}_${Math.floor(
-      Math.random() * 100000
-    )}`;
-  
-    const active: ActiveMission = {
-      instanceId,
-      mission: offer,
-      startedAt,
-      finishesAt,
-      assignedArmyId: army.id,
-    };
-  
-    ps.activeMissions.push(active);
+export function startWarfrontAssaultForPlayer(
+  playerId: string,
+  regionId: RegionId,
+  now: Date
+): WarfrontAssaultResult {
+  return startWarfrontAssaultForPlayerImpl(playerId, regionId, now);
+}
 
-    pushEvent(ps, {
-        kind: "mission_start",
-        message: `Warfront assault launched at ${region.name}`,
-        missionId: offer.id,
-        armyId: army.id,
-        regionId: region.id,
-      });
-  
-    return {
-      status: "ok",
-      activeMission: active,
-    };
-  }
+function startWarfrontAssaultForPlayerImpl(
+  playerId: string,
+  regionId: RegionId,
+  now: Date
+): WarfrontAssaultResult {
+  return startWarfrontAssaultForPlayerHelper(missionStateDeps, playerId, regionId, now);
+}
 
-// ---- Garrison strike missions (hero-only raids) ----
+export function startGarrisonStrikeForPlayer(
+  playerId: string,
+  regionId: RegionId,
+  now: Date
+): GarrisonStrikeResult {
+  return startGarrisonStrikeForPlayerImpl(playerId, regionId, now);
+}
 
-export interface GarrisonStrikeResult {
-    status: "ok" | "not_found" | "no_region" | "no_hero";
-    message?: string;
-    activeMission?: ActiveMission;
-  }
-  
-  export function startGarrisonStrikeForPlayer(
-    playerId: string,
-    regionId: RegionId,
-    now: Date
-  ): GarrisonStrikeResult {
-    const ps = getPlayerState(playerId);
-    if (!ps) {
-      return { status: "not_found", message: "Player not found" };
-    }
-  
-    const shard = gameState.world.shards[0];
-    if (!shard) {
-      return { status: "no_region", message: "World shard missing" };
-    }
-  
-    const region = shard.regions.find((r) => r.id === regionId);
-    if (!region) {
-      return { status: "no_region", message: "Region not found" };
-    }
-  
-    const rw = ps.regionWar.find((r) => r.regionId === regionId);
-    if (!rw) {
-      return {
-        status: "no_region",
-        message: "No warfront state for that region",
-      };
-    }
-  
-    // Advance ticks before sending the strike
-    tickPlayerState(ps, now);
-  
-    const difficulty = difficultyFromDanger(region.dangerLevel, rw.threat);
-    const minutes = durationMinutesForDifficulty(difficulty);
-  
-    // Recommended power tuned a bit lower than full warfront assault
-    const recommendedPower =
-      region.dangerLevel * 80 + Math.round(rw.threat * 1.5);
-  
-    const missionId = `garrison_${region.id}_${Date.now()}`;
-  
-    const offer: MissionOffer = {
-      id: missionId,
-      kind: "hero",
-      difficulty,
-      title: `Lair Strike: ${region.name}`,
-      description:
-        "Dispatch a hero-led strike team to hit enemy lairs, caches, or lieutenants in the area.",
-      regionId: region.id,
-      recommendedPower,
-      expectedRewards: {
-        wealth: 20 + region.dangerLevel * 10,
-        materials: 15 + region.dangerLevel * 8,
-        mana: 5 + region.dangerLevel * 4,
-        influence: 1 + Math.floor(region.dangerLevel * 0.8),
-      },
-      risk: {
-        casualtyRisk:
-          difficulty === "low"
-            ? "Low"
-            : difficulty === "medium"
-            ? "Moderate"
-            : difficulty === "high"
-            ? "Severe"
-            : "Catastrophic",
-        heroInjuryRisk:
-          difficulty === "low"
-            ? "Low"
-            : difficulty === "medium"
-            ? "Moderate"
-            : difficulty === "high"
-            ? "High"
-            : "Extreme",
-        notes:
-          "Fast-moving raid aimed at enemy lairs. High risk for lone heroes at high danger levels.",
-      },
-    };
-  
-    // For now: auto-pick best idle hero for this raid.
-    const hero = pickHeroForMission(ps, offer);
-    if (!hero) {
-      return {
-        status: "no_hero",
-        message: "No idle heroes available for a garrison strike.",
-      };
-    }
-  
-    hero.status = "on_mission";
-    hero.currentMissionId = missionId;
-  
-    const startedAt = now.toISOString();
-    const finishesAt = new Date(
-      now.getTime() + minutes * 60 * 1000
-    ).toISOString();
-  
-    const instanceId = `active_${Date.now()}_${Math.floor(
-      Math.random() * 100000
-    )}`;
-  
-    const active: ActiveMission = {
-      instanceId,
-      mission: offer,
-      startedAt,
-      finishesAt,
-      assignedHeroId: hero.id,
-    };
-  
-    ps.activeMissions.push(active);
+function startGarrisonStrikeForPlayerImpl(
+  playerId: string,
+  regionId: RegionId,
+  now: Date
+): GarrisonStrikeResult {
+  return startGarrisonStrikeForPlayerHelper(missionStateDeps, playerId, regionId, now);
+}
 
-    pushEvent(ps, {
-        kind: "mission_start",
-        message: `Hero raid launched in ${region.name}`,
-        missionId: offer.id,
-        heroId: hero.id,
-        regionId: region.id,
-      });
-  
-    return {
-      status: "ok",
-      activeMission: active,
-    };
-  }
+export function completeMissionForPlayer(
+  playerId: string,
+  instanceId: string,
+  now: Date
+): CompleteMissionResult {
+  return completeMissionForPlayerImpl(playerId, instanceId, now);
+}
 
-  // ---- Workshop jobs ----
+function completeMissionForPlayerImpl(
+  playerId: string,
+  instanceId: string,
+  now: Date
+): CompleteMissionResult {
+  return completeMissionForPlayerHelper(missionStateDeps, playerId, instanceId, now);
+}
+
+// ---- Workshop jobs ----
 
 export interface WorkshopJob {
     id: string;
@@ -1617,332 +1308,6 @@ export interface WorkshopJob {
     completed: boolean;
   }
   
-// ---- Mission outcome model ----
-
-export type MissionOutcomeKind = "success" | "partial" | "failure";
-
-export interface MissionOutcome {
-  kind: MissionOutcomeKind;
-  /** The computed success probability before rolling. */
-  successChance: number;
-  /** Raw RNG roll in [0,1). */
-  roll: number;
-  /** Fraction of force power lost, from 0 to 1. */
-  casualtyRate: number;
-  /** Optional hero injury severity for hero missions. */
-  heroInjury?: "none" | "light" | "severe";
-}
-
-export interface CompleteMissionResult {
-  status: "ok" | "not_found" | "not_ready";
-  message?: string;
-  rewards?: RewardBundle;
-  resources?: Resources;
-  outcome?: MissionOutcome;
-}
-
-function computeMissionOutcome(
-  ps: PlayerState,
-  active: ActiveMission
-): MissionOutcome {
-  const mission = active.mission;
-  const rec = mission.recommendedPower;
-
-  if (rec <= 0) {
-    return {
-      kind: "success",
-      successChance: 1,
-      roll: 0,
-      casualtyRate: 0,
-      heroInjury: "none",
-    };
-  }
-
-  let power = 0;
-  if (mission.kind === "hero" && active.assignedHeroId) {
-    const hero = ps.heroes.find((h) => h.id === active.assignedHeroId);
-    power = hero?.power ?? 0;
-  } else if (mission.kind === "army" && active.assignedArmyId) {
-    const army = ps.armies.find((a) => a.id === active.assignedArmyId);
-    power = army?.power ?? 0;
-  }
-
-  const ratio = power > 0 ? power / rec : 0;
-
-  let successChance: number;
-  let casualtyRate: number;
-
-  if (ratio >= 1.5) {
-    successChance = 0.95;
-    casualtyRate = 0.05;
-  } else if (ratio >= 1.0) {
-    successChance = 0.8;
-    casualtyRate = 0.15;
-  } else if (ratio >= 0.7) {
-    successChance = 0.55;
-    casualtyRate = 0.35;
-  } else {
-    successChance = 0.25;
-    casualtyRate = 0.6;
-  }
-
-  const roll = Math.random();
-
-  let kind: MissionOutcomeKind;
-  if (roll <= successChance) {
-    kind = "success";
-  } else if (roll <= successChance + 0.2) {
-    kind = "partial";
-  } else {
-    kind = "failure";
-  }
-
-  let heroInjury: MissionOutcome["heroInjury"] = "none";
-  if (mission.kind === "hero") {
-    if (casualtyRate > 0.5) {
-      heroInjury = "severe";
-    } else if (casualtyRate > 0.2) {
-      heroInjury = "light";
-    }
-  }
-
-  return { kind, successChance, roll, casualtyRate, heroInjury };
-}
-
-function applyMissionCasualties(
-  ps: PlayerState,
-  active: ActiveMission,
-  outcome: MissionOutcome
-): void {
-  const rate = outcome.casualtyRate;
-
-  if (active.assignedHeroId) {
-    const h = ps.heroes.find((hero) => hero.id === active.assignedHeroId);
-    if (h) {
-      if (outcome.heroInjury === "severe") {
-        h.power = Math.max(10, Math.floor(h.power * 0.5));
-      } else if (outcome.heroInjury === "light") {
-        h.power = Math.max(15, Math.floor(h.power * 0.8));
-      }
-      h.status = "idle";
-      h.currentMissionId = undefined;
-    }
-  }
-
-  if (active.assignedArmyId) {
-    const a = ps.armies.find((army) => army.id === active.assignedArmyId);
-    if (a) {
-      const lost = Math.round(a.size * rate);
-      a.size = Math.max(0, a.size - lost);
-      a.power = Math.max(0, Math.floor(a.power * (1 - rate)));
-
-      if (a.size === 0 || a.power === 0) {
-        ps.armies = ps.armies.filter((army) => army.id !== a.id);
-      } else {
-        a.status = "idle";
-        a.currentMissionId = undefined;
-      }
-    }
-  }
-}
-
-function applyMissionWarImpact(
-  ps: PlayerState,
-  active: ActiveMission,
-  outcome: MissionOutcome
-): void {
-  const regionId = active.mission.regionId as RegionId;
-  const rw = ps.regionWar.find((r) => r.regionId === regionId);
-  if (!rw) return;
-
-  const baseDelta = active.mission.kind === "army" ? 5 : 2;
-
-  switch (outcome.kind) {
-    case "success":
-      rw.control = clampStat(rw.control + baseDelta);
-      rw.threat = clampStat(rw.threat - baseDelta * 0.5);
-      break;
-    case "partial":
-      rw.control = clampStat(rw.control + baseDelta * 0.3);
-      break;
-    case "failure":
-      rw.control = clampStat(rw.control - baseDelta * 0.5);
-      rw.threat = clampStat(rw.threat + baseDelta * 0.7);
-      break;
-  }
-}
-
-function grantHeroXp(hero: Hero, baseAmount: number): void {
-    if (baseAmount <= 0) return;
-  
-    // sane defaults if somehow missing
-    if (!hero.level || hero.level < 1) hero.level = 1;
-    if (!hero.xpToNext || hero.xpToNext < 10) hero.xpToNext = 100;
-    if (hero.xp == null) hero.xp = 0;
-  
-    hero.xp += baseAmount;
-  
-    // simple escalating curve
-    while (hero.xp >= hero.xpToNext) {
-      hero.xp -= hero.xpToNext;
-      hero.level += 1;
-      hero.xpToNext = Math.round(hero.xpToNext * 1.25);
-    }
-  }
-
-  function applyCasualtiesAndXp(
-    ps: PlayerState,
-    active: ActiveMission,
-    outcome: MissionOutcome
-  ): void {
-    const rate = outcome.casualtyRate;
-    if (rate <= 0) return;
-  
-    // 🔹 Army casualties
-    if (active.assignedArmyId) {
-      const a = ps.armies.find((x) => x.id === active.assignedArmyId);
-      if (a) {
-        const loss = Math.max(1, Math.round(a.size * rate));
-        a.size = Math.max(1, a.size - loss);
-  
-        // scale power down, but not 1:1 (so they’re bruised, not erased)
-        const powerMult = 1 - rate * 0.7;
-        a.power = Math.max(5, Math.round(a.power * powerMult));
-      }
-    }
-  
-    // 🔹 Hero injury flavor + XP
-    if (active.assignedHeroId) {
-      const h = ps.heroes.find((x) => x.id === active.assignedHeroId);
-      if (h) {
-        // light “wounded” flavor using tags
-        if (outcome.heroInjury === "light") {
-          if (!h.tags.includes("wounded")) {
-            h.tags = [...h.tags, "wounded"];
-          }
-        } else if (outcome.heroInjury === "severe") {
-          if (!h.tags.includes("wounded")) {
-            h.tags = [...h.tags, "wounded"];
-          }
-          // small permanent power ding
-          h.power = Math.max(10, Math.round(h.power * 0.9));
-        }
-  
-        // XP reward by difficulty + outcome
-        let baseXp: number;
-        switch (active.mission.difficulty) {
-          case "low":
-            baseXp = 10;
-            break;
-          case "medium":
-            baseXp = 20;
-            break;
-          case "high":
-            baseXp = 35;
-            break;
-          case "extreme":
-            baseXp = 50;
-            break;
-          default:
-            baseXp = 20;
-            break;
-        }
-  
-        let mult = 1;
-        switch (outcome.kind) {
-          case "success":
-            mult = 1.3;
-            break;
-          case "partial":
-            mult = 1.0;
-            break;
-          case "failure":
-            mult = 0.5;
-            break;
-        }
-  
-        grantHeroXp(h, Math.round(baseXp * mult));
-      }
-    }
-  }
-
-export function completeMissionForPlayer(
-  playerId: string,
-  instanceId: string,
-  now: Date
-): CompleteMissionResult {
-  const ps = getPlayerState(playerId);
-  if (!ps) {
-    return { status: "not_found", message: "Player not found" };
-  }
-
-  tickPlayerState(ps, now);
-
-  const index = ps.activeMissions.findIndex(
-    (am) => am.instanceId === instanceId
-  );
-  if (index === -1) {
-    return { status: "not_found", message: "Mission instance not found" };
-  }
-
-  const active = ps.activeMissions[index];
-  const finishTime = new Date(active.finishesAt).getTime();
-  const nowTime = now.getTime();
-
-  if (nowTime < finishTime) {
-    return {
-      status: "not_ready",
-      message: "Mission is still in progress",
-    };
-  }
-    // 🔹 Resolve outcome before we clear the mission, so we can read force power.
-    const outcome = resolveMissionOutcome(ps, active);
-
-    // 🔹 Apply casualties + XP progression
-    applyCasualtiesAndXp(ps, active, outcome);
-
-    // free assigned forces
-    if (active.assignedHeroId) {
-        const h = ps.heroes.find((x) => x.id === active.assignedHeroId);
-        if (h) {
-        h.status = "idle";
-        h.currentMissionId = undefined;
-        }
-    }
-    if (active.assignedArmyId) {
-        const a = ps.armies.find((x) => x.id === active.assignedArmyId);
-        if (a) {
-        a.status = "idle";
-        a.currentMissionId = undefined;
-        }
-    }
-
-  const rewards = active.mission.expectedRewards;
-  applyRewards(ps, rewards);
-
-  // 🔹 Strategic impact on the warfront
-  applyMissionImpactToRegion(ps, active.mission, outcome);
-
-  pushEvent(ps, {
-    kind: "mission_complete",
-    message: `Mission ${active.mission.title}: ${outcome.kind.toUpperCase()}`,
-    missionId: active.mission.id,
-    heroId: active.assignedHeroId,
-    armyId: active.assignedArmyId,
-    regionId: active.mission.regionId as RegionId,
-    outcome: outcome.kind,
-  });
-
-  ps.activeMissions.splice(index, 1);
-
-  return {
-    status: "ok",
-    rewards,
-    resources: ps.resources,
-    outcome,
-  };
-}
-
 function scaleRewards(bundle: RewardBundle, factor: number): RewardBundle {
   return {
     wealth: bundle.wealth ? Math.round(bundle.wealth * factor) : undefined,
@@ -3059,103 +2424,6 @@ export function startResearchForPlayer(
 
   return { status: "ok", research: active };
 }
-
-// ----  War Effect/Impact To Region
-function resolveMissionOutcome(
-    ps: PlayerState,
-    active: ActiveMission
-  ): MissionOutcome {
-    const mission = active.mission;
-    const recommended = mission.recommendedPower || 0;
-  
-    // What force did we actually send?
-    let forcePower = 0;
-    if (mission.kind === "hero" && active.assignedHeroId) {
-      const h = ps.heroes.find((x) => x.id === active.assignedHeroId);
-      forcePower = h?.power ?? 0;
-    } else if (mission.kind === "army" && active.assignedArmyId) {
-      const a = ps.armies.find((x) => x.id === active.assignedArmyId);
-      forcePower = a?.power ?? 0;
-    }
-  
-    const safeRecommended = Math.max(10, recommended);
-    const ratio = forcePower > 0 ? forcePower / safeRecommended : 0.5;
-  
-    // Base success chance: ~40% at parity, better if overpowered, worse if underpowered.
-    let successChance = 0.4 + (ratio - 1) * 0.25;
-    if (ratio >= 1.5) successChance += 0.15;
-    if (ratio <= 0.5) successChance -= 0.15;
-    successChance = Math.max(0.1, Math.min(0.95, successChance));
-  
-    const roll = Math.random();
-  
-    let kind: MissionOutcomeKind;
-    if (roll < successChance * 0.7) {
-      kind = "success";
-    } else if (roll < successChance * 1.1) {
-      kind = "partial";
-    } else {
-      kind = "failure";
-    }
-  
-    let casualtyRate: number;
-    switch (kind) {
-      case "success":
-        casualtyRate = 0.05 + Math.random() * 0.1; // 5–15%
-        break;
-      case "partial":
-        casualtyRate = 0.15 + Math.random() * 0.2; // 15–35%
-        break;
-      case "failure":
-        casualtyRate = 0.35 + Math.random() * 0.4; // 35–75%
-        break;
-    }
-  
-    let heroInjury: MissionOutcome["heroInjury"] = "none";
-    if (mission.kind === "hero") {
-      if (casualtyRate > 0.5) heroInjury = "severe";
-      else if (casualtyRate > 0.25) heroInjury = "light";
-      else heroInjury = "none";
-    }
-  
-    return {
-      kind,
-      successChance,
-      roll,
-      casualtyRate,
-      heroInjury,
-    };
-  }
-  
-  function applyMissionImpactToRegion(
-    ps: PlayerState,
-    mission: MissionOffer,
-    outcome: MissionOutcome
-  ): void {
-    const region = ps.regionWar.find((rw) => rw.regionId === mission.regionId);
-    if (!region) return;
-  
-    let controlDelta = 0;
-    let threatDelta = 0;
-  
-    switch (outcome.kind) {
-      case "success":
-        controlDelta = +5;
-        threatDelta = -5;
-        break;
-      case "partial":
-        controlDelta = +2;
-        threatDelta = -2;
-        break;
-      case "failure":
-        controlDelta = -3;
-        threatDelta = +4;
-        break;
-    }
-  
-    region.control = Math.max(0, Math.min(100, region.control + controlDelta));
-    region.threat = Math.max(0, Math.min(100, region.threat + threatDelta));
-  }
 
 // Expose tick config so API can tell client tickMs
 export { tickConfig };
