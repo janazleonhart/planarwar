@@ -6,9 +6,11 @@ import {
   cityTierUp,
   cityMorph,
   fetchCityDebug,
+  fetchCityConfig,
   type MeProfile,
   type CitySummary,
   type Resources,
+  type CityConfigResult,
 } from "../lib/api";
 
 type MissionLike = {
@@ -36,6 +38,7 @@ export function OperationsPage() {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [configInfo, setConfigInfo] = useState<CityConfigResult | null>(null);
 
   const [morphSpecId, setMorphSpecId] = useState("");
   const [lastResult, setLastResult] = useState<any>(null);
@@ -57,6 +60,16 @@ export function OperationsPage() {
       } catch {
         setCityDebug(null);
       }
+
+      try {
+        const cfg = await fetchCityConfig();
+        setConfigInfo(cfg);
+        if (!morphSpecId && cfg.ok && cfg.config?.morph?.options?.length) {
+          setMorphSpecId(cfg.config.morph.options[0].id);
+        }
+      } catch {
+        setConfigInfo(null);
+      }
     } catch (err: any) {
       console.error(err);
       setError(err?.message ?? "Failed to load /api/me");
@@ -75,6 +88,7 @@ export function OperationsPage() {
   const resources = (me as any)?.resources ?? null;
 
   const cityName = city?.name ?? "No City";
+  const morphOptions = configInfo?.config?.morph?.options ?? [];
   const cityTier = city?.tier ?? null;
   const specLabel = city?.specializationId ? city.specializationId : "none";
 
@@ -149,6 +163,13 @@ export function OperationsPage() {
         </div>
       </div>
 
+      {configInfo?.status?.fallback ? (
+        <div style={{ marginBottom: 12, padding: 10, border: "1px solid #664", borderRadius: 8, background: "#221" }}>
+          <strong style={{ color: "#f6d38a" }}>City config fallback active:</strong>{" "}
+          <span style={{ color: "#f6d38a" }}>{configInfo.status.warning ?? `Using ${configInfo.status.source}`}</span>
+        </div>
+      ) : null}
+
       {error ? (
         <div style={{ marginBottom: 12, padding: 10, border: "1px solid #552", borderRadius: 8, background: "#221" }}>
           <strong style={{ color: "salmon" }}>Error:</strong>{" "}
@@ -194,20 +215,42 @@ export function OperationsPage() {
 
         <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap", alignItems: "center" }}>
           <label style={{ fontSize: 13, opacity: 0.85 }}>Morph specialization:</label>
-          <input
-            value={morphSpecId}
-            onChange={(e) => setMorphSpecId(e.target.value)}
-            placeholder="e.g. arcane, military, trade..."
-            style={{
-              padding: "6px 8px",
-              borderRadius: 6,
-              border: "1px solid #555",
-              background: "#0b0b0b",
-              color: "#ddd",
-              minWidth: 220,
-            }}
-            disabled={busy}
-          />
+          {morphOptions.length > 0 ? (
+            <select
+              value={morphSpecId}
+              onChange={(e) => setMorphSpecId(e.target.value)}
+              style={{
+                padding: "6px 8px",
+                borderRadius: 6,
+                border: "1px solid #555",
+                background: "#0b0b0b",
+                color: "#ddd",
+                minWidth: 260,
+              }}
+              disabled={busy}
+            >
+              {morphOptions.map((opt) => (
+                <option key={opt.id} value={opt.id}>
+                  {opt.label} ({opt.id})
+                </option>
+              ))}
+            </select>
+          ) : (
+            <input
+              value={morphSpecId}
+              onChange={(e) => setMorphSpecId(e.target.value)}
+              placeholder="e.g. arcane, military, trade..."
+              style={{
+                padding: "6px 8px",
+                borderRadius: 6,
+                border: "1px solid #555",
+                background: "#0b0b0b",
+                color: "#ddd",
+                minWidth: 220,
+              }}
+              disabled={busy}
+            />
+          )}
           <button
             style={{
               padding: "6px 10px",
@@ -233,6 +276,12 @@ export function OperationsPage() {
             <span>Mana: {(resources as any).mana ?? "?"}</span>
             <span>Knowledge: {(resources as any).knowledge ?? "?"}</span>
             <span>Unity: {(resources as any).unity ?? "?"}</span>
+          </div>
+        ) : null}
+
+        {configInfo?.config?.morph?.enabledFromTier ? (
+          <div style={{ marginTop: 10, fontSize: 12, opacity: 0.8 }}>
+            Morphing unlocks from tier {configInfo.config.morph.enabledFromTier}. Available options: {morphOptions.length || 0}.
           </div>
         ) : null}
 

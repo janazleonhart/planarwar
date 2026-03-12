@@ -1,4 +1,4 @@
-//backend/src/config/cityTierConfig.ts
+//web-backend/config/cityTierConfig.ts
 
 import fs from "node:fs";
 import path from "node:path";
@@ -52,22 +52,85 @@ export interface CityTierConfig {
 }
 
 let cachedConfig: CityTierConfig | null = null;
+let cachedConfigStatus: { source: string; fallback: boolean; warning?: string } | null = null;
 
-function loadConfigFromDisk(): CityTierConfig {
-  const filePath = path.join(__dirname, "..", "..", "data", "cityTierConfig.json");
-  const raw = fs.readFileSync(filePath, "utf8");
-  const parsed = JSON.parse(raw) as CityTierConfig;
+function buildDefaultTierEntries(maxTier = 20): TierConfigEntry[] {
+  const tiers: TierConfigEntry[] = [];
+  for (let tier = 1; tier <= maxTier; tier += 1) {
+    tiers.push({
+      tier,
+      techRequirements: [],
+      baseCost: {
+        wealth: Math.round(200 * Math.pow(1.35, Math.max(0, tier - 1))),
+        materials: Math.round(180 * Math.pow(1.35, Math.max(0, tier - 1))),
+        knowledge: Math.round(120 * Math.pow(1.35, Math.max(0, tier - 1))),
+        unity: Math.round(60 * Math.pow(1.35, Math.max(0, tier - 1))),
+      },
+    });
+  }
+  return tiers;
+}
 
-  // Make sure tiers are sorted
-  parsed.tiers.sort((a, b) => a.tier - b.tier);
-  return parsed;
+function candidateConfigPaths(): string[] {
+  return [
+    path.join(__dirname, '..', '..', 'data', 'cityTierConfig.json'),
+    path.join(process.cwd(), 'web-backend', 'data', 'cityTierConfig.json'),
+    path.join(process.cwd(), 'dist', 'web-backend', 'data', 'cityTierConfig.json'),
+    path.join(process.cwd(), 'data', 'cityTierConfig.json'),
+  ];
+}
+
+function normalizeConfigShape(parsed: Partial<CityTierConfig> | null | undefined): CityTierConfig {
+  const tiers = Array.isArray(parsed?.tiers) && parsed?.tiers.length > 0
+    ? [...parsed.tiers].sort((a, b) => a.tier - b.tier)
+    : DEFAULT_TIER_CONFIG.tiers;
+  const morph = parsed?.morph && Array.isArray(parsed.morph.options) && parsed.morph.options.length > 0
+    ? parsed.morph
+    : DEFAULT_TIER_CONFIG.morph;
+  return { tiers, morph };
+}
+
+function loadConfigFromDisk(): { config: CityTierConfig; source: string; fallback: boolean; warning?: string } {
+  const candidates = candidateConfigPaths();
+  const errors: string[] = [];
+  for (const filePath of candidates) {
+    try {
+      if (!fs.existsSync(filePath)) {
+        errors.push(`missing:${filePath}`);
+        continue;
+      }
+      const raw = fs.readFileSync(filePath, 'utf8');
+      const parsed = JSON.parse(raw) as CityTierConfig;
+      return {
+        config: normalizeConfigShape(parsed),
+        source: filePath,
+        fallback: false,
+      };
+    } catch (err: any) {
+      errors.push(`error:${filePath}:${String(err?.message ?? err)}`);
+    }
+  }
+
+  return {
+    config: DEFAULT_TIER_CONFIG,
+    source: 'embedded_default',
+    fallback: true,
+    warning: `cityTierConfig.json unavailable; using embedded defaults (${errors.join(' | ')})`,
+  };
 }
 
 export function getCityTierConfig(): CityTierConfig {
   if (!cachedConfig) {
-    cachedConfig = loadConfigFromDisk();
+    const loaded = loadConfigFromDisk();
+    cachedConfig = loaded.config;
+    cachedConfigStatus = { source: loaded.source, fallback: loaded.fallback, warning: loaded.warning };
   }
   return cachedConfig;
+}
+
+export function getCityTierConfigStatus(): { source: string; fallback: boolean; warning?: string } {
+  getCityTierConfig();
+  return cachedConfigStatus ?? { source: 'unknown', fallback: true, warning: 'City tier config status unavailable' };
 }
 
 export function getTierConfig(tier: number): TierConfigEntry | undefined {
@@ -380,3 +443,8 @@ export const DEFAULT_MORPH_CONFIG: CityMorphConfig = {
       }
     ],
   };
+
+export const DEFAULT_TIER_CONFIG: CityTierConfig = {
+  tiers: buildDefaultTierEntries(),
+  morph: DEFAULT_MORPH_CONFIG,
+};

@@ -129,7 +129,8 @@
         "cityMorph(specializationId)",
         "fetchCityDebug()",
         "bootstrapCity(name, shardId?)",
-        "renameCity(name)"
+        "renameCity(name)",
+        "fetchCityConfig()"
       ],
       "service": "api.client"
     },

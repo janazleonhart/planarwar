@@ -309,6 +309,37 @@ export async function fetchCityDebug(): Promise<CityDebugResult> {
   return api<CityDebugResult>("/api/city");
 }
 
+export type CityTierConfigEntry = {
+  tier: number;
+  techRequirements?: string[];
+  baseCost?: { wealth: number; materials: number; knowledge: number; unity: number };
+};
+
+export type CityMorphOption = {
+  id: string;
+  label: string;
+  category: string;
+  resourceFocus: string;
+  resourceKey?: string;
+  bonusPerStarPct: number;
+  description: string;
+};
+
+export type CityConfigResult = {
+  ok: boolean;
+  status?: { source: string; fallback: boolean; warning?: string };
+  config?: {
+    tiers: CityTierConfigEntry[];
+    morph: { enabledFromTier: number; options: CityMorphOption[] };
+  };
+  error?: string;
+};
+
+export async function fetchCityConfig(): Promise<CityConfigResult> {
+  return api<CityConfigResult>("/api/city/config");
+}
+
+
 export type CityBootstrapResult = { ok: boolean; created?: boolean; playerId?: string; city?: CitySummary; resources?: Resources; error?: string };
 export type CityRenameResult = { ok: boolean; city?: CitySummary; error?: string };
 

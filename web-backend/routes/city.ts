@@ -3,9 +3,21 @@
 import { Router } from "express";
 
 import { morphCityForPlayer, tierUpCityForPlayer } from "../gameState";
+import { getCityTierConfig, getCityTierConfigStatus } from "../config/cityTierConfig";
 import { createCityForViewer, renameCityForViewer, resolvePlayerAccess, resolveViewer, suggestCityName, withPlayerAccessMutation } from "./playerCityAccess";
 
 const router = Router();
+
+router.get("/config", async (_req, res) => {
+  try {
+    const config = getCityTierConfig();
+    const status = getCityTierConfigStatus();
+    return res.json({ ok: true, status, config });
+  } catch (err: any) {
+    return res.status(500).json({ ok: false, error: String(err?.message ?? err) });
+  }
+});
+
 
 router.post("/bootstrap", async (req, res) => {
   try {

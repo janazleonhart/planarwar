@@ -982,7 +982,8 @@
         "Authenticated accounts can create exactly one city backed by public.cities; unauthenticated callers still fall back to the demo city for read-only prototype access.",
         "Bootstrap and rename enforce validated names and rely on DB case-insensitive uniqueness for final conflict protection.",
         "Bootstrap/rename flows now seed and preserve per-account city runtime snapshots in public.cities.meta.",
-        "Tier-up and morph now use the centralized city mutation wrapper so successful mutations automatically persist account-owned runtime snapshots."
+        "Tier-up and morph now use the centralized city mutation wrapper so successful mutations automatically persist account-owned runtime snapshots.",
+        "Exposes city tier/morph config status so the UI can warn when embedded fallback content is being used."
       ],
       "owns": [],
       "path": "web-backend/routes/city.ts",
@@ -993,7 +994,8 @@
         "POST /api/city/morph",
         "POST /api/city/bootstrap",
         "POST /api/city/rename",
-        "GET /api/city"
+        "GET /api/city",
+        "GET /api/city/config"
       ],
       "service": "http.routes"
     },
