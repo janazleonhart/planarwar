@@ -145,6 +145,9 @@ function normalizeSnapshot(meta: Record<string, any> | null | undefined): CityRu
   return state as CityRuntimeSnapshotV1;
 }
 
+const MAX_SNAPSHOT_EVENT_LOG = 60;
+const MAX_SNAPSHOT_OFFERS = 24;
+
 function buildRuntimeSnapshot(ps: PlayerState): CityRuntimeSnapshotV1 {
   return {
     version: 1,
@@ -164,14 +167,14 @@ function buildRuntimeSnapshot(ps: PlayerState): CityRuntimeSnapshotV1 {
     resources: deepCloneJson(ps.resources),
     stockpile: deepCloneJson(ps.stockpile),
     resourceTiers: deepCloneJson(ps.resourceTiers),
-    currentOffers: deepCloneJson(ps.currentOffers),
+    currentOffers: deepCloneJson((ps.currentOffers ?? []).slice(0, MAX_SNAPSHOT_OFFERS)),
     activeMissions: deepCloneJson(ps.activeMissions),
     policies: deepCloneJson(ps.policies),
     lastTickAt: ps.lastTickAt,
     researchedTechIds: deepCloneJson(ps.researchedTechIds),
     activeResearch: ps.activeResearch ? deepCloneJson(ps.activeResearch) : undefined,
     regionWar: deepCloneJson(ps.regionWar),
-    eventLog: deepCloneJson(ps.eventLog),
+    eventLog: deepCloneJson((ps.eventLog ?? []).slice(-MAX_SNAPSHOT_EVENT_LOG)),
     workshopJobs: deepCloneJson(ps.workshopJobs),
     cityStress: deepCloneJson(ps.cityStress),
     storage: deepCloneJson(ps.storage),
@@ -299,6 +302,30 @@ export async function resolvePlayerAccess(
       city,
     },
   };
+}
+
+
+export type PlayerAccessMutationResult<T> =
+  | { ok: true; access: PlayerAccess; value: T }
+  | { ok: false; status: number; error: string; viewer: ViewerIdentity };
+
+export async function withPlayerAccessMutation<T>(
+  req: Request,
+  mutate: (access: PlayerAccess) => Promise<T> | T,
+  opts: { requireCity?: boolean; requireAuth?: boolean; persistOnSuccess?: boolean } = {},
+): Promise<PlayerAccessMutationResult<T>> {
+  const accessResult = await resolvePlayerAccess(req, {
+    requireCity: opts.requireCity ?? true,
+    requireAuth: opts.requireAuth,
+  });
+  if (accessResult.ok === false) return accessResult;
+
+  const value = await mutate(accessResult.access);
+  if (opts.persistOnSuccess !== false) {
+    await persistPlayerStateForCity(accessResult.access);
+  }
+
+  return { ok: true, access: accessResult.access, value };
 }
 
 export function suggestCityName(displayName: string): string {

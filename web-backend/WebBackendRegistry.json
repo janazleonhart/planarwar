@@ -981,7 +981,8 @@
         "City operations for the CityBuilder prototype now support account-owned city bootstrap, rename, tier-up, morph, and debug reads.",
         "Authenticated accounts can create exactly one city backed by public.cities; unauthenticated callers still fall back to the demo city for read-only prototype access.",
         "Bootstrap and rename enforce validated names and rely on DB case-insensitive uniqueness for final conflict protection.",
-        "Bootstrap/rename flows now seed and preserve per-account city runtime snapshots in public.cities.meta."
+        "Bootstrap/rename flows now seed and preserve per-account city runtime snapshots in public.cities.meta.",
+        "Tier-up and morph now use the centralized city mutation wrapper so successful mutations automatically persist account-owned runtime snapshots."
       ],
       "owns": [],
       "path": "web-backend/routes/city.ts",
@@ -1075,7 +1076,8 @@
         "Auth-aware CityBuilder profile endpoint used by the City Builder shell.",
         "GET /api/me now mounts correctly at /api/me (router root path) instead of the accidental /api/me/me mismatch.",
         "Returns full CityBuilder profile data when a city exists, or hasCity=false/canCreateCity=true plus a suggested city name when an authenticated account has not bootstrapped a city yet.",
-        "Persists per-account CityBuilder runtime snapshots after profile/tick hydration so city state survives process restarts."
+        "Persists per-account CityBuilder runtime snapshots after profile/tick hydration so city state survives process restarts.",
+        "GET /api/me now uses the centralized city mutation wrapper after profile hydration/tick work so profile reads persist through the same save boundary as city mutations."
       ],
       "owns": [],
       "path": "web-backend/routes/me.ts",
@@ -2458,10 +2460,12 @@
         "renameCityForViewer(viewer, nextName)",
         "persistPlayerStateForCity(access)",
         "suggestCityName(displayName)",
-        "validateCityName(input)"
+        "validateCityName(input)",
+        "withPlayerAccessMutation(req, mutate, opts?)"
       ],
       "notes": [
-        "Owns authenticated CityBuilder account-to-city resolution, city name validation, and v1 runtime snapshot persistence through public.cities.meta."
+        "Owns authenticated CityBuilder account-to-city resolution, city name validation, and v1 runtime snapshot persistence through public.cities.meta.",
+        "Adds a centralized mutation wrapper so city routes resolve access, run mutations, and persist snapshots through one hardened save boundary."
       ]
     }
   }

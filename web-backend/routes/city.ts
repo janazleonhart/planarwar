@@ -2,14 +2,8 @@
 
 import { Router } from "express";
 
-import { getPlayerState, morphCityForPlayer, tierUpCityForPlayer } from "../gameState";
-import {
-  createCityForViewer,
-  renameCityForViewer,
-  persistPlayerStateForCity, resolvePlayerAccess,
-  resolveViewer,
-  suggestCityName,
-} from "./playerCityAccess";
+import { morphCityForPlayer, tierUpCityForPlayer } from "../gameState";
+import { createCityForViewer, renameCityForViewer, resolvePlayerAccess, resolveViewer, suggestCityName, withPlayerAccessMutation } from "./playerCityAccess";
 
 const router = Router();
 
@@ -65,16 +59,15 @@ router.post("/rename", async (req, res) => {
 
 router.post("/tier-up", async (req, res) => {
   try {
-    const access = await resolvePlayerAccess(req, { requireCity: true });
-    if (access.ok === false) return res.status(access.status).json({ ok: false, error: access.error });
+    const access = await withPlayerAccessMutation(req, (access) => {
+      const result = tierUpCityForPlayer(access.playerId, new Date());
+      if (result.status === "ok") return { ok: true as const, body: { ok: true, result } };
+      return { ok: false as const, code: 200, body: { ok: false, result } };
+    });
 
-    const now = new Date();
-    const result = tierUpCityForPlayer(access.access.playerId, now);
-    if (result.status === "ok") {
-      await persistPlayerStateForCity(access.access);
-      return res.json({ ok: true, result });
-    }
-    return res.json({ ok: false, result });
+    if (access.ok === false) return res.status(access.status).json({ ok: false, error: access.error });
+    if (!access.value.ok) return res.status(access.value.code).json(access.value.body);
+    return res.json(access.value.body);
   } catch (err: any) {
     return res.status(500).json({ ok: false, error: String(err?.message ?? err) });
   }
@@ -82,21 +75,20 @@ router.post("/tier-up", async (req, res) => {
 
 router.post("/morph", async (req, res) => {
   try {
-    const access = await resolvePlayerAccess(req, { requireCity: true });
-    if (access.ok === false) return res.status(access.status).json({ ok: false, error: access.error });
-
     const specializationId = String(req.body?.specializationId ?? "").trim();
     if (!specializationId) {
       return res.status(400).json({ ok: false, error: "specializationId is required" });
     }
 
-    const now = new Date();
-    const result = morphCityForPlayer(access.access.playerId, specializationId, now);
-    if (result.status === "ok") {
-      await persistPlayerStateForCity(access.access);
-      return res.json({ ok: true, result });
-    }
-    return res.json({ ok: false, result });
+    const access = await withPlayerAccessMutation(req, (access) => {
+      const result = morphCityForPlayer(access.playerId, specializationId, new Date());
+      if (result.status === "ok") return { ok: true as const, body: { ok: true, result } };
+      return { ok: false as const, code: 200, body: { ok: false, result } };
+    });
+
+    if (access.ok === false) return res.status(access.status).json({ ok: false, error: access.error });
+    if (!access.value.ok) return res.status(access.value.code).json(access.value.body);
+    return res.json(access.value.body);
   } catch (err: any) {
     return res.status(500).json({ ok: false, error: String(err?.message ?? err) });
   }
@@ -107,10 +99,7 @@ router.get("/", async (req, res) => {
     const access = await resolvePlayerAccess(req, { requireCity: true });
     if (access.ok === false) return res.status(access.status).json({ ok: false, error: access.error });
 
-    const ps = getPlayerState(access.access.playerId);
-    if (!ps) return res.status(404).json({ ok: false, error: "no_player_state" });
-
-    return res.json({ ok: true, playerId: access.access.playerId, city: ps.city, resources: ps.resources });
+    return res.json({ ok: true, playerId: access.access.playerId, city: access.access.playerState.city, resources: access.access.playerState.resources });
   } catch (err: any) {
     return res.status(500).json({ ok: false, error: String(err?.message ?? err) });
   }

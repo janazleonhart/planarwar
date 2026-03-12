@@ -5,19 +5,12 @@ import { Router } from "express";
 import { defaultPolicies, tickPlayerState, type PlayerState } from "../gameState";
 import { getAvailableTechsForPlayer, getTechById } from "../domain/tech";
 import { getCityProductionPerTick, maxBuildingSlotsForTier } from "../domain/city";
-import { persistPlayerStateForCity, resolvePlayerAccess, resolveViewer, suggestCityName } from "./playerCityAccess";
+import { resolvePlayerAccess, resolveViewer, suggestCityName, withPlayerAccessMutation } from "./playerCityAccess";
 
 const router = Router();
 
 function emptyResources() {
-  return {
-    food: 0,
-    materials: 0,
-    wealth: 0,
-    mana: 0,
-    knowledge: 0,
-    unity: 0,
-  };
+  return { food: 0, materials: 0, wealth: 0, mana: 0, knowledge: 0, unity: 0 };
 }
 
 function buildCitySummary(ps: PlayerState) {
@@ -82,13 +75,7 @@ function buildMePayload(viewer: Awaited<ReturnType<typeof resolveViewer>>, ps: P
     currentEpoch: ps.techEpoch,
     enabledFlags: ps.techFlags,
     categoryAges: ps.techCategoryAges,
-  }).map((tech) => ({
-    id: tech.id,
-    name: tech.name,
-    description: tech.description,
-    category: tech.category,
-    cost: tech.cost,
-  }));
+  }).map((tech) => ({ id: tech.id, name: tech.name, description: tech.description, category: tech.category, cost: tech.cost }));
 
   const activeResearch = ps.activeResearch
     ? (() => {
@@ -134,15 +121,14 @@ function buildMePayload(viewer: Awaited<ReturnType<typeof resolveViewer>>, ps: P
 router.get("/", async (req, res) => {
   const access = await resolvePlayerAccess(req, { requireCity: false });
   if (access.ok === false) {
-    if (access.viewer.isAuthenticated && access.error === "no_city") {
-      return res.json(buildMePayload(access.viewer, null));
-    }
     return res.json(buildMePayload(access.viewer, null));
   }
 
-  const payload = buildMePayload(access.access.viewer, access.access.playerState);
-  await persistPlayerStateForCity(access.access);
-  return res.json(payload);
+  const mutation = await withPlayerAccessMutation(req, (access) => buildMePayload(access.viewer, access.playerState), { requireCity: false });
+  if (mutation.ok === false) {
+    return res.json(buildMePayload(mutation.viewer, null));
+  }
+  return res.json(mutation.value);
 });
 
 export default router;
