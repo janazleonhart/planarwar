@@ -79,6 +79,7 @@ import {
   buildMotherBrainStatusResponse,
   parseMotherBrainStatusRequest,
 } from "./adminSpawnPoints/motherBrainStatusOps";
+import { queryMotherBrainStatusRows } from "./adminSpawnPoints/motherBrainStatusQuery";
 import { parseMotherBrainWaveRequest } from "./adminSpawnPoints/motherBrainWaveRequestOps";
 import {
   buildMotherBrainWipeBadBoundsResponse,
@@ -2375,21 +2376,14 @@ router.get("/mother_brain/status", async (req, res) => {
   try {
     const request = parseMotherBrainStatusRequest((req.query ?? {}) as Record<string, unknown>);
 
-    const rowsRes = await db.query(
-      `
-      SELECT spawn_id, type, proto_id, region_id
-      FROM spawn_points
-      WHERE shard_id = $1
-        AND spawn_id LIKE 'brain:%'
-        AND x >= $2 AND x <= $3
-        AND z >= $4 AND z <= $5
-      `,
-      [request.shardId, request.box.minX, request.box.maxX, request.box.minZ, request.box.maxZ],
-    );
+    const rows = await queryMotherBrainStatusRows(db, {
+      shardId: request.shardId,
+      box: request.box,
+    });
 
     res.json(
       buildMotherBrainStatusResponse({
-        rows: rowsRes.rows ?? [],
+        rows,
         request,
       }),
     );
