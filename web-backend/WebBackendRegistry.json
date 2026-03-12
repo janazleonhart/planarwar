@@ -658,21 +658,24 @@
       ],
       "dependsOn": [
         "npm:express",
-        "worldcore:db/Database",
         "worldcore:quests/PostgresQuestService",
-        "worldcore:quests/QuestRegistry"
+        "web-backend.routes.adminQuests.adminQuestList",
+        "web-backend.routes.adminQuests.adminQuestUpsert",
+        "web-backend.routes.adminQuests.adminQuestTypes"
       ],
       "kind": "module",
       "lifecycle": "singleton",
       "notes": [
-        "Admin quest list + upsert; reloads QuestRegistry in-process after changes.",
-        "Supports quest_rewards: xp/gold/item",
-        "Hydrates item name/rarity for collect_item objective + reward items on GET",
-        "Normalizes objective kind item_turnin <-> collect_item for editor compatibility",
+        "Admin quest list + upsert; reloads QuestRegistry in-process after changes via extracted helper module.",
+        "Supports quest_rewards: xp/gold/item/spell_grant/ability_grant.",
+        "Keeps route file focused on request/response edges while list hydration and upsert validation live in helper modules.",
+        "Normalizes objective kind item_turnin <-> collect_item for editor compatibility.",
         "Uses AdminUI kit (AdminShell/AdminTwoCol/AdminPanel) for modern two-column layout."
       ],
       "owns": [
-        "PostgresQuestService instance"
+        "PostgresQuestService instance",
+        "GET /api/admin/quests route handlers",
+        "POST /api/admin/quests route handlers"
       ],
       "path": "web-backend/routes/adminQuests.ts",
       "provides": [
@@ -2130,6 +2133,75 @@
         "toInt(value)"
       ],
       "service": "web-backend.routes"
+    },
+    "web-backend.routes.adminQuests.adminQuestTypes": {
+      "class": null,
+      "ctorArgs": [],
+      "dependsOn": [],
+      "kind": "module",
+      "lifecycle": "singleton",
+      "notes": [
+        "Shared admin quest editor payload and normalized upsert types used by route/list/upsert helpers."
+      ],
+      "owns": [
+        "Admin quest payload type definitions"
+      ],
+      "path": "web-backend/routes/adminQuests/adminQuestTypes.ts",
+      "provides": [
+        "AdminQuestPayload type",
+        "NormalizedAdminQuestUpsert type"
+      ],
+      "service": "http.adminRoutes"
+    },
+    "web-backend.routes.adminQuests.adminQuestList": {
+      "class": null,
+      "ctorArgs": [],
+      "dependsOn": [
+        "worldcore:db/Database",
+        "worldcore:quests/PostgresQuestService",
+        "web-backend.routes.adminQuests.adminQuestTypes"
+      ],
+      "kind": "module",
+      "lifecycle": "singleton",
+      "notes": [
+        "Maps quest definitions into admin payload shape and performs best-effort item/spell/ability label hydration for editor GET responses."
+      ],
+      "owns": [
+        "Admin quest list payload mapping",
+        "Admin quest reward/objective label hydration helpers"
+      ],
+      "path": "web-backend/routes/adminQuests/adminQuestList.ts",
+      "provides": [
+        "listAdminQuests(questService)"
+      ],
+      "service": "http.adminRoutes"
+    },
+    "web-backend.routes.adminQuests.adminQuestUpsert": {
+      "class": null,
+      "ctorArgs": [],
+      "dependsOn": [
+        "worldcore:db/Database",
+        "worldcore:quests/PostgresQuestService",
+        "worldcore:quests/QuestRegistry",
+        "web-backend.routes.adminQuests.adminQuestTypes"
+      ],
+      "kind": "module",
+      "lifecycle": "singleton",
+      "notes": [
+        "Normalizes incoming admin quest payloads, performs best-effort DB validation, writes objective/reward rows, and reloads QuestRegistry in-process."
+      ],
+      "owns": [
+        "Admin quest payload normalization",
+        "Admin quest upsert validation",
+        "Admin quest DB write choreography"
+      ],
+      "path": "web-backend/routes/adminQuests/adminQuestUpsert.ts",
+      "provides": [
+        "normalizeAdminQuestPayload(body)",
+        "validateAdminQuestUpsert(input)",
+        "upsertAdminQuest(input, questService)"
+      ],
+      "service": "http.adminRoutes"
     }
   }
 }
