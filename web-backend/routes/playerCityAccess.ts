@@ -6,6 +6,10 @@ import { PostgresAuthService } from "../../worldcore/auth/PostgresAuthService";
 import { db } from "../../worldcore/db/Database";
 import { DEMO_PLAYER_ID, getDemoPlayer, getOrCreatePlayerState, type PlayerState } from "../gameState";
 import blockedNames from "../data/cityBlockedNames.json";
+import {
+  buildCityRuntimeEnvelope,
+  hydratePlayerStateFromCityRow,
+} from "../gameState/cityRuntimeSnapshot";
 
 const auth = new PostgresAuthService();
 const DEFAULT_CITY_SHARD_ID = "prime_shard";
@@ -34,32 +38,6 @@ export interface PlayerAccess {
   playerId: string;
   playerState: PlayerState;
   city: CityRow | null;
-}
-
-interface CityRuntimeSnapshotV1 {
-  version: 1;
-  savedAt: string;
-  city: Record<string, any>;
-  heroes: any[];
-  armies: any[];
-  resources: Record<string, any>;
-  stockpile: Record<string, any>;
-  resourceTiers: Record<string, any>;
-  currentOffers: any[];
-  activeMissions: any[];
-  policies: Record<string, any>;
-  lastTickAt: string;
-  researchedTechIds: string[];
-  activeResearch?: Record<string, any>;
-  regionWar: any[];
-  eventLog: any[];
-  workshopJobs: any[];
-  cityStress: Record<string, any>;
-  storage: Record<string, any>;
-  techAge: string;
-  techEpoch: string;
-  techCategoryAges: Record<string, any>;
-  techFlags: string[];
 }
 
 export type PlayerAccessResult =
@@ -128,107 +106,9 @@ export async function getCityByAccountId(accountId: string): Promise<CityRow | n
   return (result.rows[0] as CityRow) ?? null;
 }
 
-function normalizeCityMeta(meta: any): Record<string, any> {
-  if (!meta || typeof meta !== "object" || Array.isArray(meta)) return {};
-  return { ...meta };
-}
-
-function deepCloneJson<T>(value: T): T {
-  return JSON.parse(JSON.stringify(value));
-}
-
-function normalizeSnapshot(meta: Record<string, any> | null | undefined): CityRuntimeSnapshotV1 | null {
-  if (!meta || typeof meta !== "object") return null;
-  if (meta.runtimeStateVersion !== 1) return null;
-  const state = meta.runtimeState;
-  if (!state || typeof state !== "object" || Array.isArray(state)) return null;
-  return state as CityRuntimeSnapshotV1;
-}
-
-const MAX_SNAPSHOT_EVENT_LOG = 60;
-const MAX_SNAPSHOT_OFFERS = 24;
-
-function buildRuntimeSnapshot(ps: PlayerState): CityRuntimeSnapshotV1 {
-  return {
-    version: 1,
-    savedAt: new Date().toISOString(),
-    city: deepCloneJson({
-      tier: ps.city.tier,
-      regionId: ps.city.regionId,
-      maxBuildingSlots: ps.city.maxBuildingSlots,
-      stats: ps.city.stats,
-      buildings: ps.city.buildings,
-      specializationId: ps.city.specializationId ?? null,
-      specializationStars: ps.city.specializationStars ?? 0,
-      specializationStarsHistory: ps.city.specializationStarsHistory ?? {},
-    }),
-    heroes: deepCloneJson(ps.heroes),
-    armies: deepCloneJson(ps.armies),
-    resources: deepCloneJson(ps.resources),
-    stockpile: deepCloneJson(ps.stockpile),
-    resourceTiers: deepCloneJson(ps.resourceTiers),
-    currentOffers: deepCloneJson((ps.currentOffers ?? []).slice(0, MAX_SNAPSHOT_OFFERS)),
-    activeMissions: deepCloneJson(ps.activeMissions),
-    policies: deepCloneJson(ps.policies),
-    lastTickAt: ps.lastTickAt,
-    researchedTechIds: deepCloneJson(ps.researchedTechIds),
-    activeResearch: ps.activeResearch ? deepCloneJson(ps.activeResearch) : undefined,
-    regionWar: deepCloneJson(ps.regionWar),
-    eventLog: deepCloneJson((ps.eventLog ?? []).slice(-MAX_SNAPSHOT_EVENT_LOG)),
-    workshopJobs: deepCloneJson(ps.workshopJobs),
-    cityStress: deepCloneJson(ps.cityStress),
-    storage: deepCloneJson(ps.storage),
-    techAge: ps.techAge,
-    techEpoch: ps.techEpoch,
-    techCategoryAges: deepCloneJson(ps.techCategoryAges),
-    techFlags: deepCloneJson(ps.techFlags),
-  };
-}
-
-function applyRuntimeSnapshot(ps: PlayerState, snapshot: CityRuntimeSnapshotV1): PlayerState {
-  const city = snapshot.city ?? {};
-  ps.city = {
-    ...ps.city,
-    tier: typeof city.tier === "number" ? city.tier : ps.city.tier,
-    regionId: typeof city.regionId === "string" && city.regionId.trim() ? (city.regionId as any) : ps.city.regionId,
-    maxBuildingSlots: typeof city.maxBuildingSlots === "number" ? city.maxBuildingSlots : ps.city.maxBuildingSlots,
-    stats: city.stats ? (deepCloneJson(city.stats) as PlayerState["city"]["stats"]) : ps.city.stats,
-    buildings: Array.isArray(city.buildings) ? (deepCloneJson(city.buildings) as PlayerState["city"]["buildings"]) : ps.city.buildings,
-    specializationId: city.specializationId ?? null,
-    specializationStars: typeof city.specializationStars === "number" ? city.specializationStars : 0,
-    specializationStarsHistory: city.specializationStarsHistory ? (deepCloneJson(city.specializationStarsHistory) as PlayerState["city"]["specializationStarsHistory"]) : {},
-  };
-  ps.heroes = Array.isArray(snapshot.heroes) ? (deepCloneJson(snapshot.heroes) as PlayerState["heroes"]) : ps.heroes;
-  ps.armies = Array.isArray(snapshot.armies) ? (deepCloneJson(snapshot.armies) as PlayerState["armies"]) : ps.armies;
-  ps.resources = snapshot.resources ? (deepCloneJson(snapshot.resources) as PlayerState["resources"]) : ps.resources;
-  ps.stockpile = snapshot.stockpile ? (deepCloneJson(snapshot.stockpile) as PlayerState["stockpile"]) : ps.stockpile;
-  ps.resourceTiers = snapshot.resourceTiers ? (deepCloneJson(snapshot.resourceTiers) as PlayerState["resourceTiers"]) : ps.resourceTiers;
-  ps.currentOffers = Array.isArray(snapshot.currentOffers) ? (deepCloneJson(snapshot.currentOffers) as PlayerState["currentOffers"]) : ps.currentOffers;
-  ps.activeMissions = Array.isArray(snapshot.activeMissions) ? (deepCloneJson(snapshot.activeMissions) as PlayerState["activeMissions"]) : ps.activeMissions;
-  ps.policies = snapshot.policies ? (deepCloneJson(snapshot.policies) as PlayerState["policies"]) : ps.policies;
-  ps.lastTickAt = typeof snapshot.lastTickAt === "string" && snapshot.lastTickAt ? snapshot.lastTickAt : ps.lastTickAt;
-  ps.researchedTechIds = Array.isArray(snapshot.researchedTechIds) ? (deepCloneJson(snapshot.researchedTechIds) as PlayerState["researchedTechIds"]) : ps.researchedTechIds;
-  ps.activeResearch = snapshot.activeResearch ? (deepCloneJson(snapshot.activeResearch) as NonNullable<PlayerState["activeResearch"]>) : undefined;
-  ps.regionWar = Array.isArray(snapshot.regionWar) ? (deepCloneJson(snapshot.regionWar) as PlayerState["regionWar"]) : ps.regionWar;
-  ps.eventLog = Array.isArray(snapshot.eventLog) ? (deepCloneJson(snapshot.eventLog) as PlayerState["eventLog"]) : ps.eventLog;
-  ps.workshopJobs = Array.isArray(snapshot.workshopJobs) ? (deepCloneJson(snapshot.workshopJobs) as PlayerState["workshopJobs"]) : ps.workshopJobs;
-  ps.cityStress = snapshot.cityStress ? (deepCloneJson(snapshot.cityStress) as PlayerState["cityStress"]) : ps.cityStress;
-  ps.storage = snapshot.storage ? (deepCloneJson(snapshot.storage) as PlayerState["storage"]) : ps.storage;
-  ps.techAge = typeof snapshot.techAge === "string" && snapshot.techAge ? snapshot.techAge as any : ps.techAge;
-  ps.techEpoch = typeof snapshot.techEpoch === "string" && snapshot.techEpoch ? snapshot.techEpoch as any : ps.techEpoch;
-  ps.techCategoryAges = snapshot.techCategoryAges ? (deepCloneJson(snapshot.techCategoryAges) as PlayerState["techCategoryAges"]) : ps.techCategoryAges;
-  ps.techFlags = Array.isArray(snapshot.techFlags) ? (deepCloneJson(snapshot.techFlags) as PlayerState["techFlags"]) : ps.techFlags;
-  return ps;
-}
-
 export async function persistPlayerStateForCity(access: PlayerAccess): Promise<void> {
   if (access.viewer.isDemo || !access.city) return;
-  const existingMeta = normalizeCityMeta(access.city.meta);
-  const nextMeta = {
-    ...existingMeta,
-    runtimeStateVersion: 1,
-    runtimeState: buildRuntimeSnapshot(access.playerState),
-  };
+  const nextMeta = buildCityRuntimeEnvelope(access.playerState, access.city.meta);
 
   await db.query(
     `
@@ -244,19 +124,10 @@ export async function persistPlayerStateForCity(access: PlayerAccess): Promise<v
 }
 
 export function syncPlayerStateFromCityRow(ps: PlayerState, row: CityRow, viewer: ViewerIdentity): PlayerState {
-  const meta = normalizeCityMeta(row.meta);
-  ps.playerId = viewer.playerId;
-  ps.city.id = row.id;
-  ps.city.ownerId = viewer.userId;
-  ps.city.name = row.name;
-  ps.city.shardId = String(row.shard_id || DEFAULT_CITY_SHARD_ID);
-
-  const regionId = safeTrim(meta.regionId);
-  if (regionId) {
-    (ps.city as any).regionId = regionId;
+  if (!row.shard_id) {
+    row.shard_id = DEFAULT_CITY_SHARD_ID;
   }
-
-  return ps;
+  return hydratePlayerStateFromCityRow(ps, row, viewer);
 }
 
 export async function resolvePlayerAccess(
@@ -289,10 +160,7 @@ export async function resolvePlayerAccess(
     return { ok: false, status: 404, error: "no_city", viewer };
   }
 
-  const ps = getOrCreatePlayerState(viewer.playerId);
-  const snapshot = normalizeSnapshot(city.meta);
-  if (snapshot) applyRuntimeSnapshot(ps, snapshot);
-  syncPlayerStateFromCityRow(ps, city, viewer);
+  const ps = syncPlayerStateFromCityRow(getOrCreatePlayerState(viewer.playerId), city, viewer);
   return {
     ok: true,
     access: {
@@ -303,7 +171,6 @@ export async function resolvePlayerAccess(
     },
   };
 }
-
 
 export type PlayerAccessMutationResult<T> =
   | { ok: true; access: PlayerAccess; value: T }
