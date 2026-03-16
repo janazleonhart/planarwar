@@ -12,6 +12,7 @@ import garrisonsRoutes from "../routes/garrisons";
 import buildingsRoutes from "../routes/buildings";
 import heroesRoutes from "../routes/heroes";
 import workshopRoutes from "../routes/workshop";
+import publicInfrastructureRoutes from "../routes/publicInfrastructure";
 import { resourceTierRouter } from "../routes/resourceTierRoutes";
 import charactersRouter from "../routes/characters";
 import authRouter from "../routes/auth";
@@ -31,6 +32,7 @@ export function mountPlayerAndDemoRoutes(app: Express): void {
   app.use("/api/buildings", buildingsRoutes);
   app.use("/api/heroes", heroesRoutes);
   app.use("/api/workshop", workshopRoutes);
+  app.use("/api/public_infrastructure", publicInfrastructureRoutes);
   app.use("/api/resources", resourceTierRouter);
   app.use("/api/characters", charactersRouter);
   app.use("/api/auth", authRouter);

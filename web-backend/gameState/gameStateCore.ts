@@ -5,6 +5,7 @@ import { seedStarterCity } from "../domain/city";
 import { seedStarterHeroes } from "../domain/heroes";
 import { seedStarterArmies } from "../domain/armies";
 import { startingResourcesConfig } from "../config";
+import { createInitialPublicInfrastructureState } from "../domain/publicInfrastructure";
 
 import type { City } from "../domain/city";
 import type { ResourceVector } from "../domain/resources";
@@ -104,6 +105,7 @@ export function createInitialPlayerState(
       unityPressure: 0,
       lastUpdatedAt: nowIso,
     },
+    publicInfrastructure: createInitialPublicInfrastructureState(nowIso),
   };
 }
 

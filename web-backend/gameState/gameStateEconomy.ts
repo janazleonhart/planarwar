@@ -3,6 +3,7 @@
 import { getCityProductionPerTick, type BuildingProduction } from "../domain/city";
 import { addResources, type ResourceVector } from "../domain/resources";
 import { getTechById, type TechDefinition } from "../domain/tech";
+import { decayPublicInfrastructureHeat } from "../domain/publicInfrastructure";
 import type { World } from "../domain/world";
 import type {
   CityStressStage,

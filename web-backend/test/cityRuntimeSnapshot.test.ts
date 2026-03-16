@@ -3,7 +3,17 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import type { PlayerState, PoliciesState, Resources, ActiveMission, ActiveResearch, RegionWarState, GameEvent, CityStressState, CityStorage } from "../gameState";
+import type {
+  PlayerState,
+  PoliciesState,
+  Resources,
+  ActiveMission,
+  ActiveResearch,
+  RegionWarState,
+  GameEvent,
+  CityStressState,
+  CityStorage,
+} from "../gameState";
 import type { City } from "../domain/city";
 import type { Hero } from "../domain/heroes";
 import type { Army } from "../domain/armies";
@@ -12,6 +22,13 @@ import type { WorkshopJob } from "../gameState/gameStateHeroes";
 import type { ResourceVector } from "../domain/resources";
 import type { ResourceTierState } from "../gameState/gameStateProduction";
 import type { TechAge, TechEpoch, TechCategory } from "../domain/tech";
+import { createInitialPublicInfrastructureState } from "../domain/publicInfrastructure";
+import {
+  buildBuildingForPlayer,
+  getOrCreatePlayerState,
+  raiseArmyForPlayer,
+  recruitHeroForPlayer,
+} from "../gameState";
 import {
   buildCityRuntimeEnvelope,
   hydratePlayerStateFromCityRow,
@@ -127,6 +144,7 @@ function makePlayerState(overrides: Partial<PlayerState> = {}): PlayerState {
     techEpoch: "dawn" as TechEpoch,
     techCategoryAges: { civics: "bronze" as TechAge } as Partial<Record<TechCategory, TechAge>>,
     techFlags: ["CITY_ENABLED"],
+    publicInfrastructure: createInitialPublicInfrastructureState("2026-03-16T00:00:00.000Z"),
   };
 
   return {
@@ -134,6 +152,41 @@ function makePlayerState(overrides: Partial<PlayerState> = {}): PlayerState {
     ...overrides,
     city: { ...base.city, ...(overrides.city ?? {}) },
   };
+}
+
+function makeViewerAuthority(ownerId = "owner_row") {
+  return { userId: ownerId, playerId: ownerId };
+}
+
+function makeCityRowFromPlayerState(
+  ps: PlayerState,
+  overrides: Partial<{ id: string; account_id: string; shard_id: string; name: string; meta: Record<string, any> }> = {},
+) {
+  return {
+    id: overrides.id ?? ps.city.id,
+    account_id: overrides.account_id ?? ps.city.ownerId,
+    shard_id: overrides.shard_id ?? ps.city.shardId,
+    name: overrides.name ?? ps.city.name,
+    meta: overrides.meta ?? buildCityRuntimeEnvelope(ps),
+  };
+}
+
+function hydrateRoundTrip(
+  ps: PlayerState,
+  overrides: Partial<{ id: string; account_id: string; shard_id: string; name: string; meta: Record<string, any> }> = {},
+) {
+  const row = makeCityRowFromPlayerState(ps, overrides);
+  const target = makePlayerState({
+    playerId: `${ps.playerId}_target`,
+    city: {
+      id: `${ps.city.id}_old`,
+      ownerId: `${ps.city.ownerId}_old`,
+      name: "Old Name",
+      shardId: "old_shard",
+      regionId: "old_region" as any,
+    } as any,
+  });
+  return hydratePlayerStateFromCityRow(target, row, makeViewerAuthority(row.account_id));
 }
 
 test("readCityRuntimeSnapshot accepts legacy unversioned runtimeState payloads", () => {
@@ -235,4 +288,101 @@ test("hydratePlayerStateFromCityRow falls back to row meta region when no usable
 
   assert.equal(hydrated.city.regionId, "legacy_row_region");
   assert.equal(hydrated.city.name, "Row Name");
+});
+
+test("building mutation persists through snapshot save and reload", () => {
+  const playerId = `test_building_${Date.now()}_${Math.floor(Math.random() * 100000)}`;
+  const ps = getOrCreatePlayerState(playerId);
+  ps.city.id = `city_${playerId}`;
+  ps.city.ownerId = `owner_${playerId}`;
+  ps.city.name = "Builder Hold";
+  ps.city.shardId = "prime_shard";
+  ps.city.regionId = "builder_region" as any;
+  ps.resources.materials = 500;
+  ps.resources.wealth = 500;
+  ps.resources.mana = 200;
+
+  const startingCount = ps.city.buildings.length;
+  const result = buildBuildingForPlayer(playerId, "farmland", new Date("2026-03-16T12:00:00.000Z"));
+
+  assert.equal(result.status, "ok");
+  assert.ok(result.building);
+  assert.equal(ps.city.buildings.length, startingCount + 1);
+
+  const hydrated = hydrateRoundTrip(ps);
+
+  assert.equal(hydrated.city.buildings.length, ps.city.buildings.length);
+  assert.equal(hydrated.city.buildings.at(-1)?.id, result.building?.id);
+  assert.equal(hydrated.city.buildings.at(-1)?.kind, "farmland");
+  assert.equal(hydrated.resources.materials, ps.resources.materials);
+  assert.equal(hydrated.resources.wealth, ps.resources.wealth);
+});
+
+test("hero mutation persists through snapshot save and reload", () => {
+  const playerId = `test_hero_${Date.now()}_${Math.floor(Math.random() * 100000)}`;
+  const ps = getOrCreatePlayerState(playerId);
+  ps.city.id = `city_${playerId}`;
+  ps.city.ownerId = `owner_${playerId}`;
+  ps.city.name = "Hero Hold";
+  ps.city.shardId = "prime_shard";
+  ps.resources.wealth = 500;
+  ps.resources.unity = 100;
+
+  const startingHeroCount = ps.heroes.length;
+  const startingEventCount = ps.eventLog.length;
+
+  const result = recruitHeroForPlayer(playerId, "champion", new Date("2026-03-16T12:05:00.000Z"));
+
+  assert.equal(result.status, "ok");
+  assert.ok(result.hero);
+  assert.equal(ps.heroes.length, startingHeroCount + 1);
+
+  const hydrated = hydrateRoundTrip(ps);
+
+  assert.equal(hydrated.heroes.length, startingHeroCount + 1);
+  assert.ok(hydrated.heroes.some((hero) => hero.id === result.hero?.id));
+  assert.equal(
+    hydrated.heroes.find((hero) => hero.id === result.hero?.id)?.role,
+    "champion",
+  );
+  assert.equal(hydrated.resources.wealth, ps.resources.wealth);
+  assert.equal(hydrated.resources.unity, ps.resources.unity);
+  assert.ok(hydrated.eventLog.length >= startingEventCount + 1);
+  assert.ok(hydrated.eventLog.some((event) => event.kind === "hero_recruited"));
+});
+
+test("army mutation persists through snapshot save and reload", () => {
+  const playerId = `test_army_${Date.now()}_${Math.floor(Math.random() * 100000)}`;
+  const ps = getOrCreatePlayerState(playerId);
+  ps.city.id = `city_${playerId}`;
+  ps.city.ownerId = `owner_${playerId}`;
+  ps.city.name = "Army Hold";
+  ps.city.shardId = "prime_shard";
+  ps.resources.materials = 800;
+  ps.resources.wealth = 800;
+
+  const startingArmyCount = ps.armies.length;
+  const startingEventCount = ps.eventLog.length;
+
+  const raised = raiseArmyForPlayer(playerId, "militia", new Date("2026-03-16T12:10:00.000Z"));
+  assert.equal(raised.status, "ok");
+  assert.ok(raised.army);
+  assert.equal(ps.armies.length, startingArmyCount + 1);
+
+  const hydrated = hydrateRoundTrip(ps);
+
+  assert.equal(hydrated.armies.length, startingArmyCount + 1);
+  assert.ok(hydrated.armies.some((army) => army.id === raised.army?.id));
+  assert.equal(
+    hydrated.armies.find((army) => army.id === raised.army?.id)?.type,
+    "militia",
+  );
+  assert.equal(
+    hydrated.armies.find((army) => army.id === raised.army?.id)?.status,
+    "idle",
+  );
+  assert.equal(hydrated.resources.materials, ps.resources.materials);
+  assert.equal(hydrated.resources.wealth, ps.resources.wealth);
+  assert.ok(hydrated.eventLog.length >= startingEventCount + 1);
+  assert.ok(hydrated.eventLog.some((event) => event.kind === "army_raised"));
 });

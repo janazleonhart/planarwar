@@ -4,6 +4,8 @@ import { Router } from "express";
 import { equipHeroAttachmentForPlayer, HeroAttachmentKind, recruitHeroForPlayer } from "../gameState";
 import type { HeroRole } from "../domain/heroes";
 import { withPlayerAccessMutation } from "./playerCityAccess";
+import { applyPublicInfrastructureUsage, cloneResources, diffSpentResources, withInfrastructureRollback } from "./publicInfrastructureSupport";
+import type { InfrastructureMode } from "../domain/publicInfrastructure";
 
 const router = Router();
 
@@ -26,16 +28,40 @@ router.post("/equip_attachment", async (req, res) => {
 });
 
 router.post("/recruit", async (req, res) => {
-  const { role } = req.body as { role?: HeroRole };
+  const { role, serviceMode } = req.body as { role?: HeroRole; serviceMode?: InfrastructureMode };
   if (!role) return res.status(400).json({ error: "role is required" });
 
   const access = await withPlayerAccessMutation(req, (access) => {
-    const result = recruitHeroForPlayer(access.playerId, role, new Date());
-    if (result.status !== "ok" || !result.hero) {
-      return { ok: false as const, code: 400, body: { error: result.message ?? "Unable to recruit hero.", status: result.status } };
+    const mode: InfrastructureMode = serviceMode === "npc_public" ? "npc_public" : "private_city";
+    const before = cloneResources(access.playerState.resources);
+    const wrapped = withInfrastructureRollback(
+      access.playerState,
+      () => recruitHeroForPlayer(access.playerId, role, new Date()),
+      (result) => {
+        if (result.status !== "ok" || !result.hero) {
+          return { ok: false as const, error: result.message ?? "Unable to recruit hero." };
+        }
+        const baseCosts = diffSpentResources(before, access.playerState.resources);
+        const levy = applyPublicInfrastructureUsage(access.playerState, "hero_recruit", mode, baseCosts, new Date());
+        if (levy.ok === false) return { ok: false as const, error: levy.error };
+        return { ok: true as const };
+      }
+    );
+
+    if (wrapped.ok === false) {
+      return { ok: false as const, code: 400, body: { error: wrapped.error, status: "public_service_blocked" } };
     }
 
-    return { ok: true as const, body: { ok: true, hero: result.hero, heroes: access.playerState.heroes, resources: access.playerState.resources } };
+    return {
+      ok: true as const,
+      body: {
+        ok: true,
+        hero: wrapped.value.hero,
+        heroes: access.playerState.heroes,
+        resources: access.playerState.resources,
+        publicInfrastructure: access.playerState.publicInfrastructure,
+      },
+    };
   });
 
   if (access.ok === false) return res.status(access.status).json({ error: access.error });

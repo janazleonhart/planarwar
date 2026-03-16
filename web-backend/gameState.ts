@@ -74,6 +74,7 @@ import type {
 } from "./domain/missions";
 import type { TechAge, TechEpoch, TechCategory } from "./domain/tech";
 import type { ResourceKey, ResourceVector } from "./domain/resources";
+import type { PublicInfrastructureState } from "./domain/publicInfrastructure";
 
 // ---- helpers ----
 
@@ -227,6 +228,7 @@ export interface PlayerState {
   techCategoryAges: Partial<Record<TechCategory, TechAge>>;
   techFlags: string[]; // e.g. ["BLACK_MARKET_ENABLED"] later
 
+  publicInfrastructure: PublicInfrastructureState;
 }
 
 export interface GameState {
