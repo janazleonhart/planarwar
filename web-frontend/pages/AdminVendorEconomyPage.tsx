@@ -4,7 +4,7 @@
 // Polished UX: dirty tracking, bulk save, filters, and same-origin API via lib/api.ts.
 
 import { useEffect, useMemo, useState } from "react";
-import { api, getAdminCaps, getAuthToken } from "../lib/api";
+import { api, fetchCityMudBridgeStatus, getAdminCaps, getAuthToken, type CityMudBridgeStatusResponse } from "../lib/api";
 import { ItemPicker } from "../components/ItemPicker";
 import { AdminShell } from "../components/admin/AdminUI";
 
@@ -187,6 +187,7 @@ export function AdminVendorEconomyPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [bridgeStatus, setBridgeStatus] = useState<CityMudBridgeStatusResponse | null>(null);
 
   const [nowMs, setNowMs] = useState(() => Date.now());
 
@@ -199,6 +200,15 @@ export function AdminVendorEconomyPage() {
   const [onlyFinite, setOnlyFinite] = useState(false);
   const [onlyRestock, setOnlyRestock] = useState(false);
   const [onlyDirty, setOnlyDirty] = useState(false);
+
+  async function loadBridgeStatus() {
+    try {
+      const data = await fetchCityMudBridgeStatus();
+      setBridgeStatus(data);
+    } catch {
+      setBridgeStatus(null);
+    }
+  }
 
   async function loadVendors() {
     setBusy(true);
@@ -263,6 +273,7 @@ export function AdminVendorEconomyPage() {
 
   useEffect(() => {
     loadVendors();
+    void loadBridgeStatus();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -464,6 +475,44 @@ export function AdminVendorEconomyPage() {
     <AdminShell title="Vendor Economy" subtitle="Stock/restock + price knobs for vendor items.">
       <div style={{ padding: 16, fontFamily: "system-ui, sans-serif" }}>
       <h1 style={{ marginTop: 0 }}>Vendor Economy Config</h1>
+
+      {bridgeStatus?.summary && bridgeStatus.vendorPolicy && (
+        <div
+          style={{
+            marginBottom: 16,
+            padding: 12,
+            borderRadius: 12,
+            border: "1px solid rgba(255,255,255,0.12)",
+            background: "rgba(255,255,255,0.04)",
+          }}
+        >
+          <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+            <div>
+              <div style={{ fontSize: 12, opacity: 0.75, textTransform: "uppercase", letterSpacing: 0.6 }}>
+                Current city bridge posture for vendor tuning
+              </div>
+              <div style={{ fontWeight: 700, marginTop: 4 }}>{bridgeStatus.vendorPolicy.headline}</div>
+              <div style={{ opacity: 0.82, marginTop: 6 }}>{bridgeStatus.vendorPolicy.detail}</div>
+            </div>
+            <div style={{ minWidth: 260 }}>
+              <div><b>Band:</b> {bridgeStatus.summary.bridgeBand}</div>
+              <div><b>State:</b> {bridgeStatus.vendorPolicy.state}</div>
+              <div><b>Stock posture:</b> {bridgeStatus.vendorPolicy.stockPosture}</div>
+              <div><b>Price posture:</b> {bridgeStatus.vendorPolicy.pricePosture}</div>
+              <div><b>Cadence posture:</b> {bridgeStatus.vendorPolicy.cadencePosture}</div>
+            </div>
+          </div>
+          <div style={{ display: "flex", gap: 16, flexWrap: "wrap", marginTop: 10, fontSize: 13 }}>
+            <span>stock × <b>{bridgeStatus.vendorPolicy.recommendedStockMultiplier.toFixed(2)}</b></span>
+            <span>price min × <b>{bridgeStatus.vendorPolicy.recommendedPriceMinMultiplier.toFixed(2)}</b></span>
+            <span>price max × <b>{bridgeStatus.vendorPolicy.recommendedPriceMaxMultiplier.toFixed(2)}</b></span>
+            <span>cadence × <b>{bridgeStatus.vendorPolicy.recommendedRestockCadenceMultiplier.toFixed(2)}</b></span>
+          </div>
+          <div style={{ marginTop: 10, fontSize: 13 }}>
+            <b>Recommended action:</b> {bridgeStatus.vendorPolicy.recommendedAction}
+          </div>
+        </div>
+      )}
 
       <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 12, alignItems: "center" }}>
         <label style={{ display: "flex", gap: 6, alignItems: "center" }}>

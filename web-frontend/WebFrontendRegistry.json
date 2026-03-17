@@ -178,7 +178,8 @@
         "Adds typed PublicPressureSource DTOs and includes pressureSources in public infrastructure status/quote payloads.",
         "Adds typed CityMudBridge DTOs plus fetchCityMudBridgeStatus() so the frontend can preview city\u2192world support posture and exportable surplus.",
         "Adds typed City \u2194 MUD bridge consumer DTOs so frontend panels can render vendor/mission/civic guidance instead of only raw hook scores.",
-        "Adds typed mission-board DTOs plus fetchMissionBoard(), startMission(), and completeMission() so mission offers can surface bridge-aware support guidance in the UI."
+        "Adds typed mission-board DTOs plus fetchMissionBoard(), startMission(), and completeMission() so mission offers can surface bridge-aware support guidance in the UI.",
+        "Adds typed City \u2194 MUD vendor policy DTOs so admin/vendor tooling can consume stock/price/cadence recommendations from the bridge status endpoint."
       ],
       "owns": [],
       "path": "web-frontend/lib/api.ts",
@@ -457,14 +458,19 @@
     "web-frontend.pages.adminVendorEconomy": {
       "class": "AdminVendorEconomyPage",
       "ctorArgs": [],
-      "dependsOn": [],
+      "dependsOn": [
+        "web-frontend.lib.api",
+        "web-frontend.components.itemPicker",
+        "web-frontend.components.admin.AdminUI"
+      ],
       "kind": "page",
       "lifecycle": "page",
       "notes": [
         "Uses same-origin /api requests (dev via Vite proxy; prod via reverse proxy / same host).",
         "Editable vendor economy knobs (stockMax/restock cadence/price mults) with per-row save + optional stock reset.",
         "Uses ItemPicker for item filtering; displays item name + rarity from API join.",
-        "Wrapped in AdminShell for consistent admin layout; internal logic unchanged."
+        "Wrapped in AdminShell for consistent admin layout; internal logic unchanged.",
+        "v0.4 also consumes city\u2194MUD bridge vendorPolicy to preview recommended stock/price/cadence posture while tuning vendor_item_economy rows."
       ],
       "owns": [
         "Admin UI for vendor_item_economy"

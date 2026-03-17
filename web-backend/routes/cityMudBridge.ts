@@ -1,7 +1,7 @@
 //web-backend/routes/cityMudBridge.ts
 
 import { Router } from "express";
-import { deriveCityMudConsumers, summarizeCityMudBridge } from "../domain/cityMudBridge";
+import { deriveCityMudConsumers, deriveVendorSupportPolicy, summarizeCityMudBridge } from "../domain/cityMudBridge";
 import { resolvePlayerAccess } from "./playerCityAccess";
 
 const router = Router();
@@ -13,10 +13,12 @@ router.get("/status", async (req, res) => {
   }
 
   const summary = summarizeCityMudBridge(access.access.playerState);
+  const consumers = deriveCityMudConsumers(summary);
   return res.json({
     ok: true,
     summary,
-    consumers: deriveCityMudConsumers(summary),
+    consumers,
+    vendorPolicy: deriveVendorSupportPolicy(summary, consumers),
   });
 });
 

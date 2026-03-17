@@ -345,10 +345,25 @@ export interface CityMudConsumerSummary {
   advisories: string[];
 }
 
+export interface CityMudVendorSupportPolicy {
+  state: CityMudConsumerState;
+  stockPosture: "expand" | "maintain" | "throttle" | "restrict";
+  pricePosture: "discount" | "baseline" | "caution" | "surge_guard";
+  cadencePosture: "accelerate" | "normal" | "slow" | "triage";
+  recommendedStockMultiplier: number;
+  recommendedPriceMinMultiplier: number;
+  recommendedPriceMaxMultiplier: number;
+  recommendedRestockCadenceMultiplier: number;
+  headline: string;
+  detail: string;
+  recommendedAction: string;
+}
+
 export interface CityMudBridgeStatusResponse {
   ok: boolean;
   summary: CityMudBridgeSummary | null;
   consumers?: CityMudConsumerSummary | null;
+  vendorPolicy?: CityMudVendorSupportPolicy | null;
 }
 
 

@@ -3,7 +3,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { deriveCityMudConsumers, summarizeCityMudBridge } from "../domain/cityMudBridge";
+import { deriveCityMudConsumers, deriveVendorSupportPolicy, summarizeCityMudBridge } from "../domain/cityMudBridge";
 import { applyMissionConsumerGuidance, generateMissionOffers } from "../domain/missions";
 import { createInitialPublicInfrastructureState } from "../domain/publicInfrastructure";
 import { getOrCreatePlayerState } from "../gameState";
@@ -172,4 +172,52 @@ test("mission offers inherit restricted support guidance when bridge posture is 
   assert.equal(summary.bridgeBand, "restricted");
   assert.ok(guided.every((offer) => offer.supportGuidance?.state === "restricted"));
   assert.match(guided[0]?.supportGuidance?.recommendedAction ?? "", /escort, defense, recovery/i);
+});
+
+
+test("vendor support policy expands when bridge surplus is healthy", () => {
+  const ps = makePlayer();
+  ps.resources.food = 260;
+  ps.resources.materials = 240;
+  ps.resources.wealth = 220;
+  ps.resources.mana = 100;
+  ps.resources.knowledge = 80;
+  ps.resources.unity = 70;
+  ps.city.stats.infrastructure = 72;
+  ps.city.stats.prosperity = 68;
+  ps.city.stats.security = 62;
+  ps.cityStress.total = 12;
+  ps.cityStress.stage = "stable";
+
+  const summary = summarizeCityMudBridge(ps);
+  const consumers = deriveCityMudConsumers(summary);
+  const policy = deriveVendorSupportPolicy(summary, consumers);
+
+  assert.equal(policy.state, "abundant");
+  assert.equal(policy.stockPosture, "expand");
+  assert.equal(policy.cadencePosture, "accelerate");
+  assert.ok(policy.recommendedStockMultiplier > 1);
+});
+
+test("vendor support policy throttles when bridge posture is strained", () => {
+  const ps = makePlayer();
+  ps.resources.food = 170;
+  ps.resources.materials = 155;
+  ps.resources.wealth = 145;
+  ps.city.stats.infrastructure = 52;
+  ps.city.stats.prosperity = 44;
+  ps.city.stats.security = 39;
+  ps.cityStress.total = 42;
+  ps.cityStress.stage = "strained";
+  ps.publicInfrastructure.serviceHeat = 44;
+
+  const summary = summarizeCityMudBridge(ps);
+  const consumers = deriveCityMudConsumers(summary);
+  const policy = deriveVendorSupportPolicy(summary, consumers);
+
+  assert.equal(summary.bridgeBand, "strained");
+  assert.equal(policy.state, "pressured");
+  assert.equal(policy.stockPosture, "throttle");
+  assert.equal(policy.pricePosture, "caution");
+  assert.ok(policy.recommendedRestockCadenceMultiplier > 1);
 });

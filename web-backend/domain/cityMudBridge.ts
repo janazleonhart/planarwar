@@ -55,6 +55,20 @@ export interface CityMudConsumerSummary {
   advisories: string[];
 }
 
+export interface CityMudVendorSupportPolicy {
+  state: CityMudConsumerState;
+  stockPosture: "expand" | "maintain" | "throttle" | "restrict";
+  pricePosture: "discount" | "baseline" | "caution" | "surge_guard";
+  cadencePosture: "accelerate" | "normal" | "slow" | "triage";
+  recommendedStockMultiplier: number;
+  recommendedPriceMinMultiplier: number;
+  recommendedPriceMaxMultiplier: number;
+  recommendedRestockCadenceMultiplier: number;
+  headline: string;
+  detail: string;
+  recommendedAction: string;
+}
+
 const RESOURCE_KEYS: Array<keyof Resources> = ["food", "materials", "wealth", "mana", "knowledge", "unity"];
 const RESOURCE_BUFFERS: Resources = {
   food: 120,
@@ -233,6 +247,76 @@ export function deriveCityMudConsumers(summary: CityMudBridgeSummary): CityMudCo
     missionBoard,
     civicServices,
     advisories: advisories.slice(0, 4),
+  };
+}
+
+
+export function deriveVendorSupportPolicy(
+  summary: CityMudBridgeSummary,
+  consumers: CityMudConsumerSummary,
+): CityMudVendorSupportPolicy {
+  const state = consumers.vendorSupply.state;
+
+  if (state === "abundant") {
+    return {
+      state,
+      stockPosture: "expand",
+      pricePosture: "discount",
+      cadencePosture: "accelerate",
+      recommendedStockMultiplier: 1.2,
+      recommendedPriceMinMultiplier: 0.9,
+      recommendedPriceMaxMultiplier: 1.15,
+      recommendedRestockCadenceMultiplier: 0.85,
+      headline: "Vendor lanes can safely lean into surplus.",
+      detail: `Bridge posture is ${summary.bridgeBand} with ${summary.supportCapacity}/100 support capacity, so vendors can be a little generous without chewing through emergency reserves.`,
+      recommendedAction: "Allow broader restocks, slightly softer prices, and faster cadence for staple stock.",
+    };
+  }
+
+  if (state === "stable") {
+    return {
+      state,
+      stockPosture: "maintain",
+      pricePosture: "baseline",
+      cadencePosture: "normal",
+      recommendedStockMultiplier: 1,
+      recommendedPriceMinMultiplier: 0.95,
+      recommendedPriceMaxMultiplier: 1.25,
+      recommendedRestockCadenceMultiplier: 1,
+      headline: "Vendor support is steady but not magical.",
+      detail: "The city can support routine vendor flow, but downstream systems should avoid assuming endless abundance.",
+      recommendedAction: "Keep baseline stock windows and ordinary restock cadence.",
+    };
+  }
+
+  if (state === "pressured") {
+    return {
+      state,
+      stockPosture: "throttle",
+      pricePosture: "caution",
+      cadencePosture: "slow",
+      recommendedStockMultiplier: 0.85,
+      recommendedPriceMinMultiplier: 1.0,
+      recommendedPriceMaxMultiplier: 1.4,
+      recommendedRestockCadenceMultiplier: 1.2,
+      headline: "Vendor lanes should favor essentials over comfort.",
+      detail: `The bridge is ${summary.bridgeBand}, so vendor support should acknowledge visible logistics drag instead of pretending the shelves refill by prayer alone.`,
+      recommendedAction: "Throttle non-essential stock, keep staples viable, and warn that surplus lanes are under pressure.",
+    };
+  }
+
+  return {
+    state,
+    stockPosture: "restrict",
+    pricePosture: "surge_guard",
+    cadencePosture: "triage",
+    recommendedStockMultiplier: 0.65,
+    recommendedPriceMinMultiplier: 1.05,
+    recommendedPriceMaxMultiplier: 1.6,
+    recommendedRestockCadenceMultiplier: 1.4,
+    headline: "Vendor support should assume scarcity and triage.",
+    detail: "City reserves and outward support lanes are stressed enough that routine vendor behavior should narrow toward essentials and emergency stock.",
+    recommendedAction: "Restrict luxury flow, protect staple inventory, and let restocks recover before reopening broader support.",
   };
 }
 
