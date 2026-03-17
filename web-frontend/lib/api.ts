@@ -317,9 +317,29 @@ export interface CityMudBridgeSummary {
   note: string;
 }
 
+export type CityMudConsumerState = "abundant" | "stable" | "pressured" | "restricted";
+
+export interface CityMudConsumerEffect {
+  key: "vendor_supply" | "mission_board" | "civic_services";
+  label: string;
+  state: CityMudConsumerState;
+  severity: number;
+  headline: string;
+  detail: string;
+  recommendedAction: string;
+}
+
+export interface CityMudConsumerSummary {
+  vendorSupply: CityMudConsumerEffect;
+  missionBoard: CityMudConsumerEffect;
+  civicServices: CityMudConsumerEffect;
+  advisories: string[];
+}
+
 export interface CityMudBridgeStatusResponse {
   ok: boolean;
   summary: CityMudBridgeSummary | null;
+  consumers?: CityMudConsumerSummary | null;
 }
 
 export interface MeProfile {

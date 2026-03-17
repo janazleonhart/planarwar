@@ -324,7 +324,7 @@
       "notes": [
         "Derives a city-to-world/MUD economic bridge snapshot from city surplus, frontier pressure, civic stress, and public infrastructure drag.",
         "Intended as an auditable export seam so later MUD/world services can consume city-side support signals without coupling directly to city-builder route internals.",
-        "v0.1 exposes exportableResources plus hook descriptors for vendor supply, caravan risk, mission support, recruitment pressure, and public service drag."
+        "v0.2 adds concrete consumer guidance for vendor supply, mission board support posture, civic services drag, and top-level operational advisories."
       ],
       "owns": [
         "City \u2194 MUD bridge summary heuristics"
@@ -332,7 +332,9 @@
       "path": "web-backend/domain/cityMudBridge.ts",
       "provides": [
         "summarizeCityMudBridge(ps)",
-        "City \u2194 MUD bridge summary (supportCapacity, pressures, exportableResources, hooks, posture)"
+        "deriveCityMudConsumers(summary)",
+        "City \u2194 MUD bridge summary (supportCapacity, pressures, exportableResources, hooks, posture)",
+        "Concrete consumer guidance for vendor supply / mission board / civic services"
       ],
       "service": "city.cityMudBridge"
     },
@@ -2156,7 +2158,8 @@
       "lifecycle": "singleton",
       "notes": [
         "City-builder endpoint that exposes the current city-to-world/MUD bridge snapshot as derived runtime truth.",
-        "Used by the frontend to preview whether city surplus, danger, or civic strain should make future world-facing systems feel supportive, cautious, or defensive."
+        "Used by the frontend to preview whether city surplus, danger, or civic strain should make future world-facing systems feel supportive, cautious, or defensive.",
+        "v0.2 also returns consumer guidance so UI and later world systems can react to vendor pressure, mission-board strain, and civic-service drag without re-deriving rules client-side."
       ],
       "owns": [],
       "path": "web-backend/routes/cityMudBridge.ts",

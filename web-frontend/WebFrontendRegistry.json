@@ -176,7 +176,8 @@
         "Adds typed public infrastructure DTOs and fetchPublicInfrastructureStatus(serviceMode) for city-builder lane/quote previews.",
         "startTech() now accepts optional serviceMode so research can use private or NPC public lanes without raw ad-hoc payloads.",
         "Adds typed PublicPressureSource DTOs and includes pressureSources in public infrastructure status/quote payloads.",
-        "Adds typed CityMudBridge DTOs plus fetchCityMudBridgeStatus() so the frontend can preview city\u2192world support posture and exportable surplus."
+        "Adds typed CityMudBridge DTOs plus fetchCityMudBridgeStatus() so the frontend can preview city\u2192world support posture and exportable surplus.",
+        "Adds typed City \u2194 MUD bridge consumer DTOs so frontend panels can render vendor/mission/civic guidance instead of only raw hook scores."
       ],
       "owns": [],
       "path": "web-frontend/lib/api.ts",

@@ -334,6 +334,7 @@ export function MePage() {
   const receipts = me?.publicInfrastructure?.receipts ?? [];
   const quoteMap = new Map((infraStatus?.quotes ?? []).map((quote) => [quote.service, quote]));
   const bridgeSummary = bridgeStatus?.summary ?? null;
+  const bridgeConsumers = bridgeStatus?.consumers ?? null;
 
   if (loading && !me) return <p>Loading /api/me…</p>;
 
@@ -503,6 +504,30 @@ export function MePage() {
               <strong>Exportable surplus:</strong> {formatExportableResources(bridgeSummary.exportableResources)}
             </div>
             <div style={{ fontSize: 13, opacity: 0.85 }}>{bridgeSummary.note}</div>
+
+            {bridgeConsumers ? (
+              <div style={{ display: "grid", gap: 6 }}>
+                <strong>Live consumer guidance</strong>
+                <div style={{ display: "grid", gap: 6 }}>
+                  {[bridgeConsumers.vendorSupply, bridgeConsumers.missionBoard, bridgeConsumers.civicServices].map((consumer) => (
+                    <div key={consumer.key} style={{ border: "1px solid #555", borderRadius: 8, padding: 10 }}>
+                      <div>
+                        <strong>{consumer.label}</strong> • state {consumer.state} • severity {consumer.severity}
+                      </div>
+                      <div style={{ fontSize: 12, opacity: 0.84 }}>{consumer.headline}</div>
+                      <div style={{ fontSize: 12, opacity: 0.76 }}>{consumer.detail}</div>
+                      <div style={{ fontSize: 12, opacity: 0.72 }}>Recommended action: {consumer.recommendedAction}</div>
+                    </div>
+                  ))}
+                </div>
+                <div style={{ display: "grid", gap: 4 }}>
+                  <strong>Operational advisories</strong>
+                  {bridgeConsumers.advisories.map((advisory, index) => (
+                    <div key={`${index}_${advisory}`} style={{ fontSize: 12, opacity: 0.8 }}>• {advisory}</div>
+                  ))}
+                </div>
+              </div>
+            ) : null}
 
             <div style={{ display: "grid", gap: 6 }}>
               <strong>Bridge hooks for future world/MUD consumers</strong>

@@ -36,6 +36,25 @@ export interface CityMudBridgeSummary {
   note: string;
 }
 
+export type CityMudConsumerState = "abundant" | "stable" | "pressured" | "restricted";
+
+export interface CityMudConsumerEffect {
+  key: "vendor_supply" | "mission_board" | "civic_services";
+  label: string;
+  state: CityMudConsumerState;
+  severity: number;
+  headline: string;
+  detail: string;
+  recommendedAction: string;
+}
+
+export interface CityMudConsumerSummary {
+  vendorSupply: CityMudConsumerEffect;
+  missionBoard: CityMudConsumerEffect;
+  civicServices: CityMudConsumerEffect;
+  advisories: string[];
+}
+
 const RESOURCE_KEYS: Array<keyof Resources> = ["food", "materials", "wealth", "mana", "knowledge", "unity"];
 const RESOURCE_BUFFERS: Resources = {
   food: 120,
@@ -70,6 +89,153 @@ function sumExportableResources(exportable: Partial<Resources>): number {
   return RESOURCE_KEYS.reduce((sum, key) => sum + Number(exportable[key] ?? 0), 0);
 }
 
+function buildConsumerEffect(
+  key: CityMudConsumerEffect["key"],
+  label: string,
+  state: CityMudConsumerState,
+  severity: number,
+  headline: string,
+  detail: string,
+  recommendedAction: string,
+): CityMudConsumerEffect {
+  return {
+    key,
+    label,
+    state,
+    severity: clamp(severity, 0, 100),
+    headline,
+    detail,
+    recommendedAction,
+  };
+}
+
+export function deriveCityMudConsumers(summary: CityMudBridgeSummary): CityMudConsumerSummary {
+  const topHook = summary.hooks[0] ?? null;
+
+  let vendorSupply: CityMudConsumerEffect;
+  if (summary.supportCapacity >= 70 && summary.bridgeBand === "open") {
+    vendorSupply = buildConsumerEffect(
+      "vendor_supply",
+      "Vendor supply",
+      "abundant",
+      Math.max(0, 100 - summary.supportCapacity),
+      "Vendor lanes can lean on city surplus.",
+      `Exportable surplus is healthy (${summary.supportCapacity}/100 support capacity), so restocks and civic support can draw from the city without chewing through emergency reserves.`,
+      "Safe to let vendors and routine civic support consume modest city surplus.",
+    );
+  } else if (summary.supportCapacity >= 50 && summary.bridgeBand === "open") {
+    vendorSupply = buildConsumerEffect(
+      "vendor_supply",
+      "Vendor supply",
+      "stable",
+      45,
+      "Vendor lanes are workable but not free candy.",
+      "There is enough surplus to support some outward flow, but world consumers should avoid assuming infinite abundance.",
+      "Prefer measured restock support instead of aggressive surplus spending.",
+    );
+  } else if (summary.supportCapacity >= 30 && summary.bridgeBand !== "restricted") {
+    vendorSupply = buildConsumerEffect(
+      "vendor_supply",
+      "Vendor supply",
+      "pressured",
+      Math.max(55, summary.bridgeBand === "strained" ? 68 : 58),
+      "Vendor support is under pressure.",
+      "City exports exist, but logistics and civic load are competing with world-facing restock demand.",
+      "Throttle restocks and favor essential stock before comfort goods.",
+    );
+  } else {
+    vendorSupply = buildConsumerEffect(
+      "vendor_supply",
+      "Vendor supply",
+      "restricted",
+      88,
+      "Vendor support should assume scarcity.",
+      "City reserves are too stressed for broad outward support; routine restocks should not count on surplus lanes.",
+      "Treat city surplus as emergency-only until support capacity recovers.",
+    );
+  }
+
+  let missionBoard: CityMudConsumerEffect;
+  if (summary.frontierPressure >= 60 || summary.bridgeBand === "restricted") {
+    missionBoard = buildConsumerEffect(
+      "mission_board",
+      "Mission board",
+      "restricted",
+      Math.max(summary.frontierPressure, 75),
+      "Frontier operations are crowding mission support.",
+      "Field commitments, route danger, or defensive posture are soaking up city logistics, so mission postings should expect harsher support conditions.",
+      "Bias mission generation toward escort, defense, recovery, and scarce-support contracts.",
+    );
+  } else if (summary.frontierPressure >= 35 || summary.logisticsPressure >= 45 || summary.bridgeBand === "strained") {
+    missionBoard = buildConsumerEffect(
+      "mission_board",
+      "Mission board",
+      "pressured",
+      Math.max(summary.frontierPressure, summary.logisticsPressure, summary.bridgeBand === "strained" ? 52 : 0),
+      "Mission support is available with caveats.",
+      "The city can still back outward missions, but only selectively; noisy logistics, civic caution, or field traffic are eating margin.",
+      "Prefer moderate missions and surface warnings about transit risk or support drag.",
+    );
+  } else {
+    missionBoard = buildConsumerEffect(
+      "mission_board",
+      "Mission board",
+      "stable",
+      28,
+      "Mission support lanes are mostly open.",
+      "Field operations are not currently overwhelming the city, so mission boards can behave like normal instead of permanent triage mode.",
+      "Keep mission support baseline and reserve special penalties for real threat spikes.",
+    );
+  }
+
+  let civicServices: CityMudConsumerEffect;
+  if (summary.logisticsPressure >= 65 || summary.stabilityPressure >= 65 || summary.bridgeBand === "restricted") {
+    civicServices = buildConsumerEffect(
+      "civic_services",
+      "Civic services",
+      "restricted",
+      Math.max(summary.logisticsPressure, summary.stabilityPressure, summary.bridgeBand === "restricted" ? 75 : 0),
+      "Permits and civic throughput are choking.",
+      "Public-service drag and civic strain are strong enough that routine services should feel slow, expensive, or both.",
+      "Escalate permit friction, queue warnings, and support-delay messaging.",
+    );
+  } else if (summary.logisticsPressure >= 40 || summary.stabilityPressure >= 40 || summary.bridgeBand === "strained") {
+    civicServices = buildConsumerEffect(
+      "civic_services",
+      "Civic services",
+      "pressured",
+      Math.max(summary.logisticsPressure, summary.stabilityPressure, summary.bridgeBand === "strained" ? 50 : 0),
+      "Civic services are feeling the squeeze.",
+      "Queues, caution, and city stress are noticeable enough that outward systems should surface some public-service drag instead of pretending the bureaucracy is made of elves.",
+      "Show visible civic friction, but keep routine actions viable.",
+    );
+  } else {
+    civicServices = buildConsumerEffect(
+      "civic_services",
+      "Civic services",
+      "stable",
+      22,
+      "Civic services can stay mostly invisible.",
+      "Public lanes are coping fine, so world-facing systems do not need to dramatize permits or queue pain right now.",
+      "Keep civic drag lightweight unless pressure rises.",
+    );
+  }
+
+  const advisories = [
+    vendorSupply.headline,
+    missionBoard.headline,
+    civicServices.headline,
+    topHook ? `${topHook.label}: ${topHook.detail}` : null,
+  ].filter((value): value is string => Boolean(value));
+
+  return {
+    vendorSupply,
+    missionBoard,
+    civicServices,
+    advisories: advisories.slice(0, 4),
+  };
+}
+
 export function summarizeCityMudBridge(ps: PlayerState): CityMudBridgeSummary {
   const infraSummary = summarizePublicInfrastructure(ps);
   const exportableResources = computeExportableResources(ps);
@@ -85,7 +251,7 @@ export function summarizeCityMudBridge(ps: PlayerState): CityMudBridgeSummary {
   const supportCapacity = clamp(
     exportableTotal * 1.25 + Number(ps.city.stats?.infrastructure ?? 0) * 0.35 + Number(ps.city.stats?.prosperity ?? 0) * 0.2 + Number(ps.city.stats?.security ?? 0) * 0.15 - logisticsPressure * 0.35 - frontierPressure * 0.25 - stabilityPressure * 0.25,
     0,
-    100
+    100,
   );
 
   const hooks = [
@@ -158,7 +324,7 @@ export function summarizeCityMudBridge(ps: PlayerState): CityMudBridgeSummary {
   if (supportCapacity < 35 || frontierPressure >= 60 || stabilityPressure >= 65) {
     bridgeBand = "restricted";
     recommendedPosture = "defensive";
-  } else if (supportCapacity < 60 || logisticsPressure >= 45 || frontierPressure >= 35) {
+  } else if (supportCapacity < 60 || logisticsPressure >= 45 || frontierPressure >= 35 || stabilityPressure >= 35) {
     bridgeBand = "strained";
     recommendedPosture = "cautious";
   }
