@@ -5,6 +5,8 @@
 
 import express from "express";
 import { db } from "../../worldcore/db/Database";
+import { deriveCityMudConsumers, deriveVendorEconomyRecommendation, deriveVendorSupportPolicy, summarizeCityMudBridge } from "../domain/cityMudBridge";
+import { resolvePlayerAccess } from "./playerCityAccess";
 
 export const adminVendorEconomyRouter = express.Router();
 
@@ -46,7 +48,20 @@ type VendorEconomyItemRow = {
   restock_amount: number | null;
   price_min_mult: number | null;
   price_max_mult: number | null;
+  bridge_recommendation?: ReturnType<typeof deriveVendorEconomyRecommendation> | null;
 };
+
+async function getBridgeVendorPolicyOrNull(req: express.Request) {
+  const access = await resolvePlayerAccess(req, { requireCity: false });
+  if (access.ok === false) return null;
+  const summary = summarizeCityMudBridge(access.access.playerState);
+  const consumers = deriveCityMudConsumers(summary);
+  return {
+    summary,
+    consumers,
+    vendorPolicy: deriveVendorSupportPolicy(summary, consumers),
+  };
+}
 
 adminVendorEconomyRouter.get("/vendors", async (_req, res) => {
   try {
@@ -109,13 +124,33 @@ adminVendorEconomyRouter.get("/items", async (req, res) => {
       params
     )) as { rows: VendorEconomyItemRow[] };
 
+    const bridge = await getBridgeVendorPolicyOrNull(req);
+    const items = (r.rows ?? []).map((row) => ({
+      ...row,
+      bridge_recommendation: bridge
+        ? deriveVendorEconomyRecommendation(
+            {
+              stockMax: row.stock_max,
+              restockEverySec: row.restock_every_sec,
+              restockAmount: row.restock_amount,
+              priceMinMult: row.price_min_mult,
+              priceMaxMult: row.price_max_mult,
+            },
+            bridge.vendorPolicy,
+          )
+        : null,
+    }));
+
     res.json({
       ok: true,
       vendorId: params[0],
       total,
       limit,
       offset,
-      items: r.rows ?? [],
+      items,
+      bridgeSummary: bridge?.summary ?? null,
+      bridgeConsumers: bridge?.consumers ?? null,
+      vendorPolicy: bridge?.vendorPolicy ?? null,
     });
   } catch (err: any) {
     res.status(500).json({ ok: false, error: err?.message ?? String(err) });

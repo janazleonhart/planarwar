@@ -470,7 +470,8 @@
         "Editable vendor economy knobs (stockMax/restock cadence/price mults) with per-row save + optional stock reset.",
         "Uses ItemPicker for item filtering; displays item name + rarity from API join.",
         "Wrapped in AdminShell for consistent admin layout; internal logic unchanged.",
-        "v0.4 also consumes city\u2194MUD bridge vendorPolicy to preview recommended stock/price/cadence posture while tuning vendor_item_economy rows."
+        "v0.4 also consumes city\u2194MUD bridge vendorPolicy to preview recommended stock/price/cadence posture while tuning vendor_item_economy rows.",
+        "v0.5 stages and applies live bridge recommendations per row or across visible vendor items, turning policy preview into actionable tuning."
       ],
       "owns": [
         "Admin UI for vendor_item_economy"

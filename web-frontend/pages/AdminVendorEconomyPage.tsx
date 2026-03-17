@@ -4,13 +4,24 @@
 // Polished UX: dirty tracking, bulk save, filters, and same-origin API via lib/api.ts.
 
 import { useEffect, useMemo, useState } from "react";
-import { api, fetchCityMudBridgeStatus, getAdminCaps, getAuthToken, type CityMudBridgeStatusResponse } from "../lib/api";
+import { api, fetchCityMudBridgeStatus, getAdminCaps, getAuthToken, type CityMudBridgeStatusResponse, type CityMudVendorSupportPolicy } from "../lib/api";
 import { ItemPicker } from "../components/ItemPicker";
 import { AdminShell } from "../components/admin/AdminUI";
 
 type VendorSummary = {
   id: string;
   name: string | null;
+};
+
+type VendorEconomyRecommendation = {
+  stockMax: number;
+  restockEverySec: number;
+  restockAmount: number;
+  priceMinMult: number;
+  priceMaxMult: number;
+  restockPerHour: number;
+  headline: string;
+  detail: string;
 };
 
 type VendorEconomyItem = {
@@ -31,6 +42,7 @@ type VendorEconomyItem = {
   restock_amount: number | null;
   price_min_mult: number | null;
   price_max_mult: number | null;
+  bridge_recommendation?: VendorEconomyRecommendation | null;
 };
 
 type ItemsResponse = {
@@ -40,6 +52,7 @@ type ItemsResponse = {
   limit: number;
   offset: number;
   items: VendorEconomyItem[];
+  vendorPolicy?: CityMudVendorSupportPolicy | null;
   error?: string;
 };
 
@@ -93,6 +106,16 @@ function baselineForRow(r: VendorEconomyItem): Omit<EditRow, "resetStock"> {
     restockAmount: numStr(r.restock_amount ?? 0),
     priceMinMult: numStr(r.price_min_mult ?? 0.85),
     priceMaxMult: numStr(r.price_max_mult ?? 1.5),
+  };
+}
+
+function recommendationToEdit(rec: VendorEconomyRecommendation): Omit<EditRow, "resetStock"> {
+  return {
+    stockMax: String(rec.stockMax),
+    restockEverySec: String(rec.restockEverySec),
+    restockAmount: String(rec.restockAmount),
+    priceMinMult: String(rec.priceMinMult),
+    priceMaxMult: String(rec.priceMaxMult),
   };
 }
 
@@ -188,6 +211,7 @@ export function AdminVendorEconomyPage() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [bridgeStatus, setBridgeStatus] = useState<CityMudBridgeStatusResponse | null>(null);
+  const [vendorPolicy, setVendorPolicy] = useState<CityMudVendorSupportPolicy | null>(null);
 
   const [nowMs, setNowMs] = useState(() => Date.now());
 
@@ -260,6 +284,7 @@ export function AdminVendorEconomyPage() {
 
       setItems(data.items || []);
       setTotal(Number(data.total || 0));
+      setVendorPolicy(data.vendorPolicy ?? null);
 
       // NOTE: this will reset edits for the page.
       // That’s OK for explicit refresh/paging/vendor change.
@@ -354,6 +379,34 @@ export function AdminVendorEconomyPage() {
       if (!base) return prev;
       return { ...prev, [vendorItemId]: { ...base, ...patch } };
     });
+  }
+
+  function stageBridgeRecommendation(row: VendorEconomyItem) {
+    const recommendation = row.bridge_recommendation;
+    if (!recommendation) return;
+    setEdits((prev) => ({
+      ...prev,
+      [row.vendor_item_id]: {
+        ...recommendationToEdit(recommendation),
+        resetStock: prev[row.vendor_item_id]?.resetStock ?? false,
+      },
+    }));
+  }
+
+  function stageBridgeRecommendationsVisible() {
+    setEdits((prev) => {
+      const next = { ...prev };
+      for (const row of filteredItems) {
+        const recommendation = row.bridge_recommendation;
+        if (!recommendation) continue;
+        next[row.vendor_item_id] = {
+          ...recommendationToEdit(recommendation),
+          resetStock: next[row.vendor_item_id]?.resetStock ?? false,
+        };
+      }
+      return next;
+    });
+    setNotice(`Staged bridge recommendations for ${filteredItems.filter((row) => row.bridge_recommendation).length} visible row(s).`);
   }
 
   async function saveRowInternal(vendorItemId: number): Promise<void> {
@@ -476,7 +529,7 @@ export function AdminVendorEconomyPage() {
       <div style={{ padding: 16, fontFamily: "system-ui, sans-serif" }}>
       <h1 style={{ marginTop: 0 }}>Vendor Economy Config</h1>
 
-      {bridgeStatus?.summary && bridgeStatus.vendorPolicy && (
+      {bridgeStatus?.summary && (vendorPolicy ?? bridgeStatus.vendorPolicy) && (
         <div
           style={{
             marginBottom: 16,
@@ -491,25 +544,25 @@ export function AdminVendorEconomyPage() {
               <div style={{ fontSize: 12, opacity: 0.75, textTransform: "uppercase", letterSpacing: 0.6 }}>
                 Current city bridge posture for vendor tuning
               </div>
-              <div style={{ fontWeight: 700, marginTop: 4 }}>{bridgeStatus.vendorPolicy.headline}</div>
-              <div style={{ opacity: 0.82, marginTop: 6 }}>{bridgeStatus.vendorPolicy.detail}</div>
+              <div style={{ fontWeight: 700, marginTop: 4 }}>{(vendorPolicy ?? bridgeStatus?.vendorPolicy)!.headline}</div>
+              <div style={{ opacity: 0.82, marginTop: 6 }}>{(vendorPolicy ?? bridgeStatus?.vendorPolicy)!.detail}</div>
             </div>
             <div style={{ minWidth: 260 }}>
               <div><b>Band:</b> {bridgeStatus.summary.bridgeBand}</div>
-              <div><b>State:</b> {bridgeStatus.vendorPolicy.state}</div>
-              <div><b>Stock posture:</b> {bridgeStatus.vendorPolicy.stockPosture}</div>
-              <div><b>Price posture:</b> {bridgeStatus.vendorPolicy.pricePosture}</div>
-              <div><b>Cadence posture:</b> {bridgeStatus.vendorPolicy.cadencePosture}</div>
+              <div><b>State:</b> {(vendorPolicy ?? bridgeStatus?.vendorPolicy)!.state}</div>
+              <div><b>Stock posture:</b> {(vendorPolicy ?? bridgeStatus?.vendorPolicy)!.stockPosture}</div>
+              <div><b>Price posture:</b> {(vendorPolicy ?? bridgeStatus?.vendorPolicy)!.pricePosture}</div>
+              <div><b>Cadence posture:</b> {(vendorPolicy ?? bridgeStatus?.vendorPolicy)!.cadencePosture}</div>
             </div>
           </div>
           <div style={{ display: "flex", gap: 16, flexWrap: "wrap", marginTop: 10, fontSize: 13 }}>
-            <span>stock × <b>{bridgeStatus.vendorPolicy.recommendedStockMultiplier.toFixed(2)}</b></span>
-            <span>price min × <b>{bridgeStatus.vendorPolicy.recommendedPriceMinMultiplier.toFixed(2)}</b></span>
-            <span>price max × <b>{bridgeStatus.vendorPolicy.recommendedPriceMaxMultiplier.toFixed(2)}</b></span>
-            <span>cadence × <b>{bridgeStatus.vendorPolicy.recommendedRestockCadenceMultiplier.toFixed(2)}</b></span>
+            <span>stock × <b>{(vendorPolicy ?? bridgeStatus?.vendorPolicy)!.recommendedStockMultiplier.toFixed(2)}</b></span>
+            <span>price min × <b>{(vendorPolicy ?? bridgeStatus?.vendorPolicy)!.recommendedPriceMinMultiplier.toFixed(2)}</b></span>
+            <span>price max × <b>{(vendorPolicy ?? bridgeStatus?.vendorPolicy)!.recommendedPriceMaxMultiplier.toFixed(2)}</b></span>
+            <span>cadence × <b>{(vendorPolicy ?? bridgeStatus?.vendorPolicy)!.recommendedRestockCadenceMultiplier.toFixed(2)}</b></span>
           </div>
           <div style={{ marginTop: 10, fontSize: 13 }}>
-            <b>Recommended action:</b> {bridgeStatus.vendorPolicy.recommendedAction}
+            <b>Recommended action:</b> {(vendorPolicy ?? bridgeStatus?.vendorPolicy)!.recommendedAction}
           </div>
         </div>
       )}
@@ -534,6 +587,10 @@ export function AdminVendorEconomyPage() {
 
         <button onClick={() => loadItems()} disabled={busy || !vendorId}>
           Refresh
+        </button>
+
+        <button onClick={stageBridgeRecommendationsVisible} disabled={busy || !canWrite || filteredItems.every((row) => !row.bridge_recommendation)}>
+          Stage bridge recs
         </button>
 
         <button onClick={saveDirtyVisible} disabled={busy || !canWrite || dirtyCountVisible === 0}>
@@ -641,6 +698,7 @@ export function AdminVendorEconomyPage() {
               <th>restock/hr</th>
               <th>priceMinMult</th>
               <th>priceMaxMult</th>
+              <th>bridge rec</th>
               <th>lastRestock</th>
               <th>resetStock</th>
               <th>save</th>
@@ -763,6 +821,27 @@ export function AdminVendorEconomyPage() {
                     )}
                   </td>
 
+                  <td style={{ minWidth: 220 }}>
+                    {r.bridge_recommendation ? (
+                      <>
+                        <div style={{ fontSize: 12, fontWeight: 600 }}>{r.bridge_recommendation.headline}</div>
+                        <div style={{ fontSize: 11, opacity: 0.8, marginTop: 4 }}>
+                          stock {r.bridge_recommendation.stockMax} · cadence {r.bridge_recommendation.restockEverySec || 0}s/{r.bridge_recommendation.restockAmount || 0} · price {r.bridge_recommendation.priceMinMult.toFixed(2)}–{r.bridge_recommendation.priceMaxMult.toFixed(2)}
+                        </div>
+                        <button
+                          onClick={() => stageBridgeRecommendation(r)}
+                          disabled={busy || !canWrite}
+                          style={{ marginTop: 6 }}
+                          title={r.bridge_recommendation.detail}
+                        >
+                          Use bridge rec
+                        </button>
+                      </>
+                    ) : (
+                      <span style={{ fontSize: 12, opacity: 0.65 }}>No live bridge recommendation.</span>
+                    )}
+                  </td>
+
                   <td style={{ whiteSpace: "nowrap" }}>
                     <div style={{ fontFamily: "monospace", fontSize: 12 }}>
                       {(() => {
@@ -802,7 +881,7 @@ export function AdminVendorEconomyPage() {
 
             {filteredItems.length === 0 && (
               <tr>
-                <td colSpan={14} style={{ padding: 12, opacity: 0.7 }}>
+                <td colSpan={15} style={{ padding: 12, opacity: 0.7 }}>
                   No vendor items match your filters.
                 </td>
               </tr>

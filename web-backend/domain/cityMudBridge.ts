@@ -69,6 +69,17 @@ export interface CityMudVendorSupportPolicy {
   recommendedAction: string;
 }
 
+export interface CityMudVendorEconomyRecommendation {
+  stockMax: number;
+  restockEverySec: number;
+  restockAmount: number;
+  priceMinMult: number;
+  priceMaxMult: number;
+  restockPerHour: number;
+  headline: string;
+  detail: string;
+}
+
 const RESOURCE_KEYS: Array<keyof Resources> = ["food", "materials", "wealth", "mana", "knowledge", "unity"];
 const RESOURCE_BUFFERS: Resources = {
   food: 120,
@@ -81,6 +92,16 @@ const RESOURCE_BUFFERS: Resources = {
 
 function clamp(value: number, min = 0, max = 100): number {
   return Math.max(min, Math.min(max, Math.round(value)));
+}
+
+function clampVendorInt(value: number, min: number, max: number): number {
+  if (!Number.isFinite(value)) return min;
+  return Math.max(min, Math.min(max, Math.round(value)));
+}
+
+function clampVendorNum(value: number, min: number, max: number): number {
+  if (!Number.isFinite(value)) return min;
+  return Math.max(min, Math.min(max, value));
 }
 
 function computeExportableResources(ps: PlayerState): Partial<Resources> {
@@ -432,5 +453,56 @@ export function summarizeCityMudBridge(ps: PlayerState): CityMudBridgeSummary {
     hooks,
     tags,
     note,
+  };
+}
+
+
+export function deriveVendorEconomyRecommendation(
+  base: {
+    stockMax: number | null | undefined;
+    restockEverySec: number | null | undefined;
+    restockAmount: number | null | undefined;
+    priceMinMult: number | null | undefined;
+    priceMaxMult: number | null | undefined;
+  },
+  policy: CityMudVendorSupportPolicy,
+): CityMudVendorEconomyRecommendation {
+  const stockMaxBase = clampVendorInt(Number(base.stockMax ?? 50), 0, 1_000_000);
+  const restockEverySecBase = clampVendorInt(Number(base.restockEverySec ?? 0), 0, 31_536_000);
+  const restockAmountBase = clampVendorInt(Number(base.restockAmount ?? 0), 0, 1_000_000);
+  const priceMinBase = clampVendorNum(Number(base.priceMinMult ?? 0.85), 0.05, 10);
+  const priceMaxBase = clampVendorNum(Number(base.priceMaxMult ?? 1.5), 0.05, 10);
+
+  const stockMax = clampVendorInt(stockMaxBase * policy.recommendedStockMultiplier, 0, 1_000_000);
+  const restockEverySec = restockEverySecBase > 0
+    ? clampVendorInt(restockEverySecBase * policy.recommendedRestockCadenceMultiplier, 0, 31_536_000)
+    : 0;
+  const restockAmount = restockAmountBase > 0
+    ? clampVendorInt(restockAmountBase * policy.recommendedStockMultiplier, 0, 1_000_000)
+    : 0;
+
+  let priceMinMult = clampVendorNum(priceMinBase * policy.recommendedPriceMinMultiplier, 0.05, 10);
+  let priceMaxMult = clampVendorNum(priceMaxBase * policy.recommendedPriceMaxMultiplier, 0.05, 10);
+  if (priceMinMult > priceMaxMult) {
+    const lo = Math.min(priceMinMult, priceMaxMult);
+    const hi = Math.max(priceMinMult, priceMaxMult);
+    priceMinMult = lo;
+    priceMaxMult = hi;
+  }
+
+  const restockPerHour =
+    restockEverySec > 0 && restockAmount > 0
+      ? clampVendorInt(Math.ceil((restockAmount * 3600) / restockEverySec), 0, 1_000_000)
+      : 0;
+
+  return {
+    stockMax,
+    restockEverySec,
+    restockAmount,
+    priceMinMult: Number(priceMinMult.toFixed(3)),
+    priceMaxMult: Number(priceMaxMult.toFixed(3)),
+    restockPerHour,
+    headline: policy.headline,
+    detail: `${policy.detail} ${policy.recommendedAction}`.trim(),
   };
 }
