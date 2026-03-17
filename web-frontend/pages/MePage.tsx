@@ -4,12 +4,14 @@ import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react"
 import {
   api,
   bootstrapCity,
+  fetchCityMudBridgeStatus,
   fetchMe,
   fetchPublicInfrastructureStatus,
   renameCity,
   startTech,
   type AppliedPublicServiceUsage,
   type CityBuilding,
+  type CityMudBridgeStatusResponse,
   type HeroRole,
   type ArmyType,
   type InfrastructureMode,
@@ -102,6 +104,15 @@ function formatLevy(levy: Partial<Resources> | undefined): string {
   return parts.length ? parts.join(", ") : "none";
 }
 
+
+function formatExportableResources(resources: Partial<Resources> | undefined): string {
+  if (!resources) return "none";
+  const parts = Object.entries(resources)
+    .filter(([, amount]) => Number(amount ?? 0) > 0)
+    .map(([key, amount]) => `${key} ${amount}`);
+  return parts.length ? parts.join(", ") : "none";
+}
+
 function formatServiceLabel(service: string): string {
   return service
     .split("_")
@@ -121,6 +132,7 @@ function summarizeUsage(usage: AppliedPublicServiceUsage | null | undefined): st
 export function MePage() {
   const [me, setMe] = useState<MeProfile | null>(null);
   const [infraStatus, setInfraStatus] = useState<PublicInfrastructureStatusResponse | null>(null);
+  const [bridgeStatus, setBridgeStatus] = useState<CityMudBridgeStatusResponse | null>(null);
   const [serviceMode, setServiceMode] = useState<InfrastructureMode>("private_city");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -140,9 +152,10 @@ export function MePage() {
     setLoading(true);
     setError(null);
     try {
-      const [data, infra] = await Promise.all([fetchMe(), fetchPublicInfrastructureStatus(mode)]);
+      const [data, infra, bridge] = await Promise.all([fetchMe(), fetchPublicInfrastructureStatus(mode), fetchCityMudBridgeStatus()]);
       setMe(data);
       setInfraStatus(infra);
+      setBridgeStatus(bridge);
       setCityNameDraft(data.city?.name ?? data.suggestedCityName ?? "");
     } catch (err: any) {
       console.error(err);
@@ -320,6 +333,7 @@ export function MePage() {
   const infraSummary = infraStatus?.summary ?? null;
   const receipts = me?.publicInfrastructure?.receipts ?? [];
   const quoteMap = new Map((infraStatus?.quotes ?? []).map((quote) => [quote.service, quote]));
+  const bridgeSummary = bridgeStatus?.summary ?? null;
 
   if (loading && !me) return <p>Loading /api/me…</p>;
 
@@ -472,6 +486,42 @@ export function MePage() {
             </div>
           )}
         </div>
+      </div>
+
+
+      <div style={cardStyle()}>
+        <h3 style={{ marginTop: 0 }}>City ↔ MUD Economic Bridge</h3>
+        {bridgeSummary ? (
+          <>
+            <div>
+              <strong>Band:</strong> {bridgeSummary.bridgeBand} • <strong>Posture:</strong> {bridgeSummary.recommendedPosture} • <strong>Support capacity:</strong> {bridgeSummary.supportCapacity}
+            </div>
+            <div>
+              <strong>Logistics pressure:</strong> {bridgeSummary.logisticsPressure} • <strong>Frontier pressure:</strong> {bridgeSummary.frontierPressure} • <strong>Stability pressure:</strong> {bridgeSummary.stabilityPressure}
+            </div>
+            <div>
+              <strong>Exportable surplus:</strong> {formatExportableResources(bridgeSummary.exportableResources)}
+            </div>
+            <div style={{ fontSize: 13, opacity: 0.85 }}>{bridgeSummary.note}</div>
+
+            <div style={{ display: "grid", gap: 6 }}>
+              <strong>Bridge hooks for future world/MUD consumers</strong>
+              <div style={{ display: "grid", gap: 6 }}>
+                {bridgeSummary.hooks.map((hook) => (
+                  <div key={hook.key} style={{ border: "1px solid #555", borderRadius: 8, padding: 10 }}>
+                    <div>
+                      <strong>{hook.label}</strong> • score {hook.score} • direction {hook.direction}
+                    </div>
+                    <div style={{ fontSize: 12, opacity: 0.8 }}>{hook.detail}</div>
+                    <div style={{ fontSize: 12, opacity: 0.72 }}>MUD effect: {hook.mudEffect}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </>
+        ) : (
+          <div style={{ opacity: 0.7 }}>No city-to-world bridge snapshot yet.</div>
+        )}
       </div>
 
       <div style={cardStyle()}>

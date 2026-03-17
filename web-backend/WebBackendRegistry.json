@@ -11,6 +11,29 @@
   "registryVersion": "1.0",
   "root": "web-backend",
   "services": {
+    "web-backend.bootstrap.env": {
+      "class": null,
+      "ctorArgs": [],
+      "dependsOn": [
+        "npm:dotenv",
+        "node:fs",
+        "node:path"
+      ],
+      "kind": "module",
+      "lifecycle": "singleton",
+      "notes": [
+        "Loads .env/.env.local by searching upward from cwd and __dirname.",
+        "Bridges PW_DB_* variables into standard DATABASE_URL/PW_DATABASE_URL and PG* process env fields."
+      ],
+      "owns": [
+        "process.env bootstrap for web-backend"
+      ],
+      "path": "web-backend/bootstrap/env.ts",
+      "provides": [
+        "bootstrapWebBackendEnv()"
+      ],
+      "service": "bootstrap.env"
+    },
     "web-backend.config.cityTier": {
       "class": null,
       "ctorArgs": [],
@@ -288,6 +311,31 @@
       ],
       "service": "domain.city"
     },
+    "web-backend.domain.cityMudBridge": {
+      "class": null,
+      "ctorArgs": [],
+      "dependsOn": [
+        "web-backend.gameState",
+        "web-backend.domain.city",
+        "web-backend.domain.publicInfrastructure"
+      ],
+      "kind": "module",
+      "lifecycle": "singleton",
+      "notes": [
+        "Derives a city-to-world/MUD economic bridge snapshot from city surplus, frontier pressure, civic stress, and public infrastructure drag.",
+        "Intended as an auditable export seam so later MUD/world services can consume city-side support signals without coupling directly to city-builder route internals.",
+        "v0.1 exposes exportableResources plus hook descriptors for vendor supply, caravan risk, mission support, recruitment pressure, and public service drag."
+      ],
+      "owns": [
+        "City \u2194 MUD bridge summary heuristics"
+      ],
+      "path": "web-backend/domain/cityMudBridge.ts",
+      "provides": [
+        "summarizeCityMudBridge(ps)",
+        "City \u2194 MUD bridge summary (supportCapacity, pressures, exportableResources, hooks, posture)"
+      ],
+      "service": "city.cityMudBridge"
+    },
     "web-backend.domain.heroes": {
       "class": null,
       "ctorArgs": [],
@@ -324,6 +372,37 @@
         "types: MissionOffer, RewardBundle, MissionDifficulty"
       ],
       "service": "domain.missions"
+    },
+    "web-backend.domain.publicInfrastructure": {
+      "class": null,
+      "ctorArgs": [],
+      "dependsOn": [
+        "web-backend.gameState"
+      ],
+      "kind": "module",
+      "lifecycle": "singleton",
+      "notes": [
+        "Computes public-service levy/queue quotes, permit tiers, service heat, receipts, and summary recommendations for private_city vs npc_public lanes.",
+        "Used by city-builder routes to turn NPC public infrastructure into a visible pressure system instead of hidden backend math.",
+        "v0.3 adds structured pressure inputs (civic instability, regional threat, queue backlog, service heat, mission load) and exposes them through summaries/quotes for world-aware public service pricing."
+      ],
+      "owns": [
+        "Public infrastructure quote/summary heuristics"
+      ],
+      "path": "web-backend/domain/publicInfrastructure.ts",
+      "provides": [
+        "createInitialPublicInfrastructureState(nowIso?)",
+        "ensurePublicInfrastructureState(ps)",
+        "deriveCivicPermitTier(ps)",
+        "summarizePublicInfrastructure(ps)",
+        "quotePublicServiceUsage(ps, service, baseCosts, mode)",
+        "recordPublicServiceReceipt(ps, quote, now?)",
+        "decayPublicInfrastructureHeat(ps, now?)",
+        "derivePublicPressureSources(ps)",
+        "pressure-aware summarizePublicInfrastructure(ps)",
+        "pressure-aware quotePublicServiceUsage(ps, service, costs, mode)"
+      ],
+      "service": "city.publicInfrastructure"
     },
     "web-backend.domain.resources": {
       "class": null,
@@ -490,6 +569,199 @@
       ],
       "service": "demo.gameState"
     },
+    "web-backend.gameState.gameStateArmies": {
+      "kind": "module",
+      "service": "demo.gameState.armies",
+      "path": "web-backend/gameState/gameStateArmies.ts",
+      "class": null,
+      "lifecycle": "singleton",
+      "ctorArgs": [],
+      "dependsOn": [
+        "web-backend.domain.armies"
+      ],
+      "provides": [
+        "raiseArmyForPlayer(deps, playerId, type, now)",
+        "reinforceArmyForPlayer(deps, playerId, armyId, now)"
+      ],
+      "owns": [
+        "Army raising and reinforcement orchestration for the in-memory city-builder state"
+      ],
+      "notes": [
+        "Extracted from web-backend/gameState.ts to isolate army recruitment and reinforcement flows behind injected game-state dependencies while preserving the public gameState API."
+      ]
+    },
+    "web-backend.gameState.gameStateCityDevelopment": {
+      "kind": "module",
+      "service": "demo.gameState.cityDevelopment",
+      "path": "web-backend/gameState/gameStateCityDevelopment.ts",
+      "class": null,
+      "lifecycle": "singleton",
+      "ctorArgs": [],
+      "dependsOn": [
+        "web-backend.domain.tech"
+      ],
+      "provides": [
+        "buildBuildingForPlayer(deps, playerId, kind, now)",
+        "upgradeBuildingForPlayer(deps, playerId, buildingId, now)",
+        "startResearchForPlayer(deps, playerId, techId, now)"
+      ],
+      "owns": [
+        "Building construction/upgrades and research-start orchestration for the in-memory city-builder state"
+      ],
+      "notes": [
+        "Extracted from web-backend/gameState.ts to isolate city development actions behind injected game-state dependencies while preserving the public gameState API."
+      ]
+    },
+    "web-backend.gameState.gameStateCityProgression": {
+      "service": "demo.gameState.cityProgression",
+      "kind": "module",
+      "path": "web-backend/gameState/gameStateCityProgression.ts",
+      "class": null,
+      "lifecycle": "singleton",
+      "ctorArgs": [],
+      "dependsOn": [
+        "web-backend.config.cityTier"
+      ],
+      "provides": [
+        "tierUpCityForPlayer(...)",
+        "morphCityForPlayer(...)"
+      ],
+      "owns": [
+        "city tier-up cost/eligibility logic",
+        "city specialization morph/prestige progression"
+      ],
+      "notes": [
+        "Extracted from web-backend.gameState to keep city progression rules isolated while preserving the public gameState API."
+      ]
+    },
+    "web-backend.gameState.gameStateCore": {
+      "kind": "service",
+      "service": "web-backend",
+      "path": "web-backend/gameState/gameStateCore.ts",
+      "lifecycle": "singleton-helper",
+      "dependsOn": [
+        "web-backend.config",
+        "web-backend.domain.world",
+        "web-backend.domain.city",
+        "web-backend.domain.heroes",
+        "web-backend.domain.armies",
+        "web-backend.gameState"
+      ],
+      "provides": [
+        "createInitialGameState",
+        "createInitialPlayerState",
+        "getOrCreatePlayerState",
+        "pushEvent",
+        "seedRegionWar"
+      ],
+      "owns": [
+        "gameState singleton bootstrap defaults",
+        "per-player state initialization",
+        "event log append and trim behavior",
+        "initial region war seeding"
+      ],
+      "notes": [
+        "Shared helper for in-memory gameState bootstrap and player-state creation.",
+        "Keeps gameState.ts focused on public exports and delegation seams rather than initialization plumbing."
+      ]
+    },
+    "web-backend.gameState.gameStateEconomy": {
+      "kind": "module",
+      "service": "demo.gameState.economy",
+      "path": "web-backend/gameState/gameStateEconomy.ts",
+      "class": null,
+      "lifecycle": "singleton",
+      "ctorArgs": [],
+      "dependsOn": [
+        "web-backend.domain.city",
+        "web-backend.domain.resources",
+        "web-backend.domain.tech",
+        "web-backend.domain.world"
+      ],
+      "provides": [
+        "tickPlayerState(deps, ps, now)"
+      ],
+      "owns": [
+        "Passive ticking, resource progression, research completion, warfront drift, and city-stress recomputation for the in-memory city-builder state"
+      ],
+      "notes": [
+        "Extracted from web-backend/gameState.ts to isolate passive economy/time progression behind injected game-state dependencies while preserving the public gameState API."
+      ]
+    },
+    "web-backend.gameState.gameStateHeroes": {
+      "kind": "module",
+      "service": "demo.gameState.heroes",
+      "path": "web-backend/gameState/gameStateHeroes.ts",
+      "class": null,
+      "lifecycle": "singleton",
+      "ctorArgs": [],
+      "dependsOn": [
+        "web-backend.domain.heroes"
+      ],
+      "provides": [
+        "equipHeroAttachmentForPlayer(deps, playerId, heroId, kind, now)",
+        "startWorkshopJobForPlayer(deps, playerId, kind, now)",
+        "completeWorkshopJobForPlayer(deps, playerId, jobId, now)",
+        "recruitHeroForPlayer(deps, playerId, role, now)"
+      ],
+      "owns": [
+        "Hero recruitment, hero attachment equipment, and workshop crafting orchestration for the in-memory city-builder state"
+      ],
+      "notes": [
+        "Extracted from web-backend/gameState.ts to isolate hero/workshop flows behind injected game-state dependencies while preserving the public gameState API."
+      ]
+    },
+    "web-backend.gameState.gameStateMissions": {
+      "kind": "module",
+      "service": "demo.gameState.missions",
+      "path": "web-backend/gameState/gameStateMissions.ts",
+      "class": null,
+      "lifecycle": "singleton",
+      "ctorArgs": [],
+      "dependsOn": [
+        "web-backend.domain.missions",
+        "web-backend.domain.world",
+        "web-backend.config.demo"
+      ],
+      "provides": [
+        "startMissionForPlayer(deps, playerId, missionId, now)",
+        "regenerateRegionMissionsForPlayer(deps, playerId, targetRegionId, now)",
+        "startWarfrontAssaultForPlayer(deps, playerId, regionId, now)",
+        "startGarrisonStrikeForPlayer(deps, playerId, regionId, now)",
+        "completeMissionForPlayer(deps, playerId, instanceId, now)"
+      ],
+      "owns": [
+        "Mission offer orchestration and mission completion flow for the in-memory city-builder state"
+      ],
+      "notes": [
+        "Extracted from web-backend/gameState.ts to keep mission/warfront/garrison orchestration isolated behind injected game-state dependencies."
+      ]
+    },
+    "web-backend.gameState.gameStateProduction": {
+      "kind": "module",
+      "service": "demo.gameState.production",
+      "path": "web-backend/gameState/gameStateProduction.ts",
+      "class": null,
+      "lifecycle": "singleton",
+      "ctorArgs": [],
+      "dependsOn": [
+        "web-backend.config.cityTier",
+        "web-backend.domain.city",
+        "web-backend.domain.resources"
+      ],
+      "provides": [
+        "getOrInitResourceTier(ps, key)",
+        "applySpecializationToProduction(city, base)",
+        "applyResourceTiersToProduction(ps, base)"
+      ],
+      "owns": [
+        "City specialization production scaling",
+        "Resource-tier initialization and production scaling for the in-memory city-builder state"
+      ],
+      "notes": [
+        "Extracted from web-backend/gameState.ts to isolate specialization and resource-tier production modifiers behind a dedicated helper module while preserving the public gameState API."
+      ]
+    },
     "web-backend.infra.postgres": {
       "class": "(helper) Postgres config + pool",
       "ctorArgs": [],
@@ -512,22 +784,6 @@
         "createPgPool()"
       ],
       "service": "infra.db"
-    },
-    "web-backend.package": {
-      "class": null,
-      "ctorArgs": [],
-      "dependsOn": [],
-      "kind": "data",
-      "lifecycle": "static",
-      "notes": [
-        "Entry: dist/index.js. Scripts: dev/build/start."
-      ],
-      "owns": [],
-      "path": "web-backend/package.json",
-      "provides": [
-        "npm package metadata + scripts"
-      ],
-      "service": "package.meta"
     },
     "web-backend.middleware.adminAuth": {
       "class": null,
@@ -557,6 +813,22 @@
       ],
       "service": "http.middleware"
     },
+    "web-backend.package": {
+      "class": null,
+      "ctorArgs": [],
+      "dependsOn": [],
+      "kind": "data",
+      "lifecycle": "static",
+      "notes": [
+        "Entry: dist/index.js. Scripts: dev/build/start."
+      ],
+      "owns": [],
+      "path": "web-backend/package.json",
+      "provides": [
+        "npm package metadata + scripts"
+      ],
+      "service": "package.meta"
+    },
     "web-backend.routes.abilities": {
       "class": "(router)",
       "ctorArgs": [],
@@ -580,6 +852,26 @@
         "GET /api/abilities?ids=\u2026 -> { ok, abilities: AbilityMeta[] }"
       ],
       "service": "api.abilities"
+    },
+    "web-backend.routes.admin-heartbeats": {
+      "class": null,
+      "ctorArgs": [],
+      "dependsOn": [
+        "npm:express",
+        "worldcore.db.Database"
+      ],
+      "kind": "module",
+      "lifecycle": "singleton",
+      "notes": [
+        "Admin endpoint returning rows from public.service_heartbeats.",
+        "Tolerates missing/outdated table (returns ok:true, heartbeats:[], warning:...)."
+      ],
+      "owns": [],
+      "path": "web-backend/routes/adminHeartbeats.ts",
+      "provides": [
+        "GET /api/admin/heartbeats"
+      ],
+      "service": "web-backend.routes"
     },
     "web-backend.routes.adminAbilities": {
       "class": null,
@@ -649,6 +941,102 @@
       ],
       "service": "http.adminRoutes"
     },
+    "web-backend.routes.adminMotherBrain": {
+      "class": null,
+      "ctorArgs": [],
+      "dependsOn": [
+        "express",
+        "worldcore/db/Database.ts",
+        "infra.schema.079_service_heartbeats",
+        "web-backend.routes.adminMotherBrain.motherBrainProxy",
+        "web-backend.routes.adminMotherBrain.motherBrainReports",
+        "web-backend.routes.adminMotherBrain.motherBrainShared"
+      ],
+      "kind": "module",
+      "lifecycle": "singleton",
+      "notes": [
+        "Admin route for Mother Brain status, wave budget controls, goal proxy endpoints, and JSONL report tail viewing.",
+        "Mounted at /api/admin/mother_brain (see web-backend/index.ts).",
+        "Delegates HTTP proxy, report-tail file IO, and shared parsing helpers to focused route helper modules."
+      ],
+      "owns": [],
+      "path": "web-backend/routes/adminMotherBrain.ts",
+      "provides": [
+        "GET /api/admin/mother_brain/status",
+        "GET /api/admin/mother_brain/wave_budget",
+        "POST /api/admin/mother_brain/wave_budget",
+        "DELETE /api/admin/mother_brain/wave_budget/:shardId/:type",
+        "GET /api/admin/mother_brain/goals/report_tail",
+        "GET /api/admin/mother_brain/goals_proxy_info",
+        "GET /api/admin/mother_brain/goals",
+        "POST /api/admin/mother_brain/goals/run",
+        "POST /api/admin/mother_brain/goals/clear",
+        "POST /api/admin/mother_brain/goals/set"
+      ],
+      "service": "web-backend.routes"
+    },
+    "web-backend.routes.adminMotherBrain.motherBrainProxy": {
+      "class": null,
+      "ctorArgs": [],
+      "dependsOn": [
+        "node:process",
+        "global.fetch"
+      ],
+      "kind": "module",
+      "lifecycle": "singleton",
+      "notes": [
+        "Resolves Mother Brain HTTP base URL from PW_MOTHER_BRAIN_HTTP_URL or MOTHER_BRAIN_HTTP_HOST/MOTHER_BRAIN_HTTP_PORT.",
+        "Provides a small proxy wrapper with timeout, JSON parsing, and normalized error envelopes for admin route forwarding."
+      ],
+      "owns": [],
+      "path": "web-backend/routes/adminMotherBrain/motherBrainProxy.ts",
+      "provides": [
+        "motherBrainHttpBase()",
+        "proxyMotherBrain(method, routePath, body?)"
+      ],
+      "service": "web-backend.routes"
+    },
+    "web-backend.routes.adminMotherBrain.motherBrainReports": {
+      "class": null,
+      "ctorArgs": [],
+      "dependsOn": [
+        "node:fs/promises",
+        "node:path",
+        "web-backend.routes.adminMotherBrain.motherBrainShared"
+      ],
+      "kind": "module",
+      "lifecycle": "singleton",
+      "notes": [
+        "Resolves the Mother Brain goals report directory from PW_MOTHER_BRAIN_GOALS_REPORT_DIR or PW_FILELOG.",
+        "Validates suite ids and reads date-based JSONL goal reports for admin tail viewing."
+      ],
+      "owns": [],
+      "path": "web-backend/routes/adminMotherBrain/motherBrainReports.ts",
+      "provides": [
+        "motherBrainGoalsReportDir()",
+        "safeSuiteId(value)",
+        "readGoalsReportTail(args)"
+      ],
+      "service": "web-backend.routes"
+    },
+    "web-backend.routes.adminMotherBrain.motherBrainShared": {
+      "class": null,
+      "ctorArgs": [],
+      "dependsOn": [],
+      "kind": "module",
+      "lifecycle": "singleton",
+      "notes": [
+        "Shared low-level parsing helpers for adminMotherBrain route helpers.",
+        "Keeps integer coercion and Postgres error-code extraction consistent across route modules."
+      ],
+      "owns": [],
+      "path": "web-backend/routes/adminMotherBrain/motherBrainShared.ts",
+      "provides": [
+        "pgErrCode(err)",
+        "toInt(value)"
+      ],
+      "service": "web-backend.routes"
+    },
     "web-backend.routes.adminNpcs": {
       "class": null,
       "ctorArgs": [],
@@ -702,6 +1090,75 @@
       "provides": [
         "GET /api/admin/quests",
         "POST /api/admin/quests"
+      ],
+      "service": "http.adminRoutes"
+    },
+    "web-backend.routes.adminQuests.adminQuestList": {
+      "class": null,
+      "ctorArgs": [],
+      "dependsOn": [
+        "worldcore:db/Database",
+        "worldcore:quests/PostgresQuestService",
+        "web-backend.routes.adminQuests.adminQuestTypes"
+      ],
+      "kind": "module",
+      "lifecycle": "singleton",
+      "notes": [
+        "Maps quest definitions into admin payload shape and performs best-effort item/spell/ability label hydration for editor GET responses."
+      ],
+      "owns": [
+        "Admin quest list payload mapping",
+        "Admin quest reward/objective label hydration helpers"
+      ],
+      "path": "web-backend/routes/adminQuests/adminQuestList.ts",
+      "provides": [
+        "listAdminQuests(questService)"
+      ],
+      "service": "http.adminRoutes"
+    },
+    "web-backend.routes.adminQuests.adminQuestTypes": {
+      "class": null,
+      "ctorArgs": [],
+      "dependsOn": [],
+      "kind": "module",
+      "lifecycle": "singleton",
+      "notes": [
+        "Shared admin quest editor payload and normalized upsert types used by route/list/upsert helpers."
+      ],
+      "owns": [
+        "Admin quest payload type definitions"
+      ],
+      "path": "web-backend/routes/adminQuests/adminQuestTypes.ts",
+      "provides": [
+        "AdminQuestPayload type",
+        "NormalizedAdminQuestUpsert type"
+      ],
+      "service": "http.adminRoutes"
+    },
+    "web-backend.routes.adminQuests.adminQuestUpsert": {
+      "class": null,
+      "ctorArgs": [],
+      "dependsOn": [
+        "worldcore:db/Database",
+        "worldcore:quests/PostgresQuestService",
+        "worldcore:quests/QuestRegistry",
+        "web-backend.routes.adminQuests.adminQuestTypes"
+      ],
+      "kind": "module",
+      "lifecycle": "singleton",
+      "notes": [
+        "Normalizes incoming admin quest payloads, performs best-effort DB validation, writes objective/reward rows, and reloads QuestRegistry in-process."
+      ],
+      "owns": [
+        "Admin quest payload normalization",
+        "Admin quest upsert validation",
+        "Admin quest DB write choreography"
+      ],
+      "path": "web-backend/routes/adminQuests/adminQuestUpsert.ts",
+      "provides": [
+        "normalizeAdminQuestPayload(body)",
+        "validateAdminQuestUpsert(input)",
+        "upsertAdminQuest(input, questService)"
       ],
       "service": "http.adminRoutes"
     },
@@ -819,6 +1276,670 @@
       ],
       "service": "http.adminRoutes"
     },
+    "web-backend.routes.adminSpawnPoints.bulkMutationOps": {
+      "class": null,
+      "ctorArgs": [],
+      "dependsOn": [
+        "worldcore.db.Database",
+        "web-backend.routes.adminSpawnPoints"
+      ],
+      "kind": "module",
+      "lifecycle": "static",
+      "notes": [
+        "Shared bulk delete and bulk move mutation helpers extracted from adminSpawnPoints.ts.",
+        "Encapsulates editable-row filtering, delete application, and coordinate offset updates.",
+        "Behavior-preserving extraction for boundary cleanup slice 2k."
+      ],
+      "owns": [
+        "Bulk delete editable-row filtering",
+        "Bulk move editable-row filtering and offset mutation"
+      ],
+      "path": "web-backend/routes/adminSpawnPoints/bulkMutationOps.ts",
+      "provides": [
+        "deleteEditableSpawnPoints(args)",
+        "moveEditableSpawnPoints(args)"
+      ],
+      "service": "admin.spawn_points"
+    },
+    "web-backend.routes.adminSpawnPoints.bulkOwnershipOps": {
+      "class": null,
+      "ctorArgs": [],
+      "dependsOn": [
+        "worldcore.db.Database",
+        "web-backend.routes.adminSpawnPoints"
+      ],
+      "kind": "module",
+      "lifecycle": "static",
+      "notes": [
+        "Shared bulk ownership query/apply helpers extracted from adminSpawnPoints.ts.",
+        "Encapsulates query filter -> WHERE building, preview planning, confirm-token scope calculation, and apply mutation SQL.",
+        "Behavior-preserving extraction for boundary cleanup slice 2l."
+      ],
+      "owns": [
+        "Bulk ownership query filter planning",
+        "Bulk ownership preview and apply helpers"
+      ],
+      "path": "web-backend/routes/adminSpawnPoints/bulkOwnershipOps.ts",
+      "provides": [
+        "buildWhereFromQueryFilters(args)",
+        "planBulkOwnershipAction(args)",
+        "applyBulkOwnershipAction(args)"
+      ],
+      "service": "admin.spawn_points"
+    },
+    "web-backend.routes.adminSpawnPoints.cloneScatterOps": {
+      "class": null,
+      "ctorArgs": [],
+      "dependsOn": [
+        "worldcore.db.Database",
+        "web-backend.routes.adminSpawnPoints"
+      ],
+      "kind": "module",
+      "lifecycle": "static",
+      "notes": [
+        "Holds clone/scatter placement helpers extracted from adminSpawnPoints.ts.",
+        "Owns spacing sampling, nearby-point lookup, spawn id creation, and clone/scatter DB insert loops."
+      ],
+      "owns": [],
+      "path": "web-backend/routes/adminSpawnPoints/cloneScatterOps.ts",
+      "provides": [
+        "cloneSpawnPoints()",
+        "scatterSpawnPoints()",
+        "finiteOr()",
+        "clamp()",
+        "normalizeSeedBase()"
+      ],
+      "service": "admin.spawn_points"
+    },
+    "web-backend.routes.adminSpawnPoints.motherBrainBoxQuery": {
+      "service": "admin.spawn_points",
+      "kind": "module",
+      "path": "web-backend/routes/adminSpawnPoints/motherBrainBoxQuery.ts",
+      "class": null,
+      "lifecycle": "static",
+      "ctorArgs": [],
+      "dependsOn": [
+        "web-backend.routes.adminSpawnPoints.opsPreview"
+      ],
+      "provides": [
+        "queryMotherBrainBoxRows(dbLike, args)",
+        "queryMotherBrainBoxIds(dbLike, args)",
+        "normalizeMotherBrainBoxRow(row)"
+      ],
+      "owns": [
+        "Shared Mother Brain boxed spawn_points query preload helpers and normalized row coercion"
+      ],
+      "notes": [
+        "Behavior-preserving shared Mother Brain preload helper extraction from adminSpawnPoints.ts.",
+        "Encapsulates boxed spawn_points query reuse for status, wave, and wipe flows plus normalized row shaping.",
+        "Boundary cleanup slice 2z."
+      ]
+    },
+    "web-backend.routes.adminSpawnPoints.motherBrainOps": {
+      "class": null,
+      "ctorArgs": [],
+      "dependsOn": [
+        "web-backend.routes.adminSpawnPoints.opsPreview"
+      ],
+      "kind": "module",
+      "lifecycle": "singleton",
+      "notes": [
+        "Shared Mother Brain wave/wipe preview shaping helpers for admin spawn point routes.",
+        "Encapsulates ops preview construction, protected-row preview tagging, and wipe list-row shaping.",
+        "Behavior-preserving extraction for boundary cleanup slice 2c."
+      ],
+      "owns": [],
+      "path": "web-backend/routes/adminSpawnPoints/motherBrainOps.ts",
+      "provides": [
+        "buildMotherBrainWaveOpsPreview()",
+        "buildMotherBrainWipeOpsPreview()",
+        "applyProtectedPreviewRows()",
+        "buildWipeListRows()"
+      ],
+      "service": "spawnPoints.motherBrainOps"
+    },
+    "web-backend.routes.adminSpawnPoints.motherBrainResponses": {
+      "class": null,
+      "ctorArgs": [],
+      "dependsOn": [
+        "web-backend.routes.adminSpawnPoints.opsPreview"
+      ],
+      "kind": "module",
+      "lifecycle": "static",
+      "notes": [
+        "Shared Mother Brain wave/wipe response shaping helpers extracted from adminSpawnPoints.ts.",
+        "Encapsulates wave confirm-required payloads, wave success/dry-run payloads, wipe success/dry-run payloads, and wipe internal-error response shaping.",
+        "Behavior-preserving extraction for boundary cleanup slice 2v."
+      ],
+      "owns": [
+        "Mother Brain wave/wipe response payload builders"
+      ],
+      "path": "web-backend/routes/adminSpawnPoints/motherBrainResponses.ts",
+      "provides": [
+        "buildMotherBrainWaveConfirmRequiredResponse(args)",
+        "buildMotherBrainWaveResponse(args)",
+        "buildMotherBrainWipeResponse(args)",
+        "buildMotherBrainWipeInternalError(args)"
+      ],
+      "service": "admin.spawn_points"
+    },
+    "web-backend.routes.adminSpawnPoints.motherBrainStatusOps": {
+      "class": null,
+      "ctorArgs": [],
+      "dependsOn": [
+        "web-backend.routes.adminSpawnPoints.opsPreview"
+      ],
+      "kind": "module",
+      "lifecycle": "static",
+      "notes": [
+        "Mother Brain status request parsing and response-shaping helpers extracted from adminSpawnPoints.ts.",
+        "Encapsulates bounds/list/theme/epoch normalization plus filtered status summary/list payload construction.",
+        "Behavior-preserving extraction for boundary cleanup slice 2s."
+      ],
+      "owns": [
+        "Mother Brain status request normalization",
+        "Mother Brain status summary and list shaping"
+      ],
+      "path": "web-backend/routes/adminSpawnPoints/motherBrainStatusOps.ts",
+      "provides": [
+        "parseMotherBrainStatusRequest(query)",
+        "buildMotherBrainStatusResponse(args)"
+      ],
+      "service": "admin.spawn_points"
+    },
+    "web-backend.routes.adminSpawnPoints.motherBrainStatusQuery": {
+      "service": "admin.spawn_points",
+      "kind": "module",
+      "path": "web-backend/routes/adminSpawnPoints/motherBrainStatusQuery.ts",
+      "class": null,
+      "lifecycle": "static",
+      "ctorArgs": [],
+      "dependsOn": [],
+      "provides": [
+        "queryMotherBrainStatusRows(dbLike, args)"
+      ],
+      "owns": [
+        "Mother Brain status boxed query and status-row normalization"
+      ],
+      "notes": [
+        "Behavior-preserving Mother Brain status helper extraction from adminSpawnPoints.ts.",
+        "Encapsulates boxed spawn_points query for brain:% rows and normalized status row shaping.",
+        "Boundary cleanup slice 2y."
+      ]
+    },
+    "web-backend.routes.adminSpawnPoints.motherBrainWaveApply": {
+      "service": "admin.spawn_points",
+      "kind": "module",
+      "path": "web-backend/routes/adminSpawnPoints/motherBrainWaveApply.ts",
+      "class": null,
+      "lifecycle": "static",
+      "ctorArgs": [],
+      "dependsOn": [],
+      "provides": [
+        "buildEffectiveExistingSpawnIds(args)",
+        "applyMotherBrainWaveMutations(args)"
+      ],
+      "owns": [
+        "Mother Brain wave replace-mode effective-existing-set adjustment and commit-time delete/update/insert loop"
+      ],
+      "notes": [
+        "Behavior-preserving Mother Brain wave helper extraction from adminSpawnPoints.ts.",
+        "Encapsulates replace-mode existing spawn_id adjustment and commit-time delete/update/insert loop for planned wave actions.",
+        "Boundary cleanup slice 2w."
+      ]
+    },
+    "web-backend.routes.adminSpawnPoints.motherBrainWaveRequestOps": {
+      "class": null,
+      "ctorArgs": [],
+      "dependsOn": [
+        "web-backend.routes.adminSpawnPoints.opsPreview"
+      ],
+      "kind": "module",
+      "lifecycle": "static",
+      "notes": [
+        "Mother Brain wave request parsing and budget normalization helpers extracted from adminSpawnPoints.ts.",
+        "Encapsulates bounds/cell-size/border-margin/place-inset normalization plus safe budget cap handling.",
+        "Behavior-preserving extraction for boundary cleanup slice 2t."
+      ],
+      "owns": [
+        "Mother Brain wave request normalization",
+        "Mother Brain wave budget cap normalization"
+      ],
+      "path": "web-backend/routes/adminSpawnPoints/motherBrainWaveRequestOps.ts",
+      "provides": [
+        "parseMotherBrainWaveRequest(body)",
+        "normalizeMotherBrainWaveBudget(budget)",
+        "capBudgetOrNull(value, fallback)"
+      ],
+      "service": "admin.spawn_points"
+    },
+    "web-backend.routes.adminSpawnPoints.motherBrainWipeApply": {
+      "class": null,
+      "ctorArgs": [],
+      "dependsOn": [],
+      "kind": "module",
+      "lifecycle": "static",
+      "notes": [
+        "Behavior-preserving Mother Brain wipe helper extraction from adminSpawnPoints.ts.",
+        "Encapsulates wipe row-to-spawn map construction and commit-time delete application for selected ids.",
+        "Boundary cleanup slice 2x."
+      ],
+      "owns": [
+        "Mother Brain wipe spawn-row map construction and commit-time delete helper"
+      ],
+      "path": "web-backend/routes/adminSpawnPoints/motherBrainWipeApply.ts",
+      "provides": [
+        "buildMotherBrainWipeSpawnMap(rows)",
+        "applyMotherBrainWipeDelete(args)"
+      ],
+      "service": "admin.spawn_points"
+    },
+    "web-backend.routes.adminSpawnPoints.motherBrainWipeRequestOps": {
+      "kind": "module",
+      "service": "web-backend",
+      "path": "web-backend/routes/adminSpawnPoints/motherBrainWipeRequestOps.ts",
+      "description": "Parses Mother Brain wipe requests and builds confirm/bad-bounds response payload helpers for admin spawn point wipe routes.",
+      "dependsOn": [
+        "web-backend.routes.adminSpawnPoints.opsPreview",
+        "web-backend.routes.adminSpawnPoints.restoreRequestOps"
+      ],
+      "provides": [
+        "parseMotherBrainWipeRequest",
+        "buildMotherBrainWipeBadBoundsResponse",
+        "buildMotherBrainWipeConfirmToken",
+        "buildMotherBrainWipeConfirmRequiredResponse"
+      ],
+      "owns": [
+        "mother brain wipe request normalization",
+        "wipe confirm token shaping",
+        "wipe 400/409 payload construction"
+      ]
+    },
+    "web-backend.routes.adminSpawnPoints.opsPreview": {
+      "class": null,
+      "ctorArgs": [],
+      "dependsOn": [
+        "web-backend.routes.adminSpawnPoints.snapshotStore"
+      ],
+      "kind": "module",
+      "lifecycle": "singleton",
+      "notes": [
+        "Shared ops-preview, explainability, and response helper types for admin spawn point routes.",
+        "Encapsulates spawn/town-baseline preview shaping plus Mother Brain bounds parsing helpers.",
+        "Behavior-preserving extraction for boundary cleanup slice 2b."
+      ],
+      "owns": [],
+      "path": "web-backend/routes/adminSpawnPoints/opsPreview.ts",
+      "provides": [
+        "summarizePlannedSpawns()",
+        "buildSpawnSliceOpsPreview()",
+        "buildTownBaselineOpsPreview()",
+        "parseCellBounds()",
+        "toWorldBox()",
+        "reason/explainability helper types + builders"
+      ],
+      "service": "spawnPoints.opsPreview"
+    },
+    "web-backend.routes.adminSpawnPoints.protoCatalogOps": {
+      "class": null,
+      "ctorArgs": [],
+      "dependsOn": [
+        "node:fs",
+        "node:path",
+        "worldcore.db.Database",
+        "worldcore.world.TownTierRules"
+      ],
+      "kind": "module",
+      "lifecycle": "static",
+      "notes": [
+        "Proto-options catalog helpers extracted from adminSpawnPoints.ts.",
+        "Encapsulates resources-dir resolution, JSON proto-id discovery, station tier proto aggregation, item label decoration, and response payload shaping for /proto_options.",
+        "Behavior-preserving extraction for boundary cleanup slice 2n."
+      ],
+      "owns": [
+        "Proto options payload shaping",
+        "Resource/station proto catalog discovery helpers"
+      ],
+      "path": "web-backend/routes/adminSpawnPoints/protoCatalogOps.ts",
+      "provides": [
+        "loadProtoOptionsPayload(args)"
+      ],
+      "service": "admin.spawn_points"
+    },
+    "web-backend.routes.adminSpawnPoints.restoreRequestOps": {
+      "class": null,
+      "ctorArgs": [],
+      "dependsOn": [
+        "node:crypto",
+        "web-backend.routes.adminSpawnPoints.snapshotStore",
+        "web-backend.routes.adminSpawnPoints.opsPreview"
+      ],
+      "kind": "module",
+      "lifecycle": "static",
+      "notes": [
+        "Parses restore request payloads and centralizes restore confirm-token / confirm-phrase requirements.",
+        "Builds the 409 confirm_required / confirm_phrase_required response bodies for admin spawn-point restore flows."
+      ],
+      "owns": [],
+      "path": "web-backend/routes/adminSpawnPoints/restoreRequestOps.ts",
+      "provides": [
+        "parseRestoreRequest()",
+        "buildRestoreConfirmRequirements()",
+        "buildRestoreConfirmPhraseError()",
+        "buildRestoreConfirmTokenError()"
+      ],
+      "service": "admin.spawnPoints.restoreRequestOps"
+    },
+    "web-backend.routes.adminSpawnPoints.restoreSnapshot": {
+      "class": null,
+      "ctorArgs": [],
+      "dependsOn": [
+        "worldcore:db/Database",
+        "worldcore:world/spawnAuthority",
+        "web-backend.routes.adminSpawnPoints.opsPreview",
+        "web-backend.routes.adminSpawnPoints.snapshotStore"
+      ],
+      "kind": "module",
+      "lifecycle": "singleton",
+      "notes": [
+        "Boundary cleanup slice 2f extracted snapshot restore preload, diff preview, plan building, and apply mutation helpers here so adminSpawnPoints.ts can stay focused on request validation and response assembly."
+      ],
+      "owns": [],
+      "path": "web-backend/routes/adminSpawnPoints/restoreSnapshot.ts",
+      "provides": [
+        "restore snapshot preload helpers",
+        "restore snapshot opsPreview planning",
+        "restore snapshot apply mutation loop"
+      ],
+      "service": "http.adminRoutes"
+    },
+    "web-backend.routes.adminSpawnPoints.singleOwnershipOps": {
+      "class": null,
+      "ctorArgs": [],
+      "dependsOn": [
+        "worldcore.db.Database",
+        "web-backend.routes.adminSpawnPoints"
+      ],
+      "kind": "module",
+      "lifecycle": "static",
+      "notes": [
+        "Shared single-row ownership/adopt/release/lock/unlock helpers extracted from adminSpawnPoints.ts.",
+        "Encapsulates row lookup, default owner-kind fallback for release, and single-row ownership/lock mutation SQL.",
+        "Behavior-preserving extraction for boundary cleanup slice 2m."
+      ],
+      "owns": [
+        "Single-row ownership lookup helpers",
+        "Single-row adopt/release/lock/unlock mutation helpers"
+      ],
+      "path": "web-backend/routes/adminSpawnPoints/singleOwnershipOps.ts",
+      "provides": [
+        "readSpawnPointRowById(id)",
+        "computeDefaultOwnerKindForSpawnId(spawnId)",
+        "applySingleOwnershipAction(args)"
+      ],
+      "service": "admin.spawn_points"
+    },
+    "web-backend.routes.adminSpawnPoints.snapshotCaptureOps": {
+      "class": null,
+      "ctorArgs": [],
+      "dependsOn": [
+        "npm:pg",
+        "web-backend.routes.adminSpawnPoints.snapshotStore",
+        "web-backend.routes.adminSpawnPoints.opsPreview"
+      ],
+      "kind": "module",
+      "lifecycle": "static",
+      "notes": [
+        "Shared DB-backed spawn snapshot capture and stored snapshot document assembly helpers for admin spawn snapshot routes.",
+        "Encapsulates rectangular snapshot capture against spawn_points plus stored snapshot doc construction for save/save_query flows.",
+        "Behavior-preserving extraction for boundary cleanup slice 2q."
+      ],
+      "owns": [
+        "Snapshot capture query helper",
+        "Stored snapshot document assembly helper"
+      ],
+      "path": "web-backend/routes/adminSpawnPoints/snapshotCaptureOps.ts",
+      "provides": [
+        "computeSpawnSliceSnapshot(args)",
+        "buildStoredSnapshotDoc(args)"
+      ],
+      "service": "admin.spawnPoints.snapshotCaptureOps"
+    },
+    "web-backend.routes.adminSpawnPoints.snapshotDeleteOps": {
+      "class": null,
+      "ctorArgs": [],
+      "dependsOn": [
+        "node:crypto",
+        "node:fs",
+        "node:path",
+        "web-backend.routes.adminSpawnPoints.snapshotStore"
+      ],
+      "kind": "module",
+      "lifecycle": "static",
+      "notes": [
+        "Shared snapshot delete, bulk-delete, and purge planning/apply helpers for admin spawn snapshot routes.",
+        "Encapsulates confirm-token generation, candidate selection from current disk metadata, and file delete loops.",
+        "Behavior-preserving extraction for boundary cleanup slice 2h."
+      ],
+      "owns": [
+        "Snapshot delete confirm-token helpers",
+        "Snapshot bulk-delete preview/commit planning helpers",
+        "Snapshot purge preview/commit planning helpers"
+      ],
+      "path": "web-backend/routes/adminSpawnPoints/snapshotDeleteOps.ts",
+      "provides": [
+        "prepareSnapshotDeleteConfirm(id)",
+        "deleteSnapshotFile(id)",
+        "buildSnapshotBulkDeletePlan(args)",
+        "buildSnapshotPurgePlan(args)",
+        "deleteSnapshotFiles(ids)"
+      ],
+      "service": "admin.spawnPoints.snapshotDeleteOps"
+    },
+    "web-backend.routes.adminSpawnPoints.snapshotQueryFilters": {
+      "class": null,
+      "ctorArgs": [],
+      "dependsOn": [
+        "web-backend.routes.adminSpawnPoints.bulkOwnershipOps",
+        "web-backend.routes.adminSpawnPoints.snapshotStore"
+      ],
+      "kind": "module",
+      "lifecycle": "static",
+      "notes": [
+        "Shared spawn-point query filter parsing and SQL builder helpers for list/snapshot_query/save_query admin routes.",
+        "Encapsulates filter normalization, WHERE-clause reuse, list SQL construction, and snapshot row loading/count checks.",
+        "Behavior-preserving extraction for boundary cleanup slice 2o."
+      ],
+      "owns": [
+        "Spawn-point query filter normalization helpers",
+        "Shared list/snapshot query SQL builders"
+      ],
+      "path": "web-backend/routes/adminSpawnPoints/snapshotQueryFilters.ts",
+      "provides": [
+        "parseSpawnPointQueryFilters(source, helpers)",
+        "buildSpawnPointWhere(args)",
+        "buildSpawnPointListQuery(args)",
+        "loadSnapshotRowsByQuery(args)"
+      ],
+      "service": "admin.spawn_points"
+    },
+    "web-backend.routes.adminSpawnPoints.snapshotRequestParsers": {
+      "class": null,
+      "ctorArgs": [],
+      "dependsOn": [
+        "web-backend.routes.adminSpawnPoints.snapshotStore",
+        "web-backend.routes.adminSpawnPoints.snapshotQueryFilters"
+      ],
+      "kind": "module",
+      "lifecycle": "static",
+      "notes": [
+        "Parses shared snapshot capture/query/save/list request payloads for admin spawn-point routes.",
+        "Centralizes cellSize/pad clamping, query max-row cap, and stored snapshot list filter normalization."
+      ],
+      "owns": [],
+      "path": "web-backend/routes/adminSpawnPoints/snapshotRequestParsers.ts",
+      "provides": [
+        "parseSnapshotCaptureRequest()",
+        "parseSnapshotQueryRequest()",
+        "parseSnapshotSaveQueryRequest()",
+        "parseStoredSnapshotListRequest()",
+        "SNAPSHOT_QUERY_MAX_ROWS"
+      ],
+      "service": "admin.spawnPoints.snapshotRequestParsers"
+    },
+    "web-backend.routes.adminSpawnPoints.snapshotResponses": {
+      "class": null,
+      "ctorArgs": [],
+      "dependsOn": [
+        "node:buffer",
+        "node:fs",
+        "node:path",
+        "web-backend.routes.adminSpawnPoints.snapshotStore"
+      ],
+      "kind": "module",
+      "lifecycle": "static",
+      "notes": [
+        "Shared snapshot query/save/list/update response shaping helpers for admin spawn snapshot workflows.",
+        "Keeps route-level HTTP handlers thinner without changing endpoint behavior."
+      ],
+      "owns": [
+        "Snapshot response shaping helpers",
+        "Snapshot list filter/sort helpers",
+        "Snapshot metadata write helper"
+      ],
+      "path": "web-backend/routes/adminSpawnPoints/snapshotResponses.ts",
+      "provides": [
+        "buildSnapshotFromQuery(args)",
+        "makeSnapshotQueryFilename(args)",
+        "saveStoredSnapshotDoc(doc)",
+        "filterAndSortSnapshots(args)",
+        "buildUpdatedSnapshotDoc(args)"
+      ],
+      "service": "admin.spawnPoints.snapshotResponses"
+    },
+    "web-backend.routes.adminSpawnPoints.snapshotRetention": {
+      "class": null,
+      "ctorArgs": [],
+      "dependsOn": [
+        "node:fs",
+        "node:path",
+        "web-backend.routes.adminSpawnPoints.snapshotStore"
+      ],
+      "kind": "module",
+      "lifecycle": "singleton",
+      "notes": [
+        "Encapsulates spawn snapshot retention status, scheduled purge/dry-run configuration, and deletion job execution.",
+        "Scheduler configuration is driven by PW_SPAWN_SNAPSHOT_RETENTION_* environment variables.",
+        "Retains in-memory last-run status for the admin retention_status endpoint."
+      ],
+      "owns": [
+        "in-process snapshot retention timer",
+        "last retention run status cache"
+      ],
+      "path": "web-backend/routes/adminSpawnPoints/snapshotRetention.ts",
+      "provides": [
+        "startSpawnSnapshotsRetentionScheduler()",
+        "runSpawnSnapshotsRetentionJob(opts)",
+        "getSpawnSnapshotsRetentionStatus()"
+      ],
+      "service": "spawnSnapshots.retention"
+    },
+    "web-backend.routes.adminSpawnPoints.snapshotStore": {
+      "class": null,
+      "ctorArgs": [],
+      "dependsOn": [
+        "node:buffer",
+        "node:crypto",
+        "node:fs",
+        "node:path"
+      ],
+      "kind": "module",
+      "lifecycle": "singleton",
+      "notes": [
+        "Shared snapshot storage helpers for admin spawn point routes.",
+        "Owns JSON snapshot file naming, metadata extraction, listing, and coercion/parsing utilities.",
+        "Storage root defaults to data/spawn_snapshots and may be overridden by PLANARWAR_SPAWN_SNAPSHOT_DIR."
+      ],
+      "owns": [
+        "server-side stored spawn snapshot documents"
+      ],
+      "path": "web-backend/routes/adminSpawnPoints/snapshotStore.ts",
+      "provides": [
+        "ensureSnapshotDir()",
+        "listStoredSnapshots()",
+        "readStoredSnapshotById(id)",
+        "allocateSnapshotIdUnique(name, shardId, bounds, types)",
+        "snapshot metadata + normalization helpers"
+      ],
+      "service": "spawnSnapshots.storage"
+    },
+    "web-backend.routes.adminSpawnPoints.snapshotWriteOps": {
+      "class": null,
+      "ctorArgs": [],
+      "dependsOn": [
+        "node:buffer",
+        "node:fs",
+        "node:path",
+        "web-backend.routes.adminSpawnPoints.snapshotStore",
+        "web-backend.routes.adminSpawnPoints.snapshotResponses"
+      ],
+      "kind": "module",
+      "lifecycle": "static",
+      "notes": [
+        "Shared snapshot update and duplicate write-path helpers for admin spawn snapshot routes.",
+        "Encapsulates metadata normalization, file writes, and returned stored snapshot meta shaping.",
+        "Behavior-preserving extraction for boundary cleanup slice 2i."
+      ],
+      "owns": [
+        "Snapshot update write helpers",
+        "Snapshot duplicate write helpers"
+      ],
+      "path": "web-backend/routes/adminSpawnPoints/snapshotWriteOps.ts",
+      "provides": [
+        "updateStoredSnapshotFromBody(args)",
+        "duplicateStoredSnapshotFromBody(args)"
+      ],
+      "service": "admin.spawnPoints.snapshotWriteOps"
+    },
+    "web-backend.routes.adminSpawnPoints.townBaselineApply": {
+      "class": null,
+      "ctorArgs": [],
+      "dependsOn": [
+        "worldcore:db/Database"
+      ],
+      "kind": "module",
+      "lifecycle": "static",
+      "notes": [
+        "Applies town baseline planner results inside a transaction and returns inserted/updated/skipped counters.",
+        "Boundary cleanup slice 2e extracted the apply mutation loop here so adminSpawnPoints.ts can focus on request validation and response assembly."
+      ],
+      "owns": [],
+      "path": "web-backend/routes/adminSpawnPoints/townBaselineApply.ts",
+      "provides": [
+        "applyTownBaselinePlan({ plan, isSpawnEditable })"
+      ],
+      "service": "admin.spawn_points"
+    },
+    "web-backend.routes.adminSpawnPoints.townBaselineResponses": {
+      "class": null,
+      "ctorArgs": [],
+      "dependsOn": [
+        "web-backend.routes.adminSpawnPoints.opsPreview"
+      ],
+      "kind": "module",
+      "lifecycle": "static",
+      "notes": [
+        "Builds consistent success/error response payloads for the town baseline plan/apply admin routes.",
+        "Boundary cleanup slice 2d extracted town baseline response shaping here to keep adminSpawnPoints.ts focused on request validation and DB mutation flow."
+      ],
+      "owns": [],
+      "path": "web-backend/routes/adminSpawnPoints/townBaselineResponses.ts",
+      "provides": [
+        "buildTownBaselineSuccessResponse(...)",
+        "buildTownBaselineErrorResponse(...)"
+      ],
+      "service": "admin.spawn_points"
+    },
     "web-backend.routes.adminSpells": {
       "path": "web-backend/routes/adminSpells.ts",
       "class": "(router) adminSpellsRouter",
@@ -830,6 +1951,27 @@
       ],
       "notes": "Admin Spell Editor (v1) routes: list/search, get by id, upsert",
       "kind": "module"
+    },
+    "web-backend.routes.adminTestFixtures": {
+      "class": null,
+      "ctorArgs": [],
+      "dependsOn": [
+        "express"
+      ],
+      "kind": "module",
+      "lifecycle": "singleton",
+      "notes": [
+        "Admin-safe test-fixture endpoints for deterministic smoke tests.",
+        "Must not mutate persistent world state.",
+        "Mounted at /api/admin/test_fixtures (see web-backend/index.ts)."
+      ],
+      "owns": [],
+      "path": "web-backend/routes/adminTestFixtures.ts",
+      "provides": [
+        "GET /api/admin/test_fixtures/ping",
+        "POST /api/admin/test_fixtures/ping"
+      ],
+      "service": "web-backend.routes"
     },
     "web-backend.routes.adminVendorAudit": {
       "class": null,
@@ -1002,6 +2144,27 @@
       ],
       "service": "http.routes"
     },
+    "web-backend.routes.cityMudBridge": {
+      "class": null,
+      "ctorArgs": [],
+      "dependsOn": [
+        "npm:express",
+        "web-backend.domain.cityMudBridge",
+        "web-backend.routes.playerCityAccess"
+      ],
+      "kind": "module",
+      "lifecycle": "singleton",
+      "notes": [
+        "City-builder endpoint that exposes the current city-to-world/MUD bridge snapshot as derived runtime truth.",
+        "Used by the frontend to preview whether city surplus, danger, or civic strain should make future world-facing systems feel supportive, cautious, or defensive."
+      ],
+      "owns": [],
+      "path": "web-backend/routes/cityMudBridge.ts",
+      "provides": [
+        "GET /api/city_mud_bridge/status"
+      ],
+      "service": "http.routes"
+    },
     "web-backend.routes.garrisons": {
       "class": null,
       "ctorArgs": [],
@@ -1022,6 +2185,27 @@
         "POST /api/garrisons/strike"
       ],
       "service": "http.routes"
+    },
+    "web-backend.routes.health": {
+      "class": null,
+      "ctorArgs": [],
+      "dependsOn": [
+        "npm:express",
+        "node:process"
+      ],
+      "kind": "module",
+      "lifecycle": "singleton",
+      "notes": [
+        "Legacy registry alias for lightweight liveness/readiness endpoints now hosted in web-backend/server/healthRoutes.ts.",
+        "healthz is always 200 if process is alive; readyz is 200 when DB env is configured, otherwise 503."
+      ],
+      "owns": [],
+      "path": "web-backend/server/healthRoutes.ts",
+      "provides": [
+        "GET /api/healthz",
+        "GET /api/readyz"
+      ],
+      "service": "web-backend.routes"
     },
     "web-backend.routes.heroes": {
       "class": null,
@@ -1120,6 +2304,30 @@
       ],
       "service": "http.routes"
     },
+    "web-backend.routes.playerCityAccess": {
+      "kind": "ts_module",
+      "service": "routes.playerCityAccess",
+      "path": "web-backend/routes/playerCityAccess.ts",
+      "dependsOn": [
+        "worldcore.auth.PostgresAuthService",
+        "worldcore.db.Database",
+        "web-backend.gameState"
+      ],
+      "provides": [
+        "resolveViewer(req)",
+        "resolvePlayerAccess(req, opts?)",
+        "createCityForViewer(viewer, args)",
+        "renameCityForViewer(viewer, nextName)",
+        "persistPlayerStateForCity(access)",
+        "suggestCityName(displayName)",
+        "validateCityName(input)",
+        "withPlayerAccessMutation(req, mutate, opts?)"
+      ],
+      "notes": [
+        "Owns authenticated CityBuilder account-to-city resolution, city name validation, and v1 runtime snapshot persistence through public.cities.meta.",
+        "Adds a centralized mutation wrapper so city routes resolve access, run mutations, and persist snapshots through one hardened save boundary."
+      ]
+    },
     "web-backend.routes.policies": {
       "class": null,
       "ctorArgs": [],
@@ -1141,6 +2349,53 @@
         "POST /api/policies/toggle"
       ],
       "service": "http.routes"
+    },
+    "web-backend.routes.publicInfrastructure": {
+      "class": null,
+      "ctorArgs": [],
+      "dependsOn": [
+        "npm:express",
+        "web-backend.domain.publicInfrastructure",
+        "web-backend.routes.playerCityAccess"
+      ],
+      "kind": "module",
+      "lifecycle": "singleton",
+      "notes": [
+        "City-builder endpoint that exposes current public infrastructure state, summary recommendations, and per-service quotes for the selected service mode.",
+        "Status route now returns pressureSources alongside summary/quotes so frontend UI can display why NPC public lanes are expensive or delayed."
+      ],
+      "owns": [],
+      "path": "web-backend/routes/publicInfrastructure.ts",
+      "provides": [
+        "GET /api/public_infrastructure/status",
+        "GET /api/public_infrastructure/status (state + summary + quotes + pressureSources)"
+      ],
+      "service": "http.routes"
+    },
+    "web-backend.routes.publicInfrastructureSupport": {
+      "class": null,
+      "ctorArgs": [],
+      "dependsOn": [
+        "web-backend.domain.publicInfrastructure",
+        "web-backend.gameState.cityRuntimeSnapshot"
+      ],
+      "kind": "module",
+      "lifecycle": "singleton",
+      "notes": [
+        "Shared support helpers for public infrastructure consequences, including levy application, event logging, queue metadata, and rollback-safe mutation wrapping.",
+        "Infrastructure event messages now include structured pressure-input summaries so route receipts explain why NPC public service costs shifted."
+      ],
+      "owns": [],
+      "path": "web-backend/routes/publicInfrastructureSupport.ts",
+      "provides": [
+        "cloneResources(resources)",
+        "diffSpentResources(before, after)",
+        "applyPublicInfrastructureUsage(ps, service, mode, baseCosts, now?)",
+        "withInfrastructureRollback(ps, action, verify)",
+        "pressure-aware applyPublicInfrastructureUsage(...)",
+        "pressure-aware infrastructure event log messages"
+      ],
+      "service": "routes.publicInfrastructureSupport"
     },
     "web-backend.routes.resources": {
       "class": null,
@@ -1256,125 +2511,6 @@
       ],
       "service": "http.routes"
     },
-    "web-backend.routes.adminMotherBrain": {
-      "class": null,
-      "ctorArgs": [],
-      "dependsOn": [
-        "express",
-        "worldcore/db/Database.ts",
-        "infra.schema.079_service_heartbeats",
-        "web-backend.routes.adminMotherBrain.motherBrainProxy",
-        "web-backend.routes.adminMotherBrain.motherBrainReports",
-        "web-backend.routes.adminMotherBrain.motherBrainShared"
-      ],
-      "kind": "module",
-      "lifecycle": "singleton",
-      "notes": [
-        "Admin route for Mother Brain status, wave budget controls, goal proxy endpoints, and JSONL report tail viewing.",
-        "Mounted at /api/admin/mother_brain (see web-backend/index.ts).",
-        "Delegates HTTP proxy, report-tail file IO, and shared parsing helpers to focused route helper modules."
-      ],
-      "owns": [],
-      "path": "web-backend/routes/adminMotherBrain.ts",
-      "provides": [
-        "GET /api/admin/mother_brain/status",
-        "GET /api/admin/mother_brain/wave_budget",
-        "POST /api/admin/mother_brain/wave_budget",
-        "DELETE /api/admin/mother_brain/wave_budget/:shardId/:type",
-        "GET /api/admin/mother_brain/goals/report_tail",
-        "GET /api/admin/mother_brain/goals_proxy_info",
-        "GET /api/admin/mother_brain/goals",
-        "POST /api/admin/mother_brain/goals/run",
-        "POST /api/admin/mother_brain/goals/clear",
-        "POST /api/admin/mother_brain/goals/set"
-      ],
-      "service": "web-backend.routes"
-    },
-    "web-backend.routes.adminTestFixtures": {
-      "class": null,
-      "ctorArgs": [],
-      "dependsOn": [
-        "express"
-      ],
-      "kind": "module",
-      "lifecycle": "singleton",
-      "notes": [
-        "Admin-safe test-fixture endpoints for deterministic smoke tests.",
-        "Must not mutate persistent world state.",
-        "Mounted at /api/admin/test_fixtures (see web-backend/index.ts)."
-      ],
-      "owns": [],
-      "path": "web-backend/routes/adminTestFixtures.ts",
-      "provides": [
-        "GET /api/admin/test_fixtures/ping",
-        "POST /api/admin/test_fixtures/ping"
-      ],
-      "service": "web-backend.routes"
-    },
-    "web-backend.routes.health": {
-      "class": null,
-      "ctorArgs": [],
-      "dependsOn": [
-        "npm:express",
-        "node:process"
-      ],
-      "kind": "module",
-      "lifecycle": "singleton",
-      "notes": [
-        "Legacy registry alias for lightweight liveness/readiness endpoints now hosted in web-backend/server/healthRoutes.ts.",
-        "healthz is always 200 if process is alive; readyz is 200 when DB env is configured, otherwise 503."
-      ],
-      "owns": [],
-      "path": "web-backend/server/healthRoutes.ts",
-      "provides": [
-        "GET /api/healthz",
-        "GET /api/readyz"
-      ],
-      "service": "web-backend.routes"
-    },
-    "web-backend.routes.admin-heartbeats": {
-      "class": null,
-      "ctorArgs": [],
-      "dependsOn": [
-        "npm:express",
-        "worldcore.db.Database"
-      ],
-      "kind": "module",
-      "lifecycle": "singleton",
-      "notes": [
-        "Admin endpoint returning rows from public.service_heartbeats.",
-        "Tolerates missing/outdated table (returns ok:true, heartbeats:[], warning:...)."
-      ],
-      "owns": [],
-      "path": "web-backend/routes/adminHeartbeats.ts",
-      "provides": [
-        "GET /api/admin/heartbeats"
-      ],
-      "service": "web-backend.routes"
-    },
-    "web-backend.bootstrap.env": {
-      "class": null,
-      "ctorArgs": [],
-      "dependsOn": [
-        "npm:dotenv",
-        "node:fs",
-        "node:path"
-      ],
-      "kind": "module",
-      "lifecycle": "singleton",
-      "notes": [
-        "Loads .env/.env.local by searching upward from cwd and __dirname.",
-        "Bridges PW_DB_* variables into standard DATABASE_URL/PW_DATABASE_URL and PG* process env fields."
-      ],
-      "owns": [
-        "process.env bootstrap for web-backend"
-      ],
-      "path": "web-backend/bootstrap/env.ts",
-      "provides": [
-        "bootstrapWebBackendEnv()"
-      ],
-      "service": "bootstrap.env"
-    },
     "web-backend.server.healthRoutes": {
       "class": null,
       "ctorArgs": [],
@@ -1397,6 +2533,28 @@
         "GET /api/readyz"
       ],
       "service": "http.health"
+    },
+    "web-backend.server.heartbeat": {
+      "class": null,
+      "ctorArgs": [],
+      "dependsOn": [
+        "node:process",
+        "worldcore.db.Database"
+      ],
+      "kind": "module",
+      "lifecycle": "singleton",
+      "notes": [
+        "Writes coarse service heartbeat rows into public.service_heartbeats for ops visibility.",
+        "Best-effort writer: DB failures are logged and never crash the HTTP server."
+      ],
+      "owns": [
+        "web-backend heartbeat interval"
+      ],
+      "path": "web-backend/server/heartbeat.ts",
+      "provides": [
+        "startServiceHeartbeat({ port })"
+      ],
+      "service": "ops.heartbeat"
     },
     "web-backend.server.routeGroups": {
       "class": null,
@@ -1433,14 +2591,16 @@
         "web-backend.routes.adminVendorEconomy",
         "web-backend.routes.adminMotherBrain",
         "web-backend.routes.admin-heartbeats",
-        "web-backend.routes.adminTestFixtures"
+        "web-backend.routes.adminTestFixtures",
+        "web-backend.routes.cityMudBridge"
       ],
       "kind": "module",
       "lifecycle": "singleton",
       "notes": [
         "Groups route mounting by boundary: player/demo, catalog metadata, and admin surfaces.",
         "Behavior-preserving extraction from web-backend/index.ts to reduce entrypoint coupling.",
-        "Mounts /api/public_infrastructure status quotes for city-builder service-mode previews."
+        "Mounts /api/public_infrastructure status quotes for city-builder service-mode previews.",
+        "mountPlayerAndDemoRoutes() now mounts /api/city_mud_bridge for city-to-world economic bridge snapshots."
       ],
       "owns": [],
       "path": "web-backend/server/routeGroups.ts",
@@ -1449,1118 +2609,6 @@
         "mountCatalogRoutes(app)",
         "mountAdminRoutes(app)",
         "mountRouteGroups(app)"
-      ],
-      "service": "http.routes"
-    },
-    "web-backend.server.heartbeat": {
-      "class": null,
-      "ctorArgs": [],
-      "dependsOn": [
-        "node:process",
-        "worldcore.db.Database"
-      ],
-      "kind": "module",
-      "lifecycle": "singleton",
-      "notes": [
-        "Writes coarse service heartbeat rows into public.service_heartbeats for ops visibility.",
-        "Best-effort writer: DB failures are logged and never crash the HTTP server."
-      ],
-      "owns": [
-        "web-backend heartbeat interval"
-      ],
-      "path": "web-backend/server/heartbeat.ts",
-      "provides": [
-        "startServiceHeartbeat({ port })"
-      ],
-      "service": "ops.heartbeat"
-    },
-    "web-backend.routes.adminSpawnPoints.townBaselineResponses": {
-      "class": null,
-      "ctorArgs": [],
-      "dependsOn": [
-        "web-backend.routes.adminSpawnPoints.opsPreview"
-      ],
-      "kind": "module",
-      "lifecycle": "static",
-      "notes": [
-        "Builds consistent success/error response payloads for the town baseline plan/apply admin routes.",
-        "Boundary cleanup slice 2d extracted town baseline response shaping here to keep adminSpawnPoints.ts focused on request validation and DB mutation flow."
-      ],
-      "owns": [],
-      "path": "web-backend/routes/adminSpawnPoints/townBaselineResponses.ts",
-      "provides": [
-        "buildTownBaselineSuccessResponse(...)",
-        "buildTownBaselineErrorResponse(...)"
-      ],
-      "service": "admin.spawn_points"
-    },
-    "web-backend.routes.adminSpawnPoints.townBaselineApply": {
-      "class": null,
-      "ctorArgs": [],
-      "dependsOn": [
-        "worldcore:db/Database"
-      ],
-      "kind": "module",
-      "lifecycle": "static",
-      "notes": [
-        "Applies town baseline planner results inside a transaction and returns inserted/updated/skipped counters.",
-        "Boundary cleanup slice 2e extracted the apply mutation loop here so adminSpawnPoints.ts can focus on request validation and response assembly."
-      ],
-      "owns": [],
-      "path": "web-backend/routes/adminSpawnPoints/townBaselineApply.ts",
-      "provides": [
-        "applyTownBaselinePlan({ plan, isSpawnEditable })"
-      ],
-      "service": "admin.spawn_points"
-    },
-    "web-backend.routes.adminSpawnPoints.restoreSnapshot": {
-      "class": null,
-      "ctorArgs": [],
-      "dependsOn": [
-        "worldcore:db/Database",
-        "worldcore:world/spawnAuthority",
-        "web-backend.routes.adminSpawnPoints.opsPreview",
-        "web-backend.routes.adminSpawnPoints.snapshotStore"
-      ],
-      "kind": "module",
-      "lifecycle": "singleton",
-      "notes": [
-        "Boundary cleanup slice 2f extracted snapshot restore preload, diff preview, plan building, and apply mutation helpers here so adminSpawnPoints.ts can stay focused on request validation and response assembly."
-      ],
-      "owns": [],
-      "path": "web-backend/routes/adminSpawnPoints/restoreSnapshot.ts",
-      "provides": [
-        "restore snapshot preload helpers",
-        "restore snapshot opsPreview planning",
-        "restore snapshot apply mutation loop"
-      ],
-      "service": "http.adminRoutes"
-    },
-    "web-backend.routes.adminSpawnPoints.snapshotStore": {
-      "class": null,
-      "ctorArgs": [],
-      "dependsOn": [
-        "node:buffer",
-        "node:crypto",
-        "node:fs",
-        "node:path"
-      ],
-      "kind": "module",
-      "lifecycle": "singleton",
-      "notes": [
-        "Shared snapshot storage helpers for admin spawn point routes.",
-        "Owns JSON snapshot file naming, metadata extraction, listing, and coercion/parsing utilities.",
-        "Storage root defaults to data/spawn_snapshots and may be overridden by PLANARWAR_SPAWN_SNAPSHOT_DIR."
-      ],
-      "owns": [
-        "server-side stored spawn snapshot documents"
-      ],
-      "path": "web-backend/routes/adminSpawnPoints/snapshotStore.ts",
-      "provides": [
-        "ensureSnapshotDir()",
-        "listStoredSnapshots()",
-        "readStoredSnapshotById(id)",
-        "allocateSnapshotIdUnique(name, shardId, bounds, types)",
-        "snapshot metadata + normalization helpers"
-      ],
-      "service": "spawnSnapshots.storage"
-    },
-    "web-backend.routes.adminSpawnPoints.snapshotRetention": {
-      "class": null,
-      "ctorArgs": [],
-      "dependsOn": [
-        "node:fs",
-        "node:path",
-        "web-backend.routes.adminSpawnPoints.snapshotStore"
-      ],
-      "kind": "module",
-      "lifecycle": "singleton",
-      "notes": [
-        "Encapsulates spawn snapshot retention status, scheduled purge/dry-run configuration, and deletion job execution.",
-        "Scheduler configuration is driven by PW_SPAWN_SNAPSHOT_RETENTION_* environment variables.",
-        "Retains in-memory last-run status for the admin retention_status endpoint."
-      ],
-      "owns": [
-        "in-process snapshot retention timer",
-        "last retention run status cache"
-      ],
-      "path": "web-backend/routes/adminSpawnPoints/snapshotRetention.ts",
-      "provides": [
-        "startSpawnSnapshotsRetentionScheduler()",
-        "runSpawnSnapshotsRetentionJob(opts)",
-        "getSpawnSnapshotsRetentionStatus()"
-      ],
-      "service": "spawnSnapshots.retention"
-    },
-    "web-backend.routes.adminSpawnPoints.opsPreview": {
-      "class": null,
-      "ctorArgs": [],
-      "dependsOn": [
-        "web-backend.routes.adminSpawnPoints.snapshotStore"
-      ],
-      "kind": "module",
-      "lifecycle": "singleton",
-      "notes": [
-        "Shared ops-preview, explainability, and response helper types for admin spawn point routes.",
-        "Encapsulates spawn/town-baseline preview shaping plus Mother Brain bounds parsing helpers.",
-        "Behavior-preserving extraction for boundary cleanup slice 2b."
-      ],
-      "owns": [],
-      "path": "web-backend/routes/adminSpawnPoints/opsPreview.ts",
-      "provides": [
-        "summarizePlannedSpawns()",
-        "buildSpawnSliceOpsPreview()",
-        "buildTownBaselineOpsPreview()",
-        "parseCellBounds()",
-        "toWorldBox()",
-        "reason/explainability helper types + builders"
-      ],
-      "service": "spawnPoints.opsPreview"
-    },
-    "web-backend.routes.adminSpawnPoints.motherBrainOps": {
-      "class": null,
-      "ctorArgs": [],
-      "dependsOn": [
-        "web-backend.routes.adminSpawnPoints.opsPreview"
-      ],
-      "kind": "module",
-      "lifecycle": "singleton",
-      "notes": [
-        "Shared Mother Brain wave/wipe preview shaping helpers for admin spawn point routes.",
-        "Encapsulates ops preview construction, protected-row preview tagging, and wipe list-row shaping.",
-        "Behavior-preserving extraction for boundary cleanup slice 2c."
-      ],
-      "owns": [],
-      "path": "web-backend/routes/adminSpawnPoints/motherBrainOps.ts",
-      "provides": [
-        "buildMotherBrainWaveOpsPreview()",
-        "buildMotherBrainWipeOpsPreview()",
-        "applyProtectedPreviewRows()",
-        "buildWipeListRows()"
-      ],
-      "service": "spawnPoints.motherBrainOps"
-    },
-    "web-backend.routes.adminSpawnPoints.snapshotResponses": {
-      "class": null,
-      "ctorArgs": [],
-      "dependsOn": [
-        "node:buffer",
-        "node:fs",
-        "node:path",
-        "web-backend.routes.adminSpawnPoints.snapshotStore"
-      ],
-      "kind": "module",
-      "lifecycle": "static",
-      "notes": [
-        "Shared snapshot query/save/list/update response shaping helpers for admin spawn snapshot workflows.",
-        "Keeps route-level HTTP handlers thinner without changing endpoint behavior."
-      ],
-      "owns": [
-        "Snapshot response shaping helpers",
-        "Snapshot list filter/sort helpers",
-        "Snapshot metadata write helper"
-      ],
-      "path": "web-backend/routes/adminSpawnPoints/snapshotResponses.ts",
-      "provides": [
-        "buildSnapshotFromQuery(args)",
-        "makeSnapshotQueryFilename(args)",
-        "saveStoredSnapshotDoc(doc)",
-        "filterAndSortSnapshots(args)",
-        "buildUpdatedSnapshotDoc(args)"
-      ],
-      "service": "admin.spawnPoints.snapshotResponses"
-    },
-    "web-backend.routes.adminSpawnPoints.snapshotDeleteOps": {
-      "class": null,
-      "ctorArgs": [],
-      "dependsOn": [
-        "node:crypto",
-        "node:fs",
-        "node:path",
-        "web-backend.routes.adminSpawnPoints.snapshotStore"
-      ],
-      "kind": "module",
-      "lifecycle": "static",
-      "notes": [
-        "Shared snapshot delete, bulk-delete, and purge planning/apply helpers for admin spawn snapshot routes.",
-        "Encapsulates confirm-token generation, candidate selection from current disk metadata, and file delete loops.",
-        "Behavior-preserving extraction for boundary cleanup slice 2h."
-      ],
-      "owns": [
-        "Snapshot delete confirm-token helpers",
-        "Snapshot bulk-delete preview/commit planning helpers",
-        "Snapshot purge preview/commit planning helpers"
-      ],
-      "path": "web-backend/routes/adminSpawnPoints/snapshotDeleteOps.ts",
-      "provides": [
-        "prepareSnapshotDeleteConfirm(id)",
-        "deleteSnapshotFile(id)",
-        "buildSnapshotBulkDeletePlan(args)",
-        "buildSnapshotPurgePlan(args)",
-        "deleteSnapshotFiles(ids)"
-      ],
-      "service": "admin.spawnPoints.snapshotDeleteOps"
-    },
-    "web-backend.routes.adminSpawnPoints.snapshotWriteOps": {
-      "class": null,
-      "ctorArgs": [],
-      "dependsOn": [
-        "node:buffer",
-        "node:fs",
-        "node:path",
-        "web-backend.routes.adminSpawnPoints.snapshotStore",
-        "web-backend.routes.adminSpawnPoints.snapshotResponses"
-      ],
-      "kind": "module",
-      "lifecycle": "static",
-      "notes": [
-        "Shared snapshot update and duplicate write-path helpers for admin spawn snapshot routes.",
-        "Encapsulates metadata normalization, file writes, and returned stored snapshot meta shaping.",
-        "Behavior-preserving extraction for boundary cleanup slice 2i."
-      ],
-      "owns": [
-        "Snapshot update write helpers",
-        "Snapshot duplicate write helpers"
-      ],
-      "path": "web-backend/routes/adminSpawnPoints/snapshotWriteOps.ts",
-      "provides": [
-        "updateStoredSnapshotFromBody(args)",
-        "duplicateStoredSnapshotFromBody(args)"
-      ],
-      "service": "admin.spawnPoints.snapshotWriteOps"
-    },
-    "web-backend.routes.adminSpawnPoints.cloneScatterOps": {
-      "class": null,
-      "ctorArgs": [],
-      "dependsOn": [
-        "worldcore.db.Database",
-        "web-backend.routes.adminSpawnPoints"
-      ],
-      "kind": "module",
-      "lifecycle": "static",
-      "notes": [
-        "Holds clone/scatter placement helpers extracted from adminSpawnPoints.ts.",
-        "Owns spacing sampling, nearby-point lookup, spawn id creation, and clone/scatter DB insert loops."
-      ],
-      "owns": [],
-      "path": "web-backend/routes/adminSpawnPoints/cloneScatterOps.ts",
-      "provides": [
-        "cloneSpawnPoints()",
-        "scatterSpawnPoints()",
-        "finiteOr()",
-        "clamp()",
-        "normalizeSeedBase()"
-      ],
-      "service": "admin.spawn_points"
-    },
-    "web-backend.routes.adminSpawnPoints.bulkMutationOps": {
-      "class": null,
-      "ctorArgs": [],
-      "dependsOn": [
-        "worldcore.db.Database",
-        "web-backend.routes.adminSpawnPoints"
-      ],
-      "kind": "module",
-      "lifecycle": "static",
-      "notes": [
-        "Shared bulk delete and bulk move mutation helpers extracted from adminSpawnPoints.ts.",
-        "Encapsulates editable-row filtering, delete application, and coordinate offset updates.",
-        "Behavior-preserving extraction for boundary cleanup slice 2k."
-      ],
-      "owns": [
-        "Bulk delete editable-row filtering",
-        "Bulk move editable-row filtering and offset mutation"
-      ],
-      "path": "web-backend/routes/adminSpawnPoints/bulkMutationOps.ts",
-      "provides": [
-        "deleteEditableSpawnPoints(args)",
-        "moveEditableSpawnPoints(args)"
-      ],
-      "service": "admin.spawn_points"
-    },
-    "web-backend.routes.adminSpawnPoints.bulkOwnershipOps": {
-      "class": null,
-      "ctorArgs": [],
-      "dependsOn": [
-        "worldcore.db.Database",
-        "web-backend.routes.adminSpawnPoints"
-      ],
-      "kind": "module",
-      "lifecycle": "static",
-      "notes": [
-        "Shared bulk ownership query/apply helpers extracted from adminSpawnPoints.ts.",
-        "Encapsulates query filter -> WHERE building, preview planning, confirm-token scope calculation, and apply mutation SQL.",
-        "Behavior-preserving extraction for boundary cleanup slice 2l."
-      ],
-      "owns": [
-        "Bulk ownership query filter planning",
-        "Bulk ownership preview and apply helpers"
-      ],
-      "path": "web-backend/routes/adminSpawnPoints/bulkOwnershipOps.ts",
-      "provides": [
-        "buildWhereFromQueryFilters(args)",
-        "planBulkOwnershipAction(args)",
-        "applyBulkOwnershipAction(args)"
-      ],
-      "service": "admin.spawn_points"
-    },
-    "web-backend.routes.adminSpawnPoints.singleOwnershipOps": {
-      "class": null,
-      "ctorArgs": [],
-      "dependsOn": [
-        "worldcore.db.Database",
-        "web-backend.routes.adminSpawnPoints"
-      ],
-      "kind": "module",
-      "lifecycle": "static",
-      "notes": [
-        "Shared single-row ownership/adopt/release/lock/unlock helpers extracted from adminSpawnPoints.ts.",
-        "Encapsulates row lookup, default owner-kind fallback for release, and single-row ownership/lock mutation SQL.",
-        "Behavior-preserving extraction for boundary cleanup slice 2m."
-      ],
-      "owns": [
-        "Single-row ownership lookup helpers",
-        "Single-row adopt/release/lock/unlock mutation helpers"
-      ],
-      "path": "web-backend/routes/adminSpawnPoints/singleOwnershipOps.ts",
-      "provides": [
-        "readSpawnPointRowById(id)",
-        "computeDefaultOwnerKindForSpawnId(spawnId)",
-        "applySingleOwnershipAction(args)"
-      ],
-      "service": "admin.spawn_points"
-    },
-    "web-backend.routes.adminSpawnPoints.protoCatalogOps": {
-      "class": null,
-      "ctorArgs": [],
-      "dependsOn": [
-        "node:fs",
-        "node:path",
-        "worldcore.db.Database",
-        "worldcore.world.TownTierRules"
-      ],
-      "kind": "module",
-      "lifecycle": "static",
-      "notes": [
-        "Proto-options catalog helpers extracted from adminSpawnPoints.ts.",
-        "Encapsulates resources-dir resolution, JSON proto-id discovery, station tier proto aggregation, item label decoration, and response payload shaping for /proto_options.",
-        "Behavior-preserving extraction for boundary cleanup slice 2n."
-      ],
-      "owns": [
-        "Proto options payload shaping",
-        "Resource/station proto catalog discovery helpers"
-      ],
-      "path": "web-backend/routes/adminSpawnPoints/protoCatalogOps.ts",
-      "provides": [
-        "loadProtoOptionsPayload(args)"
-      ],
-      "service": "admin.spawn_points"
-    },
-    "web-backend.routes.adminSpawnPoints.snapshotQueryFilters": {
-      "class": null,
-      "ctorArgs": [],
-      "dependsOn": [
-        "web-backend.routes.adminSpawnPoints.bulkOwnershipOps",
-        "web-backend.routes.adminSpawnPoints.snapshotStore"
-      ],
-      "kind": "module",
-      "lifecycle": "static",
-      "notes": [
-        "Shared spawn-point query filter parsing and SQL builder helpers for list/snapshot_query/save_query admin routes.",
-        "Encapsulates filter normalization, WHERE-clause reuse, list SQL construction, and snapshot row loading/count checks.",
-        "Behavior-preserving extraction for boundary cleanup slice 2o."
-      ],
-      "owns": [
-        "Spawn-point query filter normalization helpers",
-        "Shared list/snapshot query SQL builders"
-      ],
-      "path": "web-backend/routes/adminSpawnPoints/snapshotQueryFilters.ts",
-      "provides": [
-        "parseSpawnPointQueryFilters(source, helpers)",
-        "buildSpawnPointWhere(args)",
-        "buildSpawnPointListQuery(args)",
-        "loadSnapshotRowsByQuery(args)"
-      ],
-      "service": "admin.spawn_points"
-    },
-    "web-backend.routes.adminSpawnPoints.snapshotRequestParsers": {
-      "class": null,
-      "ctorArgs": [],
-      "dependsOn": [
-        "web-backend.routes.adminSpawnPoints.snapshotStore",
-        "web-backend.routes.adminSpawnPoints.snapshotQueryFilters"
-      ],
-      "kind": "module",
-      "lifecycle": "static",
-      "notes": [
-        "Parses shared snapshot capture/query/save/list request payloads for admin spawn-point routes.",
-        "Centralizes cellSize/pad clamping, query max-row cap, and stored snapshot list filter normalization."
-      ],
-      "owns": [],
-      "path": "web-backend/routes/adminSpawnPoints/snapshotRequestParsers.ts",
-      "provides": [
-        "parseSnapshotCaptureRequest()",
-        "parseSnapshotQueryRequest()",
-        "parseSnapshotSaveQueryRequest()",
-        "parseStoredSnapshotListRequest()",
-        "SNAPSHOT_QUERY_MAX_ROWS"
-      ],
-      "service": "admin.spawnPoints.snapshotRequestParsers"
-    },
-    "web-backend.routes.adminSpawnPoints.snapshotCaptureOps": {
-      "class": null,
-      "ctorArgs": [],
-      "dependsOn": [
-        "npm:pg",
-        "web-backend.routes.adminSpawnPoints.snapshotStore",
-        "web-backend.routes.adminSpawnPoints.opsPreview"
-      ],
-      "kind": "module",
-      "lifecycle": "static",
-      "notes": [
-        "Shared DB-backed spawn snapshot capture and stored snapshot document assembly helpers for admin spawn snapshot routes.",
-        "Encapsulates rectangular snapshot capture against spawn_points plus stored snapshot doc construction for save/save_query flows.",
-        "Behavior-preserving extraction for boundary cleanup slice 2q."
-      ],
-      "owns": [
-        "Snapshot capture query helper",
-        "Stored snapshot document assembly helper"
-      ],
-      "path": "web-backend/routes/adminSpawnPoints/snapshotCaptureOps.ts",
-      "provides": [
-        "computeSpawnSliceSnapshot(args)",
-        "buildStoredSnapshotDoc(args)"
-      ],
-      "service": "admin.spawnPoints.snapshotCaptureOps"
-    },
-    "web-backend.routes.adminSpawnPoints.restoreRequestOps": {
-      "class": null,
-      "ctorArgs": [],
-      "dependsOn": [
-        "node:crypto",
-        "web-backend.routes.adminSpawnPoints.snapshotStore",
-        "web-backend.routes.adminSpawnPoints.opsPreview"
-      ],
-      "kind": "module",
-      "lifecycle": "static",
-      "notes": [
-        "Parses restore request payloads and centralizes restore confirm-token / confirm-phrase requirements.",
-        "Builds the 409 confirm_required / confirm_phrase_required response bodies for admin spawn-point restore flows."
-      ],
-      "owns": [],
-      "path": "web-backend/routes/adminSpawnPoints/restoreRequestOps.ts",
-      "provides": [
-        "parseRestoreRequest()",
-        "buildRestoreConfirmRequirements()",
-        "buildRestoreConfirmPhraseError()",
-        "buildRestoreConfirmTokenError()"
-      ],
-      "service": "admin.spawnPoints.restoreRequestOps"
-    },
-    "web-backend.routes.adminSpawnPoints.motherBrainStatusOps": {
-      "class": null,
-      "ctorArgs": [],
-      "dependsOn": [
-        "web-backend.routes.adminSpawnPoints.opsPreview"
-      ],
-      "kind": "module",
-      "lifecycle": "static",
-      "notes": [
-        "Mother Brain status request parsing and response-shaping helpers extracted from adminSpawnPoints.ts.",
-        "Encapsulates bounds/list/theme/epoch normalization plus filtered status summary/list payload construction.",
-        "Behavior-preserving extraction for boundary cleanup slice 2s."
-      ],
-      "owns": [
-        "Mother Brain status request normalization",
-        "Mother Brain status summary and list shaping"
-      ],
-      "path": "web-backend/routes/adminSpawnPoints/motherBrainStatusOps.ts",
-      "provides": [
-        "parseMotherBrainStatusRequest(query)",
-        "buildMotherBrainStatusResponse(args)"
-      ],
-      "service": "admin.spawn_points"
-    },
-    "web-backend.routes.adminSpawnPoints.motherBrainWaveRequestOps": {
-      "class": null,
-      "ctorArgs": [],
-      "dependsOn": [
-        "web-backend.routes.adminSpawnPoints.opsPreview"
-      ],
-      "kind": "module",
-      "lifecycle": "static",
-      "notes": [
-        "Mother Brain wave request parsing and budget normalization helpers extracted from adminSpawnPoints.ts.",
-        "Encapsulates bounds/cell-size/border-margin/place-inset normalization plus safe budget cap handling.",
-        "Behavior-preserving extraction for boundary cleanup slice 2t."
-      ],
-      "owns": [
-        "Mother Brain wave request normalization",
-        "Mother Brain wave budget cap normalization"
-      ],
-      "path": "web-backend/routes/adminSpawnPoints/motherBrainWaveRequestOps.ts",
-      "provides": [
-        "parseMotherBrainWaveRequest(body)",
-        "normalizeMotherBrainWaveBudget(budget)",
-        "capBudgetOrNull(value, fallback)"
-      ],
-      "service": "admin.spawn_points"
-    },
-    "web-backend.routes.adminSpawnPoints.motherBrainWipeRequestOps": {
-      "kind": "module",
-      "service": "web-backend",
-      "path": "web-backend/routes/adminSpawnPoints/motherBrainWipeRequestOps.ts",
-      "description": "Parses Mother Brain wipe requests and builds confirm/bad-bounds response payload helpers for admin spawn point wipe routes.",
-      "dependsOn": [
-        "web-backend.routes.adminSpawnPoints.opsPreview",
-        "web-backend.routes.adminSpawnPoints.restoreRequestOps"
-      ],
-      "provides": [
-        "parseMotherBrainWipeRequest",
-        "buildMotherBrainWipeBadBoundsResponse",
-        "buildMotherBrainWipeConfirmToken",
-        "buildMotherBrainWipeConfirmRequiredResponse"
-      ],
-      "owns": [
-        "mother brain wipe request normalization",
-        "wipe confirm token shaping",
-        "wipe 400/409 payload construction"
-      ]
-    },
-    "web-backend.routes.adminSpawnPoints.motherBrainResponses": {
-      "class": null,
-      "ctorArgs": [],
-      "dependsOn": [
-        "web-backend.routes.adminSpawnPoints.opsPreview"
-      ],
-      "kind": "module",
-      "lifecycle": "static",
-      "notes": [
-        "Shared Mother Brain wave/wipe response shaping helpers extracted from adminSpawnPoints.ts.",
-        "Encapsulates wave confirm-required payloads, wave success/dry-run payloads, wipe success/dry-run payloads, and wipe internal-error response shaping.",
-        "Behavior-preserving extraction for boundary cleanup slice 2v."
-      ],
-      "owns": [
-        "Mother Brain wave/wipe response payload builders"
-      ],
-      "path": "web-backend/routes/adminSpawnPoints/motherBrainResponses.ts",
-      "provides": [
-        "buildMotherBrainWaveConfirmRequiredResponse(args)",
-        "buildMotherBrainWaveResponse(args)",
-        "buildMotherBrainWipeResponse(args)",
-        "buildMotherBrainWipeInternalError(args)"
-      ],
-      "service": "admin.spawn_points"
-    },
-    "web-backend.routes.adminSpawnPoints.motherBrainWaveApply": {
-      "service": "admin.spawn_points",
-      "kind": "module",
-      "path": "web-backend/routes/adminSpawnPoints/motherBrainWaveApply.ts",
-      "class": null,
-      "lifecycle": "static",
-      "ctorArgs": [],
-      "dependsOn": [],
-      "provides": [
-        "buildEffectiveExistingSpawnIds(args)",
-        "applyMotherBrainWaveMutations(args)"
-      ],
-      "owns": [
-        "Mother Brain wave replace-mode effective-existing-set adjustment and commit-time delete/update/insert loop"
-      ],
-      "notes": [
-        "Behavior-preserving Mother Brain wave helper extraction from adminSpawnPoints.ts.",
-        "Encapsulates replace-mode existing spawn_id adjustment and commit-time delete/update/insert loop for planned wave actions.",
-        "Boundary cleanup slice 2w."
-      ]
-    },
-    "web-backend.routes.adminSpawnPoints.motherBrainWipeApply": {
-      "class": null,
-      "ctorArgs": [],
-      "dependsOn": [],
-      "kind": "module",
-      "lifecycle": "static",
-      "notes": [
-        "Behavior-preserving Mother Brain wipe helper extraction from adminSpawnPoints.ts.",
-        "Encapsulates wipe row-to-spawn map construction and commit-time delete application for selected ids.",
-        "Boundary cleanup slice 2x."
-      ],
-      "owns": [
-        "Mother Brain wipe spawn-row map construction and commit-time delete helper"
-      ],
-      "path": "web-backend/routes/adminSpawnPoints/motherBrainWipeApply.ts",
-      "provides": [
-        "buildMotherBrainWipeSpawnMap(rows)",
-        "applyMotherBrainWipeDelete(args)"
-      ],
-      "service": "admin.spawn_points"
-    },
-    "web-backend.routes.adminSpawnPoints.motherBrainStatusQuery": {
-      "service": "admin.spawn_points",
-      "kind": "module",
-      "path": "web-backend/routes/adminSpawnPoints/motherBrainStatusQuery.ts",
-      "class": null,
-      "lifecycle": "static",
-      "ctorArgs": [],
-      "dependsOn": [],
-      "provides": [
-        "queryMotherBrainStatusRows(dbLike, args)"
-      ],
-      "owns": [
-        "Mother Brain status boxed query and status-row normalization"
-      ],
-      "notes": [
-        "Behavior-preserving Mother Brain status helper extraction from adminSpawnPoints.ts.",
-        "Encapsulates boxed spawn_points query for brain:% rows and normalized status row shaping.",
-        "Boundary cleanup slice 2y."
-      ]
-    },
-    "web-backend.routes.adminSpawnPoints.motherBrainBoxQuery": {
-      "service": "admin.spawn_points",
-      "kind": "module",
-      "path": "web-backend/routes/adminSpawnPoints/motherBrainBoxQuery.ts",
-      "class": null,
-      "lifecycle": "static",
-      "ctorArgs": [],
-      "dependsOn": [
-        "web-backend.routes.adminSpawnPoints.opsPreview"
-      ],
-      "provides": [
-        "queryMotherBrainBoxRows(dbLike, args)",
-        "queryMotherBrainBoxIds(dbLike, args)",
-        "normalizeMotherBrainBoxRow(row)"
-      ],
-      "owns": [
-        "Shared Mother Brain boxed spawn_points query preload helpers and normalized row coercion"
-      ],
-      "notes": [
-        "Behavior-preserving shared Mother Brain preload helper extraction from adminSpawnPoints.ts.",
-        "Encapsulates boxed spawn_points query reuse for status, wave, and wipe flows plus normalized row shaping.",
-        "Boundary cleanup slice 2z."
-      ]
-    },
-    "web-backend.routes.adminMotherBrain.motherBrainProxy": {
-      "class": null,
-      "ctorArgs": [],
-      "dependsOn": [
-        "node:process",
-        "global.fetch"
-      ],
-      "kind": "module",
-      "lifecycle": "singleton",
-      "notes": [
-        "Resolves Mother Brain HTTP base URL from PW_MOTHER_BRAIN_HTTP_URL or MOTHER_BRAIN_HTTP_HOST/MOTHER_BRAIN_HTTP_PORT.",
-        "Provides a small proxy wrapper with timeout, JSON parsing, and normalized error envelopes for admin route forwarding."
-      ],
-      "owns": [],
-      "path": "web-backend/routes/adminMotherBrain/motherBrainProxy.ts",
-      "provides": [
-        "motherBrainHttpBase()",
-        "proxyMotherBrain(method, routePath, body?)"
-      ],
-      "service": "web-backend.routes"
-    },
-    "web-backend.routes.adminMotherBrain.motherBrainReports": {
-      "class": null,
-      "ctorArgs": [],
-      "dependsOn": [
-        "node:fs/promises",
-        "node:path",
-        "web-backend.routes.adminMotherBrain.motherBrainShared"
-      ],
-      "kind": "module",
-      "lifecycle": "singleton",
-      "notes": [
-        "Resolves the Mother Brain goals report directory from PW_MOTHER_BRAIN_GOALS_REPORT_DIR or PW_FILELOG.",
-        "Validates suite ids and reads date-based JSONL goal reports for admin tail viewing."
-      ],
-      "owns": [],
-      "path": "web-backend/routes/adminMotherBrain/motherBrainReports.ts",
-      "provides": [
-        "motherBrainGoalsReportDir()",
-        "safeSuiteId(value)",
-        "readGoalsReportTail(args)"
-      ],
-      "service": "web-backend.routes"
-    },
-    "web-backend.routes.adminMotherBrain.motherBrainShared": {
-      "class": null,
-      "ctorArgs": [],
-      "dependsOn": [],
-      "kind": "module",
-      "lifecycle": "singleton",
-      "notes": [
-        "Shared low-level parsing helpers for adminMotherBrain route helpers.",
-        "Keeps integer coercion and Postgres error-code extraction consistent across route modules."
-      ],
-      "owns": [],
-      "path": "web-backend/routes/adminMotherBrain/motherBrainShared.ts",
-      "provides": [
-        "pgErrCode(err)",
-        "toInt(value)"
-      ],
-      "service": "web-backend.routes"
-    },
-    "web-backend.routes.adminQuests.adminQuestTypes": {
-      "class": null,
-      "ctorArgs": [],
-      "dependsOn": [],
-      "kind": "module",
-      "lifecycle": "singleton",
-      "notes": [
-        "Shared admin quest editor payload and normalized upsert types used by route/list/upsert helpers."
-      ],
-      "owns": [
-        "Admin quest payload type definitions"
-      ],
-      "path": "web-backend/routes/adminQuests/adminQuestTypes.ts",
-      "provides": [
-        "AdminQuestPayload type",
-        "NormalizedAdminQuestUpsert type"
-      ],
-      "service": "http.adminRoutes"
-    },
-    "web-backend.routes.adminQuests.adminQuestList": {
-      "class": null,
-      "ctorArgs": [],
-      "dependsOn": [
-        "worldcore:db/Database",
-        "worldcore:quests/PostgresQuestService",
-        "web-backend.routes.adminQuests.adminQuestTypes"
-      ],
-      "kind": "module",
-      "lifecycle": "singleton",
-      "notes": [
-        "Maps quest definitions into admin payload shape and performs best-effort item/spell/ability label hydration for editor GET responses."
-      ],
-      "owns": [
-        "Admin quest list payload mapping",
-        "Admin quest reward/objective label hydration helpers"
-      ],
-      "path": "web-backend/routes/adminQuests/adminQuestList.ts",
-      "provides": [
-        "listAdminQuests(questService)"
-      ],
-      "service": "http.adminRoutes"
-    },
-    "web-backend.routes.adminQuests.adminQuestUpsert": {
-      "class": null,
-      "ctorArgs": [],
-      "dependsOn": [
-        "worldcore:db/Database",
-        "worldcore:quests/PostgresQuestService",
-        "worldcore:quests/QuestRegistry",
-        "web-backend.routes.adminQuests.adminQuestTypes"
-      ],
-      "kind": "module",
-      "lifecycle": "singleton",
-      "notes": [
-        "Normalizes incoming admin quest payloads, performs best-effort DB validation, writes objective/reward rows, and reloads QuestRegistry in-process."
-      ],
-      "owns": [
-        "Admin quest payload normalization",
-        "Admin quest upsert validation",
-        "Admin quest DB write choreography"
-      ],
-      "path": "web-backend/routes/adminQuests/adminQuestUpsert.ts",
-      "provides": [
-        "normalizeAdminQuestPayload(body)",
-        "validateAdminQuestUpsert(input)",
-        "upsertAdminQuest(input, questService)"
-      ],
-      "service": "http.adminRoutes"
-    },
-    "web-backend.gameState.gameStateMissions": {
-      "kind": "module",
-      "service": "demo.gameState.missions",
-      "path": "web-backend/gameState/gameStateMissions.ts",
-      "class": null,
-      "lifecycle": "singleton",
-      "ctorArgs": [],
-      "dependsOn": [
-        "web-backend.domain.missions",
-        "web-backend.domain.world",
-        "web-backend.config.demo"
-      ],
-      "provides": [
-        "startMissionForPlayer(deps, playerId, missionId, now)",
-        "regenerateRegionMissionsForPlayer(deps, playerId, targetRegionId, now)",
-        "startWarfrontAssaultForPlayer(deps, playerId, regionId, now)",
-        "startGarrisonStrikeForPlayer(deps, playerId, regionId, now)",
-        "completeMissionForPlayer(deps, playerId, instanceId, now)"
-      ],
-      "owns": [
-        "Mission offer orchestration and mission completion flow for the in-memory city-builder state"
-      ],
-      "notes": [
-        "Extracted from web-backend/gameState.ts to keep mission/warfront/garrison orchestration isolated behind injected game-state dependencies."
-      ]
-    },
-    "web-backend.gameState.gameStateCityDevelopment": {
-      "kind": "module",
-      "service": "demo.gameState.cityDevelopment",
-      "path": "web-backend/gameState/gameStateCityDevelopment.ts",
-      "class": null,
-      "lifecycle": "singleton",
-      "ctorArgs": [],
-      "dependsOn": [
-        "web-backend.domain.tech"
-      ],
-      "provides": [
-        "buildBuildingForPlayer(deps, playerId, kind, now)",
-        "upgradeBuildingForPlayer(deps, playerId, buildingId, now)",
-        "startResearchForPlayer(deps, playerId, techId, now)"
-      ],
-      "owns": [
-        "Building construction/upgrades and research-start orchestration for the in-memory city-builder state"
-      ],
-      "notes": [
-        "Extracted from web-backend/gameState.ts to isolate city development actions behind injected game-state dependencies while preserving the public gameState API."
-      ]
-    },
-    "web-backend.gameState.gameStateArmies": {
-      "kind": "module",
-      "service": "demo.gameState.armies",
-      "path": "web-backend/gameState/gameStateArmies.ts",
-      "class": null,
-      "lifecycle": "singleton",
-      "ctorArgs": [],
-      "dependsOn": [
-        "web-backend.domain.armies"
-      ],
-      "provides": [
-        "raiseArmyForPlayer(deps, playerId, type, now)",
-        "reinforceArmyForPlayer(deps, playerId, armyId, now)"
-      ],
-      "owns": [
-        "Army raising and reinforcement orchestration for the in-memory city-builder state"
-      ],
-      "notes": [
-        "Extracted from web-backend/gameState.ts to isolate army recruitment and reinforcement flows behind injected game-state dependencies while preserving the public gameState API."
-      ]
-    },
-    "web-backend.gameState.gameStateHeroes": {
-      "kind": "module",
-      "service": "demo.gameState.heroes",
-      "path": "web-backend/gameState/gameStateHeroes.ts",
-      "class": null,
-      "lifecycle": "singleton",
-      "ctorArgs": [],
-      "dependsOn": [
-        "web-backend.domain.heroes"
-      ],
-      "provides": [
-        "equipHeroAttachmentForPlayer(deps, playerId, heroId, kind, now)",
-        "startWorkshopJobForPlayer(deps, playerId, kind, now)",
-        "completeWorkshopJobForPlayer(deps, playerId, jobId, now)",
-        "recruitHeroForPlayer(deps, playerId, role, now)"
-      ],
-      "owns": [
-        "Hero recruitment, hero attachment equipment, and workshop crafting orchestration for the in-memory city-builder state"
-      ],
-      "notes": [
-        "Extracted from web-backend/gameState.ts to isolate hero/workshop flows behind injected game-state dependencies while preserving the public gameState API."
-      ]
-    },
-    "web-backend.gameState.gameStateEconomy": {
-      "kind": "module",
-      "service": "demo.gameState.economy",
-      "path": "web-backend/gameState/gameStateEconomy.ts",
-      "class": null,
-      "lifecycle": "singleton",
-      "ctorArgs": [],
-      "dependsOn": [
-        "web-backend.domain.city",
-        "web-backend.domain.resources",
-        "web-backend.domain.tech",
-        "web-backend.domain.world"
-      ],
-      "provides": [
-        "tickPlayerState(deps, ps, now)"
-      ],
-      "owns": [
-        "Passive ticking, resource progression, research completion, warfront drift, and city-stress recomputation for the in-memory city-builder state"
-      ],
-      "notes": [
-        "Extracted from web-backend/gameState.ts to isolate passive economy/time progression behind injected game-state dependencies while preserving the public gameState API."
-      ]
-    },
-    "web-backend.gameState.gameStateCityProgression": {
-      "service": "demo.gameState.cityProgression",
-      "kind": "module",
-      "path": "web-backend/gameState/gameStateCityProgression.ts",
-      "class": null,
-      "lifecycle": "singleton",
-      "ctorArgs": [],
-      "dependsOn": [
-        "web-backend.config.cityTier"
-      ],
-      "provides": [
-        "tierUpCityForPlayer(...)",
-        "morphCityForPlayer(...)"
-      ],
-      "owns": [
-        "city tier-up cost/eligibility logic",
-        "city specialization morph/prestige progression"
-      ],
-      "notes": [
-        "Extracted from web-backend.gameState to keep city progression rules isolated while preserving the public gameState API."
-      ]
-    },
-    "web-backend.gameState.gameStateProduction": {
-      "kind": "module",
-      "service": "demo.gameState.production",
-      "path": "web-backend/gameState/gameStateProduction.ts",
-      "class": null,
-      "lifecycle": "singleton",
-      "ctorArgs": [],
-      "dependsOn": [
-        "web-backend.config.cityTier",
-        "web-backend.domain.city",
-        "web-backend.domain.resources"
-      ],
-      "provides": [
-        "getOrInitResourceTier(ps, key)",
-        "applySpecializationToProduction(city, base)",
-        "applyResourceTiersToProduction(ps, base)"
-      ],
-      "owns": [
-        "City specialization production scaling",
-        "Resource-tier initialization and production scaling for the in-memory city-builder state"
-      ],
-      "notes": [
-        "Extracted from web-backend/gameState.ts to isolate specialization and resource-tier production modifiers behind a dedicated helper module while preserving the public gameState API."
-      ]
-    },
-    "web-backend.gameState.gameStateCore": {
-      "kind": "service",
-      "service": "web-backend",
-      "path": "web-backend/gameState/gameStateCore.ts",
-      "lifecycle": "singleton-helper",
-      "dependsOn": [
-        "web-backend.config",
-        "web-backend.domain.world",
-        "web-backend.domain.city",
-        "web-backend.domain.heroes",
-        "web-backend.domain.armies",
-        "web-backend.gameState"
-      ],
-      "provides": [
-        "createInitialGameState",
-        "createInitialPlayerState",
-        "getOrCreatePlayerState",
-        "pushEvent",
-        "seedRegionWar"
-      ],
-      "owns": [
-        "gameState singleton bootstrap defaults",
-        "per-player state initialization",
-        "event log append and trim behavior",
-        "initial region war seeding"
-      ],
-      "notes": [
-        "Shared helper for in-memory gameState bootstrap and player-state creation.",
-        "Keeps gameState.ts focused on public exports and delegation seams rather than initialization plumbing."
-      ]
-    },
-    "web-backend.routes.playerCityAccess": {
-      "kind": "ts_module",
-      "service": "routes.playerCityAccess",
-      "path": "web-backend/routes/playerCityAccess.ts",
-      "dependsOn": [
-        "worldcore.auth.PostgresAuthService",
-        "worldcore.db.Database",
-        "web-backend.gameState"
-      ],
-      "provides": [
-        "resolveViewer(req)",
-        "resolvePlayerAccess(req, opts?)",
-        "createCityForViewer(viewer, args)",
-        "renameCityForViewer(viewer, nextName)",
-        "persistPlayerStateForCity(access)",
-        "suggestCityName(displayName)",
-        "validateCityName(input)",
-        "withPlayerAccessMutation(req, mutate, opts?)"
-      ],
-      "notes": [
-        "Owns authenticated CityBuilder account-to-city resolution, city name validation, and v1 runtime snapshot persistence through public.cities.meta.",
-        "Adds a centralized mutation wrapper so city routes resolve access, run mutations, and persist snapshots through one hardened save boundary."
-      ]
-    },
-    "web-backend.domain.publicInfrastructure": {
-      "class": null,
-      "ctorArgs": [],
-      "dependsOn": [
-        "web-backend.gameState"
-      ],
-      "kind": "module",
-      "lifecycle": "singleton",
-      "notes": [
-        "Computes public-service levy/queue quotes, permit tiers, service heat, receipts, and summary recommendations for private_city vs npc_public lanes.",
-        "Used by city-builder routes to turn NPC public infrastructure into a visible pressure system instead of hidden backend math.",
-        "v0.3 adds structured pressure inputs (civic instability, regional threat, queue backlog, service heat, mission load) and exposes them through summaries/quotes for world-aware public service pricing."
-      ],
-      "owns": [
-        "Public infrastructure quote/summary heuristics"
-      ],
-      "path": "web-backend/domain/publicInfrastructure.ts",
-      "provides": [
-        "createInitialPublicInfrastructureState(nowIso?)",
-        "ensurePublicInfrastructureState(ps)",
-        "deriveCivicPermitTier(ps)",
-        "summarizePublicInfrastructure(ps)",
-        "quotePublicServiceUsage(ps, service, baseCosts, mode)",
-        "recordPublicServiceReceipt(ps, quote, now?)",
-        "decayPublicInfrastructureHeat(ps, now?)",
-        "derivePublicPressureSources(ps)",
-        "pressure-aware summarizePublicInfrastructure(ps)",
-        "pressure-aware quotePublicServiceUsage(ps, service, costs, mode)"
-      ],
-      "service": "city.publicInfrastructure"
-    },
-    "web-backend.routes.publicInfrastructureSupport": {
-      "class": null,
-      "ctorArgs": [],
-      "dependsOn": [
-        "web-backend.domain.publicInfrastructure",
-        "web-backend.gameState.cityRuntimeSnapshot"
-      ],
-      "kind": "module",
-      "lifecycle": "singleton",
-      "notes": [
-        "Shared support helpers for public infrastructure consequences, including levy application, event logging, queue metadata, and rollback-safe mutation wrapping.",
-        "Infrastructure event messages now include structured pressure-input summaries so route receipts explain why NPC public service costs shifted."
-      ],
-      "owns": [],
-      "path": "web-backend/routes/publicInfrastructureSupport.ts",
-      "provides": [
-        "cloneResources(resources)",
-        "diffSpentResources(before, after)",
-        "applyPublicInfrastructureUsage(ps, service, mode, baseCosts, now?)",
-        "withInfrastructureRollback(ps, action, verify)",
-        "pressure-aware applyPublicInfrastructureUsage(...)",
-        "pressure-aware infrastructure event log messages"
-      ],
-      "service": "routes.publicInfrastructureSupport"
-    },
-    "web-backend.routes.publicInfrastructure": {
-      "class": null,
-      "ctorArgs": [],
-      "dependsOn": [
-        "npm:express",
-        "web-backend.domain.publicInfrastructure",
-        "web-backend.routes.playerCityAccess"
-      ],
-      "kind": "module",
-      "lifecycle": "singleton",
-      "notes": [
-        "City-builder endpoint that exposes current public infrastructure state, summary recommendations, and per-service quotes for the selected service mode.",
-        "Status route now returns pressureSources alongside summary/quotes so frontend UI can display why NPC public lanes are expensive or delayed."
-      ],
-      "owns": [],
-      "path": "web-backend/routes/publicInfrastructure.ts",
-      "provides": [
-        "GET /api/public_infrastructure/status",
-        "GET /api/public_infrastructure/status (state + summary + quotes + pressureSources)"
       ],
       "service": "http.routes"
     }

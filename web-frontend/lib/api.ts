@@ -294,6 +294,34 @@ export interface PublicInfrastructureStatusResponse {
   cityStress: CityStressState | null;
 }
 
+export interface CityMudBridgeHook {
+  key: "vendor_supply" | "caravan_risk" | "mission_support" | "recruitment_pressure" | "public_service_drag";
+  label: string;
+  score: number;
+  direction: "up" | "down" | "neutral";
+  detail: string;
+  mudEffect: string;
+}
+
+export interface CityMudBridgeSummary {
+  snapshotAt: string;
+  bridgeBand: "open" | "strained" | "restricted";
+  recommendedPosture: "supportive" | "cautious" | "defensive";
+  supportCapacity: number;
+  logisticsPressure: number;
+  frontierPressure: number;
+  stabilityPressure: number;
+  exportableResources: Partial<Resources>;
+  hooks: CityMudBridgeHook[];
+  tags: string[];
+  note: string;
+}
+
+export interface CityMudBridgeStatusResponse {
+  ok: boolean;
+  summary: CityMudBridgeSummary | null;
+}
+
 export interface MeProfile {
   ok?: boolean;
   isDemo?: boolean;
@@ -361,6 +389,10 @@ export async function fetchMe(): Promise<MeProfile> {
 export async function fetchPublicInfrastructureStatus(serviceMode: InfrastructureMode): Promise<PublicInfrastructureStatusResponse> {
   const query = new URLSearchParams({ serviceMode }).toString();
   return api<PublicInfrastructureStatusResponse>(`/api/public_infrastructure/status?${query}`);
+}
+
+export async function fetchCityMudBridgeStatus(): Promise<CityMudBridgeStatusResponse> {
+  return api<CityMudBridgeStatusResponse>("/api/city_mud_bridge/status");
 }
 
 export async function startTech(techId: string, serviceMode?: InfrastructureMode): Promise<any> {

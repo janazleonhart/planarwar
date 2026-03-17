@@ -35,6 +35,62 @@
   "registryVersion": "1.0",
   "root": "web-frontend",
   "services": {
+    "web-frontend.admin.page.heartbeats": {
+      "class": null,
+      "ctorArgs": [],
+      "dependsOn": [
+        "web-backend.routes.admin-heartbeats"
+      ],
+      "kind": "page",
+      "lifecycle": "singleton",
+      "notes": [
+        "Admin page showing daemon heartbeat rows from service_heartbeats."
+      ],
+      "owns": [],
+      "path": "web-frontend/pages/AdminHeartbeatsPage.tsx",
+      "provides": [
+        "route:/admin/heartbeats"
+      ],
+      "service": "web-frontend.admin"
+    },
+    "web-frontend.components.adminUi": {
+      "class": null,
+      "ctorArgs": [],
+      "dependsOn": [],
+      "kind": "ui",
+      "lifecycle": "singleton",
+      "notes": [
+        "Admin UI shell/components for consistent styling across admin editors.",
+        "Includes light theme + overrides for legacy inline dark styles."
+      ],
+      "owns": [
+        "admin UI styling primitives"
+      ],
+      "path": "web-frontend/components/admin/AdminUI.tsx",
+      "provides": [
+        "AdminShell/AdminPanel/AdminTwoCol/AdminNotice/AdminListItem"
+      ],
+      "service": "ui.component"
+    },
+    "web-frontend.components.itemPicker": {
+      "class": null,
+      "ctorArgs": [],
+      "dependsOn": [],
+      "kind": "ui",
+      "lifecycle": "singleton",
+      "notes": [
+        "Reusable item id picker with server-backed autocomplete via /api/admin/items/options.",
+        "Resolves (id -> name/rarity) and exposes validity for forms that must prevent dangling item references."
+      ],
+      "owns": [
+        "client-side option cache for item lookups"
+      ],
+      "path": "web-frontend/components/ItemPicker.tsx",
+      "provides": [
+        "ItemPicker component (autocomplete + validation + resolved label)"
+      ],
+      "service": "ui.component"
+    },
     "web-frontend.config.ts": {
       "class": null,
       "ctorArgs": [],
@@ -119,7 +175,8 @@
         "Adds helpers for CityBuilder city bootstrap/rename endpoints and extends fetchMe() payload metadata for hasCity/canCreateCity flow.",
         "Adds typed public infrastructure DTOs and fetchPublicInfrastructureStatus(serviceMode) for city-builder lane/quote previews.",
         "startTech() now accepts optional serviceMode so research can use private or NPC public lanes without raw ad-hoc payloads.",
-        "Adds typed PublicPressureSource DTOs and includes pressureSources in public infrastructure status/quote payloads."
+        "Adds typed PublicPressureSource DTOs and includes pressureSources in public infrastructure status/quote payloads.",
+        "Adds typed CityMudBridge DTOs plus fetchCityMudBridgeStatus() so the frontend can preview city\u2192world support posture and exportable surplus."
       ],
       "owns": [],
       "path": "web-frontend/lib/api.ts",
@@ -136,7 +193,8 @@
         "fetchCityConfig()",
         "fetchPublicInfrastructureStatus(serviceMode)",
         "Typed DTOs for public infrastructure status/quotes/receipts",
-        "Typed DTOs for public infrastructure pressure inputs"
+        "Typed DTOs for public infrastructure pressure inputs",
+        "fetchCityMudBridgeStatus()"
       ],
       "service": "api.client"
     },
@@ -172,44 +230,6 @@
       ],
       "service": "npm.package"
     },
-    "web-frontend.components.adminUi": {
-      "class": null,
-      "ctorArgs": [],
-      "dependsOn": [],
-      "kind": "ui",
-      "lifecycle": "singleton",
-      "notes": [
-        "Admin UI shell/components for consistent styling across admin editors.",
-        "Includes light theme + overrides for legacy inline dark styles."
-      ],
-      "owns": [
-        "admin UI styling primitives"
-      ],
-      "path": "web-frontend/components/admin/AdminUI.tsx",
-      "provides": [
-        "AdminShell/AdminPanel/AdminTwoCol/AdminNotice/AdminListItem"
-      ],
-      "service": "ui.component"
-    },
-    "web-frontend.components.itemPicker": {
-      "class": null,
-      "ctorArgs": [],
-      "dependsOn": [],
-      "kind": "ui",
-      "lifecycle": "singleton",
-      "notes": [
-        "Reusable item id picker with server-backed autocomplete via /api/admin/items/options.",
-        "Resolves (id -> name/rarity) and exposes validity for forms that must prevent dangling item references."
-      ],
-      "owns": [
-        "client-side option cache for item lookups"
-      ],
-      "path": "web-frontend/components/ItemPicker.tsx",
-      "provides": [
-        "ItemPicker component (autocomplete + validation + resolved label)"
-      ],
-      "service": "ui.component"
-    },
     "web-frontend.pages.AdminAbilitiesPage": {
       "path": "web-frontend/pages/AdminAbilitiesPage.tsx",
       "class": "(page) AdminAbilitiesPage",
@@ -241,6 +261,29 @@
       ],
       "service": "admin.hub"
     },
+    "web-frontend.pages.adminItems": {
+      "class": null,
+      "ctorArgs": [],
+      "dependsOn": [],
+      "kind": "ui",
+      "lifecycle": "singleton",
+      "notes": [
+        "Uses same-origin /api requests (dev via Vite proxy; prod via reverse proxy / same host).",
+        "Endpoints: GET /api/admin/items?q&limit&offset; POST /api/admin/items; then refreshes list.",
+        "Supports search + paging so item table growth doesn't break UX."
+      ],
+      "owns": [
+        "client-side form state",
+        "search + paging state (q/limit/offset)"
+      ],
+      "path": "web-frontend/pages/AdminItemsPage.tsx",
+      "provides": [
+        "Item list + edit/create UI",
+        "Search + paging for item list",
+        "Edits flagsText/statsText serialized fields"
+      ],
+      "service": "admin.items"
+    },
     "web-frontend.pages.adminMotherBrain": {
       "class": "AdminMotherBrainPage",
       "ctorArgs": [],
@@ -265,29 +308,6 @@
         "/admin/mother_brain"
       ],
       "service": "web.adminPages"
-    },
-    "web-frontend.pages.adminItems": {
-      "class": null,
-      "ctorArgs": [],
-      "dependsOn": [],
-      "kind": "ui",
-      "lifecycle": "singleton",
-      "notes": [
-        "Uses same-origin /api requests (dev via Vite proxy; prod via reverse proxy / same host).",
-        "Endpoints: GET /api/admin/items?q&limit&offset; POST /api/admin/items; then refreshes list.",
-        "Supports search + paging so item table growth doesn't break UX."
-      ],
-      "owns": [
-        "client-side form state",
-        "search + paging state (q/limit/offset)"
-      ],
-      "path": "web-frontend/pages/AdminItemsPage.tsx",
-      "provides": [
-        "Item list + edit/create UI",
-        "Search + paging for item list",
-        "Edits flagsText/statsText serialized fields"
-      ],
-      "service": "admin.items"
     },
     "web-frontend.pages.adminNpcs": {
       "class": null,
@@ -463,22 +483,44 @@
         "Now acts as the city bootstrap funnel when an authenticated account has no city yet, and exposes authenticated city rename controls.",
         "Endpoints used include: /api/me, /api/city/bootstrap, /api/city/rename, /api/tech/start, /api/missions/start, /api/missions/complete, /api/missions/refresh_region, /api/buildings/construct, /api/buildings/upgrade, /api/city/tier-up, /api/warfront/assault, /api/armies/raise, /api/armies/reinforce, /api/garrisons/strike, /api/heroes/equip_attachment, /api/heroes/recruit, /api/workshop/craft, /api/workshop/collect, /api/policies/toggle.",
         "Now surfaces public infrastructure summary, quote previews, receipts, and a lane toggle for private_city vs npc_public service execution.",
-        "City-builder action toasts now include publicService consequence details (levy/queue/note) returned by backend routes."
+        "City-builder action toasts now include publicService consequence details (levy/queue/note) returned by backend routes.",
+        "Now renders a City \u2194 MUD Economic Bridge panel with support posture, exportable surplus, and future-consumer hook summaries from /api/city_mud_bridge/status."
       ],
       "owns": [
         "client-side UI state for selected actions",
         "optimistic refresh loops calling fetchMe()",
         "client-side UI state for selected public infrastructure lane",
-        "public infrastructure status snapshot from /api/public_infrastructure/status"
+        "public infrastructure status snapshot from /api/public_infrastructure/status",
+        "city-to-world bridge snapshot from /api/city_mud_bridge/status"
       ],
       "path": "web-frontend/pages/MePage.tsx",
       "provides": [
         "City-builder dashboard: city status + buildings + tech + missions + armies/heroes + policies",
         "Action buttons that POST to various /api/* endpoints",
         "Public infrastructure panel: lane toggle + quote previews + receipts",
-        "City-builder action buttons that send serviceMode to eligible /api/* endpoints"
+        "City-builder action buttons that send serviceMode to eligible /api/* endpoints",
+        "City \u2194 MUD Economic Bridge panel: support posture + exportable surplus + hook summaries"
       ],
       "service": "cityBuilder.me"
+    },
+    "web-frontend.pages.modeHub": {
+      "class": null,
+      "ctorArgs": [],
+      "dependsOn": [],
+      "kind": "ui",
+      "lifecycle": "singleton",
+      "notes": [
+        "Launcher / mode hub UI: lets user choose between primary modes (e.g., MUD, Admin, City Builder).",
+        "Pure UI/navigation surface; exact routing is owned by App.tsx."
+      ],
+      "owns": [
+        "client-side navigation state"
+      ],
+      "path": "web-frontend/pages/ModeHubPage.tsx",
+      "provides": [
+        "Mode selector hub (launcher UI)"
+      ],
+      "service": "ui.modeHub"
     },
     "web-frontend.pages.operations": {
       "class": null,
@@ -546,43 +588,6 @@
         "Player Panels: Effects (StatusEffects v1.5 MVP view)"
       ],
       "service": "webConsole.app"
-    },
-    "web-frontend.pages.modeHub": {
-      "class": null,
-      "ctorArgs": [],
-      "dependsOn": [],
-      "kind": "ui",
-      "lifecycle": "singleton",
-      "notes": [
-        "Launcher / mode hub UI: lets user choose between primary modes (e.g., MUD, Admin, City Builder).",
-        "Pure UI/navigation surface; exact routing is owned by App.tsx."
-      ],
-      "owns": [
-        "client-side navigation state"
-      ],
-      "path": "web-frontend/pages/ModeHubPage.tsx",
-      "provides": [
-        "Mode selector hub (launcher UI)"
-      ],
-      "service": "ui.modeHub"
-    },
-    "web-frontend.admin.page.heartbeats": {
-      "class": null,
-      "ctorArgs": [],
-      "dependsOn": [
-        "web-backend.routes.admin-heartbeats"
-      ],
-      "kind": "page",
-      "lifecycle": "singleton",
-      "notes": [
-        "Admin page showing daemon heartbeat rows from service_heartbeats."
-      ],
-      "owns": [],
-      "path": "web-frontend/pages/AdminHeartbeatsPage.tsx",
-      "provides": [
-        "route:/admin/heartbeats"
-      ],
-      "service": "web-frontend.admin"
     }
   }
 }
