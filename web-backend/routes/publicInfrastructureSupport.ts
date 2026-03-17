@@ -64,10 +64,16 @@ function buildInfrastructureEventMessage(
     .filter(([, amount]) => Number(amount ?? 0) > 0)
     .map(([key, amount]) => `${key} ${amount}`)
     .join(", ");
+  const pressureBits = quote.pressureSources
+    .filter((source) => source.score > 0)
+    .slice(0, 2)
+    .map((source) => source.label.toLowerCase())
+    .join(", ");
 
   const levyText = levyBits ? ` Levy: ${levyBits}.` : "";
   const queueText = quote.queueMinutes > 0 ? ` Queue delay: ${quote.queueMinutes}m.` : "";
-  return `Public infrastructure handled ${service.replace(/_/g, " ")}. ${quote.note}${levyText}${queueText}`;
+  const pressureText = pressureBits ? ` Pressure inputs: ${pressureBits}.` : "";
+  return `Public infrastructure handled ${service.replace(/_/g, " ")}. ${quote.note}${levyText}${queueText}${pressureText}`;
 }
 
 export function applyPublicInfrastructureUsage(

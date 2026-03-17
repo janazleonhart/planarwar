@@ -2,6 +2,7 @@
 
 import { Router } from "express";
 import {
+  derivePublicPressureSources,
   ensurePublicInfrastructureState,
   quotePublicServiceUsage,
   summarizePublicInfrastructure,
@@ -15,7 +16,7 @@ const router = Router();
 router.get("/status", async (req, res) => {
   const access = await resolvePlayerAccess(req, { requireCity: false });
   if (access.ok === false) {
-    return res.json({ ok: true, publicInfrastructure: null, summary: null, quotes: [] });
+    return res.json({ ok: true, publicInfrastructure: null, summary: null, quotes: [], pressureSources: [] });
   }
 
   const ps = access.access.playerState;
@@ -32,6 +33,7 @@ router.get("/status", async (req, res) => {
     summary,
     mode,
     quotes,
+    pressureSources: derivePublicPressureSources(ps),
     cityStress: ps.cityStress,
   });
 });

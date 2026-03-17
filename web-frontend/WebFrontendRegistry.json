@@ -118,7 +118,8 @@
         "Now attaches Authorization: Bearer <token> automatically if localStorage pw_auth_v1 is present (shared auth across MUD/CityBuilder).",
         "Adds helpers for CityBuilder city bootstrap/rename endpoints and extends fetchMe() payload metadata for hasCity/canCreateCity flow.",
         "Adds typed public infrastructure DTOs and fetchPublicInfrastructureStatus(serviceMode) for city-builder lane/quote previews.",
-        "startTech() now accepts optional serviceMode so research can use private or NPC public lanes without raw ad-hoc payloads."
+        "startTech() now accepts optional serviceMode so research can use private or NPC public lanes without raw ad-hoc payloads.",
+        "Adds typed PublicPressureSource DTOs and includes pressureSources in public infrastructure status/quote payloads."
       ],
       "owns": [],
       "path": "web-frontend/lib/api.ts",
@@ -134,7 +135,8 @@
         "renameCity(name)",
         "fetchCityConfig()",
         "fetchPublicInfrastructureStatus(serviceMode)",
-        "Typed DTOs for public infrastructure status/quotes/receipts"
+        "Typed DTOs for public infrastructure status/quotes/receipts",
+        "Typed DTOs for public infrastructure pressure inputs"
       ],
       "service": "api.client"
     },

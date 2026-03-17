@@ -222,6 +222,14 @@ export interface CityStressState {
 
 export type InfrastructureMode = "private_city" | "npc_public";
 export type CivicPermitTier = "novice" | "standard" | "trusted";
+export type PublicPressureSourceKey = "civic_instability" | "regional_threat" | "queue_backlog" | "service_heat" | "mission_load";
+
+export interface PublicPressureSource {
+  key: PublicPressureSourceKey;
+  label: string;
+  score: number;
+  detail: string;
+}
 
 export interface PublicInfrastructureReceipt {
   id: string;
@@ -251,6 +259,9 @@ export interface PublicInfrastructureSummary {
   subsidyCreditsRemaining: number;
   strainBand: "light" | "elevated" | "heavy" | "critical";
   recommendedMode: InfrastructureMode;
+  pressureScore: number;
+  primaryPressure: PublicPressureSource | null;
+  pressureSources: PublicPressureSource[];
   note: string;
 }
 
@@ -262,6 +273,7 @@ export interface PublicServiceQuote {
   queueMinutes: number;
   strainScore: number;
   note: string;
+  pressureSources: PublicPressureSource[];
 }
 
 export interface AppliedPublicServiceUsage {
@@ -278,6 +290,7 @@ export interface PublicInfrastructureStatusResponse {
   summary: PublicInfrastructureSummary | null;
   mode: InfrastructureMode;
   quotes: PublicServiceQuote[];
+  pressureSources: PublicPressureSource[];
   cityStress: CityStressState | null;
 }
 

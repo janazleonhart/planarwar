@@ -11,6 +11,19 @@ export type PublicServiceKind =
 
 export type InfrastructureMode = "private_city" | "npc_public";
 export type CivicPermitTier = "novice" | "standard" | "trusted";
+export type PublicPressureSourceKey =
+  | "civic_instability"
+  | "regional_threat"
+  | "queue_backlog"
+  | "service_heat"
+  | "mission_load";
+
+export interface PublicPressureSource {
+  key: PublicPressureSourceKey;
+  label: string;
+  score: number;
+  detail: string;
+}
 
 export interface PublicInfrastructureReceipt {
   id: string;
@@ -40,6 +53,9 @@ export interface PublicInfrastructureSummary {
   subsidyCreditsRemaining: number;
   strainBand: "light" | "elevated" | "heavy" | "critical";
   recommendedMode: InfrastructureMode;
+  pressureScore: number;
+  primaryPressure: PublicPressureSource | null;
+  pressureSources: PublicPressureSource[];
   note: string;
 }
 
@@ -51,6 +67,7 @@ export interface PublicServiceQuote {
   queueMinutes: number;
   strainScore: number;
   note: string;
+  pressureSources: PublicPressureSource[];
 }
 
 const MAX_RECEIPTS = 12;
@@ -161,45 +178,108 @@ function deriveStrainBand(score: number): PublicInfrastructureSummary["strainBan
   return "light";
 }
 
+function clampPressure(score: number, max = 100): number {
+  return Math.max(0, Math.min(max, Math.round(score)));
+}
+
+function topPressureSummary(source: PublicPressureSource | null): string {
+  if (!source) return "Pressure inputs are presently calm.";
+  return `${source.label} is the main public-service drag right now.`;
+}
+
+export function derivePublicPressureSources(ps: PlayerState): PublicPressureSource[] {
+  const infra = ensurePublicInfrastructureState(ps);
+  const queuePressure = getActiveQueuePressure(ps);
+  const cityStressTotal = Math.max(0, Number(ps.cityStress?.total ?? 0));
+  const maxThreat = Math.max(0, ...(ps.regionWar ?? []).map((rw) => Number(rw.threat ?? 0)));
+  const activeMissionCount = Math.max(0, Number(ps.activeMissions?.length ?? 0));
+  const deployedArmyCount = (ps.armies ?? []).filter((army) => army.status === "on_mission").length;
+  const deployedHeroCount = (ps.heroes ?? []).filter((hero) => hero.status === "on_mission").length;
+
+  const sources: PublicPressureSource[] = [
+    {
+      key: "civic_instability",
+      label: "Civic instability",
+      score: clampPressure(cityStressTotal * 0.4, 35),
+      detail: `City stress is ${ps.cityStress?.stage ?? "stable"} at ${cityStressTotal}/100.`,
+    },
+    {
+      key: "regional_threat",
+      label: "Regional threat",
+      score: clampPressure(maxThreat * 0.28, 28),
+      detail: maxThreat > 0 ? `Frontier threat has peaked at ${maxThreat}/100 across watched regions.` : "Regional threat is currently muted.",
+    },
+    {
+      key: "queue_backlog",
+      label: "Queue backlog",
+      score: clampPressure(queuePressure * 3.5, 22),
+      detail: queuePressure > 0 ? `Active workshops, armies, or research are adding ${queuePressure} queue-pressure points.` : "Local service queues are mostly clear.",
+    },
+    {
+      key: "service_heat",
+      label: "Service heat",
+      score: clampPressure(Number(infra.serviceHeat ?? 0) * 0.25, 20),
+      detail: Number(infra.serviceHeat ?? 0) > 0 ? `Recent NPC public usage has pushed service heat to ${infra.serviceHeat}/100.` : "Recent NPC public usage is light.",
+    },
+    {
+      key: "mission_load",
+      label: "Mission load",
+      score: clampPressure(activeMissionCount * 5 + deployedArmyCount * 3 + deployedHeroCount * 2, 18),
+      detail:
+        activeMissionCount + deployedArmyCount + deployedHeroCount > 0
+          ? `Field commitments: ${activeMissionCount} active missions, ${deployedArmyCount} armies out, ${deployedHeroCount} heroes deployed.`
+          : "No major field commitments are currently draining public logistics.",
+    },
+  ];
+
+  return sources.sort((a, b) => b.score - a.score);
+}
+
 export function summarizePublicInfrastructure(ps: PlayerState): PublicInfrastructureSummary {
   const infra = ensurePublicInfrastructureState(ps);
   const permitTier = deriveCivicPermitTier(ps);
   const queuePressure = getActiveQueuePressure(ps);
   const cityStressTotal = Math.max(0, Number(ps.cityStress?.total ?? 0));
-  const serviceHeat = Math.max(0, Number(infra.serviceHeat ?? 0));
-  const combinedStrain = Math.min(100, Math.round(cityStressTotal * 0.55 + serviceHeat * 0.35 + queuePressure * 2.5));
-  const strainBand = deriveStrainBand(combinedStrain);
+  const pressureSources = derivePublicPressureSources(ps);
+  const pressureScore = clampPressure(pressureSources.reduce((sum, source) => sum + source.score, 0));
+  const strainBand = deriveStrainBand(pressureScore);
   const subsidyCreditsRemaining = Math.max(0, NOVICE_SUBSIDY_MAX - Math.max(0, infra.noviceSubsidyCreditsUsed ?? 0));
   const recommendedMode: InfrastructureMode = strainBand === "critical" || queuePressure >= 6 ? "private_city" : "npc_public";
+  const primaryPressure = pressureSources.find((source) => source.score > 0) ?? null;
 
   let note = "Public service lanes are calm.";
   switch (strainBand) {
     case "elevated":
-      note = "Public desks are getting busy. Expect small levies and a queue bump.";
+      note = `${topPressureSummary(primaryPressure)} Expect small levies and a queue bump.`;
       break;
     case "heavy":
-      note = "Public infrastructure is under visible strain. Expect harsher levies and longer queues.";
+      note = `${topPressureSummary(primaryPressure)} Public infrastructure is under visible strain.`;
       break;
     case "critical":
-      note = "Public infrastructure is buckling under pressure. Use private lanes unless you enjoy paying the bureaucracy troll toll.";
+      note = `${topPressureSummary(primaryPressure)} Public infrastructure is buckling under pressure. Use private lanes unless you enjoy paying the bureaucracy troll toll.`;
       break;
     case "light":
     default:
       if (permitTier === "novice" && subsidyCreditsRemaining > 0) {
         note = `Novice civic subsidy still has ${subsidyCreditsRemaining} discounted uses remaining.`;
+      } else if (primaryPressure) {
+        note = topPressureSummary(primaryPressure);
       }
       break;
   }
 
   return {
     permitTier,
-    serviceHeat,
+    serviceHeat: Math.max(0, Number(infra.serviceHeat ?? 0)),
     queuePressure,
     cityStressStage: ps.cityStress?.stage ?? "stable",
     cityStressTotal,
     subsidyCreditsRemaining,
     strainBand,
     recommendedMode,
+    pressureScore,
+    primaryPressure,
+    pressureSources,
     note,
   };
 }
@@ -223,17 +303,19 @@ export function quotePublicServiceUsage(
       queueMinutes: 0,
       strainScore: 0,
       note: "Private city infrastructure avoids public levies and queue drag.",
+      pressureSources: summary.pressureSources,
     };
   }
 
   const base = PUBLIC_SERVICE_BASE[service];
-  const strainScore = Math.min(100, Math.round(summary.cityStressTotal * 0.55 + summary.serviceHeat * 0.35 + summary.queuePressure * 2.5));
+  const strainScore = summary.pressureScore;
   const permitDiscount = getPermitDiscountMultiplier(permitTier, infra);
   const stageMult = getStageStrainMultiplier(ps.cityStress?.stage ?? "stable");
   const pressureMult = 1 + strainScore / 250;
   const levyRate = base.levyRate * stageMult * pressureMult * permitDiscount;
   const levy = buildLevy(baseCosts, levyRate);
-  const queueMinutes = Math.max(1, Math.round(base.queueMinutes * stageMult + summary.queuePressure / 2));
+  const queueMinutes = Math.max(1, Math.round(base.queueMinutes * stageMult + summary.queuePressure / 2 + strainScore / 20));
+  const topPressures = summary.pressureSources.filter((source) => source.score > 0).slice(0, 2);
 
   let note = `NPC public service used: ${base.label}.`;
   if (permitTier === "novice" && infra.noviceSubsidyCreditsUsed < NOVICE_SUBSIDY_MAX) {
@@ -242,10 +324,10 @@ export function quotePublicServiceUsage(
     note += " Trusted-citizen terms reduced the levy slightly.";
   }
   if ((ps.cityStress?.stage ?? "stable") !== "stable") {
-    note += ` Regional strain is ${ps.cityStress.stage}, increasing public costs.`;
+    note += ` Civic strain is ${ps.cityStress.stage}, increasing public costs.`;
   }
-  if (summary.queuePressure >= 4) {
-    note += " Active queues are backed up, adding extra service delay.";
+  if (topPressures.length > 0) {
+    note += ` Main pressure inputs: ${topPressures.map((source) => source.label.toLowerCase()).join(" and ")}.`;
   }
 
   return {
@@ -256,6 +338,7 @@ export function quotePublicServiceUsage(
     queueMinutes,
     strainScore,
     note,
+    pressureSources: summary.pressureSources,
   };
 }
 
