@@ -3,7 +3,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { deriveCityMudConsumers, deriveVendorEconomyRecommendation, deriveVendorGuardrailApplication, deriveVendorRuntimeEffect, deriveVendorSupportPolicy, summarizeCityMudBridge } from "../domain/cityMudBridge";
+import { deriveCityMudConsumers, deriveVendorEconomyRecommendation, deriveVendorGuardrailApplication, deriveVendorLanePolicy, deriveVendorRuntimeEffect, deriveVendorSupportPolicy, summarizeCityMudBridge } from "../domain/cityMudBridge";
 import { applyMissionConsumerGuidance, generateMissionOffers } from "../domain/missions";
 import { createInitialPublicInfrastructureState } from "../domain/publicInfrastructure";
 import { getOrCreatePlayerState } from "../gameState";
@@ -335,4 +335,86 @@ test("vendor guardrail application softens large runtime jumps into a safe one-s
   assert.ok(guarded.restockEverySec <= 192);
   assert.ok(guarded.warnings.length >= 1);
   assert.match(guarded.detail, /guardrails softened/i);
+});
+
+
+test("vendor lane policy protects essentials more than luxury under strained posture", () => {
+  const ps = makePlayer();
+  ps.resources.food = 170;
+  ps.resources.materials = 155;
+  ps.resources.wealth = 145;
+  ps.city.stats.infrastructure = 52;
+  ps.city.stats.prosperity = 44;
+  ps.city.stats.security = 39;
+  ps.cityStress.total = 42;
+  ps.cityStress.stage = "strained";
+  ps.publicInfrastructure.serviceHeat = 44;
+
+  const summary = summarizeCityMudBridge(ps);
+  const consumers = deriveCityMudConsumers(summary);
+  const basePolicy = deriveVendorSupportPolicy(summary, consumers);
+  const essentials = deriveVendorLanePolicy(summary, consumers, basePolicy, {
+    itemId: "ration_pack",
+    itemName: "Ration Pack",
+    itemRarity: "common",
+  });
+  const luxury = deriveVendorLanePolicy(summary, consumers, basePolicy, {
+    itemId: "silk_feast_platter",
+    itemName: "Silk Feast Platter",
+    itemRarity: "epic",
+  });
+
+  assert.equal(summary.bridgeBand, "strained");
+  assert.equal(essentials.lane, "essentials");
+  assert.equal(luxury.lane, "luxury");
+  assert.ok(essentials.recommendedStockMultiplier > basePolicy.recommendedStockMultiplier);
+  assert.ok(essentials.recommendedPriceMaxMultiplier < basePolicy.recommendedPriceMaxMultiplier);
+  assert.ok(luxury.recommendedStockMultiplier < basePolicy.recommendedStockMultiplier);
+  assert.ok(luxury.recommendedPriceMaxMultiplier > basePolicy.recommendedPriceMaxMultiplier);
+});
+
+test("vendor economy recommendation becomes lane-aware for essentials versus luxury", () => {
+  const ps = makePlayer();
+  ps.resources.food = 170;
+  ps.resources.materials = 155;
+  ps.resources.wealth = 145;
+  ps.city.stats.infrastructure = 52;
+  ps.city.stats.prosperity = 44;
+  ps.city.stats.security = 39;
+  ps.cityStress.total = 42;
+  ps.cityStress.stage = "strained";
+  ps.publicInfrastructure.serviceHeat = 44;
+
+  const summary = summarizeCityMudBridge(ps);
+  const consumers = deriveCityMudConsumers(summary);
+  const basePolicy = deriveVendorSupportPolicy(summary, consumers);
+  const essentialsPolicy = deriveVendorLanePolicy(summary, consumers, basePolicy, {
+    itemId: "ration_pack",
+    itemName: "Ration Pack",
+    itemRarity: "common",
+  });
+  const luxuryPolicy = deriveVendorLanePolicy(summary, consumers, basePolicy, {
+    itemId: "silk_feast_platter",
+    itemName: "Silk Feast Platter",
+    itemRarity: "epic",
+  });
+
+  const essentialsRec = deriveVendorEconomyRecommendation({
+    stockMax: 80,
+    restockEverySec: 300,
+    restockAmount: 6,
+    priceMinMult: 0.9,
+    priceMaxMult: 1.6,
+  }, essentialsPolicy);
+  const luxuryRec = deriveVendorEconomyRecommendation({
+    stockMax: 80,
+    restockEverySec: 300,
+    restockAmount: 6,
+    priceMinMult: 0.9,
+    priceMaxMult: 1.6,
+  }, luxuryPolicy);
+
+  assert.ok(essentialsRec.stockMax > luxuryRec.stockMax);
+  assert.ok(essentialsRec.restockEverySec < luxuryRec.restockEverySec);
+  assert.ok(essentialsRec.priceMaxMult < luxuryRec.priceMaxMult);
 });

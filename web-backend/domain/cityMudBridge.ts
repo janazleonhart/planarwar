@@ -69,6 +69,22 @@ export interface CityMudVendorSupportPolicy {
   recommendedAction: string;
 }
 
+
+export type CityMudVendorLane = "essentials" | "comfort" | "luxury" | "arcane";
+
+export interface CityMudVendorLaneProfile {
+  lane: CityMudVendorLane;
+  label: string;
+  detail: string;
+  recommendedAction: string;
+}
+
+export interface CityMudVendorLanePolicy extends CityMudVendorSupportPolicy {
+  lane: CityMudVendorLane;
+  laneLabel: string;
+  laneDetail: string;
+}
+
 export interface CityMudVendorEconomyRecommendation {
   stockMax: number;
   restockEverySec: number;
@@ -484,6 +500,115 @@ export function summarizeCityMudBridge(ps: PlayerState): CityMudBridgeSummary {
   };
 }
 
+
+
+function detectVendorLane(input: { itemId?: string | null; itemName?: string | null; itemRarity?: string | null }): CityMudVendorLaneProfile {
+  const id = String(input.itemId ?? "").toLowerCase();
+  const name = String(input.itemName ?? "").toLowerCase();
+  const rarity = String(input.itemRarity ?? "").toLowerCase();
+  const haystack = `${id} ${name}`;
+
+  const hasAny = (tokens: string[]) => tokens.some((token) => haystack.includes(token));
+
+  if (rarity.includes("legend") || rarity.includes("epic") || rarity.includes("myth") || rarity.includes("relic") || hasAny(["luxury", "gem", "jewel", "feast", "wine", "crown", "silk"])) {
+    return {
+      lane: "luxury",
+      label: "Luxury goods",
+      detail: "Luxury and prestige inventory should feel scarcity first when the city-mud bridge is under pressure.",
+      recommendedAction: "Throttle comfort and prestige stock before touching staples.",
+    };
+  }
+
+  if (hasAny(["mana", "scroll", "rune", "tome", "glyph", "wand", "staff", "crystal", "focus"])) {
+    return {
+      lane: "arcane",
+      label: "Arcane stock",
+      detail: "Arcane inventory should stay viable, but it can tolerate some caution when logistics tighten.",
+      recommendedAction: "Keep magical staples available, but avoid pretending ritual stock is infinite.",
+    };
+  }
+
+  if (hasAny(["food", "bread", "ration", "water", "bandage", "herb", "ore", "wood", "stone", "cloth", "torch", "potion"])) {
+    return {
+      lane: "essentials",
+      label: "Essentials",
+      detail: "Staples and basic survival goods should be protected even when other lanes are throttled.",
+      recommendedAction: "Favor staple stock, milder price pressure, and faster cadence recovery.",
+    };
+  }
+
+  return {
+    lane: "comfort",
+    label: "Comfort goods",
+    detail: "Comfort goods can track the baseline vendor posture without the hard priority of essentials or the fragility of luxury stock.",
+    recommendedAction: "Let comfort stock follow baseline pressure unless a stronger lane bias is needed.",
+  };
+}
+
+export function deriveVendorLanePolicy(
+  summary: CityMudBridgeSummary,
+  consumers: CityMudConsumerSummary,
+  basePolicy: CityMudVendorSupportPolicy,
+  input: { itemId?: string | null; itemName?: string | null; itemRarity?: string | null },
+): CityMudVendorLanePolicy {
+  const profile = detectVendorLane(input);
+  let stock = basePolicy.recommendedStockMultiplier;
+  let priceMin = basePolicy.recommendedPriceMinMultiplier;
+  let priceMax = basePolicy.recommendedPriceMaxMultiplier;
+  let cadence = basePolicy.recommendedRestockCadenceMultiplier;
+  let headline = basePolicy.headline;
+  let detail = `${basePolicy.detail} ${profile.detail}`;
+  let action = `${basePolicy.recommendedAction} ${profile.recommendedAction}`;
+
+  if (profile.lane === "essentials") {
+    stock *= basePolicy.state === "restricted" ? 1.18 : 1.12;
+    cadence *= basePolicy.state === "abundant" ? 0.95 : 0.9;
+    priceMin *= 0.96;
+    priceMax *= 0.92;
+    headline = basePolicy.state === "restricted"
+      ? "Essentials should be protected even under scarcity."
+      : "Essentials should stay ahead of the pressure curve.";
+  } else if (profile.lane === "luxury") {
+    stock *= basePolicy.state === "abundant" ? 1.05 : 0.72;
+    cadence *= basePolicy.state === "abundant" ? 1 : 1.2;
+    priceMin *= basePolicy.state === "abundant" ? 1.02 : 1.08;
+    priceMax *= basePolicy.state === "abundant" ? 1.08 : 1.18;
+    headline = basePolicy.state === "abundant"
+      ? "Luxury goods can ride surplus without owning it."
+      : "Luxury goods should absorb scarcity before staples do.";
+  } else if (profile.lane === "arcane") {
+    stock *= basePolicy.state === "restricted" ? 0.88 : 0.97;
+    cadence *= basePolicy.state === "abundant" ? 0.98 : 1.04;
+    priceMin *= 1.01;
+    priceMax *= 1.05;
+    headline = "Arcane stock should stay viable with measured caution.";
+  }
+
+  stock = clampVendorNum(stock, 0.35, 1.5);
+  cadence = clampVendorNum(cadence, 0.65, 1.75);
+  priceMin = clampVendorNum(priceMin, 0.7, 1.4);
+  priceMax = clampVendorNum(priceMax, 0.9, 2.25);
+  if (priceMin > priceMax) {
+    const lo = Math.min(priceMin, priceMax);
+    const hi = Math.max(priceMin, priceMax);
+    priceMin = lo;
+    priceMax = hi;
+  }
+
+  return {
+    ...basePolicy,
+    lane: profile.lane,
+    laneLabel: profile.label,
+    laneDetail: profile.detail,
+    recommendedStockMultiplier: stock,
+    recommendedPriceMinMultiplier: priceMin,
+    recommendedPriceMaxMultiplier: priceMax,
+    recommendedRestockCadenceMultiplier: cadence,
+    headline,
+    detail,
+    recommendedAction: action,
+  };
+}
 
 export function deriveVendorEconomyRecommendation(
   base: {

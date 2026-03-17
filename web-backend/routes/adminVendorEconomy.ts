@@ -5,7 +5,7 @@
 
 import express from "express";
 import { db } from "../../worldcore/db/Database";
-import { deriveCityMudConsumers, deriveVendorEconomyRecommendation, deriveVendorGuardrailApplication, deriveVendorRuntimeEffect, deriveVendorSupportPolicy, summarizeCityMudBridge } from "../domain/cityMudBridge";
+import { deriveCityMudConsumers, deriveVendorEconomyRecommendation, deriveVendorGuardrailApplication, deriveVendorLanePolicy, deriveVendorRuntimeEffect, deriveVendorSupportPolicy, summarizeCityMudBridge } from "../domain/cityMudBridge";
 import { resolvePlayerAccess } from "./playerCityAccess";
 
 export const adminVendorEconomyRouter = express.Router();
@@ -48,6 +48,7 @@ type VendorEconomyItemRow = {
   restock_amount: number | null;
   price_min_mult: number | null;
   price_max_mult: number | null;
+  bridge_lane_policy?: ReturnType<typeof deriveVendorLanePolicy> | null;
   bridge_recommendation?: ReturnType<typeof deriveVendorEconomyRecommendation> | null;
   bridge_runtime_effect?: ReturnType<typeof deriveVendorRuntimeEffect> | null;
 };
@@ -127,7 +128,14 @@ adminVendorEconomyRouter.get("/items", async (req, res) => {
 
     const bridge = await getBridgeVendorPolicyOrNull(req);
     const items = (r.rows ?? []).map((row) => {
-      const bridgeRecommendation = bridge
+      const lanePolicy = bridge
+        ? deriveVendorLanePolicy(bridge.summary, bridge.consumers, bridge.vendorPolicy, {
+            itemId: row.item_id,
+            itemName: row.item_name,
+            itemRarity: row.item_rarity,
+          })
+        : null;
+      const bridgeRecommendation = lanePolicy
         ? deriveVendorEconomyRecommendation(
             {
               stockMax: row.stock_max,
@@ -136,10 +144,10 @@ adminVendorEconomyRouter.get("/items", async (req, res) => {
               priceMinMult: row.price_min_mult,
               priceMaxMult: row.price_max_mult,
             },
-            bridge.vendorPolicy,
+            lanePolicy,
           )
         : null;
-      const bridgeRuntimeEffect = bridge
+      const bridgeRuntimeEffect = lanePolicy
         ? deriveVendorRuntimeEffect(
             {
               stock: row.stock,
@@ -149,11 +157,12 @@ adminVendorEconomyRouter.get("/items", async (req, res) => {
               priceMinMult: row.price_min_mult,
               priceMaxMult: row.price_max_mult,
             },
-            bridge.vendorPolicy,
+            lanePolicy,
           )
         : null;
       return {
         ...row,
+        bridge_lane_policy: lanePolicy,
         bridge_recommendation: bridgeRecommendation,
         bridge_runtime_effect: bridgeRuntimeEffect,
       };
@@ -241,6 +250,11 @@ adminVendorEconomyRouter.post("/bridge_runtime_guarded", async (req, res) => {
     const results: any[] = [];
     let appliedCount = 0;
     for (const row of rows.rows ?? []) {
+      const lanePolicy = deriveVendorLanePolicy(bridge.summary, bridge.consumers, bridge.vendorPolicy, {
+        itemId: row.item_id,
+        itemName: row.item_name,
+        itemRarity: row.item_rarity,
+      });
       const runtimeEffect = deriveVendorRuntimeEffect({
         stock: row.stock,
         stockMax: row.stock_max,
@@ -248,7 +262,7 @@ adminVendorEconomyRouter.post("/bridge_runtime_guarded", async (req, res) => {
         restockAmount: row.restock_amount,
         priceMinMult: row.price_min_mult,
         priceMaxMult: row.price_max_mult,
-      }, bridge.vendorPolicy);
+      }, lanePolicy);
       const guardrail = deriveVendorGuardrailApplication({
         stockMax: row.stock_max,
         restockEverySec: row.restock_every_sec,

@@ -37,6 +37,23 @@ type VendorRuntimeEffect = {
   detail: string;
 };
 
+type VendorLanePolicy = {
+  lane: "essentials" | "comfort" | "luxury" | "arcane";
+  laneLabel: string;
+  laneDetail: string;
+  state: "abundant" | "stable" | "pressured" | "restricted";
+  stockPosture: "expand" | "maintain" | "throttle" | "restrict";
+  pricePosture: "discount" | "baseline" | "caution" | "surge_guard";
+  cadencePosture: "accelerate" | "normal" | "slow" | "triage";
+  recommendedStockMultiplier: number;
+  recommendedPriceMinMultiplier: number;
+  recommendedPriceMaxMultiplier: number;
+  recommendedRestockCadenceMultiplier: number;
+  headline: string;
+  detail: string;
+  recommendedAction: string;
+};
+
 type VendorEconomyItem = {
   vendor_item_id: number;
   vendor_id: string;
@@ -55,6 +72,7 @@ type VendorEconomyItem = {
   restock_amount: number | null;
   price_min_mult: number | null;
   price_max_mult: number | null;
+  bridge_lane_policy?: VendorLanePolicy | null;
   bridge_recommendation?: VendorEconomyRecommendation | null;
   bridge_runtime_effect?: VendorRuntimeEffect | null;
 };
@@ -282,6 +300,7 @@ export function AdminVendorEconomyPage() {
   const [onlyFinite, setOnlyFinite] = useState(false);
   const [onlyRestock, setOnlyRestock] = useState(false);
   const [onlyDirty, setOnlyDirty] = useState(false);
+  const [laneFilter, setLaneFilter] = useState<"all" | "essentials" | "comfort" | "luxury" | "arcane">("all");
 
   async function loadBridgeStatus() {
     try {
@@ -421,9 +440,13 @@ export function AdminVendorEconomyPage() {
         if (!rowDirty(r)) return false;
       }
 
+      if (laneFilter !== "all") {
+        if ((r.bridge_lane_policy?.lane ?? "comfort") !== laneFilter) return false;
+      }
+
       return true;
     });
-  }, [items, qItem, onlyFinite, onlyRestock, onlyDirty, edits]);
+  }, [items, qItem, onlyFinite, onlyRestock, onlyDirty, laneFilter, edits]);
 
   const dirtyCountAll = useMemo(() => items.filter((r) => rowDirty(r)).length, [items, edits]);
   const dirtyCountVisible = useMemo(
@@ -770,6 +793,17 @@ function stageRuntimePreview(row: VendorEconomyItem) {
           dirty only
         </label>
 
+        <label style={{ display: "flex", gap: 6, alignItems: "center" }}>
+          lane
+          <select value={laneFilter} onChange={(e) => setLaneFilter(e.target.value as any)} disabled={busy}>
+            <option value="all">all</option>
+            <option value="essentials">essentials</option>
+            <option value="comfort">comfort</option>
+            <option value="luxury">luxury</option>
+            <option value="arcane">arcane</option>
+          </select>
+        </label>
+
         <span style={{ marginLeft: 18, display: "flex", gap: 12, alignItems: "center" }}>
           <label style={{ display: "flex", gap: 6, alignItems: "center" }}>
             Limit
@@ -883,6 +917,9 @@ function stageRuntimePreview(row: VendorEconomyItem) {
                     {r.item_rarity ? (
                       <span style={{ marginLeft: 8, opacity: 0.75, fontSize: 12 }}>[{r.item_rarity}]</span>
                     ) : null}
+                    {r.bridge_lane_policy ? (
+                      <span style={{ marginLeft: 8, opacity: 0.85, fontSize: 12 }} title={r.bridge_lane_policy.laneDetail}>⟨{r.bridge_lane_policy.lane}⟩</span>
+                    ) : null}
                   </td>
                   <td style={{ whiteSpace: "nowrap" }}>{r.base_price_gold}</td>
 
@@ -955,9 +992,14 @@ function stageRuntimePreview(row: VendorEconomyItem) {
                     )}
                   </td>
 
-                  <td style={{ minWidth: 220 }}>
+                  <td style={{ minWidth: 250 }}>
                     {r.bridge_recommendation ? (
                       <>
+                        {r.bridge_lane_policy ? (
+                          <div style={{ fontSize: 11, opacity: 0.78, marginBottom: 4 }} title={r.bridge_lane_policy.laneDetail}>
+                            lane <b>{r.bridge_lane_policy.laneLabel}</b> · state {r.bridge_lane_policy.state} · {r.bridge_lane_policy.stockPosture}/{r.bridge_lane_policy.pricePosture}/{r.bridge_lane_policy.cadencePosture}
+                          </div>
+                        ) : null}
                         <div style={{ fontSize: 12, fontWeight: 600 }}>{r.bridge_recommendation.headline}</div>
                         <div style={{ fontSize: 11, opacity: 0.8, marginTop: 4 }}>
                           stock {r.bridge_recommendation.stockMax} · cadence {r.bridge_recommendation.restockEverySec || 0}s/{r.bridge_recommendation.restockAmount || 0} · price {r.bridge_recommendation.priceMinMult.toFixed(2)}–{r.bridge_recommendation.priceMaxMult.toFixed(2)}
@@ -966,7 +1008,9 @@ function stageRuntimePreview(row: VendorEconomyItem) {
                           onClick={() => stageBridgeRecommendation(r)}
                           disabled={busy || !canWrite}
                           style={{ marginTop: 6 }}
-                          title={r.bridge_recommendation.detail}
+                          title={r.bridge_lane_policy ? `${r.bridge_recommendation.detail}
+
+${r.bridge_lane_policy.recommendedAction}` : r.bridge_recommendation.detail}
                         >
                           Use bridge rec
                         </button>

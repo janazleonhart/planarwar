@@ -476,7 +476,8 @@
         "v0.4 also consumes city\u2194MUD bridge vendorPolicy to preview recommended stock/price/cadence posture while tuning vendor_item_economy rows.",
         "v0.5 stages and applies live bridge recommendations per row or across visible vendor items, turning policy preview into actionable tuning.",
         "v0.6 surfaces per-row bridge runtime previews (effective stock/cadence/price + fill-state) and allows staging those live runtime knobs directly into the admin editor.",
-        "v0.7 adds preview/apply controls for server-guarded runtime changes so admins can stage or commit softened bridge-driven vendor updates without bypassing safety rails."
+        "v0.7 adds preview/apply controls for server-guarded runtime changes so admins can stage or commit softened bridge-driven vendor updates without bypassing safety rails.",
+        "v0.8 adds lane-aware vendor posture display and filtering so operators can stage/apply bridge effects by essentials, comfort, luxury, or arcane stock lanes."
       ],
       "owns": [
         "Admin UI for vendor_item_economy"
