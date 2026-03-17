@@ -4,7 +4,13 @@ import { Router } from "express";
 import { equipHeroAttachmentForPlayer, HeroAttachmentKind, recruitHeroForPlayer } from "../gameState";
 import type { HeroRole } from "../domain/heroes";
 import { withPlayerAccessMutation } from "./playerCityAccess";
-import { applyPublicInfrastructureUsage, cloneResources, diffSpentResources, withInfrastructureRollback } from "./publicInfrastructureSupport";
+import {
+  applyPublicInfrastructureUsage,
+  cloneResources,
+  diffSpentResources,
+  withInfrastructureRollback,
+  type AppliedPublicInfrastructureUsage,
+} from "./publicInfrastructureSupport";
 import type { InfrastructureMode } from "../domain/publicInfrastructure";
 
 const router = Router();
@@ -34,6 +40,7 @@ router.post("/recruit", async (req, res) => {
   const access = await withPlayerAccessMutation(req, (access) => {
     const mode: InfrastructureMode = serviceMode === "npc_public" ? "npc_public" : "private_city";
     const before = cloneResources(access.playerState.resources);
+    let publicService: AppliedPublicInfrastructureUsage | null = null;
     const wrapped = withInfrastructureRollback(
       access.playerState,
       () => recruitHeroForPlayer(access.playerId, role, new Date()),
@@ -44,6 +51,7 @@ router.post("/recruit", async (req, res) => {
         const baseCosts = diffSpentResources(before, access.playerState.resources);
         const levy = applyPublicInfrastructureUsage(access.playerState, "hero_recruit", mode, baseCosts, new Date());
         if (levy.ok === false) return { ok: false as const, error: levy.error };
+        publicService = levy.usage;
         return { ok: true as const };
       }
     );
@@ -60,6 +68,7 @@ router.post("/recruit", async (req, res) => {
         heroes: access.playerState.heroes,
         resources: access.playerState.resources,
         publicInfrastructure: access.playerState.publicInfrastructure,
+        publicService,
       },
     };
   });

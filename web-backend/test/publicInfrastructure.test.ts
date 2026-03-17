@@ -3,9 +3,13 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { createInitialPublicInfrastructureState, quotePublicServiceUsage } from "../domain/publicInfrastructure";
+import {
+  createInitialPublicInfrastructureState,
+  quotePublicServiceUsage,
+  summarizePublicInfrastructure,
+} from "../domain/publicInfrastructure";
 import { getOrCreatePlayerState } from "../gameState";
-import { withInfrastructureRollback } from "../routes/publicInfrastructureSupport";
+import { applyPublicInfrastructureUsage, withInfrastructureRollback } from "../routes/publicInfrastructureSupport";
 
 function makePlayer() {
   const ps = getOrCreatePlayerState(`pubinfra_${Date.now()}_${Math.floor(Math.random() * 100000)}`);
@@ -30,6 +34,55 @@ test("npc public infrastructure quote applies novice subsidy and queue strain", 
   assert.ok((quote.levy.wealth ?? 0) > 0);
   assert.ok(quote.queueMinutes >= 8);
   assert.match(quote.note, /Novice civic subsidy/i);
+});
+
+test("public infrastructure summary recommends private mode under severe pressure", () => {
+  const ps = makePlayer();
+  ps.cityStress.stage = "lockdown";
+  ps.cityStress.total = 88;
+  ps.publicInfrastructure.serviceHeat = 74;
+  ps.workshopJobs.push({
+    id: "job_a",
+    attachmentKind: "valor_charm",
+    startedAt: "2026-03-16T00:00:00.000Z",
+    finishesAt: "2026-03-16T01:00:00.000Z",
+    completed: false,
+  });
+  ps.workshopJobs.push({
+    id: "job_b",
+    attachmentKind: "arcane_focus",
+    startedAt: "2026-03-16T00:10:00.000Z",
+    finishesAt: "2026-03-16T01:10:00.000Z",
+    completed: false,
+  });
+
+  const summary = summarizePublicInfrastructure(ps);
+  assert.equal(summary.strainBand, "critical");
+  assert.equal(summary.recommendedMode, "private_city");
+  assert.match(summary.note, /buckling under pressure/i);
+});
+
+test("applying npc public service usage returns receipt and queue metadata", () => {
+  const ps = makePlayer();
+  ps.cityStress.stage = "crisis";
+  ps.cityStress.total = 61;
+  const beforeWealth = ps.resources.wealth;
+
+  const result = applyPublicInfrastructureUsage(
+    ps,
+    "hero_recruit",
+    "npc_public",
+    { wealth: 40, materials: 12 },
+    new Date("2026-03-16T00:30:00.000Z")
+  );
+
+  assert.equal(result.ok, true);
+  if (!result.ok) return;
+  assert.ok(result.usage.receipt);
+  assert.ok(result.usage.queueAppliedMinutes >= 10);
+  assert.ok(ps.resources.wealth < beforeWealth);
+  assert.match(result.usage.eventMessage, /Public infrastructure handled hero recruit/i);
+  assert.equal(ps.publicInfrastructure.receipts.length, 1);
 });
 
 test("public infrastructure rollback restores player state when levy validation fails", () => {

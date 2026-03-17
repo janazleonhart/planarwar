@@ -4,7 +4,13 @@ import { Router } from "express";
 import { buildBuildingForPlayer, upgradeBuildingForPlayer } from "../gameState";
 import type { BuildingKind } from "../gameState";
 import { withPlayerAccessMutation } from "./playerCityAccess";
-import { applyPublicInfrastructureUsage, cloneResources, diffSpentResources, withInfrastructureRollback } from "./publicInfrastructureSupport";
+import {
+  applyPublicInfrastructureUsage,
+  cloneResources,
+  diffSpentResources,
+  withInfrastructureRollback,
+  type AppliedPublicInfrastructureUsage,
+} from "./publicInfrastructureSupport";
 import type { InfrastructureMode } from "../domain/publicInfrastructure";
 
 const router = Router();
@@ -16,6 +22,7 @@ router.post("/construct", async (req, res) => {
   const access = await withPlayerAccessMutation(req, (access) => {
     const mode: InfrastructureMode = serviceMode === "npc_public" ? "npc_public" : "private_city";
     const before = cloneResources(access.playerState.resources);
+    let publicService: AppliedPublicInfrastructureUsage | null = null;
     const wrapped = withInfrastructureRollback(
       access.playerState,
       () => buildBuildingForPlayer(access.playerId, kind, new Date()),
@@ -26,6 +33,7 @@ router.post("/construct", async (req, res) => {
         const baseCosts = diffSpentResources(before, access.playerState.resources);
         const levy = applyPublicInfrastructureUsage(access.playerState, "building_construct", mode, baseCosts, new Date());
         if (levy.ok === false) return { ok: false as const, error: levy.error };
+        publicService = levy.usage;
         return { ok: true as const };
       }
     );
@@ -35,7 +43,14 @@ router.post("/construct", async (req, res) => {
 
     return {
       ok: true as const,
-      body: { ok: true, building: wrapped.value.building, city: access.playerState.city, resources: access.playerState.resources, publicInfrastructure: access.playerState.publicInfrastructure },
+      body: {
+        ok: true,
+        building: wrapped.value.building,
+        city: access.playerState.city,
+        resources: access.playerState.resources,
+        publicInfrastructure: access.playerState.publicInfrastructure,
+        publicService,
+      },
     };
   });
 
@@ -51,6 +66,7 @@ router.post("/upgrade", async (req, res) => {
   const access = await withPlayerAccessMutation(req, (access) => {
     const mode: InfrastructureMode = serviceMode === "npc_public" ? "npc_public" : "private_city";
     const before = cloneResources(access.playerState.resources);
+    let publicService: AppliedPublicInfrastructureUsage | null = null;
     const wrapped = withInfrastructureRollback(
       access.playerState,
       () => upgradeBuildingForPlayer(access.playerId, buildingId, new Date()),
@@ -61,6 +77,7 @@ router.post("/upgrade", async (req, res) => {
         const baseCosts = diffSpentResources(before, access.playerState.resources);
         const levy = applyPublicInfrastructureUsage(access.playerState, "building_upgrade", mode, baseCosts, new Date());
         if (levy.ok === false) return { ok: false as const, error: levy.error };
+        publicService = levy.usage;
         return { ok: true as const };
       }
     );
@@ -70,7 +87,14 @@ router.post("/upgrade", async (req, res) => {
 
     return {
       ok: true as const,
-      body: { ok: true, building: wrapped.value.building, city: access.playerState.city, resources: access.playerState.resources, publicInfrastructure: access.playerState.publicInfrastructure },
+      body: {
+        ok: true,
+        building: wrapped.value.building,
+        city: access.playerState.city,
+        resources: access.playerState.resources,
+        publicInfrastructure: access.playerState.publicInfrastructure,
+        publicService,
+      },
     };
   });
 

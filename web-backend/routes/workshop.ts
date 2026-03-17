@@ -3,7 +3,13 @@
 import { Router } from "express";
 import { completeWorkshopJobForPlayer, HeroAttachmentKind, startWorkshopJobForPlayer } from "../gameState";
 import { withPlayerAccessMutation } from "./playerCityAccess";
-import { applyPublicInfrastructureUsage, cloneResources, diffSpentResources, withInfrastructureRollback } from "./publicInfrastructureSupport";
+import {
+  applyPublicInfrastructureUsage,
+  cloneResources,
+  diffSpentResources,
+  withInfrastructureRollback,
+  type AppliedPublicInfrastructureUsage,
+} from "./publicInfrastructureSupport";
 import type { InfrastructureMode } from "../domain/publicInfrastructure";
 
 const router = Router();
@@ -15,6 +21,7 @@ router.post("/craft", async (req, res) => {
   const access = await withPlayerAccessMutation(req, (access) => {
     const mode: InfrastructureMode = serviceMode === "npc_public" ? "npc_public" : "private_city";
     const before = cloneResources(access.playerState.resources);
+    let publicService: AppliedPublicInfrastructureUsage | null = null;
     const wrapped = withInfrastructureRollback(
       access.playerState,
       () => startWorkshopJobForPlayer(access.playerId, kind, new Date()),
@@ -25,8 +32,9 @@ router.post("/craft", async (req, res) => {
         const baseCosts = diffSpentResources(before, access.playerState.resources);
         const levy = applyPublicInfrastructureUsage(access.playerState, "workshop_craft", mode, baseCosts, new Date());
         if (levy.ok === false) return { ok: false as const, error: levy.error };
+        publicService = levy.usage;
         if (mode === "npc_public") {
-          result.job.finishesAt = new Date(new Date(result.job.finishesAt).getTime() + levy.quote.queueMinutes * 60 * 1000).toISOString();
+          result.job.finishesAt = new Date(new Date(result.job.finishesAt).getTime() + levy.usage.queueAppliedMinutes * 60 * 1000).toISOString();
         }
         return { ok: true as const };
       }
@@ -44,6 +52,7 @@ router.post("/craft", async (req, res) => {
         workshopJobs: access.playerState.workshopJobs,
         resources: access.playerState.resources,
         publicInfrastructure: access.playerState.publicInfrastructure,
+        publicService,
       },
     };
   });

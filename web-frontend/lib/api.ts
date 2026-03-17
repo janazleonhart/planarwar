@@ -219,6 +219,68 @@ export interface CityStressState {
   lastUpdatedAt: string;
 }
 
+
+export type InfrastructureMode = "private_city" | "npc_public";
+export type CivicPermitTier = "novice" | "standard" | "trusted";
+
+export interface PublicInfrastructureReceipt {
+  id: string;
+  service: "building_construct" | "building_upgrade" | "hero_recruit" | "tech_research" | "workshop_craft";
+  mode: InfrastructureMode;
+  permitTier: CivicPermitTier;
+  levy: Partial<Resources>;
+  queueMinutes: number;
+  strainScore: number;
+  createdAt: string;
+  note: string;
+}
+
+export interface PublicInfrastructureState {
+  serviceHeat: number;
+  lastPublicServiceAt: string | null;
+  noviceSubsidyCreditsUsed: number;
+  receipts: PublicInfrastructureReceipt[];
+}
+
+export interface PublicInfrastructureSummary {
+  permitTier: CivicPermitTier;
+  serviceHeat: number;
+  queuePressure: number;
+  cityStressStage: "stable" | "strained" | "crisis" | "lockdown";
+  cityStressTotal: number;
+  subsidyCreditsRemaining: number;
+  strainBand: "light" | "elevated" | "heavy" | "critical";
+  recommendedMode: InfrastructureMode;
+  note: string;
+}
+
+export interface PublicServiceQuote {
+  service: "building_construct" | "building_upgrade" | "hero_recruit" | "tech_research" | "workshop_craft";
+  mode: InfrastructureMode;
+  permitTier: CivicPermitTier;
+  levy: Partial<Resources>;
+  queueMinutes: number;
+  strainScore: number;
+  note: string;
+}
+
+export interface AppliedPublicServiceUsage {
+  quote: PublicServiceQuote;
+  receipt: PublicInfrastructureReceipt | null;
+  summary: PublicInfrastructureSummary;
+  queueAppliedMinutes: number;
+  eventMessage: string;
+}
+
+export interface PublicInfrastructureStatusResponse {
+  ok: boolean;
+  publicInfrastructure: PublicInfrastructureState | null;
+  summary: PublicInfrastructureSummary | null;
+  mode: InfrastructureMode;
+  quotes: PublicServiceQuote[];
+  cityStress: CityStressState | null;
+}
+
 export interface MeProfile {
   ok?: boolean;
   isDemo?: boolean;
@@ -243,6 +305,7 @@ export interface MeProfile {
   specializationId: string | null;
   specializationStars: number;
   specializationStarsHistory: Record<string, number>;
+  publicInfrastructure: PublicInfrastructureState | null;
 }
 
 function normalizeBase(raw: string): string {
@@ -282,10 +345,15 @@ export async function fetchMe(): Promise<MeProfile> {
   return api<MeProfile>("/api/me");
 }
 
-export async function startTech(techId: string): Promise<void> {
-  await api("/api/tech/start", {
+export async function fetchPublicInfrastructureStatus(serviceMode: InfrastructureMode): Promise<PublicInfrastructureStatusResponse> {
+  const query = new URLSearchParams({ serviceMode }).toString();
+  return api<PublicInfrastructureStatusResponse>(`/api/public_infrastructure/status?${query}`);
+}
+
+export async function startTech(techId: string, serviceMode?: InfrastructureMode): Promise<any> {
+  return api("/api/tech/start", {
     method: "POST",
-    body: JSON.stringify({ techId }),
+    body: JSON.stringify(serviceMode ? { techId, serviceMode } : { techId }),
   });
 }
 

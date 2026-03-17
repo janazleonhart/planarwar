@@ -116,7 +116,9 @@
         "Used by vendor admin pages (AdminVendorEconomyPage/AdminVendorAuditPage) and city-builder pages (MePage/OperationsPage).",
         "Caution: keep secrets out of repo .env; Vite only exposes VITE_* at runtime, but secrets in-repo are still a security risk.",
         "Now attaches Authorization: Bearer <token> automatically if localStorage pw_auth_v1 is present (shared auth across MUD/CityBuilder).",
-        "Adds helpers for CityBuilder city bootstrap/rename endpoints and extends fetchMe() payload metadata for hasCity/canCreateCity flow."
+        "Adds helpers for CityBuilder city bootstrap/rename endpoints and extends fetchMe() payload metadata for hasCity/canCreateCity flow.",
+        "Adds typed public infrastructure DTOs and fetchPublicInfrastructureStatus(serviceMode) for city-builder lane/quote previews.",
+        "startTech() now accepts optional serviceMode so research can use private or NPC public lanes without raw ad-hoc payloads."
       ],
       "owns": [],
       "path": "web-frontend/lib/api.ts",
@@ -130,7 +132,9 @@
         "fetchCityDebug()",
         "bootstrapCity(name, shardId?)",
         "renameCity(name)",
-        "fetchCityConfig()"
+        "fetchCityConfig()",
+        "fetchPublicInfrastructureStatus(serviceMode)",
+        "Typed DTOs for public infrastructure status/quotes/receipts"
       ],
       "service": "api.client"
     },
@@ -455,16 +459,22 @@
         "Uses same-origin /api requests (dev via Vite proxy; prod via reverse proxy / same host).",
         "Not currently routed from App.tsx.",
         "Now acts as the city bootstrap funnel when an authenticated account has no city yet, and exposes authenticated city rename controls.",
-        "Endpoints used include: /api/me, /api/city/bootstrap, /api/city/rename, /api/tech/start, /api/missions/start, /api/missions/complete, /api/missions/refresh_region, /api/buildings/construct, /api/buildings/upgrade, /api/city/tier-up, /api/warfront/assault, /api/armies/raise, /api/armies/reinforce, /api/garrisons/strike, /api/heroes/equip_attachment, /api/heroes/recruit, /api/workshop/craft, /api/workshop/collect, /api/policies/toggle."
+        "Endpoints used include: /api/me, /api/city/bootstrap, /api/city/rename, /api/tech/start, /api/missions/start, /api/missions/complete, /api/missions/refresh_region, /api/buildings/construct, /api/buildings/upgrade, /api/city/tier-up, /api/warfront/assault, /api/armies/raise, /api/armies/reinforce, /api/garrisons/strike, /api/heroes/equip_attachment, /api/heroes/recruit, /api/workshop/craft, /api/workshop/collect, /api/policies/toggle.",
+        "Now surfaces public infrastructure summary, quote previews, receipts, and a lane toggle for private_city vs npc_public service execution.",
+        "City-builder action toasts now include publicService consequence details (levy/queue/note) returned by backend routes."
       ],
       "owns": [
         "client-side UI state for selected actions",
-        "optimistic refresh loops calling fetchMe()"
+        "optimistic refresh loops calling fetchMe()",
+        "client-side UI state for selected public infrastructure lane",
+        "public infrastructure status snapshot from /api/public_infrastructure/status"
       ],
       "path": "web-frontend/pages/MePage.tsx",
       "provides": [
         "City-builder dashboard: city status + buildings + tech + missions + armies/heroes + policies",
-        "Action buttons that POST to various /api/* endpoints"
+        "Action buttons that POST to various /api/* endpoints",
+        "Public infrastructure panel: lane toggle + quote previews + receipts",
+        "City-builder action buttons that send serviceMode to eligible /api/* endpoints"
       ],
       "service": "cityBuilder.me"
     },

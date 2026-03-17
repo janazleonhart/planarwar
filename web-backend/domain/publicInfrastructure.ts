@@ -31,6 +31,18 @@ export interface PublicInfrastructureState {
   receipts: PublicInfrastructureReceipt[];
 }
 
+export interface PublicInfrastructureSummary {
+  permitTier: CivicPermitTier;
+  serviceHeat: number;
+  queuePressure: number;
+  cityStressStage: PlayerState["cityStress"]["stage"];
+  cityStressTotal: number;
+  subsidyCreditsRemaining: number;
+  strainBand: "light" | "elevated" | "heavy" | "critical";
+  recommendedMode: InfrastructureMode;
+  note: string;
+}
+
 export interface PublicServiceQuote {
   service: PublicServiceKind;
   mode: InfrastructureMode;
@@ -43,6 +55,7 @@ export interface PublicServiceQuote {
 
 const MAX_RECEIPTS = 12;
 const RESOURCE_KEYS: Array<keyof Resources> = ["food", "materials", "wealth", "mana", "knowledge", "unity"];
+const NOVICE_SUBSIDY_MAX = 8;
 
 const PUBLIC_SERVICE_BASE: Record<PublicServiceKind, { levyRate: number; queueMinutes: number; label: string }> = {
   building_construct: { levyRate: 0.16, queueMinutes: 12, label: "public works charter" },
@@ -115,7 +128,7 @@ function getStageStrainMultiplier(stage: PlayerState["cityStress"]["stage"]): nu
 
 function getPermitDiscountMultiplier(permitTier: CivicPermitTier, infra: PublicInfrastructureState): number {
   if (permitTier === "novice") {
-    return infra.noviceSubsidyCreditsUsed < 8 ? 0.5 : 0.8;
+    return infra.noviceSubsidyCreditsUsed < NOVICE_SUBSIDY_MAX ? 0.5 : 0.8;
   }
   if (permitTier === "trusted") {
     return 0.92;
@@ -134,11 +147,61 @@ function buildLevy(baseCosts: Partial<Resources>, levyRate: number): Partial<Res
   return levy;
 }
 
-function getActiveQueuePressure(ps: PlayerState): number {
+export function getActiveQueuePressure(ps: PlayerState): number {
   const activeWorkshopJobs = (ps.workshopJobs ?? []).filter((job) => !job.completed).length;
   const researchPressure = ps.activeResearch ? 1 : 0;
   const armyPressure = Math.max(0, ps.armies.length - 1);
   return activeWorkshopJobs * 2 + researchPressure * 3 + armyPressure;
+}
+
+function deriveStrainBand(score: number): PublicInfrastructureSummary["strainBand"] {
+  if (score >= 75) return "critical";
+  if (score >= 55) return "heavy";
+  if (score >= 30) return "elevated";
+  return "light";
+}
+
+export function summarizePublicInfrastructure(ps: PlayerState): PublicInfrastructureSummary {
+  const infra = ensurePublicInfrastructureState(ps);
+  const permitTier = deriveCivicPermitTier(ps);
+  const queuePressure = getActiveQueuePressure(ps);
+  const cityStressTotal = Math.max(0, Number(ps.cityStress?.total ?? 0));
+  const serviceHeat = Math.max(0, Number(infra.serviceHeat ?? 0));
+  const combinedStrain = Math.min(100, Math.round(cityStressTotal * 0.55 + serviceHeat * 0.35 + queuePressure * 2.5));
+  const strainBand = deriveStrainBand(combinedStrain);
+  const subsidyCreditsRemaining = Math.max(0, NOVICE_SUBSIDY_MAX - Math.max(0, infra.noviceSubsidyCreditsUsed ?? 0));
+  const recommendedMode: InfrastructureMode = strainBand === "critical" || queuePressure >= 6 ? "private_city" : "npc_public";
+
+  let note = "Public service lanes are calm.";
+  switch (strainBand) {
+    case "elevated":
+      note = "Public desks are getting busy. Expect small levies and a queue bump.";
+      break;
+    case "heavy":
+      note = "Public infrastructure is under visible strain. Expect harsher levies and longer queues.";
+      break;
+    case "critical":
+      note = "Public infrastructure is buckling under pressure. Use private lanes unless you enjoy paying the bureaucracy troll toll.";
+      break;
+    case "light":
+    default:
+      if (permitTier === "novice" && subsidyCreditsRemaining > 0) {
+        note = `Novice civic subsidy still has ${subsidyCreditsRemaining} discounted uses remaining.`;
+      }
+      break;
+  }
+
+  return {
+    permitTier,
+    serviceHeat,
+    queuePressure,
+    cityStressStage: ps.cityStress?.stage ?? "stable",
+    cityStressTotal,
+    subsidyCreditsRemaining,
+    strainBand,
+    recommendedMode,
+    note,
+  };
 }
 
 export function quotePublicServiceUsage(
@@ -148,7 +211,8 @@ export function quotePublicServiceUsage(
   mode: InfrastructureMode = "private_city"
 ): PublicServiceQuote {
   const infra = ensurePublicInfrastructureState(ps);
-  const permitTier = deriveCivicPermitTier(ps);
+  const summary = summarizePublicInfrastructure(ps);
+  const permitTier = summary.permitTier;
 
   if (mode === "private_city") {
     return {
@@ -163,25 +227,25 @@ export function quotePublicServiceUsage(
   }
 
   const base = PUBLIC_SERVICE_BASE[service];
-  const strainTotal = Math.max(0, Number(ps.cityStress?.total ?? 0));
-  const heat = Math.max(0, Number(infra.serviceHeat ?? 0));
-  const queuePressure = getActiveQueuePressure(ps);
-  const strainScore = Math.min(100, Math.round(strainTotal * 0.55 + heat * 0.35 + queuePressure * 2.5));
+  const strainScore = Math.min(100, Math.round(summary.cityStressTotal * 0.55 + summary.serviceHeat * 0.35 + summary.queuePressure * 2.5));
   const permitDiscount = getPermitDiscountMultiplier(permitTier, infra);
   const stageMult = getStageStrainMultiplier(ps.cityStress?.stage ?? "stable");
   const pressureMult = 1 + strainScore / 250;
   const levyRate = base.levyRate * stageMult * pressureMult * permitDiscount;
   const levy = buildLevy(baseCosts, levyRate);
-  const queueMinutes = Math.max(1, Math.round(base.queueMinutes * stageMult + queuePressure / 2));
+  const queueMinutes = Math.max(1, Math.round(base.queueMinutes * stageMult + summary.queuePressure / 2));
 
   let note = `NPC public service used: ${base.label}.`;
-  if (permitTier === "novice" && infra.noviceSubsidyCreditsUsed < 8) {
+  if (permitTier === "novice" && infra.noviceSubsidyCreditsUsed < NOVICE_SUBSIDY_MAX) {
     note += " Novice civic subsidy reduced the levy.";
   } else if (permitTier === "trusted") {
     note += " Trusted-citizen terms reduced the levy slightly.";
   }
   if ((ps.cityStress?.stage ?? "stable") !== "stable") {
     note += ` Regional strain is ${ps.cityStress.stage}, increasing public costs.`;
+  }
+  if (summary.queuePressure >= 4) {
+    note += " Active queues are backed up, adding extra service delay.";
   }
 
   return {
@@ -235,7 +299,7 @@ export function recordPublicServiceReceipt(
     const levyWeight = RESOURCE_KEYS.reduce((sum, key) => sum + Number(quote.levy[key] ?? 0), 0);
     infra.serviceHeat = Math.min(100, Math.round(infra.serviceHeat + 4 + quote.queueMinutes / 2 + levyWeight / 18));
     infra.lastPublicServiceAt = receipt.createdAt;
-    if (quote.permitTier === "novice" && infra.noviceSubsidyCreditsUsed < 8) {
+    if (quote.permitTier === "novice" && infra.noviceSubsidyCreditsUsed < NOVICE_SUBSIDY_MAX) {
       infra.noviceSubsidyCreditsUsed += 1;
     }
   }

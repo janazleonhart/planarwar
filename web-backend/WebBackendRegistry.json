@@ -926,13 +926,16 @@
       "dependsOn": [
         "npm:express",
         "web-backend.gameState",
-        "web-backend.routes.playerCityAccess"
+        "web-backend.routes.playerCityAccess",
+        "web-backend.routes.publicInfrastructureSupport",
+        "web-backend.domain.publicInfrastructure"
       ],
       "kind": "module",
       "lifecycle": "singleton",
       "notes": [
         "Alternate building endpoints (construct/upgrade) for demo city builder.",
-        "Now resolves account-owned player/city state via web-backend.routes.playerCityAccess instead of hardcoding DEMO_PLAYER_ID."
+        "Now resolves account-owned player/city state via web-backend.routes.playerCityAccess instead of hardcoding DEMO_PLAYER_ID.",
+        "Supports serviceMode=private_city|npc_public and returns publicService consequence metadata (levy, queue, note) for city-builder actions."
       ],
       "owns": [],
       "path": "web-backend/routes/buildings.ts",
@@ -1026,13 +1029,16 @@
       "dependsOn": [
         "npm:express",
         "web-backend.gameState",
-        "web-backend.routes.playerCityAccess"
+        "web-backend.routes.playerCityAccess",
+        "web-backend.routes.publicInfrastructureSupport",
+        "web-backend.domain.publicInfrastructure"
       ],
       "kind": "module",
       "lifecycle": "singleton",
       "notes": [
         "Hero recruit + equipment endpoints for demo city builder.",
-        "Now resolves account-owned player/city state via web-backend.routes.playerCityAccess instead of hardcoding DEMO_PLAYER_ID."
+        "Now resolves account-owned player/city state via web-backend.routes.playerCityAccess instead of hardcoding DEMO_PLAYER_ID.",
+        "Supports serviceMode=private_city|npc_public and returns publicService consequence metadata (levy, queue, note) for city-builder actions."
       ],
       "owns": [],
       "path": "web-backend/routes/heroes.ts",
@@ -1070,7 +1076,8 @@
       "dependsOn": [
         "npm:express",
         "web-backend.gameState",
-        "web-backend.routes.playerCityAccess"
+        "web-backend.routes.playerCityAccess",
+        "web-backend.domain.publicInfrastructure"
       ],
       "kind": "module",
       "lifecycle": "singleton",
@@ -1079,7 +1086,8 @@
         "GET /api/me now mounts correctly at /api/me (router root path) instead of the accidental /api/me/me mismatch.",
         "Returns full CityBuilder profile data when a city exists, or hasCity=false/canCreateCity=true plus a suggested city name when an authenticated account has not bootstrapped a city yet.",
         "Persists per-account CityBuilder runtime snapshots after profile/tick hydration so city state survives process restarts.",
-        "GET /api/me now uses the centralized city mutation wrapper after profile hydration/tick work so profile reads persist through the same save boundary as city mutations."
+        "GET /api/me now uses the centralized city mutation wrapper after profile hydration/tick work so profile reads persist through the same save boundary as city mutations.",
+        "Profile payload now includes persisted publicInfrastructure runtime state so the frontend can render receipts/history without extra shadow state."
       ],
       "owns": [],
       "path": "web-backend/routes/me.ts",
@@ -1184,13 +1192,16 @@
         "npm:express",
         "web-backend.gameState",
         "web-backend.domain.tech",
-        "web-backend.routes.playerCityAccess"
+        "web-backend.routes.playerCityAccess",
+        "web-backend.routes.publicInfrastructureSupport",
+        "web-backend.domain.publicInfrastructure"
       ],
       "kind": "module",
       "lifecycle": "singleton",
       "notes": [
         "Tech start endpoint for demo city builder.",
-        "Now resolves account-owned player/city state via web-backend.routes.playerCityAccess instead of hardcoding DEMO_PLAYER_ID."
+        "Now resolves account-owned player/city state via web-backend.routes.playerCityAccess instead of hardcoding DEMO_PLAYER_ID.",
+        "Supports serviceMode=private_city|npc_public and returns publicService consequence metadata (levy, queue, note) for city-builder actions."
       ],
       "owns": [],
       "path": "web-backend/routes/tech.ts",
@@ -1226,13 +1237,16 @@
       "dependsOn": [
         "npm:express",
         "web-backend.gameState",
-        "web-backend.routes.playerCityAccess"
+        "web-backend.routes.playerCityAccess",
+        "web-backend.routes.publicInfrastructureSupport",
+        "web-backend.domain.publicInfrastructure"
       ],
       "kind": "module",
       "lifecycle": "singleton",
       "notes": [
         "Workshop crafting job endpoints for demo city builder.",
-        "Now resolves account-owned player/city state via web-backend.routes.playerCityAccess instead of hardcoding DEMO_PLAYER_ID."
+        "Now resolves account-owned player/city state via web-backend.routes.playerCityAccess instead of hardcoding DEMO_PLAYER_ID.",
+        "Supports serviceMode=private_city|npc_public and returns publicService consequence metadata (levy, queue, note) for city-builder actions."
       ],
       "owns": [],
       "path": "web-backend/routes/workshop.ts",
@@ -1391,6 +1405,7 @@
         "npm:express",
         "web-backend.middleware.adminAuth",
         "web-backend.routes.me",
+        "web-backend.routes.publicInfrastructure",
         "web-backend.routes.missions",
         "web-backend.routes.city",
         "web-backend.routes.policies",
@@ -1424,7 +1439,8 @@
       "lifecycle": "singleton",
       "notes": [
         "Groups route mounting by boundary: player/demo, catalog metadata, and admin surfaces.",
-        "Behavior-preserving extraction from web-backend/index.ts to reduce entrypoint coupling."
+        "Behavior-preserving extraction from web-backend/index.ts to reduce entrypoint coupling.",
+        "Mounts /api/public_infrastructure status quotes for city-builder service-mode previews."
       ],
       "owns": [],
       "path": "web-backend/server/routeGroups.ts",
@@ -2469,6 +2485,75 @@
         "Owns authenticated CityBuilder account-to-city resolution, city name validation, and v1 runtime snapshot persistence through public.cities.meta.",
         "Adds a centralized mutation wrapper so city routes resolve access, run mutations, and persist snapshots through one hardened save boundary."
       ]
+    },
+    "web-backend.domain.publicInfrastructure": {
+      "class": null,
+      "ctorArgs": [],
+      "dependsOn": [
+        "web-backend.gameState"
+      ],
+      "kind": "module",
+      "lifecycle": "singleton",
+      "notes": [
+        "Computes public-service levy/queue quotes, permit tiers, service heat, receipts, and summary recommendations for private_city vs npc_public lanes.",
+        "Used by city-builder routes to turn NPC public infrastructure into a visible pressure system instead of hidden backend math."
+      ],
+      "owns": [
+        "Public infrastructure quote/summary heuristics"
+      ],
+      "path": "web-backend/domain/publicInfrastructure.ts",
+      "provides": [
+        "createInitialPublicInfrastructureState(nowIso?)",
+        "ensurePublicInfrastructureState(ps)",
+        "deriveCivicPermitTier(ps)",
+        "summarizePublicInfrastructure(ps)",
+        "quotePublicServiceUsage(ps, service, baseCosts, mode)",
+        "recordPublicServiceReceipt(ps, quote, now?)",
+        "decayPublicInfrastructureHeat(ps, now?)"
+      ],
+      "service": "city.publicInfrastructure"
+    },
+    "web-backend.routes.publicInfrastructureSupport": {
+      "class": null,
+      "ctorArgs": [],
+      "dependsOn": [
+        "web-backend.domain.publicInfrastructure",
+        "web-backend.gameState.cityRuntimeSnapshot"
+      ],
+      "kind": "module",
+      "lifecycle": "singleton",
+      "notes": [
+        "Shared support helpers for public infrastructure consequences, including levy application, event logging, queue metadata, and rollback-safe mutation wrapping."
+      ],
+      "owns": [],
+      "path": "web-backend/routes/publicInfrastructureSupport.ts",
+      "provides": [
+        "cloneResources(resources)",
+        "diffSpentResources(before, after)",
+        "applyPublicInfrastructureUsage(ps, service, mode, baseCosts, now?)",
+        "withInfrastructureRollback(ps, action, verify)"
+      ],
+      "service": "routes.publicInfrastructureSupport"
+    },
+    "web-backend.routes.publicInfrastructure": {
+      "class": null,
+      "ctorArgs": [],
+      "dependsOn": [
+        "npm:express",
+        "web-backend.domain.publicInfrastructure",
+        "web-backend.routes.playerCityAccess"
+      ],
+      "kind": "module",
+      "lifecycle": "singleton",
+      "notes": [
+        "City-builder endpoint that exposes current public infrastructure state, summary recommendations, and per-service quotes for the selected service mode."
+      ],
+      "owns": [],
+      "path": "web-backend/routes/publicInfrastructure.ts",
+      "provides": [
+        "GET /api/public_infrastructure/status"
+      ],
+      "service": "http.routes"
     }
   }
 }

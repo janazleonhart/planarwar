@@ -6,11 +6,22 @@ import {
   canAffordLevy,
   quotePublicServiceUsage,
   recordPublicServiceReceipt,
+  summarizePublicInfrastructure,
   type InfrastructureMode,
   type PublicServiceKind,
   type PublicServiceQuote,
+  type PublicInfrastructureReceipt,
+  type PublicInfrastructureSummary,
 } from "../domain/publicInfrastructure";
 import { applyCityRuntimeSnapshot, buildCityRuntimeSnapshot } from "../gameState/cityRuntimeSnapshot";
+
+export interface AppliedPublicInfrastructureUsage {
+  quote: PublicServiceQuote;
+  receipt: PublicInfrastructureReceipt | null;
+  summary: PublicInfrastructureSummary;
+  queueAppliedMinutes: number;
+  eventMessage: string;
+}
 
 export function cloneResources(resources: Resources): Resources {
   return { ...resources };
@@ -39,16 +50,46 @@ function pushInfrastructureEvent(ps: PlayerState, message: string): void {
   }
 }
 
+function buildInfrastructureEventMessage(
+  service: PublicServiceKind,
+  mode: InfrastructureMode,
+  quote: PublicServiceQuote,
+  summary: PublicInfrastructureSummary
+): string {
+  if (mode === "private_city") {
+    return `Private infrastructure handled ${service.replace(/_/g, " ")}. ${summary.note}`;
+  }
+
+  const levyBits = Object.entries(quote.levy)
+    .filter(([, amount]) => Number(amount ?? 0) > 0)
+    .map(([key, amount]) => `${key} ${amount}`)
+    .join(", ");
+
+  const levyText = levyBits ? ` Levy: ${levyBits}.` : "";
+  const queueText = quote.queueMinutes > 0 ? ` Queue delay: ${quote.queueMinutes}m.` : "";
+  return `Public infrastructure handled ${service.replace(/_/g, " ")}. ${quote.note}${levyText}${queueText}`;
+}
+
 export function applyPublicInfrastructureUsage(
   ps: PlayerState,
   service: PublicServiceKind,
   mode: InfrastructureMode,
   baseCosts: Partial<Resources>,
   now = new Date()
-): { ok: true; quote: PublicServiceQuote } | { ok: false; error: string } {
+): { ok: true; usage: AppliedPublicInfrastructureUsage } | { ok: false; error: string } {
   const quote = quotePublicServiceUsage(ps, service, baseCosts, mode);
+  const summary = summarizePublicInfrastructure(ps);
   if (mode === "private_city") {
-    return { ok: true, quote };
+    return {
+      ok: true,
+      usage: {
+        quote,
+        receipt: null,
+        summary,
+        queueAppliedMinutes: 0,
+        eventMessage: buildInfrastructureEventMessage(service, mode, quote, summary),
+      },
+    };
   }
 
   if (!canAffordLevy(ps.resources, quote.levy)) {
@@ -60,11 +101,19 @@ export function applyPublicInfrastructureUsage(
 
   applyLevyToResources(ps.resources, quote.levy);
   const receipt = recordPublicServiceReceipt(ps, quote, now);
-  pushInfrastructureEvent(
-    ps,
-    `Public infrastructure used for ${receipt.service.replace(/_/g, " ")}: ${receipt.note}`
-  );
-  return { ok: true, quote };
+  const postSummary = summarizePublicInfrastructure(ps);
+  const eventMessage = buildInfrastructureEventMessage(service, mode, quote, postSummary);
+  pushInfrastructureEvent(ps, eventMessage);
+  return {
+    ok: true,
+    usage: {
+      quote,
+      receipt,
+      summary: postSummary,
+      queueAppliedMinutes: quote.queueMinutes,
+      eventMessage,
+    },
+  };
 }
 
 export function withInfrastructureRollback<T>(
