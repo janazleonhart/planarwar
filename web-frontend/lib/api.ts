@@ -72,6 +72,14 @@ export interface RewardBundle {
   influence?: number;
 }
 
+export interface MissionOfferSupportGuidance {
+  state: "stable" | "pressured" | "restricted";
+  severity: number;
+  headline: string;
+  detail: string;
+  recommendedAction: string;
+}
+
 export interface MissionOffer {
   id: string;
   kind: "hero" | "army";
@@ -82,6 +90,7 @@ export interface MissionOffer {
   recommendedPower: number;
   expectedRewards: RewardBundle;
   risk: MissionRisk;
+  supportGuidance?: MissionOfferSupportGuidance;
 }
 
 export interface ActiveMission {
@@ -342,6 +351,35 @@ export interface CityMudBridgeStatusResponse {
   consumers?: CityMudConsumerSummary | null;
 }
 
+
+export interface MissionBoardResponse {
+  missions: MissionOffer[];
+  activeMissions: ActiveMission[];
+  bridgeSummary?: CityMudBridgeSummary;
+  bridgeConsumers?: CityMudConsumerSummary;
+}
+
+export interface StartMissionResponse {
+  ok: boolean;
+  activeMission: ActiveMission;
+  activeMissions: ActiveMission[];
+  heroes: Hero[];
+  armies: Army[];
+  bridgeSummary?: CityMudBridgeSummary;
+  bridgeConsumers?: CityMudConsumerSummary;
+  missionSupport?: MissionOfferSupportGuidance | CityMudConsumerEffect;
+}
+
+export interface CompleteMissionResponse {
+  ok: boolean;
+  result: any;
+  activeMissions: ActiveMission[];
+  heroes: Hero[];
+  armies: Army[];
+  resources: Resources;
+  regionWar: RegionWarState[];
+}
+
 export interface MeProfile {
   ok?: boolean;
   isDemo?: boolean;
@@ -413,6 +451,24 @@ export async function fetchPublicInfrastructureStatus(serviceMode: Infrastructur
 
 export async function fetchCityMudBridgeStatus(): Promise<CityMudBridgeStatusResponse> {
   return api<CityMudBridgeStatusResponse>("/api/city_mud_bridge/status");
+}
+
+export async function fetchMissionBoard(): Promise<MissionBoardResponse> {
+  return api<MissionBoardResponse>("/api/missions/offers");
+}
+
+export async function startMission(missionId: string): Promise<StartMissionResponse> {
+  return api<StartMissionResponse>("/api/missions/start", {
+    method: "POST",
+    body: JSON.stringify({ missionId }),
+  });
+}
+
+export async function completeMission(instanceId: string): Promise<CompleteMissionResponse> {
+  return api<CompleteMissionResponse>("/api/missions/complete", {
+    method: "POST",
+    body: JSON.stringify({ instanceId }),
+  });
 }
 
 export async function startTech(techId: string, serviceMode?: InfrastructureMode): Promise<any> {

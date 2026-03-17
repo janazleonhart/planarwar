@@ -1,6 +1,8 @@
 //web-backend/routes/missions.ts
 
 import { Router } from "express";
+import { deriveCityMudConsumers, summarizeCityMudBridge } from "../domain/cityMudBridge";
+import { applyMissionConsumerGuidance } from "../domain/missions";
 import { completeMissionForPlayer, regenerateRegionMissionsForPlayer, startMissionForPlayer, tickPlayerState } from "../gameState";
 import { withPlayerAccessMutation } from "./playerCityAccess";
 
@@ -15,7 +17,12 @@ router.get("/offers", async (req, res) => {
       regenerateRegionMissionsForPlayer(access.playerId, ps.city.regionId as any, now);
     }
 
-    return { missions: ps.currentOffers, activeMissions: ps.activeMissions };
+    const bridgeSummary = summarizeCityMudBridge(ps);
+    const bridgeConsumers = deriveCityMudConsumers(bridgeSummary);
+    const missions = applyMissionConsumerGuidance(ps.currentOffers, bridgeSummary, bridgeConsumers);
+    ps.currentOffers = missions;
+
+    return { missions, activeMissions: ps.activeMissions, bridgeSummary, bridgeConsumers };
   });
 
   if (access.ok === false) return res.status(access.status).json({ error: access.error });
@@ -30,9 +37,12 @@ router.post("/start", async (req, res) => {
     const active = startMissionForPlayer(access.playerId, missionId, new Date());
     if (!active) return { ok: false as const, code: 400, body: { error: "Mission not found or no available forces." } };
 
+    const bridgeSummary = summarizeCityMudBridge(access.playerState);
+    const bridgeConsumers = deriveCityMudConsumers(bridgeSummary);
+
     return {
       ok: true as const,
-      body: { ok: true, activeMission: active, activeMissions: access.playerState.activeMissions, heroes: access.playerState.heroes, armies: access.playerState.armies },
+      body: { ok: true, activeMission: active, activeMissions: access.playerState.activeMissions, heroes: access.playerState.heroes, armies: access.playerState.armies, bridgeSummary, bridgeConsumers, missionSupport: active.mission.supportGuidance ?? bridgeConsumers.missionBoard },
     };
   });
 

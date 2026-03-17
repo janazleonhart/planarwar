@@ -4,6 +4,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { deriveCityMudConsumers, summarizeCityMudBridge } from "../domain/cityMudBridge";
+import { applyMissionConsumerGuidance, generateMissionOffers } from "../domain/missions";
 import { createInitialPublicInfrastructureState } from "../domain/publicInfrastructure";
 import { getOrCreatePlayerState } from "../gameState";
 
@@ -113,4 +114,62 @@ test("city-mud consumers degrade to pressured when support lanes are middling bu
   assert.equal(consumers.vendorSupply.state, 'pressured');
   assert.equal(consumers.civicServices.state, 'pressured');
   assert.match(consumers.civicServices.recommendedAction, /show visible civic friction/i);
+});
+
+
+test("mission offers inherit pressured support guidance when bridge posture is strained", () => {
+  const ps = makePlayer();
+  ps.resources.food = 170;
+  ps.resources.materials = 155;
+  ps.resources.wealth = 145;
+  ps.city.stats.infrastructure = 52;
+  ps.city.stats.prosperity = 44;
+  ps.city.stats.security = 39;
+  ps.cityStress.total = 42;
+  ps.cityStress.stage = "strained";
+  ps.publicInfrastructure.serviceHeat = 44;
+
+  const summary = summarizeCityMudBridge(ps);
+  const consumers = deriveCityMudConsumers(summary);
+  const offers = generateMissionOffers({ city: ps.city, heroes: ps.heroes, armies: ps.armies });
+  const guided = applyMissionConsumerGuidance(offers, summary, consumers);
+
+  assert.equal(summary.bridgeBand, "strained");
+  assert.ok(guided.length > 0);
+  assert.ok(guided.every((offer) => offer.supportGuidance));
+  assert.ok(guided.some((offer) => offer.supportGuidance?.state === "pressured"));
+  assert.match(guided[0]?.risk.notes ?? "", /mission support is available with visible drag/i);
+});
+
+test("mission offers inherit restricted support guidance when bridge posture is defensive", () => {
+  const ps = makePlayer();
+  ps.cityStress.total = 84;
+  ps.cityStress.stage = "lockdown";
+  ps.regionWar[0].threat = 90;
+  ps.publicInfrastructure.serviceHeat = 78;
+  ps.activeMissions.push({
+    instanceId: "mission_bridge_b",
+    startedAt: "2026-03-16T00:00:00.000Z",
+    finishesAt: "2026-03-16T03:00:00.000Z",
+    mission: {
+      id: "mission_bridge_b",
+      kind: "army",
+      difficulty: "high",
+      title: "Hold the ridge",
+      description: "Test mission",
+      regionId: "ancient_elwynn",
+      recommendedPower: 120,
+      expectedRewards: { materials: 20 },
+      risk: { casualtyRisk: "Severe" },
+    },
+  });
+
+  const summary = summarizeCityMudBridge(ps);
+  const consumers = deriveCityMudConsumers(summary);
+  const offers = generateMissionOffers({ city: ps.city, heroes: ps.heroes, armies: ps.armies });
+  const guided = applyMissionConsumerGuidance(offers, summary, consumers);
+
+  assert.equal(summary.bridgeBand, "restricted");
+  assert.ok(guided.every((offer) => offer.supportGuidance?.state === "restricted"));
+  assert.match(guided[0]?.supportGuidance?.recommendedAction ?? "", /escort, defense, recovery/i);
 });

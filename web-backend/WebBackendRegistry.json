@@ -360,18 +360,22 @@
       "ctorArgs": [],
       "dependsOn": [
         "web-backend.domain.city",
-        "web-backend.domain.resources"
+        "web-backend.domain.resources",
+        "web-backend.domain.cityMudBridge"
       ],
       "kind": "module",
       "lifecycle": "static",
       "notes": [
-        "Mission offer generation and reward/risk shaping for web-city-builder demo."
+        "Mission offer generation and reward/risk shaping for web-city-builder demo.",
+        "v0.3 adds applyMissionConsumerGuidance() so mission offers inherit city\u2194MUD bridge posture, support caveats, and pressure-aware risk notes."
       ],
       "owns": [],
       "path": "web-backend/domain/missions.ts",
       "provides": [
         "generateMissionOffers(ctx)",
-        "types: MissionOffer, RewardBundle, MissionDifficulty"
+        "types: MissionOffer, RewardBundle, MissionDifficulty",
+        "applyMissionConsumerGuidance(offers, bridgeSummary, consumers)",
+        "types: MissionOfferSupportGuidance"
       ],
       "service": "domain.missions"
     },
@@ -2295,7 +2299,8 @@
       "lifecycle": "singleton",
       "notes": [
         "Mission offer listing + start/complete for the demo city builder.",
-        "Now resolves account-owned player/city state via web-backend.routes.playerCityAccess instead of hardcoding DEMO_PLAYER_ID."
+        "Now resolves account-owned player/city state via web-backend.routes.playerCityAccess instead of hardcoding DEMO_PLAYER_ID.",
+        "Mission offers now include bridge-derived mission support guidance so route consumers can surface logistics posture instead of raw mission templates only."
       ],
       "owns": [],
       "path": "web-backend/routes/missions.ts",
@@ -2303,7 +2308,9 @@
         "GET /api/missions/offers",
         "POST /api/missions/start",
         "POST /api/missions/complete",
-        "POST /api/missions/refresh_region"
+        "POST /api/missions/refresh_region",
+        "GET /api/missions/offers -> { missions, activeMissions, bridgeSummary, bridgeConsumers }",
+        "POST /api/missions/start -> missionSupport snapshot"
       ],
       "service": "http.routes"
     },

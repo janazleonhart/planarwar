@@ -4,15 +4,20 @@ import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react"
 import {
   api,
   bootstrapCity,
+  completeMission,
   fetchCityMudBridgeStatus,
   fetchMe,
+  fetchMissionBoard,
   fetchPublicInfrastructureStatus,
   renameCity,
+  startMission,
   startTech,
   type AppliedPublicServiceUsage,
   type CityBuilding,
   type CityMudBridgeStatusResponse,
   type HeroRole,
+  type MissionBoardResponse,
+  type MissionOffer,
   type ArmyType,
   type InfrastructureMode,
   type MeProfile,
@@ -133,6 +138,7 @@ export function MePage() {
   const [me, setMe] = useState<MeProfile | null>(null);
   const [infraStatus, setInfraStatus] = useState<PublicInfrastructureStatusResponse | null>(null);
   const [bridgeStatus, setBridgeStatus] = useState<CityMudBridgeStatusResponse | null>(null);
+  const [missionBoard, setMissionBoard] = useState<MissionBoardResponse | null>(null);
   const [serviceMode, setServiceMode] = useState<InfrastructureMode>("private_city");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -152,10 +158,11 @@ export function MePage() {
     setLoading(true);
     setError(null);
     try {
-      const [data, infra, bridge] = await Promise.all([fetchMe(), fetchPublicInfrastructureStatus(mode), fetchCityMudBridgeStatus()]);
+      const [data, infra, bridge, missions] = await Promise.all([fetchMe(), fetchPublicInfrastructureStatus(mode), fetchCityMudBridgeStatus(), fetchMissionBoard()]);
       setMe(data);
       setInfraStatus(infra);
       setBridgeStatus(bridge);
+      setMissionBoard(missions);
       setCityNameDraft(data.city?.name ?? data.suggestedCityName ?? "");
     } catch (err: any) {
       console.error(err);
@@ -305,6 +312,24 @@ export function MePage() {
       (result: any) => summarizeUsage(result?.publicService)
     );
 
+  const handleStartMission = (missionId: string) =>
+    runAction(
+      "Start mission",
+      () => startMission(missionId),
+      (result) => {
+        const support = result?.missionSupport;
+        if (!support) return "Mission launched.";
+        return `${support.headline} (${support.state})`;
+      }
+    );
+
+  const handleCompleteMission = (instanceId: string) =>
+    runAction(
+      "Complete mission",
+      () => completeMission(instanceId),
+      () => "Mission resolved and city state refreshed."
+    );
+
   const city = me?.city ?? null;
   const disabled = !!busyAction;
 
@@ -335,6 +360,8 @@ export function MePage() {
   const quoteMap = new Map((infraStatus?.quotes ?? []).map((quote) => [quote.service, quote]));
   const bridgeSummary = bridgeStatus?.summary ?? null;
   const bridgeConsumers = bridgeStatus?.consumers ?? null;
+  const missionOffers = missionBoard?.missions ?? [];
+  const activeMissions = missionBoard?.activeMissions ?? me?.activeMissions ?? [];
 
   if (loading && !me) return <p>Loading /api/me…</p>;
 
@@ -547,6 +574,78 @@ export function MePage() {
         ) : (
           <div style={{ opacity: 0.7 }}>No city-to-world bridge snapshot yet.</div>
         )}
+      </div>
+
+      <div style={cardStyle()}>
+        <h3 style={{ marginTop: 0 }}>Mission Board</h3>
+        <div style={{ fontSize: 13, opacity: 0.82 }}>Mission offers now consume the city ↔ MUD bridge posture instead of pretending logistics are imaginary.</div>
+
+        {missionBoard?.bridgeConsumers?.missionBoard ? (
+          <div style={{ border: "1px solid #555", borderRadius: 8, padding: 10, display: "grid", gap: 4 }}>
+            <div><strong>Support lane:</strong> {missionBoard.bridgeConsumers.missionBoard.state} • severity {missionBoard.bridgeConsumers.missionBoard.severity}</div>
+            <div style={{ fontSize: 12, opacity: 0.84 }}>{missionBoard.bridgeConsumers.missionBoard.headline}</div>
+            <div style={{ fontSize: 12, opacity: 0.74 }}>{missionBoard.bridgeConsumers.missionBoard.detail}</div>
+            <div style={{ fontSize: 12, opacity: 0.72 }}>Recommended action: {missionBoard.bridgeConsumers.missionBoard.recommendedAction}</div>
+          </div>
+        ) : null}
+
+        <div style={{ display: "grid", gap: 6 }}>
+          <strong>Available offers</strong>
+          {missionOffers.length === 0 ? (
+            <div style={{ opacity: 0.7 }}>No mission offers available right now.</div>
+          ) : (
+            <div style={{ display: "grid", gap: 6 }}>
+              {missionOffers.map((mission: MissionOffer) => (
+                <div key={mission.id} style={{ border: "1px solid #555", borderRadius: 8, padding: 10, display: "grid", gap: 5 }}>
+                  <div><strong>{mission.title}</strong> • {mission.kind} • {mission.difficulty} • {getRegionDisplayName(mission.regionId)}</div>
+                  <div style={{ fontSize: 13, opacity: 0.85 }}>{mission.description}</div>
+                  <div style={{ fontSize: 12, opacity: 0.82 }}>Recommended power {mission.recommendedPower} • rewards {formatLevy(mission.expectedRewards as Partial<Resources>)}</div>
+                  <div style={{ fontSize: 12, opacity: 0.82 }}>Risk: {mission.risk.casualtyRisk}{mission.risk.heroInjuryRisk ? ` • hero injury ${mission.risk.heroInjuryRisk}` : ""}</div>
+                  {mission.supportGuidance ? (
+                    <div style={{ fontSize: 12, opacity: 0.78 }}>
+                      <strong>Support:</strong> {mission.supportGuidance.state} • {mission.supportGuidance.headline}
+                    </div>
+                  ) : null}
+                  <div style={{ fontSize: 12, opacity: 0.72 }}>{mission.risk.notes}</div>
+                  <div>
+                    <button
+                      style={{ padding: "6px 10px", borderRadius: 6, border: "1px solid #777", background: "#111", opacity: disabled ? 0.6 : 1 }}
+                      disabled={disabled}
+                      onClick={() => void handleStartMission(mission.id)}
+                    >
+                      Start mission
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div style={{ display: "grid", gap: 6 }}>
+          <strong>Active missions</strong>
+          {activeMissions.length === 0 ? (
+            <div style={{ opacity: 0.7 }}>No active missions.</div>
+          ) : (
+            <div style={{ display: "grid", gap: 6 }}>
+              {activeMissions.map((active) => (
+                <div key={active.instanceId} style={{ border: "1px solid #555", borderRadius: 8, padding: 10, display: "grid", gap: 5 }}>
+                  <div><strong>{active.mission.title}</strong> • {active.mission.kind} • finishes {new Date(active.finishesAt).toLocaleString()}</div>
+                  <div style={{ fontSize: 12, opacity: 0.78 }}>{active.mission.supportGuidance?.headline ?? active.mission.risk.notes ?? "Mission in progress."}</div>
+                  <div>
+                    <button
+                      style={{ padding: "6px 10px", borderRadius: 6, border: "1px solid #777", background: "#111", opacity: disabled ? 0.6 : 1 }}
+                      disabled={disabled}
+                      onClick={() => void handleCompleteMission(active.instanceId)}
+                    >
+                      Complete mission
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
 
       <div style={cardStyle()}>

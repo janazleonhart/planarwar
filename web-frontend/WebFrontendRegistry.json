@@ -177,7 +177,8 @@
         "startTech() now accepts optional serviceMode so research can use private or NPC public lanes without raw ad-hoc payloads.",
         "Adds typed PublicPressureSource DTOs and includes pressureSources in public infrastructure status/quote payloads.",
         "Adds typed CityMudBridge DTOs plus fetchCityMudBridgeStatus() so the frontend can preview city\u2192world support posture and exportable surplus.",
-        "Adds typed City \u2194 MUD bridge consumer DTOs so frontend panels can render vendor/mission/civic guidance instead of only raw hook scores."
+        "Adds typed City \u2194 MUD bridge consumer DTOs so frontend panels can render vendor/mission/civic guidance instead of only raw hook scores.",
+        "Adds typed mission-board DTOs plus fetchMissionBoard(), startMission(), and completeMission() so mission offers can surface bridge-aware support guidance in the UI."
       ],
       "owns": [],
       "path": "web-frontend/lib/api.ts",
@@ -195,7 +196,11 @@
         "fetchPublicInfrastructureStatus(serviceMode)",
         "Typed DTOs for public infrastructure status/quotes/receipts",
         "Typed DTOs for public infrastructure pressure inputs",
-        "fetchCityMudBridgeStatus()"
+        "fetchCityMudBridgeStatus()",
+        "fetchMissionBoard()",
+        "startMission(missionId)",
+        "completeMission(instanceId)",
+        "Typed DTOs for mission support guidance / mission board bridge snapshots"
       ],
       "service": "api.client"
     },
@@ -485,14 +490,16 @@
         "Endpoints used include: /api/me, /api/city/bootstrap, /api/city/rename, /api/tech/start, /api/missions/start, /api/missions/complete, /api/missions/refresh_region, /api/buildings/construct, /api/buildings/upgrade, /api/city/tier-up, /api/warfront/assault, /api/armies/raise, /api/armies/reinforce, /api/garrisons/strike, /api/heroes/equip_attachment, /api/heroes/recruit, /api/workshop/craft, /api/workshop/collect, /api/policies/toggle.",
         "Now surfaces public infrastructure summary, quote previews, receipts, and a lane toggle for private_city vs npc_public service execution.",
         "City-builder action toasts now include publicService consequence details (levy/queue/note) returned by backend routes.",
-        "Now renders a City \u2194 MUD Economic Bridge panel with support posture, exportable surplus, and future-consumer hook summaries from /api/city_mud_bridge/status."
+        "Now renders a City \u2194 MUD Economic Bridge panel with support posture, exportable surplus, and future-consumer hook summaries from /api/city_mud_bridge/status.",
+        "Now renders mission board cards that surface bridge-derived support guidance and allows start/complete flows from the same dashboard."
       ],
       "owns": [
         "client-side UI state for selected actions",
         "optimistic refresh loops calling fetchMe()",
         "client-side UI state for selected public infrastructure lane",
         "public infrastructure status snapshot from /api/public_infrastructure/status",
-        "city-to-world bridge snapshot from /api/city_mud_bridge/status"
+        "city-to-world bridge snapshot from /api/city_mud_bridge/status",
+        "mission board snapshot from /api/missions/offers"
       ],
       "path": "web-frontend/pages/MePage.tsx",
       "provides": [
@@ -500,7 +507,8 @@
         "Action buttons that POST to various /api/* endpoints",
         "Public infrastructure panel: lane toggle + quote previews + receipts",
         "City-builder action buttons that send serviceMode to eligible /api/* endpoints",
-        "City \u2194 MUD Economic Bridge panel: support posture + exportable surplus + hook summaries"
+        "City \u2194 MUD Economic Bridge panel: support posture + exportable surplus + hook summaries",
+        "Mission board panel: available offers + active missions + bridge-aware support notes"
       ],
       "service": "cityBuilder.me"
     },
