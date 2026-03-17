@@ -151,6 +151,30 @@ type GuardedApplyResponse = {
   error?: string;
 };
 
+type VendorScenarioLogEntry = {
+  at: string;
+  actor: "admin_ui";
+  action: "preview" | "apply";
+  vendorId: string;
+  selectionLabel: string;
+  laneFilters: VendorLane[];
+  presetKey: VendorPresetKey | null;
+  bridgeBand: "open" | "strained" | "restricted";
+  vendorState: "abundant" | "stable" | "pressured" | "restricted";
+  matchedCount: number;
+  appliedCount: number;
+  softenedCount: number;
+  blockedCount: number;
+  warningCount: number;
+  note: string;
+};
+
+type VendorScenarioLogResponse = {
+  ok: boolean;
+  entries: VendorScenarioLogEntry[];
+  error?: string;
+};
+
 type EditRow = {
   stockMax: string;
   restockEverySec: string;
@@ -317,6 +341,7 @@ export function AdminVendorEconomyPage() {
   const [laneFilter, setLaneFilter] = useState<"all" | VendorLane>("all");
   const [guardedLaneSet, setGuardedLaneSet] = useState<VendorLane[]>(ALL_VENDOR_LANES);
   const [presetKey, setPresetKey] = useState<VendorPresetKey>("scarcity_essentials_protection");
+  const [scenarioLogs, setScenarioLogs] = useState<VendorScenarioLogEntry[]>([]);
 
   async function loadBridgeStatus() {
     try {
@@ -404,9 +429,20 @@ export function AdminVendorEconomyPage() {
     }
   }
 
+  async function loadScenarioLogs() {
+    try {
+      const data = await api<VendorScenarioLogResponse>(`/api/admin/vendor_economy/bridge_runtime_guarded_log?limit=12`);
+      if (!data?.ok) throw new Error(data?.error || "Unknown error");
+      setScenarioLogs(Array.isArray(data.entries) ? data.entries : []);
+    } catch (e: any) {
+      setError((prev) => prev ?? (e?.message || String(e)));
+    }
+  }
+
   useEffect(() => {
     loadVendors();
     void loadBridgeStatus();
+    void loadScenarioLogs();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -544,6 +580,7 @@ function stageRuntimePreview(row: VendorEconomyItem) {
         body: JSON.stringify({ vendorId, vendorItemIds, laneFilters, presetKey: preset, apply, resetStock: false }),
       });
       if (!data?.ok) throw new Error(data?.error || "Unknown error");
+      await loadScenarioLogs();
 
       if (apply) {
         await loadItems();

@@ -3,7 +3,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { describeVendorLaneSelection, deriveCityMudConsumers, deriveVendorEconomyRecommendation, deriveVendorGuardrailApplication, deriveVendorLanePolicy, deriveVendorRuntimeEffect, deriveVendorSupportPolicy, getVendorPreset, matchesVendorLaneSelection, normalizeVendorLaneSelection, normalizeVendorPresetKey, summarizeCityMudBridge } from "../domain/cityMudBridge";
+import { buildVendorScenarioLogNote, describeVendorLaneSelection, deriveCityMudConsumers, deriveVendorEconomyRecommendation, deriveVendorGuardrailApplication, deriveVendorLanePolicy, deriveVendorRuntimeEffect, deriveVendorSupportPolicy, getVendorPreset, matchesVendorLaneSelection, normalizeVendorLaneSelection, normalizeVendorPresetKey, summarizeCityMudBridge } from "../domain/cityMudBridge";
 import { applyMissionConsumerGuidance, generateMissionOffers } from "../domain/missions";
 import { createInitialPublicInfrastructureState } from "../domain/publicInfrastructure";
 import { getOrCreatePlayerState } from "../gameState";
@@ -438,4 +438,26 @@ test("vendor preset helpers return audited lane targets", () => {
   assert.equal(preset.label, "Scarcity essentials protection");
   assert.deepEqual(preset.laneFilters, ["essentials"]);
   assert.match(preset.detail, /protect essentials/i);
+});
+
+
+test("vendor scenario log note includes posture and softened counts", () => {
+  const note = buildVendorScenarioLogNote({
+    action: "apply",
+    selectionLabel: "luxury lane",
+    presetKey: "luxury_throttle",
+    bridgeBand: "strained",
+    vendorState: "pressured",
+    matchedCount: 8,
+    appliedCount: 6,
+    softenedCount: 3,
+    blockedCount: 1,
+  });
+
+  assert.match(note, /Applied guarded vendor runtime/i);
+  assert.match(note, /luxury lane/i);
+  assert.match(note, /preset luxury_throttle/i);
+  assert.match(note, /bridge strained, vendor pressured/i);
+  assert.match(note, /softened 3/i);
+  assert.match(note, /blocked 1/i);
 });

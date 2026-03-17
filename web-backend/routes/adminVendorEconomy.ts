@@ -4,11 +4,40 @@
 // Backed by worldcore tables: vendors, vendor_items, vendor_item_economy, vendor_item_state.
 
 import express from "express";
+import fs from "node:fs/promises";
+import path from "node:path";
 import { db } from "../../worldcore/db/Database";
-import { describeVendorLaneSelection, deriveCityMudConsumers, deriveVendorEconomyRecommendation, deriveVendorGuardrailApplication, deriveVendorLanePolicy, deriveVendorRuntimeEffect, deriveVendorSupportPolicy, getVendorPreset, matchesVendorLaneSelection, normalizeVendorLaneSelection, normalizeVendorPresetKey, summarizeCityMudBridge, type CityMudVendorLane, type CityMudVendorPresetKey } from "../domain/cityMudBridge";
+import { buildVendorScenarioLogNote, describeVendorLaneSelection, deriveCityMudConsumers, deriveVendorEconomyRecommendation, deriveVendorGuardrailApplication, deriveVendorLanePolicy, deriveVendorRuntimeEffect, deriveVendorSupportPolicy, getVendorPreset, matchesVendorLaneSelection, normalizeVendorLaneSelection, normalizeVendorPresetKey, summarizeCityMudBridge, type CityMudVendorLane, type CityMudVendorPresetKey, type CityMudVendorScenarioLogEntry } from "../domain/cityMudBridge";
 import { resolvePlayerAccess } from "./playerCityAccess";
 
 export const adminVendorEconomyRouter = express.Router();
+
+
+const VENDOR_SCENARIO_LOG_PATH = path.resolve(process.cwd(), "logs", "planarwar-vendor-runtime-scenarios.jsonl");
+
+async function appendVendorScenarioLog(entry: CityMudVendorScenarioLogEntry): Promise<void> {
+  await fs.mkdir(path.dirname(VENDOR_SCENARIO_LOG_PATH), { recursive: true });
+  await fs.appendFile(VENDOR_SCENARIO_LOG_PATH, `${JSON.stringify(entry)}\n`, "utf8");
+}
+
+async function readRecentVendorScenarioLogs(limit: number): Promise<CityMudVendorScenarioLogEntry[]> {
+  try {
+    const raw = await fs.readFile(VENDOR_SCENARIO_LOG_PATH, "utf8");
+    const lines = raw.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+    const parsed: CityMudVendorScenarioLogEntry[] = [];
+    for (const line of lines.slice(-Math.max(1, Math.min(limit, 200)))) {
+      try {
+        parsed.push(JSON.parse(line) as CityMudVendorScenarioLogEntry);
+      } catch {
+        // ignore malformed historical lines
+      }
+    }
+    return parsed.reverse();
+  } catch (err: any) {
+    if (err?.code === "ENOENT") return [];
+    throw err;
+  }
+}
 
 function clampInt(n: number, lo: number, hi: number): number {
   if (!Number.isFinite(n)) return lo;
@@ -71,6 +100,16 @@ adminVendorEconomyRouter.get("/vendors", async (_req, res) => {
     res.json({ ok: true, vendors: r.rows ?? [] });
   } catch (err: any) {
     res.status(500).json({ ok: false, error: err?.message ?? String(err) });
+  }
+});
+
+adminVendorEconomyRouter.get("/bridge_runtime_guarded_log", async (req, res) => {
+  try {
+    const limit = clampInt(Number(req.query.limit ?? 25), 1, 100);
+    const entries = await readRecentVendorScenarioLogs(limit);
+    return res.json({ ok: true, entries });
+  } catch (err: any) {
+    return res.status(500).json({ ok: false, error: err?.message ?? String(err) });
   }
 });
 
@@ -326,6 +365,39 @@ adminVendorEconomyRouter.post("/bridge_runtime_guarded", async (req, res) => {
       });
     }
 
+    const selectionLabel = preset?.label ?? describeVendorLaneSelection(effectiveLaneFilters);
+    const softenedCount = results.filter((result) => (result.guardrail?.warnings?.length ?? 0) > 0).length;
+    const blockedCount = results.filter((result) => !result.guardrail?.allowed).length;
+    const warningCount = results.reduce((sum, result) => sum + (result.guardrail?.warnings?.length ?? 0), 0);
+    const scenarioEntry: CityMudVendorScenarioLogEntry = {
+      at: new Date().toISOString(),
+      actor: "admin_ui",
+      action: apply ? "apply" : "preview",
+      vendorId,
+      selectionLabel,
+      laneFilters: effectiveLaneFilters,
+      presetKey: preset?.key ?? null,
+      bridgeBand: bridge.summary.bridgeBand,
+      vendorState: bridge.consumers.vendorSupply.state,
+      matchedCount: results.length,
+      appliedCount,
+      softenedCount,
+      blockedCount,
+      warningCount,
+      note: buildVendorScenarioLogNote({
+        action: apply ? "apply" : "preview",
+        selectionLabel,
+        presetKey: preset?.key ?? null,
+        bridgeBand: bridge.summary.bridgeBand,
+        vendorState: bridge.consumers.vendorSupply.state,
+        matchedCount: results.length,
+        appliedCount,
+        softenedCount,
+        blockedCount,
+      }),
+    };
+    await appendVendorScenarioLog(scenarioEntry);
+
     return res.json({
       ok: true,
       vendorId,
@@ -339,7 +411,8 @@ adminVendorEconomyRouter.post("/bridge_runtime_guarded", async (req, res) => {
       vendorPolicy: bridge.vendorPolicy,
       laneFiltersApplied: effectiveLaneFilters,
       presetApplied: preset,
-      selectionLabel: preset?.label ?? describeVendorLaneSelection(effectiveLaneFilters),
+      selectionLabel,
+      scenarioEntry,
       results,
     });
   } catch (err: any) {

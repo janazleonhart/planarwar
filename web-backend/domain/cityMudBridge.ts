@@ -170,6 +170,43 @@ export interface CityMudVendorLanePolicy extends CityMudVendorSupportPolicy {
   laneDetail: string;
 }
 
+
+export interface CityMudVendorScenarioLogEntry {
+  at: string;
+  actor: "admin_ui";
+  action: "preview" | "apply";
+  vendorId: string;
+  selectionLabel: string;
+  laneFilters: CityMudVendorLane[];
+  presetKey: CityMudVendorPresetKey | null;
+  bridgeBand: CityMudBridgeBand;
+  vendorState: CityMudConsumerState;
+  matchedCount: number;
+  appliedCount: number;
+  softenedCount: number;
+  blockedCount: number;
+  warningCount: number;
+  note: string;
+}
+
+export function buildVendorScenarioLogNote(input: {
+  action: "preview" | "apply";
+  selectionLabel: string;
+  presetKey: CityMudVendorPresetKey | null;
+  bridgeBand: CityMudBridgeBand;
+  vendorState: CityMudConsumerState;
+  matchedCount: number;
+  appliedCount: number;
+  softenedCount: number;
+  blockedCount: number;
+}): string {
+  const verb = input.action === "apply" ? "Applied" : "Previewed";
+  const preset = input.presetKey ? ` via preset ${input.presetKey}` : "";
+  const touched = input.action === "apply" ? `${input.appliedCount}/${input.matchedCount} row(s)` : `${input.matchedCount} row(s)`;
+  const softened = input.softenedCount > 0 ? ` guardrails softened ${input.softenedCount}` : "";
+  const blocked = input.blockedCount > 0 ? ` blocked ${input.blockedCount}` : "";
+  return `${verb} guarded vendor runtime for ${input.selectionLabel}${preset}; ${touched}; bridge ${input.bridgeBand}, vendor ${input.vendorState}.${softened || blocked ? ` Summary:${softened}${blocked}.` : ""}`;
+}
 export interface CityMudVendorEconomyRecommendation {
   stockMax: number;
   restockEverySec: number;
