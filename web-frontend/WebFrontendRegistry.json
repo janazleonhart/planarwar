@@ -181,7 +181,8 @@
         "Adds typed mission-board DTOs plus fetchMissionBoard(), startMission(), and completeMission() so mission offers can surface bridge-aware support guidance in the UI.",
         "Adds typed City \u2194 MUD vendor policy DTOs so admin/vendor tooling can consume stock/price/cadence recommendations from the bridge status endpoint.",
         "Admin vendor economy consumers may now receive bridge_runtime_effect preview fields on item rows from /api/admin/vendor_economy/items.",
-        "Admin vendor economy flows may now call /api/admin/vendor_economy/bridge_runtime_guarded to preview/apply server-guarded runtime changes for selected rows."
+        "Admin vendor economy flows may now call /api/admin/vendor_economy/bridge_runtime_guarded to preview/apply server-guarded runtime changes for selected rows.",
+        "Adds typed vendor scenario replay/report DTOs plus fetchVendorScenarioReports() for the admin vendor economy reporting surface."
       ],
       "owns": [],
       "path": "web-frontend/lib/api.ts",
@@ -204,7 +205,8 @@
         "startMission(missionId)",
         "completeMission(instanceId)",
         "Typed DTOs for mission support guidance / mission board bridge snapshots",
-        "Admin vendor economy item rows may include bridge_runtime_effect previews"
+        "Admin vendor economy item rows may include bridge_runtime_effect previews",
+        "fetchVendorScenarioReports(query)"
       ],
       "service": "api.client"
     },
@@ -480,7 +482,8 @@
         "v0.8 adds lane-aware vendor posture display and filtering so operators can stage/apply bridge effects by essentials, comfort, luxury, or arcane stock lanes.",
         "v0.9 adds explicit guarded lane-set controls and preview/apply actions so operators can target essentials/comfort/luxury/arcane groups directly instead of relying only on visible-row filtering.",
         "v1.0 adds guarded preset preview/apply controls so operators can run audited vendor posture presets on top of lane-set targeting instead of rebuilding the same selections by hand.",
-        "v1.1 surfaces recent guarded runtime scenario entries so preset/lane previews and applies are visible as an auditable operator timeline instead of disappearing into toast fog."
+        "v1.1 surfaces recent guarded runtime scenario entries so preset/lane previews and applies are visible as an auditable operator timeline instead of disappearing into toast fog.",
+        "v1.2 upgrades the guarded runtime timeline into a filterable replay/report panel with rollup chips, scope controls, and expandable scenario details (warnings + sample rows)."
       ],
       "owns": [
         "Admin UI for vendor_item_economy"

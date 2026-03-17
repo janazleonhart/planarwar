@@ -4,7 +4,7 @@
 // Polished UX: dirty tracking, bulk save, filters, and same-origin API via lib/api.ts.
 
 import { useEffect, useMemo, useState } from "react";
-import { api, fetchCityMudBridgeStatus, getAdminCaps, getAuthToken, type CityMudBridgeStatusResponse, type CityMudVendorSupportPolicy } from "../lib/api";
+import { api, fetchCityMudBridgeStatus, fetchVendorScenarioReports, getAdminCaps, getAuthToken, type CityMudBridgeStatusResponse, type CityMudVendorSupportPolicy, type VendorScenarioAction, type VendorScenarioReportEntry, type VendorScenarioReportResponse } from "../lib/api";
 import { ItemPicker } from "../components/ItemPicker";
 import { AdminShell } from "../components/admin/AdminUI";
 
@@ -151,29 +151,6 @@ type GuardedApplyResponse = {
   error?: string;
 };
 
-type VendorScenarioLogEntry = {
-  at: string;
-  actor: "admin_ui";
-  action: "preview" | "apply";
-  vendorId: string;
-  selectionLabel: string;
-  laneFilters: VendorLane[];
-  presetKey: VendorPresetKey | null;
-  bridgeBand: "open" | "strained" | "restricted";
-  vendorState: "abundant" | "stable" | "pressured" | "restricted";
-  matchedCount: number;
-  appliedCount: number;
-  softenedCount: number;
-  blockedCount: number;
-  warningCount: number;
-  note: string;
-};
-
-type VendorScenarioLogResponse = {
-  ok: boolean;
-  entries: VendorScenarioLogEntry[];
-  error?: string;
-};
 
 type EditRow = {
   stockMax: string;
@@ -341,7 +318,15 @@ export function AdminVendorEconomyPage() {
   const [laneFilter, setLaneFilter] = useState<"all" | VendorLane>("all");
   const [guardedLaneSet, setGuardedLaneSet] = useState<VendorLane[]>(ALL_VENDOR_LANES);
   const [presetKey, setPresetKey] = useState<VendorPresetKey>("scarcity_essentials_protection");
-  const [scenarioLogs, setScenarioLogs] = useState<VendorScenarioLogEntry[]>([]);
+  const [scenarioReport, setScenarioReport] = useState<VendorScenarioReportResponse | null>(null);
+  const [scenarioExpandedAt, setScenarioExpandedAt] = useState<string | null>(null);
+  const [scenarioActionFilter, setScenarioActionFilter] = useState<"all" | VendorScenarioAction>("all");
+  const [scenarioPresetFilter, setScenarioPresetFilter] = useState<"all" | VendorPresetKey>("all");
+  const [scenarioLaneFilter, setScenarioLaneFilter] = useState<"all" | VendorLane>("all");
+  const [scenarioBridgeBandFilter, setScenarioBridgeBandFilter] = useState<"all" | "open" | "strained" | "restricted">("all");
+  const [scenarioVendorStateFilter, setScenarioVendorStateFilter] = useState<"all" | "abundant" | "stable" | "pressured" | "restricted">("all");
+  const [scenarioLimit, setScenarioLimit] = useState(12);
+  const [scenarioVendorScope, setScenarioVendorScope] = useState<"current" | "all">("current");
 
   async function loadBridgeStatus() {
     try {
@@ -431,9 +416,18 @@ export function AdminVendorEconomyPage() {
 
   async function loadScenarioLogs() {
     try {
-      const data = await api<VendorScenarioLogResponse>(`/api/admin/vendor_economy/bridge_runtime_guarded_log?limit=12`);
+      const data = await fetchVendorScenarioReports({
+        action: scenarioActionFilter === "all" ? undefined : scenarioActionFilter,
+        presetKey: scenarioPresetFilter,
+        lane: scenarioLaneFilter,
+        bridgeBand: scenarioBridgeBandFilter,
+        vendorState: scenarioVendorStateFilter,
+        vendorId: scenarioVendorScope === "current" ? vendorId : undefined,
+        limit: scenarioLimit,
+      });
       if (!data?.ok) throw new Error(data?.error || "Unknown error");
-      setScenarioLogs(Array.isArray(data.entries) ? data.entries : []);
+      setScenarioReport(data);
+      setScenarioExpandedAt((prev) => (data.entries.some((entry) => entry.at === prev) ? prev : null));
     } catch (e: any) {
       setError((prev) => prev ?? (e?.message || String(e)));
     }
@@ -442,7 +436,6 @@ export function AdminVendorEconomyPage() {
   useEffect(() => {
     loadVendors();
     void loadBridgeStatus();
-    void loadScenarioLogs();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -450,6 +443,12 @@ export function AdminVendorEconomyPage() {
     const id = window.setInterval(() => setNowMs(Date.now()), 1000);
     return () => window.clearInterval(id);
   }, []);
+
+  useEffect(() => {
+    if (scenarioVendorScope === "current" && !vendorId) return;
+    void loadScenarioLogs();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [vendorId, scenarioActionFilter, scenarioPresetFilter, scenarioLaneFilter, scenarioBridgeBandFilter, scenarioVendorStateFilter, scenarioVendorScope, scenarioLimit]);
 
   useEffect(() => {
     if (!vendorId) return;
@@ -745,6 +744,19 @@ function stageRuntimePreview(row: VendorEconomyItem) {
     }
   }
 
+  function formatScenarioSelectionKind(entry: VendorScenarioReportEntry): string {
+    if (entry.selectionKind === "preset") return "preset";
+    if (entry.selectionKind === "lane_filters") return "lane set";
+    if (entry.selectionKind === "vendor_item_ids") return "explicit rows";
+    return "selection";
+  }
+
+  function formatScenarioTimestamp(iso: string): string {
+    const ms = Date.parse(iso);
+    if (!Number.isFinite(ms)) return iso;
+    return new Date(ms).toLocaleString();
+  }
+
   async function saveDirtyVisible() {
     const targets = filteredItems.filter((r) => rowDirty(r)).map((r) => r.vendor_item_id);
     if (targets.length === 0) return;
@@ -974,6 +986,200 @@ function stageRuntimePreview(row: VendorEconomyItem) {
           <b>Error:</b> {error}
         </div>
       )}
+
+      <div
+        style={{
+          marginBottom: 16,
+          padding: 12,
+          borderRadius: 12,
+          border: "1px solid rgba(255,255,255,0.12)",
+          background: "rgba(255,255,255,0.035)",
+        }}
+      >
+        <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
+          <div>
+            <div style={{ fontWeight: 700 }}>Vendor posture replay / reporting</div>
+            <div style={{ fontSize: 12, opacity: 0.76, marginTop: 4 }}>
+              Read-only view of guarded preview/apply scenarios with filters, rollups, and sample affected rows.
+            </div>
+          </div>
+          <button onClick={() => void loadScenarioLogs()} disabled={busy}>
+            Refresh scenario report
+          </button>
+        </div>
+
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center", marginTop: 12 }}>
+          <label style={{ display: "flex", gap: 6, alignItems: "center" }}>
+            scope
+            <select value={scenarioVendorScope} onChange={(e) => setScenarioVendorScope(e.target.value as "current" | "all")}>
+              <option value="current">current vendor</option>
+              <option value="all">all vendors</option>
+            </select>
+          </label>
+
+          <label style={{ display: "flex", gap: 6, alignItems: "center" }}>
+            action
+            <select value={scenarioActionFilter} onChange={(e) => setScenarioActionFilter(e.target.value as "all" | VendorScenarioAction)}>
+              <option value="all">all</option>
+              <option value="preview">preview</option>
+              <option value="apply">apply</option>
+            </select>
+          </label>
+
+          <label style={{ display: "flex", gap: 6, alignItems: "center" }}>
+            preset
+            <select value={scenarioPresetFilter} onChange={(e) => setScenarioPresetFilter(e.target.value as "all" | VendorPresetKey)}>
+              <option value="all">all</option>
+              {VENDOR_PRESETS.map((preset) => (
+                <option key={preset.key} value={preset.key}>{preset.label}</option>
+              ))}
+            </select>
+          </label>
+
+          <label style={{ display: "flex", gap: 6, alignItems: "center" }}>
+            lane
+            <select value={scenarioLaneFilter} onChange={(e) => setScenarioLaneFilter(e.target.value as "all" | VendorLane)}>
+              <option value="all">all</option>
+              {ALL_VENDOR_LANES.map((lane) => <option key={lane} value={lane}>{lane}</option>)}
+            </select>
+          </label>
+
+          <label style={{ display: "flex", gap: 6, alignItems: "center" }}>
+            bridge
+            <select value={scenarioBridgeBandFilter} onChange={(e) => setScenarioBridgeBandFilter(e.target.value as "all" | "open" | "strained" | "restricted")}>
+              <option value="all">all</option>
+              <option value="open">open</option>
+              <option value="strained">strained</option>
+              <option value="restricted">restricted</option>
+            </select>
+          </label>
+
+          <label style={{ display: "flex", gap: 6, alignItems: "center" }}>
+            vendor state
+            <select value={scenarioVendorStateFilter} onChange={(e) => setScenarioVendorStateFilter(e.target.value as "all" | "abundant" | "stable" | "pressured" | "restricted")}>
+              <option value="all">all</option>
+              <option value="abundant">abundant</option>
+              <option value="stable">stable</option>
+              <option value="pressured">pressured</option>
+              <option value="restricted">restricted</option>
+            </select>
+          </label>
+
+          <label style={{ display: "flex", gap: 6, alignItems: "center" }}>
+            rows
+            <input
+              type="number"
+              min={1}
+              max={50}
+              value={scenarioLimit}
+              onChange={(e) => setScenarioLimit(Math.max(1, Math.min(50, Number(e.target.value) || 12)))}
+              style={{ width: 80 }}
+            />
+          </label>
+        </div>
+
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 12 }}>
+          {[
+            ["matched", scenarioReport?.rollups.matched ?? 0],
+            ["applied", scenarioReport?.rollups.applied ?? 0],
+            ["softened", scenarioReport?.rollups.softened ?? 0],
+            ["blocked", scenarioReport?.rollups.blocked ?? 0],
+            ["warnings", scenarioReport?.rollups.warnings ?? 0],
+            ["previews", scenarioReport?.rollups.previews ?? 0],
+            ["applies", scenarioReport?.rollups.applies ?? 0],
+          ].map(([label, value]) => (
+            <div key={String(label)} style={{ padding: "8px 10px", borderRadius: 10, background: "rgba(255,255,255,0.05)", minWidth: 92 }}>
+              <div style={{ fontSize: 11, opacity: 0.72, textTransform: "uppercase", letterSpacing: 0.5 }}>{label}</div>
+              <div style={{ fontWeight: 700, marginTop: 4 }}>{value}</div>
+            </div>
+          ))}
+        </div>
+
+        <div style={{ marginTop: 10, fontSize: 12, opacity: 0.76 }}>
+          showing {scenarioReport?.entries.length ?? 0} scenario row(s)
+          {scenarioVendorScope === "current" && vendorId ? ` for vendor ${vendorId}` : " across all vendors"}
+          {scenarioReport?.malformedCount ? ` · skipped malformed historical rows: ${scenarioReport.malformedCount}` : ""}
+        </div>
+
+        <div style={{ display: "grid", gap: 10, marginTop: 12 }}>
+          {(scenarioReport?.entries ?? []).map((entry) => {
+            const expanded = scenarioExpandedAt === entry.at;
+            return (
+              <div key={`${entry.at}-${entry.vendorId}-${entry.action}`} style={{ border: "1px solid rgba(255,255,255,0.12)", borderRadius: 12, padding: 12 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+                  <div>
+                    <div style={{ fontWeight: 700 }}>{entry.note}</div>
+                    <div style={{ fontSize: 12, opacity: 0.74, marginTop: 4 }}>
+                      {formatScenarioTimestamp(entry.at)} · {entry.action} · {formatScenarioSelectionKind(entry)} · vendor {entry.vendorId}
+                    </div>
+                  </div>
+                  <button onClick={() => setScenarioExpandedAt(expanded ? null : entry.at)}>
+                    {expanded ? "Hide details" : "Show details"}
+                  </button>
+                </div>
+
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10, fontSize: 12 }}>
+                  <span><b>selection:</b> {entry.selectionLabel}</span>
+                  <span><b>lanes:</b> {entry.laneFilters.length ? entry.laneFilters.join(", ") : "none"}</span>
+                  <span><b>bridge:</b> {entry.bridgeBand}</span>
+                  <span><b>state:</b> {entry.vendorState}</span>
+                  <span><b>preset:</b> {entry.presetKey ?? "—"}</span>
+                </div>
+
+                {expanded && (
+                  <div style={{ marginTop: 12, paddingTop: 12, borderTop: "1px solid rgba(255,255,255,0.08)" }}>
+                    <div style={{ display: "flex", gap: 10, flexWrap: "wrap", fontSize: 12 }}>
+                      <span>matched <b>{entry.matchedCount}</b></span>
+                      <span>applied <b>{entry.appliedCount}</b></span>
+                      <span>softened <b>{entry.softenedCount}</b></span>
+                      <span>blocked <b>{entry.blockedCount}</b></span>
+                      <span>warnings <b>{entry.warningCount}</b></span>
+                    </div>
+
+                    {entry.topWarnings.length > 0 && (
+                      <div style={{ marginTop: 10 }}>
+                        <div style={{ fontSize: 12, fontWeight: 700 }}>Top warnings</div>
+                        <ul style={{ margin: "6px 0 0 18px", padding: 0 }}>
+                          {entry.topWarnings.map((warning) => <li key={warning} style={{ fontSize: 12 }}>{warning}</li>)}
+                        </ul>
+                      </div>
+                    )}
+
+                    {entry.sampleItems.length > 0 && (
+                      <div style={{ marginTop: 10 }}>
+                        <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 6 }}>Sample affected rows</div>
+                        <div style={{ display: "grid", gap: 8 }}>
+                          {entry.sampleItems.map((sample) => (
+                            <div key={`${entry.at}-${sample.vendorItemId}`} style={{ padding: 8, borderRadius: 10, background: "rgba(255,255,255,0.04)", fontSize: 12 }}>
+                              <div style={{ fontWeight: 600 }}>
+                                {sample.itemName ?? sample.itemId} <code>({sample.itemId})</code>
+                              </div>
+                              <div style={{ marginTop: 4, opacity: 0.82 }}>
+                                row {sample.vendorItemId} · lane {sample.lane ?? "?"} · runtime {sample.runtimeState ?? "?"} · {sample.allowed ? "allowed" : "blocked"} · {sample.applied ? "applied" : "not applied"}
+                              </div>
+                              {sample.warnings.length > 0 && (
+                                <div style={{ marginTop: 4, opacity: 0.8 }}>
+                                  warnings: {sample.warnings.join(" · ")}
+                                </div>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+
+          {(scenarioReport?.entries.length ?? 0) === 0 && (
+            <div style={{ padding: 12, borderRadius: 10, background: "rgba(255,255,255,0.03)", fontSize: 12, opacity: 0.76 }}>
+              No scenario entries match the current filters.
+            </div>
+          )}
+        </div>
+      </div>
 
       {busy && <div style={{ marginBottom: 8 }}>Loading…</div>}
 

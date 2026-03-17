@@ -8,6 +8,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { db } from "../../worldcore/db/Database";
 import { buildVendorScenarioLogNote, describeVendorLaneSelection, deriveCityMudConsumers, deriveVendorEconomyRecommendation, deriveVendorGuardrailApplication, deriveVendorLanePolicy, deriveVendorRuntimeEffect, deriveVendorSupportPolicy, getVendorPreset, matchesVendorLaneSelection, normalizeVendorLaneSelection, normalizeVendorPresetKey, summarizeCityMudBridge, type CityMudVendorLane, type CityMudVendorPresetKey, type CityMudVendorScenarioLogEntry } from "../domain/cityMudBridge";
+import { readVendorScenarioReportFromFile, type VendorScenarioReportFilter } from "../domain/vendorScenarioReports";
 import { resolvePlayerAccess } from "./playerCityAccess";
 
 export const adminVendorEconomyRouter = express.Router();
@@ -20,24 +21,6 @@ async function appendVendorScenarioLog(entry: CityMudVendorScenarioLogEntry): Pr
   await fs.appendFile(VENDOR_SCENARIO_LOG_PATH, `${JSON.stringify(entry)}\n`, "utf8");
 }
 
-async function readRecentVendorScenarioLogs(limit: number): Promise<CityMudVendorScenarioLogEntry[]> {
-  try {
-    const raw = await fs.readFile(VENDOR_SCENARIO_LOG_PATH, "utf8");
-    const lines = raw.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
-    const parsed: CityMudVendorScenarioLogEntry[] = [];
-    for (const line of lines.slice(-Math.max(1, Math.min(limit, 200)))) {
-      try {
-        parsed.push(JSON.parse(line) as CityMudVendorScenarioLogEntry);
-      } catch {
-        // ignore malformed historical lines
-      }
-    }
-    return parsed.reverse();
-  } catch (err: any) {
-    if (err?.code === "ENOENT") return [];
-    throw err;
-  }
-}
 
 function clampInt(n: number, lo: number, hi: number): number {
   if (!Number.isFinite(n)) return lo;
@@ -106,8 +89,28 @@ adminVendorEconomyRouter.get("/vendors", async (_req, res) => {
 adminVendorEconomyRouter.get("/bridge_runtime_guarded_log", async (req, res) => {
   try {
     const limit = clampInt(Number(req.query.limit ?? 25), 1, 100);
-    const entries = await readRecentVendorScenarioLogs(limit);
-    return res.json({ ok: true, entries });
+    const report = await readVendorScenarioReportFromFile(VENDOR_SCENARIO_LOG_PATH, { limit });
+    return res.json({ ok: true, entries: report.entries });
+  } catch (err: any) {
+    return res.status(500).json({ ok: false, error: err?.message ?? String(err) });
+  }
+});
+
+adminVendorEconomyRouter.get("/scenarios", async (req, res) => {
+  try {
+    const filter: VendorScenarioReportFilter = {
+      action: req.query.action === "preview" || req.query.action === "apply" ? req.query.action : undefined,
+      presetKey: typeof req.query.presetKey === "string" && req.query.presetKey.trim() ? req.query.presetKey.trim() : undefined,
+      lane: req.query.lane === "essentials" || req.query.lane === "comfort" || req.query.lane === "luxury" || req.query.lane === "arcane" ? req.query.lane : undefined,
+      laneSet: typeof req.query.laneSet === "string" && req.query.laneSet.trim() ? req.query.laneSet.trim() : undefined,
+      bridgeBand: req.query.bridgeBand === "open" || req.query.bridgeBand === "strained" || req.query.bridgeBand === "restricted" ? req.query.bridgeBand : undefined,
+      vendorId: typeof req.query.vendorId === "string" && req.query.vendorId.trim() ? req.query.vendorId.trim() : undefined,
+      vendorState: req.query.vendorState === "abundant" || req.query.vendorState === "stable" || req.query.vendorState === "pressured" || req.query.vendorState === "restricted" ? req.query.vendorState : undefined,
+      before: typeof req.query.before === "string" && req.query.before.trim() ? req.query.before.trim() : undefined,
+      limit: clampInt(Number(req.query.limit ?? 25), 1, 100),
+    };
+    const report = await readVendorScenarioReportFromFile(VENDOR_SCENARIO_LOG_PATH, filter);
+    return res.json({ ok: true, ...report });
   } catch (err: any) {
     return res.status(500).json({ ok: false, error: err?.message ?? String(err) });
   }
@@ -359,6 +362,7 @@ adminVendorEconomyRouter.post("/bridge_runtime_guarded", async (req, res) => {
         vendor_item_id: row.vendor_item_id,
         item_id: row.item_id,
         item_name: row.item_name,
+        lane: lanePolicy.lane,
         runtimeEffect,
         guardrail,
         applied,
@@ -369,6 +373,9 @@ adminVendorEconomyRouter.post("/bridge_runtime_guarded", async (req, res) => {
     const softenedCount = results.filter((result) => (result.guardrail?.warnings?.length ?? 0) > 0).length;
     const blockedCount = results.filter((result) => !result.guardrail?.allowed).length;
     const warningCount = results.reduce((sum, result) => sum + (result.guardrail?.warnings?.length ?? 0), 0);
+    const warningMessages = Array.from(new Set(
+      results.flatMap((result) => Array.isArray(result.guardrail?.warnings) ? result.guardrail.warnings : [])
+    ));
     const scenarioEntry: CityMudVendorScenarioLogEntry = {
       at: new Date().toISOString(),
       actor: "admin_ui",
@@ -395,6 +402,20 @@ adminVendorEconomyRouter.post("/bridge_runtime_guarded", async (req, res) => {
         softenedCount,
         blockedCount,
       }),
+      detail: {
+        selectionKind: preset ? "preset" : (vendorItemIds.length > 0 ? "vendor_item_ids" : "lane_filters"),
+        topWarnings: warningMessages.slice(0, 5),
+        sampleItems: results.slice(0, 8).map((result) => ({
+          vendorItemId: result.vendor_item_id,
+          itemId: result.item_id,
+          itemName: result.item_name,
+          lane: result.lane,
+          runtimeState: result.runtimeEffect?.state ?? "normal",
+          allowed: Boolean(result.guardrail?.allowed),
+          applied: Boolean(result.applied),
+          warnings: Array.isArray(result.guardrail?.warnings) ? result.guardrail.warnings.slice(0, 4) : [],
+        })).filter((row) => row.lane),
+      },
     };
     await appendVendorScenarioLog(scenarioEntry);
 

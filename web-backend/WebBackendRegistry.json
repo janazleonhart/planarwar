@@ -2023,7 +2023,8 @@
       "dependsOn": [
         "npm:express",
         "worldcore:db/Database",
-        "web-backend.domain.cityMudBridge"
+        "web-backend.domain.cityMudBridge",
+        "web-backend.domain.vendorScenarioReports"
       ],
       "kind": "module",
       "lifecycle": "singleton",
@@ -2037,7 +2038,8 @@
         "v0.8 returns per-row bridge_lane_policy and applies guarded/runtime previews through that lane-aware policy instead of a single blunt vendor posture.",
         "v0.9 extends POST /api/admin/vendor_economy/bridge_runtime_guarded with laneFilters and selectionLabel support, allowing guarded preview/apply against explicit vendor lane sets for a vendor.",
         "v1.0 extends POST /api/admin/vendor_economy/bridge_runtime_guarded with presetKey support so operators can preview/apply reusable guarded vendor posture presets.",
-        "v1.1 adds GET /api/admin/vendor_economy/bridge_runtime_guarded_log and writes preview/apply scenario entries with bridge posture, target selection, softened counts, and blocked rows for operator audit."
+        "v1.1 adds GET /api/admin/vendor_economy/bridge_runtime_guarded_log and writes preview/apply scenario entries with bridge posture, target selection, softened counts, and blocked rows for operator audit.",
+        "v1.2 adds GET /api/admin/vendor_economy/scenarios plus normalized replay/report rollups, filterable posture history, and richer scenario log detail (selection kind, top warnings, sample rows)."
       ],
       "owns": [],
       "path": "web-backend/routes/adminVendorEconomy.ts",
@@ -2046,7 +2048,8 @@
         "GET /api/admin/vendor_economy/items",
         "POST /api/admin/vendor_economy/items/:vendorItemId",
         "POST /api/admin/vendor_economy/bridge_runtime_guarded",
-        "POST /api/admin/vendor_economy/bridge_runtime_guarded presetKey support"
+        "POST /api/admin/vendor_economy/bridge_runtime_guarded presetKey support",
+        "GET /api/admin/vendor_economy/scenarios"
       ],
       "service": "http.adminRoutes"
     },
@@ -2650,6 +2653,29 @@
         "mountRouteGroups(app)"
       ],
       "service": "http.routes"
+    },
+    "web-backend.domain.vendorScenarioReports": {
+      "class": null,
+      "ctorArgs": [],
+      "dependsOn": [
+        "node:fs/promises"
+      ],
+      "kind": "module",
+      "lifecycle": "singleton",
+      "notes": [
+        "Normalizes historical vendor runtime scenario JSONL entries into a stable reporting DTO.",
+        "Provides filter + rollup helpers for action/preset/lane/bridge/vendor-state replay queries.",
+        "Tolerates malformed historical lines so admin reporting stays readable during schema evolution."
+      ],
+      "owns": [],
+      "path": "web-backend/domain/vendorScenarioReports.ts",
+      "provides": [
+        "normalizeVendorScenarioReportEntry(raw)",
+        "filterVendorScenarioReportEntries(entries, filter)",
+        "buildVendorScenarioReportResponse(entries, filter, malformedCount)",
+        "readVendorScenarioReportFromFile(logPath, filter)"
+      ],
+      "service": "vendorScenarioReports.domain"
     }
   }
 }

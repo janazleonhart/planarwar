@@ -171,6 +171,17 @@ export interface CityMudVendorLanePolicy extends CityMudVendorSupportPolicy {
 }
 
 
+export interface CityMudVendorScenarioLogSampleItem {
+  vendorItemId: number;
+  itemId: string;
+  itemName: string | null;
+  lane: CityMudVendorLane;
+  runtimeState: "surplus" | "normal" | "tight" | "scarce";
+  allowed: boolean;
+  applied: boolean;
+  warnings: string[];
+}
+
 export interface CityMudVendorScenarioLogEntry {
   at: string;
   actor: "admin_ui";
@@ -187,6 +198,11 @@ export interface CityMudVendorScenarioLogEntry {
   blockedCount: number;
   warningCount: number;
   note: string;
+  detail?: {
+    selectionKind: "vendor_item_ids" | "lane_filters" | "preset";
+    topWarnings?: string[];
+    sampleItems?: CityMudVendorScenarioLogSampleItem[];
+  };
 }
 
 export function buildVendorScenarioLogNote(input: {

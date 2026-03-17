@@ -303,6 +303,86 @@ export interface PublicInfrastructureStatusResponse {
   cityStress: CityStressState | null;
 }
 
+
+export type VendorScenarioAction = "preview" | "apply";
+export type VendorScenarioLane = "essentials" | "comfort" | "luxury" | "arcane";
+export type VendorScenarioPresetKey = "scarcity_essentials_protection" | "luxury_throttle" | "arcane_caution" | "broad_recovery";
+export type VendorScenarioBridgeBand = "open" | "strained" | "restricted";
+export type VendorScenarioVendorState = "abundant" | "stable" | "pressured" | "restricted";
+export type VendorScenarioRuntimeState = "surplus" | "normal" | "tight" | "scarce";
+
+export interface VendorScenarioReportSampleItem {
+  vendorItemId: number;
+  itemId: string;
+  itemName: string | null;
+  lane: VendorScenarioLane | null;
+  runtimeState: VendorScenarioRuntimeState | null;
+  allowed: boolean;
+  applied: boolean;
+  warnings: string[];
+}
+
+export interface VendorScenarioReportEntry {
+  at: string;
+  actor: "admin_ui";
+  action: VendorScenarioAction;
+  vendorId: string;
+  selectionLabel: string;
+  laneFilters: VendorScenarioLane[];
+  presetKey: VendorScenarioPresetKey | null;
+  bridgeBand: VendorScenarioBridgeBand;
+  vendorState: VendorScenarioVendorState;
+  matchedCount: number;
+  appliedCount: number;
+  softenedCount: number;
+  blockedCount: number;
+  warningCount: number;
+  note: string;
+  selectionKind: "vendor_item_ids" | "lane_filters" | "preset" | "unknown";
+  topWarnings: string[];
+  sampleItems: VendorScenarioReportSampleItem[];
+}
+
+export interface VendorScenarioReportResponse {
+  ok: boolean;
+  entries: VendorScenarioReportEntry[];
+  rollups: {
+    matched: number;
+    applied: number;
+    softened: number;
+    blocked: number;
+    warnings: number;
+    previews: number;
+    applies: number;
+  };
+  filtersApplied: {
+    action: VendorScenarioAction | null;
+    presetKey: VendorScenarioPresetKey | null;
+    lane: VendorScenarioLane | null;
+    laneSet: string | null;
+    bridgeBand: VendorScenarioBridgeBand | null;
+    vendorId: string | null;
+    vendorState: VendorScenarioVendorState | null;
+    before: string | null;
+    limit: number;
+  };
+  malformedCount: number;
+  nextCursor: string | null;
+  error?: string;
+}
+
+export interface VendorScenarioReportQuery {
+  action?: VendorScenarioAction;
+  presetKey?: VendorScenarioPresetKey | "all";
+  lane?: VendorScenarioLane | "all";
+  laneSet?: string;
+  bridgeBand?: VendorScenarioBridgeBand | "all";
+  vendorId?: string;
+  vendorState?: VendorScenarioVendorState | "all";
+  before?: string | null;
+  limit?: number;
+}
+
 export interface CityMudBridgeHook {
   key: "vendor_supply" | "caravan_risk" | "mission_support" | "recruitment_pressure" | "public_service_drag";
   label: string;
@@ -466,6 +546,22 @@ export async function fetchPublicInfrastructureStatus(serviceMode: Infrastructur
 
 export async function fetchCityMudBridgeStatus(): Promise<CityMudBridgeStatusResponse> {
   return api<CityMudBridgeStatusResponse>("/api/city_mud_bridge/status");
+}
+
+
+export async function fetchVendorScenarioReports(query: VendorScenarioReportQuery = {}): Promise<VendorScenarioReportResponse> {
+  const params = new URLSearchParams();
+  if (query.action) params.set("action", query.action);
+  if (query.presetKey && query.presetKey !== "all") params.set("presetKey", query.presetKey);
+  if (query.lane && query.lane !== "all") params.set("lane", query.lane);
+  if (query.laneSet) params.set("laneSet", query.laneSet);
+  if (query.bridgeBand && query.bridgeBand !== "all") params.set("bridgeBand", query.bridgeBand);
+  if (query.vendorId) params.set("vendorId", query.vendorId);
+  if (query.vendorState && query.vendorState !== "all") params.set("vendorState", query.vendorState);
+  if (query.before) params.set("before", query.before);
+  if (query.limit) params.set("limit", String(query.limit));
+  const qs = params.toString();
+  return api<VendorScenarioReportResponse>(`/api/admin/vendor_economy/scenarios${qs ? `?${qs}` : ""}`);
 }
 
 export async function fetchMissionBoard(): Promise<MissionBoardResponse> {
