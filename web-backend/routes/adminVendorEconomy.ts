@@ -5,7 +5,7 @@
 
 import express from "express";
 import { db } from "../../worldcore/db/Database";
-import { deriveCityMudConsumers, deriveVendorEconomyRecommendation, deriveVendorGuardrailApplication, deriveVendorLanePolicy, deriveVendorRuntimeEffect, deriveVendorSupportPolicy, summarizeCityMudBridge } from "../domain/cityMudBridge";
+import { describeVendorLaneSelection, deriveCityMudConsumers, deriveVendorEconomyRecommendation, deriveVendorGuardrailApplication, deriveVendorLanePolicy, deriveVendorRuntimeEffect, deriveVendorSupportPolicy, matchesVendorLaneSelection, normalizeVendorLaneSelection, summarizeCityMudBridge, type CityMudVendorLane } from "../domain/cityMudBridge";
 import { resolvePlayerAccess } from "./playerCityAccess";
 
 export const adminVendorEconomyRouter = express.Router();
@@ -189,6 +189,7 @@ adminVendorEconomyRouter.get("/items", async (req, res) => {
 type BulkGuardedApplyBody = {
   vendorId?: string;
   vendorItemIds?: number[];
+  laneFilters?: CityMudVendorLane[];
   apply?: boolean;
   resetStock?: boolean;
 };
@@ -205,9 +206,10 @@ adminVendorEconomyRouter.post("/bridge_runtime_guarded", async (req, res) => {
     const vendorItemIds = rawIds
       .map((v) => Number(v))
       .filter((v) => Number.isFinite(v) && v > 0)
-      .slice(0, 200);
-    if (vendorItemIds.length === 0) {
-      return res.status(400).json({ ok: false, error: "vendorItemIds must include at least one valid id" });
+      .slice(0, 500);
+    const laneFilters = normalizeVendorLaneSelection(body.laneFilters);
+    if (vendorItemIds.length === 0 && laneFilters.length === 0) {
+      return res.status(400).json({ ok: false, error: "vendorItemIds or laneFilters must include at least one valid selection" });
     }
 
     const apply = Boolean(body.apply);
@@ -241,10 +243,12 @@ adminVendorEconomyRouter.post("/bridge_runtime_guarded", async (req, res) => {
       LEFT JOIN items it ON it.id = vi.item_id
       LEFT JOIN vendor_item_economy e ON e.vendor_item_id = vi.id
       LEFT JOIN vendor_item_state s ON s.vendor_item_id = vi.id
-      WHERE vi.vendor_id = $1 AND vi.id = ANY($2::int[])
+      WHERE vi.vendor_id = $1
+        AND ($2::int[] IS NULL OR cardinality($2::int[]) = 0 OR vi.id = ANY($2::int[]))
       ORDER BY vi.id ASC
+      LIMIT 1000
       `,
-      [vendorId, vendorItemIds]
+      [vendorId, vendorItemIds.length > 0 ? vendorItemIds : null]
     )) as { rows: VendorEconomyItemRow[] };
 
     const results: any[] = [];
@@ -255,6 +259,9 @@ adminVendorEconomyRouter.post("/bridge_runtime_guarded", async (req, res) => {
         itemName: row.item_name,
         itemRarity: row.item_rarity,
       });
+      if (!matchesVendorLaneSelection(lanePolicy, laneFilters)) {
+        continue;
+      }
       const runtimeEffect = deriveVendorRuntimeEffect({
         stock: row.stock,
         stockMax: row.stock_max,
@@ -326,6 +333,8 @@ adminVendorEconomyRouter.post("/bridge_runtime_guarded", async (req, res) => {
       bridgeSummary: bridge.summary,
       bridgeConsumers: bridge.consumers,
       vendorPolicy: bridge.vendorPolicy,
+      laneFiltersApplied: laneFilters,
+      selectionLabel: describeVendorLaneSelection(laneFilters),
       results,
     });
   } catch (err: any) {

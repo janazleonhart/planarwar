@@ -37,8 +37,12 @@ type VendorRuntimeEffect = {
   detail: string;
 };
 
+type VendorLane = "essentials" | "comfort" | "luxury" | "arcane";
+
+const ALL_VENDOR_LANES: VendorLane[] = ["essentials", "comfort", "luxury", "arcane"];
+
 type VendorLanePolicy = {
-  lane: "essentials" | "comfort" | "luxury" | "arcane";
+  lane: VendorLane;
   laneLabel: string;
   laneDetail: string;
   state: "abundant" | "stable" | "pressured" | "restricted";
@@ -126,6 +130,8 @@ type GuardedApplyResponse = {
   requestedCount: number;
   matchedCount: number;
   appliedCount: number;
+  laneFiltersApplied?: VendorLane[];
+  selectionLabel?: string;
   results: Array<{
     vendor_item_id: number;
     item_id: string;
@@ -300,7 +306,8 @@ export function AdminVendorEconomyPage() {
   const [onlyFinite, setOnlyFinite] = useState(false);
   const [onlyRestock, setOnlyRestock] = useState(false);
   const [onlyDirty, setOnlyDirty] = useState(false);
-  const [laneFilter, setLaneFilter] = useState<"all" | "essentials" | "comfort" | "luxury" | "arcane">("all");
+  const [laneFilter, setLaneFilter] = useState<"all" | VendorLane>("all");
+  const [guardedLaneSet, setGuardedLaneSet] = useState<VendorLane[]>(ALL_VENDOR_LANES);
 
   async function loadBridgeStatus() {
     try {
@@ -309,6 +316,19 @@ export function AdminVendorEconomyPage() {
     } catch {
       setBridgeStatus(null);
     }
+  }
+
+  function toggleGuardedLane(lane: VendorLane) {
+    setGuardedLaneSet((prev) =>
+      prev.includes(lane) ? prev.filter((value) => value !== lane) : [...prev, lane]
+    );
+  }
+
+  function describeLaneSet(lanes: VendorLane[]): string {
+    if (lanes.length === 0) return "no lanes";
+    if (lanes.length === ALL_VENDOR_LANES.length) return "all lanes";
+    if (lanes.length === 1) return `${lanes[0]} lane`;
+    return `${lanes.join(", ")} lanes`;
   }
 
   async function loadVendors() {
@@ -502,21 +522,21 @@ function stageRuntimePreview(row: VendorEconomyItem) {
     setNotice(`Staged bridge recommendations for ${filteredItems.filter((row) => row.bridge_recommendation).length} visible row(s).`);
   }
 
-  async function runGuardedRuntimeApply(vendorItemIds: number[], apply: boolean) {
-    if (!vendorId || vendorItemIds.length === 0) return;
+  async function runGuardedRuntimeApply(vendorItemIds: number[], apply: boolean, laneFilters?: VendorLane[]) {
+    if (!vendorId || (vendorItemIds.length === 0 && (!laneFilters || laneFilters.length === 0))) return;
     setBusy(true);
     setError(null);
     setNotice(null);
     try {
       const data = await api<GuardedApplyResponse>(`/api/admin/vendor_economy/bridge_runtime_guarded`, {
         method: "POST",
-        body: JSON.stringify({ vendorId, vendorItemIds, apply, resetStock: false }),
+        body: JSON.stringify({ vendorId, vendorItemIds, laneFilters, apply, resetStock: false }),
       });
       if (!data?.ok) throw new Error(data?.error || "Unknown error");
 
       if (apply) {
         await loadItems();
-        setNotice(`Applied guarded bridge runtime to ${data.appliedCount}/${data.matchedCount} row(s).`);
+        setNotice(`Applied guarded bridge runtime to ${data.appliedCount}/${data.matchedCount} row(s) for ${data.selectionLabel ?? describeLaneSet(laneFilters ?? [])}.`);
         return;
       }
 
@@ -537,7 +557,7 @@ function stageRuntimePreview(row: VendorEconomyItem) {
       });
       const softened = (data.results || []).filter((result) => (result.guardrail?.warnings?.length ?? 0) > 0).length;
       const blocked = (data.results || []).filter((result) => !result.guardrail?.allowed).length;
-      setNotice(`Previewed guarded runtime apply for ${data.matchedCount} row(s); softened ${softened}, blocked ${blocked}.`);
+      setNotice(`Previewed guarded runtime apply for ${data.matchedCount} row(s) across ${data.selectionLabel ?? describeLaneSet(laneFilters ?? [])}; softened ${softened}, blocked ${blocked}.`);
     } catch (e: any) {
       setError(e?.message || String(e));
     } finally {
@@ -554,6 +574,17 @@ function stageRuntimePreview(row: VendorEconomyItem) {
     if (ids.length === 0) return;
     if (!window.confirm(`Apply guarded bridge runtime to ${ids.length} visible row(s)?`)) return;
     void runGuardedRuntimeApply(ids, true);
+  }
+
+  function previewGuardedRuntimeLaneSet() {
+    if (guardedLaneSet.length === 0) return;
+    void runGuardedRuntimeApply([], false, guardedLaneSet);
+  }
+
+  function applyGuardedRuntimeLaneSet() {
+    if (guardedLaneSet.length === 0) return;
+    if (!window.confirm(`Apply guarded bridge runtime to ${describeLaneSet(guardedLaneSet)} for this vendor?`)) return;
+    void runGuardedRuntimeApply([], true, guardedLaneSet);
   }
 
   function previewGuardedRuntimeRow(row: VendorEconomyItem) {
@@ -749,6 +780,19 @@ function stageRuntimePreview(row: VendorEconomyItem) {
           Stage bridge recs
         </button>
 
+        <button onClick={previewGuardedRuntimeVisible} disabled={busy || !canWrite || filteredItems.length === 0}>
+          Preview guarded runtime (visible)
+        </button>
+        <button onClick={applyGuardedRuntimeVisible} disabled={busy || !canWrite || filteredItems.length === 0}>
+          Apply guarded runtime (visible)
+        </button>
+        <button onClick={previewGuardedRuntimeLaneSet} disabled={busy || !canWrite || guardedLaneSet.length === 0}>
+          Preview guarded runtime (lane set)
+        </button>
+        <button onClick={applyGuardedRuntimeLaneSet} disabled={busy || !canWrite || guardedLaneSet.length === 0}>
+          Apply guarded runtime (lane set)
+        </button>
+
         <button onClick={saveDirtyVisible} disabled={busy || !canWrite || dirtyCountVisible === 0}>
           Save dirty ({dirtyCountVisible})
         </button>
@@ -795,13 +839,33 @@ function stageRuntimePreview(row: VendorEconomyItem) {
 
         <label style={{ display: "flex", gap: 6, alignItems: "center" }}>
           lane
-          <select value={laneFilter} onChange={(e) => setLaneFilter(e.target.value as any)} disabled={busy}>
+          <select value={laneFilter} onChange={(e) => setLaneFilter(e.target.value as "all" | VendorLane)} disabled={busy}>
             <option value="all">all</option>
             <option value="essentials">essentials</option>
             <option value="comfort">comfort</option>
             <option value="luxury">luxury</option>
             <option value="arcane">arcane</option>
           </select>
+        </label>
+
+        <label style={{ display: "grid", gap: 6 }}>
+          <span>guarded lane set</span>
+          <span style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+            {ALL_VENDOR_LANES.map((lane) => (
+              <label key={lane} style={{ display: "flex", gap: 4, alignItems: "center", fontSize: 12 }}>
+                <input
+                  type="checkbox"
+                  checked={guardedLaneSet.includes(lane)}
+                  onChange={() => toggleGuardedLane(lane)}
+                  disabled={busy}
+                />
+                {lane}
+              </label>
+            ))}
+          </span>
+          <span style={{ fontSize: 12, opacity: 0.72 }}>
+            explicit target: <b>{describeLaneSet(guardedLaneSet)}</b>
+          </span>
         </label>
 
         <span style={{ marginLeft: 18, display: "flex", gap: 12, alignItems: "center" }}>

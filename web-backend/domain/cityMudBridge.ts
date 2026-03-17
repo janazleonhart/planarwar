@@ -72,6 +72,31 @@ export interface CityMudVendorSupportPolicy {
 
 export type CityMudVendorLane = "essentials" | "comfort" | "luxury" | "arcane";
 
+export const ALL_CITY_MUD_VENDOR_LANES: CityMudVendorLane[] = ["essentials", "comfort", "luxury", "arcane"];
+
+export function isCityMudVendorLane(value: unknown): value is CityMudVendorLane {
+  return typeof value === "string" && (ALL_CITY_MUD_VENDOR_LANES as string[]).includes(value);
+}
+
+export function normalizeVendorLaneSelection(values: unknown): CityMudVendorLane[] {
+  if (!Array.isArray(values)) return [];
+  const seen = new Set<CityMudVendorLane>();
+  const lanes: CityMudVendorLane[] = [];
+  for (const value of values) {
+    if (!isCityMudVendorLane(value) || seen.has(value)) continue;
+    seen.add(value);
+    lanes.push(value);
+  }
+  return lanes;
+}
+
+export function describeVendorLaneSelection(lanes: CityMudVendorLane[]): string {
+  if (lanes.length === 0) return "selected rows";
+  if (lanes.length === 1) return `${lanes[0]} lane`;
+  if (lanes.length === ALL_CITY_MUD_VENDOR_LANES.length) return "all lanes";
+  return `${lanes.join(", ")} lanes`;
+}
+
 export interface CityMudVendorLaneProfile {
   lane: CityMudVendorLane;
   label: string;
@@ -315,6 +340,12 @@ export function deriveCityMudConsumers(summary: CityMudBridgeSummary): CityMudCo
   };
 }
 
+
+export function matchesVendorLaneSelection(policy: Pick<CityMudVendorLanePolicy, "lane"> | null | undefined, lanes: CityMudVendorLane[]): boolean {
+  if (lanes.length === 0) return true;
+  if (!policy) return false;
+  return lanes.includes(policy.lane);
+}
 
 export function deriveVendorSupportPolicy(
   summary: CityMudBridgeSummary,

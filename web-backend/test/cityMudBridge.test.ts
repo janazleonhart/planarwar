@@ -3,7 +3,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { deriveCityMudConsumers, deriveVendorEconomyRecommendation, deriveVendorGuardrailApplication, deriveVendorLanePolicy, deriveVendorRuntimeEffect, deriveVendorSupportPolicy, summarizeCityMudBridge } from "../domain/cityMudBridge";
+import { describeVendorLaneSelection, deriveCityMudConsumers, deriveVendorEconomyRecommendation, deriveVendorGuardrailApplication, deriveVendorLanePolicy, deriveVendorRuntimeEffect, deriveVendorSupportPolicy, matchesVendorLaneSelection, normalizeVendorLaneSelection, summarizeCityMudBridge } from "../domain/cityMudBridge";
 import { applyMissionConsumerGuidance, generateMissionOffers } from "../domain/missions";
 import { createInitialPublicInfrastructureState } from "../domain/publicInfrastructure";
 import { getOrCreatePlayerState } from "../gameState";
@@ -417,4 +417,14 @@ test("vendor economy recommendation becomes lane-aware for essentials versus lux
   assert.ok(essentialsRec.stockMax > luxuryRec.stockMax);
   assert.ok(essentialsRec.restockEverySec < luxuryRec.restockEverySec);
   assert.ok(essentialsRec.priceMaxMult < luxuryRec.priceMaxMult);
+});
+
+
+test("vendor lane selection helpers dedupe filters and describe explicit lane sets", () => {
+  const lanes = normalizeVendorLaneSelection(["luxury", "essentials", "luxury", "bogus", null]);
+
+  assert.deepEqual(lanes, ["luxury", "essentials"]);
+  assert.equal(describeVendorLaneSelection(lanes), "luxury, essentials lanes");
+  assert.equal(matchesVendorLaneSelection({ lane: "luxury" }, lanes), true);
+  assert.equal(matchesVendorLaneSelection({ lane: "comfort" }, lanes), false);
 });
