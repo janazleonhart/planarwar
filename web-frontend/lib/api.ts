@@ -343,6 +343,20 @@ export interface VendorScenarioReportEntry {
   sampleItems: VendorScenarioReportSampleItem[];
 }
 
+export interface VendorScenarioReviewBucket {
+  key: string;
+  label: string;
+  entryCount: number;
+  matched: number;
+  applied: number;
+  softened: number;
+  blocked: number;
+  warnings: number;
+  previews: number;
+  applies: number;
+  lastAt: string | null;
+}
+
 export interface VendorScenarioReportResponse {
   ok: boolean;
   entries: VendorScenarioReportEntry[];
@@ -354,6 +368,26 @@ export interface VendorScenarioReportResponse {
     warnings: number;
     previews: number;
     applies: number;
+  };
+  review: {
+    reviewWindowSize: number;
+    totalMatchingEntries: number;
+    distinctVendors: number;
+    distinctPresets: number;
+    windowRollups: {
+      matched: number;
+      applied: number;
+      softened: number;
+      blocked: number;
+      warnings: number;
+      previews: number;
+      applies: number;
+    };
+    byAction: VendorScenarioReviewBucket[];
+    byPreset: VendorScenarioReviewBucket[];
+    byLane: VendorScenarioReviewBucket[];
+    byBridgeBand: VendorScenarioReviewBucket[];
+    byVendorState: VendorScenarioReviewBucket[];
   };
   filtersApplied: {
     action: VendorScenarioAction | null;
@@ -382,6 +416,8 @@ export interface VendorScenarioReportQuery {
   before?: string | null;
   limit?: number;
 }
+
+export type VendorScenarioExportFormat = "csv" | "json";
 
 export interface CityMudBridgeHook {
   key: "vendor_supply" | "caravan_risk" | "mission_support" | "recruitment_pressure" | "public_service_drag";
@@ -549,7 +585,7 @@ export async function fetchCityMudBridgeStatus(): Promise<CityMudBridgeStatusRes
 }
 
 
-export async function fetchVendorScenarioReports(query: VendorScenarioReportQuery = {}): Promise<VendorScenarioReportResponse> {
+function buildVendorScenarioReportParams(query: VendorScenarioReportQuery = {}): URLSearchParams {
   const params = new URLSearchParams();
   if (query.action) params.set("action", query.action);
   if (query.presetKey && query.presetKey !== "all") params.set("presetKey", query.presetKey);
@@ -560,8 +596,22 @@ export async function fetchVendorScenarioReports(query: VendorScenarioReportQuer
   if (query.vendorState && query.vendorState !== "all") params.set("vendorState", query.vendorState);
   if (query.before) params.set("before", query.before);
   if (query.limit) params.set("limit", String(query.limit));
-  const qs = params.toString();
+  return params;
+}
+
+export async function fetchVendorScenarioReports(query: VendorScenarioReportQuery = {}): Promise<VendorScenarioReportResponse> {
+  const qs = buildVendorScenarioReportParams(query).toString();
   return api<VendorScenarioReportResponse>(`/api/admin/vendor_economy/scenarios${qs ? `?${qs}` : ""}`);
+}
+
+export function buildVendorScenarioReportExportUrl(
+  query: VendorScenarioReportQuery = {},
+  format: VendorScenarioExportFormat = "csv",
+): string {
+  const params = buildVendorScenarioReportParams(query);
+  params.set("format", format);
+  const qs = params.toString();
+  return `${API_BASE_URL}/api/admin/vendor_economy/scenarios/export${qs ? `?${qs}` : ""}`;
 }
 
 export async function fetchMissionBoard(): Promise<MissionBoardResponse> {

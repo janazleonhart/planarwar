@@ -4,7 +4,7 @@
 // Polished UX: dirty tracking, bulk save, filters, and same-origin API via lib/api.ts.
 
 import { useEffect, useMemo, useState } from "react";
-import { api, fetchCityMudBridgeStatus, fetchVendorScenarioReports, getAdminCaps, getAuthToken, type CityMudBridgeStatusResponse, type CityMudVendorSupportPolicy, type VendorScenarioAction, type VendorScenarioReportEntry, type VendorScenarioReportResponse } from "../lib/api";
+import { api, buildVendorScenarioReportExportUrl, fetchCityMudBridgeStatus, fetchVendorScenarioReports, getAdminCaps, getAuthToken, type CityMudBridgeStatusResponse, type CityMudVendorSupportPolicy, type VendorScenarioAction, type VendorScenarioReportEntry, type VendorScenarioReportResponse } from "../lib/api";
 import { ItemPicker } from "../components/ItemPicker";
 import { AdminShell } from "../components/admin/AdminUI";
 
@@ -414,17 +414,77 @@ export function AdminVendorEconomyPage() {
     }
   }
 
+  function getScenarioQuery() {
+    return {
+      action: scenarioActionFilter === "all" ? undefined : scenarioActionFilter,
+      presetKey: scenarioPresetFilter,
+      lane: scenarioLaneFilter,
+      bridgeBand: scenarioBridgeBandFilter,
+      vendorState: scenarioVendorStateFilter,
+      vendorId: scenarioVendorScope === "current" ? vendorId : undefined,
+      limit: scenarioLimit,
+    };
+  }
+
+  async function downloadScenarioExport(format: "csv" | "json") {
+    try {
+      setError(null);
+      const response = await authedFetch(buildVendorScenarioReportExportUrl(getScenarioQuery(), format));
+      if (!response.ok) {
+        const message = await response.text();
+        throw new Error(message || `Scenario export failed (${response.status})`);
+      }
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      const vendorScope = scenarioVendorScope === "current" && vendorId ? vendorId : "all-vendors";
+      anchor.href = url;
+      anchor.download = `vendor-scenarios-${vendorScope}.${format}`;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (e: any) {
+      setError(e?.message || String(e));
+    }
+  }
+
+  function renderScenarioBucketTable(
+    title: string,
+    buckets: Array<{ key: string; label: string; entryCount: number; applied: number; softened: number; blocked: number; warnings: number; lastAt: string | null }>,
+  ) {
+    return (
+      <div style={{ minWidth: 260, flex: 1, border: "1px solid rgba(255,255,255,0.08)", borderRadius: 12, padding: 10 }}>
+        <div style={{ fontWeight: 700, fontSize: 13 }}>{title}</div>
+        <div style={{ display: "grid", gap: 8, marginTop: 10 }}>
+          {buckets.slice(0, 6).map((bucket) => (
+            <div key={`${title}-${bucket.key}`} style={{ paddingBottom: 8, borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
+                <span style={{ fontWeight: 600 }}>{bucket.label}</span>
+                <span style={{ fontSize: 12, opacity: 0.74 }}>{bucket.entryCount} entries</span>
+              </div>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap", fontSize: 12, opacity: 0.84, marginTop: 4 }}>
+                <span>applied <b>{bucket.applied}</b></span>
+                <span>softened <b>{bucket.softened}</b></span>
+                <span>blocked <b>{bucket.blocked}</b></span>
+                <span>warnings <b>{bucket.warnings}</b></span>
+              </div>
+              {bucket.lastAt && (
+                <div style={{ fontSize: 11, opacity: 0.68, marginTop: 4 }}>last {formatScenarioTimestamp(bucket.lastAt)}</div>
+              )}
+            </div>
+          ))}
+          {buckets.length === 0 && (
+            <div style={{ fontSize: 12, opacity: 0.68 }}>No matching rows in the current review window.</div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
   async function loadScenarioLogs() {
     try {
-      const data = await fetchVendorScenarioReports({
-        action: scenarioActionFilter === "all" ? undefined : scenarioActionFilter,
-        presetKey: scenarioPresetFilter,
-        lane: scenarioLaneFilter,
-        bridgeBand: scenarioBridgeBandFilter,
-        vendorState: scenarioVendorStateFilter,
-        vendorId: scenarioVendorScope === "current" ? vendorId : undefined,
-        limit: scenarioLimit,
-      });
+      const data = await fetchVendorScenarioReports(getScenarioQuery());
       if (!data?.ok) throw new Error(data?.error || "Unknown error");
       setScenarioReport(data);
       setScenarioExpandedAt((prev) => (data.entries.some((entry) => entry.at === prev) ? prev : null));
@@ -1003,9 +1063,17 @@ function stageRuntimePreview(row: VendorEconomyItem) {
               Read-only view of guarded preview/apply scenarios with filters, rollups, and sample affected rows.
             </div>
           </div>
-          <button onClick={() => void loadScenarioLogs()} disabled={busy}>
-            Refresh scenario report
-          </button>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <button onClick={() => void loadScenarioLogs()} disabled={busy}>
+              Refresh scenario report
+            </button>
+            <button onClick={() => void downloadScenarioExport("csv")} disabled={busy}>
+              Download CSV
+            </button>
+            <button onClick={() => void downloadScenarioExport("json")} disabled={busy}>
+              Download JSON
+            </button>
+          </div>
         </div>
 
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center", marginTop: 12 }}>
@@ -1080,13 +1148,13 @@ function stageRuntimePreview(row: VendorEconomyItem) {
 
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 12 }}>
           {[
-            ["matched", scenarioReport?.rollups.matched ?? 0],
-            ["applied", scenarioReport?.rollups.applied ?? 0],
-            ["softened", scenarioReport?.rollups.softened ?? 0],
-            ["blocked", scenarioReport?.rollups.blocked ?? 0],
-            ["warnings", scenarioReport?.rollups.warnings ?? 0],
-            ["previews", scenarioReport?.rollups.previews ?? 0],
-            ["applies", scenarioReport?.rollups.applies ?? 0],
+            ["matched", scenarioReport?.review.windowRollups.matched ?? 0],
+            ["applied", scenarioReport?.review.windowRollups.applied ?? 0],
+            ["softened", scenarioReport?.review.windowRollups.softened ?? 0],
+            ["blocked", scenarioReport?.review.windowRollups.blocked ?? 0],
+            ["warnings", scenarioReport?.review.windowRollups.warnings ?? 0],
+            ["previews", scenarioReport?.review.windowRollups.previews ?? 0],
+            ["applies", scenarioReport?.review.windowRollups.applies ?? 0],
           ].map(([label, value]) => (
             <div key={String(label)} style={{ padding: "8px 10px", borderRadius: 10, background: "rgba(255,255,255,0.05)", minWidth: 92 }}>
               <div style={{ fontSize: 11, opacity: 0.72, textTransform: "uppercase", letterSpacing: 0.5 }}>{label}</div>
@@ -1099,6 +1167,28 @@ function stageRuntimePreview(row: VendorEconomyItem) {
           showing {scenarioReport?.entries.length ?? 0} scenario row(s)
           {scenarioVendorScope === "current" && vendorId ? ` for vendor ${vendorId}` : " across all vendors"}
           {scenarioReport?.malformedCount ? ` · skipped malformed historical rows: ${scenarioReport.malformedCount}` : ""}
+        </div>
+
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 12 }}>
+          {[
+            ["review window", scenarioReport?.review.reviewWindowSize ?? 0],
+            ["matching entries", scenarioReport?.review.totalMatchingEntries ?? 0],
+            ["vendors", scenarioReport?.review.distinctVendors ?? 0],
+            ["presets", scenarioReport?.review.distinctPresets ?? 0],
+          ].map(([label, value]) => (
+            <div key={String(label)} style={{ padding: "8px 10px", borderRadius: 10, background: "rgba(255,255,255,0.05)", minWidth: 92 }}>
+              <div style={{ fontSize: 11, opacity: 0.72, textTransform: "uppercase", letterSpacing: 0.5 }}>{label}</div>
+              <div style={{ fontWeight: 700, marginTop: 4 }}>{value}</div>
+            </div>
+          ))}
+        </div>
+
+        <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginTop: 12 }}>
+          {renderScenarioBucketTable("Action mix", scenarioReport?.review.byAction ?? [])}
+          {renderScenarioBucketTable("Per-preset performance", scenarioReport?.review.byPreset ?? [])}
+          {renderScenarioBucketTable("Lane rollups", scenarioReport?.review.byLane ?? [])}
+          {renderScenarioBucketTable("Bridge bands", scenarioReport?.review.byBridgeBand ?? [])}
+          {renderScenarioBucketTable("Vendor states", scenarioReport?.review.byVendorState ?? [])}
         </div>
 
         <div style={{ display: "grid", gap: 10, marginTop: 12 }}>

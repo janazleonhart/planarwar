@@ -68,9 +68,37 @@ export type VendorScenarioReportRollups = {
   applies: number;
 };
 
+export type VendorScenarioReviewBucket = {
+  key: string;
+  label: string;
+  entryCount: number;
+  matched: number;
+  applied: number;
+  softened: number;
+  blocked: number;
+  warnings: number;
+  previews: number;
+  applies: number;
+  lastAt: string | null;
+};
+
+export type VendorScenarioReportReview = {
+  reviewWindowSize: number;
+  totalMatchingEntries: number;
+  distinctVendors: number;
+  distinctPresets: number;
+  windowRollups: VendorScenarioReportRollups;
+  byAction: VendorScenarioReviewBucket[];
+  byPreset: VendorScenarioReviewBucket[];
+  byLane: VendorScenarioReviewBucket[];
+  byBridgeBand: VendorScenarioReviewBucket[];
+  byVendorState: VendorScenarioReviewBucket[];
+};
+
 export type VendorScenarioReportResponse = {
   entries: VendorScenarioReportEntry[];
   rollups: VendorScenarioReportRollups;
+  review: VendorScenarioReportReview;
   filtersApplied: {
     action: VendorScenarioAction | null;
     presetKey: string | null;
@@ -228,7 +256,9 @@ export function filterVendorScenarioReportEntries(
   filter: VendorScenarioReportFilter,
 ): VendorScenarioReportEntry[] {
   const beforeMs = filter.before ? Date.parse(filter.before) : NaN;
-  const expectedLaneSet = filter.laneSet ? laneSetKey(normalizeLaneList(String(filter.laneSet).split(",").map((lane) => lane.trim()))) : null;
+  const expectedLaneSet = filter.laneSet
+    ? laneSetKey(normalizeLaneList(String(filter.laneSet).split(",").map((lane) => lane.trim())))
+    : null;
   return entries.filter((entry) => {
     if (filter.action && entry.action !== filter.action) return false;
     if (filter.presetKey && entry.presetKey !== filter.presetKey) return false;
@@ -242,6 +272,152 @@ export function filterVendorScenarioReportEntries(
   });
 }
 
+function emptyRollups(): VendorScenarioReportRollups {
+  return {
+    matched: 0,
+    applied: 0,
+    softened: 0,
+    blocked: 0,
+    warnings: 0,
+    previews: 0,
+    applies: 0,
+  };
+}
+
+function applyEntryToRollups(acc: VendorScenarioReportRollups, entry: VendorScenarioReportEntry): VendorScenarioReportRollups {
+  acc.matched += entry.matchedCount;
+  acc.applied += entry.appliedCount;
+  acc.softened += entry.softenedCount;
+  acc.blocked += entry.blockedCount;
+  acc.warnings += entry.warningCount;
+  if (entry.action === "preview") acc.previews += 1;
+  if (entry.action === "apply") acc.applies += 1;
+  return acc;
+}
+
+type BucketAccumulator = VendorScenarioReviewBucket & { _sortHint: number; _firstSeenOrder: number };
+
+function buildBuckets(
+  entries: VendorScenarioReportEntry[],
+  classify: (entry: VendorScenarioReportEntry) => Array<{ key: string; label: string }>,
+): VendorScenarioReviewBucket[] {
+  const buckets = new Map<string, BucketAccumulator>();
+  let firstSeenOrder = 0;
+  for (const entry of entries) {
+    const labels = classify(entry);
+    for (const label of labels) {
+      const existing = buckets.get(label.key) ?? {
+        key: label.key,
+        label: label.label,
+        entryCount: 0,
+        matched: 0,
+        applied: 0,
+        softened: 0,
+        blocked: 0,
+        warnings: 0,
+        previews: 0,
+        applies: 0,
+        lastAt: null,
+        _sortHint: Number.POSITIVE_INFINITY,
+        _firstSeenOrder: firstSeenOrder++,
+      };
+      existing.entryCount += 1;
+      applyEntryToRollups(existing, entry);
+      if (existing.lastAt === null || Date.parse(entry.at) > Date.parse(existing.lastAt)) {
+        existing.lastAt = entry.at;
+      }
+      existing._sortHint = Math.min(existing._sortHint, Date.parse(entry.at));
+      buckets.set(label.key, existing);
+    }
+  }
+
+  return [...buckets.values()]
+    .sort((a, b) => {
+      if (b.entryCount !== a.entryCount) return b.entryCount - a.entryCount;
+      if (b.applied !== a.applied) return b.applied - a.applied;
+      if (a._sortHint !== b._sortHint) return a._sortHint - b._sortHint;
+      return a._firstSeenOrder - b._firstSeenOrder;
+    })
+    .map(({ _sortHint, _firstSeenOrder, ...bucket }) => bucket);
+}
+
+function buildVendorScenarioReportReview(
+  filtered: VendorScenarioReportEntry[],
+  limit: number,
+): VendorScenarioReportReview {
+  const reviewWindowSize = clampInt(Math.max(limit * 2, 20), 10, 100);
+  const reviewEntries = filtered.slice(0, reviewWindowSize);
+  const distinctVendors = new Set(reviewEntries.map((entry) => entry.vendorId)).size;
+  const distinctPresets = new Set(reviewEntries.map((entry) => entry.presetKey).filter(Boolean)).size;
+  return {
+    reviewWindowSize,
+    totalMatchingEntries: filtered.length,
+    distinctVendors,
+    distinctPresets,
+    windowRollups: reviewEntries.reduce(applyEntryToRollups, emptyRollups()),
+    byAction: buildBuckets(reviewEntries, (entry) => [{ key: entry.action, label: entry.action }]),
+    byPreset: buildBuckets(reviewEntries, (entry) => [{ key: entry.presetKey ?? "none", label: entry.presetKey ?? "none" }]),
+    byLane: buildBuckets(reviewEntries, (entry) => {
+      const lanes = entry.laneFilters.length ? entry.laneFilters : [null];
+      return lanes.map((lane) => ({ key: lane ?? "none", label: lane ?? "none" }));
+    }),
+    byBridgeBand: buildBuckets(reviewEntries, (entry) => [{ key: entry.bridgeBand, label: entry.bridgeBand }]),
+    byVendorState: buildBuckets(reviewEntries, (entry) => [{ key: entry.vendorState, label: entry.vendorState }]),
+  };
+}
+
+function csvEscape(value: unknown): string {
+  if (value === null || value === undefined) return "";
+  const s = String(value);
+  if (/[",\n\r]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
+  return s;
+}
+
+export function renderVendorScenarioReportCsv(entries: VendorScenarioReportEntry[]): string {
+  const headers = [
+    "at",
+    "action",
+    "vendor_id",
+    "selection_label",
+    "lane_filters",
+    "preset_key",
+    "bridge_band",
+    "vendor_state",
+    "matched_count",
+    "applied_count",
+    "softened_count",
+    "blocked_count",
+    "warning_count",
+    "selection_kind",
+    "top_warnings",
+    "sample_vendor_item_ids",
+    "note",
+  ];
+  const lines = [headers.join(",")];
+  for (const entry of entries) {
+    lines.push([
+      entry.at,
+      entry.action,
+      entry.vendorId,
+      entry.selectionLabel,
+      entry.laneFilters.join("|"),
+      entry.presetKey ?? "",
+      entry.bridgeBand,
+      entry.vendorState,
+      entry.matchedCount,
+      entry.appliedCount,
+      entry.softenedCount,
+      entry.blockedCount,
+      entry.warningCount,
+      entry.selectionKind,
+      entry.topWarnings.join(" | "),
+      entry.sampleItems.map((item) => item.vendorItemId).join("|"),
+      entry.note,
+    ].map(csvEscape).join(","));
+  }
+  return `\ufeff${lines.join("\r\n")}\r\n`;
+}
+
 export function buildVendorScenarioReportResponse(
   entries: VendorScenarioReportEntry[],
   filter: VendorScenarioReportFilter,
@@ -250,28 +426,12 @@ export function buildVendorScenarioReportResponse(
   const limit = clampInt(filter.limit, 1, 100);
   const filtered = filterVendorScenarioReportEntries(entries, filter);
   const page = filtered.slice(0, limit);
-  const rollups = page.reduce<VendorScenarioReportRollups>((acc, entry) => {
-    acc.matched += entry.matchedCount;
-    acc.applied += entry.appliedCount;
-    acc.softened += entry.softenedCount;
-    acc.blocked += entry.blockedCount;
-    acc.warnings += entry.warningCount;
-    if (entry.action === "preview") acc.previews += 1;
-    if (entry.action === "apply") acc.applies += 1;
-    return acc;
-  }, {
-    matched: 0,
-    applied: 0,
-    softened: 0,
-    blocked: 0,
-    warnings: 0,
-    previews: 0,
-    applies: 0,
-  });
+  const rollups = page.reduce<VendorScenarioReportRollups>(applyEntryToRollups, emptyRollups());
 
   return {
     entries: page,
     rollups,
+    review: buildVendorScenarioReportReview(filtered, limit),
     filtersApplied: {
       action: filter.action ?? null,
       presetKey: filter.presetKey ?? null,

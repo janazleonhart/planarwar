@@ -7,6 +7,7 @@ import {
   buildVendorScenarioReportResponse,
   filterVendorScenarioReportEntries,
   normalizeVendorScenarioReportEntry,
+  renderVendorScenarioReportCsv,
 } from "../domain/vendorScenarioReports";
 
 test("normalizeVendorScenarioReportEntry upgrades detailed scenario rows", () => {
@@ -170,4 +171,100 @@ test("buildVendorScenarioReportResponse aggregates rollups and tolerates malform
   });
   assert.equal(response.malformedCount, 1);
   assert.equal(response.nextCursor, null);
+});
+
+
+test("buildVendorScenarioReportResponse includes grouped review buckets for the review window", () => {
+  const entries = [
+    normalizeVendorScenarioReportEntry({
+      at: "2026-03-17T14:10:00.000Z",
+      actor: "admin_ui",
+      action: "apply",
+      vendorId: "vendor_blacksmith",
+      selectionLabel: "Luxury throttle",
+      laneFilters: ["luxury", "comfort"],
+      presetKey: "luxury_throttle",
+      bridgeBand: "strained",
+      vendorState: "pressured",
+      matchedCount: 7,
+      appliedCount: 5,
+      softenedCount: 1,
+      blockedCount: 1,
+      warningCount: 2,
+      note: "Applied guarded runtime.",
+    }),
+    normalizeVendorScenarioReportEntry({
+      at: "2026-03-17T14:08:00.000Z",
+      actor: "admin_ui",
+      action: "preview",
+      vendorId: "vendor_blacksmith",
+      selectionLabel: "Essentials protection",
+      laneFilters: ["essentials"],
+      presetKey: "scarcity_essentials_protection",
+      bridgeBand: "restricted",
+      vendorState: "pressured",
+      matchedCount: 4,
+      appliedCount: 0,
+      softenedCount: 2,
+      blockedCount: 1,
+      warningCount: 3,
+      note: "Previewed guarded runtime.",
+    }),
+    normalizeVendorScenarioReportEntry({
+      at: "2026-03-17T14:05:00.000Z",
+      actor: "admin_ui",
+      action: "apply",
+      vendorId: "vendor_arcane",
+      selectionLabel: "Arcane caution",
+      laneFilters: ["arcane"],
+      presetKey: "arcane_caution",
+      bridgeBand: "restricted",
+      vendorState: "restricted",
+      matchedCount: 3,
+      appliedCount: 2,
+      softenedCount: 1,
+      blockedCount: 0,
+      warningCount: 1,
+      note: "Applied guarded runtime.",
+    }),
+  ].filter(Boolean) as any[];
+
+  const response = buildVendorScenarioReportResponse(entries, { limit: 2 }, 0);
+  assert.equal(response.review.totalMatchingEntries, 3);
+  assert.equal(response.review.distinctVendors, 2);
+  assert.equal(response.review.distinctPresets, 3);
+  assert.equal(response.review.byLane[0]?.label, "luxury");
+  assert.ok(response.review.byPreset.some((bucket) => bucket.label === "arcane_caution"));
+  assert.equal(response.review.byBridgeBand[0]?.label, "restricted");
+  assert.equal(response.review.windowRollups.previews, 1);
+});
+
+test("renderVendorScenarioReportCsv renders export rows with escaped values", () => {
+  const entry = normalizeVendorScenarioReportEntry({
+    at: "2026-03-17T14:10:00.000Z",
+    actor: "admin_ui",
+    action: "apply",
+    vendorId: "vendor_blacksmith",
+    selectionLabel: "Luxury throttle",
+    laneFilters: ["luxury"],
+    presetKey: "luxury_throttle",
+    bridgeBand: "strained",
+    vendorState: "pressured",
+    matchedCount: 7,
+    appliedCount: 5,
+    softenedCount: 1,
+    blockedCount: 1,
+    warningCount: 2,
+    note: 'Applied guarded runtime, operator said "proceed".',
+    detail: {
+      selectionKind: "preset",
+      topWarnings: ["cap softened"],
+      sampleItems: [{ vendorItemId: 22, itemId: "silk_robe", itemName: "Silk Robe", lane: "luxury", runtimeState: "tight", allowed: true, applied: true, warnings: [] }],
+    },
+  });
+  const csv = renderVendorScenarioReportCsv([entry!]);
+  assert.match(csv, /^﻿at,action,/);
+  assert.match(csv, /vendor_blacksmith/);
+  assert.match(csv, /"Applied guarded runtime, operator said ""proceed""\."/);
+  assert.match(csv, /22/);
 });

@@ -8,7 +8,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { db } from "../../worldcore/db/Database";
 import { buildVendorScenarioLogNote, describeVendorLaneSelection, deriveCityMudConsumers, deriveVendorEconomyRecommendation, deriveVendorGuardrailApplication, deriveVendorLanePolicy, deriveVendorRuntimeEffect, deriveVendorSupportPolicy, getVendorPreset, matchesVendorLaneSelection, normalizeVendorLaneSelection, normalizeVendorPresetKey, summarizeCityMudBridge, type CityMudVendorLane, type CityMudVendorPresetKey, type CityMudVendorScenarioLogEntry } from "../domain/cityMudBridge";
-import { readVendorScenarioReportFromFile, type VendorScenarioReportFilter } from "../domain/vendorScenarioReports";
+import { readVendorScenarioReportFromFile, renderVendorScenarioReportCsv, type VendorScenarioReportFilter } from "../domain/vendorScenarioReports";
 import { resolvePlayerAccess } from "./playerCityAccess";
 
 export const adminVendorEconomyRouter = express.Router();
@@ -96,21 +96,50 @@ adminVendorEconomyRouter.get("/bridge_runtime_guarded_log", async (req, res) => 
   }
 });
 
+function readScenarioFilter(req: express.Request, defaultLimit = 25): VendorScenarioReportFilter {
+  return {
+    action: req.query.action === "preview" || req.query.action === "apply" ? req.query.action : undefined,
+    presetKey: typeof req.query.presetKey === "string" && req.query.presetKey.trim() ? req.query.presetKey.trim() : undefined,
+    lane: req.query.lane === "essentials" || req.query.lane === "comfort" || req.query.lane === "luxury" || req.query.lane === "arcane" ? req.query.lane : undefined,
+    laneSet: typeof req.query.laneSet === "string" && req.query.laneSet.trim() ? req.query.laneSet.trim() : undefined,
+    bridgeBand: req.query.bridgeBand === "open" || req.query.bridgeBand === "strained" || req.query.bridgeBand === "restricted" ? req.query.bridgeBand : undefined,
+    vendorId: typeof req.query.vendorId === "string" && req.query.vendorId.trim() ? req.query.vendorId.trim() : undefined,
+    vendorState: req.query.vendorState === "abundant" || req.query.vendorState === "stable" || req.query.vendorState === "pressured" || req.query.vendorState === "restricted" ? req.query.vendorState : undefined,
+    before: typeof req.query.before === "string" && req.query.before.trim() ? req.query.before.trim() : undefined,
+    limit: clampInt(Number(req.query.limit ?? defaultLimit), 1, 5000),
+  };
+}
+
 adminVendorEconomyRouter.get("/scenarios", async (req, res) => {
   try {
-    const filter: VendorScenarioReportFilter = {
-      action: req.query.action === "preview" || req.query.action === "apply" ? req.query.action : undefined,
-      presetKey: typeof req.query.presetKey === "string" && req.query.presetKey.trim() ? req.query.presetKey.trim() : undefined,
-      lane: req.query.lane === "essentials" || req.query.lane === "comfort" || req.query.lane === "luxury" || req.query.lane === "arcane" ? req.query.lane : undefined,
-      laneSet: typeof req.query.laneSet === "string" && req.query.laneSet.trim() ? req.query.laneSet.trim() : undefined,
-      bridgeBand: req.query.bridgeBand === "open" || req.query.bridgeBand === "strained" || req.query.bridgeBand === "restricted" ? req.query.bridgeBand : undefined,
-      vendorId: typeof req.query.vendorId === "string" && req.query.vendorId.trim() ? req.query.vendorId.trim() : undefined,
-      vendorState: req.query.vendorState === "abundant" || req.query.vendorState === "stable" || req.query.vendorState === "pressured" || req.query.vendorState === "restricted" ? req.query.vendorState : undefined,
-      before: typeof req.query.before === "string" && req.query.before.trim() ? req.query.before.trim() : undefined,
-      limit: clampInt(Number(req.query.limit ?? 25), 1, 100),
-    };
+    const filter = readScenarioFilter(req, 25);
+    filter.limit = clampInt(Number(req.query.limit ?? 25), 1, 100);
     const report = await readVendorScenarioReportFromFile(VENDOR_SCENARIO_LOG_PATH, filter);
     return res.json({ ok: true, ...report });
+  } catch (err: any) {
+    return res.status(500).json({ ok: false, error: err?.message ?? String(err) });
+  }
+});
+
+adminVendorEconomyRouter.get("/scenarios/export", async (req, res) => {
+  try {
+    const format = req.query.format === "json" ? "json" : "csv";
+    const filter = readScenarioFilter(req, 500);
+    const report = await readVendorScenarioReportFromFile(VENDOR_SCENARIO_LOG_PATH, filter);
+    const stamp = new Date().toISOString().replace(/:/g, "-").replace(/\.\d{3}Z$/, "Z");
+    if (format === "json") {
+      const filename = `vendor_scenarios_${stamp}.json`;
+      res.setHeader("Content-Type", "application/json; charset=utf-8");
+      res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+      res.setHeader("Cache-Control", "no-store");
+      return res.send(JSON.stringify({ ok: true, exportedAt: new Date().toISOString(), ...report }, null, 2));
+    }
+
+    const filename = `vendor_scenarios_${stamp}.csv`;
+    res.setHeader("Content-Type", "text/csv; charset=utf-8");
+    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+    res.setHeader("Cache-Control", "no-store");
+    return res.send(renderVendorScenarioReportCsv(report.entries));
   } catch (err: any) {
     return res.status(500).json({ ok: false, error: err?.message ?? String(err) });
   }
