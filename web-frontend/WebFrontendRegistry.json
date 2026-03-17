@@ -180,7 +180,8 @@
         "Adds typed City \u2194 MUD bridge consumer DTOs so frontend panels can render vendor/mission/civic guidance instead of only raw hook scores.",
         "Adds typed mission-board DTOs plus fetchMissionBoard(), startMission(), and completeMission() so mission offers can surface bridge-aware support guidance in the UI.",
         "Adds typed City \u2194 MUD vendor policy DTOs so admin/vendor tooling can consume stock/price/cadence recommendations from the bridge status endpoint.",
-        "Admin vendor economy consumers may now receive bridge_runtime_effect preview fields on item rows from /api/admin/vendor_economy/items."
+        "Admin vendor economy consumers may now receive bridge_runtime_effect preview fields on item rows from /api/admin/vendor_economy/items.",
+        "Admin vendor economy flows may now call /api/admin/vendor_economy/bridge_runtime_guarded to preview/apply server-guarded runtime changes for selected rows."
       ],
       "owns": [],
       "path": "web-frontend/lib/api.ts",
@@ -474,7 +475,8 @@
         "Wrapped in AdminShell for consistent admin layout; internal logic unchanged.",
         "v0.4 also consumes city\u2194MUD bridge vendorPolicy to preview recommended stock/price/cadence posture while tuning vendor_item_economy rows.",
         "v0.5 stages and applies live bridge recommendations per row or across visible vendor items, turning policy preview into actionable tuning.",
-        "v0.6 surfaces per-row bridge runtime previews (effective stock/cadence/price + fill-state) and allows staging those live runtime knobs directly into the admin editor."
+        "v0.6 surfaces per-row bridge runtime previews (effective stock/cadence/price + fill-state) and allows staging those live runtime knobs directly into the admin editor.",
+        "v0.7 adds preview/apply controls for server-guarded runtime changes so admins can stage or commit softened bridge-driven vendor updates without bypassing safety rails."
       ],
       "owns": [
         "Admin UI for vendor_item_economy"

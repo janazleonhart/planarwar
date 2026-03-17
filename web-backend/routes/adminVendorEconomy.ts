@@ -5,7 +5,7 @@
 
 import express from "express";
 import { db } from "../../worldcore/db/Database";
-import { deriveCityMudConsumers, deriveVendorEconomyRecommendation, deriveVendorRuntimeEffect, deriveVendorSupportPolicy, summarizeCityMudBridge } from "../domain/cityMudBridge";
+import { deriveCityMudConsumers, deriveVendorEconomyRecommendation, deriveVendorGuardrailApplication, deriveVendorRuntimeEffect, deriveVendorSupportPolicy, summarizeCityMudBridge } from "../domain/cityMudBridge";
 import { resolvePlayerAccess } from "./playerCityAccess";
 
 export const adminVendorEconomyRouter = express.Router();
@@ -175,6 +175,149 @@ adminVendorEconomyRouter.get("/items", async (req, res) => {
   }
 });
 
+
+
+type BulkGuardedApplyBody = {
+  vendorId?: string;
+  vendorItemIds?: number[];
+  apply?: boolean;
+  resetStock?: boolean;
+};
+
+adminVendorEconomyRouter.post("/bridge_runtime_guarded", async (req, res) => {
+  try {
+    const body = (req.body ?? {}) as BulkGuardedApplyBody;
+    const vendorId = typeof body.vendorId === "string" ? body.vendorId.trim() : "";
+    if (!vendorId) {
+      return res.status(400).json({ ok: false, error: "vendorId is required" });
+    }
+
+    const rawIds = Array.isArray(body.vendorItemIds) ? body.vendorItemIds : [];
+    const vendorItemIds = rawIds
+      .map((v) => Number(v))
+      .filter((v) => Number.isFinite(v) && v > 0)
+      .slice(0, 200);
+    if (vendorItemIds.length === 0) {
+      return res.status(400).json({ ok: false, error: "vendorItemIds must include at least one valid id" });
+    }
+
+    const apply = Boolean(body.apply);
+    const resetStock = Boolean(body.resetStock);
+
+    const bridge = await getBridgeVendorPolicyOrNull(req);
+    if (!bridge) {
+      return res.status(400).json({ ok: false, error: "bridge vendor policy unavailable for current context" });
+    }
+
+    const rows = (await db.query(
+      `
+      SELECT
+        vi.id::int                   AS vendor_item_id,
+        vi.vendor_id                 AS vendor_id,
+        v.name                       AS vendor_name,
+        vi.item_id                   AS item_id,
+        it.name                      AS item_name,
+        it.rarity                    AS item_rarity,
+        vi.price_gold::int           AS base_price_gold,
+        s.stock::int                 AS stock,
+        s.last_restock_ts            AS last_restock_ts,
+        e.stock_max::int             AS stock_max,
+        e.restock_per_hour::int      AS restock_per_hour,
+        e.restock_every_sec::int     AS restock_every_sec,
+        e.restock_amount::int        AS restock_amount,
+        e.price_min_mult::float      AS price_min_mult,
+        e.price_max_mult::float      AS price_max_mult
+      FROM vendor_items vi
+      LEFT JOIN vendors v ON v.id = vi.vendor_id
+      LEFT JOIN items it ON it.id = vi.item_id
+      LEFT JOIN vendor_item_economy e ON e.vendor_item_id = vi.id
+      LEFT JOIN vendor_item_state s ON s.vendor_item_id = vi.id
+      WHERE vi.vendor_id = $1 AND vi.id = ANY($2::int[])
+      ORDER BY vi.id ASC
+      `,
+      [vendorId, vendorItemIds]
+    )) as { rows: VendorEconomyItemRow[] };
+
+    const results: any[] = [];
+    let appliedCount = 0;
+    for (const row of rows.rows ?? []) {
+      const runtimeEffect = deriveVendorRuntimeEffect({
+        stock: row.stock,
+        stockMax: row.stock_max,
+        restockEverySec: row.restock_every_sec,
+        restockAmount: row.restock_amount,
+        priceMinMult: row.price_min_mult,
+        priceMaxMult: row.price_max_mult,
+      }, bridge.vendorPolicy);
+      const guardrail = deriveVendorGuardrailApplication({
+        stockMax: row.stock_max,
+        restockEverySec: row.restock_every_sec,
+        restockAmount: row.restock_amount,
+        priceMinMult: row.price_min_mult,
+        priceMaxMult: row.price_max_mult,
+      }, runtimeEffect);
+
+      let applied = false;
+      if (apply && guardrail.allowed) {
+        await db.query(
+          `
+          INSERT INTO vendor_item_economy (
+            vendor_item_id, stock_max, restock_per_hour, restock_every_sec, restock_amount, price_min_mult, price_max_mult
+          ) VALUES ($1,$2,$3,$4,$5,$6,$7)
+          ON CONFLICT (vendor_item_id) DO UPDATE SET
+            stock_max = EXCLUDED.stock_max,
+            restock_per_hour = EXCLUDED.restock_per_hour,
+            restock_every_sec = EXCLUDED.restock_every_sec,
+            restock_amount = EXCLUDED.restock_amount,
+            price_min_mult = EXCLUDED.price_min_mult,
+            price_max_mult = EXCLUDED.price_max_mult
+          `,
+          [row.vendor_item_id, guardrail.stockMax, guardrail.restockPerHour, guardrail.restockEverySec, guardrail.restockAmount, guardrail.priceMinMult, guardrail.priceMaxMult]
+        );
+        if (resetStock) {
+          const newStock = guardrail.stockMax > 0 ? guardrail.stockMax : 0;
+          await db.query(
+            `
+            INSERT INTO vendor_item_state (vendor_item_id, stock, last_restock_ts)
+            VALUES ($1, $2, NOW())
+            ON CONFLICT (vendor_item_id) DO UPDATE SET
+              stock = EXCLUDED.stock,
+              last_restock_ts = EXCLUDED.last_restock_ts
+            `,
+            [row.vendor_item_id, newStock]
+          );
+        }
+        applied = true;
+        appliedCount += 1;
+      }
+
+      results.push({
+        vendor_item_id: row.vendor_item_id,
+        item_id: row.item_id,
+        item_name: row.item_name,
+        runtimeEffect,
+        guardrail,
+        applied,
+      });
+    }
+
+    return res.json({
+      ok: true,
+      vendorId,
+      apply,
+      resetStock,
+      requestedCount: vendorItemIds.length,
+      matchedCount: results.length,
+      appliedCount,
+      bridgeSummary: bridge.summary,
+      bridgeConsumers: bridge.consumers,
+      vendorPolicy: bridge.vendorPolicy,
+      results,
+    });
+  } catch (err: any) {
+    return res.status(500).json({ ok: false, error: err?.message ?? String(err) });
+  }
+});
 type UpdateVendorEconomyBody = {
   stockMax?: number | null;
   restockEverySec?: number | null;

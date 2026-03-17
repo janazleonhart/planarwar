@@ -80,6 +80,21 @@ export interface CityMudVendorEconomyRecommendation {
   detail: string;
 }
 
+
+export interface CityMudVendorGuardrailApplication {
+  allowed: boolean;
+  autoApplyEligible: boolean;
+  stockMax: number;
+  restockEverySec: number;
+  restockAmount: number;
+  priceMinMult: number;
+  priceMaxMult: number;
+  restockPerHour: number;
+  warnings: string[];
+  reason: string;
+  headline: string;
+  detail: string;
+}
 export interface CityMudVendorRuntimeEffect {
   state: "surplus" | "normal" | "tight" | "scarce";
   effectiveStockMax: number;
@@ -584,5 +599,110 @@ export function deriveVendorRuntimeEffect(
     stockFillRatio,
     headline,
     detail,
+  };
+}
+
+
+export function deriveVendorGuardrailApplication(
+  base: {
+    stockMax: number | null | undefined;
+    restockEverySec: number | null | undefined;
+    restockAmount: number | null | undefined;
+    priceMinMult: number | null | undefined;
+    priceMaxMult: number | null | undefined;
+  },
+  runtime: CityMudVendorRuntimeEffect,
+): CityMudVendorGuardrailApplication {
+  const currentStockMax = clampVendorInt(Number(base.stockMax ?? 50), 0, 1_000_000);
+  const currentRestockEverySec = clampVendorInt(Number(base.restockEverySec ?? 0), 0, 31_536_000);
+  const currentRestockAmount = clampVendorInt(Number(base.restockAmount ?? 0), 0, 1_000_000);
+  const currentPriceMin = clampVendorNum(Number(base.priceMinMult ?? 0.85), 0.05, 10);
+  const currentPriceMax = clampVendorNum(Number(base.priceMaxMult ?? 1.5), 0.05, 10);
+
+  const warnings: string[] = [];
+
+  const maxStockDelta = Math.max(10, Math.round(Math.max(currentStockMax, runtime.effectiveStockMax, 20) * 0.35));
+  let stockMax = runtime.effectiveStockMax;
+  if (Math.abs(stockMax - currentStockMax) > maxStockDelta) {
+    stockMax = currentStockMax + Math.sign(stockMax - currentStockMax) * maxStockDelta;
+    warnings.push('Stock cap change was softened by guardrails.');
+  }
+  stockMax = clampVendorInt(stockMax, 0, 1_000_000);
+
+  const cadenceFloor = currentRestockEverySec > 0 ? Math.max(60, Math.floor(currentRestockEverySec * 0.6)) : 0;
+  const cadenceCeil = currentRestockEverySec > 0 ? Math.min(31_536_000, Math.ceil(currentRestockEverySec * 1.6)) : runtime.effectiveRestockEverySec;
+  let restockEverySec = runtime.effectiveRestockEverySec;
+  if (currentRestockEverySec > 0) {
+    if (restockEverySec < cadenceFloor) {
+      restockEverySec = cadenceFloor;
+      warnings.push('Restock cadence acceleration was softened by guardrails.');
+    }
+    if (restockEverySec > cadenceCeil) {
+      restockEverySec = cadenceCeil;
+      warnings.push('Restock cadence slowdown was softened by guardrails.');
+    }
+  }
+  restockEverySec = clampVendorInt(restockEverySec, 0, 31_536_000);
+
+  const amountDeltaCap = Math.max(2, Math.round(Math.max(currentRestockAmount, runtime.effectiveRestockAmount, 4) * 0.4));
+  let restockAmount = runtime.effectiveRestockAmount;
+  if (Math.abs(restockAmount - currentRestockAmount) > amountDeltaCap) {
+    restockAmount = currentRestockAmount + Math.sign(restockAmount - currentRestockAmount) * amountDeltaCap;
+    warnings.push('Restock amount change was softened by guardrails.');
+  }
+  restockAmount = clampVendorInt(restockAmount, 0, 1_000_000);
+
+  const priceStepCap = 0.2;
+  let priceMinMult = runtime.effectivePriceMinMult;
+  let priceMaxMult = runtime.effectivePriceMaxMult;
+  if (Math.abs(priceMinMult - currentPriceMin) > priceStepCap) {
+    priceMinMult = currentPriceMin + Math.sign(priceMinMult - currentPriceMin) * priceStepCap;
+    warnings.push('Minimum price multiplier change was softened by guardrails.');
+  }
+  if (Math.abs(priceMaxMult - currentPriceMax) > priceStepCap) {
+    priceMaxMult = currentPriceMax + Math.sign(priceMaxMult - currentPriceMax) * priceStepCap;
+    warnings.push('Maximum price multiplier change was softened by guardrails.');
+  }
+  priceMinMult = clampVendorNum(Number(priceMinMult.toFixed(3)), 0.05, 10);
+  priceMaxMult = clampVendorNum(Number(priceMaxMult.toFixed(3)), 0.05, 10);
+  if (priceMinMult > priceMaxMult) {
+    const lo = Math.min(priceMinMult, priceMaxMult);
+    const hi = Math.max(priceMinMult, priceMaxMult);
+    priceMinMult = lo;
+    priceMaxMult = hi;
+  }
+
+  const restockPerHour =
+    restockEverySec > 0 && restockAmount > 0
+      ? clampVendorInt(Math.ceil((restockAmount * 3600) / restockEverySec), 0, 1_000_000)
+      : 0;
+
+  const autoApplyEligible = warnings.length === 0 && runtime.state !== 'scarce';
+  const allowed = runtime.state !== 'scarce' || warnings.length > 0;
+  const reason = warnings.length > 0
+    ? runtime.state === 'scarce'
+      ? 'Scarce runtime posture requires a guarded operator apply, and guardrails softened the change into a safe one-step window.'
+      : 'Runtime preview was larger than the safe one-step window, so guardrails softened the change.'
+    : runtime.state === 'scarce'
+      ? 'Scarce runtime posture requires a guarded operator apply instead of blind automation.'
+      : 'Runtime preview is inside the safe one-step window.';
+
+  return {
+    allowed,
+    autoApplyEligible,
+    stockMax,
+    restockEverySec,
+    restockAmount,
+    priceMinMult,
+    priceMaxMult,
+    restockPerHour,
+    warnings,
+    reason,
+    headline: autoApplyEligible
+      ? 'Bridge runtime can be auto-staged safely.'
+      : runtime.state === 'scarce'
+        ? 'Bridge runtime needs operator guardrails.'
+        : 'Bridge runtime can be staged, but guardrails softened it.',
+    detail: `${reason}${warnings.length > 0 ? ` Warnings: ${warnings.join(' ')}` : ''}`.trim(),
   };
 }

@@ -3,7 +3,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { deriveCityMudConsumers, deriveVendorEconomyRecommendation, deriveVendorRuntimeEffect, deriveVendorSupportPolicy, summarizeCityMudBridge } from "../domain/cityMudBridge";
+import { deriveCityMudConsumers, deriveVendorEconomyRecommendation, deriveVendorGuardrailApplication, deriveVendorRuntimeEffect, deriveVendorSupportPolicy, summarizeCityMudBridge } from "../domain/cityMudBridge";
 import { applyMissionConsumerGuidance, generateMissionOffers } from "../domain/missions";
 import { createInitialPublicInfrastructureState } from "../domain/publicInfrastructure";
 import { getOrCreatePlayerState } from "../gameState";
@@ -292,4 +292,47 @@ test("vendor runtime effect reflects live bridge pressure on effective economy k
   assert.ok(runtime.effectivePriceMaxMult >= 1.6);
   assert.ok((runtime.stockFillRatio ?? 1) < 0.3);
   assert.match(runtime.headline, /visible pressure/i);
+});
+
+
+test("vendor guardrail application softens large runtime jumps into a safe one-step window", () => {
+  const ps = makePlayer();
+  ps.cityStress.total = 42;
+  ps.cityStress.stage = "strained";
+  ps.publicInfrastructure.serviceHeat = 44;
+  ps.resources.food = 170;
+  ps.resources.materials = 155;
+  ps.resources.wealth = 145;
+
+  const summary = summarizeCityMudBridge(ps);
+  const consumers = deriveCityMudConsumers(summary);
+  const policy = deriveVendorSupportPolicy(summary, consumers);
+  const runtime = deriveVendorRuntimeEffect(
+    {
+      stock: 4,
+      stockMax: 120,
+      restockEverySec: 120,
+      restockAmount: 12,
+      priceMinMult: 0.8,
+      priceMaxMult: 1.4,
+    },
+    policy,
+  );
+  const guarded = deriveVendorGuardrailApplication(
+    {
+      stockMax: 120,
+      restockEverySec: 120,
+      restockAmount: 12,
+      priceMinMult: 0.8,
+      priceMaxMult: 1.4,
+    },
+    runtime,
+  );
+
+  assert.equal(policy.state, "pressured");
+  assert.ok(guarded.allowed);
+  assert.ok(guarded.stockMax >= 78);
+  assert.ok(guarded.restockEverySec <= 192);
+  assert.ok(guarded.warnings.length >= 1);
+  assert.match(guarded.detail, /guardrails softened/i);
 });

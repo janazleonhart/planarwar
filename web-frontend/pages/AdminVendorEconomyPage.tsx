@@ -85,6 +85,40 @@ type UpdateResponse = {
   error?: string;
 };
 
+type GuardrailApplication = {
+  allowed: boolean;
+  autoApplyEligible: boolean;
+  stockMax: number;
+  restockEverySec: number;
+  restockAmount: number;
+  priceMinMult: number;
+  priceMaxMult: number;
+  restockPerHour: number;
+  warnings: string[];
+  reason: string;
+  headline: string;
+  detail: string;
+};
+
+type GuardedApplyResponse = {
+  ok: boolean;
+  vendorId: string;
+  apply: boolean;
+  resetStock: boolean;
+  requestedCount: number;
+  matchedCount: number;
+  appliedCount: number;
+  results: Array<{
+    vendor_item_id: number;
+    item_id: string;
+    item_name: string | null;
+    runtimeEffect: VendorRuntimeEffect;
+    guardrail: GuardrailApplication;
+    applied: boolean;
+  }>;
+  error?: string;
+};
+
 type EditRow = {
   stockMax: string;
   restockEverySec: string;
@@ -443,6 +477,69 @@ function stageRuntimePreview(row: VendorEconomyItem) {
       return next;
     });
     setNotice(`Staged bridge recommendations for ${filteredItems.filter((row) => row.bridge_recommendation).length} visible row(s).`);
+  }
+
+  async function runGuardedRuntimeApply(vendorItemIds: number[], apply: boolean) {
+    if (!vendorId || vendorItemIds.length === 0) return;
+    setBusy(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const data = await api<GuardedApplyResponse>(`/api/admin/vendor_economy/bridge_runtime_guarded`, {
+        method: "POST",
+        body: JSON.stringify({ vendorId, vendorItemIds, apply, resetStock: false }),
+      });
+      if (!data?.ok) throw new Error(data?.error || "Unknown error");
+
+      if (apply) {
+        await loadItems();
+        setNotice(`Applied guarded bridge runtime to ${data.appliedCount}/${data.matchedCount} row(s).`);
+        return;
+      }
+
+      setEdits((prev) => {
+        const next = { ...prev };
+        for (const result of data.results || []) {
+          if (!result.guardrail?.allowed) continue;
+          next[result.vendor_item_id] = {
+            stockMax: String(result.guardrail.stockMax),
+            restockEverySec: String(result.guardrail.restockEverySec),
+            restockAmount: String(result.guardrail.restockAmount),
+            priceMinMult: String(result.guardrail.priceMinMult),
+            priceMaxMult: String(result.guardrail.priceMaxMult),
+            resetStock: next[result.vendor_item_id]?.resetStock ?? false,
+          };
+        }
+        return next;
+      });
+      const softened = (data.results || []).filter((result) => (result.guardrail?.warnings?.length ?? 0) > 0).length;
+      const blocked = (data.results || []).filter((result) => !result.guardrail?.allowed).length;
+      setNotice(`Previewed guarded runtime apply for ${data.matchedCount} row(s); softened ${softened}, blocked ${blocked}.`);
+    } catch (e: any) {
+      setError(e?.message || String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function previewGuardedRuntimeVisible() {
+    void runGuardedRuntimeApply(filteredItems.map((row) => row.vendor_item_id), false);
+  }
+
+  function applyGuardedRuntimeVisible() {
+    const ids = filteredItems.map((row) => row.vendor_item_id);
+    if (ids.length === 0) return;
+    if (!window.confirm(`Apply guarded bridge runtime to ${ids.length} visible row(s)?`)) return;
+    void runGuardedRuntimeApply(ids, true);
+  }
+
+  function previewGuardedRuntimeRow(row: VendorEconomyItem) {
+    void runGuardedRuntimeApply([row.vendor_item_id], false);
+  }
+
+  function applyGuardedRuntimeRow(row: VendorEconomyItem) {
+    if (!window.confirm(`Apply guarded bridge runtime to ${row.item_name ?? row.item_id}?`)) return;
+    void runGuardedRuntimeApply([row.vendor_item_id], true);
   }
 
   async function saveRowInternal(vendorItemId: number): Promise<void> {

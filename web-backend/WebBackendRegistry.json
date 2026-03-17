@@ -327,7 +327,8 @@
         "v0.2 adds concrete consumer guidance for vendor supply, mission board support posture, civic services drag, and top-level operational advisories.",
         "v0.4 adds deriveVendorSupportPolicy(summary, consumers) so vendor-facing systems can consume bridge posture as concrete stock/price/cadence recommendations instead of only reading generic guidance cards.",
         "v0.5 adds concrete vendor economy recommendations (stock/restock/price) derived from live city\u2194MUD vendor policy for downstream consumers.",
-        "v0.6 adds deriveVendorRuntimeEffect(base, policy) so vendor/admin tooling can preview live runtime stock/cadence/price behavior under current bridge pressure, including fill-state-aware scarcity messaging."
+        "v0.6 adds deriveVendorRuntimeEffect(base, policy) so vendor/admin tooling can preview live runtime stock/cadence/price behavior under current bridge pressure, including fill-state-aware scarcity messaging.",
+        "v0.7 adds deriveVendorGuardrailApplication(base, runtime) so runtime previews can be staged/applied through a server-side safe one-step window instead of full-strength jumps."
       ],
       "owns": [
         "City \u2194 MUD bridge summary heuristics"
@@ -341,7 +342,9 @@
         "deriveVendorSupportPolicy(summary, consumers)",
         "Vendor support policy (stock/price/cadence posture + recommended multipliers)",
         "deriveVendorRuntimeEffect(base, policy)",
-        "Vendor runtime effect preview (effective knobs + fill-aware scarcity state)"
+        "Vendor runtime effect preview (effective knobs + fill-aware scarcity state)",
+        "deriveVendorGuardrailApplication(base, runtime)",
+        "Guarded vendor runtime application preview (safe one-step knobs + warnings)"
       ],
       "service": "city.cityMudBridge"
     },
@@ -2022,14 +2025,16 @@
         "GET /items joins items table to return item_name + item_rarity for nicer admin display.",
         "v0.4 is now intended to be informed by city\u2194MUD vendor policy previews in the admin UI, even though the endpoint still persists global vendor_item_economy settings.",
         "v0.5 now returns per-row bridge recommendations plus current vendor policy so admin tooling can stage/apply live city-aware tuning.",
-        "v0.6 now returns per-row bridge_runtime_effect previews so admin/vendor tooling can inspect live effective runtime knobs without persisting them first."
+        "v0.6 now returns per-row bridge_runtime_effect previews so admin/vendor tooling can inspect live effective runtime knobs without persisting them first.",
+        "v0.7 adds POST /api/admin/vendor_economy/bridge_runtime_guarded for preview/apply of server-guarded runtime changes across selected vendor rows, with softened deltas and operator warnings."
       ],
       "owns": [],
       "path": "web-backend/routes/adminVendorEconomy.ts",
       "provides": [
         "GET /api/admin/vendor_economy/vendors",
         "GET /api/admin/vendor_economy/items",
-        "POST /api/admin/vendor_economy/items/:vendorItemId"
+        "POST /api/admin/vendor_economy/items/:vendorItemId",
+        "POST /api/admin/vendor_economy/bridge_runtime_guarded"
       ],
       "service": "http.adminRoutes"
     },
