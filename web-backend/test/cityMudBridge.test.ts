@@ -3,7 +3,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { describeVendorLaneSelection, deriveCityMudConsumers, deriveVendorEconomyRecommendation, deriveVendorGuardrailApplication, deriveVendorLanePolicy, deriveVendorRuntimeEffect, deriveVendorSupportPolicy, matchesVendorLaneSelection, normalizeVendorLaneSelection, summarizeCityMudBridge } from "../domain/cityMudBridge";
+import { describeVendorLaneSelection, deriveCityMudConsumers, deriveVendorEconomyRecommendation, deriveVendorGuardrailApplication, deriveVendorLanePolicy, deriveVendorRuntimeEffect, deriveVendorSupportPolicy, getVendorPreset, matchesVendorLaneSelection, normalizeVendorLaneSelection, normalizeVendorPresetKey, summarizeCityMudBridge } from "../domain/cityMudBridge";
 import { applyMissionConsumerGuidance, generateMissionOffers } from "../domain/missions";
 import { createInitialPublicInfrastructureState } from "../domain/publicInfrastructure";
 import { getOrCreatePlayerState } from "../gameState";
@@ -427,4 +427,15 @@ test("vendor lane selection helpers dedupe filters and describe explicit lane se
   assert.equal(describeVendorLaneSelection(lanes), "luxury, essentials lanes");
   assert.equal(matchesVendorLaneSelection({ lane: "luxury" }, lanes), true);
   assert.equal(matchesVendorLaneSelection({ lane: "comfort" }, lanes), false);
+});
+
+
+test("vendor preset helpers return audited lane targets", () => {
+  const preset = getVendorPreset("scarcity_essentials_protection");
+
+  assert.equal(normalizeVendorPresetKey("luxury_throttle"), "luxury_throttle");
+  assert.equal(normalizeVendorPresetKey("bogus_preset"), null);
+  assert.equal(preset.label, "Scarcity essentials protection");
+  assert.deepEqual(preset.laneFilters, ["essentials"]);
+  assert.match(preset.detail, /protect essentials/i);
 });

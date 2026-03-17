@@ -5,7 +5,7 @@
 
 import express from "express";
 import { db } from "../../worldcore/db/Database";
-import { describeVendorLaneSelection, deriveCityMudConsumers, deriveVendorEconomyRecommendation, deriveVendorGuardrailApplication, deriveVendorLanePolicy, deriveVendorRuntimeEffect, deriveVendorSupportPolicy, matchesVendorLaneSelection, normalizeVendorLaneSelection, summarizeCityMudBridge, type CityMudVendorLane } from "../domain/cityMudBridge";
+import { describeVendorLaneSelection, deriveCityMudConsumers, deriveVendorEconomyRecommendation, deriveVendorGuardrailApplication, deriveVendorLanePolicy, deriveVendorRuntimeEffect, deriveVendorSupportPolicy, getVendorPreset, matchesVendorLaneSelection, normalizeVendorLaneSelection, normalizeVendorPresetKey, summarizeCityMudBridge, type CityMudVendorLane, type CityMudVendorPresetKey } from "../domain/cityMudBridge";
 import { resolvePlayerAccess } from "./playerCityAccess";
 
 export const adminVendorEconomyRouter = express.Router();
@@ -190,6 +190,7 @@ type BulkGuardedApplyBody = {
   vendorId?: string;
   vendorItemIds?: number[];
   laneFilters?: CityMudVendorLane[];
+  presetKey?: CityMudVendorPresetKey;
   apply?: boolean;
   resetStock?: boolean;
 };
@@ -207,9 +208,12 @@ adminVendorEconomyRouter.post("/bridge_runtime_guarded", async (req, res) => {
       .map((v) => Number(v))
       .filter((v) => Number.isFinite(v) && v > 0)
       .slice(0, 500);
+    const presetKey = normalizeVendorPresetKey(body.presetKey);
+    const preset = presetKey ? getVendorPreset(presetKey) : null;
     const laneFilters = normalizeVendorLaneSelection(body.laneFilters);
-    if (vendorItemIds.length === 0 && laneFilters.length === 0) {
-      return res.status(400).json({ ok: false, error: "vendorItemIds or laneFilters must include at least one valid selection" });
+    const effectiveLaneFilters = laneFilters.length > 0 ? laneFilters : (preset?.laneFilters ?? []);
+    if (vendorItemIds.length === 0 && effectiveLaneFilters.length === 0) {
+      return res.status(400).json({ ok: false, error: "vendorItemIds, laneFilters, or presetKey must include at least one valid selection" });
     }
 
     const apply = Boolean(body.apply);
@@ -259,7 +263,7 @@ adminVendorEconomyRouter.post("/bridge_runtime_guarded", async (req, res) => {
         itemName: row.item_name,
         itemRarity: row.item_rarity,
       });
-      if (!matchesVendorLaneSelection(lanePolicy, laneFilters)) {
+      if (!matchesVendorLaneSelection(lanePolicy, effectiveLaneFilters)) {
         continue;
       }
       const runtimeEffect = deriveVendorRuntimeEffect({
@@ -333,8 +337,9 @@ adminVendorEconomyRouter.post("/bridge_runtime_guarded", async (req, res) => {
       bridgeSummary: bridge.summary,
       bridgeConsumers: bridge.consumers,
       vendorPolicy: bridge.vendorPolicy,
-      laneFiltersApplied: laneFilters,
-      selectionLabel: describeVendorLaneSelection(laneFilters),
+      laneFiltersApplied: effectiveLaneFilters,
+      presetApplied: preset,
+      selectionLabel: preset?.label ?? describeVendorLaneSelection(effectiveLaneFilters),
       results,
     });
   } catch (err: any) {

@@ -38,8 +38,15 @@ type VendorRuntimeEffect = {
 };
 
 type VendorLane = "essentials" | "comfort" | "luxury" | "arcane";
+type VendorPresetKey = "scarcity_essentials_protection" | "luxury_throttle" | "arcane_caution" | "broad_recovery";
 
 const ALL_VENDOR_LANES: VendorLane[] = ["essentials", "comfort", "luxury", "arcane"];
+const VENDOR_PRESETS: Array<{ key: VendorPresetKey; label: string; detail: string; laneFilters: VendorLane[] }> = [
+  { key: "scarcity_essentials_protection", label: "Scarcity essentials protection", detail: "Protect essentials first during scarcity.", laneFilters: ["essentials"] },
+  { key: "luxury_throttle", label: "Luxury throttle", detail: "Throttle luxury stock before protected lanes.", laneFilters: ["luxury"] },
+  { key: "arcane_caution", label: "Arcane caution", detail: "Apply guarded caution to arcane lanes.", laneFilters: ["arcane"] },
+  { key: "broad_recovery", label: "Broad recovery", detail: "Run a broad guarded pass across all lanes.", laneFilters: [...ALL_VENDOR_LANES] },
+];
 
 type VendorLanePolicy = {
   lane: VendorLane;
@@ -132,6 +139,7 @@ type GuardedApplyResponse = {
   appliedCount: number;
   laneFiltersApplied?: VendorLane[];
   selectionLabel?: string;
+  presetApplied?: { key: VendorPresetKey; label: string; detail: string; laneFilters: VendorLane[]; recommendedAction: string } | null;
   results: Array<{
     vendor_item_id: number;
     item_id: string;
@@ -308,6 +316,7 @@ export function AdminVendorEconomyPage() {
   const [onlyDirty, setOnlyDirty] = useState(false);
   const [laneFilter, setLaneFilter] = useState<"all" | VendorLane>("all");
   const [guardedLaneSet, setGuardedLaneSet] = useState<VendorLane[]>(ALL_VENDOR_LANES);
+  const [presetKey, setPresetKey] = useState<VendorPresetKey>("scarcity_essentials_protection");
 
   async function loadBridgeStatus() {
     try {
@@ -330,6 +339,8 @@ export function AdminVendorEconomyPage() {
     if (lanes.length === 1) return `${lanes[0]} lane`;
     return `${lanes.join(", ")} lanes`;
   }
+
+  const selectedPreset = VENDOR_PRESETS.find((preset) => preset.key === presetKey) ?? VENDOR_PRESETS[0];
 
   async function loadVendors() {
     setBusy(true);
@@ -522,15 +533,15 @@ function stageRuntimePreview(row: VendorEconomyItem) {
     setNotice(`Staged bridge recommendations for ${filteredItems.filter((row) => row.bridge_recommendation).length} visible row(s).`);
   }
 
-  async function runGuardedRuntimeApply(vendorItemIds: number[], apply: boolean, laneFilters?: VendorLane[]) {
-    if (!vendorId || (vendorItemIds.length === 0 && (!laneFilters || laneFilters.length === 0))) return;
+  async function runGuardedRuntimeApply(vendorItemIds: number[], apply: boolean, laneFilters?: VendorLane[], preset?: VendorPresetKey) {
+    if (!vendorId || (vendorItemIds.length === 0 && (!laneFilters || laneFilters.length === 0) && !preset)) return;
     setBusy(true);
     setError(null);
     setNotice(null);
     try {
       const data = await api<GuardedApplyResponse>(`/api/admin/vendor_economy/bridge_runtime_guarded`, {
         method: "POST",
-        body: JSON.stringify({ vendorId, vendorItemIds, laneFilters, apply, resetStock: false }),
+        body: JSON.stringify({ vendorId, vendorItemIds, laneFilters, presetKey: preset, apply, resetStock: false }),
       });
       if (!data?.ok) throw new Error(data?.error || "Unknown error");
 
@@ -585,6 +596,15 @@ function stageRuntimePreview(row: VendorEconomyItem) {
     if (guardedLaneSet.length === 0) return;
     if (!window.confirm(`Apply guarded bridge runtime to ${describeLaneSet(guardedLaneSet)} for this vendor?`)) return;
     void runGuardedRuntimeApply([], true, guardedLaneSet);
+  }
+
+  function previewGuardedRuntimePreset() {
+    void runGuardedRuntimeApply([], false, undefined, presetKey);
+  }
+
+  function applyGuardedRuntimePreset() {
+    if (!window.confirm(`Apply guarded runtime preset "${selectedPreset.label}" to this vendor?`)) return;
+    void runGuardedRuntimeApply([], true, undefined, presetKey);
   }
 
   function previewGuardedRuntimeRow(row: VendorEconomyItem) {
@@ -791,6 +811,12 @@ function stageRuntimePreview(row: VendorEconomyItem) {
         </button>
         <button onClick={applyGuardedRuntimeLaneSet} disabled={busy || !canWrite || guardedLaneSet.length === 0}>
           Apply guarded runtime (lane set)
+        </button>
+        <button onClick={previewGuardedRuntimePreset} disabled={busy || !canWrite}>
+          Preview preset
+        </button>
+        <button onClick={applyGuardedRuntimePreset} disabled={busy || !canWrite}>
+          Apply preset
         </button>
 
         <button onClick={saveDirtyVisible} disabled={busy || !canWrite || dirtyCountVisible === 0}>

@@ -71,8 +71,15 @@ export interface CityMudVendorSupportPolicy {
 
 
 export type CityMudVendorLane = "essentials" | "comfort" | "luxury" | "arcane";
+export type CityMudVendorPresetKey = "scarcity_essentials_protection" | "luxury_throttle" | "arcane_caution" | "broad_recovery";
 
 export const ALL_CITY_MUD_VENDOR_LANES: CityMudVendorLane[] = ["essentials", "comfort", "luxury", "arcane"];
+export const ALL_CITY_MUD_VENDOR_PRESET_KEYS: CityMudVendorPresetKey[] = [
+  "scarcity_essentials_protection",
+  "luxury_throttle",
+  "arcane_caution",
+  "broad_recovery",
+];
 
 export function isCityMudVendorLane(value: unknown): value is CityMudVendorLane {
   return typeof value === "string" && (ALL_CITY_MUD_VENDOR_LANES as string[]).includes(value);
@@ -96,11 +103,64 @@ export function describeVendorLaneSelection(lanes: CityMudVendorLane[]): string 
   if (lanes.length === ALL_CITY_MUD_VENDOR_LANES.length) return "all lanes";
   return `${lanes.join(", ")} lanes`;
 }
+export function isCityMudVendorPresetKey(value: unknown): value is CityMudVendorPresetKey {
+  return typeof value === "string" && (ALL_CITY_MUD_VENDOR_PRESET_KEYS as string[]).includes(value);
+}
+
+export function getVendorPreset(key: CityMudVendorPresetKey): CityMudVendorPreset {
+  switch (key) {
+    case "scarcity_essentials_protection":
+      return {
+        key,
+        label: "Scarcity essentials protection",
+        detail: "Protect essentials first when city support is tight, leaving comfort and luxury lanes untouched.",
+        laneFilters: ["essentials"],
+        recommendedAction: "Use during scarcity or civic strain to keep bread-and-bolts stock alive.",
+      };
+    case "luxury_throttle":
+      return {
+        key,
+        label: "Luxury throttle",
+        detail: "Throttle luxury stock first so pressure lands on optional indulgence before civic basics.",
+        laneFilters: ["luxury"],
+        recommendedAction: "Use when you want visible scarcity to hit non-essential stock before protected lanes.",
+      };
+    case "arcane_caution":
+      return {
+        key,
+        label: "Arcane caution",
+        detail: "Apply guarded pressure only to arcane lanes when mystical supply should remain viable but cautious.",
+        laneFilters: ["arcane"],
+        recommendedAction: "Use when mana-side supply should stay alive without being treated like staple goods.",
+      };
+    case "broad_recovery":
+    default:
+      return {
+        key: "broad_recovery",
+        label: "Broad recovery",
+        detail: "Apply guarded recovery posture across all vendor lanes during stabilization or post-crisis easing.",
+        laneFilters: [...ALL_CITY_MUD_VENDOR_LANES],
+        recommendedAction: "Use when the city is recovering and you want a broad, audited policy pass.",
+      };
+  }
+}
+
+export function normalizeVendorPresetKey(value: unknown): CityMudVendorPresetKey | null {
+  return isCityMudVendorPresetKey(value) ? value : null;
+}
 
 export interface CityMudVendorLaneProfile {
   lane: CityMudVendorLane;
   label: string;
   detail: string;
+  recommendedAction: string;
+}
+
+export interface CityMudVendorPreset {
+  key: CityMudVendorPresetKey;
+  label: string;
+  detail: string;
+  laneFilters: CityMudVendorLane[];
   recommendedAction: string;
 }
 

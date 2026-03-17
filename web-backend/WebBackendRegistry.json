@@ -330,7 +330,8 @@
         "v0.6 adds deriveVendorRuntimeEffect(base, policy) so vendor/admin tooling can preview live runtime stock/cadence/price behavior under current bridge pressure, including fill-state-aware scarcity messaging.",
         "v0.7 adds deriveVendorGuardrailApplication(base, runtime) so runtime previews can be staged/applied through a server-side safe one-step window instead of full-strength jumps.",
         "v0.8 adds lane-aware vendor policy derivation so essentials, comfort goods, luxury goods, and arcane stock can respond differently to the same bridge posture.",
-        "v0.9 adds explicit lane-set selection helpers so guarded vendor applies can target audited lane groups instead of depending on whatever rows happen to be visible."
+        "v0.9 adds explicit lane-set selection helpers so guarded vendor applies can target audited lane groups instead of depending on whatever rows happen to be visible.",
+        "v1.0 adds audited vendor posture presets (scarcity essentials protection, luxury throttle, arcane caution, broad recovery) so guarded tooling can target reusable lane groups without re-encoding them in the UI."
       ],
       "owns": [
         "City \u2194 MUD bridge summary heuristics",
@@ -348,7 +349,8 @@
         "Vendor runtime effect preview (effective knobs + fill-aware scarcity state)",
         "deriveVendorGuardrailApplication(base, runtime)",
         "Guarded vendor runtime application preview (safe one-step knobs + warnings)",
-        "deriveVendorLanePolicy(summary, consumers, basePolicy, item)"
+        "deriveVendorLanePolicy(summary, consumers, basePolicy, item)",
+        "getVendorPreset(key) + normalizeVendorPresetKey(value)"
       ],
       "service": "city.cityMudBridge"
     },
@@ -2032,7 +2034,8 @@
         "v0.6 now returns per-row bridge_runtime_effect previews so admin/vendor tooling can inspect live effective runtime knobs without persisting them first.",
         "v0.7 adds POST /api/admin/vendor_economy/bridge_runtime_guarded for preview/apply of server-guarded runtime changes across selected vendor rows, with softened deltas and operator warnings.",
         "v0.8 returns per-row bridge_lane_policy and applies guarded/runtime previews through that lane-aware policy instead of a single blunt vendor posture.",
-        "v0.9 extends POST /api/admin/vendor_economy/bridge_runtime_guarded with laneFilters and selectionLabel support, allowing guarded preview/apply against explicit vendor lane sets for a vendor."
+        "v0.9 extends POST /api/admin/vendor_economy/bridge_runtime_guarded with laneFilters and selectionLabel support, allowing guarded preview/apply against explicit vendor lane sets for a vendor.",
+        "v1.0 extends POST /api/admin/vendor_economy/bridge_runtime_guarded with presetKey support so operators can preview/apply reusable guarded vendor posture presets."
       ],
       "owns": [],
       "path": "web-backend/routes/adminVendorEconomy.ts",
@@ -2040,7 +2043,8 @@
         "GET /api/admin/vendor_economy/vendors",
         "GET /api/admin/vendor_economy/items",
         "POST /api/admin/vendor_economy/items/:vendorItemId",
-        "POST /api/admin/vendor_economy/bridge_runtime_guarded"
+        "POST /api/admin/vendor_economy/bridge_runtime_guarded",
+        "POST /api/admin/vendor_economy/bridge_runtime_guarded presetKey support"
       ],
       "service": "http.adminRoutes"
     },
