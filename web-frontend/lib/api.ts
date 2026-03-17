@@ -80,6 +80,8 @@ export interface MissionOfferSupportGuidance {
   recommendedAction: string;
 }
 
+export type MissionResponseTag = "frontline" | "recon" | "command" | "recovery" | "warding";
+
 export interface MissionOffer {
   id: string;
   kind: "hero" | "army";
@@ -90,6 +92,7 @@ export interface MissionOffer {
   recommendedPower: number;
   expectedRewards: RewardBundle;
   risk: MissionRisk;
+  responseTags: MissionResponseTag[];
   supportGuidance?: MissionOfferSupportGuidance;
 }
 
@@ -120,12 +123,25 @@ export interface PoliciesState {
 
 export type HeroRole = "champion" | "scout" | "tactician" | "mage";
 export type HeroStatus = "idle" | "on_mission";
+export type HeroResponseRole = "frontline" | "recon" | "command" | "recovery" | "warding";
+
+export interface HeroTrait {
+  id: string;
+  name: string;
+  polarity: "pro" | "con";
+  summary: string;
+  responseBias?: Partial<Record<HeroResponseRole, number>>;
+  powerDelta?: number;
+  injuryDelta?: number;
+}
 
 export interface Hero {
   id: string;
   ownerId: string;
   name: string;
   role: "champion" | "scout" | "tactician" | "mage";
+  responseRoles: HeroResponseRole[];
+  traits: HeroTrait[];
   power: number;
   tags: string[];
   status: "idle" | "on_mission";
@@ -618,10 +634,10 @@ export async function fetchMissionBoard(): Promise<MissionBoardResponse> {
   return api<MissionBoardResponse>("/api/missions/offers");
 }
 
-export async function startMission(missionId: string): Promise<StartMissionResponse> {
+export async function startMission(missionId: string, heroId?: string): Promise<StartMissionResponse> {
   return api<StartMissionResponse>("/api/missions/start", {
     method: "POST",
-    body: JSON.stringify({ missionId }),
+    body: JSON.stringify({ missionId, heroId }),
   });
 }
 

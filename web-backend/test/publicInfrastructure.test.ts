@@ -71,6 +71,7 @@ test("public infrastructure summary recommends private mode under severe pressur
       recommendedPower: 100,
       expectedRewards: { materials: 10 },
       risk: { casualtyRisk: "Severe" },
+      responseTags: ["frontline", "command"],
     },
   });
 
@@ -102,6 +103,7 @@ test("pressure sources detect regional threat and mission load", () => {
       recommendedPower: 80,
       expectedRewards: { wealth: 12 },
       risk: { casualtyRisk: "Moderate" },
+      responseTags: ["frontline", "command"],
     },
   });
   if (ps.armies[0]) ps.armies[0].status = "on_mission";
@@ -152,6 +154,8 @@ test("public infrastructure rollback restores player state when levy validation 
         ownerId: ps.playerId,
         name: "Test Hero",
         role: "champion",
+        responseRoles: ["frontline"],
+        traits: [],
         power: 99,
         tags: [],
         status: "idle",

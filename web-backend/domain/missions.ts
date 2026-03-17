@@ -3,12 +3,13 @@
 import type { City } from "./city";
 import type { Hero } from "./heroes";
 import type { Army } from "./armies";
-import type { World, RegionId } from "./world";
+import type { RegionId } from "./world";
 
 import type { CityMudConsumerSummary, CityMudBridgeSummary } from "./cityMudBridge";
 
 export type MissionKind = "hero" | "army";
 export type MissionDifficulty = "low" | "medium" | "high" | "extreme";
+export type MissionResponseTag = "frontline" | "recon" | "command" | "recovery" | "warding" | "defense";
 
 export interface RiskSummary {
   casualtyRisk: string;
@@ -43,6 +44,7 @@ export interface MissionOffer {
   recommendedPower: number;
   expectedRewards: RewardBundle;
   risk: RiskSummary;
+  responseTags: MissionResponseTag[];
   supportGuidance?: MissionOfferSupportGuidance;
 }
 
@@ -53,25 +55,15 @@ export interface MissionContext {
   regionId?: RegionId;
 }
 
-// ---- helpers ----
-
 function totalIdleHeroPower(heroes: Hero[]): number {
-  return heroes
-    .filter((h) => h.status === "idle")
-    .reduce((sum: number, h: Hero) => sum + h.power, 0);
+  return heroes.filter((h) => h.status === "idle").reduce((sum, h) => sum + h.power, 0);
 }
 
 function totalIdleArmyPower(armies: Army[]): number {
-  return armies
-    .filter((a) => a.status === "idle")
-    .reduce((sum: number, a: Army) => sum + a.power, 0);
+  return armies.filter((a) => a.status === "idle").reduce((sum, a) => sum + a.power, 0);
 }
 
-function summarizeRisk(
-  kind: MissionKind,
-  recommendedPower: number,
-  availablePower: number
-): RiskSummary {
+function summarizeRisk(kind: MissionKind, recommendedPower: number, availablePower: number): RiskSummary {
   if (recommendedPower <= 0) {
     return {
       casualtyRisk: "minimal",
@@ -112,11 +104,7 @@ function summarizeRisk(
   };
 }
 
-function makeRewards(
-  difficulty: MissionDifficulty,
-  kind: MissionKind
-): RewardBundle {
-  // very rough placeholders; we’ll tune later
+function makeRewards(difficulty: MissionDifficulty, kind: MissionKind): RewardBundle {
   const baseWealth =
     difficulty === "low"
       ? 25
@@ -136,7 +124,6 @@ function makeRewards(
     bundle.knowledge = Math.round(baseWealth * 0.25);
     bundle.influence = Math.round(baseWealth * 0.2);
   } else {
-    // army missions skew more to raw resources
     bundle.materials = Math.round(baseWealth * 0.8);
     bundle.food = Math.round(baseWealth * 0.5);
   }
@@ -144,105 +131,72 @@ function makeRewards(
   return bundle;
 }
 
-// ---- main generator ----
-
 export function generateMissionOffers(ctx: MissionContext): MissionOffer[] {
-    const { city, heroes, armies, regionId: overrideRegionId } = ctx;
-  
-    const heroPower = totalIdleHeroPower(heroes);
-    const armyPower = totalIdleArmyPower(armies);
-  
-    // 🔹 Prefer explicit region from context, otherwise default to city’s region
-    const regionId = overrideRegionId ?? city.regionId;
-  
-    // simple IDs for now
-    const idBase = Date.now();
-  
-    const offers: MissionOffer[] = [];
-  
-    // 1) Low-risk local hero mission
-    {
-      const kind: MissionKind = "hero";
-      const difficulty: MissionDifficulty = "low";
-      const recommendedPower = Math.max(30, Math.round(heroPower * 0.4));
-  
-      offers.push({
-        id: `m_${idBase}_hero_low`,
-        kind,
-        difficulty,
-        title: "Scout Local Disturbance",
-        description:
-          "Strange activity reported near your borders. Send a champion to investigate.",
-        regionId,
-        recommendedPower,
-        expectedRewards: makeRewards(difficulty, kind),
-        risk: summarizeRisk(kind, recommendedPower, heroPower),
-      });
-    }
-  
-    // 2) Medium army skirmish
-    {
-      const kind: MissionKind = "army";
-      const difficulty: MissionDifficulty = "medium";
-      const recommendedPower = Math.max(60, Math.round(armyPower * 0.6));
-  
-      offers.push({
-        id: `m_${idBase}_army_med`,
-        kind,
-        difficulty,
-        title: "Raid Hostile Outpost",
-        description:
-          "Strike a minor enemy camp to seize supplies and weaken their presence.",
-        regionId,
-        recommendedPower,
-        expectedRewards: makeRewards(difficulty, kind),
-        risk: summarizeRisk(kind, recommendedPower, armyPower),
-      });
-    }
-  
-    // 3) High diff hero mission (arcane / story hook)
-    {
-      const kind: MissionKind = "hero";
-      const difficulty: MissionDifficulty = "high";
-      const recommendedPower = Math.max(80, Math.round(heroPower * 0.9));
-  
-      offers.push({
-        id: `m_${idBase}_hero_high`,
-        kind,
-        difficulty,
-        title: "Delve Ancient Ruins",
-        description:
-          "A newly uncovered ruin hums with planar energy. Send your best to recover what lies within.",
-        regionId,
-        recommendedPower,
-        expectedRewards: makeRewards(difficulty, kind),
-        risk: summarizeRisk(kind, recommendedPower, heroPower),
-      });
-    }
-  
-    // 4) Extreme army operation (optional, only if you’re not totally weak)
-    if (armyPower > 50) {
-      const kind: MissionKind = "army";
-      const difficulty: MissionDifficulty = "extreme";
-      const recommendedPower = Math.max(120, Math.round(armyPower * 1.1));
-  
-      offers.push({
-        id: `m_${idBase}_army_extreme`,
-        kind,
-        difficulty,
-        title: "Launch Major Offensive",
-        description:
-          "Commit your main forces to a decisive strike that could reshape control of the region.",
-        regionId,
-        recommendedPower,
-        expectedRewards: makeRewards(difficulty, kind),
-        risk: summarizeRisk(kind, recommendedPower, armyPower),
-      });
-    }
-  
-    return offers;
-}
+  const { city, heroes, armies, regionId: overrideRegionId } = ctx;
 
+  const heroPower = totalIdleHeroPower(heroes);
+  const armyPower = totalIdleArmyPower(armies);
+  const regionId = overrideRegionId ?? city.regionId;
+  const idBase = Date.now();
+
+  const offers: MissionOffer[] = [];
+
+  offers.push({
+    id: `m_${idBase}_hero_low`,
+    kind: "hero",
+    difficulty: "low",
+    title: "Scout Local Disturbance",
+    description: "Strange activity reported near your borders. Send a champion to investigate.",
+    regionId,
+    recommendedPower: Math.max(30, Math.round(heroPower * 0.4)),
+    expectedRewards: makeRewards("low", "hero"),
+    risk: summarizeRisk("hero", Math.max(30, Math.round(heroPower * 0.4)), heroPower),
+    responseTags: ["recon", "recovery"],
+  });
+
+  offers.push({
+    id: `m_${idBase}_army_med`,
+    kind: "army",
+    difficulty: "medium",
+    title: "Raid Hostile Outpost",
+    description: "Strike a minor enemy camp to seize supplies and weaken their presence.",
+    regionId,
+    recommendedPower: Math.max(60, Math.round(armyPower * 0.6)),
+    expectedRewards: makeRewards("medium", "army"),
+    risk: summarizeRisk("army", Math.max(60, Math.round(armyPower * 0.6)), armyPower),
+    responseTags: ["frontline", "command"],
+  });
+
+  offers.push({
+    id: `m_${idBase}_hero_high`,
+    kind: "hero",
+    difficulty: "high",
+    title: "Delve Ancient Ruins",
+    description: "A newly uncovered ruin hums with planar energy. Send your best to recover what lies within.",
+    regionId,
+    recommendedPower: Math.max(80, Math.round(heroPower * 0.9)),
+    expectedRewards: makeRewards("high", "hero"),
+    risk: summarizeRisk("hero", Math.max(80, Math.round(heroPower * 0.9)), heroPower),
+    responseTags: ["warding", "command"],
+  });
+
+  if (armyPower > 50) {
+    offers.push({
+      id: `m_${idBase}_army_extreme`,
+      kind: "army",
+      difficulty: "extreme",
+      title: "Launch Major Offensive",
+      description: "Commit your main forces to a decisive strike that could reshape control of the region.",
+      regionId,
+      recommendedPower: Math.max(120, Math.round(armyPower * 1.1)),
+      expectedRewards: makeRewards("extreme", "army"),
+      risk: summarizeRisk("army", Math.max(120, Math.round(armyPower * 1.1)), armyPower),
+      responseTags: ["frontline", "command", "recovery"],
+    });
+  }
+
+  return offers;
+}
 
 function missionSupportStateSeverity(difficulty: MissionDifficulty): number {
   switch (difficulty) {

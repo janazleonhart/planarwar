@@ -63,6 +63,7 @@ test("city-mud bridge summary becomes defensive under frontier and civic pressur
       recommendedPower: 120,
       expectedRewards: { materials: 20 },
       risk: { casualtyRisk: "Severe" },
+      responseTags: ["frontline", "defense"],
     },
   });
   if (ps.armies[0]) ps.armies[0].status = "on_mission";
@@ -161,6 +162,7 @@ test("mission offers inherit restricted support guidance when bridge posture is 
       recommendedPower: 120,
       expectedRewards: { materials: 20 },
       risk: { casualtyRisk: "Severe" },
+      responseTags: ["frontline", "defense"],
     },
   });
 

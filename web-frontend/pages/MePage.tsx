@@ -145,6 +145,7 @@ export function MePage() {
 
   const [busyAction, setBusyAction] = useState<string | null>(null);
   const [cityNameDraft, setCityNameDraft] = useState("");
+  const [missionHeroSelection, setMissionHeroSelection] = useState<Record<string, string>>({});
   const [notice, setNotice] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
 
   const noticeTimer = useRef<number | null>(null);
@@ -312,10 +313,10 @@ export function MePage() {
       (result: any) => summarizeUsage(result?.publicService)
     );
 
-  const handleStartMission = (missionId: string) =>
+  const handleStartMission = (missionId: string, heroId?: string) =>
     runAction(
       "Start mission",
-      () => startMission(missionId),
+      () => startMission(missionId, heroId),
       (result) => {
         const support = result?.missionSupport;
         if (!support) return "Mission launched.";
@@ -601,21 +602,47 @@ export function MePage() {
                   <div style={{ fontSize: 13, opacity: 0.85 }}>{mission.description}</div>
                   <div style={{ fontSize: 12, opacity: 0.82 }}>Recommended power {mission.recommendedPower} • rewards {formatLevy(mission.expectedRewards as Partial<Resources>)}</div>
                   <div style={{ fontSize: 12, opacity: 0.82 }}>Risk: {mission.risk.casualtyRisk}{mission.risk.heroInjuryRisk ? ` • hero injury ${mission.risk.heroInjuryRisk}` : ""}</div>
+                  <div style={{ fontSize: 12, opacity: 0.78 }}>Best response lanes: {mission.responseTags?.join(", ") || "generalist"}</div>
                   {mission.supportGuidance ? (
                     <div style={{ fontSize: 12, opacity: 0.78 }}>
                       <strong>Support:</strong> {mission.supportGuidance.state} • {mission.supportGuidance.headline}
                     </div>
                   ) : null}
                   <div style={{ fontSize: 12, opacity: 0.72 }}>{mission.risk.notes}</div>
-                  <div>
-                    <button
-                      style={{ padding: "6px 10px", borderRadius: 6, border: "1px solid #777", background: "#111", opacity: disabled ? 0.6 : 1 }}
-                      disabled={disabled}
-                      onClick={() => void handleStartMission(mission.id)}
-                    >
-                      Start mission
-                    </button>
-                  </div>
+                  {mission.kind === "hero" ? (
+                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                      <select
+                        value={missionHeroSelection[mission.id] ?? ""}
+                        onChange={(e) => setMissionHeroSelection((prev) => ({ ...prev, [mission.id]: e.target.value }))}
+                        style={{ padding: "6px 8px", borderRadius: 6, border: "1px solid #555", background: "#0b0b0b", color: "#ddd", minWidth: 220 }}
+                        disabled={disabled}
+                      >
+                        <option value="">Auto-pick best hero</option>
+                        {me.heroes.filter((hero) => hero.status === "idle").map((hero) => (
+                          <option key={hero.id} value={hero.id}>
+                            {hero.name} • {hero.responseRoles.join("/")} • power {hero.power}
+                          </option>
+                        ))}
+                      </select>
+                      <button
+                        style={{ padding: "6px 10px", borderRadius: 6, border: "1px solid #777", background: "#111", opacity: disabled ? 0.6 : 1 }}
+                        disabled={disabled}
+                        onClick={() => void handleStartMission(mission.id, missionHeroSelection[mission.id] || undefined)}
+                      >
+                        Start mission
+                      </button>
+                    </div>
+                  ) : (
+                    <div>
+                      <button
+                        style={{ padding: "6px 10px", borderRadius: 6, border: "1px solid #777", background: "#111", opacity: disabled ? 0.6 : 1 }}
+                        disabled={disabled}
+                        onClick={() => void handleStartMission(mission.id)}
+                      >
+                        Start mission
+                      </button>
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
@@ -870,6 +897,14 @@ export function MePage() {
                 {me.heroes.map((hero) => (
                   <div key={hero.id} style={{ border: "1px solid #555", borderRadius: 8, padding: 10, display: "grid", gap: 6 }}>
                     <div><strong>{hero.name}</strong> ({hero.role}) • power {hero.power} • {hero.status}</div>
+                    <div style={{ fontSize: 12, opacity: 0.8 }}>Response roles: {hero.responseRoles?.join(", ") || "generalist"}</div>
+                    <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                      {(hero.traits ?? []).map((trait) => (
+                        <span key={trait.id} style={{ border: `1px solid ${trait.polarity === "pro" ? "#2a6" : "#844"}`, borderRadius: 999, padding: "2px 8px", fontSize: 12, opacity: 0.9 }} title={trait.summary}>
+                          {trait.polarity === "pro" ? "+" : "−"} {trait.name}
+                        </span>
+                      ))}
+                    </div>
                     <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                       {(["valor_charm", "scouting_cloak", "arcane_focus"] as const).map((kind) => (
                         <button

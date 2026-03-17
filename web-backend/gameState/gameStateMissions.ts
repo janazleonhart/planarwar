@@ -4,8 +4,8 @@ import { generateMissionOffers } from "../domain/missions";
 import { missionDurationConfig } from "../config";
 
 import type { Army } from "../domain/armies";
-import type { Hero } from "../domain/heroes";
-import type { MissionDifficulty, MissionOffer, RewardBundle } from "../domain/missions";
+import type { Hero, HeroResponseRole, HeroTrait } from "../domain/heroes";
+import type { MissionDifficulty, MissionOffer, MissionResponseTag, RewardBundle } from "../domain/missions";
 import type { RegionId, World } from "../domain/world";
 import type {
   ActiveMission,
@@ -68,10 +68,41 @@ function durationMinutesForDifficulty(diff: MissionDifficulty): number {
   }
 }
 
-function pickHeroForMission(ps: PlayerState): Hero | null {
+function getHeroAttachmentKinds(hero: Hero): string[] {
+  return (hero.attachments ?? []).map((entry) => String(entry.kind ?? "")).filter(Boolean);
+}
+
+function getMissionResponseTags(mission: MissionOffer): MissionResponseTag[] {
+  return Array.isArray(mission.responseTags) ? mission.responseTags : [];
+}
+
+function scoreHeroForMission(hero: Hero, mission: MissionOffer): number {
+  const tags = getMissionResponseTags(mission);
+  let score = hero.power;
+  for (const role of hero.responseRoles ?? []) {
+    if (tags.includes(role)) score += 18;
+  }
+  for (const trait of hero.traits ?? []) {
+    for (const [role, delta] of Object.entries(trait.responseBias ?? {})) {
+      if (tags.includes(role as HeroResponseRole)) score += Number(delta ?? 0);
+    }
+  }
+  const attachments = getHeroAttachmentKinds(hero);
+  if (attachments.includes("scouting_cloak") && tags.includes("recon")) score += 12;
+  if (attachments.includes("valor_charm") && tags.includes("frontline")) score += 12;
+  if (attachments.includes("arcane_focus") && tags.includes("warding")) score += 12;
+  if ((hero.tags ?? []).includes("wounded")) score -= 14;
+  return score;
+}
+
+function pickHeroForMission(ps: PlayerState, mission: MissionOffer, preferredHeroId?: string): Hero | null {
   const idle = ps.heroes.filter((h) => h.status === "idle");
   if (idle.length === 0) return null;
-  idle.sort((a, b) => b.power - a.power);
+  if (preferredHeroId) {
+    const exact = idle.find((hero) => hero.id === preferredHeroId);
+    if (exact) return exact;
+  }
+  idle.sort((a, b) => scoreHeroForMission(b, mission) - scoreHeroForMission(a, mission) || b.power - a.power);
   return idle[0];
 }
 
@@ -97,7 +128,8 @@ export function startMissionForPlayer(
   deps: MissionStateDeps,
   playerId: string,
   missionId: string,
-  now: Date
+  now: Date,
+  preferredHeroId?: string
 ): ActiveMission | null {
   const ps = deps.getPlayerState(playerId);
   if (!ps) return null;
@@ -112,7 +144,7 @@ export function startMissionForPlayer(
   let assignedArmyId: string | undefined;
 
   if (mission.kind === "hero") {
-    const hero = pickHeroForMission(ps);
+    const hero = pickHeroForMission(ps, mission, preferredHeroId);
     if (!hero) return null;
     hero.status = "on_mission";
     hero.currentMissionId = missionId;
@@ -241,6 +273,7 @@ export function startWarfrontAssaultForPlayer(
       notes:
         "Assaulting a fortified warfront. Casualties scale with enemy threat and your army strength.",
     },
+    responseTags: ["frontline", "command"],
   };
 
   const army = pickArmyForMission(ps);
@@ -336,9 +369,10 @@ export function startGarrisonStrikeForPlayer(
       notes:
         "Fast-moving raid aimed at enemy lairs. High risk for lone heroes at high danger levels.",
     },
+    responseTags: ["recon", "warding"],
   };
 
-  const hero = pickHeroForMission(ps);
+  const hero = pickHeroForMission(ps, offer);
   if (!hero) {
     return { status: "no_hero", message: "No idle heroes available for a garrison strike." };
   }
@@ -371,14 +405,70 @@ export function startGarrisonStrikeForPlayer(
   return { status: "ok", activeMission: active };
 }
 
+function computeHeroMissionEffect(hero: Hero | undefined, mission: MissionOffer): { power: number; successBonus: number; injuryDelta: number; notes: string[] } {
+  if (!hero) return { power: 0, successBonus: 0, injuryDelta: 0, notes: [] };
+  const notes: string[] = [];
+  const tags = getMissionResponseTags(mission);
+  let effectivePower = hero.power;
+  let successBonus = 0;
+  let injuryDelta = 0;
+
+  for (const role of hero.responseRoles ?? []) {
+    if (tags.includes(role)) {
+      effectivePower += 10;
+      successBonus += 0.05;
+      notes.push(`${role} fit`);
+    }
+  }
+
+  for (const trait of hero.traits ?? []) {
+    for (const [role, delta] of Object.entries(trait.responseBias ?? {})) {
+      if (tags.includes(role as HeroResponseRole)) {
+        const numeric = Number(delta ?? 0);
+        effectivePower += numeric;
+        successBonus += numeric / 400;
+        if (numeric > 0) notes.push(trait.name);
+      }
+    }
+    injuryDelta += trait.injuryDelta ?? 0;
+    effectivePower += trait.powerDelta ?? 0;
+  }
+
+  const attachments = getHeroAttachmentKinds(hero);
+  if (attachments.includes("scouting_cloak") && tags.includes("recon")) {
+    effectivePower += 12;
+    successBonus += 0.04;
+    notes.push("Scouting Cloak");
+  }
+  if (attachments.includes("valor_charm") && tags.includes("frontline")) {
+    effectivePower += 12;
+    successBonus += 0.04;
+    notes.push("Valor Charm");
+  }
+  if (attachments.includes("arcane_focus") && tags.includes("warding")) {
+    effectivePower += 12;
+    successBonus += 0.04;
+    notes.push("Arcane Focus");
+  }
+  if ((hero.tags ?? []).includes("wounded")) {
+    effectivePower = Math.max(5, effectivePower - 14);
+    injuryDelta += 0.08;
+    notes.push("wounded");
+  }
+
+  return { power: effectivePower, successBonus, injuryDelta, notes };
+}
+
 function resolveMissionOutcome(ps: PlayerState, active: ActiveMission): MissionOutcome {
   const mission = active.mission;
   const recommended = mission.recommendedPower || 0;
 
   let forcePower = 0;
+  let heroEffect: ReturnType<typeof computeHeroMissionEffect> | null = null;
   if (mission.kind === "hero" && active.assignedHeroId) {
     const h = ps.heroes.find((x) => x.id === active.assignedHeroId);
-    forcePower = h?.power ?? 0;
+    heroEffect = computeHeroMissionEffect(h, mission);
+    forcePower = heroEffect.power;
   } else if (mission.kind === "army" && active.assignedArmyId) {
     const a = ps.armies.find((x) => x.id === active.assignedArmyId);
     forcePower = a?.power ?? 0;
@@ -390,6 +480,7 @@ function resolveMissionOutcome(ps: PlayerState, active: ActiveMission): MissionO
   let successChance = 0.4 + (ratio - 1) * 0.25;
   if (ratio >= 1.5) successChance += 0.15;
   if (ratio <= 0.5) successChance -= 0.15;
+  if (heroEffect) successChance += heroEffect.successBonus;
   successChance = Math.max(0.1, Math.min(0.95, successChance));
 
   const roll = Math.random();
@@ -414,6 +505,10 @@ function resolveMissionOutcome(ps: PlayerState, active: ActiveMission): MissionO
     case "failure":
       casualtyRate = 0.35 + Math.random() * 0.4;
       break;
+  }
+
+  if (heroEffect) {
+    casualtyRate = Math.max(0.03, Math.min(0.95, casualtyRate + heroEffect.injuryDelta));
   }
 
   let heroInjury: MissionOutcome["heroInjury"] = "none";

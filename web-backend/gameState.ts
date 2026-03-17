@@ -387,17 +387,19 @@ const missionStateDeps = {
 export function startMissionForPlayer(
   playerId: string,
   missionId: string,
-  now: Date
+  now: Date,
+  preferredHeroId?: string
 ): ActiveMission | null {
-  return startMissionForPlayerImpl(playerId, missionId, now);
+  return startMissionForPlayerImpl(playerId, missionId, now, preferredHeroId);
 }
 
 function startMissionForPlayerImpl(
   playerId: string,
   missionId: string,
-  now: Date
+  now: Date,
+  preferredHeroId?: string
 ): ActiveMission | null {
-  return startMissionForPlayerHelper(missionStateDeps, playerId, missionId, now);
+  return startMissionForPlayerHelper(missionStateDeps, playerId, missionId, now, preferredHeroId);
 }
 
 export function regenerateRegionMissionsForPlayer(

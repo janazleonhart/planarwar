@@ -1,6 +1,6 @@
 //web-backend/gameState/gameStateHeroes.ts
 
-import type { Hero, HeroRole } from "../domain/heroes";
+import type { Hero, HeroResponseRole, HeroRole, HeroTrait } from "../domain/heroes";
 import type {
   GameEventInput,
   PlayerState,
@@ -65,6 +65,16 @@ type HeroWithGear = Hero & {
   xp?: number;
   attachments?: HeroAttachment[];
 };
+
+interface HeroRecruitDef {
+  namePool: string[];
+  basePower: number;
+  wealthCost: number;
+  unityCost: number;
+  responseRoles: HeroResponseRole[];
+  positiveTraits: HeroTrait[];
+  negativeTraits: HeroTrait[];
+}
 
 export interface WorkshopJob {
   id: string;
@@ -381,6 +391,15 @@ const HERO_RECRUIT_DEFS: Record<HeroRole, HeroRecruitDef> = {
     basePower: 75,
     wealthCost: 150,
     unityCost: 10,
+    responseRoles: ["frontline", "recovery"],
+    positiveTraits: [
+      { id: "steadfast", name: "Steadfast", polarity: "pro", summary: "+Frontline staying power during hard fights.", responseBias: { frontline: 18 }, injuryDelta: -0.08 },
+      { id: "battle_scarred", name: "Battle-Scarred", polarity: "pro", summary: "Knows how to keep fighting through ugly attrition.", responseBias: { frontline: 8, recovery: 4 }, powerDelta: 2 },
+    ],
+    negativeTraits: [
+      { id: "rigid", name: "Rigid", polarity: "con", summary: "Less adaptable outside direct battle lines.", responseBias: { command: -10, recon: -8 } },
+      { id: "cautious", name: "Cautious", polarity: "con", summary: "Hesitates when a response needs reckless initiative.", responseBias: { frontline: -4 } },
+    ],
   },
   scout: {
     namePool: [
@@ -392,6 +411,15 @@ const HERO_RECRUIT_DEFS: Record<HeroRole, HeroRecruitDef> = {
     basePower: 55,
     wealthCost: 110,
     unityCost: 7,
+    responseRoles: ["recon", "recovery"],
+    positiveTraits: [
+      { id: "swift", name: "Swift", polarity: "pro", summary: "+Better for reconnaissance, pursuit, and warning response.", responseBias: { recon: 18, recovery: 6 } },
+      { id: "cautious", name: "Cautious", polarity: "pro", summary: "Keeps ahead of ambushes and avoids needless exposure.", responseBias: { recon: 8, warding: 4 }, injuryDelta: -0.03 },
+    ],
+    negativeTraits: [
+      { id: "fragile", name: "Fragile", polarity: "con", summary: "Struggles in prolonged attrition fights.", injuryDelta: 0.08, responseBias: { frontline: -12 } },
+      { id: "rigid", name: "Rigid", polarity: "con", summary: "Poor at adapting to command-heavy battlefield pivots.", responseBias: { command: -8 } },
+    ],
   },
   tactician: {
     namePool: [
@@ -403,6 +431,15 @@ const HERO_RECRUIT_DEFS: Record<HeroRole, HeroRecruitDef> = {
     basePower: 60,
     wealthCost: 130,
     unityCost: 9,
+    responseRoles: ["command", "recovery"],
+    positiveTraits: [
+      { id: "inspiring", name: "Inspiring", polarity: "pro", summary: "+Improves organized responses and recovery coordination.", responseBias: { command: 18, recovery: 10 } },
+      { id: "steadfast", name: "Steadfast", polarity: "pro", summary: "Keeps a response plan intact under pressure.", responseBias: { command: 8, frontline: 4 } },
+    ],
+    negativeTraits: [
+      { id: "cautious", name: "Cautious", polarity: "con", summary: "May surrender tempo when a crisis rewards speed.", responseBias: { frontline: -6 } },
+      { id: "fragile", name: "Fragile", polarity: "con", summary: "Not built for direct duels when plans collapse.", responseBias: { frontline: -10 }, injuryDelta: 0.04 },
+    ],
   },
   mage: {
     namePool: [
@@ -414,8 +451,23 @@ const HERO_RECRUIT_DEFS: Record<HeroRole, HeroRecruitDef> = {
     basePower: 70,
     wealthCost: 140,
     unityCost: 8,
+    responseRoles: ["warding", "command"],
+    positiveTraits: [
+      { id: "planar_savvy", name: "Planar Savvy", polarity: "pro", summary: "+Better against strange incursions, wards, and arcane disturbances.", responseBias: { warding: 20, command: 4 } },
+      { id: "inspiring", name: "Inspiring", polarity: "pro", summary: "Turns arcane mastery into organized city response.", responseBias: { command: 8, warding: 6 } },
+    ],
+    negativeTraits: [
+      { id: "fragile", name: "Fragile", polarity: "con", summary: "Breaks down faster in prolonged attrition.", injuryDelta: 0.08, responseBias: { frontline: -10 } },
+      { id: "battle_scarred", name: "Battle-Scarred", polarity: "con", summary: "Old wounds flare during extended crises.", injuryDelta: 0.04 },
+    ],
   },
 };
+
+function pickRecruitTraits(def: HeroRecruitDef, seedIndex: number): HeroTrait[] {
+  const pos = def.positiveTraits[seedIndex % def.positiveTraits.length];
+  const neg = def.negativeTraits[(seedIndex + 1) % def.negativeTraits.length];
+  return [pos, neg].map((trait) => ({ ...trait, responseBias: trait.responseBias ? { ...trait.responseBias } : undefined }));
+}
 
 function pickHeroName(role: HeroRole, index: number): string {
   const def = HERO_RECRUIT_DEFS[role];
@@ -460,13 +512,18 @@ export function recruitHeroForPlayer(
   const variance = Math.floor(Math.random() * 11) - 5;
   const power = def.basePower + tier * 5 + variance;
 
+  const traits = pickRecruitTraits(def, index);
+  const traitPowerDelta = traits.reduce((sum, trait) => sum + (trait.powerDelta ?? 0), 0);
+
   const hero: Hero = {
     id: `hero_${Date.now()}_${Math.floor(Math.random() * 100000)}`,
     ownerId: ps.playerId,
     name,
     role,
-    power,
-    tags: [],
+    responseRoles: [...def.responseRoles],
+    traits,
+    power: power + traitPowerDelta,
+    tags: traits.map((trait) => trait.id),
     status: "idle",
   };
 

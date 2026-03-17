@@ -30,11 +30,11 @@ router.get("/offers", async (req, res) => {
 });
 
 router.post("/start", async (req, res) => {
-  const { missionId } = req.body as { missionId?: string };
+  const { missionId, heroId, preferredHeroId } = req.body as { missionId?: string; heroId?: string; preferredHeroId?: string };
   if (!missionId) return res.status(400).json({ error: "missionId is required" });
 
   const access = await withPlayerAccessMutation(req, (access) => {
-    const active = startMissionForPlayer(access.playerId, missionId, new Date());
+    const active = startMissionForPlayer(access.playerId, missionId, new Date(), preferredHeroId ?? heroId);
     if (!active) return { ok: false as const, code: 400, body: { error: "Mission not found or no available forces." } };
 
     const bridgeSummary = summarizeCityMudBridge(access.playerState);
