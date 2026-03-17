@@ -5,7 +5,7 @@
 
 import express from "express";
 import { db } from "../../worldcore/db/Database";
-import { deriveCityMudConsumers, deriveVendorEconomyRecommendation, deriveVendorSupportPolicy, summarizeCityMudBridge } from "../domain/cityMudBridge";
+import { deriveCityMudConsumers, deriveVendorEconomyRecommendation, deriveVendorRuntimeEffect, deriveVendorSupportPolicy, summarizeCityMudBridge } from "../domain/cityMudBridge";
 import { resolvePlayerAccess } from "./playerCityAccess";
 
 export const adminVendorEconomyRouter = express.Router();
@@ -49,6 +49,7 @@ type VendorEconomyItemRow = {
   price_min_mult: number | null;
   price_max_mult: number | null;
   bridge_recommendation?: ReturnType<typeof deriveVendorEconomyRecommendation> | null;
+  bridge_runtime_effect?: ReturnType<typeof deriveVendorRuntimeEffect> | null;
 };
 
 async function getBridgeVendorPolicyOrNull(req: express.Request) {
@@ -125,9 +126,8 @@ adminVendorEconomyRouter.get("/items", async (req, res) => {
     )) as { rows: VendorEconomyItemRow[] };
 
     const bridge = await getBridgeVendorPolicyOrNull(req);
-    const items = (r.rows ?? []).map((row) => ({
-      ...row,
-      bridge_recommendation: bridge
+    const items = (r.rows ?? []).map((row) => {
+      const bridgeRecommendation = bridge
         ? deriveVendorEconomyRecommendation(
             {
               stockMax: row.stock_max,
@@ -138,8 +138,26 @@ adminVendorEconomyRouter.get("/items", async (req, res) => {
             },
             bridge.vendorPolicy,
           )
-        : null,
-    }));
+        : null;
+      const bridgeRuntimeEffect = bridge
+        ? deriveVendorRuntimeEffect(
+            {
+              stock: row.stock,
+              stockMax: row.stock_max,
+              restockEverySec: row.restock_every_sec,
+              restockAmount: row.restock_amount,
+              priceMinMult: row.price_min_mult,
+              priceMaxMult: row.price_max_mult,
+            },
+            bridge.vendorPolicy,
+          )
+        : null;
+      return {
+        ...row,
+        bridge_recommendation: bridgeRecommendation,
+        bridge_runtime_effect: bridgeRuntimeEffect,
+      };
+    });
 
     res.json({
       ok: true,

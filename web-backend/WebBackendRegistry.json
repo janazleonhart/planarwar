@@ -326,7 +326,8 @@
         "Intended as an auditable export seam so later MUD/world services can consume city-side support signals without coupling directly to city-builder route internals.",
         "v0.2 adds concrete consumer guidance for vendor supply, mission board support posture, civic services drag, and top-level operational advisories.",
         "v0.4 adds deriveVendorSupportPolicy(summary, consumers) so vendor-facing systems can consume bridge posture as concrete stock/price/cadence recommendations instead of only reading generic guidance cards.",
-        "v0.5 adds concrete vendor economy recommendations (stock/restock/price) derived from live city\u2194MUD vendor policy for downstream consumers."
+        "v0.5 adds concrete vendor economy recommendations (stock/restock/price) derived from live city\u2194MUD vendor policy for downstream consumers.",
+        "v0.6 adds deriveVendorRuntimeEffect(base, policy) so vendor/admin tooling can preview live runtime stock/cadence/price behavior under current bridge pressure, including fill-state-aware scarcity messaging."
       ],
       "owns": [
         "City \u2194 MUD bridge summary heuristics"
@@ -338,7 +339,9 @@
         "City \u2194 MUD bridge summary (supportCapacity, pressures, exportableResources, hooks, posture)",
         "Concrete consumer guidance for vendor supply / mission board / civic services",
         "deriveVendorSupportPolicy(summary, consumers)",
-        "Vendor support policy (stock/price/cadence posture + recommended multipliers)"
+        "Vendor support policy (stock/price/cadence posture + recommended multipliers)",
+        "deriveVendorRuntimeEffect(base, policy)",
+        "Vendor runtime effect preview (effective knobs + fill-aware scarcity state)"
       ],
       "service": "city.cityMudBridge"
     },
@@ -2018,7 +2021,8 @@
         "Admin editor endpoints for vendor_item_economy (stock/restock/price multipliers) with optional stock reset.",
         "GET /items joins items table to return item_name + item_rarity for nicer admin display.",
         "v0.4 is now intended to be informed by city\u2194MUD vendor policy previews in the admin UI, even though the endpoint still persists global vendor_item_economy settings.",
-        "v0.5 now returns per-row bridge recommendations plus current vendor policy so admin tooling can stage/apply live city-aware tuning."
+        "v0.5 now returns per-row bridge recommendations plus current vendor policy so admin tooling can stage/apply live city-aware tuning.",
+        "v0.6 now returns per-row bridge_runtime_effect previews so admin/vendor tooling can inspect live effective runtime knobs without persisting them first."
       ],
       "owns": [],
       "path": "web-backend/routes/adminVendorEconomy.ts",

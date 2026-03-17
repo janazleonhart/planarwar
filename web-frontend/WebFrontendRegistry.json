@@ -179,7 +179,8 @@
         "Adds typed CityMudBridge DTOs plus fetchCityMudBridgeStatus() so the frontend can preview city\u2192world support posture and exportable surplus.",
         "Adds typed City \u2194 MUD bridge consumer DTOs so frontend panels can render vendor/mission/civic guidance instead of only raw hook scores.",
         "Adds typed mission-board DTOs plus fetchMissionBoard(), startMission(), and completeMission() so mission offers can surface bridge-aware support guidance in the UI.",
-        "Adds typed City \u2194 MUD vendor policy DTOs so admin/vendor tooling can consume stock/price/cadence recommendations from the bridge status endpoint."
+        "Adds typed City \u2194 MUD vendor policy DTOs so admin/vendor tooling can consume stock/price/cadence recommendations from the bridge status endpoint.",
+        "Admin vendor economy consumers may now receive bridge_runtime_effect preview fields on item rows from /api/admin/vendor_economy/items."
       ],
       "owns": [],
       "path": "web-frontend/lib/api.ts",
@@ -201,7 +202,8 @@
         "fetchMissionBoard()",
         "startMission(missionId)",
         "completeMission(instanceId)",
-        "Typed DTOs for mission support guidance / mission board bridge snapshots"
+        "Typed DTOs for mission support guidance / mission board bridge snapshots",
+        "Admin vendor economy item rows may include bridge_runtime_effect previews"
       ],
       "service": "api.client"
     },
@@ -471,7 +473,8 @@
         "Uses ItemPicker for item filtering; displays item name + rarity from API join.",
         "Wrapped in AdminShell for consistent admin layout; internal logic unchanged.",
         "v0.4 also consumes city\u2194MUD bridge vendorPolicy to preview recommended stock/price/cadence posture while tuning vendor_item_economy rows.",
-        "v0.5 stages and applies live bridge recommendations per row or across visible vendor items, turning policy preview into actionable tuning."
+        "v0.5 stages and applies live bridge recommendations per row or across visible vendor items, turning policy preview into actionable tuning.",
+        "v0.6 surfaces per-row bridge runtime previews (effective stock/cadence/price + fill-state) and allows staging those live runtime knobs directly into the admin editor."
       ],
       "owns": [
         "Admin UI for vendor_item_economy"

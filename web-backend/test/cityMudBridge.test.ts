@@ -3,7 +3,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { deriveCityMudConsumers, deriveVendorEconomyRecommendation, deriveVendorSupportPolicy, summarizeCityMudBridge } from "../domain/cityMudBridge";
+import { deriveCityMudConsumers, deriveVendorEconomyRecommendation, deriveVendorRuntimeEffect, deriveVendorSupportPolicy, summarizeCityMudBridge } from "../domain/cityMudBridge";
 import { applyMissionConsumerGuidance, generateMissionOffers } from "../domain/missions";
 import { createInitialPublicInfrastructureState } from "../domain/publicInfrastructure";
 import { getOrCreatePlayerState } from "../gameState";
@@ -255,4 +255,41 @@ test("vendor economy recommendation applies bridge policy to concrete knobs", ()
   assert.ok(rec.priceMinMult >= 0.9);
   assert.ok(rec.priceMaxMult >= 1.6);
   assert.equal(rec.restockPerHour, Math.ceil((rec.restockAmount * 3600) / rec.restockEverySec));
+});
+
+
+test("vendor runtime effect reflects live bridge pressure on effective economy knobs", () => {
+  const ps = makePlayer();
+  ps.resources.food = 170;
+  ps.resources.materials = 155;
+  ps.resources.wealth = 145;
+  ps.city.stats.infrastructure = 52;
+  ps.city.stats.prosperity = 44;
+  ps.city.stats.security = 39;
+  ps.cityStress.total = 42;
+  ps.cityStress.stage = "strained";
+  ps.publicInfrastructure.serviceHeat = 44;
+
+  const summary = summarizeCityMudBridge(ps);
+  const consumers = deriveCityMudConsumers(summary);
+  const policy = deriveVendorSupportPolicy(summary, consumers);
+  const runtime = deriveVendorRuntimeEffect(
+    {
+      stock: 18,
+      stockMax: 80,
+      restockEverySec: 300,
+      restockAmount: 6,
+      priceMinMult: 0.9,
+      priceMaxMult: 1.6,
+    },
+    policy,
+  );
+
+  assert.equal(policy.state, "pressured");
+  assert.equal(runtime.state, "tight");
+  assert.ok(runtime.effectiveStockMax < 80);
+  assert.ok(runtime.effectiveRestockEverySec > 300);
+  assert.ok(runtime.effectivePriceMaxMult >= 1.6);
+  assert.ok((runtime.stockFillRatio ?? 1) < 0.3);
+  assert.match(runtime.headline, /visible pressure/i);
 });

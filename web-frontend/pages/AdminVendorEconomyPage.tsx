@@ -24,6 +24,19 @@ type VendorEconomyRecommendation = {
   detail: string;
 };
 
+type VendorRuntimeEffect = {
+  state: "surplus" | "normal" | "tight" | "scarce";
+  effectiveStockMax: number;
+  effectiveRestockEverySec: number;
+  effectiveRestockAmount: number;
+  effectivePriceMinMult: number;
+  effectivePriceMaxMult: number;
+  effectiveRestockPerHour: number;
+  stockFillRatio: number | null;
+  headline: string;
+  detail: string;
+};
+
 type VendorEconomyItem = {
   vendor_item_id: number;
   vendor_id: string;
@@ -43,6 +56,7 @@ type VendorEconomyItem = {
   price_min_mult: number | null;
   price_max_mult: number | null;
   bridge_recommendation?: VendorEconomyRecommendation | null;
+  bridge_runtime_effect?: VendorRuntimeEffect | null;
 };
 
 type ItemsResponse = {
@@ -116,6 +130,16 @@ function recommendationToEdit(rec: VendorEconomyRecommendation): Omit<EditRow, "
     restockAmount: String(rec.restockAmount),
     priceMinMult: String(rec.priceMinMult),
     priceMaxMult: String(rec.priceMaxMult),
+  };
+}
+
+function runtimeEffectToEdit(effect: VendorRuntimeEffect): Omit<EditRow, "resetStock"> {
+  return {
+    stockMax: String(effect.effectiveStockMax),
+    restockEverySec: String(effect.effectiveRestockEverySec),
+    restockAmount: String(effect.effectiveRestockAmount),
+    priceMinMult: String(effect.effectivePriceMinMult),
+    priceMaxMult: String(effect.effectivePriceMaxMult),
   };
 }
 
@@ -392,6 +416,18 @@ export function AdminVendorEconomyPage() {
       },
     }));
   }
+
+function stageRuntimePreview(row: VendorEconomyItem) {
+  const runtimeEffect = row.bridge_runtime_effect;
+  if (!runtimeEffect) return;
+  setEdits((prev) => ({
+    ...prev,
+    [row.vendor_item_id]: {
+      ...runtimeEffectToEdit(runtimeEffect),
+      resetStock: prev[row.vendor_item_id]?.resetStock ?? false,
+    },
+  }));
+}
 
   function stageBridgeRecommendationsVisible() {
     setEdits((prev) => {
@@ -699,6 +735,7 @@ export function AdminVendorEconomyPage() {
               <th>priceMinMult</th>
               <th>priceMaxMult</th>
               <th>bridge rec</th>
+              <th>runtime preview</th>
               <th>lastRestock</th>
               <th>resetStock</th>
               <th>save</th>
@@ -839,6 +876,30 @@ export function AdminVendorEconomyPage() {
                       </>
                     ) : (
                       <span style={{ fontSize: 12, opacity: 0.65 }}>No live bridge recommendation.</span>
+                    )}
+                  </td>
+
+                  <td style={{ minWidth: 230 }}>
+                    {r.bridge_runtime_effect ? (
+                      <>
+                        <div style={{ fontSize: 12, fontWeight: 600 }}>{r.bridge_runtime_effect.headline}</div>
+                        <div style={{ fontSize: 11, opacity: 0.8, marginTop: 4 }}>
+                          {r.bridge_runtime_effect.state} · stock {r.bridge_runtime_effect.effectiveStockMax} · cadence {r.bridge_runtime_effect.effectiveRestockEverySec || 0}s/{r.bridge_runtime_effect.effectiveRestockAmount || 0} · price {r.bridge_runtime_effect.effectivePriceMinMult.toFixed(2)}–{r.bridge_runtime_effect.effectivePriceMaxMult.toFixed(2)}
+                        </div>
+                        <div style={{ fontSize: 11, opacity: 0.72, marginTop: 4 }} title={r.bridge_runtime_effect.detail}>
+                          {r.bridge_runtime_effect.stockFillRatio != null ? `fill ${(r.bridge_runtime_effect.stockFillRatio * 100).toFixed(0)}%` : 'no finite stock cap'}
+                        </div>
+                        <button
+                          onClick={() => stageRuntimePreview(r)}
+                          disabled={busy || !canWrite}
+                          style={{ marginTop: 6 }}
+                          title={r.bridge_runtime_effect.detail}
+                        >
+                          Use runtime preview
+                        </button>
+                      </>
+                    ) : (
+                      <span style={{ fontSize: 12, opacity: 0.65 }}>No live runtime preview.</span>
                     )}
                   </td>
 

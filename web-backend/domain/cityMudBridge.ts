@@ -80,6 +80,19 @@ export interface CityMudVendorEconomyRecommendation {
   detail: string;
 }
 
+export interface CityMudVendorRuntimeEffect {
+  state: "surplus" | "normal" | "tight" | "scarce";
+  effectiveStockMax: number;
+  effectiveRestockEverySec: number;
+  effectiveRestockAmount: number;
+  effectivePriceMinMult: number;
+  effectivePriceMaxMult: number;
+  effectiveRestockPerHour: number;
+  stockFillRatio: number | null;
+  headline: string;
+  detail: string;
+}
+
 const RESOURCE_KEYS: Array<keyof Resources> = ["food", "materials", "wealth", "mana", "knowledge", "unity"];
 const RESOURCE_BUFFERS: Resources = {
   food: 120,
@@ -504,5 +517,72 @@ export function deriveVendorEconomyRecommendation(
     restockPerHour,
     headline: policy.headline,
     detail: `${policy.detail} ${policy.recommendedAction}`.trim(),
+  };
+}
+
+export function deriveVendorRuntimeEffect(
+  base: {
+    stock: number | null | undefined;
+    stockMax: number | null | undefined;
+    restockEverySec: number | null | undefined;
+    restockAmount: number | null | undefined;
+    priceMinMult: number | null | undefined;
+    priceMaxMult: number | null | undefined;
+  },
+  policy: CityMudVendorSupportPolicy,
+): CityMudVendorRuntimeEffect {
+  const recommendation = deriveVendorEconomyRecommendation(base, policy);
+  const effectiveStockMax = recommendation.stockMax;
+  const effectiveRestockEverySec = recommendation.restockEverySec;
+  const effectiveRestockAmount = recommendation.restockAmount;
+  const effectivePriceMinMult = recommendation.priceMinMult;
+  const effectivePriceMaxMult = recommendation.priceMaxMult;
+  const effectiveRestockPerHour = recommendation.restockPerHour;
+  const currentStock = base.stock == null ? null : clampVendorInt(Number(base.stock), 0, 1_000_000);
+  const stockFillRatio = effectiveStockMax > 0 && currentStock != null
+    ? Number((currentStock / effectiveStockMax).toFixed(3))
+    : null;
+
+  let state: CityMudVendorRuntimeEffect["state"] = "normal";
+  if (policy.state === "abundant") state = "surplus";
+  else if (policy.state === "stable") state = "normal";
+  else if (policy.state === "pressured") state = "tight";
+  else state = "scarce";
+
+  if (stockFillRatio != null) {
+    if (stockFillRatio < 0.2) {
+      state = state === "surplus" ? "normal" : state === "normal" ? "tight" : "scarce";
+    } else if (stockFillRatio > 0.95 && state === "tight") {
+      state = "normal";
+    }
+  }
+
+  let headline = "Vendor runtime can stay close to baseline.";
+  let detail = "Live bridge policy is not currently pushing strong vendor runtime distortions.";
+  if (state === "surplus") {
+    headline = "Vendor runtime can flow a little more generously.";
+    detail = `Live bridge posture is ${policy.state}, so vendor stock and cadence can run slightly hotter than baseline without eating emergency reserves.`;
+  } else if (state === "tight") {
+    headline = "Vendor runtime should show visible pressure.";
+    detail = `Live bridge posture is ${policy.state}, so runtime stock windows and refill cadence should feel a bit tighter than baseline instead of pretending the shelves refill by prayer.`;
+  } else if (state === "scarce") {
+    headline = "Vendor runtime should behave like scarcity, not abundance.";
+    detail = `Live bridge posture is ${policy.state}, so runtime stock, cadence, and price windows should be treated as defensive/triage lanes.`;
+  }
+  if (stockFillRatio != null) {
+    detail += ` Current stock fill is ${(stockFillRatio * 100).toFixed(0)}% of the live effective cap.`;
+  }
+
+  return {
+    state,
+    effectiveStockMax,
+    effectiveRestockEverySec,
+    effectiveRestockAmount,
+    effectivePriceMinMult,
+    effectivePriceMaxMult,
+    effectiveRestockPerHour,
+    stockFillRatio,
+    headline,
+    detail,
   };
 }
