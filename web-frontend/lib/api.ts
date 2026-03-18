@@ -675,6 +675,142 @@ export interface CompleteMissionResponse {
   regionWar: RegionWarState[];
 }
 
+
+export interface WorldConsequenceLedgerMetrics {
+  pressureDelta: number;
+  recoveryDelta: number;
+  controlDelta: number;
+  threatDelta: number;
+  bridgeBand?: string;
+  bridgePosture?: string;
+}
+
+export interface WorldConsequenceLedgerEntry {
+  id: string;
+  createdAt: string;
+  playerId: string;
+  cityId: string;
+  regionId: string;
+  source: string;
+  severity: "watch" | "pressure" | "severe";
+  title: string;
+  summary: string;
+  detail: string;
+  audiences: string[];
+  tags: string[];
+  metrics: WorldConsequenceLedgerMetrics;
+  missionId?: string;
+  missionTitle?: string;
+  threatFamily?: ThreatFamily;
+  contractKind?: RecoveryContractKind;
+  outcome?: "success" | "partial" | "failure";
+}
+
+export interface WorldConsequenceRegionState {
+  regionId: string;
+  entryCount: number;
+  netPressure: number;
+  netRecoveryLoad: number;
+  controlDrift: number;
+  threatDrift: number;
+  tradeDisruption: number;
+  blackMarketHeat: number;
+  factionDrift: number;
+  dominantSeverity: "watch" | "pressure" | "severe";
+  lastEventAt?: string;
+}
+
+export interface WorldConsequenceWorldEconomyState {
+  tradePressure: number;
+  supplyFriction: number;
+  cartelAttention: number;
+  destabilization: number;
+  outlook: "stable" | "strained" | "volatile";
+}
+
+export interface WorldConsequenceBlackMarketState {
+  opportunityScore: number;
+  heat: number;
+  outlook: "quiet" | "active" | "surging";
+}
+
+export interface WorldConsequenceFactionPressureState {
+  driftScore: number;
+  instability: number;
+  dominantStance: "stable" | "watch" | "destabilizing" | "fracturing";
+}
+
+export interface WorldConsequenceStateSummary {
+  affectedRegionIds: string[];
+  totalLedgerEntries: number;
+  severeCount: number;
+  destabilizationScore: number;
+  note: string;
+}
+
+export interface WorldConsequenceState {
+  regions: WorldConsequenceRegionState[];
+  worldEconomy: WorldConsequenceWorldEconomyState;
+  blackMarket: WorldConsequenceBlackMarketState;
+  factionPressure: WorldConsequenceFactionPressureState;
+  summary: WorldConsequenceStateSummary;
+  lastUpdatedAt?: string;
+}
+
+export interface WorldConsequenceHookHotspot {
+  regionId: string;
+  tradeDisruption: number;
+  blackMarketHeat: number;
+  factionDrift: number;
+  note: string;
+}
+
+export interface WorldConsequenceBlackMarketHook {
+  enabled: boolean;
+  unlocked: boolean;
+  status: "locked" | "latent" | "opening" | "active" | "surging";
+  recommendedPosture: "ignore" | "watch" | "probe" | "exploit" | "contain";
+  opportunityScore: number;
+  heat: number;
+  hottestRegionId: string | null;
+  note: string;
+}
+
+export interface WorldConsequenceCartelHook {
+  pressureTier: "low" | "watch" | "active" | "severe";
+  responseBias: "none" | "opportunistic" | "probing" | "predatory";
+  attention: number;
+  note: string;
+}
+
+export interface WorldConsequenceWorldEconomyHook {
+  tradePressure: number;
+  supplyFriction: number;
+  outlook: "stable" | "strained" | "volatile";
+  riskTier: "low" | "watch" | "active" | "severe";
+  note: string;
+}
+
+export interface WorldConsequenceFactionHook {
+  dominantStance: "stable" | "watch" | "destabilizing" | "fracturing";
+  instability: number;
+  responseBias: "quiet" | "watch" | "fracture_risk";
+  note: string;
+}
+
+export interface WorldConsequenceHooksView {
+  blackMarket: WorldConsequenceBlackMarketHook;
+  cartel: WorldConsequenceCartelHook;
+  worldEconomy: WorldConsequenceWorldEconomyHook;
+  faction: WorldConsequenceFactionHook;
+  hotspots: WorldConsequenceHookHotspot[];
+  summary: {
+    hasActiveHooks: boolean;
+    headline: string;
+    topRegionIds: string[];
+  };
+}
+
 export interface MeProfile {
   ok?: boolean;
   isDemo?: boolean;
@@ -705,6 +841,9 @@ export interface MeProfile {
   specializationStars: number;
   specializationStarsHistory: Record<string, number>;
   publicInfrastructure: PublicInfrastructureState | null;
+  worldConsequences?: WorldConsequenceLedgerEntry[];
+  worldConsequenceState?: WorldConsequenceState | null;
+  worldConsequenceHooks?: WorldConsequenceHooksView | null;
 }
 
 function normalizeBase(raw: string): string {

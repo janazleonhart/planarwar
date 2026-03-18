@@ -404,6 +404,115 @@ function parseGoalsHealthSummary(snapshot: any): { overall: GoalsHealthSummary |
   };
 }
 
+
+
+type CitySignalsSummaryView = {
+  enabled: boolean;
+  everyTicks: number;
+  playerIds: string[];
+  ok: boolean;
+  lastFetchIso: string | null;
+  players: Array<{
+    playerId: string;
+    ok: boolean;
+    fetchedAt: string | null;
+    ledgerCount: number;
+    severeCount: number;
+    activeTags: string[];
+    topRegions: Array<{
+      regionId: string;
+      netPressure: number;
+      netRecoveryLoad: number;
+      dominantSeverity: string;
+      blackMarketHeat: number;
+      factionDrift: number;
+    }>;
+    worldEconomyOutlook: string | null;
+    factionStance: string | null;
+    blackMarketOpportunity: number;
+    summaryNote: string | null;
+    error: string | null;
+  }>;
+  summary: {
+    playersWithSignals: number;
+    totalLedgerEntries: number;
+    severeEntries: number;
+    hottestRegionId: string | null;
+    dominantEconomyOutlook: string | null;
+    dominantFactionStance: string | null;
+    maxBlackMarketOpportunity: number;
+  };
+};
+
+function asRecord(v: unknown): Record<string, any> | null {
+  return v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, any>) : null;
+}
+
+function toNum(v: unknown, fallback = 0): number {
+  if (typeof v === "number" && Number.isFinite(v)) return v;
+  if (typeof v === "string" && v.trim() !== "") {
+    const n = Number(v);
+    if (Number.isFinite(n)) return n;
+  }
+  return fallback;
+}
+
+function parseCitySignals(raw: unknown): CitySignalsSummaryView | null {
+  const rec = asRecord(raw);
+  if (!rec) return null;
+  const playersRaw = Array.isArray(rec.players) ? rec.players : [];
+  const players = playersRaw.map((item) => {
+    const row = asRecord(item) ?? {};
+    const topRegionsRaw = Array.isArray(row.topRegions) ? row.topRegions : [];
+    return {
+      playerId: typeof row.playerId === "string" ? row.playerId : "unknown",
+      ok: Boolean(row.ok),
+      fetchedAt: typeof row.fetchedAt === "string" ? row.fetchedAt : null,
+      ledgerCount: toNum(row.ledgerCount),
+      severeCount: toNum(row.severeCount),
+      activeTags: Array.isArray(row.activeTags) ? row.activeTags.filter((v): v is string => typeof v === "string") : [],
+      topRegions: topRegionsRaw.map((region) => {
+        const rr = asRecord(region) ?? {};
+        return {
+          regionId: typeof rr.regionId === "string" ? rr.regionId : "unknown",
+          netPressure: toNum(rr.netPressure),
+          netRecoveryLoad: toNum(rr.netRecoveryLoad),
+          dominantSeverity: typeof rr.dominantSeverity === "string" ? rr.dominantSeverity : "watch",
+          blackMarketHeat: toNum(rr.blackMarketHeat),
+          factionDrift: toNum(rr.factionDrift),
+        };
+      }),
+      worldEconomyOutlook: typeof asRecord(row.worldEconomy)?.outlook === "string" ? String(asRecord(row.worldEconomy)?.outlook) : null,
+      factionStance: typeof asRecord(row.factionPressure)?.dominantStance === "string" ? String(asRecord(row.factionPressure)?.dominantStance) : null,
+      blackMarketOpportunity: toNum(asRecord(row.blackMarket)?.opportunityScore),
+      summaryNote: typeof asRecord(row.summary)?.note === "string" ? String(asRecord(row.summary)?.note) : null,
+      error: typeof row.error === "string" ? row.error : null,
+    };
+  });
+  const summary = asRecord(rec.summary) ?? {};
+  return {
+    enabled: Boolean(rec.enabled),
+    everyTicks: toNum(rec.everyTicks),
+    playerIds: Array.isArray(rec.playerIds) ? rec.playerIds.filter((v): v is string => typeof v === "string") : [],
+    ok: Boolean(rec.ok),
+    lastFetchIso: typeof rec.lastFetchIso === "string" ? rec.lastFetchIso : null,
+    players,
+    summary: {
+      playersWithSignals: toNum(summary.playersWithSignals),
+      totalLedgerEntries: toNum(summary.totalLedgerEntries),
+      severeEntries: toNum(summary.severeEntries),
+      hottestRegionId: typeof summary.hottestRegionId === "string" ? summary.hottestRegionId : null,
+      dominantEconomyOutlook: typeof summary.dominantEconomyOutlook === "string" ? summary.dominantEconomyOutlook : null,
+      dominantFactionStance: typeof summary.dominantFactionStance === "string" ? summary.dominantFactionStance : null,
+      maxBlackMarketOpportunity: toNum(summary.maxBlackMarketOpportunity),
+    },
+  };
+}
+
+function citySignalBadge(ok: boolean): any {
+  return goalsBadgeStyle(ok ? "OK" : "FAIL");
+}
+
 function goalsBadgeStyle(status: "OK" | "FAIL" | "STALE"): any {
   const base: any = {
     display: "inline-flex",
@@ -616,6 +725,7 @@ export function AdminMotherBrainPage() {
   }, [autoRefresh, everyMs]);
 
   const waveBudget = useMemo(() => parseBrainWaveBudget(snapshot?.brainWaveBudget), [snapshot]);
+  const citySignals = useMemo(() => parseCitySignals(snapshot?.citySignals), [snapshot]);
 
   const apiJson = useMemo(() => prettyJson(raw), [raw]);
   const snapshotJson = useMemo(() => prettyJson(snapshot), [snapshot]);
@@ -833,6 +943,73 @@ export function AdminMotherBrainPage() {
               {snapshotJson}
             </pre>
             {copiedSnapshot ? <div>Copied.</div> : null}
+          </div>
+
+          <div style={{ marginTop: 14, border: "1px solid #ddd", borderRadius: 10, padding: 12 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+              <div>
+                <div style={{ fontWeight: 700, marginBottom: 2 }}>City consequence intake</div>
+                <div style={{ fontSize: 12, opacity: 0.8 }}>Mother Brain consumption of web-backend city/world consequence signals.</div>
+              </div>
+              {citySignals ? <span style={citySignalBadge(citySignals.ok)}>{citySignals.ok ? "OK" : "FAIL"}</span> : null}
+            </div>
+
+            {!citySignals ? (
+              <div style={{ marginTop: 8, opacity: 0.8 }}>No <code>citySignals</code> section found in the latest Mother Brain snapshot yet.</div>
+            ) : (
+              <div style={{ marginTop: 10, display: "grid", gap: 10 }}>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 14, alignItems: "center" }}>
+                  <div><span style={{ opacity: 0.8 }}>enabled</span> <code>{citySignals.enabled ? "true" : "false"}</code></div>
+                  <div><span style={{ opacity: 0.8 }}>everyTicks</span> <code>{citySignals.everyTicks}</code></div>
+                  <div><span style={{ opacity: 0.8 }}>last fetch</span> <code>{citySignals.lastFetchIso ? safeIso(citySignals.lastFetchIso) : "—"}</code></div>
+                  <div><span style={{ opacity: 0.8 }}>tracked players</span> <code>{citySignals.playerIds.join(", ") || "—"}</code></div>
+                </div>
+
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 10 }}>
+                  <div style={{ border: "1px solid #eee", borderRadius: 10, padding: 10 }}>
+                    <div style={{ fontWeight: 700 }}>Signals</div>
+                    <div style={{ fontSize: 12, opacity: 0.82 }}>players {citySignals.summary.playersWithSignals} • ledger {citySignals.summary.totalLedgerEntries} • severe {citySignals.summary.severeEntries}</div>
+                  </div>
+                  <div style={{ border: "1px solid #eee", borderRadius: 10, padding: 10 }}>
+                    <div style={{ fontWeight: 700 }}>Economy/Faction</div>
+                    <div style={{ fontSize: 12, opacity: 0.82 }}>economy {citySignals.summary.dominantEconomyOutlook ?? "—"} • faction {citySignals.summary.dominantFactionStance ?? "—"}</div>
+                  </div>
+                  <div style={{ border: "1px solid #eee", borderRadius: 10, padding: 10 }}>
+                    <div style={{ fontWeight: 700 }}>Heat</div>
+                    <div style={{ fontSize: 12, opacity: 0.82 }}>hottest region {citySignals.summary.hottestRegionId ?? "—"} • max BM {citySignals.summary.maxBlackMarketOpportunity}</div>
+                  </div>
+                </div>
+
+                {citySignals.players.length ? (
+                  <div style={{ display: "grid", gap: 8 }}>
+                    {citySignals.players.map((player) => (
+                      <div key={player.playerId} style={{ border: "1px solid #eee", borderRadius: 10, padding: 10, display: "grid", gap: 6 }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                          <div>
+                            <strong>{player.playerId}</strong>
+                            <div style={{ fontSize: 12, opacity: 0.78 }}>fetched {player.fetchedAt ? safeIso(player.fetchedAt) : "—"}</div>
+                          </div>
+                          <span style={citySignalBadge(player.ok)}>{player.ok ? "OK" : "FAIL"}</span>
+                        </div>
+                        {player.error ? <div style={{ color: "#9b1111", fontSize: 12 }}><code>{player.error}</code></div> : null}
+                        <div style={{ fontSize: 12, opacity: 0.85 }}>ledger {player.ledgerCount} • severe {player.severeCount} • economy {player.worldEconomyOutlook ?? "—"} • faction {player.factionStance ?? "—"} • BM {player.blackMarketOpportunity}</div>
+                        {player.activeTags.length ? <div style={{ fontSize: 12, opacity: 0.78 }}>tags: <code>{player.activeTags.join(", ")}</code></div> : null}
+                        {player.summaryNote ? <div style={{ fontSize: 12, opacity: 0.78 }}>{player.summaryNote}</div> : null}
+                        {player.topRegions.length ? (
+                          <div style={{ display: "grid", gap: 4 }}>
+                            {player.topRegions.slice(0, 3).map((region) => (
+                              <div key={`${player.playerId}:${region.regionId}`} style={{ fontSize: 12, opacity: 0.8 }}>
+                                • <code>{region.regionId}</code> pressure {region.netPressure} • recovery {region.netRecoveryLoad} • BM {region.blackMarketHeat} • faction {region.factionDrift} • {region.dominantSeverity}
+                              </div>
+                            ))}
+                          </div>
+                        ) : null}
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+            )}
           </div>
         
         <div style={{ marginTop: 14, border: "1px solid #ddd", borderRadius: 10, padding: 12 }}>

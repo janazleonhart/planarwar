@@ -24,6 +24,8 @@ import {
   type PublicInfrastructureStatusResponse,
   type PublicServiceQuote,
   type Resources,
+  type WorldConsequenceLedgerEntry,
+  type WorldConsequenceRegionState,
 } from "../lib/api";
 
 const REGION_META: Record<string, { name: string }> = {
@@ -231,6 +233,50 @@ function formatContractKind(kind: string | undefined): string {
     case "counter_rumors": return "Counter rumors";
     default: return "";
   }
+}
+
+
+function worldSeverityColor(severity: string): string {
+  switch (severity) {
+    case "severe": return "#ff7a7a";
+    case "pressure": return "#ffca6b";
+    default: return "#9ad0ff";
+  }
+}
+
+function worldHookTone(state: string): string {
+  switch (state) {
+    case "surging":
+    case "severe":
+    case "fracturing":
+    case "fracture_risk":
+    case "active":
+      return "#ff9c9c";
+    case "opening":
+    case "watch":
+    case "strained":
+    case "volatile":
+    case "destabilizing":
+      return "#ffd27a";
+    default:
+      return "#b7d7ff";
+  }
+}
+
+function worldRegionScore(region: WorldConsequenceRegionState): number {
+  return (region.tradeDisruption ?? 0) + (region.blackMarketHeat ?? 0) + Math.abs(region.factionDrift ?? 0) + Math.max(0, region.netPressure ?? 0);
+}
+
+function formatWorldDelta(value: number): string {
+  if (value > 0) return `+${value}`;
+  return `${value}`;
+}
+
+function formatWorldConsequenceSource(source: string): string {
+  return source
+    .split("_")
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
 }
 
 function summarizeUsage(usage: AppliedPublicServiceUsage | null | undefined): string | null {
@@ -481,6 +527,11 @@ export function MePage() {
   const highlightedWarnings = [...threatWarnings].sort((a, b) => b.severity - a.severity).slice(0, 3);
   const highlightedPressure = [...motherBrainPressureMap].sort((a, b) => b.pressureScore - a.pressureScore).slice(0, 3);
   const highlightedReceipts = [...missionReceipts].slice(0, 5);
+  const worldConsequences = me?.worldConsequences ?? [];
+  const worldConsequenceState = me?.worldConsequenceState ?? null;
+  const worldConsequenceHooks = me?.worldConsequenceHooks ?? null;
+  const highlightedWorldLedger = [...worldConsequences].slice(0, 5);
+  const highlightedWorldRegions = [...(worldConsequenceState?.regions ?? [])].sort((a, b) => worldRegionScore(b) - worldRegionScore(a)).slice(0, 3);
 
   if (loading && !me) return <p>Loading /api/me…</p>;
 
@@ -1017,6 +1068,80 @@ export function MePage() {
                   )}
                 </div>
               ))}
+            </div>
+          )}
+        </div>
+
+        <div style={{ display: "grid", gap: 6 }}>
+          <strong>World consequence outlook</strong>
+          {!worldConsequenceState || !worldConsequenceHooks ? (
+            <div style={{ opacity: 0.7 }}>World-facing consequence propagation has not produced a readable outlook yet.</div>
+          ) : (
+            <div style={{ display: "grid", gap: 8 }}>
+              <div style={{ border: "1px solid #555", borderRadius: 8, padding: 10, display: "grid", gap: 5, background: "rgba(45,34,74,0.12)" }}>
+                <div><strong>{worldConsequenceHooks.summary.headline}</strong></div>
+                <div style={{ fontSize: 12, opacity: 0.82 }}>{worldConsequenceState.summary.note}</div>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 10, fontSize: 12 }}>
+                  <div>entries <strong>{worldConsequenceState.summary.totalLedgerEntries}</strong></div>
+                  <div>severe <strong style={{ color: worldSeverityColor(worldConsequenceState.summary.severeCount > 0 ? "severe" : "watch") }}>{worldConsequenceState.summary.severeCount}</strong></div>
+                  <div>destabilization <strong>{worldConsequenceState.summary.destabilizationScore}</strong></div>
+                  <div>hooks <strong style={{ color: worldConsequenceHooks.summary.hasActiveHooks ? "#ffd27a" : "#9ef7b2" }}>{worldConsequenceHooks.summary.hasActiveHooks ? "active" : "quiet"}</strong></div>
+                </div>
+              </div>
+
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 8 }}>
+                <div style={{ border: "1px solid #555", borderRadius: 8, padding: 10, display: "grid", gap: 4 }}>
+                  <div><strong>Economy</strong> <span style={{ color: worldHookTone(worldConsequenceHooks.worldEconomy.riskTier) }}>{worldConsequenceHooks.worldEconomy.riskTier}</span></div>
+                  <div style={{ fontSize: 12, opacity: 0.8 }}>outlook {worldConsequenceHooks.worldEconomy.outlook}</div>
+                  <div style={{ fontSize: 12, opacity: 0.8 }}>trade {worldConsequenceHooks.worldEconomy.tradePressure} • supply {worldConsequenceHooks.worldEconomy.supplyFriction}</div>
+                  <div style={{ fontSize: 12, opacity: 0.76 }}>{worldConsequenceHooks.worldEconomy.note}</div>
+                </div>
+                <div style={{ border: "1px solid #555", borderRadius: 8, padding: 10, display: "grid", gap: 4 }}>
+                  <div><strong>Black market</strong> <span style={{ color: worldHookTone(worldConsequenceHooks.blackMarket.status) }}>{worldConsequenceHooks.blackMarket.status}</span></div>
+                  <div style={{ fontSize: 12, opacity: 0.8 }}>posture {worldConsequenceHooks.blackMarket.recommendedPosture}</div>
+                  <div style={{ fontSize: 12, opacity: 0.8 }}>opportunity {worldConsequenceHooks.blackMarket.opportunityScore} • heat {worldConsequenceHooks.blackMarket.heat}</div>
+                  <div style={{ fontSize: 12, opacity: 0.76 }}>{worldConsequenceHooks.blackMarket.note}</div>
+                </div>
+                <div style={{ border: "1px solid #555", borderRadius: 8, padding: 10, display: "grid", gap: 4 }}>
+                  <div><strong>Cartel</strong> <span style={{ color: worldHookTone(worldConsequenceHooks.cartel.pressureTier) }}>{worldConsequenceHooks.cartel.pressureTier}</span></div>
+                  <div style={{ fontSize: 12, opacity: 0.8 }}>bias {worldConsequenceHooks.cartel.responseBias}</div>
+                  <div style={{ fontSize: 12, opacity: 0.8 }}>attention {worldConsequenceHooks.cartel.attention}</div>
+                  <div style={{ fontSize: 12, opacity: 0.76 }}>{worldConsequenceHooks.cartel.note}</div>
+                </div>
+                <div style={{ border: "1px solid #555", borderRadius: 8, padding: 10, display: "grid", gap: 4 }}>
+                  <div><strong>Factions</strong> <span style={{ color: worldHookTone(worldConsequenceHooks.faction.responseBias) }}>{worldConsequenceHooks.faction.responseBias}</span></div>
+                  <div style={{ fontSize: 12, opacity: 0.8 }}>stance {worldConsequenceHooks.faction.dominantStance}</div>
+                  <div style={{ fontSize: 12, opacity: 0.8 }}>instability {worldConsequenceHooks.faction.instability}</div>
+                  <div style={{ fontSize: 12, opacity: 0.76 }}>{worldConsequenceHooks.faction.note}</div>
+                </div>
+              </div>
+
+              <div style={{ display: "grid", gap: 6 }}>
+                <div style={{ fontWeight: 700, fontSize: 13 }}>Regional hotspots</div>
+                {highlightedWorldRegions.length === 0 ? (
+                  <div style={{ opacity: 0.7 }}>No propagated regional hotspots yet.</div>
+                ) : highlightedWorldRegions.map((region) => (
+                  <div key={region.regionId} style={{ border: "1px solid #555", borderRadius: 8, padding: 10, display: "grid", gap: 4, background: "rgba(70,35,20,0.08)" }}>
+                    <div><strong>{getRegionDisplayName(region.regionId)}</strong> <span style={{ opacity: 0.72 }}>({region.regionId})</span> • <span style={{ color: worldSeverityColor(region.dominantSeverity) }}>{region.dominantSeverity}</span></div>
+                    <div style={{ fontSize: 12, opacity: 0.82 }}>pressure {formatWorldDelta(region.netPressure)} • recovery {formatWorldDelta(region.netRecoveryLoad)} • control {formatWorldDelta(region.controlDrift)} • threat {formatWorldDelta(region.threatDrift)}</div>
+                    <div style={{ fontSize: 12, opacity: 0.8 }}>trade {region.tradeDisruption} • black market heat {region.blackMarketHeat} • faction drift {region.factionDrift}</div>
+                  </div>
+                ))}
+              </div>
+
+              <div style={{ display: "grid", gap: 6 }}>
+                <div style={{ fontWeight: 700, fontSize: 13 }}>World consequence ledger</div>
+                {highlightedWorldLedger.length === 0 ? (
+                  <div style={{ opacity: 0.7 }}>No exported ledger entries yet.</div>
+                ) : highlightedWorldLedger.map((entry: WorldConsequenceLedgerEntry) => (
+                  <div key={entry.id} style={{ border: "1px solid #555", borderRadius: 8, padding: 10, display: "grid", gap: 4, background: "rgba(20,40,65,0.10)" }}>
+                    <div><strong>{entry.title}</strong> • <span style={{ color: worldSeverityColor(entry.severity) }}>{entry.severity}</span> • {formatWorldConsequenceSource(entry.source)}</div>
+                    <div style={{ fontSize: 12, opacity: 0.82 }}>{entry.summary}</div>
+                    <div style={{ fontSize: 12, opacity: 0.74 }}>{entry.detail}</div>
+                    <div style={{ fontSize: 12, opacity: 0.76 }}>region {getRegionDisplayName(entry.regionId)} • pressure {formatWorldDelta(entry.metrics.pressureDelta)} • recovery {formatWorldDelta(entry.metrics.recoveryDelta)} • control {formatWorldDelta(entry.metrics.controlDelta)} • threat {formatWorldDelta(entry.metrics.threatDelta)}</div>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
         </div>

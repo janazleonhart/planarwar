@@ -2382,6 +2382,18 @@ async function main(): Promise<void> {
             playerIds: state.citySignals.playerIds,
             failures: state.citySignals.players.filter((player) => !player.ok).map((player) => ({ playerId: player.playerId, error: player.error ?? "unknown" })),
           });
+        } else if (state.citySignals.summary.playersWithSignals > 0 || state.citySignals.summary.totalLedgerEntries > 0) {
+          gatedLog("info", "City signal snapshot", {
+            tick,
+            playerIds: state.citySignals.playerIds,
+            playersWithSignals: state.citySignals.summary.playersWithSignals,
+            totalLedgerEntries: state.citySignals.summary.totalLedgerEntries,
+            severeEntries: state.citySignals.summary.severeEntries,
+            hottestRegionId: state.citySignals.summary.hottestRegionId,
+            dominantEconomyOutlook: state.citySignals.summary.dominantEconomyOutlook,
+            dominantFactionStance: state.citySignals.summary.dominantFactionStance,
+            maxBlackMarketOpportunity: state.citySignals.summary.maxBlackMarketOpportunity,
+          });
         }
       } catch (e: unknown) {
         state.citySignals = {
