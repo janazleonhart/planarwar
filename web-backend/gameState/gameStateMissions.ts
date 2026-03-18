@@ -10,6 +10,9 @@ import type { MissionDefenseReceipt, MissionDifficulty, MissionOffer, MissionRes
 import type { RegionId, World } from "../domain/world";
 import type {
   ActiveMission,
+  CityAlphaSeverity,
+  CityAlphaStatusItem,
+  CityAlphaStatusSummary,
   GameEventInput,
   PlayerState,
   Resources,
@@ -312,6 +315,113 @@ export function syncMotherBrainPressureMap(ps: PlayerState, now: Date): MotherBr
     pressureMap: windows,
     exposureScore,
     highestPressure: windows[0]?.pressureScore ?? 0,
+  };
+}
+
+function cityAlphaSeverityFromScore(score: number): CityAlphaSeverity {
+  if (score >= 75) return "critical";
+  if (score >= 52) return "pressed";
+  if (score >= 28) return "watch";
+  return "calm";
+}
+
+function topCityAlphaItems(ps: PlayerState): CityAlphaStatusItem[] {
+  const warningItems: CityAlphaStatusItem[] = (ps.threatWarnings ?? []).map((warning) => ({
+    id: `warning_${warning.id}`,
+    kind: "warning",
+    headline: warning.headline,
+    detail: warning.recommendedAction || warning.detail,
+    severity: Math.max(0, Math.min(100, Number(warning.severity ?? 0))),
+    when: warning.earliestImpactAt,
+    threatFamily: warning.threatFamily,
+    responseTags: [...(warning.responseTags ?? [])],
+  }));
+
+  const pressureItems: CityAlphaStatusItem[] = (ps.motherBrainPressureMap ?? []).map((window) => ({
+    id: `pressure_${window.id}`,
+    kind: "pressure",
+    headline: window.summary,
+    detail: window.detail,
+    severity: Math.max(0, Math.min(100, Number(window.pressureScore ?? 0))),
+    when: window.earliestWindowAt,
+    threatFamily: window.threatFamily,
+    responseTags: [...(window.responseTags ?? [])],
+  }));
+
+  const receiptItems: CityAlphaStatusItem[] = (ps.missionReceipts ?? []).slice(0, 4).map((receipt, index) => ({
+    id: `receipt_${receipt.id}_${index}`,
+    kind: "receipt",
+    headline: receipt.summary,
+    detail: receipt.setbacks?.length ? receipt.setbacks[0]!.detail : "Recent defense outcome recorded.",
+    severity: receipt.outcome === "failure" ? 82 : receipt.outcome === "partial" ? 58 : 28,
+    when: receipt.createdAt,
+    threatFamily: receipt.threatFamily,
+    responseTags: [],
+  }));
+
+  return [...warningItems, ...pressureItems, ...receiptItems]
+    .sort((a, b) => b.severity - a.severity || ((a.when ?? "").localeCompare(b.when ?? "")))
+    .slice(0, 5);
+}
+
+export function summarizeCityAlphaStatus(ps: PlayerState): CityAlphaStatusSummary {
+  const idleHeroes = (ps.heroes ?? []).filter((hero) => hero.status === "idle");
+  const readyArmies = (ps.armies ?? []).filter((army) => army.status === "idle" && Number(army.readiness ?? 0) >= 40);
+  const averageArmyReadiness = readyArmies.length
+    ? Math.round(readyArmies.reduce((sum, army) => sum + Number(army.readiness ?? 0), 0) / readyArmies.length)
+    : 0;
+  const warnings = ps.threatWarnings ?? [];
+  const pressureMap = ps.motherBrainPressureMap ?? [];
+  const receipts = ps.missionReceipts ?? [];
+  const urgentPressureCount = pressureMap.filter((window) => window.confidence === "urgent").length;
+  const recentReceiptCount = receipts.slice(0, 5).length;
+  const nextImpactAt = [...warnings.map((warning) => warning.earliestImpactAt), ...pressureMap.map((window) => window.earliestWindowAt)]
+    .filter(Boolean)
+    .sort()[0];
+  const dangerScore = Math.round(
+    (warnings[0]?.severity ?? 0) * 0.34 +
+    (pressureMap[0]?.pressureScore ?? 0) * 0.26 +
+    Number(ps.cityStress?.threatPressure ?? 0) * 0.22 +
+    Number(ps.cityStress?.recoveryBurden ?? 0) * 0.18,
+  );
+  const severity = cityAlphaSeverityFromScore(dangerScore);
+  const testerFocus: string[] = [];
+  if (warnings.length > 0) testerFocus.push(`Answer ${warnings.length} live warning${warnings.length === 1 ? "" : "s"} before the next impact window.`);
+  if (urgentPressureCount > 0) testerFocus.push(`Mother Brain flags ${urgentPressureCount} urgent pressure window${urgentPressureCount === 1 ? "" : "s"}; keep a reserve response ready.`);
+  if (Number(ps.cityStress?.recoveryBurden ?? 0) >= 35) testerFocus.push(`Recovery burden is ${Math.round(Number(ps.cityStress?.recoveryBurden ?? 0))}/100; prioritize stabilization contracts.`);
+  if (readyArmies.length === 0) testerFocus.push("No army is above baseline readiness; reinforce before taking another hard defense.");
+  if (idleHeroes.length === 0) testerFocus.push("All heroes are committed; tester readability depends on at least one idle specialist being visible.");
+  if (testerFocus.length === 0) testerFocus.push("Board is readable and stable; run a warning-to-receipt loop to verify tester flow.");
+
+  const headline = severity === "critical"
+    ? "City Alpha is under heavy pressure."
+    : severity === "pressed"
+    ? "City Alpha pressure is elevated."
+    : severity === "watch"
+    ? "City Alpha is stable, but pressure windows are forming."
+    : "City Alpha is calm enough for a clean tester pass.";
+  const detail = nextImpactAt
+    ? `Next likely impact window begins around ${new Date(nextImpactAt).toLocaleString()}.`
+    : "No immediate hostile impact window is currently flagged.";
+
+  const readinessScore = Math.max(0, Math.min(100, Math.round(idleHeroes.length * 10 + averageArmyReadiness * 0.65 - Number(ps.cityStress?.recoveryBurden ?? 0) * 0.25)));
+
+  return {
+    severity,
+    headline,
+    detail,
+    readinessScore,
+    idleHeroCount: idleHeroes.length,
+    readyArmyCount: readyArmies.length,
+    averageArmyReadiness,
+    activeMissionCount: (ps.activeMissions ?? []).length,
+    openWarningCount: warnings.length,
+    urgentPressureCount,
+    recentReceiptCount,
+    recoveryBurden: Math.round(Number(ps.cityStress?.recoveryBurden ?? 0)),
+    nextImpactAt,
+    testerFocus: testerFocus.slice(0, 4),
+    topItems: topCityAlphaItems(ps),
   };
 }
 

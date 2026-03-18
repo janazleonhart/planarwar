@@ -2,7 +2,7 @@
 
 import { Router } from "express";
 
-import { defaultPolicies, tickPlayerState, type PlayerState } from "../gameState";
+import { defaultPolicies, summarizeCityAlphaStatus, tickPlayerState, type PlayerState } from "../gameState";
 import { getAvailableTechsForPlayer, getTechById } from "../domain/tech";
 import { getCityProductionPerTick, maxBuildingSlotsForTier } from "../domain/city";
 import { resolvePlayerAccess, resolveViewer, suggestCityName, withPlayerAccessMutation } from "./playerCityAccess";
@@ -59,6 +59,7 @@ function buildMePayload(viewer: Awaited<ReturnType<typeof resolveViewer>>, ps: P
       threatWarnings: [],
       motherBrainPressureMap: [],
       missionReceipts: [],
+      cityAlphaStatus: null,
       researchedTechIds: [],
       availableTechs: [],
       activeResearch: null,
@@ -112,6 +113,7 @@ function buildMePayload(viewer: Awaited<ReturnType<typeof resolveViewer>>, ps: P
     threatWarnings: ps.threatWarnings ?? [],
     motherBrainPressureMap: ps.motherBrainPressureMap ?? [],
     missionReceipts: ps.missionReceipts ?? [],
+    cityAlphaStatus: summarizeCityAlphaStatus(ps),
     researchedTechIds: ps.researchedTechIds,
     availableTechs,
     activeResearch,

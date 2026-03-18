@@ -27,6 +27,7 @@ import {
   syncThreatWarnings as syncThreatWarningsHelper,
   syncMotherBrainPressureMap as syncMotherBrainPressureMapHelper,
   syncRecoveryContractsForState as syncRecoveryContractsForStateHelper,
+  summarizeCityAlphaStatus as summarizeCityAlphaStatusHelper,
 } from "./gameState/gameStateMissions";
 import {
   type BuildBuildingResult,
@@ -79,6 +80,9 @@ import type {
   RewardBundle,
   ThreatWarning,
   MotherBrainPressureWindow,
+  ThreatFamily,
+  WarningIntelQuality,
+  PressureMapConfidence,
 } from "./domain/missions";
 import type { TechAge, TechEpoch, TechCategory } from "./domain/tech";
 import type { ResourceKey, ResourceVector } from "./domain/resources";
@@ -156,6 +160,38 @@ export interface CityStressState {
   unityPressure: number;  // 0–100
   recoveryBurden: number; // 0–100 lingering post-crisis burden
   lastUpdatedAt: string;
+}
+
+
+export type CityAlphaSeverity = "calm" | "watch" | "pressed" | "critical";
+
+export interface CityAlphaStatusItem {
+  id: string;
+  kind: "warning" | "pressure" | "receipt";
+  headline: string;
+  detail: string;
+  severity: number;
+  when?: string;
+  threatFamily?: ThreatFamily;
+  responseTags: string[];
+}
+
+export interface CityAlphaStatusSummary {
+  severity: CityAlphaSeverity;
+  headline: string;
+  detail: string;
+  readinessScore: number;
+  idleHeroCount: number;
+  readyArmyCount: number;
+  averageArmyReadiness: number;
+  activeMissionCount: number;
+  openWarningCount: number;
+  urgentPressureCount: number;
+  recentReceiptCount: number;
+  recoveryBurden: number;
+  nextImpactAt?: string;
+  testerFocus: string[];
+  topItems: CityAlphaStatusItem[];
 }
 
 // ---- Event log ----
@@ -355,6 +391,10 @@ function syncThreatWarnings(ps: PlayerState, now: Date): ThreatWarningSyncResult
 
 export function syncMotherBrainPressureMap(ps: PlayerState, now: Date): MotherBrainPressureMapSyncResult {
   return syncMotherBrainPressureMapHelper(ps, now);
+}
+
+export function summarizeCityAlphaStatus(ps: PlayerState): CityAlphaStatusSummary {
+  return summarizeCityAlphaStatusHelper(ps);
 }
 
 // City Stress

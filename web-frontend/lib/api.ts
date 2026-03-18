@@ -179,6 +179,37 @@ export interface ThreatWarning {
   recommendedArmyId?: string;
 }
 
+export type CityAlphaSeverity = "calm" | "watch" | "pressed" | "critical";
+
+export interface CityAlphaStatusItem {
+  id: string;
+  kind: "warning" | "pressure" | "receipt";
+  headline: string;
+  detail: string;
+  severity: number;
+  when?: string;
+  threatFamily?: ThreatFamily;
+  responseTags: string[];
+}
+
+export interface CityAlphaStatusSummary {
+  severity: CityAlphaSeverity;
+  headline: string;
+  detail: string;
+  readinessScore: number;
+  idleHeroCount: number;
+  readyArmyCount: number;
+  averageArmyReadiness: number;
+  activeMissionCount: number;
+  openWarningCount: number;
+  urgentPressureCount: number;
+  recentReceiptCount: number;
+  recoveryBurden: number;
+  nextImpactAt?: string;
+  testerFocus: string[];
+  topItems: CityAlphaStatusItem[];
+}
+
 export interface Resources {
   food: number;
   materials: number;
@@ -640,6 +671,7 @@ export interface MeProfile {
   threatWarnings?: ThreatWarning[];
   motherBrainPressureMap?: MotherBrainPressureWindow[];
   missionReceipts?: MissionDefenseReceipt[];
+  cityAlphaStatus?: CityAlphaStatusSummary | null;
   researchedTechIds: string[];
   availableTechs: TechSummary[];
   activeResearch: ActiveResearchView | null;
