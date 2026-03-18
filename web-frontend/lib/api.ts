@@ -819,6 +819,35 @@ export interface WorldConsequenceActionsView {
   motherBrainActions: WorldConsequenceActionItem[];
 }
 
+
+export interface WorldConsequenceConsumersView {
+  summary: {
+    pressureTier: "quiet" | "watch" | "active" | "severe";
+    headline: string;
+    note: string;
+    sourceRegionId: string | null;
+    shouldNudgeRuntime: boolean;
+  };
+  vendor: {
+    stockMultiplierDelta: number;
+    priceMinDelta: number;
+    priceMaxDelta: number;
+    cadenceDelta: number;
+    laneBias: "none" | "essentials_only" | "luxury_throttle" | "arcane_caution";
+    note: string;
+  };
+  missions: {
+    supportBias: "none" | "pressured" | "restricted";
+    severityBoost: number;
+    note: string;
+  };
+  admin: {
+    auditWatch: boolean;
+    cartelWatch: boolean;
+    note: string;
+  };
+}
+
 export interface WorldConsequenceHooksView {
   blackMarket: WorldConsequenceBlackMarketHook;
   cartel: WorldConsequenceCartelHook;
@@ -866,6 +895,7 @@ export interface MeProfile {
   worldConsequenceState?: WorldConsequenceState | null;
   worldConsequenceHooks?: WorldConsequenceHooksView | null;
   worldConsequenceActions?: WorldConsequenceActionsView | null;
+  worldConsequenceConsumers?: WorldConsequenceConsumersView | null;
 }
 
 function normalizeBase(raw: string): string {

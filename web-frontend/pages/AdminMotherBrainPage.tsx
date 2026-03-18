@@ -451,6 +451,8 @@ type CitySignalsSummaryView = {
     maxBlackMarketOpportunity: number;
     urgentActionCount: number;
     recommendedPrimaryAction: string | null;
+    activeConsumerPlayers: number;
+    nudgingConsumerPlayers: number;
   };
 };
 
@@ -528,6 +530,8 @@ function parseCitySignals(raw: unknown): CitySignalsSummaryView | null {
       maxBlackMarketOpportunity: toNum(summary.maxBlackMarketOpportunity),
       urgentActionCount: toNum(summary.urgentActionCount),
       recommendedPrimaryAction: typeof summary.recommendedPrimaryAction === "string" ? summary.recommendedPrimaryAction : null,
+      activeConsumerPlayers: toNum(summary.activeConsumerPlayers),
+      nudgingConsumerPlayers: toNum(summary.nudgingConsumerPlayers),
     },
   };
 }
