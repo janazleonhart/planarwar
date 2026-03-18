@@ -14,6 +14,7 @@ import heroesRoutes from "../routes/heroes";
 import workshopRoutes from "../routes/workshop";
 import publicInfrastructureRoutes from "../routes/publicInfrastructure";
 import cityMudBridgeRoutes from "../routes/cityMudBridge";
+import worldConsequencesRoutes from "../routes/worldConsequences";
 import { resourceTierRouter } from "../routes/resourceTierRoutes";
 import charactersRouter from "../routes/characters";
 import authRouter from "../routes/auth";
@@ -35,6 +36,7 @@ export function mountPlayerAndDemoRoutes(app: Express): void {
   app.use("/api/workshop", workshopRoutes);
   app.use("/api/public_infrastructure", publicInfrastructureRoutes);
   app.use("/api/city_mud_bridge", cityMudBridgeRoutes);
+  app.use("/api/world_consequences", worldConsequencesRoutes);
   app.use("/api/resources", resourceTierRouter);
   app.use("/api/characters", charactersRouter);
   app.use("/api/auth", authRouter);

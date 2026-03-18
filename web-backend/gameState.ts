@@ -29,6 +29,7 @@ import {
   syncRecoveryContractsForState as syncRecoveryContractsForStateHelper,
   summarizeCityAlphaStatus as summarizeCityAlphaStatusHelper,
   summarizeCityAlphaScopeLock as summarizeCityAlphaScopeLockHelper,
+  summarizePlayerWorldConsequences as summarizePlayerWorldConsequencesHelper,
 } from "./gameState/gameStateMissions";
 import {
   type BuildBuildingResult,
@@ -88,6 +89,7 @@ import type {
 import type { TechAge, TechEpoch, TechCategory } from "./domain/tech";
 import type { ResourceKey, ResourceVector } from "./domain/resources";
 import type { PublicInfrastructureState } from "./domain/publicInfrastructure";
+import type { WorldConsequenceLedgerEntry } from "./domain/worldConsequences";
 
 // ---- helpers ----
 
@@ -301,6 +303,7 @@ export interface PlayerState {
   techFlags: string[]; // e.g. ["BLACK_MARKET_ENABLED"] later
 
   publicInfrastructure: PublicInfrastructureState;
+  worldConsequences: WorldConsequenceLedgerEntry[];
 }
 
 export interface GameState {
@@ -421,6 +424,10 @@ export function summarizeCityAlphaStatus(ps: PlayerState): CityAlphaStatusSummar
 
 export function summarizeCityAlphaScopeLock(ps: PlayerState): CityAlphaScopeLockSummary {
   return summarizeCityAlphaScopeLockHelper(ps);
+}
+
+export function summarizePlayerWorldConsequences(ps: PlayerState) {
+  return summarizePlayerWorldConsequencesHelper(ps);
 }
 
 // City Stress

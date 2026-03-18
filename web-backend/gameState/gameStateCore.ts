@@ -110,6 +110,7 @@ export function createInitialPlayerState(
       lastUpdatedAt: nowIso,
     },
     publicInfrastructure: createInitialPublicInfrastructureState(nowIso),
+    worldConsequences: [],
   };
 }
 

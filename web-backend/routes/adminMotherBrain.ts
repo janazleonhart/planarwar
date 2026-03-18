@@ -7,6 +7,7 @@
 
 import { Router } from "express";
 import { db } from "../../worldcore/db/Database";
+import { getPlayerState, summarizePlayerWorldConsequences } from "../gameState";
 import { motherBrainHttpBase, proxyMotherBrain } from "./adminMotherBrain/motherBrainProxy";
 import { readGoalsReportTail } from "./adminMotherBrain/motherBrainReports";
 import { pgErrCode, toInt } from "./adminMotherBrain/motherBrainShared";
@@ -131,6 +132,27 @@ router.post("/wave_budget", async (req, res) => {
       return;
     }
 
+    res.status(500).json({ ok: false, error: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+router.get("/city_signals", async (req, res) => {
+  const playerId = typeof req.query?.playerId === "string" ? req.query.playerId.trim() : "demo_player";
+  try {
+    const ps = getPlayerState(playerId);
+    if (!ps) {
+      res.status(404).json({ ok: false, error: "player_not_found" });
+      return;
+    }
+
+    res.json({
+      ok: true,
+      playerId,
+      summary: summarizePlayerWorldConsequences(ps),
+      ledger: ps.worldConsequences ?? [],
+      pressureMap: ps.motherBrainPressureMap ?? [],
+    });
+  } catch (err: unknown) {
     res.status(500).json({ ok: false, error: err instanceof Error ? err.message : String(err) });
   }
 });

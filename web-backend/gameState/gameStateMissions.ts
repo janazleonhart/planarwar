@@ -8,6 +8,7 @@ import type { Hero, HeroAttachment, HeroResponseRole, HeroTrait } from "../domai
 import { getHeroAttachmentDef } from "./gameStateHeroes";
 import type { MissionDefenseReceipt, MissionDifficulty, MissionOffer, MissionResponsePosture, MissionResponseTag, MissionSetback, MotherBrainPressureWindow, PressureMapConfidence, RecoveryContractKind, RewardBundle, ThreatFamily, ThreatWarning, WarningIntelQuality } from "../domain/missions";
 import type { RegionId, World } from "../domain/world";
+import { buildRecoveryContractWorldConsequence, buildSetbackWorldConsequence, pushWorldConsequence, summarizeWorldConsequences } from "../domain/worldConsequences";
 import type {
   ActiveMission,
   CityAlphaScopeLockItem,
@@ -501,6 +502,10 @@ function buildCityAlphaScopeLockItems(ps: PlayerState): CityAlphaScopeLockSummar
     ambiguityCount,
     alphaReadyPercent,
   };
+}
+
+export function summarizePlayerWorldConsequences(ps: PlayerState) {
+  return summarizeWorldConsequences(ps.worldConsequences ?? []);
 }
 
 export function summarizeCityAlphaScopeLock(ps: PlayerState): CityAlphaScopeLockSummary {
@@ -1487,9 +1492,9 @@ function applyCasualtiesAndXp(ps: PlayerState, active: ActiveMission, outcome: M
   }
 }
 
-function applyMissionImpactToRegion(ps: PlayerState, mission: MissionOffer, outcome: MissionOutcome): void {
+function applyMissionImpactToRegion(ps: PlayerState, mission: MissionOffer, outcome: MissionOutcome): { controlDelta: number; threatDelta: number } {
   const region = ps.regionWar.find((rw) => rw.regionId === mission.regionId);
-  if (!region) return;
+  if (!region) return { controlDelta: 0, threatDelta: 0 };
 
   let controlDelta = 0;
   let threatDelta = 0;
@@ -1511,10 +1516,11 @@ function applyMissionImpactToRegion(ps: PlayerState, mission: MissionOffer, outc
 
   region.control = Math.max(0, Math.min(100, region.control + controlDelta));
   region.threat = Math.max(0, Math.min(100, region.threat + threatDelta));
+  return { controlDelta, threatDelta };
 }
 
-function applyRecoveryContractEffects(ps: PlayerState, active: ActiveMission, outcome: MissionOutcome): void {
-  if (!active.mission.contractKind) return;
+function applyRecoveryContractEffects(ps: PlayerState, active: ActiveMission, outcome: MissionOutcome): { pressureDelta: number; trustDelta: number; recoveryDelta: number } {
+  if (!active.mission.contractKind) return { pressureDelta: 0, trustDelta: 0, recoveryDelta: 0 };
 
   const pressureDelta = Number(active.mission.contractPressureDelta ?? 0);
   const trustDelta = Number(active.mission.contractTrustDelta ?? 0);
@@ -1524,15 +1530,25 @@ function applyRecoveryContractEffects(ps: PlayerState, active: ActiveMission, ou
     ps.cityStress.threatPressure = Math.max(0, ps.cityStress.threatPressure + pressureDelta);
     ps.city.stats.unity = Math.max(0, Math.min(100, ps.city.stats.unity + trustDelta));
     ps.cityStress.recoveryBurden = Math.max(0, (ps.cityStress.recoveryBurden ?? 0) + burdenDelta);
-  } else if (outcome.kind === "partial") {
-    ps.cityStress.threatPressure = Math.max(0, ps.cityStress.threatPressure + Math.round(pressureDelta * 0.4));
-    ps.city.stats.unity = Math.max(0, Math.min(100, ps.city.stats.unity + Math.round(trustDelta * 0.4)));
-    ps.cityStress.recoveryBurden = Math.max(0, (ps.cityStress.recoveryBurden ?? 0) + Math.round(burdenDelta * 0.45));
-  } else {
-    ps.cityStress.threatPressure = Math.min(100, ps.cityStress.threatPressure + Math.max(3, Math.round(Math.abs(pressureDelta) * 0.6)));
-    ps.city.stats.unity = Math.max(0, Math.min(100, ps.city.stats.unity - Math.max(2, Math.round(Math.max(1, trustDelta) * 0.6))));
-    ps.cityStress.recoveryBurden = Math.min(100, (ps.cityStress.recoveryBurden ?? 0) + Math.max(5, Math.round(Math.abs(burdenDelta) * 0.7)));
+    return { pressureDelta, trustDelta, recoveryDelta: burdenDelta };
   }
+  if (outcome.kind === "partial") {
+    const partialPressure = Math.round(pressureDelta * 0.4);
+    const partialTrust = Math.round(trustDelta * 0.4);
+    const partialBurden = Math.round(burdenDelta * 0.45);
+    ps.cityStress.threatPressure = Math.max(0, ps.cityStress.threatPressure + partialPressure);
+    ps.city.stats.unity = Math.max(0, Math.min(100, ps.city.stats.unity + partialTrust));
+    ps.cityStress.recoveryBurden = Math.max(0, (ps.cityStress.recoveryBurden ?? 0) + partialBurden);
+    return { pressureDelta: partialPressure, trustDelta: partialTrust, recoveryDelta: partialBurden };
+  }
+
+  const failurePressure = Math.max(3, Math.round(Math.abs(pressureDelta) * 0.6));
+  const failureTrust = -Math.max(2, Math.round(Math.max(1, trustDelta) * 0.6));
+  const failureBurden = Math.max(5, Math.round(Math.abs(burdenDelta) * 0.7));
+  ps.cityStress.threatPressure = Math.min(100, ps.cityStress.threatPressure + failurePressure);
+  ps.city.stats.unity = Math.max(0, Math.min(100, ps.city.stats.unity + failureTrust));
+  ps.cityStress.recoveryBurden = Math.min(100, (ps.cityStress.recoveryBurden ?? 0) + failureBurden);
+  return { pressureDelta: failurePressure, trustDelta: failureTrust, recoveryDelta: failureBurden };
 }
 
 export function completeMissionForPlayer(
@@ -1576,10 +1592,40 @@ export function completeMissionForPlayer(
 
   const rewards = active.mission.expectedRewards;
   deps.applyRewards(ps, rewards);
-  applyMissionImpactToRegion(ps, active.mission, outcome);
-  applyRecoveryContractEffects(ps, active, outcome);
+  const regionImpact = applyMissionImpactToRegion(ps, active.mission, outcome);
+  const recoveryImpact = applyRecoveryContractEffects(ps, active, outcome);
   const receipt = buildMissionReceipt(active, outcome, now);
   ps.missionReceipts = [receipt, ...(ps.missionReceipts ?? [])].slice(0, 20);
+
+  if ((receipt.setbacks?.length ?? 0) > 0 && outcome.kind !== "success") {
+    const fallbackControlDelta = outcome.kind === "failure" ? -3 : -1;
+    const fallbackThreatDelta = outcome.kind === "failure" ? 4 : 1;
+    pushWorldConsequence(ps, buildSetbackWorldConsequence({
+      missionId: active.mission.id,
+      missionTitle: active.mission.title,
+      regionId: active.mission.regionId,
+      threatFamily: active.mission.threatFamily,
+      outcome: outcome.kind,
+      pressureDelta: outcome.kind === "failure" ? 8 : 3,
+      recoveryDelta: outcome.kind === "failure" ? 14 : 6,
+      controlDelta: regionImpact.controlDelta !== 0 ? regionImpact.controlDelta : fallbackControlDelta,
+      threatDelta: regionImpact.threatDelta !== 0 ? regionImpact.threatDelta : fallbackThreatDelta,
+      setbackCount: receipt.setbacks.length,
+    }));
+  }
+
+  if (active.mission.contractKind) {
+    pushWorldConsequence(ps, buildRecoveryContractWorldConsequence({
+      missionId: active.mission.id,
+      missionTitle: active.mission.title,
+      regionId: active.mission.regionId,
+      contractKind: active.mission.contractKind,
+      outcome: outcome.kind,
+      pressureDelta: recoveryImpact.pressureDelta,
+      recoveryDelta: recoveryImpact.recoveryDelta,
+      trustDelta: recoveryImpact.trustDelta,
+    }));
+  }
 
   deps.pushEvent(ps, {
     kind: "mission_complete",
