@@ -45,6 +45,57 @@ export interface WorldConsequenceLedgerEntry {
   outcome?: "success" | "partial" | "failure";
 }
 
+export interface WorldConsequenceRegionState {
+  regionId: string;
+  entryCount: number;
+  netPressure: number;
+  netRecoveryLoad: number;
+  controlDrift: number;
+  threatDrift: number;
+  tradeDisruption: number;
+  blackMarketHeat: number;
+  factionDrift: number;
+  dominantSeverity: WorldConsequenceSeverity;
+  lastEventAt?: string;
+}
+
+export interface WorldConsequenceWorldEconomyState {
+  tradePressure: number;
+  supplyFriction: number;
+  cartelAttention: number;
+  destabilization: number;
+  outlook: "stable" | "strained" | "volatile";
+}
+
+export interface WorldConsequenceBlackMarketState {
+  opportunityScore: number;
+  heat: number;
+  outlook: "quiet" | "active" | "surging";
+}
+
+export interface WorldConsequenceFactionPressureState {
+  driftScore: number;
+  instability: number;
+  dominantStance: "stable" | "watch" | "destabilizing" | "fracturing";
+}
+
+export interface WorldConsequenceStateSummary {
+  affectedRegionIds: string[];
+  totalLedgerEntries: number;
+  severeCount: number;
+  destabilizationScore: number;
+  note: string;
+}
+
+export interface WorldConsequenceState {
+  regions: WorldConsequenceRegionState[];
+  worldEconomy: WorldConsequenceWorldEconomyState;
+  blackMarket: WorldConsequenceBlackMarketState;
+  factionPressure: WorldConsequenceFactionPressureState;
+  summary: WorldConsequenceStateSummary;
+  lastUpdatedAt?: string;
+}
+
 export interface WorldConsequenceSummary {
   total: number;
   recent: WorldConsequenceLedgerEntry[];
@@ -65,6 +116,37 @@ function clampSeverity(value: number): WorldConsequenceSeverity {
 
 function unique<T>(values: T[]): T[] {
   return Array.from(new Set(values));
+}
+
+function clampNonNegative(value: number): number {
+  return Math.max(0, Math.round(value));
+}
+
+function scaleSeverityWeight(severity: WorldConsequenceSeverity): number {
+  switch (severity) {
+    case "severe": return 3;
+    case "pressure": return 2;
+    default: return 1;
+  }
+}
+
+function economyOutlook(score: number): WorldConsequenceWorldEconomyState["outlook"] {
+  if (score >= 22) return "volatile";
+  if (score >= 8) return "strained";
+  return "stable";
+}
+
+function blackMarketOutlook(score: number): WorldConsequenceBlackMarketState["outlook"] {
+  if (score >= 18) return "surging";
+  if (score >= 6) return "active";
+  return "quiet";
+}
+
+function factionStance(score: number): WorldConsequenceFactionPressureState["dominantStance"] {
+  if (score >= 22) return "fracturing";
+  if (score >= 8) return "destabilizing";
+  if (score >= 3) return "watch";
+  return "stable";
 }
 
 export function summarizeWorldConsequences(entries: WorldConsequenceLedgerEntry[]): WorldConsequenceSummary {
@@ -113,6 +195,119 @@ export function summarizeWorldConsequences(entries: WorldConsequenceLedgerEntry[
   };
 }
 
+export function deriveWorldConsequenceState(entries: WorldConsequenceLedgerEntry[]): WorldConsequenceState {
+  const regionMap = new Map<string, WorldConsequenceRegionState>();
+
+  let tradePressure = 0;
+  let supplyFriction = 0;
+  let cartelAttention = 0;
+  let blackMarketOpportunity = 0;
+  let blackMarketHeat = 0;
+  let factionDriftScore = 0;
+  let factionInstability = 0;
+  let severeCount = 0;
+  let lastUpdatedAt: string | undefined;
+
+  for (const entry of entries) {
+    const regionId = String(entry.regionId ?? "unknown");
+    const current = regionMap.get(regionId) ?? {
+      regionId,
+      entryCount: 0,
+      netPressure: 0,
+      netRecoveryLoad: 0,
+      controlDrift: 0,
+      threatDrift: 0,
+      tradeDisruption: 0,
+      blackMarketHeat: 0,
+      factionDrift: 0,
+      dominantSeverity: "watch",
+      lastEventAt: undefined,
+    } satisfies WorldConsequenceRegionState;
+
+    const severityWeight = scaleSeverityWeight(entry.severity);
+    const pressureDelta = Number(entry.metrics?.pressureDelta ?? 0);
+    const recoveryDelta = Number(entry.metrics?.recoveryDelta ?? 0);
+    const controlDelta = Number(entry.metrics?.controlDelta ?? 0);
+    const threatDelta = Number(entry.metrics?.threatDelta ?? 0);
+
+    current.entryCount += 1;
+    current.netPressure += pressureDelta;
+    current.netRecoveryLoad += recoveryDelta;
+    current.controlDrift += controlDelta;
+    current.threatDrift += threatDelta;
+    current.tradeDisruption += clampNonNegative(threatDelta + Math.max(0, pressureDelta * 0.5) + (entry.tags.includes("trade_disruption") ? 2 : 0));
+    current.blackMarketHeat += clampNonNegative(Math.max(0, pressureDelta) + Math.max(0, recoveryDelta * 0.5) + (entry.tags.includes("black_market_opening") ? 4 : 0));
+    current.factionDrift += clampNonNegative(Math.max(0, threatDelta) + Math.max(0, -controlDelta) + (entry.tags.includes("faction_drift") ? 2 : 0));
+    current.dominantSeverity = severityWeight >= scaleSeverityWeight(current.dominantSeverity) ? entry.severity : current.dominantSeverity;
+    current.lastEventAt = entry.createdAt;
+    regionMap.set(regionId, current);
+
+    tradePressure += clampNonNegative(current.tradeDisruption === 0 ? threatDelta : 0) + clampNonNegative(threatDelta + Math.max(0, pressureDelta * 0.4));
+    supplyFriction += clampNonNegative(Math.max(0, recoveryDelta) + Math.max(0, -controlDelta));
+    cartelAttention += clampNonNegative(Math.max(0, pressureDelta * 0.6) + Math.max(0, threatDelta) + (entry.tags.includes("world_economy_hook") ? 3 : 0));
+    blackMarketOpportunity += clampNonNegative(Math.max(0, pressureDelta) + Math.max(0, recoveryDelta * 0.35) + (entry.tags.includes("black_market_opening") ? 5 : 0));
+    blackMarketHeat += clampNonNegative(Math.max(0, pressureDelta * 0.4) + Math.max(0, threatDelta * 0.5));
+    factionDriftScore += clampNonNegative(Math.max(0, threatDelta) + Math.max(0, -controlDelta) + (entry.tags.includes("faction_drift") ? 3 : 0));
+    factionInstability += clampNonNegative(Math.max(0, pressureDelta * 0.5) + Math.max(0, recoveryDelta * 0.35) + Math.max(0, threatDelta));
+    if (entry.severity === "severe") severeCount += 1;
+    if (!lastUpdatedAt || entry.createdAt > lastUpdatedAt) lastUpdatedAt = entry.createdAt;
+  }
+
+  const regions = Array.from(regionMap.values()).sort((a, b) => {
+    const scoreA = a.tradeDisruption + a.blackMarketHeat + a.factionDrift + Math.max(0, a.netPressure);
+    const scoreB = b.tradeDisruption + b.blackMarketHeat + b.factionDrift + Math.max(0, b.netPressure);
+    return scoreB - scoreA;
+  });
+
+  const destabilizationScore = tradePressure + supplyFriction + cartelAttention + blackMarketOpportunity + factionInstability;
+  const blackMarketScore = blackMarketOpportunity + Math.round(blackMarketHeat * 0.5);
+  const dominantStance = factionStance(factionDriftScore + Math.round(factionInstability * 0.35));
+  const note = entries.length === 0
+    ? "No propagated consequence pressure yet."
+    : dominantStance === "fracturing"
+    ? "City consequence exports are destabilizing multiple fronts and feeding black-market escalation."
+    : dominantStance === "destabilizing"
+    ? "Propagated city setbacks are destabilizing regional posture and opening black-market routes."
+    : blackMarketScore > 0
+    ? "Consequence propagation is creating black-market and trade pressure signals."
+    : "Propagated world consequence pressure is active.";
+
+  return {
+    regions,
+    worldEconomy: {
+      tradePressure,
+      supplyFriction,
+      cartelAttention,
+      destabilization: destabilizationScore,
+      outlook: economyOutlook(tradePressure + supplyFriction + cartelAttention),
+    },
+    blackMarket: {
+      opportunityScore: blackMarketOpportunity,
+      heat: blackMarketHeat,
+      outlook: blackMarketOutlook(blackMarketScore),
+    },
+    factionPressure: {
+      driftScore: factionDriftScore,
+      instability: factionInstability,
+      dominantStance,
+    },
+    summary: {
+      affectedRegionIds: regions.map((entry) => entry.regionId),
+      totalLedgerEntries: entries.length,
+      severeCount,
+      destabilizationScore,
+      note,
+    },
+    lastUpdatedAt,
+  };
+}
+
+export function recomputeWorldConsequenceState(ps: PlayerState): WorldConsequenceState {
+  const state = deriveWorldConsequenceState(ps.worldConsequences ?? []);
+  ps.worldConsequenceState = state;
+  return state;
+}
+
 export function pushWorldConsequence(ps: PlayerState, entry: Omit<WorldConsequenceLedgerEntry, "id" | "createdAt" | "playerId" | "cityId">): WorldConsequenceLedgerEntry {
   const record: WorldConsequenceLedgerEntry = {
     id: `wce_${Date.now()}_${Math.floor(Math.random() * 100000)}`,
@@ -123,6 +318,7 @@ export function pushWorldConsequence(ps: PlayerState, entry: Omit<WorldConsequen
   };
 
   ps.worldConsequences = [record, ...(ps.worldConsequences ?? [])].slice(0, MAX_WORLD_CONSEQUENCE_LEDGER);
+  recomputeWorldConsequenceState(ps);
   return record;
 }
 

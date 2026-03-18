@@ -89,7 +89,7 @@ import type {
 import type { TechAge, TechEpoch, TechCategory } from "./domain/tech";
 import type { ResourceKey, ResourceVector } from "./domain/resources";
 import type { PublicInfrastructureState } from "./domain/publicInfrastructure";
-import type { WorldConsequenceLedgerEntry } from "./domain/worldConsequences";
+import type { WorldConsequenceLedgerEntry, WorldConsequenceState } from "./domain/worldConsequences";
 
 // ---- helpers ----
 
@@ -304,6 +304,7 @@ export interface PlayerState {
 
   publicInfrastructure: PublicInfrastructureState;
   worldConsequences: WorldConsequenceLedgerEntry[];
+  worldConsequenceState: WorldConsequenceState;
 }
 
 export interface GameState {

@@ -1,6 +1,7 @@
 //web-backend/gameState/cityRuntimeSnapshot.ts
 
 import type { PlayerState } from "../gameState";
+import { recomputeWorldConsequenceState } from "../domain/worldConsequences";
 
 const CITY_RUNTIME_SNAPSHOT_VERSION = 1;
 const MAX_SNAPSHOT_EVENT_LOG = 60;
@@ -21,6 +22,7 @@ export interface CityRuntimeSnapshotV1 {
   motherBrainPressureMap: any[];
   missionReceipts: any[];
   worldConsequences: any[];
+  worldConsequenceState?: Record<string, any>;
   policies: Record<string, any>;
   lastTickAt: string;
   researchedTechIds: string[];
@@ -60,6 +62,7 @@ function safeTrim(value: unknown): string {
 }
 
 function deepCloneJson<T>(value: T): T {
+  if (value === undefined || value === null) return value;
   return JSON.parse(JSON.stringify(value));
 }
 
@@ -94,6 +97,7 @@ function normalizeLegacySnapshot(input: Record<string, any>): CityRuntimeSnapsho
     motherBrainPressureMap: Array.isArray(state.motherBrainPressureMap) ? deepCloneJson(state.motherBrainPressureMap) : [],
     missionReceipts: Array.isArray(state.missionReceipts) ? deepCloneJson(state.missionReceipts) : [],
     worldConsequences: Array.isArray((state as any).worldConsequences) ? deepCloneJson((state as any).worldConsequences) : [],
+    worldConsequenceState: isRecord((state as any).worldConsequenceState) ? deepCloneJson((state as any).worldConsequenceState) : undefined,
     policies: isRecord(state.policies) ? deepCloneJson(state.policies) : {},
     lastTickAt: typeof state.lastTickAt === "string" ? state.lastTickAt : "",
     researchedTechIds: Array.isArray(state.researchedTechIds) ? deepCloneJson(state.researchedTechIds) : [],
@@ -150,6 +154,7 @@ export function buildCityRuntimeSnapshot(ps: PlayerState): CityRuntimeSnapshotV1
     motherBrainPressureMap: deepCloneJson(ps.motherBrainPressureMap ?? []),
     missionReceipts: deepCloneJson(ps.missionReceipts ?? []),
     worldConsequences: deepCloneJson((ps as any).worldConsequences ?? []),
+    worldConsequenceState: (ps as any).worldConsequenceState ? deepCloneJson((ps as any).worldConsequenceState) : undefined,
     policies: deepCloneJson(ps.policies),
     lastTickAt: ps.lastTickAt,
     researchedTechIds: deepCloneJson(ps.researchedTechIds),
@@ -193,6 +198,7 @@ export function applyCityRuntimeSnapshot(ps: PlayerState, snapshot: CityRuntimeS
   ps.motherBrainPressureMap = Array.isArray(snapshot.motherBrainPressureMap) ? (deepCloneJson(snapshot.motherBrainPressureMap) as PlayerState["motherBrainPressureMap"]) : ps.motherBrainPressureMap;
   ps.missionReceipts = Array.isArray(snapshot.missionReceipts) ? (deepCloneJson(snapshot.missionReceipts) as PlayerState["missionReceipts"]) : ps.missionReceipts;
   ps.worldConsequences = Array.isArray((snapshot as any).worldConsequences) ? (deepCloneJson((snapshot as any).worldConsequences) as PlayerState["worldConsequences"]) : ps.worldConsequences;
+  ps.worldConsequenceState = isRecord((snapshot as any).worldConsequenceState) ? (deepCloneJson((snapshot as any).worldConsequenceState) as PlayerState["worldConsequenceState"]) : ps.worldConsequenceState;
   ps.policies = isRecord(snapshot.policies) ? (deepCloneJson(snapshot.policies) as PlayerState["policies"]) : ps.policies;
   ps.lastTickAt = typeof snapshot.lastTickAt === "string" && snapshot.lastTickAt ? snapshot.lastTickAt : ps.lastTickAt;
   ps.researchedTechIds = Array.isArray(snapshot.researchedTechIds)
@@ -218,6 +224,9 @@ export function applyCityRuntimeSnapshot(ps: PlayerState, snapshot: CityRuntimeS
   ps.publicInfrastructure = isRecord(snapshot.publicInfrastructure)
     ? (deepCloneJson(snapshot.publicInfrastructure) as PlayerState["publicInfrastructure"])
     : ps.publicInfrastructure;
+  if (!isRecord((snapshot as any).worldConsequenceState)) {
+    recomputeWorldConsequenceState(ps);
+  }
   return ps;
 }
 

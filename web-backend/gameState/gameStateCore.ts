@@ -6,6 +6,7 @@ import { seedStarterHeroes } from "../domain/heroes";
 import { seedStarterArmies } from "../domain/armies";
 import { startingResourcesConfig } from "../config";
 import { createInitialPublicInfrastructureState } from "../domain/publicInfrastructure";
+import { deriveWorldConsequenceState } from "../domain/worldConsequences";
 
 import type { City } from "../domain/city";
 import type { ResourceVector } from "../domain/resources";
@@ -111,6 +112,7 @@ export function createInitialPlayerState(
     },
     publicInfrastructure: createInitialPublicInfrastructureState(nowIso),
     worldConsequences: [],
+    worldConsequenceState: deriveWorldConsequenceState([]),
   };
 }
 

@@ -151,6 +151,7 @@ router.get("/city_signals", async (req, res) => {
       summary: summarizePlayerWorldConsequences(ps),
       ledger: ps.worldConsequences ?? [],
       pressureMap: ps.motherBrainPressureMap ?? [],
+      propagatedState: ps.worldConsequenceState ?? null,
     });
   } catch (err: unknown) {
     res.status(500).json({ ok: false, error: err instanceof Error ? err.message : String(err) });

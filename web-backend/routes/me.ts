@@ -73,6 +73,7 @@ function buildMePayload(viewer: Awaited<ReturnType<typeof resolveViewer>>, ps: P
       specializationStarsHistory: {},
       publicInfrastructure: null,
       worldConsequences: [],
+      worldConsequenceState: null,
     };
   }
 
@@ -129,6 +130,7 @@ function buildMePayload(viewer: Awaited<ReturnType<typeof resolveViewer>>, ps: P
     specializationStarsHistory: ps.city.specializationStarsHistory ?? {},
     publicInfrastructure: ps.publicInfrastructure,
     worldConsequences: ps.worldConsequences ?? [],
+    worldConsequenceState: ps.worldConsequenceState ?? null,
   };
 }
 
