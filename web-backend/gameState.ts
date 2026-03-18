@@ -28,6 +28,7 @@ import {
   syncMotherBrainPressureMap as syncMotherBrainPressureMapHelper,
   syncRecoveryContractsForState as syncRecoveryContractsForStateHelper,
   summarizeCityAlphaStatus as summarizeCityAlphaStatusHelper,
+  summarizeCityAlphaScopeLock as summarizeCityAlphaScopeLockHelper,
 } from "./gameState/gameStateMissions";
 import {
   type BuildBuildingResult,
@@ -192,6 +193,27 @@ export interface CityAlphaStatusSummary {
   nextImpactAt?: string;
   testerFocus: string[];
   topItems: CityAlphaStatusItem[];
+}
+
+export type CityAlphaScopeLockBucket = "already_exists" | "exists_but_weak" | "missing" | "excluded";
+
+export interface CityAlphaScopeLockItem {
+  id: string;
+  bucket: CityAlphaScopeLockBucket;
+  label: string;
+  detail: string;
+}
+
+export interface CityAlphaScopeLockSummary {
+  headline: string;
+  detail: string;
+  frozenExclusions: string[];
+  alreadyExists: CityAlphaScopeLockItem[];
+  existsButWeak: CityAlphaScopeLockItem[];
+  missing: CityAlphaScopeLockItem[];
+  exclusions: CityAlphaScopeLockItem[];
+  ambiguityCount: number;
+  alphaReadyPercent: number;
 }
 
 // ---- Event log ----
@@ -395,6 +417,10 @@ export function syncMotherBrainPressureMap(ps: PlayerState, now: Date): MotherBr
 
 export function summarizeCityAlphaStatus(ps: PlayerState): CityAlphaStatusSummary {
   return summarizeCityAlphaStatusHelper(ps);
+}
+
+export function summarizeCityAlphaScopeLock(ps: PlayerState): CityAlphaScopeLockSummary {
+  return summarizeCityAlphaScopeLockHelper(ps);
 }
 
 // City Stress

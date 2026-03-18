@@ -210,6 +210,27 @@ export interface CityAlphaStatusSummary {
   topItems: CityAlphaStatusItem[];
 }
 
+export type CityAlphaScopeLockBucket = "already_exists" | "exists_but_weak" | "missing" | "excluded";
+
+export interface CityAlphaScopeLockItem {
+  id: string;
+  bucket: CityAlphaScopeLockBucket;
+  label: string;
+  detail: string;
+}
+
+export interface CityAlphaScopeLockSummary {
+  headline: string;
+  detail: string;
+  frozenExclusions: string[];
+  alreadyExists: CityAlphaScopeLockItem[];
+  existsButWeak: CityAlphaScopeLockItem[];
+  missing: CityAlphaScopeLockItem[];
+  exclusions: CityAlphaScopeLockItem[];
+  ambiguityCount: number;
+  alphaReadyPercent: number;
+}
+
 export interface Resources {
   food: number;
   materials: number;
@@ -672,6 +693,7 @@ export interface MeProfile {
   motherBrainPressureMap?: MotherBrainPressureWindow[];
   missionReceipts?: MissionDefenseReceipt[];
   cityAlphaStatus?: CityAlphaStatusSummary | null;
+  cityAlphaScopeLock?: CityAlphaScopeLockSummary | null;
   researchedTechIds: string[];
   availableTechs: TechSummary[];
   activeResearch: ActiveResearchView | null;

@@ -10,6 +10,8 @@ import type { MissionDefenseReceipt, MissionDifficulty, MissionOffer, MissionRes
 import type { RegionId, World } from "../domain/world";
 import type {
   ActiveMission,
+  CityAlphaScopeLockItem,
+  CityAlphaScopeLockSummary,
   CityAlphaSeverity,
   CityAlphaStatusItem,
   CityAlphaStatusSummary,
@@ -362,6 +364,147 @@ function topCityAlphaItems(ps: PlayerState): CityAlphaStatusItem[] {
   return [...warningItems, ...pressureItems, ...receiptItems]
     .sort((a, b) => b.severity - a.severity || ((a.when ?? "").localeCompare(b.when ?? "")))
     .slice(0, 5);
+}
+
+
+function buildCityAlphaScopeLockItems(ps: PlayerState): CityAlphaScopeLockSummary {
+  const alreadyExists: CityAlphaScopeLockItem[] = [
+    {
+      id: "response_loop",
+      bucket: "already_exists",
+      label: "Playable response loop",
+      detail: "Cities can recruit heroes, raise armies, assign them to missions, and resolve mission outcomes with readable receipts.",
+    },
+    {
+      id: "warning_windows",
+      bucket: "already_exists",
+      label: "Warning and intel windows",
+      detail: "Threat warnings and Mother Brain pressure windows surface lead time, threat families, and likely response lanes before impact.",
+    },
+    {
+      id: "recovery_contracts",
+      bucket: "already_exists",
+      label: "Recovery and stabilization contracts",
+      detail: "Post-setback burden can spawn stabilizing contracts that directly move recovery burden, trust, and pressure.",
+    },
+    {
+      id: "command_board",
+      bucket: "already_exists",
+      label: "Readable alpha command board",
+      detail: "The /me view now consolidates readiness, warnings, pressure, receipts, and tester focus into one board.",
+    },
+  ];
+
+  const existsButWeak: CityAlphaScopeLockItem[] = [
+    {
+      id: "world_consequence",
+      bucket: "exists_but_weak",
+      label: "World consequence linkage is still shallow",
+      detail: "City defenses change local pressure and receipts, but they do not yet meaningfully reshape world ownership, economy lanes, or long-run faction posture.",
+    },
+    {
+      id: "mother_brain_mapper",
+      bucket: "exists_but_weak",
+      label: "Mother Brain map is read-only",
+      detail: "The precursor pressure mapper is valuable for tester readability, but it still stops before conquest writing, autonomous follow-through, or strategic mutation.",
+    },
+    {
+      id: "gear_depth",
+      bucket: "exists_but_weak",
+      label: "Gear depth is functional but thin",
+      detail: "Hero gear now matters by slot and response tags, but the attachment catalog and workshop breadth are still alpha-thin.",
+    },
+    {
+      id: "setback_variety",
+      bucket: "exists_but_weak",
+      label: "Setbacks are readable but not yet broad",
+      detail: "Defense receipts now persist and sting, but setback families are still a narrow slice compared with the eventual city sim target.",
+    },
+  ];
+
+  const missing: CityAlphaScopeLockItem[] = [
+    {
+      id: "player_city_vs_world",
+      bucket: "missing",
+      label: "Persistent city-to-world influence loop",
+      detail: "City Alpha still lacks a fully wired path where successes and failures materially feed long-run region control, black market health, or UDM/world consequences.",
+    },
+    {
+      id: "autonomous_mb_response",
+      bucket: "missing",
+      label: "Autonomous Mother Brain strategic follow-through",
+      detail: "Pressure windows are visible, but Mother Brain does not yet escalate into a full strategic actor that rewrites pressure or city state on its own authority.",
+    },
+    {
+      id: "alpha_onboarding",
+      bucket: "missing",
+      label: "Explicit alpha onboarding walkthrough",
+      detail: "The board is readable, but there is still no dedicated guided intro flow that teaches testers how to run a full city warning-to-recovery loop.",
+    },
+  ];
+
+  const exclusions: CityAlphaScopeLockItem[] = [
+    {
+      id: "conquest_sim",
+      bucket: "excluded",
+      label: "No full conquest simulation in City Alpha",
+      detail: "Region ownership flips, empire-level conquest math, and broad world rewrites are explicitly out of scope for this alpha milestone.",
+    },
+    {
+      id: "fully_live_economy",
+      bucket: "excluded",
+      label: "No full economy/world market integration",
+      detail: "Black market, vendor, and UDM impact are not frozen as City Alpha completion criteria for this strike.",
+    },
+    {
+      id: "autonomous_city_ai",
+      bucket: "excluded",
+      label: "No autonomous city governor AI",
+      detail: "The alpha expects a tester-driven command board, not a fully self-running city manager.",
+    },
+    {
+      id: "combat_client",
+      bucket: "excluded",
+      label: "No 2.5D/3D combat client requirement",
+      detail: "City Alpha is locked to the web tester loop and does not require the future graphical client path to count as complete.",
+    },
+  ];
+
+  if ((ps.heroes ?? []).length === 0) {
+    existsButWeak.unshift({
+      id: "hero_pool_thin_runtime",
+      bucket: "exists_but_weak",
+      label: "Current test city has no active hero pool",
+      detail: "The system exists, but this particular state has no recruited heroes yet, so tester readability on specialist assignment is weaker than intended.",
+    });
+  }
+
+  if ((ps.armies ?? []).length === 0) {
+    existsButWeak.unshift({
+      id: "army_pool_thin_runtime",
+      bucket: "exists_but_weak",
+      label: "Current test city has no ready army pool",
+      detail: "The readiness/assignment loop exists, but this state has no raised armies to demonstrate it cleanly.",
+    });
+  }
+
+  const alphaReadyPercent = Math.max(0, Math.min(100, Math.round(((alreadyExists.length * 1.0) + (existsButWeak.length * 0.45)) / (alreadyExists.length + existsButWeak.length + missing.length) * 100)));
+  const ambiguityCount = 0;
+  return {
+    headline: "City Alpha scope lock is now explicit.",
+    detail: `Already-exists ${alreadyExists.length}, weak ${existsButWeak.length}, missing ${missing.length}, exclusions ${exclusions.length}.`,
+    frozenExclusions: exclusions.map((item) => item.label),
+    alreadyExists,
+    existsButWeak,
+    missing,
+    exclusions,
+    ambiguityCount,
+    alphaReadyPercent,
+  };
+}
+
+export function summarizeCityAlphaScopeLock(ps: PlayerState): CityAlphaScopeLockSummary {
+  return buildCityAlphaScopeLockItems(ps);
 }
 
 export function summarizeCityAlphaStatus(ps: PlayerState): CityAlphaStatusSummary {

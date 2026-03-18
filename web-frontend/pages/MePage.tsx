@@ -187,6 +187,26 @@ function cityAlphaSeverityColor(severity: string): string {
   }
 }
 
+function cityAlphaScopeBucketLabel(bucket: string) {
+  switch (bucket) {
+    case "already_exists": return "Already exists";
+    case "exists_but_weak": return "Exists but weak";
+    case "missing": return "Missing";
+    case "excluded": return "Excluded";
+    default: return bucket;
+  }
+}
+
+function cityAlphaScopeBucketColor(bucket: string) {
+  switch (bucket) {
+    case "already_exists": return "#3f8f55";
+    case "exists_but_weak": return "#a67c2d";
+    case "missing": return "#a64545";
+    case "excluded": return "#5d5d88";
+    default: return "#555";
+  }
+}
+
 function formatResponseLaneList(tags: string[] | undefined): string {
   return tags && tags.length ? tags.join("/") : "general coverage";
 }
@@ -457,6 +477,7 @@ export function MePage() {
   const motherBrainPressureMap = missionBoard?.motherBrainPressureMap ?? me?.motherBrainPressureMap ?? [];
   const missionReceipts = me?.missionReceipts ?? [];
   const cityAlphaStatus = me?.cityAlphaStatus ?? null;
+  const cityAlphaScopeLock = me?.cityAlphaScopeLock ?? null;
   const highlightedWarnings = [...threatWarnings].sort((a, b) => b.severity - a.severity).slice(0, 3);
   const highlightedPressure = [...motherBrainPressureMap].sort((a, b) => b.pressureScore - a.pressureScore).slice(0, 3);
   const highlightedReceipts = [...missionReceipts].slice(0, 5);
@@ -701,9 +722,9 @@ export function MePage() {
                   <div><strong>{warning.headline}</strong> • severity {warning.severity} • intel {warningQualityTone(warning.intelQuality)}</div>
                   <div style={{ fontSize: 12, opacity: 0.82 }}>Threat family: {getThreatFamilyDisplayName(warning.threatFamily)}{warning.targetingPressure != null ? ` • pressure ${warning.targetingPressure}` : ""}</div>
                   <div style={{ fontSize: 12, opacity: 0.8 }}>Window: {formatWarningWindow(warning.earliestImpactAt, warning.latestImpactAt)} • {getRegionDisplayName(warning.targetRegionId)}</div>
-                  <div style={{ fontSize: 12, opacity: 0.82 }}>Likely response lanes: {warning.responseTags.join(", ")}</div>
+                  <div style={{ fontSize: 12, opacity: 0.82 }}>Likely response lanes: {(warning.responseTags ?? []).join(", ")}</div>
                   {warning.targetingReasons?.length ? (
-                    <div style={{ fontSize: 12, opacity: 0.78 }}>Why targeted: {warning.targetingReasons.join(" ")}</div>
+                    <div style={{ fontSize: 12, opacity: 0.78 }}>Why targeted: {(warning.targetingReasons ?? []).join(" ")}</div>
                   ) : null}
                   <div style={{ fontSize: 12, opacity: 0.8 }}>{warning.detail}</div>
                   <div style={{ fontSize: 12, opacity: 0.86 }}><strong>Recommended action:</strong> {warning.recommendedAction}</div>
@@ -734,17 +755,17 @@ export function MePage() {
               </div>
               <div style={{ display: "grid", gap: 4 }}>
                 <strong style={{ fontSize: 13 }}>Tester focus</strong>
-                {cityAlphaStatus.testerFocus.map((focus, index) => (
+                {(cityAlphaStatus.testerFocus ?? []).map((focus, index) => (
                   <div key={`${index}_${focus}`} style={{ fontSize: 12, opacity: 0.84 }}>• {focus}</div>
                 ))}
               </div>
               <div style={{ display: "grid", gap: 6 }}>
                 <strong style={{ fontSize: 13 }}>Top pressure items</strong>
-                {cityAlphaStatus.topItems.length === 0 ? (
+                {(cityAlphaStatus.topItems ?? []).length === 0 ? (
                   <div style={{ fontSize: 12, opacity: 0.7 }}>No active pressure items yet.</div>
                 ) : (
                   <div style={{ display: "grid", gap: 6 }}>
-                    {cityAlphaStatus.topItems.map((item) => (
+                    {(cityAlphaStatus.topItems ?? []).map((item) => (
                       <div key={item.id} style={{ border: "1px solid #444", borderRadius: 8, padding: 8, display: "grid", gap: 3 }}>
                         <div><strong>{item.headline}</strong> • {item.kind} • severity {item.severity}</div>
                         <div style={{ fontSize: 12, opacity: 0.8 }}>{item.detail}</div>
@@ -760,6 +781,61 @@ export function MePage() {
             </div>
           ) : (
             <div style={{ opacity: 0.72 }}>City Alpha summary will appear once a city profile is loaded.</div>
+          )}
+        </div>
+
+        <div style={{ display: "grid", gap: 10 }}>
+          <strong>City Alpha scope lock</strong>
+          {cityAlphaScopeLock ? (
+            <div style={{ border: "1px solid #444", borderRadius: 10, padding: 12, display: "grid", gap: 10, background: "rgba(18,18,24,0.5)" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
+                <div>
+                  <div><strong>{cityAlphaScopeLock.headline}</strong></div>
+                  <div style={{ fontSize: 12, opacity: 0.82 }}>{cityAlphaScopeLock.detail}</div>
+                </div>
+                <div style={{ fontSize: 12, opacity: 0.86 }}>
+                  readiness lock {cityAlphaScopeLock.alphaReadyPercent}% • ambiguity {cityAlphaScopeLock.ambiguityCount}
+                </div>
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 8 }}>
+                <div style={{ border: "1px solid #444", borderRadius: 8, padding: 8 }}><strong>Already exists</strong><div style={{ fontSize: 12, opacity: 0.84 }}>{(cityAlphaScopeLock.alreadyExists ?? []).length} locked</div></div>
+                <div style={{ border: "1px solid #444", borderRadius: 8, padding: 8 }}><strong>Exists but weak</strong><div style={{ fontSize: 12, opacity: 0.84 }}>{(cityAlphaScopeLock.existsButWeak ?? []).length} follow-up targets</div></div>
+                <div style={{ border: "1px solid #444", borderRadius: 8, padding: 8 }}><strong>Missing</strong><div style={{ fontSize: 12, opacity: 0.84 }}>{(cityAlphaScopeLock.missing ?? []).length} deferred beyond alpha</div></div>
+                <div style={{ border: "1px solid #444", borderRadius: 8, padding: 8 }}><strong>Frozen exclusions</strong><div style={{ fontSize: 12, opacity: 0.84 }}>{(cityAlphaScopeLock.exclusions ?? []).length} explicitly out</div></div>
+              </div>
+              <div style={{ display: "grid", gap: 8 }}>
+                {[
+                  ["already_exists", cityAlphaScopeLock.alreadyExists],
+                  ["exists_but_weak", cityAlphaScopeLock.existsButWeak],
+                  ["missing", cityAlphaScopeLock.missing],
+                  ["excluded", cityAlphaScopeLock.exclusions],
+                ].map(([bucket, items]) => (
+                  <div key={String(bucket)} style={{ display: "grid", gap: 6 }}>
+                    <strong style={{ fontSize: 13 }}>{cityAlphaScopeBucketLabel(String(bucket))}</strong>
+                    {(items as any[]).length === 0 ? (
+                      <div style={{ fontSize: 12, opacity: 0.68 }}>No items in this bucket.</div>
+                    ) : (
+                      <div style={{ display: "grid", gap: 6 }}>
+                        {(items as any[]).map((item) => (
+                          <div key={item.id} style={{ border: `1px solid ${cityAlphaScopeBucketColor(String(bucket))}`, borderRadius: 8, padding: 8, display: "grid", gap: 3 }}>
+                            <div><strong>{item.label}</strong></div>
+                            <div style={{ fontSize: 12, opacity: 0.82 }}>{item.detail}</div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+              <div style={{ display: "grid", gap: 4 }}>
+                <strong style={{ fontSize: 13 }}>Frozen exclusions</strong>
+                {(cityAlphaScopeLock.frozenExclusions ?? []).map((entry) => (
+                  <div key={entry} style={{ fontSize: 12, opacity: 0.8 }}>• {entry}</div>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <div style={{ opacity: 0.72 }}>Scope lock summary will appear once a city profile is loaded.</div>
           )}
         </div>
 
@@ -781,7 +857,7 @@ export function MePage() {
                   <div style={{ fontSize: 12, opacity: 0.82 }}>Risk: {mission.risk.casualtyRisk}{mission.risk.heroInjuryRisk ? ` • hero injury ${mission.risk.heroInjuryRisk}` : ""}</div>
                   <div style={{ fontSize: 12, opacity: 0.78 }}>Best response lanes: {mission.responseTags?.join(", ") || "generalist"}</div>
                   {mission.targetingReasons?.length ? (
-                    <div style={{ fontSize: 12, opacity: 0.76 }}>Why this city: {mission.targetingReasons.join(" ")}</div>
+                    <div style={{ fontSize: 12, opacity: 0.76 }}>Why this city: {(mission.targetingReasons ?? []).join(" ")}</div>
                   ) : null}
                   {mission.supportGuidance ? (
                     <div style={{ fontSize: 12, opacity: 0.78 }}>
@@ -800,7 +876,7 @@ export function MePage() {
                         <option value="">Auto-pick best hero</option>
                         {me.heroes.filter((hero) => hero.status === "idle").map((hero) => (
                           <option key={hero.id} value={hero.id}>
-                            {hero.name} • {hero.responseRoles.join("/")} • power {hero.power}
+                            {hero.name} • {(hero.responseRoles ?? []).join("/")} • power {hero.power}
                           </option>
                         ))}
                       </select>
@@ -834,7 +910,7 @@ export function MePage() {
                         <option value="">Auto-pick best army</option>
                         {me.armies.filter((army) => army.status === "idle").map((army) => (
                           <option key={army.id} value={army.id}>
-                            {army.name} • {army.specialties.join("/")} • readiness {army.readiness} • power {army.power}
+                            {army.name} • {(army.specialties ?? []).join("/") || "general service"} • readiness {army.readiness ?? 0} • power {army.power}
                           </option>
                         ))}
                       </select>
@@ -904,10 +980,10 @@ export function MePage() {
                   <div style={{ fontSize: 12, opacity: 0.82 }}>Exposure {window.exposureScore}/100 • window {formatPressureWindow(window.earliestWindowAt, window.latestWindowAt)}</div>
                   <div style={{ fontSize: 12, opacity: 0.88 }}>{window.summary}</div>
                   <div style={{ fontSize: 12, opacity: 0.76 }}>{window.detail}</div>
-                  <div style={{ fontSize: 12, opacity: 0.78 }}>Likely lanes: {window.responseTags.join("/")}</div>
-                  {window.reasons.length ? (
+                  <div style={{ fontSize: 12, opacity: 0.78 }}>Likely lanes: {(window.responseTags ?? []).join("/")}</div>
+                  {(window.reasons ?? []).length ? (
                     <div style={{ display: "grid", gap: 4 }}>
-                      {window.reasons.map((reason, idx) => (
+                      {(window.reasons ?? []).map((reason, idx) => (
                         <div key={`${window.id}_${idx}`} style={{ fontSize: 12, opacity: 0.76 }}>• {reason}</div>
                       ))}
                     </div>
@@ -1184,7 +1260,7 @@ export function MePage() {
                         <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
                           {(hero.attachments ?? []).map((attachment) => (
                             <span key={attachment.id} style={{ border: "1px solid #446", borderRadius: 999, padding: "2px 8px", fontSize: 12, opacity: 0.92 }} title={attachment.summary ?? `${attachment.family} gear`} >
-                              {attachment.name} • {attachment.slot} • {attachment.responseTags.join("/")}
+                              {attachment.name} • {attachment.slot} • {(attachment.responseTags ?? []).join("/")}
                             </span>
                           ))}
                         </div>
@@ -1300,8 +1376,8 @@ export function MePage() {
             <div key={army.id} style={{ border: "1px solid #555", borderRadius: 8, padding: 10, display: "flex", justifyContent: "space-between", gap: 10 }}>
               <div style={{ display: "grid", gap: 4 }}>
                 <div><strong>{army.name}</strong> ({army.type}) • power {army.power} • size {army.size} • {army.status}</div>
-                <div style={{ fontSize: 12, opacity: 0.82 }}>Readiness {army.readiness}/100 • upkeep {army.upkeep.wealth} wealth + {army.upkeep.materials} materials/tick</div>
-                <div style={{ fontSize: 12, opacity: 0.74 }}>Specialties: {army.specialties.join(", ")}</div>
+                <div style={{ fontSize: 12, opacity: 0.82 }}>Readiness {army.readiness ?? 0}/100 • upkeep {army.upkeep?.wealth ?? 0} wealth + {army.upkeep?.materials ?? 0} materials/tick</div>
+                <div style={{ fontSize: 12, opacity: 0.74 }}>Specialties: {(army.specialties ?? []).join(", ") || "general service"}</div>
               </div>
               <button
                 style={{ padding: "6px 10px", borderRadius: 6, border: "1px solid #777", background: "#111", opacity: disabled ? 0.6 : 1 }}
