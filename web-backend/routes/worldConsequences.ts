@@ -3,6 +3,7 @@
 import { Router } from "express";
 import { summarizePlayerWorldConsequences } from "../gameState";
 import { deriveWorldConsequenceHooks } from "../domain/worldConsequenceHooks";
+import { deriveWorldConsequenceActions } from "../domain/worldConsequenceActions";
 import { resolvePlayerAccess } from "./playerCityAccess";
 
 const router = Router();
@@ -19,6 +20,19 @@ router.get("/status", async (req, res) => {
     ledger: access.access.playerState.worldConsequences ?? [],
     propagatedState: access.access.playerState.worldConsequenceState ?? null,
     hooks: deriveWorldConsequenceHooks(access.access.playerState),
+    actions: deriveWorldConsequenceActions(access.access.playerState),
+  });
+});
+
+router.get("/actions", async (req, res) => {
+  const access = await resolvePlayerAccess(req, { requireCity: false });
+  if (access.ok === false) {
+    return res.json({ ok: true, actions: null });
+  }
+
+  return res.json({
+    ok: true,
+    actions: deriveWorldConsequenceActions(access.access.playerState),
   });
 });
 
@@ -31,6 +45,7 @@ router.get("/hooks", async (req, res) => {
   return res.json({
     ok: true,
     hooks: deriveWorldConsequenceHooks(access.access.playerState),
+    actions: deriveWorldConsequenceActions(access.access.playerState),
   });
 });
 

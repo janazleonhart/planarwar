@@ -24,6 +24,7 @@ import {
   type PublicInfrastructureStatusResponse,
   type PublicServiceQuote,
   type Resources,
+  type WorldConsequenceActionItem,
   type WorldConsequenceLedgerEntry,
   type WorldConsequenceRegionState,
 } from "../lib/api";
@@ -530,6 +531,7 @@ export function MePage() {
   const worldConsequences = me?.worldConsequences ?? [];
   const worldConsequenceState = me?.worldConsequenceState ?? null;
   const worldConsequenceHooks = me?.worldConsequenceHooks ?? null;
+  const worldConsequenceActions = me?.worldConsequenceActions ?? null;
   const highlightedWorldLedger = [...worldConsequences].slice(0, 5);
   const highlightedWorldRegions = [...(worldConsequenceState?.regions ?? [])].sort((a, b) => worldRegionScore(b) - worldRegionScore(a)).slice(0, 3);
 
@@ -848,6 +850,7 @@ export function MePage() {
                   readiness lock {cityAlphaScopeLock.alphaReadyPercent}% • ambiguity {cityAlphaScopeLock.ambiguityCount}
                 </div>
               </div>
+
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 8 }}>
                 <div style={{ border: "1px solid #444", borderRadius: 8, padding: 8 }}><strong>Already exists</strong><div style={{ fontSize: 12, opacity: 0.84 }}>{(cityAlphaScopeLock.alreadyExists ?? []).length} locked</div></div>
                 <div style={{ border: "1px solid #444", borderRadius: 8, padding: 8 }}><strong>Exists but weak</strong><div style={{ fontSize: 12, opacity: 0.84 }}>{(cityAlphaScopeLock.existsButWeak ?? []).length} follow-up targets</div></div>
@@ -1115,6 +1118,30 @@ export function MePage() {
                   <div style={{ fontSize: 12, opacity: 0.76 }}>{worldConsequenceHooks.faction.note}</div>
                 </div>
               </div>
+
+              {worldConsequenceActions ? (
+                <div style={{ display: "grid", gap: 6 }}>
+                  <div style={{ fontWeight: 700, fontSize: 13 }}>What to do next</div>
+                  <div style={{ border: "1px solid #555", borderRadius: 8, padding: 10, display: "grid", gap: 5, background: "rgba(28,56,48,0.14)" }}>
+                    <div><strong>{worldConsequenceActions.recommendedPrimaryAction}</strong></div>
+                    <div style={{ fontSize: 12, opacity: 0.8 }}>{worldConsequenceActions.headline}</div>
+                  </div>
+                  {worldConsequenceActions.playerActions.length === 0 ? (
+                    <div style={{ opacity: 0.7 }}>No player-facing action recommendations yet.</div>
+                  ) : worldConsequenceActions.playerActions.map((action: WorldConsequenceActionItem) => (
+                    <div key={action.id} style={{ border: "1px solid #555", borderRadius: 8, padding: 10, display: "grid", gap: 4, background: "rgba(36,36,36,0.14)" }}>
+                      <div><strong>{action.title}</strong> <span style={{ color: worldHookTone(action.priority) }}>{action.priority}</span></div>
+                      <div style={{ fontSize: 12, opacity: 0.82 }}>{action.summary}</div>
+                      <div style={{ fontSize: 12, opacity: 0.76 }}>lane {action.lane}{action.sourceRegionId ? ` • region ${getRegionDisplayName(action.sourceRegionId)}` : ""}</div>
+                      <div style={{ display: "grid", gap: 2, fontSize: 12, opacity: 0.8 }}>
+                        {action.recommendedMoves.map((move, idx) => (
+                          <div key={`${action.id}_${idx}`}>• {move}</div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
 
               <div style={{ display: "grid", gap: 6 }}>
                 <div style={{ fontWeight: 700, fontSize: 13 }}>Regional hotspots</div>

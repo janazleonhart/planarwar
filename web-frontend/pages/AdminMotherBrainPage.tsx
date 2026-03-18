@@ -431,6 +431,14 @@ type CitySignalsSummaryView = {
     factionStance: string | null;
     blackMarketOpportunity: number;
     summaryNote: string | null;
+    recommendedPrimaryAction: string | null;
+    actions: Array<{
+      id: string;
+      priority: string;
+      lane: string;
+      title: string;
+      sourceRegionId: string | null;
+    }>;
     error: string | null;
   }>;
   summary: {
@@ -441,6 +449,8 @@ type CitySignalsSummaryView = {
     dominantEconomyOutlook: string | null;
     dominantFactionStance: string | null;
     maxBlackMarketOpportunity: number;
+    urgentActionCount: number;
+    recommendedPrimaryAction: string | null;
   };
 };
 
@@ -486,6 +496,17 @@ function parseCitySignals(raw: unknown): CitySignalsSummaryView | null {
       factionStance: typeof asRecord(row.factionPressure)?.dominantStance === "string" ? String(asRecord(row.factionPressure)?.dominantStance) : null,
       blackMarketOpportunity: toNum(asRecord(row.blackMarket)?.opportunityScore),
       summaryNote: typeof asRecord(row.summary)?.note === "string" ? String(asRecord(row.summary)?.note) : null,
+      recommendedPrimaryAction: typeof row.recommendedPrimaryAction === "string" ? row.recommendedPrimaryAction : null,
+      actions: (Array.isArray(row.actions) ? row.actions : []).map((action) => {
+        const ar = asRecord(action) ?? {};
+        return {
+          id: typeof ar.id === "string" ? ar.id : "unknown_action",
+          priority: typeof ar.priority === "string" ? ar.priority : "watch",
+          lane: typeof ar.lane === "string" ? ar.lane : "observability",
+          title: typeof ar.title === "string" ? ar.title : "Untitled action",
+          sourceRegionId: typeof ar.sourceRegionId === "string" ? ar.sourceRegionId : null,
+        };
+      }),
       error: typeof row.error === "string" ? row.error : null,
     };
   });
@@ -505,6 +526,8 @@ function parseCitySignals(raw: unknown): CitySignalsSummaryView | null {
       dominantEconomyOutlook: typeof summary.dominantEconomyOutlook === "string" ? summary.dominantEconomyOutlook : null,
       dominantFactionStance: typeof summary.dominantFactionStance === "string" ? summary.dominantFactionStance : null,
       maxBlackMarketOpportunity: toNum(summary.maxBlackMarketOpportunity),
+      urgentActionCount: toNum(summary.urgentActionCount),
+      recommendedPrimaryAction: typeof summary.recommendedPrimaryAction === "string" ? summary.recommendedPrimaryAction : null,
     },
   };
 }
@@ -978,6 +1001,10 @@ export function AdminMotherBrainPage() {
                     <div style={{ fontWeight: 700 }}>Heat</div>
                     <div style={{ fontSize: 12, opacity: 0.82 }}>hottest region {citySignals.summary.hottestRegionId ?? "—"} • max BM {citySignals.summary.maxBlackMarketOpportunity}</div>
                   </div>
+                  <div style={{ border: "1px solid #eee", borderRadius: 10, padding: 10 }}>
+                    <div style={{ fontWeight: 700 }}>Actionability</div>
+                    <div style={{ fontSize: 12, opacity: 0.82 }}>urgent actions {citySignals.summary.urgentActionCount} • primary {citySignals.summary.recommendedPrimaryAction ?? "—"}</div>
+                  </div>
                 </div>
 
                 {citySignals.players.length ? (
@@ -995,6 +1022,16 @@ export function AdminMotherBrainPage() {
                         <div style={{ fontSize: 12, opacity: 0.85 }}>ledger {player.ledgerCount} • severe {player.severeCount} • economy {player.worldEconomyOutlook ?? "—"} • faction {player.factionStance ?? "—"} • BM {player.blackMarketOpportunity}</div>
                         {player.activeTags.length ? <div style={{ fontSize: 12, opacity: 0.78 }}>tags: <code>{player.activeTags.join(", ")}</code></div> : null}
                         {player.summaryNote ? <div style={{ fontSize: 12, opacity: 0.78 }}>{player.summaryNote}</div> : null}
+                        {player.recommendedPrimaryAction ? <div style={{ fontSize: 12, opacity: 0.82 }}><strong>Primary action:</strong> {player.recommendedPrimaryAction}</div> : null}
+                        {player.actions.length ? (
+                          <div style={{ display: "grid", gap: 4 }}>
+                            {player.actions.slice(0, 3).map((action) => (
+                              <div key={`${player.playerId}:${action.id}`} style={{ fontSize: 12, opacity: 0.82 }}>
+                                • <strong>{action.priority}</strong> {action.title} <span style={{ opacity: 0.68 }}>({action.lane}{action.sourceRegionId ? ` • ${action.sourceRegionId}` : ""})</span>
+                              </div>
+                            ))}
+                          </div>
+                        ) : null}
                         {player.topRegions.length ? (
                           <div style={{ display: "grid", gap: 4 }}>
                             {player.topRegions.slice(0, 3).map((region) => (

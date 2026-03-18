@@ -159,6 +159,14 @@ type MotherBrainCitySignalRegionSummary = {
   factionDrift: number;
 };
 
+type MotherBrainCitySignalActionSummary = {
+  id: string;
+  priority: string;
+  lane: string;
+  title: string;
+  sourceRegionId: string | null;
+};
+
 type MotherBrainCitySignalPlayerSnapshot = {
   playerId: string;
   ok: boolean;
@@ -171,6 +179,8 @@ type MotherBrainCitySignalPlayerSnapshot = {
   blackMarket?: Record<string, unknown> | null;
   factionPressure?: Record<string, unknown> | null;
   summary?: Record<string, unknown> | null;
+  actions?: MotherBrainCitySignalActionSummary[];
+  recommendedPrimaryAction?: string | null;
   error?: string;
 };
 
@@ -189,6 +199,8 @@ type MotherBrainCitySignalsSnapshot = {
     dominantEconomyOutlook: string | null;
     dominantFactionStance: string | null;
     maxBlackMarketOpportunity: number;
+    urgentActionCount: number;
+    recommendedPrimaryAction: string | null;
   };
 };
 
@@ -1447,6 +1459,20 @@ function summarizeCitySignalPayload(playerId: string, payload: any): MotherBrain
   const activeTags = Array.isArray(payload?.summary?.activeTags)
     ? payload.summary.activeTags.filter((tag: unknown) => typeof tag === "string")
     : [];
+  const actionsPayload = payload?.actions ?? {};
+  const actionRows = [
+    ...(Array.isArray(actionsPayload?.playerActions) ? actionsPayload.playerActions : []),
+    ...(Array.isArray(actionsPayload?.adminActions) ? actionsPayload.adminActions : []),
+    ...(Array.isArray(actionsPayload?.motherBrainActions) ? actionsPayload.motherBrainActions : []),
+  ]
+    .map((entry: any) => ({
+      id: typeof entry?.id === "string" ? entry.id : "unknown_action",
+      priority: typeof entry?.priority === "string" ? entry.priority : "watch",
+      lane: typeof entry?.lane === "string" ? entry.lane : "observability",
+      title: typeof entry?.title === "string" ? entry.title : "Untitled action",
+      sourceRegionId: typeof entry?.sourceRegionId === "string" ? entry.sourceRegionId : null,
+    }))
+    .slice(0, 6);
   return {
     playerId,
     ok: true,
@@ -1459,6 +1485,8 @@ function summarizeCitySignalPayload(playerId: string, payload: any): MotherBrain
     blackMarket: propagated?.blackMarket ?? null,
     factionPressure: propagated?.factionPressure ?? null,
     summary: propagated?.summary ?? payload?.summary ?? null,
+    actions: actionRows,
+    recommendedPrimaryAction: typeof actionsPayload?.recommendedPrimaryAction === "string" ? actionsPayload.recommendedPrimaryAction : null,
   };
 }
 
@@ -1478,6 +1506,8 @@ function emptyCitySignalsSnapshot(cfg: MotherBrainConfig, previous?: MotherBrain
       dominantEconomyOutlook: null,
       dominantFactionStance: null,
       maxBlackMarketOpportunity: 0,
+      urgentActionCount: 0,
+      recommendedPrimaryAction: null,
     },
   };
 }
@@ -1488,6 +1518,8 @@ function aggregateCitySignals(cfg: MotherBrainConfig, players: MotherBrainCitySi
   const economyCounts = new Map<string, number>();
   const stanceCounts = new Map<string, number>();
   let maxBlackMarketOpportunity = 0;
+  let urgentActionCount = 0;
+  const primaryActionCounts = new Map<string, number>();
   for (const player of players) {
     for (const region of player.topRegions ?? []) {
       const score = region.netPressure + region.blackMarketHeat + Math.abs(region.factionDrift);
@@ -1501,9 +1533,12 @@ function aggregateCitySignals(cfg: MotherBrainConfig, players: MotherBrainCitySi
     const stance = typeof player.factionPressure?.dominantStance === "string" ? String(player.factionPressure.dominantStance) : null;
     if (stance) stanceCounts.set(stance, (stanceCounts.get(stance) ?? 0) + 1);
     maxBlackMarketOpportunity = Math.max(maxBlackMarketOpportunity, toFiniteNumber(player.blackMarket?.opportunityScore));
+    urgentActionCount += (player.actions ?? []).filter((action) => action.priority === "critical" || action.priority === "high").length;
+    if (player.recommendedPrimaryAction) primaryActionCounts.set(player.recommendedPrimaryAction, (primaryActionCounts.get(player.recommendedPrimaryAction) ?? 0) + 1);
   }
   const dominantEconomyOutlook = [...economyCounts.entries()].sort((a,b)=> b[1]-a[1])[0]?.[0] ?? null;
   const dominantFactionStance = [...stanceCounts.entries()].sort((a,b)=> b[1]-a[1])[0]?.[0] ?? null;
+  const recommendedPrimaryAction = [...primaryActionCounts.entries()].sort((a,b)=> b[1]-a[1])[0]?.[0] ?? null;
   return {
     enabled: Boolean(cfg.webBackendHttpBase && cfg.citySignalEveryTicks > 0 && cfg.citySignalPlayerIds.length > 0),
     everyTicks: cfg.citySignalEveryTicks,
@@ -1519,6 +1554,8 @@ function aggregateCitySignals(cfg: MotherBrainConfig, players: MotherBrainCitySi
       dominantEconomyOutlook,
       dominantFactionStance,
       maxBlackMarketOpportunity,
+      urgentActionCount,
+      recommendedPrimaryAction,
     },
   };
 }
@@ -2393,6 +2430,8 @@ async function main(): Promise<void> {
             dominantEconomyOutlook: state.citySignals.summary.dominantEconomyOutlook,
             dominantFactionStance: state.citySignals.summary.dominantFactionStance,
             maxBlackMarketOpportunity: state.citySignals.summary.maxBlackMarketOpportunity,
+            urgentActionCount: state.citySignals.summary.urgentActionCount,
+            recommendedPrimaryAction: state.citySignals.summary.recommendedPrimaryAction,
           });
         }
       } catch (e: unknown) {

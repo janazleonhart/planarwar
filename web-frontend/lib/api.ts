@@ -798,6 +798,27 @@ export interface WorldConsequenceFactionHook {
   note: string;
 }
 
+
+export interface WorldConsequenceActionItem {
+  id: string;
+  audience: "player" | "admin" | "mother_brain";
+  lane: "economy" | "black_market" | "cartel" | "faction" | "regional" | "observability";
+  priority: "watch" | "high" | "critical";
+  title: string;
+  summary: string;
+  recommendedMoves: string[];
+  sourceRegionId: string | null;
+  sourceHook: string;
+}
+
+export interface WorldConsequenceActionsView {
+  headline: string;
+  recommendedPrimaryAction: string;
+  playerActions: WorldConsequenceActionItem[];
+  adminActions: WorldConsequenceActionItem[];
+  motherBrainActions: WorldConsequenceActionItem[];
+}
+
 export interface WorldConsequenceHooksView {
   blackMarket: WorldConsequenceBlackMarketHook;
   cartel: WorldConsequenceCartelHook;
@@ -844,6 +865,7 @@ export interface MeProfile {
   worldConsequences?: WorldConsequenceLedgerEntry[];
   worldConsequenceState?: WorldConsequenceState | null;
   worldConsequenceHooks?: WorldConsequenceHooksView | null;
+  worldConsequenceActions?: WorldConsequenceActionsView | null;
 }
 
 function normalizeBase(raw: string): string {

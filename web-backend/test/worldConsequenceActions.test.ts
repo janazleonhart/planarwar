@@ -1,0 +1,53 @@
+//web-backend/test/worldConsequenceActions.test.ts
+
+import test from "node:test";
+import assert from "node:assert/strict";
+
+import { getOrCreatePlayerState } from "../gameState";
+import { deriveWorldConsequenceActions } from "../domain/worldConsequenceActions";
+import { pushWorldConsequence } from "../domain/worldConsequences";
+
+test("quiet world consequence state still returns an observe-only recommendation", () => {
+  const ps = getOrCreatePlayerState("world_consequence_actions_quiet_player");
+  ps.worldConsequences = [];
+  ps.worldConsequenceState = {
+    regions: [],
+    worldEconomy: { tradePressure: 0, supplyFriction: 0, cartelAttention: 0, destabilization: 0, outlook: "stable" },
+    blackMarket: { opportunityScore: 0, heat: 0, outlook: "quiet" },
+    factionPressure: { driftScore: 0, instability: 0, dominantStance: "stable" },
+    summary: { affectedRegionIds: [], totalLedgerEntries: 0, severeCount: 0, destabilizationScore: 0, note: "No propagated consequence pressure yet." },
+  };
+
+  const actions = deriveWorldConsequenceActions(ps);
+  assert.equal(actions.playerActions[0]?.id, "action_observe_until_pressure_is_real");
+  assert.equal(actions.adminActions.length, 0);
+});
+
+test("active world consequence pressure yields player and admin recommendations", () => {
+  const ps = getOrCreatePlayerState("world_consequence_actions_hot_player");
+  ps.techFlags = ["BLACK_MARKET_ENABLED"];
+
+  pushWorldConsequence(ps, {
+    regionId: ps.city.regionId,
+    source: "mission_setback",
+    severity: "severe",
+    title: "Trade corridor collapse",
+    summary: "Route pressure, faction drift, and illicit demand all spiked together.",
+    detail: "This should produce actionable economy, cartel, faction, and black-market recommendations.",
+    audiences: ["player", "admin", "mother_brain"],
+    tags: ["city_pressure_export", "trade_disruption", "black_market_opening", "faction_drift", "world_economy_hook"],
+    metrics: {
+      pressureDelta: 18,
+      recoveryDelta: 10,
+      controlDelta: -6,
+      threatDelta: 7,
+    },
+    outcome: "failure",
+  });
+
+  const actions = deriveWorldConsequenceActions(ps);
+  assert.ok(actions.playerActions.some((action) => action.lane === "economy"));
+  assert.ok(actions.playerActions.some((action) => action.lane === "black_market"));
+  assert.ok(actions.adminActions.some((action) => action.lane === "observability" || action.lane === "economy"));
+  assert.ok(actions.recommendedPrimaryAction.length > 0);
+});

@@ -9,6 +9,7 @@ import { Router } from "express";
 import { db } from "../../worldcore/db/Database";
 import { getPlayerState, summarizePlayerWorldConsequences } from "../gameState";
 import { deriveWorldConsequenceHooks } from "../domain/worldConsequenceHooks";
+import { deriveWorldConsequenceActions } from "../domain/worldConsequenceActions";
 import { motherBrainHttpBase, proxyMotherBrain } from "./adminMotherBrain/motherBrainProxy";
 import { readGoalsReportTail } from "./adminMotherBrain/motherBrainReports";
 import { pgErrCode, toInt } from "./adminMotherBrain/motherBrainShared";
@@ -154,6 +155,7 @@ router.get("/city_signals", async (req, res) => {
       pressureMap: ps.motherBrainPressureMap ?? [],
       propagatedState: ps.worldConsequenceState ?? null,
       hooks: deriveWorldConsequenceHooks(ps),
+      actions: deriveWorldConsequenceActions(ps),
     });
   } catch (err: unknown) {
     res.status(500).json({ ok: false, error: err instanceof Error ? err.message : String(err) });
