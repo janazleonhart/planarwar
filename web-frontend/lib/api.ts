@@ -99,17 +99,42 @@ export interface MissionOffer {
   supportGuidance?: MissionOfferSupportGuidance;
 }
 
+export type MissionResponsePosture = "cautious" | "balanced" | "aggressive" | "desperate";
+
 export interface ActiveMission {
   instanceId: string;
   mission: MissionOffer;
   startedAt: string; // ISO string
   finishesAt: string; // ISO string
+  responsePosture: MissionResponsePosture;
+  committedResources?: Partial<Resources>;
   assignedHeroId?: string;
   assignedArmyId?: string;
 }
 
 export type WarningIntelQuality = "faint" | "usable" | "clear" | "precise";
 export type ThreatFamily = "bandits" | "mercs" | "desperate_towns" | "organized_hostile_forces" | "early_planar_strike";
+
+export interface MissionSetback {
+  kind: "resource_loss" | "infrastructure_damage" | "unrest" | "hero_injury" | "army_attrition" | "threat_surge";
+  severity: number;
+  summary: string;
+  detail: string;
+  resources?: RewardBundle;
+  statImpacts?: Record<string, number>;
+}
+
+export interface MissionDefenseReceipt {
+  id: string;
+  missionId: string;
+  missionTitle: string;
+  createdAt: string;
+  outcome: "success" | "partial" | "failure";
+  posture: MissionResponsePosture;
+  threatFamily?: ThreatFamily;
+  summary: string;
+  setbacks: MissionSetback[];
+}
 
 export interface ThreatWarning {
   threatFamily?: ThreatFamily;
@@ -551,6 +576,7 @@ export interface StartMissionResponse {
   activeMission: ActiveMission;
   activeMissions: ActiveMission[];
   threatWarnings: ThreatWarning[];
+  missionReceipts: MissionDefenseReceipt[];
   heroes: Hero[];
   armies: Army[];
   bridgeSummary?: CityMudBridgeSummary;
@@ -563,6 +589,7 @@ export interface CompleteMissionResponse {
   result: any;
   activeMissions: ActiveMission[];
   threatWarnings: ThreatWarning[];
+  missionReceipts: MissionDefenseReceipt[];
   heroes: Hero[];
   armies: Army[];
   resources: Resources;
@@ -584,6 +611,7 @@ export interface MeProfile {
   armies: Army[];
   activeMissions?: ActiveMission[];
   threatWarnings?: ThreatWarning[];
+  missionReceipts?: MissionDefenseReceipt[];
   researchedTechIds: string[];
   availableTechs: TechSummary[];
   activeResearch: ActiveResearchView | null;
@@ -677,10 +705,10 @@ export async function fetchMissionBoard(): Promise<MissionBoardResponse> {
   return api<MissionBoardResponse>("/api/missions/offers");
 }
 
-export async function startMission(missionId: string, heroId?: string, armyId?: string): Promise<StartMissionResponse> {
+export async function startMission(missionId: string, heroId?: string, armyId?: string, responsePosture?: MissionResponsePosture): Promise<StartMissionResponse> {
   return api<StartMissionResponse>("/api/missions/start", {
     method: "POST",
-    body: JSON.stringify({ missionId, heroId, armyId }),
+    body: JSON.stringify({ missionId, heroId, armyId, responsePosture }),
   });
 }
 

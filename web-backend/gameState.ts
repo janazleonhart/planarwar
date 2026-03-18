@@ -71,6 +71,8 @@ import type { Army, ArmyType } from "./domain/armies";
 import type {
   MissionOffer,
   MissionDifficulty,
+  MissionDefenseReceipt,
+  MissionResponsePosture,
   RewardBundle,
   ThreatWarning,
 } from "./domain/missions";
@@ -116,6 +118,8 @@ export interface ActiveMission {
   mission: MissionOffer;
   startedAt: string;
   finishesAt: string;
+  responsePosture: MissionResponsePosture;
+  committedResources?: Partial<Resources>;
   assignedHeroId?: string;
   assignedArmyId?: string;
 }
@@ -202,6 +206,7 @@ export interface PlayerState {
   currentOffers: MissionOffer[];
   activeMissions: ActiveMission[];
   threatWarnings: ThreatWarning[];
+  missionReceipts: MissionDefenseReceipt[];
 
   policies: PoliciesState;
   lastTickAt: string; // ISO
@@ -402,14 +407,16 @@ export function startMissionForPlayer(
   missionId: string,
   now: Date,
   preferredHeroId?: string,
-  preferredArmyId?: string
+  preferredArmyId?: string,
+  responsePosture?: MissionResponsePosture
 ): ActiveMission | null {
   return startMissionForPlayerImpl(
     playerId,
     missionId,
     now,
     preferredHeroId,
-    preferredArmyId
+    preferredArmyId,
+    responsePosture
   );
 }
 
@@ -418,7 +425,8 @@ function startMissionForPlayerImpl(
   missionId: string,
   now: Date,
   preferredHeroId?: string,
-  preferredArmyId?: string
+  preferredArmyId?: string,
+  responsePosture?: MissionResponsePosture
 ): ActiveMission | null {
   return startMissionForPlayerHelper(
     missionStateDeps,
@@ -426,7 +434,8 @@ function startMissionForPlayerImpl(
     missionId,
     now,
     preferredHeroId,
-    preferredArmyId
+    preferredArmyId,
+    responsePosture
   );
 }
 

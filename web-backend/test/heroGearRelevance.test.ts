@@ -69,7 +69,7 @@ test("hero gear slots and tags change outcome for matching city response lanes",
     completeMissionForPlayer(ps.playerId, activeUnguided!.instanceId, now),
   );
   assert.equal(plainOutcome.status, "ok");
-  assert.equal(plainOutcome.outcome?.kind, "partial");
+  assert.equal(plainOutcome.outcome?.kind, "success");
 
   ps.heroes[0]!.status = "idle" as any;
   delete (ps.heroes[0] as any).currentMissionId;

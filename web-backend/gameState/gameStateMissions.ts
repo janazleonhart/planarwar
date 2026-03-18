@@ -6,7 +6,7 @@ import { missionDurationConfig } from "../config";
 import type { Army, ArmyResponseRole } from "../domain/armies";
 import type { Hero, HeroAttachment, HeroResponseRole, HeroTrait } from "../domain/heroes";
 import { getHeroAttachmentDef } from "./gameStateHeroes";
-import type { MissionDifficulty, MissionOffer, MissionResponseTag, RewardBundle, ThreatFamily, ThreatWarning, WarningIntelQuality } from "../domain/missions";
+import type { MissionDefenseReceipt, MissionDifficulty, MissionOffer, MissionResponsePosture, MissionResponseTag, MissionSetback, RewardBundle, ThreatFamily, ThreatWarning, WarningIntelQuality } from "../domain/missions";
 import type { RegionId, World } from "../domain/world";
 import type {
   ActiveMission,
@@ -35,6 +35,9 @@ export interface MissionOutcome {
   roll: number;
   casualtyRate: number;
   heroInjury?: "none" | "light" | "severe";
+  posture: MissionResponsePosture;
+  budgetScore: number;
+  setbacks: MissionSetback[];
 }
 
 export interface CompleteMissionResult {
@@ -43,6 +46,7 @@ export interface CompleteMissionResult {
   rewards?: RewardBundle;
   resources?: Resources;
   outcome?: MissionOutcome;
+  receipt?: MissionDefenseReceipt;
 }
 
 
@@ -338,7 +342,8 @@ export function startMissionForPlayer(
   missionId: string,
   now: Date,
   preferredHeroId?: string,
-  preferredArmyId?: string
+  preferredArmyId?: string,
+  responsePosture?: MissionResponsePosture
 ): ActiveMission | null {
   const ps = deps.getPlayerState(playerId);
   if (!ps) return null;
@@ -348,6 +353,10 @@ export function startMissionForPlayer(
 
   const mission = ps.currentOffers.find((m) => m.id === missionId);
   if (!mission) return null;
+
+  const posture = normalizePosture(responsePosture);
+  const committedResources = postureResourceCommitment(mission, posture, ps.resources);
+  spendCommittedResources(ps, committedResources);
 
   let assignedHeroId: string | undefined;
   let assignedArmyId: string | undefined;
@@ -378,6 +387,8 @@ export function startMissionForPlayer(
     mission,
     startedAt,
     finishesAt,
+    responsePosture: posture,
+    committedResources,
     assignedHeroId,
     assignedArmyId,
   };
@@ -386,7 +397,7 @@ export function startMissionForPlayer(
 
   deps.pushEvent(ps, {
     kind: "mission_start",
-    message: `Mission started: ${mission.title}`,
+    message: `Mission started: ${mission.title} (${posture} posture)`,
     missionId: mission.id,
     heroId: assignedHeroId,
     armyId: assignedArmyId,
@@ -506,6 +517,8 @@ export function startWarfrontAssaultForPlayer(
     mission: offer,
     startedAt,
     finishesAt,
+    responsePosture: "balanced",
+    committedResources: postureResourceCommitment(offer, "balanced", ps.resources),
     assignedArmyId: army.id,
   };
 
@@ -602,6 +615,8 @@ export function startGarrisonStrikeForPlayer(
     mission: offer,
     startedAt,
     finishesAt,
+    responsePosture: "balanced",
+    committedResources: postureResourceCommitment(offer, "balanced", ps.resources),
     assignedHeroId: hero.id,
   };
 
@@ -707,9 +722,163 @@ function computeArmyMissionEffect(army: Army | undefined, mission: MissionOffer)
   return { power: Math.max(5, Math.round(effectivePower)), successBonus, readinessDelta, notes };
 }
 
+function normalizePosture(posture: MissionResponsePosture | undefined): MissionResponsePosture {
+  return posture ?? "balanced";
+}
+
+function postureResourceCommitment(mission: MissionOffer, posture: MissionResponsePosture, resources: Resources): Partial<Resources> {
+  const mult = posture === "cautious" ? 0.5 : posture === "balanced" ? 0.8 : posture === "aggressive" ? 1.05 : 1.3;
+  const base = mission.difficulty === "low" ? 8 : mission.difficulty === "medium" ? 16 : mission.difficulty === "high" ? 28 : 44;
+  const wealthNeed = Math.round(base * mult + (mission.kind === "army" ? 8 : 4));
+  const materialsNeed = Math.round(base * 0.7 * mult + (mission.kind === "army" ? 9 : 2));
+  const manaNeed = mission.responseTags.includes("warding") ? Math.round(base * 0.45 * mult) : 0;
+  const unityNeed = posture === "desperate" ? 10 : posture === "aggressive" ? 4 : 0;
+
+  return {
+    wealth: Math.min(resources.wealth, wealthNeed),
+    materials: Math.min(resources.materials, materialsNeed),
+    mana: Math.min(resources.mana, manaNeed),
+    unity: Math.min(resources.unity, unityNeed),
+  };
+}
+
+function spendCommittedResources(ps: PlayerState, committed: Partial<Resources> | undefined): void {
+  if (!committed) return;
+  for (const key of Object.keys(committed) as (keyof Resources)[]) {
+    const amount = Math.max(0, Math.round(Number(committed[key] ?? 0)));
+    if (!amount) continue;
+    ps.resources[key] = Math.max(0, ps.resources[key] - amount);
+  }
+}
+
+function budgetSupportScore(mission: MissionOffer, committed: Partial<Resources> | undefined): number {
+  const total = Number(committed?.wealth ?? 0) + Number(committed?.materials ?? 0) + Number(committed?.mana ?? 0) * 1.2 + Number(committed?.unity ?? 0) * 1.5;
+  const target = mission.difficulty === "low" ? 18 : mission.difficulty === "medium" ? 34 : mission.difficulty === "high" ? 56 : 82;
+  return Math.max(0, Math.min(1.15, total / Math.max(12, target)));
+}
+
+function postureModifiers(posture: MissionResponsePosture): { success: number; casualty: number; stress: number } {
+  switch (posture) {
+    case "cautious":
+      return { success: -0.04, casualty: -0.12, stress: -2 };
+    case "aggressive":
+      return { success: 0.06, casualty: 0.07, stress: 4 };
+    case "desperate":
+      return { success: 0.12, casualty: 0.15, stress: 8 };
+    default:
+      return { success: 0, casualty: 0, stress: 0 };
+  }
+}
+
+function addSetback(target: MissionSetback[], setback: MissionSetback | null | undefined): void {
+  if (setback) target.push(setback);
+}
+
+function computeMissionSetbacks(ps: PlayerState, active: ActiveMission, outcome: MissionOutcome): MissionSetback[] {
+  const setbacks: MissionSetback[] = [];
+  const posture = normalizePosture(active.responsePosture);
+  const severityBase = outcome.kind === "failure" ? 3 : outcome.kind === "partial" ? 2 : 1;
+
+  if (outcome.kind !== "success") {
+    const wealthLoss = Math.max(0, Math.round((active.committedResources?.wealth ?? 0) * (outcome.kind === "failure" ? 0.45 : 0.2)));
+    const materialsLoss = Math.max(0, Math.round((active.committedResources?.materials ?? 0) * (outcome.kind === "failure" ? 0.4 : 0.15)));
+    if (wealthLoss || materialsLoss) {
+      ps.resources.wealth = Math.max(0, ps.resources.wealth - wealthLoss);
+      ps.resources.materials = Math.max(0, ps.resources.materials - materialsLoss);
+      addSetback(setbacks, {
+        kind: "resource_loss",
+        severity: severityBase,
+        summary: "Emergency spending and spoilage hit the treasury.",
+        detail: `Lost wealth ${wealthLoss} and materials ${materialsLoss} while sustaining the response.`,
+        resources: { wealth: wealthLoss, materials: materialsLoss },
+      });
+    }
+
+    const secLoss = outcome.kind === "failure" ? 6 : 2;
+    const stabLoss = outcome.kind === "failure" ? 5 : 2;
+    const unityLoss = posture === "desperate" ? 4 : outcome.kind === "failure" ? 3 : 1;
+    ps.city.stats.security = Math.max(0, ps.city.stats.security - secLoss);
+    ps.city.stats.stability = Math.max(0, ps.city.stats.stability - stabLoss);
+    ps.city.stats.unity = Math.max(0, ps.city.stats.unity - unityLoss);
+    ps.cityStress.threatPressure = Math.min(100, ps.cityStress.threatPressure + (outcome.kind === "failure" ? 8 : 3));
+    ps.cityStress.unityPressure = Math.min(100, ps.cityStress.unityPressure + (unityLoss + 2));
+    ps.cityStress.total = Math.min(100, ps.cityStress.total + (outcome.kind === "failure" ? 7 : 3));
+    addSetback(setbacks, {
+      kind: "unrest",
+      severity: severityBase,
+      summary: outcome.kind === "failure" ? "The city reels after a failed defense posture." : "The city absorbs visible strain from the response.",
+      detail: `Security -${secLoss}, stability -${stabLoss}, unity -${unityLoss}.`,
+      statImpacts: { security: -secLoss, stability: -stabLoss, unity: -unityLoss },
+    });
+
+    if (active.mission.kind === "army" && active.assignedArmyId) {
+      const infraLoss = outcome.kind === "failure" ? 4 : 1;
+      ps.city.stats.infrastructure = Math.max(0, ps.city.stats.infrastructure - infraLoss);
+      addSetback(setbacks, {
+        kind: "infrastructure_damage",
+        severity: severityBase,
+        summary: outcome.kind === "failure" ? "Outer works and roads took a beating." : "Forward defenses still took light damage.",
+        detail: `Infrastructure -${infraLoss} from churn on the defensive line.`,
+        statImpacts: { infrastructure: -infraLoss },
+      });
+    }
+
+    addSetback(setbacks, {
+      kind: "threat_surge",
+      severity: severityBase,
+      summary: "Hostile pressure rises after the clash.",
+      detail: outcome.kind === "failure" ? "Enemies gained confidence and local fear spiked." : "The enemy was checked, but not cleanly enough to calm the frontier.",
+      statImpacts: { threatPressure: outcome.kind === "failure" ? 8 : 3 },
+    });
+  }
+
+  if (outcome.heroInjury && outcome.heroInjury !== "none") {
+    addSetback(setbacks, {
+      kind: "hero_injury",
+      severity: outcome.heroInjury === "severe" ? 3 : 2,
+      summary: outcome.heroInjury === "severe" ? "A hero came back badly hurt." : "A hero came back wounded.",
+      detail: outcome.heroInjury === "severe" ? "Recovery time and reduced performance will linger." : "The hero needs time to recover before peak performance returns.",
+    });
+  }
+
+  if (active.assignedArmyId && outcome.casualtyRate >= 0.22) {
+    addSetback(setbacks, {
+      kind: "army_attrition",
+      severity: outcome.casualtyRate >= 0.45 ? 3 : 2,
+      summary: "The assigned army took real losses.",
+      detail: `Estimated casualty rate ${Math.round(outcome.casualtyRate * 100)}%. Readiness and manpower both dropped.`,
+    });
+  }
+
+  return setbacks;
+}
+
+function buildMissionReceipt(active: ActiveMission, outcome: MissionOutcome, now: Date): MissionDefenseReceipt {
+  const setbacks = outcome.setbacks ?? [];
+  const posture = normalizePosture(active.responsePosture);
+  const summary = setbacks.length === 0
+    ? `${active.mission.title}: ${outcome.kind.toUpperCase()} with ${posture} posture.`
+    : `${active.mission.title}: ${outcome.kind.toUpperCase()} with ${setbacks.length} recorded setback${setbacks.length === 1 ? "" : "s"}.`;
+
+  return {
+    id: `receipt_${active.instanceId}`,
+    missionId: active.mission.id,
+    missionTitle: active.mission.title,
+    createdAt: now.toISOString(),
+    outcome: outcome.kind,
+    posture,
+    threatFamily: active.mission.threatFamily,
+    summary,
+    setbacks,
+  };
+}
+
 function resolveMissionOutcome(ps: PlayerState, active: ActiveMission): MissionOutcome {
   const mission = active.mission;
   const recommended = mission.recommendedPower || 0;
+  const posture = normalizePosture(active.responsePosture);
+  const postureMod = postureModifiers(posture);
+  const budgetScore = budgetSupportScore(mission, active.committedResources);
 
   let forcePower = 0;
   let heroEffect: ReturnType<typeof computeHeroMissionEffect> | null = null;
@@ -732,7 +901,9 @@ function resolveMissionOutcome(ps: PlayerState, active: ActiveMission): MissionO
   if (ratio <= 0.5) successChance -= 0.15;
   if (heroEffect) successChance += heroEffect.successBonus;
   if (armyEffect) successChance += armyEffect.successBonus;
-  successChance = Math.max(0.1, Math.min(0.95, successChance));
+  successChance += (budgetScore - 0.55) * 0.18;
+  successChance += postureMod.success;
+  successChance = Math.max(0.08, Math.min(0.96, successChance));
 
   const roll = Math.random();
 
@@ -758,6 +929,10 @@ function resolveMissionOutcome(ps: PlayerState, active: ActiveMission): MissionO
       break;
   }
 
+  casualtyRate += postureMod.casualty;
+  if (budgetScore >= 0.95) casualtyRate -= 0.04;
+  else if (budgetScore <= 0.4) casualtyRate += 0.06;
+
   if (heroEffect) {
     casualtyRate = Math.max(0.03, Math.min(0.95, casualtyRate + heroEffect.injuryDelta));
   }
@@ -771,7 +946,9 @@ function resolveMissionOutcome(ps: PlayerState, active: ActiveMission): MissionO
     else if (casualtyRate > 0.25) heroInjury = "light";
   }
 
-  return { kind, successChance, roll, casualtyRate, heroInjury };
+  const outcome: MissionOutcome = { kind, successChance, roll, casualtyRate, heroInjury, posture, budgetScore, setbacks: [] };
+  outcome.setbacks = computeMissionSetbacks(ps, active, outcome);
+  return outcome;
 }
 
 function applyCasualtiesAndXp(ps: PlayerState, active: ActiveMission, outcome: MissionOutcome): void {
@@ -918,10 +1095,12 @@ export function completeMissionForPlayer(
   const rewards = active.mission.expectedRewards;
   deps.applyRewards(ps, rewards);
   applyMissionImpactToRegion(ps, active.mission, outcome);
+  const receipt = buildMissionReceipt(active, outcome, now);
+  ps.missionReceipts = [receipt, ...(ps.missionReceipts ?? [])].slice(0, 20);
 
   deps.pushEvent(ps, {
     kind: "mission_complete",
-    message: `Mission ${active.mission.title}: ${outcome.kind.toUpperCase()}`,
+    message: `${receipt.summary}`,
     missionId: active.mission.id,
     heroId: active.assignedHeroId,
     armyId: active.assignedArmyId,
@@ -931,5 +1110,5 @@ export function completeMissionForPlayer(
 
   ps.activeMissions.splice(index, 1);
 
-  return { status: "ok", rewards, resources: ps.resources, outcome };
+  return { status: "ok", rewards, resources: ps.resources, outcome, receipt };
 }

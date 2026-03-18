@@ -182,6 +182,7 @@ export function MePage() {
   const [cityNameDraft, setCityNameDraft] = useState("");
   const [missionHeroSelection, setMissionHeroSelection] = useState<Record<string, string>>({});
   const [missionArmySelection, setMissionArmySelection] = useState<Record<string, string>>({});
+  const [missionPostureSelection, setMissionPostureSelection] = useState<Record<string, "cautious" | "balanced" | "aggressive" | "desperate">>({});
   const [notice, setNotice] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
 
   const noticeTimer = useRef<number | null>(null);
@@ -349,10 +350,10 @@ export function MePage() {
       (result: any) => summarizeUsage(result?.publicService)
     );
 
-  const handleStartMission = (missionId: string, heroId?: string, armyId?: string) =>
+  const handleStartMission = (missionId: string, heroId?: string, armyId?: string, responsePosture?: "cautious" | "balanced" | "aggressive" | "desperate") =>
     runAction(
       "Start mission",
-      () => startMission(missionId, heroId, armyId),
+      () => startMission(missionId, heroId, armyId, responsePosture),
       (result) => {
         const support = result?.missionSupport;
         if (!support) return "Mission launched.";
@@ -400,6 +401,7 @@ export function MePage() {
   const missionOffers = missionBoard?.missions ?? [];
   const activeMissions = missionBoard?.activeMissions ?? me?.activeMissions ?? [];
   const threatWarnings = missionBoard?.threatWarnings ?? me?.threatWarnings ?? [];
+  const missionReceipts = me?.missionReceipts ?? [];
 
   if (loading && !me) return <p>Loading /api/me…</p>;
 
@@ -688,10 +690,21 @@ export function MePage() {
                           </option>
                         ))}
                       </select>
+                      <select
+                        value={missionPostureSelection[mission.id] ?? "balanced"}
+                        onChange={(e) => setMissionPostureSelection((prev) => ({ ...prev, [mission.id]: e.target.value as any }))}
+                        style={{ padding: "6px 8px", borderRadius: 6, border: "1px solid #555", background: "#0b0b0b", color: "#ddd" }}
+                        disabled={disabled}
+                      >
+                        <option value="cautious">Cautious posture</option>
+                        <option value="balanced">Balanced posture</option>
+                        <option value="aggressive">Aggressive posture</option>
+                        <option value="desperate">Desperate posture</option>
+                      </select>
                       <button
                         style={{ padding: "6px 10px", borderRadius: 6, border: "1px solid #777", background: "#111", opacity: disabled ? 0.6 : 1 }}
                         disabled={disabled}
-                        onClick={() => void handleStartMission(mission.id, missionHeroSelection[mission.id] || undefined)}
+                        onClick={() => void handleStartMission(mission.id, missionHeroSelection[mission.id] || undefined, undefined, missionPostureSelection[mission.id] ?? "balanced")}
                       >
                         Start mission
                       </button>
@@ -711,10 +724,21 @@ export function MePage() {
                           </option>
                         ))}
                       </select>
+                      <select
+                        value={missionPostureSelection[mission.id] ?? "balanced"}
+                        onChange={(e) => setMissionPostureSelection((prev) => ({ ...prev, [mission.id]: e.target.value as any }))}
+                        style={{ padding: "6px 8px", borderRadius: 6, border: "1px solid #555", background: "#0b0b0b", color: "#ddd" }}
+                        disabled={disabled}
+                      >
+                        <option value="cautious">Cautious posture</option>
+                        <option value="balanced">Balanced posture</option>
+                        <option value="aggressive">Aggressive posture</option>
+                        <option value="desperate">Desperate posture</option>
+                      </select>
                       <button
                         style={{ padding: "6px 10px", borderRadius: 6, border: "1px solid #777", background: "#111", opacity: disabled ? 0.6 : 1 }}
                         disabled={disabled}
-                        onClick={() => void handleStartMission(mission.id, undefined, missionArmySelection[mission.id] || undefined)}
+                        onClick={() => void handleStartMission(mission.id, undefined, missionArmySelection[mission.id] || undefined, missionPostureSelection[mission.id] ?? "balanced")}
                       >
                         Start mission
                       </button>
@@ -734,7 +758,7 @@ export function MePage() {
             <div style={{ display: "grid", gap: 6 }}>
               {activeMissions.map((active) => (
                 <div key={active.instanceId} style={{ border: "1px solid #555", borderRadius: 8, padding: 10, display: "grid", gap: 5 }}>
-                  <div><strong>{active.mission.title}</strong> • {active.mission.kind} • finishes {new Date(active.finishesAt).toLocaleString()}</div>
+                  <div><strong>{active.mission.title}</strong> • {active.mission.kind} • posture {active.responsePosture} • finishes {new Date(active.finishesAt).toLocaleString()}</div>
                   <div style={{ fontSize: 12, opacity: 0.78 }}>{active.mission.supportGuidance?.headline ?? active.mission.risk.notes ?? "Mission in progress."}</div>
                   <div>
                     <button
@@ -745,6 +769,32 @@ export function MePage() {
                       Complete mission
                     </button>
                   </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+              <div style={{ display: "grid", gap: 6 }}>
+          <strong>Recent defense receipts</strong>
+          {missionReceipts.length === 0 ? (
+            <div style={{ opacity: 0.7 }}>No defense receipts yet. Once missions resolve, setbacks and posture receipts show up here.</div>
+          ) : (
+            <div style={{ display: "grid", gap: 6 }}>
+              {missionReceipts.slice(0, 5).map((receipt) => (
+                <div key={receipt.id} style={{ border: "1px solid #555", borderRadius: 8, padding: 10, display: "grid", gap: 5, background: "rgba(60,20,20,0.08)" }}>
+                  <div><strong>{receipt.missionTitle}</strong> • {receipt.outcome} • posture {receipt.posture}</div>
+                  <div style={{ fontSize: 12, opacity: 0.82 }}>{receipt.summary}</div>
+                  {receipt.setbacks.length ? (
+                    <div style={{ display: "grid", gap: 4 }}>
+                      {receipt.setbacks.map((setback, idx) => (
+                        <div key={`${receipt.id}_${idx}`} style={{ fontSize: 12, opacity: 0.8 }}>
+                          • <strong>{setback.summary}</strong> — {setback.detail}
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div style={{ fontSize: 12, opacity: 0.76 }}>No major setbacks recorded.</div>
+                  )}
                 </div>
               ))}
             </div>

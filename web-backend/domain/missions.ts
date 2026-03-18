@@ -10,7 +10,31 @@ import type { CityMudConsumerSummary, CityMudBridgeSummary } from "./cityMudBrid
 export type MissionKind = "hero" | "army";
 export type MissionDifficulty = "low" | "medium" | "high" | "extreme";
 export type MissionResponseTag = "frontline" | "recon" | "command" | "recovery" | "warding" | "defense";
+export type MissionResponsePosture = "cautious" | "balanced" | "aggressive" | "desperate";
 export type ThreatFamily = "bandits" | "mercs" | "desperate_towns" | "organized_hostile_forces" | "early_planar_strike";
+
+export type MissionSetbackKind = "resource_loss" | "infrastructure_damage" | "unrest" | "hero_injury" | "army_attrition" | "threat_surge";
+
+export interface MissionSetback {
+  kind: MissionSetbackKind;
+  severity: number;
+  summary: string;
+  detail: string;
+  resources?: RewardBundle;
+  statImpacts?: Record<string, number>;
+}
+
+export interface MissionDefenseReceipt {
+  id: string;
+  missionId: string;
+  missionTitle: string;
+  createdAt: string;
+  outcome: "success" | "partial" | "failure";
+  posture: MissionResponsePosture;
+  threatFamily?: ThreatFamily;
+  summary: string;
+  setbacks: MissionSetback[];
+}
 
 export interface RiskSummary {
   casualtyRisk: string;

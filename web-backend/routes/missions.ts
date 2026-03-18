@@ -30,11 +30,11 @@ router.get("/offers", async (req, res) => {
 });
 
 router.post("/start", async (req, res) => {
-  const { missionId, heroId, preferredHeroId, armyId, preferredArmyId } = req.body as { missionId?: string; heroId?: string; preferredHeroId?: string; armyId?: string; preferredArmyId?: string };
+  const { missionId, heroId, preferredHeroId, armyId, preferredArmyId, responsePosture } = req.body as { missionId?: string; heroId?: string; preferredHeroId?: string; armyId?: string; preferredArmyId?: string; responsePosture?: "cautious" | "balanced" | "aggressive" | "desperate" };
   if (!missionId) return res.status(400).json({ error: "missionId is required" });
 
   const access = await withPlayerAccessMutation(req, (access) => {
-    const active = startMissionForPlayer(access.playerId, missionId, new Date(), preferredHeroId ?? heroId, preferredArmyId ?? armyId);
+    const active = startMissionForPlayer(access.playerId, missionId, new Date(), preferredHeroId ?? heroId, preferredArmyId ?? armyId, responsePosture);
     if (!active) return { ok: false as const, code: 400, body: { error: "Mission not found or no available forces." } };
 
     const bridgeSummary = summarizeCityMudBridge(access.playerState);
@@ -42,7 +42,7 @@ router.post("/start", async (req, res) => {
 
     return {
       ok: true as const,
-      body: { ok: true, activeMission: active, activeMissions: access.playerState.activeMissions, threatWarnings: access.playerState.threatWarnings ?? [], heroes: access.playerState.heroes, armies: access.playerState.armies, bridgeSummary, bridgeConsumers, missionSupport: active.mission.supportGuidance ?? bridgeConsumers.missionBoard },
+      body: { ok: true, activeMission: active, activeMissions: access.playerState.activeMissions, threatWarnings: access.playerState.threatWarnings ?? [], heroes: access.playerState.heroes, armies: access.playerState.armies, bridgeSummary, bridgeConsumers, missionSupport: active.mission.supportGuidance ?? bridgeConsumers.missionBoard, missionReceipts: access.playerState.missionReceipts ?? [] },
     };
   });
 
@@ -61,7 +61,7 @@ router.post("/complete", async (req, res) => {
       return { ok: false as const, code: 400, body: { error: result.message ?? "Unable to complete mission", status: result.status } };
     }
 
-    return { ok: true as const, body: { ok: true, result, activeMissions: access.playerState.activeMissions, heroes: access.playerState.heroes, armies: access.playerState.armies, resources: access.playerState.resources, regionWar: access.playerState.regionWar } };
+    return { ok: true as const, body: { ok: true, result, activeMissions: access.playerState.activeMissions, threatWarnings: access.playerState.threatWarnings ?? [], heroes: access.playerState.heroes, armies: access.playerState.armies, resources: access.playerState.resources, regionWar: access.playerState.regionWar, missionReceipts: access.playerState.missionReceipts ?? [] } };
   });
 
   if (access.ok === false) return res.status(access.status).json({ error: access.error });
