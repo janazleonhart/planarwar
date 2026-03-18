@@ -505,6 +505,7 @@ export type GoalPackId =
   | "playtester"
   | "admin_smoke"
   | "web_smoke"
+  | "world_consequence_smoke"
   | "all_smoke"
   | "class_playtest";
 
@@ -952,6 +953,34 @@ const mmoAdminSmoke: GoalDefinition[] =
 
   // Class playtester suite: create/attach/smoke/delete per class.
   // NOTE: requires MOTHER_BRAIN_MMO_BACKEND_HTTP_BASE + service token editor, and WS configured.
+  const worldConsequenceSmoke: GoalDefinition[] =
+    ctx?.webBackendHttpBase && defaultAdminHeaders && String(process.env.MOTHER_BRAIN_CITY_SIGNAL_PLAYER_IDS || "").trim().length > 0
+      ? ([
+          {
+            id: "admin.mother_brain.city_signals",
+            kind: "http_json",
+            url: `${ctx.webBackendHttpBase}/api/admin/mother_brain/city_signals?playerId=${encodeURIComponent(
+              String(process.env.MOTHER_BRAIN_CITY_SIGNAL_PLAYER_IDS || "")
+                .split(",")
+                .map((v) => v.trim())
+                .filter(Boolean)[0] || "demo_player"
+            )}`,
+            requestHeaders: defaultAdminHeaders,
+            expectStatus: 200,
+            expectPath: "ok",
+            expectValue: true,
+            timeoutMs: 2500,
+          },
+        ] satisfies GoalDefinition[])
+      : ([
+          {
+            id: "world_consequence_smoke.disabled",
+            kind: "http_get",
+            url: "http://invalid.local/disabled",
+            enabled: false,
+          },
+        ] satisfies GoalDefinition[]);
+
   const classPlaytest: GoalDefinition[] = [
     { id: "ws.connected", kind: "ws_connected" },
     {
@@ -993,6 +1022,7 @@ const mmoAdminSmoke: GoalDefinition[] =
 
     admin_smoke: [...adminSmoke, ...mmoAdminSmoke],
     web_smoke: webSmoke,
+    world_consequence_smoke: worldConsequenceSmoke,
 
     // Convenience pack: combines core + web_smoke + admin_smoke + player_smoke.
     // Individual goals inside may be disabled (e.g. if MOTHER_BRAIN_WEB_BACKEND_HTTP_BASE is not set).

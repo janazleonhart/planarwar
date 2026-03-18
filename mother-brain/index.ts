@@ -144,6 +144,52 @@ type TickSnapshot = {
     lastBySuite?: Record<string, { ok: boolean; summary: GoalRunReport["summary"] }>;
     health: GoalsHealth;
   };
+
+  citySignals?: MotherBrainCitySignalsSnapshot;
+};
+
+type MotherBrainCitySignalRegionSummary = {
+  regionId: string;
+  netPressure: number;
+  netRecoveryLoad: number;
+  dominantSeverity: string;
+  controlDelta: number;
+  threatDelta: number;
+  blackMarketHeat: number;
+  factionDrift: number;
+};
+
+type MotherBrainCitySignalPlayerSnapshot = {
+  playerId: string;
+  ok: boolean;
+  fetchedAt: string;
+  ledgerCount?: number;
+  severeCount?: number;
+  activeTags?: string[];
+  topRegions?: MotherBrainCitySignalRegionSummary[];
+  worldEconomy?: Record<string, unknown> | null;
+  blackMarket?: Record<string, unknown> | null;
+  factionPressure?: Record<string, unknown> | null;
+  summary?: Record<string, unknown> | null;
+  error?: string;
+};
+
+type MotherBrainCitySignalsSnapshot = {
+  enabled: boolean;
+  everyTicks: number;
+  playerIds: string[];
+  ok: boolean;
+  lastFetchIso: string | null;
+  players: MotherBrainCitySignalPlayerSnapshot[];
+  summary: {
+    playersWithSignals: number;
+    totalLedgerEntries: number;
+    severeEntries: number;
+    hottestRegionId: string | null;
+    dominantEconomyOutlook: string | null;
+    dominantFactionStance: string | null;
+    maxBlackMarketOpportunity: number;
+  };
 };
 
 function nowIso(): string {
@@ -463,6 +509,17 @@ const ConfigSchema = z
     // Optional role-scoped service tokens for mmo-backend.
     MOTHER_BRAIN_MMO_BACKEND_SERVICE_TOKEN_READONLY: z.string().optional(),
     MOTHER_BRAIN_MMO_BACKEND_SERVICE_TOKEN_EDITOR: z.string().optional(),
+
+    // World consequence intake (observe-only): poll web-backend admin city signal views
+    // for one or more player ids and surface a bounded city->world consequence snapshot.
+    MOTHER_BRAIN_CITY_SIGNAL_EVERY_TICKS: z
+      .string()
+      .optional()
+      .transform((v) => (v ? Number(v) : 6))
+      .refine((n) => Number.isFinite(n) && n >= 0, {
+        message: "MOTHER_BRAIN_CITY_SIGNAL_EVERY_TICKS must be a number >= 0",
+      }),
+    MOTHER_BRAIN_CITY_SIGNAL_PLAYER_IDS: z.string().optional(),
   })
   .passthrough();
 
@@ -507,6 +564,8 @@ type MotherBrainConfig = {
   webBackendServiceToken?: string;
   webBackendServiceTokenReadonly?: string;
   webBackendServiceTokenEditor?: string;
+  citySignalEveryTicks: number;
+  citySignalPlayerIds: string[];
 
   mmoBackendHttpBase?: string;
   mmoBackendServiceToken?: string;
@@ -580,6 +639,12 @@ function parseConfig(): MotherBrainConfig {
       env.MOTHER_BRAIN_WEB_BACKEND_SERVICE_TOKEN ??
       process.env.PW_MOTHER_BRAIN_SERVICE_TOKEN ??
       process.env.PW_SERVICE_TOKEN,
+
+    citySignalEveryTicks: env.MOTHER_BRAIN_CITY_SIGNAL_EVERY_TICKS,
+    citySignalPlayerIds: String(env.MOTHER_BRAIN_CITY_SIGNAL_PLAYER_IDS ?? "")
+      .split(",")
+      .map((v) => v.trim())
+      .filter(Boolean),
 
     mmoBackendServiceToken:
       env.MOTHER_BRAIN_MMO_BACKEND_SERVICE_TOKEN ?? process.env.PW_MOTHER_BRAIN_SERVICE_TOKEN ?? process.env.PW_SERVICE_TOKEN,
@@ -1298,6 +1363,7 @@ type StatusState = {
     state: GoalsState;
     lastReport: GoalRunReport | null;
   };
+  citySignals: MotherBrainCitySignalsSnapshot | null;
 };
 
 function deriveGoalsReportDir(cfg: MotherBrainConfig): string | undefined {
@@ -1329,6 +1395,157 @@ async function readJsonBody(req: http.IncomingMessage, maxBytes = 128 * 1024): P
   const raw = Buffer.concat(chunks).toString("utf-8").trim();
   if (raw.length === 0) return null;
   return JSON.parse(raw) as unknown;
+}
+
+function buildServiceHeaders(token: string | undefined): Record<string, string> | undefined {
+  if (!token || token.trim().length === 0) return undefined;
+  return { "x-service-token": token.trim() };
+}
+
+async function fetchJsonWithTimeout(url: string, init: RequestInit | undefined, timeoutMs: number): Promise<any> {
+  const controller = new AbortController();
+  const t = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(url, { ...(init ?? {}), signal: controller.signal });
+    const text = await res.text();
+    const data = text.length > 0 ? JSON.parse(text) : null;
+    if (!res.ok) {
+      throw new Error(`http_${res.status}`);
+    }
+    return data;
+  } finally {
+    clearTimeout(t);
+  }
+}
+
+function toFiniteNumber(value: unknown): number {
+  return typeof value === "number" && Number.isFinite(value) ? value : 0;
+}
+
+function summarizeCitySignalPayload(playerId: string, payload: any): MotherBrainCitySignalPlayerSnapshot {
+  const propagated = payload?.propagatedState ?? {};
+  const regions = Array.isArray(propagated?.regions) ? propagated.regions : [];
+  const topRegions = regions
+    .map((region: any) => ({
+      regionId: typeof region?.regionId === "string" ? region.regionId : "unknown_region",
+      netPressure: toFiniteNumber(region?.netPressure),
+      netRecoveryLoad: toFiniteNumber(region?.netRecoveryLoad),
+      dominantSeverity: typeof region?.dominantSeverity === "string" ? region.dominantSeverity : "watch",
+      controlDelta: toFiniteNumber(region?.controlDelta),
+      threatDelta: toFiniteNumber(region?.threatDelta),
+      blackMarketHeat: toFiniteNumber(region?.blackMarketHeat),
+      factionDrift: toFiniteNumber(region?.factionDrift),
+    }))
+    .sort((a: MotherBrainCitySignalRegionSummary, b: MotherBrainCitySignalRegionSummary) => {
+      const scoreA = a.netPressure + a.blackMarketHeat + Math.abs(a.factionDrift);
+      const scoreB = b.netPressure + b.blackMarketHeat + Math.abs(b.factionDrift);
+      return scoreB - scoreA;
+    })
+    .slice(0, 5);
+  const ledger = Array.isArray(payload?.ledger) ? payload.ledger : [];
+  const severeCount = ledger.filter((entry: any) => entry?.severity === "severe").length;
+  const activeTags = Array.isArray(payload?.summary?.activeTags)
+    ? payload.summary.activeTags.filter((tag: unknown) => typeof tag === "string")
+    : [];
+  return {
+    playerId,
+    ok: true,
+    fetchedAt: nowIso(),
+    ledgerCount: ledger.length,
+    severeCount,
+    activeTags,
+    topRegions,
+    worldEconomy: propagated?.worldEconomy ?? null,
+    blackMarket: propagated?.blackMarket ?? null,
+    factionPressure: propagated?.factionPressure ?? null,
+    summary: propagated?.summary ?? payload?.summary ?? null,
+  };
+}
+
+function emptyCitySignalsSnapshot(cfg: MotherBrainConfig, previous?: MotherBrainCitySignalsSnapshot | null): MotherBrainCitySignalsSnapshot {
+  return {
+    enabled: Boolean(cfg.webBackendHttpBase && cfg.citySignalEveryTicks > 0 && cfg.citySignalPlayerIds.length > 0),
+    everyTicks: cfg.citySignalEveryTicks,
+    playerIds: cfg.citySignalPlayerIds,
+    ok: previous?.ok ?? false,
+    lastFetchIso: previous?.lastFetchIso ?? null,
+    players: previous?.players ?? [],
+    summary: previous?.summary ?? {
+      playersWithSignals: 0,
+      totalLedgerEntries: 0,
+      severeEntries: 0,
+      hottestRegionId: null,
+      dominantEconomyOutlook: null,
+      dominantFactionStance: null,
+      maxBlackMarketOpportunity: 0,
+    },
+  };
+}
+
+function aggregateCitySignals(cfg: MotherBrainConfig, players: MotherBrainCitySignalPlayerSnapshot[], fetchedAt: string): MotherBrainCitySignalsSnapshot {
+  let hottestRegionId: string | null = null;
+  let hottestRegionScore = -1;
+  const economyCounts = new Map<string, number>();
+  const stanceCounts = new Map<string, number>();
+  let maxBlackMarketOpportunity = 0;
+  for (const player of players) {
+    for (const region of player.topRegions ?? []) {
+      const score = region.netPressure + region.blackMarketHeat + Math.abs(region.factionDrift);
+      if (score > hottestRegionScore) {
+        hottestRegionScore = score;
+        hottestRegionId = region.regionId;
+      }
+    }
+    const economyOutlook = typeof player.worldEconomy?.outlook === "string" ? String(player.worldEconomy.outlook) : null;
+    if (economyOutlook) economyCounts.set(economyOutlook, (economyCounts.get(economyOutlook) ?? 0) + 1);
+    const stance = typeof player.factionPressure?.dominantStance === "string" ? String(player.factionPressure.dominantStance) : null;
+    if (stance) stanceCounts.set(stance, (stanceCounts.get(stance) ?? 0) + 1);
+    maxBlackMarketOpportunity = Math.max(maxBlackMarketOpportunity, toFiniteNumber(player.blackMarket?.opportunityScore));
+  }
+  const dominantEconomyOutlook = [...economyCounts.entries()].sort((a,b)=> b[1]-a[1])[0]?.[0] ?? null;
+  const dominantFactionStance = [...stanceCounts.entries()].sort((a,b)=> b[1]-a[1])[0]?.[0] ?? null;
+  return {
+    enabled: Boolean(cfg.webBackendHttpBase && cfg.citySignalEveryTicks > 0 && cfg.citySignalPlayerIds.length > 0),
+    everyTicks: cfg.citySignalEveryTicks,
+    playerIds: cfg.citySignalPlayerIds,
+    ok: players.every((player) => player.ok),
+    lastFetchIso: fetchedAt,
+    players,
+    summary: {
+      playersWithSignals: players.filter((player) => player.ok).length,
+      totalLedgerEntries: players.reduce((sum, player) => sum + (player.ledgerCount ?? 0), 0),
+      severeEntries: players.reduce((sum, player) => sum + (player.severeCount ?? 0), 0),
+      hottestRegionId,
+      dominantEconomyOutlook,
+      dominantFactionStance,
+      maxBlackMarketOpportunity,
+    },
+  };
+}
+
+async function pollCitySignals(cfg: MotherBrainConfig): Promise<MotherBrainCitySignalsSnapshot> {
+  const fetchedAt = nowIso();
+  if (!cfg.webBackendHttpBase || cfg.citySignalEveryTicks <= 0 || cfg.citySignalPlayerIds.length === 0) {
+    return emptyCitySignalsSnapshot(cfg, null);
+  }
+  const headers = buildServiceHeaders(cfg.webBackendServiceTokenReadonly ?? cfg.webBackendServiceToken ?? cfg.webBackendAdminToken);
+  const base = cfg.webBackendHttpBase.replace(/\/$/, "");
+  const players: MotherBrainCitySignalPlayerSnapshot[] = [];
+  for (const playerId of cfg.citySignalPlayerIds) {
+    try {
+      const url = `${base}/api/admin/mother_brain/city_signals?playerId=${encodeURIComponent(playerId)}`;
+      const payload = await fetchJsonWithTimeout(url, { headers }, Math.max(1000, Math.min(5000, cfg.dbTimeoutMs + 1000)));
+      players.push(summarizeCitySignalPayload(playerId, payload));
+    } catch (error) {
+      players.push({
+        playerId,
+        ok: false,
+        fetchedAt,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+  return aggregateCitySignals(cfg, players, fetchedAt);
 }
 
 function computeSignature(s: TickSnapshot): string {
@@ -1890,6 +2107,7 @@ async function main(): Promise<void> {
       }),
       lastReport: null,
     },
+    citySignals: emptyCitySignalsSnapshot(cfg, null),
   };
 
   let httpServer: http.Server | null = null;
@@ -2155,6 +2373,26 @@ async function main(): Promise<void> {
     }
 
 
+    if (cfg.citySignalEveryTicks > 0 && cfg.citySignalPlayerIds.length > 0 && tick % cfg.citySignalEveryTicks === 0) {
+      try {
+        state.citySignals = await pollCitySignals(cfg);
+        if (!state.citySignals.ok) {
+          gatedLog("warn", "City signal poll had failures", {
+            tick,
+            playerIds: state.citySignals.playerIds,
+            failures: state.citySignals.players.filter((player) => !player.ok).map((player) => ({ playerId: player.playerId, error: player.error ?? "unknown" })),
+          });
+        }
+      } catch (e: unknown) {
+        state.citySignals = {
+          ...emptyCitySignalsSnapshot(cfg, state.citySignals),
+          ok: false,
+          lastFetchIso: nowIso(),
+          players: cfg.citySignalPlayerIds.map((playerId) => ({ playerId, ok: false, fetchedAt: nowIso(), error: e instanceof Error ? e.message : String(e) })),
+        };
+      }
+    }
+
     const goalsHealth = computeGoalsHealth(state.goals.state);
 
     const snapshot: TickSnapshot = {
@@ -2199,6 +2437,8 @@ async function main(): Promise<void> {
         lastBySuite: goalsHealth.bySuite ?? (state.goals.state.lastBySuite as any),
         health: goalsHealth,
       },
+
+      ...(state.citySignals ? { citySignals: state.citySignals } : {}),
     };
 
     // Update HTTP-visible state
