@@ -160,6 +160,18 @@ function warningQualityTone(quality: string): string {
   }
 }
 
+function pressureConfidenceLabel(confidence: string): string {
+  switch (confidence) {
+    case "urgent": return "Urgent";
+    case "credible": return "Credible";
+    default: return "Watch";
+  }
+}
+
+function formatPressureWindow(startIso: string, endIso: string): string {
+  return formatWarningWindow(startIso, endIso);
+}
+
 function formatContractKind(kind: string | undefined): string {
   switch (kind) {
     case "stabilize_district": return "Stabilize district";
@@ -411,6 +423,7 @@ export function MePage() {
   const missionOffers = missionBoard?.missions ?? [];
   const activeMissions = missionBoard?.activeMissions ?? me?.activeMissions ?? [];
   const threatWarnings = missionBoard?.threatWarnings ?? me?.threatWarnings ?? [];
+  const motherBrainPressureMap = missionBoard?.motherBrainPressureMap ?? me?.motherBrainPressureMap ?? [];
   const missionReceipts = me?.missionReceipts ?? [];
 
   if (loading && !me) return <p>Loading /api/me…</p>;
@@ -793,7 +806,34 @@ export function MePage() {
             </div>
           )}
         </div>
-              <div style={{ display: "grid", gap: 6 }}>
+
+        <div style={{ display: "grid", gap: 6 }}>
+          <strong>Mother Brain pressure map</strong>
+          {motherBrainPressureMap.length === 0 ? (
+            <div style={{ opacity: 0.7 }}>No pressure windows flagged yet. Once exposure and hostile pressure rise, the precursor map will nominate likely families.</div>
+          ) : (
+            <div style={{ display: "grid", gap: 6 }}>
+              {motherBrainPressureMap.map((window) => (
+                <div key={window.id} style={{ border: "1px solid #555", borderRadius: 8, padding: 10, display: "grid", gap: 5, background: "rgba(26,38,60,0.12)" }}>
+                  <div><strong>{getThreatFamilyDisplayName(window.threatFamily)}</strong> • {pressureConfidenceLabel(window.confidence)} • pressure {window.pressureScore}/100</div>
+                  <div style={{ fontSize: 12, opacity: 0.82 }}>Exposure {window.exposureScore}/100 • window {formatPressureWindow(window.earliestWindowAt, window.latestWindowAt)}</div>
+                  <div style={{ fontSize: 12, opacity: 0.88 }}>{window.summary}</div>
+                  <div style={{ fontSize: 12, opacity: 0.76 }}>{window.detail}</div>
+                  <div style={{ fontSize: 12, opacity: 0.78 }}>Likely lanes: {window.responseTags.join("/")}</div>
+                  {window.reasons.length ? (
+                    <div style={{ display: "grid", gap: 4 }}>
+                      {window.reasons.map((reason, idx) => (
+                        <div key={`${window.id}_${idx}`} style={{ fontSize: 12, opacity: 0.76 }}>• {reason}</div>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div style={{ display: "grid", gap: 6 }}>
           <strong>Recent defense receipts</strong>
           {missionReceipts.length === 0 ? (
             <div style={{ opacity: 0.7 }}>No defense receipts yet. Once missions resolve, setbacks and posture receipts show up here.</div>

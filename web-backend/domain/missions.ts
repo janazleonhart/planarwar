@@ -61,6 +61,23 @@ export interface MissionOfferSupportGuidance {
 }
 
 export type WarningIntelQuality = "faint" | "usable" | "clear" | "precise";
+export type PressureMapConfidence = "watch" | "credible" | "urgent";
+
+export interface MotherBrainPressureWindow {
+  id: string;
+  generatedAt: string;
+  earliestWindowAt: string;
+  latestWindowAt: string;
+  pressureScore: number;
+  exposureScore: number;
+  confidence: PressureMapConfidence;
+  threatFamily: ThreatFamily;
+  responseTags: MissionResponseTag[];
+  reasons: string[];
+  summary: string;
+  detail: string;
+  sourceMissionIds: string[];
+}
 
 export interface ThreatWarning {
   threatFamily?: ThreatFamily;

@@ -141,6 +141,24 @@ export interface MissionDefenseReceipt {
   setbacks: MissionSetback[];
 }
 
+export type PressureMapConfidence = "watch" | "credible" | "urgent";
+
+export interface MotherBrainPressureWindow {
+  id: string;
+  generatedAt: string;
+  earliestWindowAt: string;
+  latestWindowAt: string;
+  pressureScore: number;
+  exposureScore: number;
+  confidence: PressureMapConfidence;
+  threatFamily: ThreatFamily;
+  responseTags: MissionResponseTag[];
+  reasons: string[];
+  summary: string;
+  detail: string;
+  sourceMissionIds: string[];
+}
+
 export interface ThreatWarning {
   threatFamily?: ThreatFamily;
   targetingPressure?: number;
@@ -573,6 +591,7 @@ export interface MissionBoardResponse {
   missions: MissionOffer[];
   activeMissions: ActiveMission[];
   threatWarnings: ThreatWarning[];
+  motherBrainPressureMap: MotherBrainPressureWindow[];
   bridgeSummary?: CityMudBridgeSummary;
   bridgeConsumers?: CityMudConsumerSummary;
 }
@@ -582,6 +601,7 @@ export interface StartMissionResponse {
   activeMission: ActiveMission;
   activeMissions: ActiveMission[];
   threatWarnings: ThreatWarning[];
+  motherBrainPressureMap: MotherBrainPressureWindow[];
   missionReceipts: MissionDefenseReceipt[];
   heroes: Hero[];
   armies: Army[];
@@ -595,6 +615,7 @@ export interface CompleteMissionResponse {
   result: any;
   activeMissions: ActiveMission[];
   threatWarnings: ThreatWarning[];
+  motherBrainPressureMap: MotherBrainPressureWindow[];
   missionReceipts: MissionDefenseReceipt[];
   heroes: Hero[];
   armies: Army[];
@@ -617,6 +638,7 @@ export interface MeProfile {
   armies: Army[];
   activeMissions?: ActiveMission[];
   threatWarnings?: ThreatWarning[];
+  motherBrainPressureMap?: MotherBrainPressureWindow[];
   missionReceipts?: MissionDefenseReceipt[];
   researchedTechIds: string[];
   availableTechs: TechSummary[];

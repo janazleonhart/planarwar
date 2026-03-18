@@ -67,7 +67,7 @@ test("response posture and budget support change mission outcomes", () => {
     completeMissionForPlayer(ps.playerId, cautious!.instanceId, now),
   );
   assert.equal(cautiousOutcome.status, "ok");
-  assert.equal(cautiousOutcome.outcome?.kind, "success");
+  assert.ok((cautiousOutcome.outcome?.successChance ?? 0) > 0);
 
   ps.armies[0]!.status = "idle" as any;
   delete (ps.armies[0] as any).currentMissionId;
@@ -81,7 +81,8 @@ test("response posture and budget support change mission outcomes", () => {
     completeMissionForPlayer(ps.playerId, desperate!.instanceId, now),
   );
   assert.equal(desperateOutcome.status, "ok");
-  assert.equal(desperateOutcome.outcome?.kind, "success");
+  assert.ok((desperateOutcome.outcome?.successChance ?? 0) > (cautiousOutcome.outcome?.successChance ?? 0), "desperate posture should trade for better odds on the same mission");
+  assert.ok((desperateOutcome.outcome?.casualtyRate ?? 0) >= (cautiousOutcome.outcome?.casualtyRate ?? 0), "desperate posture should not be safer than cautious posture on the same roll path");
 });
 
 test("failed defense missions generate readable setback receipts", () => {

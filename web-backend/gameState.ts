@@ -18,12 +18,14 @@ import {
   type MissionOutcomeKind,
   type WarfrontAssaultResult,
   type ThreatWarningSyncResult,
+  type MotherBrainPressureMapSyncResult,
   completeMissionForPlayer as completeMissionForPlayerHelper,
   regenerateRegionMissionsForPlayer as regenerateRegionMissionsForPlayerHelper,
   startGarrisonStrikeForPlayer as startGarrisonStrikeForPlayerHelper,
   startMissionForPlayer as startMissionForPlayerHelper,
   startWarfrontAssaultForPlayer as startWarfrontAssaultForPlayerHelper,
   syncThreatWarnings as syncThreatWarningsHelper,
+  syncMotherBrainPressureMap as syncMotherBrainPressureMapHelper,
   syncRecoveryContractsForState as syncRecoveryContractsForStateHelper,
 } from "./gameState/gameStateMissions";
 import {
@@ -76,6 +78,7 @@ import type {
   MissionResponsePosture,
   RewardBundle,
   ThreatWarning,
+  MotherBrainPressureWindow,
 } from "./domain/missions";
 import type { TechAge, TechEpoch, TechCategory } from "./domain/tech";
 import type { ResourceKey, ResourceVector } from "./domain/resources";
@@ -208,6 +211,7 @@ export interface PlayerState {
   currentOffers: MissionOffer[];
   activeMissions: ActiveMission[];
   threatWarnings: ThreatWarning[];
+  motherBrainPressureMap: MotherBrainPressureWindow[];
   missionReceipts: MissionDefenseReceipt[];
 
   policies: PoliciesState;
@@ -349,6 +353,10 @@ function syncThreatWarnings(ps: PlayerState, now: Date): ThreatWarningSyncResult
   return syncThreatWarningsHelper(ps, now);
 }
 
+export function syncMotherBrainPressureMap(ps: PlayerState, now: Date): MotherBrainPressureMapSyncResult {
+  return syncMotherBrainPressureMapHelper(ps, now);
+}
+
 // City Stress
 
 export function tickPlayerState(ps: PlayerState, now: Date): void {
@@ -368,6 +376,7 @@ export function tickPlayerState(ps: PlayerState, now: Date): void {
 
   ensureOffers(ps);
   syncThreatWarnings(ps, now);
+  syncMotherBrainPressureMap(ps, now);
 }
 
 // ---- Missions / offers helpers ----

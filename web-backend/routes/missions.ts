@@ -22,7 +22,7 @@ router.get("/offers", async (req, res) => {
     const missions = applyMissionConsumerGuidance(ps.currentOffers, bridgeSummary, bridgeConsumers);
     ps.currentOffers = missions;
 
-    return { missions, activeMissions: ps.activeMissions, threatWarnings: ps.threatWarnings ?? [], bridgeSummary, bridgeConsumers };
+    return { missions, activeMissions: ps.activeMissions, threatWarnings: ps.threatWarnings ?? [], motherBrainPressureMap: ps.motherBrainPressureMap ?? [], bridgeSummary, bridgeConsumers };
   });
 
   if (access.ok === false) return res.status(access.status).json({ error: access.error });
@@ -42,7 +42,7 @@ router.post("/start", async (req, res) => {
 
     return {
       ok: true as const,
-      body: { ok: true, activeMission: active, activeMissions: access.playerState.activeMissions, threatWarnings: access.playerState.threatWarnings ?? [], heroes: access.playerState.heroes, armies: access.playerState.armies, bridgeSummary, bridgeConsumers, missionSupport: active.mission.supportGuidance ?? bridgeConsumers.missionBoard, missionReceipts: access.playerState.missionReceipts ?? [] },
+      body: { ok: true, activeMission: active, activeMissions: access.playerState.activeMissions, threatWarnings: access.playerState.threatWarnings ?? [], motherBrainPressureMap: access.playerState.motherBrainPressureMap ?? [], heroes: access.playerState.heroes, armies: access.playerState.armies, bridgeSummary, bridgeConsumers, missionSupport: active.mission.supportGuidance ?? bridgeConsumers.missionBoard, missionReceipts: access.playerState.missionReceipts ?? [] },
     };
   });
 
@@ -61,7 +61,7 @@ router.post("/complete", async (req, res) => {
       return { ok: false as const, code: 400, body: { error: result.message ?? "Unable to complete mission", status: result.status } };
     }
 
-    return { ok: true as const, body: { ok: true, result, activeMissions: access.playerState.activeMissions, threatWarnings: access.playerState.threatWarnings ?? [], heroes: access.playerState.heroes, armies: access.playerState.armies, resources: access.playerState.resources, regionWar: access.playerState.regionWar, missionReceipts: access.playerState.missionReceipts ?? [] } };
+    return { ok: true as const, body: { ok: true, result, activeMissions: access.playerState.activeMissions, threatWarnings: access.playerState.threatWarnings ?? [], motherBrainPressureMap: access.playerState.motherBrainPressureMap ?? [], heroes: access.playerState.heroes, armies: access.playerState.armies, resources: access.playerState.resources, regionWar: access.playerState.regionWar, missionReceipts: access.playerState.missionReceipts ?? [] } };
   });
 
   if (access.ok === false) return res.status(access.status).json({ error: access.error });

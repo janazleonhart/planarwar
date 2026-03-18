@@ -6,7 +6,7 @@ import { missionDurationConfig } from "../config";
 import type { Army, ArmyResponseRole } from "../domain/armies";
 import type { Hero, HeroAttachment, HeroResponseRole, HeroTrait } from "../domain/heroes";
 import { getHeroAttachmentDef } from "./gameStateHeroes";
-import type { MissionDefenseReceipt, MissionDifficulty, MissionOffer, MissionResponsePosture, MissionResponseTag, MissionSetback, RecoveryContractKind, RewardBundle, ThreatFamily, ThreatWarning, WarningIntelQuality } from "../domain/missions";
+import type { MissionDefenseReceipt, MissionDifficulty, MissionOffer, MissionResponsePosture, MissionResponseTag, MissionSetback, MotherBrainPressureWindow, PressureMapConfidence, RecoveryContractKind, RewardBundle, ThreatFamily, ThreatWarning, WarningIntelQuality } from "../domain/missions";
 import type { RegionId, World } from "../domain/world";
 import type {
   ActiveMission,
@@ -54,6 +54,12 @@ export interface ThreatWarningSyncResult {
   warnings: ThreatWarning[];
   intelScore: number;
   intelQuality: WarningIntelQuality;
+}
+
+export interface MotherBrainPressureMapSyncResult {
+  pressureMap: MotherBrainPressureWindow[];
+  exposureScore: number;
+  highestPressure: number;
 }
 
 export interface MissionStateDeps {
@@ -207,6 +213,106 @@ export function syncThreatWarnings(ps: PlayerState, now: Date): ThreatWarningSyn
 
   ps.threatWarnings = warnings;
   return { warnings, intelScore, intelQuality };
+}
+
+
+function clampPercent(value: number): number {
+  return Math.max(0, Math.min(100, Math.round(value)));
+}
+
+function pressureConfidence(score: number): PressureMapConfidence {
+  if (score >= 80) return "urgent";
+  if (score >= 55) return "credible";
+  return "watch";
+}
+
+function computeExposureScore(ps: PlayerState): number {
+  const prosperity = Number(ps.city.stats.prosperity ?? 0);
+  const infrastructure = Number(ps.city.stats.infrastructure ?? 0);
+  const influence = Number(ps.city.stats.influence ?? 0);
+  const arcane = Number(ps.city.stats.arcaneSaturation ?? 0);
+  const security = Number(ps.city.stats.security ?? 0);
+  const stress = Number(ps.cityStress?.total ?? 0);
+  return clampPercent(prosperity * 0.32 + infrastructure * 0.16 + influence * 0.16 + arcane * 0.14 + stress * 0.14 - security * 0.22);
+}
+
+function summarizePressureWindow(window: MotherBrainPressureWindow): string {
+  return `${threatFamilyLabel(window.threatFamily)} pressure ${window.pressureScore}/100 with ${window.confidence} confidence.`;
+}
+
+function detailPressureWindow(window: MotherBrainPressureWindow): string {
+  const reasons = window.reasons.slice(0, 2).join(" ");
+  const lanes = window.responseTags.join("/");
+  return `Mother Brain precursor flags ${lanes} exposure. ${reasons}`.trim();
+}
+
+export function syncMotherBrainPressureMap(ps: PlayerState, now: Date): MotherBrainPressureMapSyncResult {
+  const exposureScore = computeExposureScore(ps);
+  const warnings = Array.isArray(ps.threatWarnings) ? ps.threatWarnings : [];
+  const offers = Array.isArray(ps.currentOffers) ? ps.currentOffers : [];
+
+  const familyBuckets = new Map<ThreatFamily, { pressure: number; reasons: string[]; tags: MissionResponseTag[]; earliest?: string; latest?: string; missionIds: string[] }>();
+
+  for (const offer of offers) {
+    const family = offer.threatFamily;
+    if (!family) continue;
+    const existing = familyBuckets.get(family) ?? { pressure: 0, reasons: [], tags: [], missionIds: [] };
+    existing.pressure = Math.max(existing.pressure, Number(offer.targetingPressure ?? offer.recommendedPower ?? 0));
+    existing.reasons.push(...(offer.targetingReasons ?? []));
+    existing.tags.push(...(offer.responseTags ?? []));
+    existing.missionIds.push(offer.id);
+    familyBuckets.set(family, existing);
+  }
+
+  for (const warning of warnings) {
+    const family = warning.threatFamily;
+    if (!family) continue;
+    const existing = familyBuckets.get(family) ?? { pressure: 0, reasons: [], tags: [], missionIds: [] };
+    existing.pressure = Math.max(existing.pressure, Number(warning.targetingPressure ?? warning.severity ?? 0));
+    existing.reasons.push(...(warning.targetingReasons ?? []));
+    existing.tags.push(...(warning.responseTags ?? []));
+    existing.earliest = existing.earliest ?? warning.earliestImpactAt;
+    existing.latest = existing.latest ?? warning.latestImpactAt;
+    if (warning.missionId) existing.missionIds.push(warning.missionId);
+    familyBuckets.set(family, existing);
+  }
+
+  const windows: MotherBrainPressureWindow[] = Array.from(familyBuckets.entries())
+    .map(([family, bucket], index) => {
+      const combinedPressure = clampPercent(bucket.pressure * 0.72 + exposureScore * 0.28);
+      const confidence = pressureConfidence(combinedPressure);
+      const earliestWindowAt = bucket.earliest ?? new Date(now.getTime() + (25 + index * 10) * 60_000).toISOString();
+      const latestWindowAt = bucket.latest ?? new Date(now.getTime() + (70 + index * 12) * 60_000).toISOString();
+      const responseTags = Array.from(new Set(bucket.tags)).slice(0, 3) as MissionResponseTag[];
+      const reasons = Array.from(new Set(bucket.reasons.filter(Boolean))).slice(0, 3);
+      const window: MotherBrainPressureWindow = {
+        id: `mb_pressure_${family}`,
+        generatedAt: now.toISOString(),
+        earliestWindowAt,
+        latestWindowAt,
+        pressureScore: combinedPressure,
+        exposureScore,
+        confidence,
+        threatFamily: family,
+        responseTags: responseTags.length ? responseTags : [family === "early_planar_strike" ? "warding" : "frontline"],
+        reasons: reasons.length ? reasons : ["City exposure and hostile pressure are high enough to justify a watch window."],
+        summary: "",
+        detail: "",
+        sourceMissionIds: Array.from(new Set(bucket.missionIds)).slice(0, 4),
+      };
+      window.summary = summarizePressureWindow(window);
+      window.detail = detailPressureWindow(window);
+      return window;
+    })
+    .sort((a, b) => b.pressureScore - a.pressureScore)
+    .slice(0, 3);
+
+  ps.motherBrainPressureMap = windows;
+  return {
+    pressureMap: windows,
+    exposureScore,
+    highestPressure: windows[0]?.pressureScore ?? 0,
+  };
 }
 
 function durationMinutesForDifficulty(diff: MissionDifficulty): number {

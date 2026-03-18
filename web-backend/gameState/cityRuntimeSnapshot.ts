@@ -18,6 +18,7 @@ export interface CityRuntimeSnapshotV1 {
   currentOffers: any[];
   activeMissions: any[];
   threatWarnings: any[];
+  motherBrainPressureMap: any[];
   missionReceipts: any[];
   policies: Record<string, any>;
   lastTickAt: string;
@@ -89,6 +90,7 @@ function normalizeLegacySnapshot(input: Record<string, any>): CityRuntimeSnapsho
     currentOffers: Array.isArray(state.currentOffers) ? deepCloneJson(state.currentOffers).slice(0, MAX_SNAPSHOT_OFFERS) : [],
     activeMissions: Array.isArray(state.activeMissions) ? deepCloneJson(state.activeMissions) : [],
     threatWarnings: Array.isArray(state.threatWarnings) ? deepCloneJson(state.threatWarnings) : [],
+    motherBrainPressureMap: Array.isArray(state.motherBrainPressureMap) ? deepCloneJson(state.motherBrainPressureMap) : [],
     missionReceipts: Array.isArray(state.missionReceipts) ? deepCloneJson(state.missionReceipts) : [],
     policies: isRecord(state.policies) ? deepCloneJson(state.policies) : {},
     lastTickAt: typeof state.lastTickAt === "string" ? state.lastTickAt : "",
@@ -143,6 +145,7 @@ export function buildCityRuntimeSnapshot(ps: PlayerState): CityRuntimeSnapshotV1
     currentOffers: deepCloneJson((ps.currentOffers ?? []).slice(0, MAX_SNAPSHOT_OFFERS)),
     activeMissions: deepCloneJson(ps.activeMissions),
     threatWarnings: deepCloneJson(ps.threatWarnings ?? []),
+    motherBrainPressureMap: deepCloneJson(ps.motherBrainPressureMap ?? []),
     missionReceipts: deepCloneJson(ps.missionReceipts ?? []),
     policies: deepCloneJson(ps.policies),
     lastTickAt: ps.lastTickAt,
@@ -184,6 +187,7 @@ export function applyCityRuntimeSnapshot(ps: PlayerState, snapshot: CityRuntimeS
   ps.currentOffers = Array.isArray(snapshot.currentOffers) ? (deepCloneJson(snapshot.currentOffers) as PlayerState["currentOffers"]) : ps.currentOffers;
   ps.activeMissions = Array.isArray(snapshot.activeMissions) ? (deepCloneJson(snapshot.activeMissions) as PlayerState["activeMissions"]) : ps.activeMissions;
   ps.threatWarnings = Array.isArray(snapshot.threatWarnings) ? (deepCloneJson(snapshot.threatWarnings) as PlayerState["threatWarnings"]) : ps.threatWarnings;
+  ps.motherBrainPressureMap = Array.isArray(snapshot.motherBrainPressureMap) ? (deepCloneJson(snapshot.motherBrainPressureMap) as PlayerState["motherBrainPressureMap"]) : ps.motherBrainPressureMap;
   ps.missionReceipts = Array.isArray(snapshot.missionReceipts) ? (deepCloneJson(snapshot.missionReceipts) as PlayerState["missionReceipts"]) : ps.missionReceipts;
   ps.policies = isRecord(snapshot.policies) ? (deepCloneJson(snapshot.policies) as PlayerState["policies"]) : ps.policies;
   ps.lastTickAt = typeof snapshot.lastTickAt === "string" && snapshot.lastTickAt ? snapshot.lastTickAt : ps.lastTickAt;

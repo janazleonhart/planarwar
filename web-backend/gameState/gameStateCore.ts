@@ -88,6 +88,7 @@ export function createInitialPlayerState(
     currentOffers: [],
     activeMissions: [],
     threatWarnings: [],
+    motherBrainPressureMap: [],
     missionReceipts: [],
     policies: { ...defaultPolicies },
     lastTickAt: nowIso,
