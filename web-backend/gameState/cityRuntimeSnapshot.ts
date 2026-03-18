@@ -17,6 +17,7 @@ export interface CityRuntimeSnapshotV1 {
   resourceTiers: Record<string, any>;
   currentOffers: any[];
   activeMissions: any[];
+  threatWarnings: any[];
   policies: Record<string, any>;
   lastTickAt: string;
   researchedTechIds: string[];
@@ -86,6 +87,7 @@ function normalizeLegacySnapshot(input: Record<string, any>): CityRuntimeSnapsho
     resourceTiers: isRecord(state.resourceTiers) ? deepCloneJson(state.resourceTiers) : {},
     currentOffers: Array.isArray(state.currentOffers) ? deepCloneJson(state.currentOffers).slice(0, MAX_SNAPSHOT_OFFERS) : [],
     activeMissions: Array.isArray(state.activeMissions) ? deepCloneJson(state.activeMissions) : [],
+    threatWarnings: Array.isArray(state.threatWarnings) ? deepCloneJson(state.threatWarnings) : [],
     policies: isRecord(state.policies) ? deepCloneJson(state.policies) : {},
     lastTickAt: typeof state.lastTickAt === "string" ? state.lastTickAt : "",
     researchedTechIds: Array.isArray(state.researchedTechIds) ? deepCloneJson(state.researchedTechIds) : [],
@@ -138,6 +140,7 @@ export function buildCityRuntimeSnapshot(ps: PlayerState): CityRuntimeSnapshotV1
     resourceTiers: deepCloneJson(ps.resourceTiers),
     currentOffers: deepCloneJson((ps.currentOffers ?? []).slice(0, MAX_SNAPSHOT_OFFERS)),
     activeMissions: deepCloneJson(ps.activeMissions),
+    threatWarnings: deepCloneJson(ps.threatWarnings ?? []),
     policies: deepCloneJson(ps.policies),
     lastTickAt: ps.lastTickAt,
     researchedTechIds: deepCloneJson(ps.researchedTechIds),
@@ -177,6 +180,7 @@ export function applyCityRuntimeSnapshot(ps: PlayerState, snapshot: CityRuntimeS
   ps.resourceTiers = isRecord(snapshot.resourceTiers) ? (deepCloneJson(snapshot.resourceTiers) as PlayerState["resourceTiers"]) : ps.resourceTiers;
   ps.currentOffers = Array.isArray(snapshot.currentOffers) ? (deepCloneJson(snapshot.currentOffers) as PlayerState["currentOffers"]) : ps.currentOffers;
   ps.activeMissions = Array.isArray(snapshot.activeMissions) ? (deepCloneJson(snapshot.activeMissions) as PlayerState["activeMissions"]) : ps.activeMissions;
+  ps.threatWarnings = Array.isArray(snapshot.threatWarnings) ? (deepCloneJson(snapshot.threatWarnings) as PlayerState["threatWarnings"]) : ps.threatWarnings;
   ps.policies = isRecord(snapshot.policies) ? (deepCloneJson(snapshot.policies) as PlayerState["policies"]) : ps.policies;
   ps.lastTickAt = typeof snapshot.lastTickAt === "string" && snapshot.lastTickAt ? snapshot.lastTickAt : ps.lastTickAt;
   ps.researchedTechIds = Array.isArray(snapshot.researchedTechIds)

@@ -125,6 +125,23 @@ function formatServiceLabel(service: string): string {
     .join(" ");
 }
 
+function formatWarningWindow(startIso: string, endIso: string): string {
+  const start = new Date(startIso);
+  const end = new Date(endIso);
+  const startText = Number.isFinite(start.getTime()) ? start.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : startIso;
+  const endText = Number.isFinite(end.getTime()) ? end.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : endIso;
+  return `${startText} → ${endText}`;
+}
+
+function warningQualityTone(quality: string): string {
+  switch (quality) {
+    case "precise": return "Precise";
+    case "clear": return "Clear";
+    case "usable": return "Usable";
+    default: return "Faint";
+  }
+}
+
 function summarizeUsage(usage: AppliedPublicServiceUsage | null | undefined): string | null {
   if (!usage) return null;
   if (usage.quote.mode === "private_city") {
@@ -364,6 +381,7 @@ export function MePage() {
   const bridgeConsumers = bridgeStatus?.consumers ?? null;
   const missionOffers = missionBoard?.missions ?? [];
   const activeMissions = missionBoard?.activeMissions ?? me?.activeMissions ?? [];
+  const threatWarnings = missionBoard?.threatWarnings ?? me?.threatWarnings ?? [];
 
   if (loading && !me) return <p>Loading /api/me…</p>;
 
@@ -590,6 +608,25 @@ export function MePage() {
             <div style={{ fontSize: 12, opacity: 0.72 }}>Recommended action: {missionBoard.bridgeConsumers.missionBoard.recommendedAction}</div>
           </div>
         ) : null}
+
+        <div style={{ display: "grid", gap: 6 }}>
+          <strong>Warning windows</strong>
+          {threatWarnings.length === 0 ? (
+            <div style={{ opacity: 0.7 }}>No active warning windows. Your city is either quiet or blind.</div>
+          ) : (
+            <div style={{ display: "grid", gap: 6 }}>
+              {threatWarnings.map((warning) => (
+                <div key={warning.id} style={{ border: "1px solid #654", borderRadius: 8, padding: 10, display: "grid", gap: 5, background: "rgba(80,40,20,0.12)" }}>
+                  <div><strong>{warning.headline}</strong> • severity {warning.severity} • intel {warningQualityTone(warning.intelQuality)}</div>
+                  <div style={{ fontSize: 12, opacity: 0.8 }}>Window: {formatWarningWindow(warning.earliestImpactAt, warning.latestImpactAt)} • {getRegionDisplayName(warning.targetRegionId)}</div>
+                  <div style={{ fontSize: 12, opacity: 0.82 }}>Likely response lanes: {warning.responseTags.join(", ")}</div>
+                  <div style={{ fontSize: 12, opacity: 0.8 }}>{warning.detail}</div>
+                  <div style={{ fontSize: 12, opacity: 0.86 }}><strong>Recommended action:</strong> {warning.recommendedAction}</div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
 
         <div style={{ display: "grid", gap: 6 }}>
           <strong>Available offers</strong>

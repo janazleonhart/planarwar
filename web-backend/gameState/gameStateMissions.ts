@@ -6,7 +6,7 @@ import { missionDurationConfig } from "../config";
 import type { Army, ArmyResponseRole } from "../domain/armies";
 import type { Hero, HeroAttachment, HeroResponseRole, HeroTrait } from "../domain/heroes";
 import { getHeroAttachmentDef } from "./gameStateHeroes";
-import type { MissionDifficulty, MissionOffer, MissionResponseTag, RewardBundle } from "../domain/missions";
+import type { MissionDifficulty, MissionOffer, MissionResponseTag, RewardBundle, ThreatWarning, WarningIntelQuality } from "../domain/missions";
 import type { RegionId, World } from "../domain/world";
 import type {
   ActiveMission,
@@ -45,12 +45,147 @@ export interface CompleteMissionResult {
   outcome?: MissionOutcome;
 }
 
+
+export interface ThreatWarningSyncResult {
+  warnings: ThreatWarning[];
+  intelScore: number;
+  intelQuality: WarningIntelQuality;
+}
+
 export interface MissionStateDeps {
   gameState: { world: World };
   getPlayerState(playerId: string): PlayerState | undefined;
   tickPlayerState(ps: PlayerState, now: Date): void;
   pushEvent(ps: PlayerState, input: GameEventInput): void;
   applyRewards(ps: PlayerState, rewards: RewardBundle): void;
+}
+
+function computeIntelScore(ps: PlayerState): number {
+  let score = 0;
+
+  score += (ps.city.stats.security ?? 0) * 0.35;
+  score += (ps.city.stats.infrastructure ?? 0) * 0.18;
+  score += (ps.city.stats.arcaneSaturation ?? 0) * 0.05;
+
+  for (const hero of ps.heroes ?? []) {
+    if (hero.status !== "idle") continue;
+    if (hero.role === "scout") score += 16;
+    if ((hero.responseRoles ?? []).includes("recon")) score += 12;
+    if ((hero.responseRoles ?? []).includes("command")) score += 5;
+    for (const trait of hero.traits ?? []) {
+      const reconBias = Number(trait.responseBias?.recon ?? 0);
+      const commandBias = Number(trait.responseBias?.command ?? 0);
+      score += reconBias * 0.35;
+      score += commandBias * 0.1;
+    }
+    for (const attachment of getHeroAttachments(hero)) {
+      if ((attachment.responseTags ?? []).includes("recon")) score += 8;
+      if ((attachment.responseTags ?? []).includes("warding")) score += 4;
+    }
+  }
+
+  for (const army of ps.armies ?? []) {
+    if (army.status !== "idle") continue;
+    if ((army.specialties ?? []).includes("recon")) score += 14;
+    if ((army.specialties ?? []).includes("command")) score += 6;
+    score += Math.max(0, (army.readiness ?? 0) - 50) * 0.08;
+  }
+
+  for (const techId of ps.researchedTechIds ?? []) {
+    if (techId.startsWith("militia_training")) score += 5;
+    if (techId.startsWith("urban_planning")) score += 4;
+  }
+
+  return Math.round(score);
+}
+
+function intelQualityFromScore(score: number): WarningIntelQuality {
+  if (score >= 95) return "precise";
+  if (score >= 70) return "clear";
+  if (score >= 45) return "usable";
+  return "faint";
+}
+
+function leadMinutesForWarning(severity: number, intelQuality: WarningIntelQuality): number {
+  const base = intelQuality === "precise" ? 95 : intelQuality === "clear" ? 70 : intelQuality === "usable" ? 42 : 22;
+  const severityDrag = Math.round(severity * 0.18);
+  return Math.max(12, base - severityDrag);
+}
+
+function topResponseTags(mission: MissionOffer): MissionResponseTag[] {
+  const tags = getMissionResponseTags(mission);
+  return tags.length > 0 ? tags.slice(0, 3) : [mission.kind === "army" ? "frontline" : "recon"];
+}
+
+function warningHeadlineForMission(mission: MissionOffer, intelQuality: WarningIntelQuality): string {
+  const prefix = intelQuality === "faint" ? "Uneasy reports" : intelQuality === "usable" ? "Field warning" : intelQuality === "clear" ? "Confirmed warning" : "Precise threat window";
+  return `${prefix}: ${mission.title}`;
+}
+
+function warningDetailForMission(mission: MissionOffer, intelQuality: WarningIntelQuality, leadMinutes: number): string {
+  const visibility = intelQuality === "faint"
+    ? "Scattered reports suggest trouble, but the picture is incomplete."
+    : intelQuality === "usable"
+    ? "Scouts and stewards agree something is building."
+    : intelQuality === "clear"
+    ? "Multiple signals align on an approaching strike window."
+    : "Scouts, command, and local watchers agree on where pressure will land.";
+  return `${visibility} Expect impact pressure in roughly ${leadMinutes}m near ${mission.regionId}. ${mission.description}`;
+}
+
+function warningActionForMission(mission: MissionOffer, hero: Hero | null, army: Army | null): string {
+  const heroText = hero ? `${hero.name} (${(hero.responseRoles ?? []).join("/")})` : "your best idle hero";
+  const armyText = army ? `${army.name} (${(army.specialties ?? []).join("/")})` : "your best idle army";
+  if (mission.kind === "hero") {
+    return `Prepare ${heroText} for a ${topResponseTags(mission).join("/")} response and keep a reserve army ready if the warning escalates.`;
+  }
+  return `Stage ${armyText} for a ${topResponseTags(mission).join("/")} response and keep ${heroText} ready to plug intel or warding gaps.`;
+}
+
+export function syncThreatWarnings(ps: PlayerState, now: Date): ThreatWarningSyncResult {
+  const offers = Array.isArray(ps.currentOffers) ? ps.currentOffers : [];
+  const intelScore = computeIntelScore(ps);
+  const intelQuality = intelQualityFromScore(intelScore);
+
+  const prioritized = offers
+    .filter((offer) => offer.difficulty !== "low" || offer.kind === "army")
+    .slice()
+    .sort((a, b) => {
+      const severityA = (a.recommendedPower ?? 0) + (a.kind === "army" ? 40 : 15);
+      const severityB = (b.recommendedPower ?? 0) + (b.kind === "army" ? 40 : 15);
+      return severityB - severityA;
+    })
+    .slice(0, 3);
+
+  const warnings: ThreatWarning[] = prioritized.map((mission, index) => {
+    const severity = Math.max(18, Math.min(100, Math.round((mission.recommendedPower ?? 0) * 0.45 + (mission.kind === "army" ? 18 : 8))));
+    const leadMinutes = leadMinutesForWarning(severity, intelQuality) + index * 8;
+    const issuedAt = now.toISOString();
+    const earliestImpactAt = new Date(now.getTime() + leadMinutes * 60_000).toISOString();
+    const latestImpactAt = new Date(now.getTime() + (leadMinutes + 35) * 60_000).toISOString();
+    const recommendedHero = pickHeroForMission(ps, mission);
+    const recommendedArmy = mission.kind === "army" ? pickArmyForMission(ps, mission) : pickArmyForMission(ps, { ...mission, kind: "army" });
+
+    return {
+      id: `warn_${mission.id}`,
+      missionId: mission.id,
+      targetRegionId: mission.regionId,
+      issuedAt,
+      earliestImpactAt,
+      latestImpactAt,
+      severity,
+      intelQuality,
+      headline: warningHeadlineForMission(mission, intelQuality),
+      detail: warningDetailForMission(mission, intelQuality, leadMinutes),
+      responseTags: topResponseTags(mission),
+      recommendedAction: warningActionForMission(mission, recommendedHero, recommendedArmy),
+      recommendedHeroId: recommendedHero?.id,
+      recommendedArmyId: recommendedArmy?.id,
+    };
+  });
+
+  ps.threatWarnings = warnings;
+  return { warnings, intelScore, intelQuality };
 }
 
 function durationMinutesForDifficulty(diff: MissionDifficulty): number {

@@ -34,6 +34,25 @@ export interface MissionOfferSupportGuidance {
   recommendedAction: string;
 }
 
+export type WarningIntelQuality = "faint" | "usable" | "clear" | "precise";
+
+export interface ThreatWarning {
+  id: string;
+  missionId?: string;
+  targetRegionId: string;
+  issuedAt: string;
+  earliestImpactAt: string;
+  latestImpactAt: string;
+  severity: number;
+  intelQuality: WarningIntelQuality;
+  headline: string;
+  detail: string;
+  responseTags: MissionResponseTag[];
+  recommendedAction: string;
+  recommendedHeroId?: string;
+  recommendedArmyId?: string;
+}
+
 export interface MissionOffer {
   id: string;
   kind: MissionKind;

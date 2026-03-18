@@ -17,11 +17,13 @@ import {
   type MissionOutcome,
   type MissionOutcomeKind,
   type WarfrontAssaultResult,
+  type ThreatWarningSyncResult,
   completeMissionForPlayer as completeMissionForPlayerHelper,
   regenerateRegionMissionsForPlayer as regenerateRegionMissionsForPlayerHelper,
   startGarrisonStrikeForPlayer as startGarrisonStrikeForPlayerHelper,
   startMissionForPlayer as startMissionForPlayerHelper,
   startWarfrontAssaultForPlayer as startWarfrontAssaultForPlayerHelper,
+  syncThreatWarnings as syncThreatWarningsHelper,
 } from "./gameState/gameStateMissions";
 import {
   type BuildBuildingResult,
@@ -70,6 +72,7 @@ import type {
   MissionOffer,
   MissionDifficulty,
   RewardBundle,
+  ThreatWarning,
 } from "./domain/missions";
 import type { TechAge, TechEpoch, TechCategory } from "./domain/tech";
 import type { ResourceKey, ResourceVector } from "./domain/resources";
@@ -198,6 +201,7 @@ export interface PlayerState {
 
   currentOffers: MissionOffer[];
   activeMissions: ActiveMission[];
+  threatWarnings: ThreatWarning[];
 
   policies: PoliciesState;
   lastTickAt: string; // ISO
@@ -334,6 +338,10 @@ function pushEvent(ps: PlayerState, input: GameEventInput): void {
   pushEventHelper(ps, input);
 }
 
+function syncThreatWarnings(ps: PlayerState, now: Date): ThreatWarningSyncResult {
+  return syncThreatWarningsHelper(ps, now);
+}
+
 // City Stress
 
 export function tickPlayerState(ps: PlayerState, now: Date): void {
@@ -350,6 +358,9 @@ export function tickPlayerState(ps: PlayerState, now: Date): void {
     ps,
     now
   );
+
+  ensureOffers(ps);
+  syncThreatWarnings(ps, now);
 }
 
 // ---- Missions / offers helpers ----

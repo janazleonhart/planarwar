@@ -22,7 +22,7 @@ router.get("/offers", async (req, res) => {
     const missions = applyMissionConsumerGuidance(ps.currentOffers, bridgeSummary, bridgeConsumers);
     ps.currentOffers = missions;
 
-    return { missions, activeMissions: ps.activeMissions, bridgeSummary, bridgeConsumers };
+    return { missions, activeMissions: ps.activeMissions, threatWarnings: ps.threatWarnings ?? [], bridgeSummary, bridgeConsumers };
   });
 
   if (access.ok === false) return res.status(access.status).json({ error: access.error });
@@ -42,7 +42,7 @@ router.post("/start", async (req, res) => {
 
     return {
       ok: true as const,
-      body: { ok: true, activeMission: active, activeMissions: access.playerState.activeMissions, heroes: access.playerState.heroes, armies: access.playerState.armies, bridgeSummary, bridgeConsumers, missionSupport: active.mission.supportGuidance ?? bridgeConsumers.missionBoard },
+      body: { ok: true, activeMission: active, activeMissions: access.playerState.activeMissions, threatWarnings: access.playerState.threatWarnings ?? [], heroes: access.playerState.heroes, armies: access.playerState.armies, bridgeSummary, bridgeConsumers, missionSupport: active.mission.supportGuidance ?? bridgeConsumers.missionBoard },
     };
   });
 

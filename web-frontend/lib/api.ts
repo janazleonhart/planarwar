@@ -105,6 +105,25 @@ export interface ActiveMission {
   assignedArmyId?: string;
 }
 
+export type WarningIntelQuality = "faint" | "usable" | "clear" | "precise";
+
+export interface ThreatWarning {
+  id: string;
+  missionId?: string;
+  targetRegionId: string;
+  issuedAt: string;
+  earliestImpactAt: string;
+  latestImpactAt: string;
+  severity: number;
+  intelQuality: WarningIntelQuality;
+  headline: string;
+  detail: string;
+  responseTags: MissionResponseTag[];
+  recommendedAction: string;
+  recommendedHeroId?: string;
+  recommendedArmyId?: string;
+}
+
 export interface Resources {
   food: number;
   materials: number;
@@ -515,6 +534,7 @@ export interface CityMudBridgeStatusResponse {
 export interface MissionBoardResponse {
   missions: MissionOffer[];
   activeMissions: ActiveMission[];
+  threatWarnings: ThreatWarning[];
   bridgeSummary?: CityMudBridgeSummary;
   bridgeConsumers?: CityMudConsumerSummary;
 }
@@ -523,6 +543,7 @@ export interface StartMissionResponse {
   ok: boolean;
   activeMission: ActiveMission;
   activeMissions: ActiveMission[];
+  threatWarnings: ThreatWarning[];
   heroes: Hero[];
   armies: Army[];
   bridgeSummary?: CityMudBridgeSummary;
@@ -534,6 +555,7 @@ export interface CompleteMissionResponse {
   ok: boolean;
   result: any;
   activeMissions: ActiveMission[];
+  threatWarnings: ThreatWarning[];
   heroes: Hero[];
   armies: Army[];
   resources: Resources;
@@ -554,6 +576,7 @@ export interface MeProfile {
   heroes: Hero[];
   armies: Army[];
   activeMissions?: ActiveMission[];
+  threatWarnings?: ThreatWarning[];
   researchedTechIds: string[];
   availableTechs: TechSummary[];
   activeResearch: ActiveResearchView | null;

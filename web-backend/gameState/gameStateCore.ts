@@ -87,6 +87,7 @@ export function createInitialPlayerState(
     resourceTiers: {},
     currentOffers: [],
     activeMissions: [],
+    threatWarnings: [],
     policies: { ...defaultPolicies },
     lastTickAt: nowIso,
     researchedTechIds: [],
