@@ -919,6 +919,20 @@ export function MePage() {
                         </span>
                       ))}
                     </div>
+                    <div style={{ display: "grid", gap: 6 }}>
+                      <div style={{ fontSize: 12, opacity: 0.82 }}>Gear:</div>
+                      {(hero.attachments?.length ?? 0) === 0 ? (
+                        <div style={{ fontSize: 12, opacity: 0.62 }}>No gear equipped.</div>
+                      ) : (
+                        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                          {(hero.attachments ?? []).map((attachment) => (
+                            <span key={attachment.id} style={{ border: "1px solid #446", borderRadius: 999, padding: "2px 8px", fontSize: 12, opacity: 0.92 }} title={attachment.summary ?? `${attachment.family} gear`} >
+                              {attachment.name} • {attachment.slot} • {attachment.responseTags.join("/")}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
                     <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                       {(["valor_charm", "scouting_cloak", "arcane_focus"] as const).map((kind) => (
                         <button
@@ -926,6 +940,7 @@ export function MePage() {
                           style={{ padding: "6px 10px", borderRadius: 6, border: "1px solid #777", background: "#111", opacity: disabled ? 0.6 : 1 }}
                           disabled={disabled}
                           onClick={() => void handleEquipHeroAttachment(hero.id, kind)}
+                          title={kind === "valor_charm" ? "Trinket slot • frontline/recovery" : kind === "scouting_cloak" ? "Utility slot • recon/recovery" : "Focus slot • warding/command"}
                         >
                           Equip {kind}
                         </button>

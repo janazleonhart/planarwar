@@ -4,7 +4,8 @@ import { generateMissionOffers } from "../domain/missions";
 import { missionDurationConfig } from "../config";
 
 import type { Army, ArmyResponseRole } from "../domain/armies";
-import type { Hero, HeroResponseRole, HeroTrait } from "../domain/heroes";
+import type { Hero, HeroAttachment, HeroResponseRole, HeroTrait } from "../domain/heroes";
+import { getHeroAttachmentDef } from "./gameStateHeroes";
 import type { MissionDifficulty, MissionOffer, MissionResponseTag, RewardBundle } from "../domain/missions";
 import type { RegionId, World } from "../domain/world";
 import type {
@@ -68,8 +69,47 @@ function durationMinutesForDifficulty(diff: MissionDifficulty): number {
   }
 }
 
-function getHeroAttachmentKinds(hero: Hero): string[] {
-  return (hero.attachments ?? []).map((entry) => String(entry.kind ?? "")).filter(Boolean);
+function getHeroAttachments(hero: Hero): HeroAttachment[] {
+  return (hero.attachments ?? []).filter((entry): entry is HeroAttachment => Boolean(entry && entry.kind));
+}
+
+function getHeroAttachmentEffects(hero: Hero, mission: MissionOffer): { power: number; successBonus: number; injuryDelta: number; notes: string[] } {
+  const tags = getMissionResponseTags(mission);
+  let power = 0;
+  let successBonus = 0;
+  let injuryDelta = 0;
+  const notes: string[] = [];
+
+  for (const attachment of getHeroAttachments(hero)) {
+    const def = getHeroAttachmentDef(attachment.kind);
+    const responseTags = attachment.responseTags?.length ? attachment.responseTags : def?.responseTags ?? [];
+    const overlap = responseTags.filter((tag) => tags.includes(tag));
+    if (overlap.length > 0) {
+      power += 8 + overlap.length * 4;
+      successBonus += 0.02 + overlap.length * 0.01;
+      notes.push(attachment.name);
+    }
+
+    const family = attachment.family ?? def?.family;
+    if (family === "martial" && hero.responseRoles.includes("frontline") && tags.includes("frontline")) {
+      power += 4;
+      successBonus += 0.01;
+    }
+    if (family === "recon" && hero.responseRoles.includes("recon") && tags.includes("recon")) {
+      power += 4;
+      successBonus += 0.01;
+    }
+    if (family === "arcane" && hero.responseRoles.includes("warding") && (tags.includes("warding") || tags.includes("command"))) {
+      power += 5;
+      successBonus += 0.015;
+    }
+
+    if ((attachment.slot ?? def?.slot) === "utility" && tags.includes("recon")) injuryDelta -= 0.02;
+    if ((attachment.slot ?? def?.slot) === "trinket" && tags.includes("frontline")) injuryDelta -= 0.015;
+    if ((attachment.slot ?? def?.slot) === "focus" && tags.includes("warding")) injuryDelta -= 0.01;
+  }
+
+  return { power, successBonus, injuryDelta, notes };
 }
 
 function getMissionResponseTags(mission: MissionOffer): MissionResponseTag[] {
@@ -87,10 +127,7 @@ function scoreHeroForMission(hero: Hero, mission: MissionOffer): number {
       if (tags.includes(role as HeroResponseRole)) score += Number(delta ?? 0);
     }
   }
-  const attachments = getHeroAttachmentKinds(hero);
-  if (attachments.includes("scouting_cloak") && tags.includes("recon")) score += 12;
-  if (attachments.includes("valor_charm") && tags.includes("frontline")) score += 12;
-  if (attachments.includes("arcane_focus") && tags.includes("warding")) score += 12;
+  score += getHeroAttachmentEffects(hero, mission).power;
   if ((hero.tags ?? []).includes("wounded")) score -= 14;
   return score;
 }
@@ -451,22 +488,11 @@ function computeHeroMissionEffect(hero: Hero | undefined, mission: MissionOffer)
     effectivePower += trait.powerDelta ?? 0;
   }
 
-  const attachments = getHeroAttachmentKinds(hero);
-  if (attachments.includes("scouting_cloak") && tags.includes("recon")) {
-    effectivePower += 12;
-    successBonus += 0.04;
-    notes.push("Scouting Cloak");
-  }
-  if (attachments.includes("valor_charm") && tags.includes("frontline")) {
-    effectivePower += 12;
-    successBonus += 0.04;
-    notes.push("Valor Charm");
-  }
-  if (attachments.includes("arcane_focus") && tags.includes("warding")) {
-    effectivePower += 12;
-    successBonus += 0.04;
-    notes.push("Arcane Focus");
-  }
+  const attachmentEffect = getHeroAttachmentEffects(hero, mission);
+  effectivePower += attachmentEffect.power;
+  successBonus += attachmentEffect.successBonus;
+  injuryDelta += attachmentEffect.injuryDelta;
+  notes.push(...attachmentEffect.notes);
   if ((hero.tags ?? []).includes("wounded")) {
     effectivePower = Math.max(5, effectivePower - 14);
     injuryDelta += 0.08;

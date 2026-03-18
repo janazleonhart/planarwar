@@ -23,6 +23,20 @@ export interface HeroTrait {
   injuryDelta?: number;
 }
 
+export type HeroAttachmentKind = "valor_charm" | "scouting_cloak" | "arcane_focus";
+export type HeroAttachmentSlot = "trinket" | "utility" | "focus";
+export type HeroGearFamily = "martial" | "recon" | "arcane";
+
+export interface HeroAttachment {
+  id: string;
+  kind: HeroAttachmentKind;
+  name: string;
+  slot: HeroAttachmentSlot;
+  family: HeroGearFamily;
+  responseTags: HeroResponseRole[];
+  summary?: string;
+}
+
 export interface Hero {
   id: string;
   ownerId: string;
@@ -37,7 +51,7 @@ export interface Hero {
   level?: number;
   xp?: number;
   xpToNext?: number;
-  attachments?: { id: string; name: string; kind: string }[];
+  attachments?: HeroAttachment[];
 }
 
 function makeStarterHero(

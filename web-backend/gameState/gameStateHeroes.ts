@@ -1,6 +1,6 @@
 //web-backend/gameState/gameStateHeroes.ts
 
-import type { Hero, HeroResponseRole, HeroRole, HeroTrait } from "../domain/heroes";
+import type { Hero, HeroAttachment, HeroAttachmentKind, HeroAttachmentSlot, HeroGearFamily, HeroResponseRole, HeroRole, HeroTrait } from "../domain/heroes";
 import type {
   GameEventInput,
   PlayerState,
@@ -13,19 +13,12 @@ export interface HeroStateDeps {
   pushEvent(ps: PlayerState, input: GameEventInput): void;
 }
 
-export type HeroAttachmentKind =
-  | "valor_charm"
-  | "scouting_cloak"
-  | "arcane_focus";
-
-export interface HeroAttachment {
-  id: string;
-  kind: HeroAttachmentKind;
-  name: string;
-}
-
 interface HeroAttachmentDef {
   name: string;
+  slot: HeroAttachmentSlot;
+  family: HeroGearFamily;
+  responseTags: HeroResponseRole[];
+  summary: string;
   powerBonus: number;
   wealthCost: number;
   manaCost: number;
@@ -36,6 +29,10 @@ interface HeroAttachmentDef {
 const HERO_ATTACHMENT_DEFS: Record<HeroAttachmentKind, HeroAttachmentDef> = {
   valor_charm: {
     name: "Valor Charm",
+    slot: "trinket",
+    family: "martial",
+    responseTags: ["frontline", "recovery"],
+    summary: "Martial ward-trinket that hardens frontline pushes and emergency stabilization.",
     powerBonus: 15,
     wealthCost: 60,
     manaCost: 0,
@@ -44,6 +41,10 @@ const HERO_ATTACHMENT_DEFS: Record<HeroAttachmentKind, HeroAttachmentDef> = {
   },
   scouting_cloak: {
     name: "Scouting Cloak",
+    slot: "utility",
+    family: "recon",
+    responseTags: ["recon", "recovery"],
+    summary: "Field cloak for scouts, pursuit, and early-warning response lanes.",
     powerBonus: 10,
     wealthCost: 45,
     manaCost: 10,
@@ -52,6 +53,10 @@ const HERO_ATTACHMENT_DEFS: Record<HeroAttachmentKind, HeroAttachmentDef> = {
   },
   arcane_focus: {
     name: "Arcane Focus",
+    slot: "focus",
+    family: "arcane",
+    responseTags: ["warding", "command"],
+    summary: "Arcane implement tuned for wards, anomalies, and organized spell response.",
     powerBonus: 18,
     wealthCost: 70,
     manaCost: 25,
@@ -59,6 +64,24 @@ const HERO_ATTACHMENT_DEFS: Record<HeroAttachmentKind, HeroAttachmentDef> = {
     craftMinutes: 40,
   },
 };
+
+export function getHeroAttachmentDef(kind: HeroAttachmentKind): HeroAttachmentDef | undefined {
+  return HERO_ATTACHMENT_DEFS[kind];
+}
+
+export function createHeroAttachment(kind: HeroAttachmentKind, idSeed: number = Date.now()): HeroAttachment | null {
+  const def = HERO_ATTACHMENT_DEFS[kind];
+  if (!def) return null;
+  return {
+    id: `hgear_${idSeed}_${Math.floor(Math.random() * 100000)}` ,
+    kind,
+    name: def.name,
+    slot: def.slot,
+    family: def.family,
+    responseTags: [...def.responseTags],
+    summary: def.summary,
+  };
+}
 
 type HeroWithGear = Hero & {
   level?: number;
@@ -133,6 +156,16 @@ export function equipHeroAttachmentForPlayer(
     };
   }
 
+  const slotConflict = hero.attachments.find((a) => a.slot === def.slot);
+  if (slotConflict) {
+    return {
+      status: "already_has",
+      message: `${hero.name} already has ${slotConflict.name} in the ${def.slot} slot.`,
+      hero,
+      resources: ps.resources,
+    };
+  }
+
   if (ps.resources.wealth < def.wealthCost || ps.resources.mana < def.manaCost) {
     return {
       status: "insufficient_resources",
@@ -143,11 +176,10 @@ export function equipHeroAttachmentForPlayer(
   ps.resources.wealth -= def.wealthCost;
   ps.resources.mana -= def.manaCost;
 
-  const attachment: HeroAttachment = {
-    id: `hgear_${Date.now()}_${Math.floor(Math.random() * 100000)}`,
-    kind,
-    name: def.name,
-  };
+  const attachment = createHeroAttachment(kind);
+  if (!attachment) {
+    return { status: "unknown_kind", message: "Unknown attachment kind" };
+  }
 
   hero.attachments.push(attachment);
   hero.power += def.powerBonus;
@@ -334,11 +366,33 @@ export function completeWorkshopJobForPlayer(
     hero.attachments = [];
   }
 
-  const attachment: HeroAttachment = {
-    id: `hgear_${Date.now()}_${Math.floor(Math.random() * 100000)}`,
-    kind: job.attachmentKind,
-    name: def.name,
-  };
+  const attachment = createHeroAttachment(job.attachmentKind);
+  if (!attachment) {
+    job.completed = true;
+    return {
+      status: "ok",
+      message: "Attachment definition missing; marking job complete.",
+      job,
+      resources: ps.resources,
+    };
+  }
+
+  const slotConflict = hero.attachments.find((a) => a.slot === attachment.slot);
+  if (slotConflict) {
+    job.completed = true;
+    deps.pushEvent(ps, {
+      kind: "workshop_complete",
+      message: `Crafted ${attachment.name}, but ${hero.name} already had the ${attachment.slot} slot filled.`,
+      heroId: hero.id,
+    });
+    return {
+      status: "no_hero_available",
+      message: `${hero.name} already has the ${attachment.slot} slot filled.`,
+      job,
+      hero,
+      resources: ps.resources,
+    };
+  }
 
   hero.attachments.push(attachment);
   hero.power += def.powerBonus;

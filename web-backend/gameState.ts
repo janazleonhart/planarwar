@@ -41,7 +41,6 @@ import {
 import {
   type CompleteWorkshopJobResult,
   type EquipHeroAttachmentResult,
-  type HeroAttachmentKind,
   type RecruitHeroResult,
   type StartWorkshopJobResult,
   type WorkshopJob,
@@ -65,7 +64,7 @@ import {
 
 import type { World, RegionId } from "./domain/world";
 import type { City, BuildingProduction } from "./domain/city";
-import type { Hero, HeroRole } from "./domain/heroes";
+import type { Hero, HeroRole, HeroAttachment, HeroAttachmentKind } from "./domain/heroes";
 import type { Army, ArmyType } from "./domain/armies";
 import type {
   MissionOffer,
@@ -620,12 +619,12 @@ type HeroWithProgress = Hero & {
 export type {
   CompleteWorkshopJobResult,
   EquipHeroAttachmentResult,
-  HeroAttachment,
-  HeroAttachmentKind,
   RecruitHeroResult,
   StartWorkshopJobResult,
   WorkshopJob,
 } from "./gameState/gameStateHeroes";
+
+export type { HeroAttachment, HeroAttachmentKind } from "./domain/heroes";
 
 const heroStateDeps = {
   getPlayerState,
