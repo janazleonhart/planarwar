@@ -90,6 +90,7 @@ import type { TechAge, TechEpoch, TechCategory } from "./domain/tech";
 import type { ResourceKey, ResourceVector } from "./domain/resources";
 import type { PublicInfrastructureState } from "./domain/publicInfrastructure";
 import type { WorldConsequenceLedgerEntry, WorldConsequenceState } from "./domain/worldConsequences";
+export { deriveWorldConsequenceHooks } from "./domain/worldConsequenceHooks";
 
 // ---- helpers ----
 

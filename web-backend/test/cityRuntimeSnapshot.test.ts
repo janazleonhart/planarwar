@@ -14,6 +14,10 @@ import type {
   CityStressState,
   CityStorage,
 } from "../gameState";
+import type { WorldConsequenceState } from "../domain/worldConsequences";
+import type { ThreatWarning } from "../domain/missions";
+import type { MotherBrainPressureWindow } from "../domain/missions";
+import type { MissionDefenseReceipt } from "../domain/missions";
 import type { City } from "../domain/city";
 import type { Hero } from "../domain/heroes";
 import type { Army } from "../domain/armies";
@@ -114,6 +118,40 @@ function makePlayerState(overrides: Partial<PlayerState> = {}): PlayerState {
     foodPressure: 5,
     threatPressure: 2,
     unityPressure: 3,
+    recoveryBurden: 0,
+    lastUpdatedAt: "2026-03-12T00:00:00.000Z",
+  };
+
+  const threatWarnings: ThreatWarning[] = [];
+  const motherBrainPressureMap: MotherBrainPressureWindow[] = [];
+  const missionReceipts: MissionDefenseReceipt[] = [];
+  const worldConsequences = [];
+  const worldConsequenceState: WorldConsequenceState = {
+    regions: [],
+    worldEconomy: {
+      tradePressure: 0,
+      supplyFriction: 0,
+      cartelAttention: 0,
+      destabilization: 0,
+      outlook: "stable",
+    },
+    blackMarket: {
+      opportunityScore: 0,
+      heat: 0,
+      outlook: "quiet",
+    },
+    factionPressure: {
+      driftScore: 0,
+      instability: 0,
+      dominantStance: "stable",
+    },
+    summary: {
+      affectedRegionIds: [],
+      totalLedgerEntries: 0,
+      severeCount: 0,
+      destabilizationScore: 0,
+      note: "No exported city consequences yet.",
+    },
     lastUpdatedAt: "2026-03-12T00:00:00.000Z",
   };
 
@@ -127,6 +165,9 @@ function makePlayerState(overrides: Partial<PlayerState> = {}): PlayerState {
     resourceTiers,
     currentOffers,
     activeMissions,
+    threatWarnings,
+    motherBrainPressureMap,
+    missionReceipts,
     policies,
     lastTickAt: "2026-03-12T00:00:00.000Z",
     researchedTechIds: ["tech_alpha"],
@@ -145,6 +186,8 @@ function makePlayerState(overrides: Partial<PlayerState> = {}): PlayerState {
     techCategoryAges: { civics: "bronze" as TechAge } as Partial<Record<TechCategory, TechAge>>,
     techFlags: ["CITY_ENABLED"],
     publicInfrastructure: createInitialPublicInfrastructureState("2026-03-16T00:00:00.000Z"),
+    worldConsequences,
+    worldConsequenceState,
   };
 
   return {

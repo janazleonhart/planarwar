@@ -65,6 +65,7 @@ test("city-mud bridge summary becomes defensive under frontier and civic pressur
       risk: { casualtyRisk: "Severe" },
       responseTags: ["frontline", "defense"],
     },
+    responsePosture: "balanced",
   });
   if (ps.armies[0]) ps.armies[0].status = "on_mission";
 
@@ -164,6 +165,7 @@ test("mission offers inherit restricted support guidance when bridge posture is 
       risk: { casualtyRisk: "Severe" },
       responseTags: ["frontline", "defense"],
     },
+    responsePosture: "balanced",
   });
 
   const summary = summarizeCityMudBridge(ps);

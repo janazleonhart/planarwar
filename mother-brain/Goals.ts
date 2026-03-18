@@ -1026,7 +1026,7 @@ const mmoAdminSmoke: GoalDefinition[] =
 
     // Convenience pack: combines core + web_smoke + admin_smoke + player_smoke.
     // Individual goals inside may be disabled (e.g. if MOTHER_BRAIN_WEB_BACKEND_HTTP_BASE is not set).
-    all_smoke: [...corePack, ...webSmoke, ...adminSmoke, ...mmoAdminSmoke, ...playerSmokeWithPlaytester],
+    all_smoke: [...corePack, ...webSmoke, ...adminSmoke, ...mmoAdminSmoke, ...playerSmokeWithPlaytester, ...worldConsequenceSmoke],
 
     // Heavyweight: per-class create/attach/smoke/delete loop.
     // Run this explicitly by setting MOTHER_BRAIN_GOALS_PACKS=class_playtest.

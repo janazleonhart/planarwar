@@ -73,6 +73,7 @@ test("public infrastructure summary recommends private mode under severe pressur
       risk: { casualtyRisk: "Severe" },
       responseTags: ["frontline", "command"],
     },
+    responsePosture: "balanced",
   });
 
   const summary = summarizePublicInfrastructure(ps);
@@ -105,6 +106,7 @@ test("pressure sources detect regional threat and mission load", () => {
       risk: { casualtyRisk: "Moderate" },
       responseTags: ["frontline", "command"],
     },
+    responsePosture: "balanced",
   });
   if (ps.armies[0]) ps.armies[0].status = "on_mission";
 
