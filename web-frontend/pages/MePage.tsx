@@ -160,6 +160,16 @@ function warningQualityTone(quality: string): string {
   }
 }
 
+function formatContractKind(kind: string | undefined): string {
+  switch (kind) {
+    case "stabilize_district": return "Stabilize district";
+    case "repair_works": return "Repair works";
+    case "relief_convoys": return "Relief convoys";
+    case "counter_rumors": return "Counter rumors";
+    default: return "";
+  }
+}
+
 function summarizeUsage(usage: AppliedPublicServiceUsage | null | undefined): string | null {
   if (!usage) return null;
   if (usage.quote.mode === "private_city") {
@@ -619,6 +629,9 @@ export function MePage() {
       <div style={cardStyle()}>
         <h3 style={{ marginTop: 0 }}>Mission Board</h3>
         <div style={{ fontSize: 13, opacity: 0.82 }}>Mission offers now consume the city ↔ MUD bridge posture instead of pretending logistics are imaginary.</div>
+        {me.cityStress ? (
+          <div style={{ fontSize: 12, opacity: 0.8 }}>City stress {me.cityStress.stage} • total {me.cityStress.total} • recovery burden {me.cityStress.recoveryBurden}</div>
+        ) : null}
 
         {missionBoard?.bridgeConsumers?.missionBoard ? (
           <div style={{ border: "1px solid #555", borderRadius: 8, padding: 10, display: "grid", gap: 4 }}>
@@ -661,6 +674,9 @@ export function MePage() {
               {missionOffers.map((mission: MissionOffer) => (
                 <div key={mission.id} style={{ border: "1px solid #555", borderRadius: 8, padding: 10, display: "grid", gap: 5 }}>
                   <div><strong>{mission.title}</strong> • {mission.kind} • {mission.difficulty} • {getRegionDisplayName(mission.regionId)}</div>
+                  {mission.contractKind ? (
+                    <div style={{ fontSize: 12, opacity: 0.86 }}>Recovery contract: {formatContractKind(mission.contractKind)} • burden {mission.contractRecoveryBurdenDelta ?? 0} • trust {mission.contractTrustDelta ?? 0} • pressure {mission.contractPressureDelta ?? 0}</div>
+                  ) : null}
                   <div style={{ fontSize: 12, opacity: 0.8 }}>Threat family: {getThreatFamilyDisplayName(mission.threatFamily)}{mission.targetingPressure != null ? ` • pressure ${mission.targetingPressure}` : ""}</div>
                   <div style={{ fontSize: 13, opacity: 0.85 }}>{mission.description}</div>
                   <div style={{ fontSize: 12, opacity: 0.82 }}>Recommended power {mission.recommendedPower} • rewards {formatLevy(mission.expectedRewards as Partial<Resources>)}</div>
@@ -759,6 +775,9 @@ export function MePage() {
               {activeMissions.map((active) => (
                 <div key={active.instanceId} style={{ border: "1px solid #555", borderRadius: 8, padding: 10, display: "grid", gap: 5 }}>
                   <div><strong>{active.mission.title}</strong> • {active.mission.kind} • posture {active.responsePosture} • finishes {new Date(active.finishesAt).toLocaleString()}</div>
+                  {active.mission.contractKind ? (
+                    <div style={{ fontSize: 12, opacity: 0.8 }}>Recovery contract: {formatContractKind(active.mission.contractKind)}</div>
+                  ) : null}
                   <div style={{ fontSize: 12, opacity: 0.78 }}>{active.mission.supportGuidance?.headline ?? active.mission.risk.notes ?? "Mission in progress."}</div>
                   <div>
                     <button

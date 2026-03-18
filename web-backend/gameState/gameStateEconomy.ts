@@ -38,7 +38,9 @@ function recomputeCityStress(
   const unityPressure =
     r.unity >= 70 ? 0 : Math.min(100, Math.round(((70 - r.unity) / 70) * 100));
 
-  const totalRaw = foodPressure * 0.4 + threatPressure * 0.4 + unityPressure * 0.2;
+  const recoveryBurden = Math.max(0, Math.min(100, Math.round(ps.cityStress?.recoveryBurden ?? 0)));
+
+  const totalRaw = foodPressure * 0.32 + threatPressure * 0.33 + unityPressure * 0.17 + recoveryBurden * 0.18;
   const total = Math.round(Math.min(100, totalRaw));
 
   let stage: CityStressStage;
@@ -55,6 +57,7 @@ function recomputeCityStress(
     foodPressure,
     threatPressure,
     unityPressure,
+    recoveryBurden,
     lastUpdatedAt: now.toISOString(),
   };
 

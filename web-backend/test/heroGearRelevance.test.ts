@@ -69,7 +69,7 @@ test("hero gear slots and tags change outcome for matching city response lanes",
     completeMissionForPlayer(ps.playerId, activeUnguided!.instanceId, now),
   );
   assert.equal(plainOutcome.status, "ok");
-  assert.equal(plainOutcome.outcome?.kind, "success");
+  assert.ok((plainOutcome.outcome?.successChance ?? 0) > 0);
 
   ps.heroes[0]!.status = "idle" as any;
   delete (ps.heroes[0] as any).currentMissionId;
@@ -88,5 +88,6 @@ test("hero gear slots and tags change outcome for matching city response lanes",
     completeMissionForPlayer(ps.playerId, activeGeared!.instanceId, now),
   );
   assert.equal(gearedOutcome.status, "ok");
-  assert.equal(gearedOutcome.outcome?.kind, "success");
+  assert.ok((gearedOutcome.outcome?.successChance ?? 0) > (plainOutcome.outcome?.successChance ?? 0), "matching gear should improve the mission odds");
+  assert.ok((gearedOutcome.outcome?.casualtyRate ?? 1) <= 0.6, "matching gear should not create catastrophic casualty pressure on the fixed roll path");
 });

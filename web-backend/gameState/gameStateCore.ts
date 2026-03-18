@@ -105,6 +105,7 @@ export function createInitialPlayerState(
       foodPressure: 0,
       threatPressure: 0,
       unityPressure: 0,
+      recoveryBurden: 0,
       lastUpdatedAt: nowIso,
     },
     publicInfrastructure: createInitialPublicInfrastructureState(nowIso),

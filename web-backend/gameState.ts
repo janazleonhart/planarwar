@@ -24,6 +24,7 @@ import {
   startMissionForPlayer as startMissionForPlayerHelper,
   startWarfrontAssaultForPlayer as startWarfrontAssaultForPlayerHelper,
   syncThreatWarnings as syncThreatWarningsHelper,
+  syncRecoveryContractsForState as syncRecoveryContractsForStateHelper,
 } from "./gameState/gameStateMissions";
 import {
   type BuildBuildingResult,
@@ -150,6 +151,7 @@ export interface CityStressState {
   foodPressure: number;   // 0–100
   threatPressure: number; // 0–100
   unityPressure: number;  // 0–100
+  recoveryBurden: number; // 0–100 lingering post-crisis burden
   lastUpdatedAt: string;
 }
 
@@ -382,6 +384,7 @@ function ensureOffers(ps: PlayerState): void {
       cityStressTotal: ps.cityStress.total ?? 0,
     });
   }
+  syncRecoveryContractsForStateHelper(ps, new Date(ps.lastTickAt || Date.now()));
 }
 
 export function getDemoPlayerWithOffers(): PlayerState {

@@ -83,6 +83,10 @@ export interface MissionOfferSupportGuidance {
 export type MissionResponseTag = "frontline" | "recon" | "command" | "recovery" | "warding" | "defense";
 
 export interface MissionOffer {
+  contractKind?: RecoveryContractKind;
+  contractPressureDelta?: number;
+  contractTrustDelta?: number;
+  contractRecoveryBurdenDelta?: number;
   threatFamily?: ThreatFamily;
   targetingPressure?: number;
   targetingReasons?: string[];
@@ -114,6 +118,7 @@ export interface ActiveMission {
 
 export type WarningIntelQuality = "faint" | "usable" | "clear" | "precise";
 export type ThreatFamily = "bandits" | "mercs" | "desperate_towns" | "organized_hostile_forces" | "early_planar_strike";
+export type RecoveryContractKind = "stabilize_district" | "repair_works" | "relief_convoys" | "counter_rumors";
 
 export interface MissionSetback {
   kind: "resource_loss" | "infrastructure_damage" | "unrest" | "hero_injury" | "army_attrition" | "threat_surge";
@@ -305,6 +310,7 @@ export interface CityStressState {
   foodPressure: number;
   threatPressure: number;
   unityPressure: number;
+  recoveryBurden: number;
   lastUpdatedAt: string;
 }
 

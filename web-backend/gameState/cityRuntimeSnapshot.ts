@@ -199,6 +199,7 @@ export function applyCityRuntimeSnapshot(ps: PlayerState, snapshot: CityRuntimeS
     ? (deepCloneJson(snapshot.workshopJobs) as PlayerState["workshopJobs"])
     : ps.workshopJobs;
   ps.cityStress = isRecord(snapshot.cityStress) ? (deepCloneJson(snapshot.cityStress) as PlayerState["cityStress"]) : ps.cityStress;
+  if (typeof ps.cityStress.recoveryBurden !== "number") ps.cityStress.recoveryBurden = 0;
   ps.storage = isRecord(snapshot.storage) ? (deepCloneJson(snapshot.storage) as PlayerState["storage"]) : ps.storage;
   ps.techAge = typeof snapshot.techAge === "string" && snapshot.techAge ? (snapshot.techAge as any) : ps.techAge;
   ps.techEpoch = typeof snapshot.techEpoch === "string" && snapshot.techEpoch ? (snapshot.techEpoch as any) : ps.techEpoch;

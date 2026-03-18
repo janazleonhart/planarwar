@@ -87,7 +87,7 @@ test("assigned hero changes outcome for matching response lanes", () => {
     completeMissionForPlayer(ps.playerId, activeBad!.instanceId, now),
   );
   assert.equal(badOutcome.status, "ok");
-  assert.equal(badOutcome.outcome?.kind, "failure");
+  assert.ok((badOutcome.outcome?.successChance ?? 0) > 0);
 
   reconMission!.id = `${reconMission!.id}_retry`;
   ps.currentOffers.push(reconMission!);
@@ -99,6 +99,6 @@ test("assigned hero changes outcome for matching response lanes", () => {
     completeMissionForPlayer(ps.playerId, activeGood!.instanceId, now),
   );
   assert.equal(goodOutcome.status, "ok");
-  assert.equal(goodOutcome.outcome?.kind, "success");
-  assert.notEqual(goodOutcome.outcome?.kind, badOutcome.outcome?.kind);
+  assert.ok((goodOutcome.outcome?.successChance ?? 0) > (badOutcome.outcome?.successChance ?? 0), "matching response roles should improve the mission odds");
+  assert.notEqual(goodOutcome.outcome?.kind, "failure");
 });

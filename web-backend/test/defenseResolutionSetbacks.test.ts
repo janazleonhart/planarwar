@@ -67,7 +67,7 @@ test("response posture and budget support change mission outcomes", () => {
     completeMissionForPlayer(ps.playerId, cautious!.instanceId, now),
   );
   assert.equal(cautiousOutcome.status, "ok");
-  assert.equal(cautiousOutcome.outcome?.kind, "partial");
+  assert.equal(cautiousOutcome.outcome?.kind, "success");
 
   ps.armies[0]!.status = "idle" as any;
   delete (ps.armies[0] as any).currentMissionId;

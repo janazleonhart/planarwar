@@ -6,7 +6,7 @@ import { missionDurationConfig } from "../config";
 import type { Army, ArmyResponseRole } from "../domain/armies";
 import type { Hero, HeroAttachment, HeroResponseRole, HeroTrait } from "../domain/heroes";
 import { getHeroAttachmentDef } from "./gameStateHeroes";
-import type { MissionDefenseReceipt, MissionDifficulty, MissionOffer, MissionResponsePosture, MissionResponseTag, MissionSetback, RewardBundle, ThreatFamily, ThreatWarning, WarningIntelQuality } from "../domain/missions";
+import type { MissionDefenseReceipt, MissionDifficulty, MissionOffer, MissionResponsePosture, MissionResponseTag, MissionSetback, RecoveryContractKind, RewardBundle, ThreatFamily, ThreatWarning, WarningIntelQuality } from "../domain/missions";
 import type { RegionId, World } from "../domain/world";
 import type {
   ActiveMission,
@@ -322,6 +322,103 @@ function pickArmyForMission(ps: PlayerState, mission: MissionOffer, preferredArm
   return idle[0];
 }
 
+function buildRecoveryContractOffer(ps: PlayerState, kind: RecoveryContractKind, now: Date, slot: number): MissionOffer {
+  const burden = Number(ps.cityStress.recoveryBurden ?? 0);
+  const pressure = Number(ps.cityStress.threatPressure ?? 0);
+  const trust = Number(ps.city.stats.unity ?? 0);
+  const suffix = `${ps.city.regionId}_${kind}`;
+
+  switch (kind) {
+    case "stabilize_district":
+      return {
+        id: `contract_stabilize_${suffix}`,
+        contractKind: kind,
+        kind: "hero",
+        difficulty: burden >= 70 ? "high" : burden >= 45 ? "medium" : "low",
+        title: "Stabilize the District",
+        description: "Send a trusted coordinator to quiet panic, re-open civic routines, and stop strain from hardening into unrest.",
+        regionId: ps.city.regionId,
+        recommendedPower: 58 + Math.round(burden * 0.45),
+        expectedRewards: { influence: 24, knowledge: 14, wealth: 12 },
+        risk: { casualtyRisk: burden >= 60 ? "moderate" : "low", heroInjuryRisk: burden >= 70 ? "moderate" : "low", notes: "City-centered contract: lowers recovery burden and rebuilds trust if handled well." },
+        responseTags: ["command", "recovery"],
+        contractPressureDelta: -4,
+        contractTrustDelta: 5,
+        contractRecoveryBurdenDelta: -12,
+      };
+    case "repair_works":
+      return {
+        id: `contract_repair_${suffix}`,
+        contractKind: kind,
+        kind: "army",
+        difficulty: burden >= 75 ? "high" : "medium",
+        title: "Repair the Outer Works",
+        description: "Assign disciplined troops and labor cover to clear roads, shore up barricades, and restore defensive lanes before the next hit.",
+        regionId: ps.city.regionId,
+        recommendedPower: 78 + Math.round((pressure + burden) * 0.4),
+        expectedRewards: { materials: 32, wealth: 18 },
+        risk: { casualtyRisk: pressure >= 60 ? "moderate" : "low", notes: "City-centered contract: trims future pressure and lowers repair backlog." },
+        responseTags: ["defense", "recovery", "frontline"],
+        contractPressureDelta: -6,
+        contractTrustDelta: 2,
+        contractRecoveryBurdenDelta: -10,
+      };
+    case "relief_convoys":
+      return {
+        id: `contract_relief_${suffix}`,
+        contractKind: kind,
+        kind: "army",
+        difficulty: pressure >= 70 ? "high" : "medium",
+        title: "Escort Relief Convoys",
+        description: "Push guarded food, medicine, and tools through strained lanes so shortages stop feeding rumor and theft.",
+        regionId: ps.city.regionId,
+        recommendedPower: 72 + Math.round(pressure * 0.38),
+        expectedRewards: { food: 26, wealth: 16, influence: 10 },
+        risk: { casualtyRisk: pressure >= 75 ? "high" : "moderate", notes: "City-centered contract: eases pressure and softens the burden on nearby districts." },
+        responseTags: ["defense", "recovery", "command"],
+        contractPressureDelta: -8,
+        contractTrustDelta: 3,
+        contractRecoveryBurdenDelta: -8,
+      };
+    case "counter_rumors":
+    default:
+      return {
+        id: `contract_rumor_${suffix}`,
+        contractKind: "counter_rumors",
+        kind: "hero",
+        difficulty: trust <= 35 || burden >= 65 ? "high" : "medium",
+        title: "Counter Rumors and Panic",
+        description: "Put a credible face in the streets, challenge bad information, and keep fear from driving citizens into hostile hands.",
+        regionId: ps.city.regionId,
+        recommendedPower: 62 + Math.round((100 - trust) * 0.32 + burden * 0.2),
+        expectedRewards: { influence: 28, knowledge: 10 },
+        risk: { casualtyRisk: "low", heroInjuryRisk: "low", notes: "City-centered contract: restores trust and keeps recovery from stalling out." },
+        responseTags: ["recon", "command", "recovery"],
+        contractPressureDelta: -3,
+        contractTrustDelta: 7,
+        contractRecoveryBurdenDelta: -6,
+      };
+  }
+}
+
+export function syncRecoveryContractsForState(ps: PlayerState, now: Date): void {
+  const existingNonContracts = (ps.currentOffers ?? []).filter((offer) => !offer.contractKind);
+  const burden = Number(ps.cityStress.recoveryBurden ?? 0);
+  const pressure = Number(ps.cityStress.threatPressure ?? 0);
+  const trust = Number(ps.city.stats.unity ?? 0);
+  const recentSetbacks = (ps.missionReceipts ?? []).slice(0, 3).reduce((sum, receipt) => sum + (receipt.setbacks?.length ?? 0), 0);
+
+  const desired: RecoveryContractKind[] = [];
+  if (burden >= 18 || recentSetbacks >= 2) desired.push("stabilize_district");
+  if (burden >= 32 || pressure >= 55) desired.push("repair_works");
+  if (pressure >= 45 || Number(ps.resources.food ?? 0) <= 90) desired.push("relief_convoys");
+  if (trust <= 55 || burden >= 40) desired.push("counter_rumors");
+
+  const contractKinds = Array.from(new Set(desired)).slice(0, 2);
+  const contracts = contractKinds.map((kind, index) => buildRecoveryContractOffer(ps, kind, now, index));
+  ps.currentOffers = [...existingNonContracts, ...contracts];
+}
+
 function ensureOffers(ps: PlayerState): void {
   if (!ps.currentOffers || ps.currentOffers.length === 0) {
     ps.currentOffers = generateMissionOffers({
@@ -334,6 +431,7 @@ function ensureOffers(ps: PlayerState): void {
       cityStressTotal: ps.cityStress.total ?? 0,
     });
   }
+  syncRecoveryContractsForState(ps, new Date());
 }
 
 export function startMissionForPlayer(
@@ -430,6 +528,7 @@ export function regenerateRegionMissionsForPlayer(
   });
 
   ps.currentOffers = [...remaining, ...newOffers];
+  syncRecoveryContractsForState(ps, now);
 
   deps.pushEvent(ps, {
     kind: "mission_refresh_region",
@@ -802,6 +901,7 @@ function computeMissionSetbacks(ps: PlayerState, active: ActiveMission, outcome:
     ps.city.stats.unity = Math.max(0, ps.city.stats.unity - unityLoss);
     ps.cityStress.threatPressure = Math.min(100, ps.cityStress.threatPressure + (outcome.kind === "failure" ? 8 : 3));
     ps.cityStress.unityPressure = Math.min(100, ps.cityStress.unityPressure + (unityLoss + 2));
+    ps.cityStress.recoveryBurden = Math.min(100, (ps.cityStress.recoveryBurden ?? 0) + (outcome.kind === "failure" ? 14 : 6));
     ps.cityStress.total = Math.min(100, ps.cityStress.total + (outcome.kind === "failure" ? 7 : 3));
     addSetback(setbacks, {
       kind: "unrest",
@@ -856,9 +956,10 @@ function computeMissionSetbacks(ps: PlayerState, active: ActiveMission, outcome:
 function buildMissionReceipt(active: ActiveMission, outcome: MissionOutcome, now: Date): MissionDefenseReceipt {
   const setbacks = outcome.setbacks ?? [];
   const posture = normalizePosture(active.responsePosture);
+  const contractPrefix = active.mission.contractKind ? "Recovery contract" : active.mission.title;
   const summary = setbacks.length === 0
-    ? `${active.mission.title}: ${outcome.kind.toUpperCase()} with ${posture} posture.`
-    : `${active.mission.title}: ${outcome.kind.toUpperCase()} with ${setbacks.length} recorded setback${setbacks.length === 1 ? "" : "s"}.`;
+    ? `${contractPrefix}: ${outcome.kind.toUpperCase()} with ${posture} posture.`
+    : `${contractPrefix}: ${outcome.kind.toUpperCase()} with ${setbacks.length} recorded setback${setbacks.length === 1 ? "" : "s"}.`;
 
   return {
     id: `receipt_${active.instanceId}`,
@@ -1053,6 +1154,28 @@ function applyMissionImpactToRegion(ps: PlayerState, mission: MissionOffer, outc
   region.threat = Math.max(0, Math.min(100, region.threat + threatDelta));
 }
 
+function applyRecoveryContractEffects(ps: PlayerState, active: ActiveMission, outcome: MissionOutcome): void {
+  if (!active.mission.contractKind) return;
+
+  const pressureDelta = Number(active.mission.contractPressureDelta ?? 0);
+  const trustDelta = Number(active.mission.contractTrustDelta ?? 0);
+  const burdenDelta = Number(active.mission.contractRecoveryBurdenDelta ?? 0);
+
+  if (outcome.kind === "success") {
+    ps.cityStress.threatPressure = Math.max(0, ps.cityStress.threatPressure + pressureDelta);
+    ps.city.stats.unity = Math.max(0, Math.min(100, ps.city.stats.unity + trustDelta));
+    ps.cityStress.recoveryBurden = Math.max(0, (ps.cityStress.recoveryBurden ?? 0) + burdenDelta);
+  } else if (outcome.kind === "partial") {
+    ps.cityStress.threatPressure = Math.max(0, ps.cityStress.threatPressure + Math.round(pressureDelta * 0.4));
+    ps.city.stats.unity = Math.max(0, Math.min(100, ps.city.stats.unity + Math.round(trustDelta * 0.4)));
+    ps.cityStress.recoveryBurden = Math.max(0, (ps.cityStress.recoveryBurden ?? 0) + Math.round(burdenDelta * 0.45));
+  } else {
+    ps.cityStress.threatPressure = Math.min(100, ps.cityStress.threatPressure + Math.max(3, Math.round(Math.abs(pressureDelta) * 0.6)));
+    ps.city.stats.unity = Math.max(0, Math.min(100, ps.city.stats.unity - Math.max(2, Math.round(Math.max(1, trustDelta) * 0.6))));
+    ps.cityStress.recoveryBurden = Math.min(100, (ps.cityStress.recoveryBurden ?? 0) + Math.max(5, Math.round(Math.abs(burdenDelta) * 0.7)));
+  }
+}
+
 export function completeMissionForPlayer(
   deps: MissionStateDeps,
   playerId: string,
@@ -1095,6 +1218,7 @@ export function completeMissionForPlayer(
   const rewards = active.mission.expectedRewards;
   deps.applyRewards(ps, rewards);
   applyMissionImpactToRegion(ps, active.mission, outcome);
+  applyRecoveryContractEffects(ps, active, outcome);
   const receipt = buildMissionReceipt(active, outcome, now);
   ps.missionReceipts = [receipt, ...(ps.missionReceipts ?? [])].slice(0, 20);
 
@@ -1109,6 +1233,7 @@ export function completeMissionForPlayer(
   });
 
   ps.activeMissions.splice(index, 1);
+  syncRecoveryContractsForState(ps, now);
 
   return { status: "ok", rewards, resources: ps.resources, outcome, receipt };
 }

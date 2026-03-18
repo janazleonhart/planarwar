@@ -12,6 +12,7 @@ export type MissionDifficulty = "low" | "medium" | "high" | "extreme";
 export type MissionResponseTag = "frontline" | "recon" | "command" | "recovery" | "warding" | "defense";
 export type MissionResponsePosture = "cautious" | "balanced" | "aggressive" | "desperate";
 export type ThreatFamily = "bandits" | "mercs" | "desperate_towns" | "organized_hostile_forces" | "early_planar_strike";
+export type RecoveryContractKind = "stabilize_district" | "repair_works" | "relief_convoys" | "counter_rumors";
 
 export type MissionSetbackKind = "resource_loss" | "infrastructure_damage" | "unrest" | "hero_injury" | "army_attrition" | "threat_surge";
 
@@ -82,6 +83,10 @@ export interface ThreatWarning {
 }
 
 export interface MissionOffer {
+  contractKind?: RecoveryContractKind;
+  contractPressureDelta?: number;
+  contractTrustDelta?: number;
+  contractRecoveryBurdenDelta?: number;
   threatFamily?: ThreatFamily;
   targetingPressure?: number;
   targetingReasons?: string[];
