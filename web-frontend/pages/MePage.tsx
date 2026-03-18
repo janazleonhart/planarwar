@@ -42,6 +42,24 @@ function getRegionDisplayName(regionId: string) {
     .join(" ");
 }
 
+
+function getThreatFamilyDisplayName(family?: string) {
+  switch (family) {
+    case "bandits":
+      return "Bandits";
+    case "mercs":
+      return "Mercenaries";
+    case "desperate_towns":
+      return "Desperate towns";
+    case "organized_hostile_forces":
+      return "Organized hostile forces";
+    case "early_planar_strike":
+      return "Early planar strike";
+    default:
+      return "Unclear hostile pressure";
+  }
+}
+
 function getBuildingUpgradeCost(b: CityBuilding) {
   let baseMaterials = 20;
   let baseWealth = 10;
@@ -618,8 +636,12 @@ export function MePage() {
               {threatWarnings.map((warning) => (
                 <div key={warning.id} style={{ border: "1px solid #654", borderRadius: 8, padding: 10, display: "grid", gap: 5, background: "rgba(80,40,20,0.12)" }}>
                   <div><strong>{warning.headline}</strong> • severity {warning.severity} • intel {warningQualityTone(warning.intelQuality)}</div>
+                  <div style={{ fontSize: 12, opacity: 0.82 }}>Threat family: {getThreatFamilyDisplayName(warning.threatFamily)}{warning.targetingPressure != null ? ` • pressure ${warning.targetingPressure}` : ""}</div>
                   <div style={{ fontSize: 12, opacity: 0.8 }}>Window: {formatWarningWindow(warning.earliestImpactAt, warning.latestImpactAt)} • {getRegionDisplayName(warning.targetRegionId)}</div>
                   <div style={{ fontSize: 12, opacity: 0.82 }}>Likely response lanes: {warning.responseTags.join(", ")}</div>
+                  {warning.targetingReasons?.length ? (
+                    <div style={{ fontSize: 12, opacity: 0.78 }}>Why targeted: {warning.targetingReasons.join(" ")}</div>
+                  ) : null}
                   <div style={{ fontSize: 12, opacity: 0.8 }}>{warning.detail}</div>
                   <div style={{ fontSize: 12, opacity: 0.86 }}><strong>Recommended action:</strong> {warning.recommendedAction}</div>
                 </div>
@@ -637,10 +659,14 @@ export function MePage() {
               {missionOffers.map((mission: MissionOffer) => (
                 <div key={mission.id} style={{ border: "1px solid #555", borderRadius: 8, padding: 10, display: "grid", gap: 5 }}>
                   <div><strong>{mission.title}</strong> • {mission.kind} • {mission.difficulty} • {getRegionDisplayName(mission.regionId)}</div>
+                  <div style={{ fontSize: 12, opacity: 0.8 }}>Threat family: {getThreatFamilyDisplayName(mission.threatFamily)}{mission.targetingPressure != null ? ` • pressure ${mission.targetingPressure}` : ""}</div>
                   <div style={{ fontSize: 13, opacity: 0.85 }}>{mission.description}</div>
                   <div style={{ fontSize: 12, opacity: 0.82 }}>Recommended power {mission.recommendedPower} • rewards {formatLevy(mission.expectedRewards as Partial<Resources>)}</div>
                   <div style={{ fontSize: 12, opacity: 0.82 }}>Risk: {mission.risk.casualtyRisk}{mission.risk.heroInjuryRisk ? ` • hero injury ${mission.risk.heroInjuryRisk}` : ""}</div>
                   <div style={{ fontSize: 12, opacity: 0.78 }}>Best response lanes: {mission.responseTags?.join(", ") || "generalist"}</div>
+                  {mission.targetingReasons?.length ? (
+                    <div style={{ fontSize: 12, opacity: 0.76 }}>Why this city: {mission.targetingReasons.join(" ")}</div>
+                  ) : null}
                   {mission.supportGuidance ? (
                     <div style={{ fontSize: 12, opacity: 0.78 }}>
                       <strong>Support:</strong> {mission.supportGuidance.state} • {mission.supportGuidance.headline}

@@ -83,6 +83,9 @@ export interface MissionOfferSupportGuidance {
 export type MissionResponseTag = "frontline" | "recon" | "command" | "recovery" | "warding" | "defense";
 
 export interface MissionOffer {
+  threatFamily?: ThreatFamily;
+  targetingPressure?: number;
+  targetingReasons?: string[];
   id: string;
   kind: "hero" | "army";
   difficulty: "low" | "medium" | "high" | "extreme";
@@ -106,8 +109,12 @@ export interface ActiveMission {
 }
 
 export type WarningIntelQuality = "faint" | "usable" | "clear" | "precise";
+export type ThreatFamily = "bandits" | "mercs" | "desperate_towns" | "organized_hostile_forces" | "early_planar_strike";
 
 export interface ThreatWarning {
+  threatFamily?: ThreatFamily;
+  targetingPressure?: number;
+  targetingReasons?: string[];
   id: string;
   missionId?: string;
   targetRegionId: string;

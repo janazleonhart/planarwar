@@ -372,6 +372,9 @@ function ensureOffers(ps: PlayerState): void {
       heroes: ps.heroes,
       armies: ps.armies,
       regionId: ps.city.regionId,
+      regionThreat: ps.regionWar.find((entry) => entry.regionId === ps.city.regionId)?.threat ?? 0,
+      cityThreatPressure: ps.cityStress.threatPressure ?? 0,
+      cityStressTotal: ps.cityStress.total ?? 0,
     });
   }
 }

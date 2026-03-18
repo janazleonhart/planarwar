@@ -6,7 +6,7 @@ import { missionDurationConfig } from "../config";
 import type { Army, ArmyResponseRole } from "../domain/armies";
 import type { Hero, HeroAttachment, HeroResponseRole, HeroTrait } from "../domain/heroes";
 import { getHeroAttachmentDef } from "./gameStateHeroes";
-import type { MissionDifficulty, MissionOffer, MissionResponseTag, RewardBundle, ThreatWarning, WarningIntelQuality } from "../domain/missions";
+import type { MissionDifficulty, MissionOffer, MissionResponseTag, RewardBundle, ThreatFamily, ThreatWarning, WarningIntelQuality } from "../domain/missions";
 import type { RegionId, World } from "../domain/world";
 import type {
   ActiveMission,
@@ -117,6 +117,17 @@ function topResponseTags(mission: MissionOffer): MissionResponseTag[] {
   return tags.length > 0 ? tags.slice(0, 3) : [mission.kind === "army" ? "frontline" : "recon"];
 }
 
+function threatFamilyLabel(family?: ThreatFamily): string {
+  switch (family) {
+    case "bandits": return "Bandits";
+    case "mercs": return "Mercenaries";
+    case "desperate_towns": return "Desperate towns";
+    case "organized_hostile_forces": return "Organized hostile forces";
+    case "early_planar_strike": return "Early planar strike";
+    default: return "Hostile pressure";
+  }
+}
+
 function warningHeadlineForMission(mission: MissionOffer, intelQuality: WarningIntelQuality): string {
   const prefix = intelQuality === "faint" ? "Uneasy reports" : intelQuality === "usable" ? "Field warning" : intelQuality === "clear" ? "Confirmed warning" : "Precise threat window";
   return `${prefix}: ${mission.title}`;
@@ -130,16 +141,19 @@ function warningDetailForMission(mission: MissionOffer, intelQuality: WarningInt
     : intelQuality === "clear"
     ? "Multiple signals align on an approaching strike window."
     : "Scouts, command, and local watchers agree on where pressure will land.";
-  return `${visibility} Expect impact pressure in roughly ${leadMinutes}m near ${mission.regionId}. ${mission.description}`;
+  const reasons = (mission.targetingReasons ?? []).slice(0, 2).join(" ");
+  const familyDetail = mission.threatFamily ? `${threatFamilyLabel(mission.threatFamily)} are the likely source.` : "";
+  return `${visibility} Expect impact pressure in roughly ${leadMinutes}m near ${mission.regionId}. ${familyDetail} ${mission.description} ${reasons}`.trim();
 }
 
 function warningActionForMission(mission: MissionOffer, hero: Hero | null, army: Army | null): string {
   const heroText = hero ? `${hero.name} (${(hero.responseRoles ?? []).join("/")})` : "your best idle hero";
   const armyText = army ? `${army.name} (${(army.specialties ?? []).join("/")})` : "your best idle army";
+  const familyText = mission.threatFamily ? ` against ${threatFamilyLabel(mission.threatFamily).toLowerCase()}` : "";
   if (mission.kind === "hero") {
-    return `Prepare ${heroText} for a ${topResponseTags(mission).join("/")} response and keep a reserve army ready if the warning escalates.`;
+    return `Prepare ${heroText} for a ${topResponseTags(mission).join("/")} response${familyText} and keep a reserve army ready if the warning escalates.`;
   }
-  return `Stage ${armyText} for a ${topResponseTags(mission).join("/")} response and keep ${heroText} ready to plug intel or warding gaps.`;
+  return `Stage ${armyText} for a ${topResponseTags(mission).join("/")} response${familyText} and keep ${heroText} ready to plug intel or warding gaps.`;
 }
 
 export function syncThreatWarnings(ps: PlayerState, now: Date): ThreatWarningSyncResult {
@@ -181,6 +195,9 @@ export function syncThreatWarnings(ps: PlayerState, now: Date): ThreatWarningSyn
       recommendedAction: warningActionForMission(mission, recommendedHero, recommendedArmy),
       recommendedHeroId: recommendedHero?.id,
       recommendedArmyId: recommendedArmy?.id,
+      threatFamily: mission.threatFamily,
+      targetingPressure: mission.targetingPressure,
+      targetingReasons: mission.targetingReasons ? [...mission.targetingReasons] : [],
     };
   });
 
@@ -308,6 +325,9 @@ function ensureOffers(ps: PlayerState): void {
       heroes: ps.heroes,
       armies: ps.armies,
       regionId: ps.city.regionId,
+      regionThreat: ps.regionWar.find((entry) => entry.regionId === ps.city.regionId)?.threat ?? 0,
+      cityThreatPressure: ps.cityStress.threatPressure ?? 0,
+      cityStressTotal: ps.cityStress.total ?? 0,
     });
   }
 }
@@ -332,6 +352,7 @@ export function startMissionForPlayer(
   let assignedHeroId: string | undefined;
   let assignedArmyId: string | undefined;
 
+  const familyText = mission.threatFamily ? ` against ${threatFamilyLabel(mission.threatFamily).toLowerCase()}` : "";
   if (mission.kind === "hero") {
     const hero = pickHeroForMission(ps, mission, preferredHeroId);
     if (!hero) return null;
@@ -392,6 +413,9 @@ export function regenerateRegionMissionsForPlayer(
     heroes: ps.heroes,
     armies: ps.armies,
     regionId: targetRegionId,
+    regionThreat: ps.regionWar.find((entry) => entry.regionId === targetRegionId)?.threat ?? 0,
+    cityThreatPressure: ps.cityStress.threatPressure ?? 0,
+    cityStressTotal: ps.cityStress.total ?? 0,
   });
 
   ps.currentOffers = [...remaining, ...newOffers];
