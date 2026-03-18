@@ -533,6 +533,7 @@ export function MePage() {
   const worldConsequenceHooks = me?.worldConsequenceHooks ?? null;
   const worldConsequenceActions = me?.worldConsequenceActions ?? null;
   const worldConsequenceConsumers = me?.worldConsequenceConsumers ?? null;
+  const economyCartelResponseState = me?.economyCartelResponseState ?? null;
   const highlightedWorldLedger = [...worldConsequences].slice(0, 5);
   const highlightedWorldRegions = [...(worldConsequenceState?.regions ?? [])].sort((a, b) => worldRegionScore(b) - worldRegionScore(a)).slice(0, 3);
 
@@ -851,6 +852,16 @@ export function MePage() {
                   readiness lock {cityAlphaScopeLock.alphaReadyPercent}% • ambiguity {cityAlphaScopeLock.ambiguityCount}
                 </div>
               </div>
+
+              {economyCartelResponseState ? (
+                <div style={{ border: "1px solid #555", borderRadius: 8, padding: 10, display: "grid", gap: 5, background: "rgba(56,36,18,0.16)" }}>
+                  <div><strong>{economyCartelResponseState.summary.headline}</strong></div>
+                  <div style={{ fontSize: 12, opacity: 0.82 }}>phase <strong style={{ color: worldSeverityColor(economyCartelResponseState.summary.responsePhase) }}>{economyCartelResponseState.summary.responsePhase}</strong> • runtime {economyCartelResponseState.summary.shouldNudgeRuntime ? "nudging" : "observe only"}</div>
+                  <div style={{ fontSize: 12, opacity: 0.8 }}>black market {economyCartelResponseState.blackMarket.state} / {economyCartelResponseState.blackMarket.posture} • cartel {economyCartelResponseState.cartel.tier} / {economyCartelResponseState.cartel.posture}</div>
+                  <div style={{ fontSize: 12, opacity: 0.76 }}>{economyCartelResponseState.blackMarket.note}</div>
+                  <div style={{ fontSize: 12, opacity: 0.76 }}>{economyCartelResponseState.cartel.note}</div>
+                </div>
+              ) : null}
 
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 8 }}>
                 <div style={{ border: "1px solid #444", borderRadius: 8, padding: 8 }}><strong>Already exists</strong><div style={{ fontSize: 12, opacity: 0.84 }}>{(cityAlphaScopeLock.alreadyExists ?? []).length} locked</div></div>

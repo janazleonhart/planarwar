@@ -178,6 +178,8 @@ type MotherBrainCitySignalPlayerSnapshot = {
   worldEconomy?: Record<string, unknown> | null;
   blackMarket?: Record<string, unknown> | null;
   factionPressure?: Record<string, unknown> | null;
+  responseState?: Record<string, unknown> | null;
+  consumers?: Record<string, unknown> | null;
   summary?: Record<string, unknown> | null;
   actions?: MotherBrainCitySignalActionSummary[];
   recommendedPrimaryAction?: string | null;
@@ -201,6 +203,8 @@ type MotherBrainCitySignalsSnapshot = {
     maxBlackMarketOpportunity: number;
     urgentActionCount: number;
     recommendedPrimaryAction: string | null;
+    activeConsumerPlayers: number;
+    nudgingConsumerPlayers: number;
   };
 };
 
@@ -1434,6 +1438,11 @@ function toFiniteNumber(value: unknown): number {
   return typeof value === "number" && Number.isFinite(value) ? value : 0;
 }
 
+
+function toRecord(value: unknown): Record<string, unknown> | null {
+  return value !== null && typeof value === "object" ? (value as Record<string, unknown>) : null;
+}
+
 function summarizeCitySignalPayload(playerId: string, payload: any): MotherBrainCitySignalPlayerSnapshot {
   const propagated = payload?.propagatedState ?? {};
   const regions = Array.isArray(propagated?.regions) ? propagated.regions : [];
@@ -1484,6 +1493,8 @@ function summarizeCitySignalPayload(playerId: string, payload: any): MotherBrain
     worldEconomy: propagated?.worldEconomy ?? null,
     blackMarket: propagated?.blackMarket ?? null,
     factionPressure: propagated?.factionPressure ?? null,
+    responseState: payload?.responseState ?? null,
+    consumers: payload?.consumers ?? null,
     summary: propagated?.summary ?? payload?.summary ?? null,
     actions: actionRows,
     recommendedPrimaryAction: typeof actionsPayload?.recommendedPrimaryAction === "string" ? actionsPayload.recommendedPrimaryAction : null,
@@ -1508,6 +1519,8 @@ function emptyCitySignalsSnapshot(cfg: MotherBrainConfig, previous?: MotherBrain
       maxBlackMarketOpportunity: 0,
       urgentActionCount: 0,
       recommendedPrimaryAction: null,
+      activeConsumerPlayers: 0,
+      nudgingConsumerPlayers: 0,
     },
   };
 }
@@ -1519,6 +1532,8 @@ function aggregateCitySignals(cfg: MotherBrainConfig, players: MotherBrainCitySi
   const stanceCounts = new Map<string, number>();
   let maxBlackMarketOpportunity = 0;
   let urgentActionCount = 0;
+  let activeConsumerPlayers = 0;
+  let nudgingConsumerPlayers = 0;
   const primaryActionCounts = new Map<string, number>();
   for (const player of players) {
     for (const region of player.topRegions ?? []) {
@@ -1528,11 +1543,23 @@ function aggregateCitySignals(cfg: MotherBrainConfig, players: MotherBrainCitySi
         hottestRegionId = region.regionId;
       }
     }
-    const economyOutlook = typeof player.worldEconomy?.outlook === "string" ? String(player.worldEconomy.outlook) : null;
+    const responseState = toRecord(player.responseState);
+    const responseSummary = toRecord(responseState?.summary);
+    const consumerState = toRecord(player.consumers);
+    const consumerSummary = toRecord(consumerState?.summary);
+    const worldEconomy = toRecord(player.worldEconomy);
+    const factionPressure = toRecord(player.factionPressure);
+    const blackMarket = toRecord(player.blackMarket);
+
+    const responsePhase = typeof responseSummary?.responsePhase === "string" ? String(responseSummary.responsePhase) : null;
+    const nudging = Boolean(responseSummary?.shouldNudgeRuntime || consumerSummary?.shouldNudgeRuntime);
+    if (responsePhase === "active" || responsePhase === "severe") activeConsumerPlayers += 1;
+    if (nudging) nudgingConsumerPlayers += 1;
+    const economyOutlook = typeof worldEconomy?.outlook === "string" ? String(worldEconomy.outlook) : null;
     if (economyOutlook) economyCounts.set(economyOutlook, (economyCounts.get(economyOutlook) ?? 0) + 1);
-    const stance = typeof player.factionPressure?.dominantStance === "string" ? String(player.factionPressure.dominantStance) : null;
+    const stance = typeof factionPressure?.dominantStance === "string" ? String(factionPressure.dominantStance) : null;
     if (stance) stanceCounts.set(stance, (stanceCounts.get(stance) ?? 0) + 1);
-    maxBlackMarketOpportunity = Math.max(maxBlackMarketOpportunity, toFiniteNumber(player.blackMarket?.opportunityScore));
+    maxBlackMarketOpportunity = Math.max(maxBlackMarketOpportunity, toFiniteNumber(blackMarket?.opportunityScore));
     urgentActionCount += (player.actions ?? []).filter((action) => action.priority === "critical" || action.priority === "high").length;
     if (player.recommendedPrimaryAction) primaryActionCounts.set(player.recommendedPrimaryAction, (primaryActionCounts.get(player.recommendedPrimaryAction) ?? 0) + 1);
   }
@@ -1556,6 +1583,8 @@ function aggregateCitySignals(cfg: MotherBrainConfig, players: MotherBrainCitySi
       maxBlackMarketOpportunity,
       urgentActionCount,
       recommendedPrimaryAction,
+      activeConsumerPlayers,
+      nudgingConsumerPlayers,
     },
   };
 }

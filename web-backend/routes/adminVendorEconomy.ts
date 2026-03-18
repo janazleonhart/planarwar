@@ -9,6 +9,7 @@ import path from "node:path";
 import { db } from "../../worldcore/db/Database";
 import { buildVendorScenarioLogNote, describeVendorLaneSelection, deriveCityMudConsumers, deriveVendorEconomyRecommendation, deriveVendorGuardrailApplication, deriveVendorLanePolicy, deriveVendorRuntimeEffect, deriveVendorSupportPolicy, getVendorPreset, matchesVendorLaneSelection, normalizeVendorLaneSelection, normalizeVendorPresetKey, summarizeCityMudBridge, type CityMudVendorLane, type CityMudVendorPresetKey, type CityMudVendorScenarioLogEntry } from "../domain/cityMudBridge";
 import { applyWorldConsequenceVendorPolicy, deriveWorldConsequenceConsumers } from "../domain/worldConsequenceConsumers";
+import { deriveEconomyCartelResponseState } from "../domain/economyCartelResponse";
 import { readVendorScenarioReportFromFile, renderVendorScenarioReportCsv, type VendorScenarioReportFilter } from "../domain/vendorScenarioReports";
 import { resolvePlayerAccess } from "./playerCityAccess";
 
@@ -78,6 +79,7 @@ async function getBridgeVendorPolicyOrNull(req: express.Request) {
     consumers,
     vendorPolicy,
     consequenceConsumers: worldConsequenceConsumers,
+    economyCartelResponseState: deriveEconomyCartelResponseState(access.access.playerState),
     vendorPolicyWithConsequences: applyWorldConsequenceVendorPolicy(vendorPolicy, worldConsequenceConsumers),
   };
 }
@@ -255,6 +257,7 @@ adminVendorEconomyRouter.get("/items", async (req, res) => {
       bridgeConsumers: bridge?.consumers ?? null,
       vendorPolicy: bridge?.vendorPolicy ?? null,
       consequenceConsumers: bridge?.consequenceConsumers ?? null,
+      economyCartelResponseState: bridge?.economyCartelResponseState ?? null,
       vendorPolicyWithConsequences: bridge?.vendorPolicyWithConsequences ?? bridge?.vendorPolicy ?? null,
     });
   } catch (err: any) {
@@ -467,6 +470,7 @@ adminVendorEconomyRouter.post("/bridge_runtime_guarded", async (req, res) => {
       bridgeConsumers: bridge.consumers,
       vendorPolicy: bridge.vendorPolicy,
       consequenceConsumers: bridge.consequenceConsumers,
+      economyCartelResponseState: bridge.economyCartelResponseState,
       vendorPolicyWithConsequences: bridge.vendorPolicyWithConsequences ?? bridge.vendorPolicy,
       laneFiltersApplied: effectiveLaneFilters,
       presetApplied: preset,

@@ -431,6 +431,8 @@ type CitySignalsSummaryView = {
     factionStance: string | null;
     blackMarketOpportunity: number;
     summaryNote: string | null;
+    responsePhase: string | null;
+    responseNudging: boolean;
     recommendedPrimaryAction: string | null;
     actions: Array<{
       id: string;
@@ -498,6 +500,8 @@ function parseCitySignals(raw: unknown): CitySignalsSummaryView | null {
       factionStance: typeof asRecord(row.factionPressure)?.dominantStance === "string" ? String(asRecord(row.factionPressure)?.dominantStance) : null,
       blackMarketOpportunity: toNum(asRecord(row.blackMarket)?.opportunityScore),
       summaryNote: typeof asRecord(row.summary)?.note === "string" ? String(asRecord(row.summary)?.note) : null,
+      responsePhase: typeof asRecord(asRecord(row.responseState)?.summary)?.responsePhase === "string" ? String(asRecord(asRecord(row.responseState)?.summary)?.responsePhase) : null,
+      responseNudging: Boolean(asRecord(asRecord(row.responseState)?.summary)?.shouldNudgeRuntime),
       recommendedPrimaryAction: typeof row.recommendedPrimaryAction === "string" ? row.recommendedPrimaryAction : null,
       actions: (Array.isArray(row.actions) ? row.actions : []).map((action) => {
         const ar = asRecord(action) ?? {};
@@ -1008,6 +1012,7 @@ export function AdminMotherBrainPage() {
                   <div style={{ border: "1px solid #eee", borderRadius: 10, padding: 10 }}>
                     <div style={{ fontWeight: 700 }}>Actionability</div>
                     <div style={{ fontSize: 12, opacity: 0.82 }}>urgent actions {citySignals.summary.urgentActionCount} • primary {citySignals.summary.recommendedPrimaryAction ?? "—"}</div>
+                    <div style={{ fontSize: 12, opacity: 0.78 }}>active players {citySignals.summary.activeConsumerPlayers} • nudging {citySignals.summary.nudgingConsumerPlayers}</div>
                   </div>
                 </div>
 
@@ -1024,6 +1029,7 @@ export function AdminMotherBrainPage() {
                         </div>
                         {player.error ? <div style={{ color: "#9b1111", fontSize: 12 }}><code>{player.error}</code></div> : null}
                         <div style={{ fontSize: 12, opacity: 0.85 }}>ledger {player.ledgerCount} • severe {player.severeCount} • economy {player.worldEconomyOutlook ?? "—"} • faction {player.factionStance ?? "—"} • BM {player.blackMarketOpportunity}</div>
+                        <div style={{ fontSize: 12, opacity: 0.82 }}>response {player.responsePhase ?? "—"} • runtime {player.responseNudging ? "nudging" : "observe only"}</div>
                         {player.activeTags.length ? <div style={{ fontSize: 12, opacity: 0.78 }}>tags: <code>{player.activeTags.join(", ")}</code></div> : null}
                         {player.summaryNote ? <div style={{ fontSize: 12, opacity: 0.78 }}>{player.summaryNote}</div> : null}
                         {player.recommendedPrimaryAction ? <div style={{ fontSize: 12, opacity: 0.82 }}><strong>Primary action:</strong> {player.recommendedPrimaryAction}</div> : null}

@@ -1,6 +1,7 @@
 //web-backend/domain/worldConsequenceHooks.ts
 
 import type { PlayerState } from "../gameState";
+import { deriveEconomyCartelResponseState } from "./economyCartelResponse";
 import type { WorldConsequenceBlackMarketState, WorldConsequenceFactionPressureState, WorldConsequenceRegionState, WorldConsequenceState, WorldConsequenceWorldEconomyState } from "./worldConsequences";
 
 export interface WorldConsequenceHookHotspot {
@@ -76,96 +77,39 @@ function topHotspots(regions: WorldConsequenceRegionState[]): WorldConsequenceHo
 }
 
 function deriveBlackMarketHook(ps: PlayerState, state: WorldConsequenceState, hottestRegionId: string | null): WorldConsequenceBlackMarketHook {
-  const unlocked = (ps.techFlags ?? []).includes("BLACK_MARKET_ENABLED");
-  const opportunity = Number(state.blackMarket?.opportunityScore ?? 0);
-  const heat = Number(state.blackMarket?.heat ?? 0);
-  const outlook = state.blackMarket?.outlook ?? "quiet";
-
-  if (!unlocked) {
-    const status = opportunity >= 10 || heat >= 8 ? "opening" : "locked";
-    return {
-      unlocked,
-      status,
-      opportunityScore: opportunity,
-      heat,
-      driverRegionId: hottestRegionId,
-      recommendedPosture: status === "opening" ? "watch" : "ignore",
-      note:
-        status === "opening"
-          ? "The world is opening black-market seams, but the city lacks the contacts or doctrine to use them yet."
-          : "No actionable black-market hook is live because the city has not unlocked that lane.",
-    };
-  }
-
-  if (outlook === "surging" || opportunity >= 18 || heat >= 14) {
-    return {
-      unlocked,
-      status: "surging",
-      opportunityScore: opportunity,
-      heat,
-      driverRegionId: hottestRegionId,
-      recommendedPosture: heat >= opportunity ? "contain" : "exploit",
-      note: "Consequences have opened an aggressive black-market window. This is profit with teeth, not a harmless side alley.",
-    };
-  }
-
-  if (outlook === "active" || opportunity >= 6) {
-    return {
-      unlocked,
-      status: "active",
-      opportunityScore: opportunity,
-      heat,
-      driverRegionId: hottestRegionId,
-      recommendedPosture: heat >= 8 ? "contain" : "probe",
-      note: "City consequence pressure is generating a real black-market opportunity window.",
-    };
-  }
-
+  const response = deriveEconomyCartelResponseState(ps, state);
   return {
-    unlocked,
-    status: opportunity > 0 || heat > 0 ? "opening" : "latent",
-    opportunityScore: opportunity,
-    heat,
+    unlocked: response.blackMarket.unlocked,
+    status: response.blackMarket.state,
+    opportunityScore: response.blackMarket.opportunityScore,
+    heat: response.blackMarket.heat,
     driverRegionId: hottestRegionId,
-    recommendedPosture: opportunity > 0 || heat > 0 ? "watch" : "ignore",
-    note:
-      opportunity > 0 || heat > 0
-        ? "Weak illicit trade seams are appearing, but they are not fully mature yet."
-        : "No meaningful black-market hook is active right now.",
+    recommendedPosture: response.blackMarket.posture,
+    note: response.blackMarket.note,
   };
 }
 
-function deriveCartelHook(state: WorldConsequenceState): WorldConsequenceCartelHook {
-  const attention = Number(state.worldEconomy?.cartelAttention ?? 0);
-  if (attention >= 18) {
-    return {
-      attention,
-      pressureTier: "severe",
-      responseBias: "predatory",
-      note: "Cartel attention is severe. Expect exploitation attempts, coercive pricing, or route capture behavior.",
-    };
-  }
-  if (attention >= 8) {
-    return {
-      attention,
-      pressureTier: "active",
-      responseBias: "probing",
-      note: "Cartel pressure is active enough to probe weak supply lanes and civic recovery efforts.",
-    };
-  }
-  if (attention >= 3) {
-    return {
-      attention,
-      pressureTier: "watch",
-      responseBias: "opportunistic",
-      note: "Cartel attention exists, but mostly as opportunistic pressure rather than committed aggression.",
-    };
-  }
+function deriveCartelHook(ps: PlayerState, state: WorldConsequenceState): WorldConsequenceCartelHook {
+  const response = deriveEconomyCartelResponseState(ps, state);
+  const tierMap: Record<string, WorldConsequenceCartelHook["pressureTier"]> = {
+    none: "low",
+    watch: "watch",
+    probing: "watch",
+    active: "active",
+    crackdown: "severe",
+  };
+  const postureMap: Record<string, WorldConsequenceCartelHook["responseBias"]> = {
+    none: "none",
+    opportunistic: "opportunistic",
+    probing: "probing",
+    predatory: "predatory",
+    coercive: "predatory",
+  };
   return {
-    attention,
-    pressureTier: "low",
-    responseBias: "none",
-    note: "Cartel pressure is currently low.",
+    attention: response.cartel.attention,
+    pressureTier: tierMap[response.cartel.tier] ?? "low",
+    responseBias: postureMap[response.cartel.posture] ?? "none",
+    note: response.cartel.note,
   };
 }
 
@@ -214,7 +158,7 @@ export function deriveWorldConsequenceHooks(ps: PlayerState, state?: WorldConseq
   const hotspots = topHotspots(safeState.regions ?? []);
   const hottestRegionId = hotspots[0]?.regionId ?? safeState.summary?.affectedRegionIds?.[0] ?? null;
   const blackMarket = deriveBlackMarketHook(ps, safeState, hottestRegionId);
-  const cartel = deriveCartelHook(safeState);
+  const cartel = deriveCartelHook(ps, safeState);
   const worldEconomy = deriveWorldEconomyHook(safeState);
   const faction = deriveFactionHook(safeState);
 

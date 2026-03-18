@@ -3,6 +3,7 @@
 import { Router } from "express";
 import { deriveCityMudConsumers, summarizeCityMudBridge } from "../domain/cityMudBridge";
 import { deriveWorldConsequenceConsumers } from "../domain/worldConsequenceConsumers";
+import { deriveEconomyCartelResponseState } from "../domain/economyCartelResponse";
 import { applyMissionConsumerGuidance } from "../domain/missions";
 import { completeMissionForPlayer, regenerateRegionMissionsForPlayer, startMissionForPlayer, tickPlayerState } from "../gameState";
 import { withPlayerAccessMutation } from "./playerCityAccess";
@@ -24,7 +25,7 @@ router.get("/offers", async (req, res) => {
     const missions = applyMissionConsumerGuidance(ps.currentOffers, bridgeSummary, bridgeConsumers, consequenceConsumers);
     ps.currentOffers = missions;
 
-    return { missions, activeMissions: ps.activeMissions, threatWarnings: ps.threatWarnings ?? [], motherBrainPressureMap: ps.motherBrainPressureMap ?? [], bridgeSummary, bridgeConsumers, consequenceConsumers };
+    return { missions, activeMissions: ps.activeMissions, threatWarnings: ps.threatWarnings ?? [], motherBrainPressureMap: ps.motherBrainPressureMap ?? [], bridgeSummary, bridgeConsumers, consequenceConsumers, economyCartelResponseState: deriveEconomyCartelResponseState(ps) };
   });
 
   if (access.ok === false) return res.status(access.status).json({ error: access.error });
@@ -45,7 +46,7 @@ router.post("/start", async (req, res) => {
 
     return {
       ok: true as const,
-      body: { ok: true, activeMission: active, activeMissions: access.playerState.activeMissions, threatWarnings: access.playerState.threatWarnings ?? [], motherBrainPressureMap: access.playerState.motherBrainPressureMap ?? [], heroes: access.playerState.heroes, armies: access.playerState.armies, bridgeSummary, bridgeConsumers, consequenceConsumers, missionSupport: active.mission.supportGuidance ?? bridgeConsumers.missionBoard, missionReceipts: access.playerState.missionReceipts ?? [] },
+      body: { ok: true, activeMission: active, activeMissions: access.playerState.activeMissions, threatWarnings: access.playerState.threatWarnings ?? [], motherBrainPressureMap: access.playerState.motherBrainPressureMap ?? [], heroes: access.playerState.heroes, armies: access.playerState.armies, bridgeSummary, bridgeConsumers, consequenceConsumers, economyCartelResponseState: deriveEconomyCartelResponseState(access.playerState), missionSupport: active.mission.supportGuidance ?? bridgeConsumers.missionBoard, missionReceipts: access.playerState.missionReceipts ?? [] },
     };
   });
 

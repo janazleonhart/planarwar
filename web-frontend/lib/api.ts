@@ -848,6 +848,48 @@ export interface WorldConsequenceConsumersView {
   };
 }
 
+
+export interface EconomyCartelResponseState {
+  summary: {
+    headline: string;
+    responsePhase: "quiet" | "watch" | "active" | "severe";
+    shouldNudgeRuntime: boolean;
+    sourceRegionId: string | null;
+    note: string;
+  };
+  blackMarket: {
+    unlocked: boolean;
+    state: "locked" | "latent" | "opening" | "active" | "surging";
+    posture: "ignore" | "watch" | "probe" | "exploit" | "contain";
+    opportunityScore: number;
+    heat: number;
+    driverRegionId: string | null;
+    shouldNudgeRuntime: boolean;
+    note: string;
+  };
+  cartel: {
+    tier: "none" | "watch" | "probing" | "active" | "crackdown";
+    posture: "none" | "opportunistic" | "probing" | "predatory" | "coercive";
+    attention: number;
+    shouldNudgeRuntime: boolean;
+    note: string;
+  };
+  missions: {
+    state: "none" | "pressured" | "restricted";
+    severityBoost: number;
+    note: string;
+  };
+  vendors: {
+    state: "none" | "pressured" | "restricted";
+    laneBias: "none" | "essentials_only" | "luxury_throttle" | "arcane_caution";
+    stockMultiplierDelta: number;
+    priceMinDelta: number;
+    priceMaxDelta: number;
+    cadenceDelta: number;
+    note: string;
+  };
+}
+
 export interface WorldConsequenceHooksView {
   blackMarket: WorldConsequenceBlackMarketHook;
   cartel: WorldConsequenceCartelHook;
@@ -896,6 +938,7 @@ export interface MeProfile {
   worldConsequenceHooks?: WorldConsequenceHooksView | null;
   worldConsequenceActions?: WorldConsequenceActionsView | null;
   worldConsequenceConsumers?: WorldConsequenceConsumersView | null;
+  economyCartelResponseState?: EconomyCartelResponseState | null;
 }
 
 function normalizeBase(raw: string): string {

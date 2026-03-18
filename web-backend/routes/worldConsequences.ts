@@ -5,6 +5,7 @@ import { summarizePlayerWorldConsequences } from "../gameState";
 import { deriveWorldConsequenceHooks } from "../domain/worldConsequenceHooks";
 import { deriveWorldConsequenceActions } from "../domain/worldConsequenceActions";
 import { applyWorldConsequenceVendorPolicy, deriveWorldConsequenceConsumers } from "../domain/worldConsequenceConsumers";
+import { deriveEconomyCartelResponseState } from "../domain/economyCartelResponse";
 import { deriveCityMudConsumers, deriveVendorSupportPolicy, summarizeCityMudBridge } from "../domain/cityMudBridge";
 import { resolvePlayerAccess } from "./playerCityAccess";
 
@@ -26,6 +27,7 @@ router.get("/status", async (req, res) => {
     ledger: access.access.playerState.worldConsequences ?? [],
     propagatedState: access.access.playerState.worldConsequenceState ?? null,
     hooks: deriveWorldConsequenceHooks(access.access.playerState),
+    responseState: deriveEconomyCartelResponseState(access.access.playerState),
     actions: deriveWorldConsequenceActions(access.access.playerState),
     consumers: consequenceConsumers,
     consumerTargets: {
@@ -60,6 +62,7 @@ router.get("/consumers", async (req, res) => {
   return res.json({
     ok: true,
     consumers,
+    responseState: deriveEconomyCartelResponseState(access.access.playerState),
     consumerTargets: {
       vendorPolicy,
       vendorPolicyWithConsequences: applyWorldConsequenceVendorPolicy(vendorPolicy, consumers),
@@ -77,6 +80,7 @@ router.get("/hooks", async (req, res) => {
   return res.json({
     ok: true,
     hooks: deriveWorldConsequenceHooks(access.access.playerState),
+    responseState: deriveEconomyCartelResponseState(access.access.playerState),
     actions: deriveWorldConsequenceActions(access.access.playerState),
   });
 });
