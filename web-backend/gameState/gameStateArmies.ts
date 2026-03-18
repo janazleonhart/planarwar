@@ -1,6 +1,6 @@
 //web-backend/gameState/gameStateArmies.ts
 
-import type { Army, ArmyType } from "../domain/armies";
+import type { Army, ArmyResponseRole, ArmyType } from "../domain/armies";
 import type { GameEventInput, PlayerState, Resources } from "../gameState";
 
 export interface RaiseArmyResult {
@@ -25,25 +25,38 @@ export interface ArmyStateDeps {
 
 const ARMY_BASE_CONFIG: Record<
   ArmyType,
-  { baseSize: number; basePower: number; baseMaterials: number; baseWealth: number }
+  {
+    baseSize: number;
+    basePower: number;
+    baseMaterials: number;
+    baseWealth: number;
+    baseReadiness: number;
+    specialties: ArmyResponseRole[];
+  }
 > = {
   militia: {
     baseSize: 100,
     basePower: 60,
     baseMaterials: 80,
     baseWealth: 40,
+    baseReadiness: 74,
+    specialties: ["defense", "frontline", "recovery"],
   },
   line: {
     baseSize: 150,
     basePower: 100,
     baseMaterials: 130,
     baseWealth: 80,
+    baseReadiness: 82,
+    specialties: ["frontline", "command", "defense"],
   },
   vanguard: {
     baseSize: 80,
     basePower: 140,
     baseMaterials: 160,
     baseWealth: 120,
+    baseReadiness: 90,
+    specialties: ["frontline", "command", "recon"],
   },
 };
 
@@ -56,6 +69,13 @@ function buildArmyName(type: ArmyType, index: number): string {
       : "Vanguard Spear";
 
   return `${nameBase} ${index}`;
+}
+
+function deriveArmyUpkeep(power: number, size: number): { wealth: number; materials: number } {
+  return {
+    wealth: Math.max(2, Math.round(power * 0.08 + size * 0.01)),
+    materials: Math.max(1, Math.round(power * 0.05 + size * 0.006)),
+  };
 }
 
 export function raiseArmyForPlayer(
@@ -99,6 +119,9 @@ export function raiseArmyForPlayer(
     type,
     power,
     size,
+    readiness: cfg.baseReadiness,
+    upkeep: deriveArmyUpkeep(power, size),
+    specialties: [...cfg.specialties],
     status: "idle",
   };
 
@@ -106,7 +129,7 @@ export function raiseArmyForPlayer(
 
   deps.pushEvent(ps, {
     kind: "army_raised",
-    message: `Raised ${army.name} (${army.type})`,
+    message: `Raised ${army.name} (${army.type}) • readiness ${army.readiness} • upkeep ${army.upkeep.wealth}w/${army.upkeep.materials}m`,
     armyId: army.id,
   });
 
@@ -159,10 +182,12 @@ export function reinforceArmyForPlayer(
   army.size += deltaSize;
   const deltaPower = Math.max(10, Math.round(army.power * 0.25));
   army.power += deltaPower;
+  army.readiness = Math.min(100, army.readiness + 16);
+  army.upkeep = deriveArmyUpkeep(army.power, army.size);
 
   deps.pushEvent(ps, {
     kind: "army_reinforced",
-    message: `Reinforced ${army.name} by ${deltaSize} troops`,
+    message: `Reinforced ${army.name} by ${deltaSize} troops • readiness ${army.readiness} • upkeep ${army.upkeep.wealth}w/${army.upkeep.materials}m`,
     armyId: army.id,
   });
 

@@ -80,7 +80,7 @@ export interface MissionOfferSupportGuidance {
   recommendedAction: string;
 }
 
-export type MissionResponseTag = "frontline" | "recon" | "command" | "recovery" | "warding";
+export type MissionResponseTag = "frontline" | "recon" | "command" | "recovery" | "warding" | "defense";
 
 export interface MissionOffer {
   id: string;
@@ -171,6 +171,8 @@ export interface WorkshopJob {
 export type ArmyType = "militia" | "line" | "vanguard";
 export type ArmyStatus = "idle" | "on_mission";
 
+export type ArmyResponseRole = "frontline" | "command" | "defense" | "recovery" | "warding" | "recon";
+
 export interface Army {
   id: string;
   cityId: string;
@@ -178,6 +180,9 @@ export interface Army {
   type: ArmyType;
   power: number;
   size: number;
+  readiness: number;
+  upkeep: { wealth: number; materials: number };
+  specialties: ArmyResponseRole[];
   status: ArmyStatus;
   currentMissionId?: string;
 }
@@ -634,10 +639,10 @@ export async function fetchMissionBoard(): Promise<MissionBoardResponse> {
   return api<MissionBoardResponse>("/api/missions/offers");
 }
 
-export async function startMission(missionId: string, heroId?: string): Promise<StartMissionResponse> {
+export async function startMission(missionId: string, heroId?: string, armyId?: string): Promise<StartMissionResponse> {
   return api<StartMissionResponse>("/api/missions/start", {
     method: "POST",
-    body: JSON.stringify({ missionId, heroId }),
+    body: JSON.stringify({ missionId, heroId, armyId }),
   });
 }
 

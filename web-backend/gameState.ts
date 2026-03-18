@@ -388,18 +388,33 @@ export function startMissionForPlayer(
   playerId: string,
   missionId: string,
   now: Date,
-  preferredHeroId?: string
+  preferredHeroId?: string,
+  preferredArmyId?: string
 ): ActiveMission | null {
-  return startMissionForPlayerImpl(playerId, missionId, now, preferredHeroId);
+  return startMissionForPlayerImpl(
+    playerId,
+    missionId,
+    now,
+    preferredHeroId,
+    preferredArmyId
+  );
 }
 
 function startMissionForPlayerImpl(
   playerId: string,
   missionId: string,
   now: Date,
-  preferredHeroId?: string
+  preferredHeroId?: string,
+  preferredArmyId?: string
 ): ActiveMission | null {
-  return startMissionForPlayerHelper(missionStateDeps, playerId, missionId, now, preferredHeroId);
+  return startMissionForPlayerHelper(
+    missionStateDeps,
+    playerId,
+    missionId,
+    now,
+    preferredHeroId,
+    preferredArmyId
+  );
 }
 
 export function regenerateRegionMissionsForPlayer(

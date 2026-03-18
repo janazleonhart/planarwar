@@ -146,6 +146,7 @@ export function MePage() {
   const [busyAction, setBusyAction] = useState<string | null>(null);
   const [cityNameDraft, setCityNameDraft] = useState("");
   const [missionHeroSelection, setMissionHeroSelection] = useState<Record<string, string>>({});
+  const [missionArmySelection, setMissionArmySelection] = useState<Record<string, string>>({});
   const [notice, setNotice] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
 
   const noticeTimer = useRef<number | null>(null);
@@ -313,10 +314,10 @@ export function MePage() {
       (result: any) => summarizeUsage(result?.publicService)
     );
 
-  const handleStartMission = (missionId: string, heroId?: string) =>
+  const handleStartMission = (missionId: string, heroId?: string, armyId?: string) =>
     runAction(
       "Start mission",
-      () => startMission(missionId, heroId),
+      () => startMission(missionId, heroId, armyId),
       (result) => {
         const support = result?.missionSupport;
         if (!support) return "Mission launched.";
@@ -633,11 +634,24 @@ export function MePage() {
                       </button>
                     </div>
                   ) : (
-                    <div>
+                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                      <select
+                        value={missionArmySelection[mission.id] ?? ""}
+                        onChange={(e) => setMissionArmySelection((prev) => ({ ...prev, [mission.id]: e.target.value }))}
+                        style={{ padding: "6px 8px", borderRadius: 6, border: "1px solid #555", background: "#0b0b0b", color: "#ddd", minWidth: 260 }}
+                        disabled={disabled}
+                      >
+                        <option value="">Auto-pick best army</option>
+                        {me.armies.filter((army) => army.status === "idle").map((army) => (
+                          <option key={army.id} value={army.id}>
+                            {army.name} • {army.specialties.join("/")} • readiness {army.readiness} • power {army.power}
+                          </option>
+                        ))}
+                      </select>
                       <button
                         style={{ padding: "6px 10px", borderRadius: 6, border: "1px solid #777", background: "#111", opacity: disabled ? 0.6 : 1 }}
                         disabled={disabled}
-                        onClick={() => void handleStartMission(mission.id)}
+                        onClick={() => void handleStartMission(mission.id, undefined, missionArmySelection[mission.id] || undefined)}
                       >
                         Start mission
                       </button>
@@ -1012,7 +1026,11 @@ export function MePage() {
         <div style={{ display: "grid", gap: 6 }}>
           {me.armies.map((army) => (
             <div key={army.id} style={{ border: "1px solid #555", borderRadius: 8, padding: 10, display: "flex", justifyContent: "space-between", gap: 10 }}>
-              <div><strong>{army.name}</strong> ({army.type}) • power {army.power} • size {army.size} • {army.status}</div>
+              <div style={{ display: "grid", gap: 4 }}>
+                <div><strong>{army.name}</strong> ({army.type}) • power {army.power} • size {army.size} • {army.status}</div>
+                <div style={{ fontSize: 12, opacity: 0.82 }}>Readiness {army.readiness}/100 • upkeep {army.upkeep.wealth} wealth + {army.upkeep.materials} materials/tick</div>
+                <div style={{ fontSize: 12, opacity: 0.74 }}>Specialties: {army.specialties.join(", ")}</div>
+              </div>
               <button
                 style={{ padding: "6px 10px", borderRadius: 6, border: "1px solid #777", background: "#111", opacity: disabled ? 0.6 : 1 }}
                 disabled={disabled}
