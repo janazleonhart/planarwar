@@ -6,6 +6,7 @@ import type { Army } from "./armies";
 import type { RegionId } from "./world";
 
 import type { CityMudConsumerSummary, CityMudBridgeSummary } from "./cityMudBridge";
+import type { WorldConsequenceConsumersView } from "./worldConsequenceConsumers";
 
 export type MissionKind = "hero" | "army";
 export type MissionDifficulty = "low" | "medium" | "high" | "extreme";
@@ -415,17 +416,19 @@ export function applyMissionConsumerGuidance(
   offers: MissionOffer[],
   bridgeSummary: CityMudBridgeSummary,
   consumers: CityMudConsumerSummary,
+  consequenceConsumers?: WorldConsequenceConsumersView | null,
 ): MissionOffer[] {
   return offers.map((offer) => {
     const baseSeverity = missionSupportStateSeverity(offer.difficulty);
     const missionConsumer = consumers.missionBoard;
     const civicConsumer = consumers.civicServices;
-    const severity = Math.max(baseSeverity, missionConsumer.severity, bridgeSummary.frontierPressure);
+    const consequenceSeverityBoost = Math.max(0, Number(consequenceConsumers?.missions?.severityBoost ?? 0));
+    const severity = Math.max(baseSeverity, missionConsumer.severity, bridgeSummary.frontierPressure) + consequenceSeverityBoost;
 
     let supportState: MissionOfferSupportGuidance["state"] = "stable";
-    if (missionConsumer.state === "restricted") {
+    if (consequenceConsumers?.missions?.supportBias === "restricted" || missionConsumer.state === "restricted") {
       supportState = "restricted";
-    } else if (missionConsumer.state === "pressured" || offer.difficulty === "high" || offer.difficulty === "extreme" || bridgeSummary.bridgeBand === "strained") {
+    } else if (consequenceConsumers?.missions?.supportBias === "pressured" || missionConsumer.state === "pressured" || offer.difficulty === "high" || offer.difficulty === "extreme" || bridgeSummary.bridgeBand === "strained") {
       supportState = "pressured";
     }
 
@@ -434,7 +437,7 @@ export function applyMissionConsumerGuidance(
           state: "restricted",
           severity: Math.max(severity, 75),
           headline: "Mission support is in defensive triage.",
-          detail: `${missionConsumer.detail} ${civicConsumer.detail}`,
+          detail: `${missionConsumer.detail} ${civicConsumer.detail} ${consequenceConsumers?.missions?.note ?? ""}`.trim(),
           recommendedAction: "Bias toward escort, defense, recovery, or emergency contracts until city pressure eases.",
         }
       : supportState === "pressured"
@@ -442,7 +445,7 @@ export function applyMissionConsumerGuidance(
           state: "pressured",
           severity: Math.max(severity, 52),
           headline: "Mission support is available with visible drag.",
-          detail: `${missionConsumer.headline} ${bridgeSummary.note}`,
+          detail: `${missionConsumer.headline} ${bridgeSummary.note} ${consequenceConsumers?.missions?.note ?? ""}`.trim(),
           recommendedAction: offer.kind === "hero"
             ? "Surface risk/support caveats and favor focused missions over broad frontier commitments."
             : "Surface logistics risk and prefer medium operations over force-heavy offensives.",
@@ -451,7 +454,7 @@ export function applyMissionConsumerGuidance(
           state: "stable",
           severity: Math.min(40, severity),
           headline: "Mission support lanes are open.",
-          detail: "The city can back routine outward missions without leaning hard on emergency logistics or civic triage.",
+          detail: consequenceConsumers?.missions?.note ? `The city can back routine outward missions without leaning hard on emergency logistics or civic triage. ${consequenceConsumers.missions.note}` : "The city can back routine outward missions without leaning hard on emergency logistics or civic triage.",
           recommendedAction: "Keep support notes lightweight and reserve hard warnings for real spikes.",
         };
 

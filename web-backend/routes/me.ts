@@ -6,6 +6,7 @@ import { defaultPolicies, summarizeCityAlphaScopeLock, summarizeCityAlphaStatus,
 import { getAvailableTechsForPlayer, getTechById } from "../domain/tech";
 import { deriveWorldConsequenceHooks } from "../domain/worldConsequenceHooks";
 import { deriveWorldConsequenceActions } from "../domain/worldConsequenceActions";
+import { deriveWorldConsequenceConsumers } from "../domain/worldConsequenceConsumers";
 import { getCityProductionPerTick, maxBuildingSlotsForTier } from "../domain/city";
 import { resolvePlayerAccess, resolveViewer, suggestCityName, withPlayerAccessMutation } from "./playerCityAccess";
 
@@ -78,6 +79,7 @@ function buildMePayload(viewer: Awaited<ReturnType<typeof resolveViewer>>, ps: P
       worldConsequenceState: null,
       worldConsequenceHooks: null,
       worldConsequenceActions: null,
+      worldConsequenceConsumers: null,
     };
   }
 
@@ -137,6 +139,7 @@ function buildMePayload(viewer: Awaited<ReturnType<typeof resolveViewer>>, ps: P
     worldConsequenceState: ps.worldConsequenceState ?? null,
     worldConsequenceHooks: deriveWorldConsequenceHooks(ps),
     worldConsequenceActions: deriveWorldConsequenceActions(ps),
+    worldConsequenceConsumers: deriveWorldConsequenceConsumers(ps),
   };
 }
 

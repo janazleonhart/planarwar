@@ -2,6 +2,7 @@
 
 import { Router } from "express";
 import { deriveCityMudConsumers, deriveVendorSupportPolicy, summarizeCityMudBridge } from "../domain/cityMudBridge";
+import { applyWorldConsequenceVendorPolicy, deriveWorldConsequenceConsumers } from "../domain/worldConsequenceConsumers";
 import { resolvePlayerAccess } from "./playerCityAccess";
 
 const router = Router();
@@ -14,11 +15,15 @@ router.get("/status", async (req, res) => {
 
   const summary = summarizeCityMudBridge(access.access.playerState);
   const consumers = deriveCityMudConsumers(summary);
+  const worldConsequenceConsumers = deriveWorldConsequenceConsumers(access.access.playerState);
+  const vendorPolicy = deriveVendorSupportPolicy(summary, consumers);
   return res.json({
     ok: true,
     summary,
     consumers,
-    vendorPolicy: deriveVendorSupportPolicy(summary, consumers),
+    vendorPolicy,
+    consequenceConsumers: worldConsequenceConsumers,
+    vendorPolicyWithConsequences: applyWorldConsequenceVendorPolicy(vendorPolicy, worldConsequenceConsumers),
   });
 });
 

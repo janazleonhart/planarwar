@@ -8,6 +8,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { db } from "../../worldcore/db/Database";
 import { buildVendorScenarioLogNote, describeVendorLaneSelection, deriveCityMudConsumers, deriveVendorEconomyRecommendation, deriveVendorGuardrailApplication, deriveVendorLanePolicy, deriveVendorRuntimeEffect, deriveVendorSupportPolicy, getVendorPreset, matchesVendorLaneSelection, normalizeVendorLaneSelection, normalizeVendorPresetKey, summarizeCityMudBridge, type CityMudVendorLane, type CityMudVendorPresetKey, type CityMudVendorScenarioLogEntry } from "../domain/cityMudBridge";
+import { applyWorldConsequenceVendorPolicy, deriveWorldConsequenceConsumers } from "../domain/worldConsequenceConsumers";
 import { readVendorScenarioReportFromFile, renderVendorScenarioReportCsv, type VendorScenarioReportFilter } from "../domain/vendorScenarioReports";
 import { resolvePlayerAccess } from "./playerCityAccess";
 
@@ -70,10 +71,14 @@ async function getBridgeVendorPolicyOrNull(req: express.Request) {
   if (access.ok === false) return null;
   const summary = summarizeCityMudBridge(access.access.playerState);
   const consumers = deriveCityMudConsumers(summary);
+  const worldConsequenceConsumers = deriveWorldConsequenceConsumers(access.access.playerState);
+  const vendorPolicy = deriveVendorSupportPolicy(summary, consumers);
   return {
     summary,
     consumers,
-    vendorPolicy: deriveVendorSupportPolicy(summary, consumers),
+    vendorPolicy,
+    consequenceConsumers: worldConsequenceConsumers,
+    vendorPolicyWithConsequences: applyWorldConsequenceVendorPolicy(vendorPolicy, worldConsequenceConsumers),
   };
 }
 
@@ -249,6 +254,8 @@ adminVendorEconomyRouter.get("/items", async (req, res) => {
       bridgeSummary: bridge?.summary ?? null,
       bridgeConsumers: bridge?.consumers ?? null,
       vendorPolicy: bridge?.vendorPolicy ?? null,
+      consequenceConsumers: bridge?.consequenceConsumers ?? null,
+      vendorPolicyWithConsequences: bridge?.vendorPolicyWithConsequences ?? bridge?.vendorPolicy ?? null,
     });
   } catch (err: any) {
     res.status(500).json({ ok: false, error: err?.message ?? String(err) });
@@ -329,7 +336,7 @@ adminVendorEconomyRouter.post("/bridge_runtime_guarded", async (req, res) => {
     const results: any[] = [];
     let appliedCount = 0;
     for (const row of rows.rows ?? []) {
-      const lanePolicy = deriveVendorLanePolicy(bridge.summary, bridge.consumers, bridge.vendorPolicy, {
+      const lanePolicy = deriveVendorLanePolicy(bridge.summary, bridge.consumers, bridge.vendorPolicyWithConsequences ?? bridge.vendorPolicy, {
         itemId: row.item_id,
         itemName: row.item_name,
         itemRarity: row.item_rarity,
@@ -459,6 +466,8 @@ adminVendorEconomyRouter.post("/bridge_runtime_guarded", async (req, res) => {
       bridgeSummary: bridge.summary,
       bridgeConsumers: bridge.consumers,
       vendorPolicy: bridge.vendorPolicy,
+      consequenceConsumers: bridge.consequenceConsumers,
+      vendorPolicyWithConsequences: bridge.vendorPolicyWithConsequences ?? bridge.vendorPolicy,
       laneFiltersApplied: effectiveLaneFilters,
       presetApplied: preset,
       selectionLabel,
