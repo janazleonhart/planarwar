@@ -1056,6 +1056,63 @@
         "City Alpha scope lock section"
       ],
       "service": "ui.component"
+    },
+    "web-frontend.components.worldResponse.worldResponseConsumersSection": {
+      "class": null,
+      "ctorArgs": [],
+      "dependsOn": [
+        "web-frontend.lib.api"
+      ],
+      "kind": "ui",
+      "lifecycle": "singleton",
+      "notes": [
+        "Extracted runtime consumer pressure rendering from WorldResponsePanel.",
+        "Keeps player-facing world response pressure cards readable without changing maintenance-mode backend behavior."
+      ],
+      "owns": [],
+      "path": "web-frontend/components/worldResponse/WorldResponseConsumersSection.tsx",
+      "provides": [
+        "World response consumer pressure section"
+      ],
+      "service": "ui.component"
+    },
+    "web-frontend.components.worldResponse.worldResponseReceiptsSection": {
+      "class": null,
+      "ctorArgs": [],
+      "dependsOn": [
+        "web-frontend.lib.api"
+      ],
+      "kind": "ui",
+      "lifecycle": "singleton",
+      "notes": [
+        "Extracted recent world response receipt rendering from WorldResponsePanel.",
+        "Preserves existing response receipt display while reducing mixed concern density in the player-facing reporting shell."
+      ],
+      "owns": [],
+      "path": "web-frontend/components/worldResponse/WorldResponseReceiptsSection.tsx",
+      "provides": [
+        "World response receipts section"
+      ],
+      "service": "ui.component"
+    },
+    "web-frontend.components.worldResponse.worldResponseActionsSection": {
+      "class": null,
+      "ctorArgs": [],
+      "dependsOn": [
+        "web-frontend.lib.api"
+      ],
+      "kind": "ui",
+      "lifecycle": "singleton",
+      "notes": [
+        "Extracted player-facing world response action recommendation and runtime execution card rendering from WorldResponsePanel.",
+        "Keeps bounded runtime action presentation readable without reopening the closed world-response milestone."
+      ],
+      "owns": [],
+      "path": "web-frontend/components/worldResponse/WorldResponseActionsSection.tsx",
+      "provides": [
+        "World response actions section"
+      ],
+      "service": "ui.component"
     }
   }
 }
