@@ -165,3 +165,19 @@ test("player action cards expose recent runtime action history", () => {
   assert.equal(action?.runtime?.successfulCommitCount, 1);
   assert.ok(typeof action?.runtime?.lastCommittedAt === "string");
 });
+
+
+test("player action cards expose the last applied runtime result", () => {
+  const ps = seedPressure();
+  const first = executeWorldConsequenceAction(ps, "action_stabilize_supply_lanes");
+  assert.equal(first.ok, true);
+
+  const view = deriveWorldConsequenceActions(ps);
+  const action = view.playerActions.find((entry) => entry.id === "action_stabilize_supply_lanes");
+  assert.ok(action);
+  assert.ok(action?.runtime?.lastReceiptId);
+  assert.equal(action?.runtime?.lastAppliedEffect?.pressureDelta, -5);
+  assert.equal(action?.runtime?.lastAppliedEffect?.recoveryDelta, -4);
+  assert.equal(action?.runtime?.lastAppliedEffect?.threatDelta, -2);
+  assert.match(action?.runtime?.lastReceiptSummary ?? "", /Costs committed:/i);
+});

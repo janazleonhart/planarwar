@@ -831,6 +831,14 @@ export interface WorldConsequenceActionRuntimeView {
   readyAt?: string;
   lastCommittedAt?: string;
   successfulCommitCount?: number;
+  lastReceiptId?: string;
+  lastReceiptSummary?: string;
+  lastAppliedEffect?: {
+    pressureDelta: number;
+    recoveryDelta: number;
+    controlDelta: number;
+    threatDelta: number;
+  };
 }
 
 export interface WorldConsequenceActionItem {

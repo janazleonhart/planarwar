@@ -41,6 +41,14 @@ export interface WorldConsequenceActionRuntimeView {
   readyAt?: string;
   lastCommittedAt?: string;
   successfulCommitCount?: number;
+  lastReceiptId?: string;
+  lastReceiptSummary?: string;
+  lastAppliedEffect?: {
+    pressureDelta: number;
+    recoveryDelta: number;
+    controlDelta: number;
+    threatDelta: number;
+  };
 }
 
 export interface WorldConsequenceActionItem {
@@ -68,18 +76,49 @@ export interface WorldConsequenceActionsView {
 
 export const WORLD_CONSEQUENCE_ACTION_COOLDOWN_MS = 10 * 60 * 1000;
 
-function summarizeRuntimeActionHistory(ps: PlayerState, actionId: string): { lastCommittedAt?: string; successfulCommitCount: number } {
+function summarizeRuntimeActionHistory(ps: PlayerState, actionId: string): {
+  lastCommittedAt?: string;
+  successfulCommitCount: number;
+  lastReceiptId?: string;
+  lastReceiptSummary?: string;
+  lastAppliedEffect?: {
+    pressureDelta: number;
+    recoveryDelta: number;
+    controlDelta: number;
+    threatDelta: number;
+  };
+} {
   const receipts = ps.worldConsequences ?? [];
   let lastCommittedAt: string | undefined;
   let successfulCommitCount = 0;
+  let lastReceiptId: string | undefined;
+  let lastReceiptSummary: string | undefined;
+  let lastAppliedEffect:
+    | {
+        pressureDelta: number;
+        recoveryDelta: number;
+        controlDelta: number;
+        threatDelta: number;
+      }
+    | undefined;
   for (const entry of receipts) {
     if (entry.source !== "recovery_contract") continue;
     if (entry.runtimeActionId !== actionId) continue;
     if (entry.outcome !== "success") continue;
     successfulCommitCount += 1;
-    if (!lastCommittedAt) lastCommittedAt = entry.createdAt;
+    if (!lastCommittedAt) {
+      lastCommittedAt = entry.createdAt;
+      lastReceiptId = entry.id;
+      lastReceiptSummary = entry.summary;
+      lastAppliedEffect = {
+        pressureDelta: entry.metrics.pressureDelta,
+        recoveryDelta: entry.metrics.recoveryDelta,
+        controlDelta: entry.metrics.controlDelta,
+        threatDelta: entry.metrics.threatDelta,
+      };
+    }
   }
-  return { lastCommittedAt, successfulCommitCount };
+  return { lastCommittedAt, successfulCommitCount, lastReceiptId, lastReceiptSummary, lastAppliedEffect };
 }
 
 export function getWorldConsequenceRuntimePlan(actionId: string): RuntimeWorldConsequenceActionPlan | null {
@@ -200,6 +239,9 @@ export function buildWorldConsequenceActionRuntimeView(ps: PlayerState, actionId
         readyAt: new Date(readyAtMs).toISOString(),
         lastCommittedAt: history.lastCommittedAt,
         successfulCommitCount: history.successfulCommitCount,
+        lastReceiptId: history.lastReceiptId,
+        lastReceiptSummary: history.lastReceiptSummary,
+        lastAppliedEffect: history.lastAppliedEffect,
       };
     }
   }
@@ -218,6 +260,9 @@ export function buildWorldConsequenceActionRuntimeView(ps: PlayerState, actionId
     effect: buildRuntimeEffectPreview(plan),
     lastCommittedAt: history.lastCommittedAt,
     successfulCommitCount: history.successfulCommitCount,
+    lastReceiptId: history.lastReceiptId,
+    lastReceiptSummary: history.lastReceiptSummary,
+    lastAppliedEffect: history.lastAppliedEffect,
   };
 }
 function pushUnique(target: WorldConsequenceActionItem[], item: WorldConsequenceActionItem) {
