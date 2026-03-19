@@ -91,6 +91,81 @@
       ],
       "service": "ui.component"
     },
+    "web-frontend.components.city.publicInfrastructurePanel": {
+      "class": null,
+      "ctorArgs": [],
+      "dependsOn": [
+        "web-frontend.lib.api"
+      ],
+      "kind": "ui",
+      "lifecycle": "singleton",
+      "notes": [
+        "Extracted City Builder panel for public infrastructure lane selection, quote previews, and receipt rendering.",
+        "Keeps MePage focused on orchestration while preserving the existing private_city vs npc_public UI behavior."
+      ],
+      "owns": [],
+      "path": "web-frontend/components/city/PublicInfrastructurePanel.tsx",
+      "provides": [
+        "City Builder public infrastructure panel"
+      ],
+      "service": "ui.component"
+    },
+    "web-frontend.components.city.cityMudBridgePanel": {
+      "class": null,
+      "ctorArgs": [],
+      "dependsOn": [
+        "web-frontend.lib.api"
+      ],
+      "kind": "ui",
+      "lifecycle": "singleton",
+      "notes": [
+        "Extracted City ↔ MUD bridge posture, consumer guidance, and hook rendering from MePage.",
+        "Behavior is display-only; bridge math remains owned by web-backend/domain/cityMudBridge.ts."
+      ],
+      "owns": [],
+      "path": "web-frontend/components/city/CityMudBridgePanel.tsx",
+      "provides": [
+        "City Builder bridge posture panel"
+      ],
+      "service": "ui.component"
+    },
+    "web-frontend.components.city.cityCorePanel": {
+      "class": null,
+      "ctorArgs": [],
+      "dependsOn": [
+        "web-frontend.lib.api"
+      ],
+      "kind": "ui",
+      "lifecycle": "singleton",
+      "notes": [
+        "Extracted city bootstrap/core/buildings/heroes/workshop/tech panel from MePage.",
+        "Preserves existing action handlers and lane-aware quote display while reducing page-level JSX sprawl."
+      ],
+      "owns": [],
+      "path": "web-frontend/components/city/CityCorePanel.tsx",
+      "provides": [
+        "City Builder city core panel"
+      ],
+      "service": "ui.component"
+    },
+    "web-frontend.components.city.cityPolicyArmiesPanel": {
+      "class": null,
+      "ctorArgs": [],
+      "dependsOn": [
+        "web-frontend.lib.api"
+      ],
+      "kind": "ui",
+      "lifecycle": "singleton",
+      "notes": [
+        "Extracted city policy toggles and army readiness/reinforcement rendering from MePage."
+      ],
+      "owns": [],
+      "path": "web-frontend/components/city/CityPolicyArmiesPanel.tsx",
+      "provides": [
+        "City Builder policies and armies panel"
+      ],
+      "service": "ui.component"
+    },
     "web-frontend.config.ts": {
       "class": null,
       "ctorArgs": [],
@@ -513,7 +588,8 @@
         "Now surfaces public infrastructure summary, quote previews, receipts, and a lane toggle for private_city vs npc_public service execution.",
         "City-builder action toasts now include publicService consequence details (levy/queue/note) returned by backend routes.",
         "Now renders a City \u2194 MUD Economic Bridge panel with support posture, exportable surplus, and future-consumer hook summaries from /api/city_mud_bridge/status.",
-        "Now renders mission board cards that surface bridge-derived support guidance and allows start/complete flows from the same dashboard."
+        "Now renders mission board cards that surface bridge-derived support guidance and allows start/complete flows from the same dashboard.",
+        "Page shell now delegates public infrastructure, bridge, city core, and policy/army sections to dedicated city components while preserving runtime behavior."
       ],
       "owns": [
         "client-side UI state for selected actions",
