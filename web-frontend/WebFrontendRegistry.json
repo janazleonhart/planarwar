@@ -874,7 +874,8 @@
         "City-builder action toasts now include publicService consequence details (levy/queue/note) returned by backend routes.",
         "Now renders a City \u2194 MUD Economic Bridge panel with support posture, exportable surplus, and future-consumer hook summaries from /api/city_mud_bridge/status.",
         "Now renders mission board cards that surface bridge-derived support guidance and allows start/complete flows from the same dashboard.",
-        "Page shell now delegates public infrastructure, bridge, city core, and policy/army sections to dedicated city components while preserving runtime behavior."
+        "Page shell now delegates public infrastructure, bridge, city core, and policy/army sections to dedicated city components while preserving runtime behavior.",
+        "Page shell now delegates fetch/refresh loops, flash notices, and city action handler wiring to a dedicated controller hook while preserving runtime behavior."
       ],
       "owns": [
         "client-side UI state for selected actions",
@@ -1149,6 +1150,29 @@
       "path": "web-frontend/components/worldResponse/ActiveMissionsSection.tsx",
       "provides": [
         "Active missions section"
+      ],
+      "service": "ui.component"
+    },
+    "web-frontend.components.city.mePageController": {
+      "class": null,
+      "ctorArgs": [],
+      "dependsOn": [
+        "web-frontend.lib.api",
+        "web-frontend.components.city.cityUiHelpers"
+      ],
+      "kind": "ui",
+      "lifecycle": "singleton",
+      "notes": [
+        "MePage controller hook extracted from the page shell to own fetch/refresh loops, toast state, and city action handlers.",
+        "Keeps MePage focused on orchestration and rendering while preserving existing runtime behavior."
+      ],
+      "owns": [
+        "client-side fetch/refresh state for /api/me, /api/public_infrastructure/status, /api/city_mud_bridge/status, and /api/missions/offers",
+        "client-side busy/toast state for city actions and bounded world actions"
+      ],
+      "path": "web-frontend/components/city/useMePageController.ts",
+      "provides": [
+        "MePage controller hook for fetch state, flash notices, and action handlers"
       ],
       "service": "ui.component"
     }
