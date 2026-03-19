@@ -18,6 +18,63 @@ export function getRegionDisplayName(regionId: string) {
     .join(" ");
 }
 
+
+export function getThreatFamilyDisplayName(family?: string) {
+  switch (family) {
+    case "bandits":
+      return "Bandits";
+    case "mercs":
+      return "Mercenaries";
+    case "desperate_towns":
+      return "Desperate towns";
+    case "organized_hostile_forces":
+      return "Organized hostile forces";
+    case "early_planar_strike":
+      return "Early planar strike";
+    default:
+      return "Unclear hostile pressure";
+  }
+}
+
+export function formatWarningWindow(startIso: string, endIso: string): string {
+  const start = new Date(startIso);
+  const end = new Date(endIso);
+  const startText = Number.isFinite(start.getTime()) ? start.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : startIso;
+  const endText = Number.isFinite(end.getTime()) ? end.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : endIso;
+  return `${startText} → ${endText}`;
+}
+
+export function warningQualityTone(quality: string): string {
+  switch (quality) {
+    case "precise": return "Precise";
+    case "clear": return "Clear";
+    case "usable": return "Usable";
+    default: return "Faint";
+  }
+}
+
+export function pressureConfidenceLabel(confidence: string): string {
+  switch (confidence) {
+    case "urgent": return "Urgent";
+    case "credible": return "Credible";
+    default: return "Watch";
+  }
+}
+
+export function formatPressureWindow(startIso: string, endIso: string): string {
+  return formatWarningWindow(startIso, endIso);
+}
+
+export function formatContractKind(kind: string | undefined): string {
+  switch (kind) {
+    case "stabilize_district": return "Stabilize district";
+    case "repair_works": return "Repair works";
+    case "relief_convoys": return "Relief convoys";
+    case "counter_rumors": return "Counter rumors";
+    default: return "";
+  }
+}
+
 export function formatWorldActionCost(cost: Partial<Resources> | undefined): string {
   const entries = Object.entries(cost ?? {}).filter(([, value]) => Number(value ?? 0) > 0);
   if (entries.length <= 0) return "no direct city cost";
