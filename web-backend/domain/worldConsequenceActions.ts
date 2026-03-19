@@ -67,6 +67,8 @@ export interface WorldConsequenceActionRuntimeView {
   blockedFollowupActionTitles?: string[];
   availableFollowupActionIds?: string[];
   availableFollowupActionTitles?: string[];
+  recommendedFollowupActionId?: string;
+  recommendedFollowupActionTitle?: string;
   postCommitState?: {
     currentStage: "stable" | "strained" | "crisis" | "lockdown";
     stage: "stable" | "strained" | "crisis" | "lockdown";
@@ -291,7 +293,14 @@ function getFollowupActionOutcomes(
   ps: PlayerState,
   actionId: string,
   candidates: Pick<WorldConsequenceActionItem, "id" | "title">[],
-): { blockedIds: string[]; blockedTitles: string[]; availableIds: string[]; availableTitles: string[] } | undefined {
+): {
+  blockedIds: string[];
+  blockedTitles: string[];
+  availableIds: string[];
+  availableTitles: string[];
+  recommendedId?: string;
+  recommendedTitle?: string;
+} | undefined {
   const plan = getWorldConsequenceRuntimePlan(actionId);
   if (!plan) return undefined;
 
@@ -324,7 +333,14 @@ function getFollowupActionOutcomes(
   }
 
   if (blockedIds.length === 0 && availableIds.length === 0) return undefined;
-  return { blockedIds, blockedTitles, availableIds, availableTitles };
+  return {
+    blockedIds,
+    blockedTitles,
+    availableIds,
+    availableTitles,
+    recommendedId: availableIds[0],
+    recommendedTitle: availableTitles[0],
+  };
 }
 
 function runtimeButtonLabel(
@@ -396,6 +412,8 @@ export function buildWorldConsequenceActionRuntimeView(
         blockedFollowupActionTitles: followupOutcomes?.blockedTitles,
         availableFollowupActionIds: followupOutcomes?.availableIds,
         availableFollowupActionTitles: followupOutcomes?.availableTitles,
+        recommendedFollowupActionId: followupOutcomes?.recommendedId,
+        recommendedFollowupActionTitle: followupOutcomes?.recommendedTitle,
         postCommitState: buildPostCommitStatePreview(ps, plan),
       };
     }
@@ -427,6 +445,8 @@ export function buildWorldConsequenceActionRuntimeView(
     blockedFollowupActionTitles: affordable ? followupOutcomes?.blockedTitles : undefined,
     availableFollowupActionIds: affordable ? followupOutcomes?.availableIds : undefined,
     availableFollowupActionTitles: affordable ? followupOutcomes?.availableTitles : undefined,
+    recommendedFollowupActionId: affordable ? followupOutcomes?.recommendedId : undefined,
+    recommendedFollowupActionTitle: affordable ? followupOutcomes?.recommendedTitle : undefined,
     postCommitState: affordable ? buildPostCommitStatePreview(ps, plan) : undefined,
   };
 }

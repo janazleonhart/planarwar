@@ -136,6 +136,29 @@ test("player action cards expose which follow-up actions stay open after spend",
   assert.equal(tighter?.runtime?.availableFollowupActionIds?.includes("action_faction_stability"), false);
 });
 
+test("player action cards expose a recommended next follow-up after spend", () => {
+  const ps = seedPressure();
+  ps.resources.wealth = 20;
+  ps.resources.materials = 10;
+  ps.resources.unity = 8;
+
+  const actions = deriveWorldConsequenceActions(ps);
+  const stabilize = actions.playerActions.find((action) => action.id === "action_stabilize_supply_lanes");
+  assert.ok(stabilize);
+  assert.equal(stabilize?.runtime?.recommendedFollowupActionId, "action_faction_stability");
+  assert.equal(
+    stabilize?.runtime?.recommendedFollowupActionTitle,
+    "Repair faction stability before local pressure turns political",
+  );
+
+  ps.resources.wealth = 17;
+  const tighter = deriveWorldConsequenceActions(ps).playerActions.find((action) => action.id === "action_stabilize_supply_lanes");
+  assert.ok(tighter);
+  assert.equal(tighter?.runtime?.recommendedFollowupActionId, undefined);
+  assert.equal(tighter?.runtime?.recommendedFollowupActionTitle, undefined);
+});
+
+
 
 test("player action cards expose remaining resources after paying bounded response cost", () => {
   const ps = seedPressure();

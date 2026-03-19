@@ -872,6 +872,8 @@ export interface WorldConsequenceActionRuntimeView {
   blockedFollowupActionTitles?: string[];
   availableFollowupActionIds?: string[];
   availableFollowupActionTitles?: string[];
+  recommendedFollowupActionId?: string;
+  recommendedFollowupActionTitle?: string;
   postCommitState?: {
     currentStage: "stable" | "strained" | "crisis" | "lockdown";
     stage: "stable" | "strained" | "crisis" | "lockdown";
