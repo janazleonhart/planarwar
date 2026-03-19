@@ -139,6 +139,16 @@ test("player action cards expose post-commit city state previews", () => {
   assert.equal(stabilize?.runtime?.postCommitState?.threatPressure, Math.max(0, (ps.cityStress.threatPressure ?? 0) - 5));
   assert.equal(stabilize?.runtime?.postCommitState?.recoveryBurden, Math.max(0, (ps.cityStress.recoveryBurden ?? 0) - 4));
   assert.equal(stabilize?.runtime?.postCommitState?.unityPressure, Math.max(0, (ps.cityStress.unityPressure ?? 0) - 1));
+  assert.equal(stabilize?.runtime?.postCommitState?.currentStage, ps.cityStress.stage);
+  assert.equal(stabilize?.runtime?.postCommitState?.stage, "stable");
+  assert.equal(stabilize?.runtime?.postCommitState?.stageChanged, false);
+
+  ps.cityStress.total = 26;
+  ps.cityStress.stage = "strained";
+  const calmer = deriveWorldConsequenceActions(ps).playerActions.find((action) => action.id === "action_stabilize_supply_lanes");
+  assert.equal(calmer?.runtime?.postCommitState?.currentStage, "strained");
+  assert.equal(calmer?.runtime?.postCommitState?.stage, "stable");
+  assert.equal(calmer?.runtime?.postCommitState?.stageChanged, true);
 
   ps.resources.wealth = 0;
   const starved = deriveWorldConsequenceActions(ps).playerActions.find((action) => action.id === "action_stabilize_supply_lanes");

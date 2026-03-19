@@ -66,6 +66,9 @@ export interface WorldConsequenceActionRuntimeView {
   blockedFollowupActionIds?: string[];
   blockedFollowupActionTitles?: string[];
   postCommitState?: {
+    currentStage: "stable" | "strained" | "crisis" | "lockdown";
+    stage: "stable" | "strained" | "crisis" | "lockdown";
+    stageChanged: boolean;
     unity: number;
     threatPressure: number;
     recoveryBurden: number;
@@ -250,17 +253,34 @@ function clampPreviewStat(value: number): number {
   return Math.max(0, Math.min(100, Math.round(value)));
 }
 
+function derivePreviewStage(total: number): "stable" | "strained" | "crisis" | "lockdown" {
+  if (total < 25) return "stable";
+  if (total < 50) return "strained";
+  if (total < 75) return "crisis";
+  return "lockdown";
+}
+
 function buildPostCommitStatePreview(ps: PlayerState, plan: RuntimeWorldConsequenceActionPlan) {
   const trustPressureDrop = Math.max(1, Math.round(plan.trustDelta * 0.6));
+  const total = clampPreviewStat(
+    Number(ps.cityStress.total ?? 0) +
+      Math.round(plan.pressureDelta * 0.35 + plan.recoveryDelta * 0.35 - plan.trustDelta * 0.2),
+  );
+  const currentStage = (ps.cityStress.stage ?? derivePreviewStage(Number(ps.cityStress.total ?? 0))) as
+    | "stable"
+    | "strained"
+    | "crisis"
+    | "lockdown";
+  const stage = derivePreviewStage(total);
   return {
+    currentStage,
+    stage,
+    stageChanged: currentStage !== stage,
     unity: clampPreviewStat(Number(ps.city.stats.unity ?? 0) + plan.trustDelta),
     threatPressure: clampPreviewStat(Number(ps.cityStress.threatPressure ?? 0) + plan.pressureDelta),
     recoveryBurden: clampPreviewStat(Number(ps.cityStress.recoveryBurden ?? 0) + plan.recoveryDelta),
     unityPressure: clampPreviewStat(Number(ps.cityStress.unityPressure ?? 0) - trustPressureDrop),
-    total: clampPreviewStat(
-      Number(ps.cityStress.total ?? 0) +
-        Math.round(plan.pressureDelta * 0.35 + plan.recoveryDelta * 0.35 - plan.trustDelta * 0.2),
-    ),
+    total,
   };
 }
 

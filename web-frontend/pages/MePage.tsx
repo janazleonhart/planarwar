@@ -1297,7 +1297,12 @@ export function MePage() {
                         ) : null}
                         {action.runtime?.postCommitState ? (
                           <div style={{ fontSize: 12, opacity: 0.74, color: "#9fd8c4" }}>
-                            after commit unity {action.runtime.postCommitState.unity} • threat {action.runtime.postCommitState.threatPressure} • recovery {action.runtime.postCommitState.recoveryBurden} • strain {action.runtime.postCommitState.total}
+                            after commit stage {action.runtime.postCommitState.stage}
+                            {action.runtime.postCommitState.stageChanged ? ` (from ${action.runtime.postCommitState.currentStage})` : ""}
+                            {" • "}unity {action.runtime.postCommitState.unity}
+                            {" • "}threat {action.runtime.postCommitState.threatPressure}
+                            {" • "}recovery {action.runtime.postCommitState.recoveryBurden}
+                            {" • "}strain {action.runtime.postCommitState.total}
                           </div>
                         ) : null}
                         {action.runtime?.affordability === "cooldown_active" ? (
