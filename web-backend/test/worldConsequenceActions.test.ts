@@ -51,3 +51,37 @@ test("active world consequence pressure yields player and admin recommendations"
   assert.ok(actions.adminActions.some((action) => action.lane === "observability" || action.lane === "economy"));
   assert.ok(actions.recommendedPrimaryAction.length > 0);
 });
+
+
+test("regional action evidence follows the hottest hotspot instead of page-level guesses", () => {
+  const ps = getOrCreatePlayerState("world_consequence_actions_regional_evidence_player");
+  ps.techFlags = ["BLACK_MARKET_ENABLED"];
+
+  pushWorldConsequence(ps, {
+    regionId: ps.city.regionId,
+    source: "mission_setback",
+    severity: "severe",
+    title: "Market district flare-up",
+    summary: "Regional trade disruption and faction drift both spiked.",
+    detail: "This should produce a hotspot-backed regional action with concrete evidence.",
+    audiences: ["player", "admin", "mother_brain"],
+    tags: ["city_pressure_export", "trade_disruption", "black_market_opening", "faction_drift"],
+    metrics: {
+      pressureDelta: 16,
+      recoveryDelta: 9,
+      controlDelta: -4,
+      threatDelta: 5,
+    },
+    outcome: "failure",
+  });
+
+  const actions = deriveWorldConsequenceActions(ps);
+  const regional = actions.playerActions.find((action) => action.id.startsWith("action_region_"));
+  assert.ok(regional);
+  assert.deepEqual(
+    regional?.evidence?.map((entry) => entry.label),
+    ["regional trade disruption", "regional black-market heat", "regional faction drift"],
+  );
+  assert.ok((regional?.evidence?.[0]?.value ?? 0) > 0);
+  assert.ok(["watch", "high", "critical"].includes(regional?.evidence?.[0]?.tone ?? ""));
+});

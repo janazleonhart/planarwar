@@ -4,6 +4,7 @@ import type { PlayerState } from "../gameState";
 import type { WorldConsequenceState } from "./worldConsequences";
 import type { WorldConsequenceHooksView } from "./worldConsequenceHooks";
 import { deriveWorldConsequenceHooks } from "./worldConsequenceHooks";
+import { buildWorldConsequenceActionEvidence } from "./worldConsequenceActionEvidence";
 import {
   buildWorldConsequenceActionRuntimeView,
   type WorldConsequenceActionRuntimeView,
@@ -48,103 +49,6 @@ export interface WorldConsequenceActionsView {
   motherBrainActions: WorldConsequenceActionItem[];
 }
 
-function toneForValue(value: number): "watch" | "high" | "critical" {
-  if (value >= 12) return "critical";
-  if (value >= 6) return "high";
-  return "watch";
-}
-
-function buildActionEvidence(
-  actionId: string,
-  propagated: WorldConsequenceState | null,
-  hooks: WorldConsequenceHooksView,
-  sourceRegionId: string | null,
-): WorldConsequenceActionEvidenceItem[] {
-  if (!propagated) return [];
-
-  if (actionId === "action_stabilize_supply_lanes") {
-    return [
-      {
-        label: "trade pressure",
-        value: Number(propagated.worldEconomy.tradePressure ?? 0),
-        tone: toneForValue(Number(propagated.worldEconomy.tradePressure ?? 0)),
-      },
-      {
-        label: "supply friction",
-        value: Number(propagated.worldEconomy.supplyFriction ?? 0),
-        tone: toneForValue(Number(propagated.worldEconomy.supplyFriction ?? 0)),
-      },
-      {
-        label: "destabilization",
-        value: Number(propagated.summary?.destabilizationScore ?? 0),
-        tone: toneForValue(Number(propagated.summary?.destabilizationScore ?? 0)),
-      },
-    ].filter((entry) => entry.value > 0);
-  }
-
-  if (actionId === "action_faction_stability") {
-    return [
-      {
-        label: "instability",
-        value: Number(propagated.factionPressure.instability ?? 0),
-        tone: toneForValue(Number(propagated.factionPressure.instability ?? 0)),
-      },
-      {
-        label: "drift score",
-        value: Number(propagated.factionPressure.driftScore ?? 0),
-        tone: toneForValue(Number(propagated.factionPressure.driftScore ?? 0)),
-      },
-    ].filter((entry) => entry.value > 0);
-  }
-
-  if (
-    actionId === "action_cartel_pressure" ||
-    actionId === "action_black_market_window_contain" ||
-    actionId === "action_black_market_window_exploit"
-  ) {
-    return [
-      {
-        label: "cartel attention",
-        value: Number(hooks.cartel.attention ?? 0),
-        tone: toneForValue(Number(hooks.cartel.attention ?? 0)),
-      },
-      {
-        label: "black-market heat",
-        value: Number(propagated.blackMarket.heat ?? 0),
-        tone: toneForValue(Number(propagated.blackMarket.heat ?? 0)),
-      },
-      {
-        label: "opportunity",
-        value: Number(propagated.blackMarket.opportunityScore ?? 0),
-        tone: toneForValue(Number(propagated.blackMarket.opportunityScore ?? 0)),
-      },
-    ].filter((entry) => entry.value > 0);
-  }
-
-  if (actionId.startsWith("action_region_")) {
-    const hotspot = hooks.hotspots.find((entry) => entry.regionId === sourceRegionId) ?? hooks.hotspots[0];
-    if (!hotspot) return [];
-    return [
-      {
-        label: "regional trade disruption",
-        value: Number(hotspot.tradeDisruption ?? 0),
-        tone: toneForValue(Number(hotspot.tradeDisruption ?? 0)),
-      },
-      {
-        label: "regional black-market heat",
-        value: Number(hotspot.blackMarketHeat ?? 0),
-        tone: toneForValue(Number(hotspot.blackMarketHeat ?? 0)),
-      },
-      {
-        label: "regional faction drift",
-        value: Number(hotspot.factionDrift ?? 0),
-        tone: toneForValue(Number(hotspot.factionDrift ?? 0)),
-      },
-    ].filter((entry) => entry.value > 0);
-  }
-
-  return [];
-}
 
 function attachActionTruth(
   item: WorldConsequenceActionItem,
@@ -155,7 +59,7 @@ function attachActionTruth(
 ): WorldConsequenceActionItem {
   return {
     ...item,
-    evidence: buildActionEvidence(item.id, propagated, hooks, item.sourceRegionId),
+    evidence: buildWorldConsequenceActionEvidence(item.id, propagated, hooks, item.sourceRegionId),
     runtime: buildWorldConsequenceActionRuntimeView(ps, item.id, candidates),
   };
 }
