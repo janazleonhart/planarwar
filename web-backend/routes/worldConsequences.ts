@@ -52,7 +52,20 @@ router.post("/act", async (req, res) => {
     const result = executeWorldConsequenceAction(access.playerState, actionId);
     if (!result.ok) {
       const code = result.status === "unknown_action" ? 404 : 400;
-      return { ok: false as const, code, body: { ok: false, error: result.message, status: result.status, actionId } };
+      return {
+        ok: false as const,
+        code,
+        body: {
+          ok: false,
+          error: result.message,
+          status: result.status,
+          actionId,
+          result,
+          resources: access.playerState.resources,
+          worldConsequenceActions: deriveWorldConsequenceActions(access.playerState),
+          worldConsequenceResponseReceipts: summarizeWorldConsequenceResponseReceipts(access.playerState.worldConsequences ?? []),
+        },
+      };
     }
 
     const bridgeSummary = summarizeCityMudBridge(access.playerState);

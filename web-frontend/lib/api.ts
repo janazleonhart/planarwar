@@ -1124,10 +1124,33 @@ export async function executeWorldConsequenceAction(actionId: string): Promise<{
   worldConsequenceConsumers: WorldConsequenceConsumersView | null;
   responseState: EconomyCartelResponseState | null;
 }> {
-  return api("/api/world_consequences/act", {
+  const normalizedPath = "/api/world_consequences/act";
+  const token = getAuthToken();
+  const res = await fetch(`${API_BASE_URL}${normalizedPath}`, {
     method: "POST",
+    credentials: "include",
+    headers: {
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      "Content-Type": "application/json",
+    },
     body: JSON.stringify({ actionId }),
   });
+
+  const contentType = res.headers.get("content-type") || "";
+  const body = res.status === 204
+    ? undefined
+    : contentType.includes("application/json")
+      ? await res.json()
+      : await res.text();
+
+  if (!res.ok) {
+    const message = typeof body === "object" && body && "error" in body
+      ? String((body as any).error)
+      : `Failed to fetch ${normalizedPath}: ${res.status}`;
+    throw new ApiResponseError(message, res.status, typeof body === "object" ? body : undefined);
+  }
+
+  return body as any;
 }
 
 export async function startTech(techId: string, serviceMode?: InfrastructureMode): Promise<any> {
@@ -1302,6 +1325,19 @@ export function explainAdminError(code: string): string {
       return "Not logged in (missing/invalid token).";
     default:
       return c || "Unknown error.";
+  }
+}
+
+
+export class ApiResponseError<T = any> extends Error {
+  status: number;
+  data?: T;
+
+  constructor(message: string, status: number, data?: T) {
+    super(message);
+    this.name = "ApiResponseError";
+    this.status = status;
+    this.data = data;
   }
 }
 

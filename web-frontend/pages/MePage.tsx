@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import {
   api,
+  ApiResponseError,
   bootstrapCity,
   completeMission,
   fetchCityMudBridgeStatus,
@@ -510,7 +511,11 @@ export function MePage() {
       setFlash("ok", `${result?.result?.message ?? `${action.title} executed.`}${appliedSummary}`);
     } catch (err: any) {
       console.error(err);
-      setFlash("err", err?.message ?? `Failed to execute ${action.title}.`);
+      const shortfall = err instanceof ApiResponseError ? err.data?.result?.shortfall : undefined;
+      const shortfallText = shortfall && Object.keys(shortfall).length > 0
+        ? ` Still needed ${formatWorldActionCost(shortfall)}.`
+        : "";
+      setFlash("err", `${err?.message ?? `Failed to execute ${action.title}.`}${shortfallText}`);
     } finally {
       setWorldActionBusyId(null);
     }

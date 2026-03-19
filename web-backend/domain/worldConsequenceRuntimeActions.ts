@@ -11,6 +11,7 @@ export interface WorldConsequenceActionExecutionResult {
   message: string;
   action?: WorldConsequenceActionItem;
   spent?: Partial<Resources>;
+  shortfall?: Partial<Resources>;
   regionId?: string | null;
   receiptId?: string;
   appliedEffect?: {
@@ -103,12 +104,14 @@ export function executeWorldConsequenceAction(ps: PlayerState, actionId: string)
   }
 
   if (!canAfford(ps.resources, plan.spent)) {
+    const runtime = buildWorldConsequenceActionRuntimeView(ps, action.id);
     return {
       ok: false,
       status: "insufficient_resources",
       message: "Not enough city resources to commit that response right now.",
-      action,
+      action: { ...action, runtime },
       spent: plan.spent,
+      shortfall: runtime.shortfall,
       regionId: action.sourceRegionId,
     };
   }

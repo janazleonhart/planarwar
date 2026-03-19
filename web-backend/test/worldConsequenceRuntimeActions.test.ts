@@ -121,3 +121,16 @@ test("successful response action is surfaced as a bounded runtime receipt", () =
   assert.equal(receipts.recent[0]?.contractKind, "relief_convoys");
   assert.match(receipts.recent[0]?.title ?? "", /Response action executed:/);
 });
+
+
+test("insufficient resource execution returns exact shortfall truth", () => {
+  const ps = seedPressure();
+  ps.resources.wealth = 0;
+
+  const result = executeWorldConsequenceAction(ps, "action_stabilize_supply_lanes");
+  assert.equal(result.ok, false);
+  assert.equal(result.status, "insufficient_resources");
+  assert.deepEqual(result.shortfall, { wealth: 10 });
+  assert.equal(result.action?.runtime?.affordability, "insufficient_resources");
+  assert.deepEqual(result.action?.runtime?.shortfall, { wealth: 10 });
+});
