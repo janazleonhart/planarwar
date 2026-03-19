@@ -16,17 +16,15 @@ import type {
   WorldConsequenceActionItem,
 } from "../../lib/api";
 import { CityAlphaPanels } from "./CityAlphaPanels";
+import { MissionDefenseReceiptsSection } from "./MissionDefenseReceiptsSection";
+import { MissionPressureMapSection } from "./MissionPressureMapSection";
+import { MissionWarningWindowsSection } from "./MissionWarningWindowsSection";
 import { WorldResponseSection } from "./WorldResponseSection";
 import {
   formatContractKind,
-  formatPressureWindow,
-  formatResponseLaneList,
-  formatWarningWindow,
   formatWorldActionCost,
   getRegionDisplayName,
   getThreatFamilyDisplayName,
-  pressureConfidenceLabel,
-  warningQualityTone,
 } from "./worldResponseUi";
 
 type MissionResponsePanelProps = {
@@ -110,28 +108,7 @@ export function MissionResponsePanel({
         </div>
       ) : null}
 
-      <div style={{ display: "grid", gap: 6 }}>
-        <strong>Warning windows</strong>
-        {highlightedWarnings.length === 0 ? (
-          <div style={{ opacity: 0.7 }}>No active warning windows. Your city is either quiet or blind.</div>
-        ) : (
-          <div style={{ display: "grid", gap: 6 }}>
-            {highlightedWarnings.map((warning) => (
-              <div key={warning.id} style={{ border: "1px solid #654", borderRadius: 8, padding: 10, display: "grid", gap: 5, background: "rgba(80,40,20,0.12)" }}>
-                <div><strong>{warning.headline}</strong> • severity {warning.severity} • intel {warningQualityTone(warning.intelQuality)}</div>
-                <div style={{ fontSize: 12, opacity: 0.82 }}>Threat family: {getThreatFamilyDisplayName(warning.threatFamily)}{warning.targetingPressure != null ? ` • pressure ${warning.targetingPressure}` : ""}</div>
-                <div style={{ fontSize: 12, opacity: 0.8 }}>Window: {formatWarningWindow(warning.earliestImpactAt, warning.latestImpactAt)} • {getRegionDisplayName(warning.targetRegionId)}</div>
-                <div style={{ fontSize: 12, opacity: 0.82 }}>Likely response lanes: {formatResponseLaneList(warning.responseTags)}</div>
-                {warning.targetingReasons?.length ? (
-                  <div style={{ fontSize: 12, opacity: 0.78 }}>Why targeted: {(warning.targetingReasons ?? []).join(" ")}</div>
-                ) : null}
-                <div style={{ fontSize: 12, opacity: 0.8 }}>{warning.detail}</div>
-                <div style={{ fontSize: 12, opacity: 0.86 }}><strong>Recommended action:</strong> {warning.recommendedAction}</div>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
+      <MissionWarningWindowsSection highlightedWarnings={highlightedWarnings} />
 
       <CityAlphaPanels
         cityAlphaStatus={cityAlphaStatus}
@@ -270,58 +247,9 @@ export function MissionResponsePanel({
         )}
       </div>
 
-      <div style={{ display: "grid", gap: 6 }}>
-        <strong>Mother Brain pressure map</strong>
-        {highlightedPressure.length === 0 ? (
-          <div style={{ opacity: 0.7 }}>No pressure windows flagged yet. Once exposure and hostile pressure rise, the precursor map will nominate likely families.</div>
-        ) : (
-          <div style={{ display: "grid", gap: 6 }}>
-            {highlightedPressure.map((window) => (
-              <div key={window.id} style={{ border: "1px solid #555", borderRadius: 8, padding: 10, display: "grid", gap: 5, background: "rgba(26,38,60,0.12)" }}>
-                <div><strong>{getThreatFamilyDisplayName(window.threatFamily)}</strong> • {pressureConfidenceLabel(window.confidence)} • pressure {window.pressureScore}/100</div>
-                <div style={{ fontSize: 12, opacity: 0.82 }}>Exposure {window.exposureScore}/100 • window {formatPressureWindow(window.earliestWindowAt, window.latestWindowAt)}</div>
-                <div style={{ fontSize: 12, opacity: 0.88 }}>{window.summary}</div>
-                <div style={{ fontSize: 12, opacity: 0.76 }}>{window.detail}</div>
-                <div style={{ fontSize: 12, opacity: 0.78 }}>Likely lanes: {(window.responseTags ?? []).join("/")}</div>
-                {(window.reasons ?? []).length ? (
-                  <div style={{ display: "grid", gap: 4 }}>
-                    {(window.reasons ?? []).map((reason, idx) => (
-                      <div key={`${window.id}_${idx}`} style={{ fontSize: 12, opacity: 0.76 }}>• {reason}</div>
-                    ))}
-                  </div>
-                ) : null}
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
+      <MissionPressureMapSection highlightedPressure={highlightedPressure} />
 
-      <div style={{ display: "grid", gap: 6 }}>
-        <strong>Recent defense receipts</strong>
-        {highlightedReceipts.length === 0 ? (
-          <div style={{ opacity: 0.7 }}>No defense receipts yet. Once missions resolve, setbacks and posture receipts show up here.</div>
-        ) : (
-          <div style={{ display: "grid", gap: 6 }}>
-            {highlightedReceipts.map((receipt) => (
-              <div key={receipt.id} style={{ border: "1px solid #555", borderRadius: 8, padding: 10, display: "grid", gap: 5, background: "rgba(60,20,20,0.08)" }}>
-                <div><strong>{receipt.missionTitle}</strong> • {receipt.outcome} • posture {receipt.posture}</div>
-                <div style={{ fontSize: 12, opacity: 0.82 }}>{receipt.summary}</div>
-                {receipt.setbacks.length ? (
-                  <div style={{ display: "grid", gap: 4 }}>
-                    {receipt.setbacks.map((setback, idx) => (
-                      <div key={`${receipt.id}_${idx}`} style={{ fontSize: 12, opacity: 0.8 }}>
-                        • <strong>{setback.summary}</strong> — {setback.detail}
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div style={{ fontSize: 12, opacity: 0.76 }}>No major setbacks recorded.</div>
-                )}
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
+      <MissionDefenseReceiptsSection highlightedReceipts={highlightedReceipts} />
 
       <WorldResponseSection
         worldConsequences={worldConsequences ?? []}
