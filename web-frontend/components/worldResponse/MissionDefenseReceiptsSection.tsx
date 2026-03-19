@@ -1,6 +1,7 @@
 // web-frontend/components/worldResponse/MissionDefenseReceiptsSection.tsx
 
 import type { MissionDefenseReceipt } from "../../lib/api";
+import { formatMissionDefenseOutcomeLabel, getMissionDefenseReceiptTone, summarizeMissionDefenseReceipts } from "./worldResponsePolishSummaries";
 
 type MissionDefenseReceiptsSectionProps = {
   highlightedReceipts: MissionDefenseReceipt[];
@@ -14,20 +15,8 @@ const tonePalette: Record<ReceiptTone, { border: string; background: string }> =
   danger: { border: "#7a3d3d", background: "rgba(100,30,30,0.16)" },
 };
 
-function getReceiptTone(receipt: MissionDefenseReceipt): ReceiptTone {
-  if (receipt.outcome === "failure") return "danger";
-  if (receipt.setbacks.length > 0) return "watch";
-  return "calm";
-}
-
-function formatOutcomeLabel(outcome: MissionDefenseReceipt["outcome"]): string {
-  return outcome.charAt(0).toUpperCase() + outcome.slice(1);
-}
-
 export function MissionDefenseReceiptsSection({ highlightedReceipts }: MissionDefenseReceiptsSectionProps) {
-  const failedCount = highlightedReceipts.filter((receipt) => receipt.outcome === "failure").length;
-  const setbackCount = highlightedReceipts.reduce((sum, receipt) => sum + receipt.setbacks.length, 0);
-  const latestPosture = highlightedReceipts[0]?.posture ?? "balanced";
+  const { failedCount, setbackCount, latestPosture } = summarizeMissionDefenseReceipts(highlightedReceipts);
 
   return (
     <div style={{ display: "grid", gap: 8 }}>
@@ -62,7 +51,7 @@ export function MissionDefenseReceiptsSection({ highlightedReceipts }: MissionDe
 
           <div style={{ display: "grid", gap: 6 }}>
             {highlightedReceipts.map((receipt) => {
-              const tone = getReceiptTone(receipt);
+              const tone = getMissionDefenseReceiptTone(receipt);
               const palette = tonePalette[tone];
               return (
                 <div
@@ -79,7 +68,7 @@ export function MissionDefenseReceiptsSection({ highlightedReceipts }: MissionDe
                   <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
                     <strong>{receipt.missionTitle}</strong>
                     <span style={{ border: `1px solid ${palette.border}`, borderRadius: 999, padding: "2px 8px", fontSize: 12 }}>
-                      {formatOutcomeLabel(receipt.outcome)}
+                      {formatMissionDefenseOutcomeLabel(receipt.outcome)}
                     </span>
                     <span style={{ border: "1px solid #555", borderRadius: 999, padding: "2px 8px", fontSize: 12, opacity: 0.84 }}>
                       posture {receipt.posture}

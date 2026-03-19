@@ -2,6 +2,7 @@
 
 import type { CSSProperties } from "react";
 import type { CitySummary, MeProfile, Resources } from "../../lib/api";
+import { formatProductionDelta, summarizeTreasury } from "./cityPolishSummaries";
 
 interface CityResourcesCardProps {
   resources: Resources;
@@ -29,45 +30,6 @@ const tonePalette = {
   watch: { border: "#77603a", background: "rgba(90,70,30,0.16)" },
   danger: { border: "#7a3d3d", background: "rgba(100,30,30,0.16)" },
 };
-
-function formatProductionDelta(city: CitySummary | null, key: keyof Resources): string {
-  if (!city) return "no city production yet";
-
-  const productionMap: Record<keyof Resources, number> = {
-    food: city.production.foodPerTick,
-    materials: city.production.materialsPerTick,
-    wealth: city.production.wealthPerTick,
-    mana: city.production.manaPerTick,
-    knowledge: city.production.knowledgePerTick,
-    unity: city.production.unityPerTick,
-  };
-
-  const value = productionMap[key] ?? 0;
-  return `${value >= 0 ? "+" : ""}${value}/tick`;
-}
-
-function summarizeTreasury(resources: Resources, cityStress: MeProfile["cityStress"]): { headline: string; detail: string } {
-  const total = Object.values(resources).reduce((sum, value) => sum + Number(value ?? 0), 0);
-
-  if (cityStress.stage === "lockdown" || cityStress.stage === "crisis") {
-    return {
-      headline: "Treasury under pressure",
-      detail: `Combined stores ${total}. Keep an eye on burn rate before the board starts pretending panic is a strategy.`,
-    };
-  }
-
-  if (cityStress.stage === "strained") {
-    return {
-      headline: "Resources are serviceable",
-      detail: `Combined stores ${total}. Plenty to act with, but not enough to be lazy about it.`,
-    };
-  }
-
-  return {
-    headline: "Stores look stable",
-    detail: `Combined stores ${total}. This is a decent window for tidy growth instead of emergency patchwork.`,
-  };
-}
 
 export function CityResourcesCard({ resources, city, cityStress, cardStyle }: CityResourcesCardProps) {
   const summary = summarizeTreasury(resources, cityStress);

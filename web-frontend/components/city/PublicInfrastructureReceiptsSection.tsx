@@ -1,6 +1,7 @@
 //web-frontend/components/city/PublicInfrastructureReceiptsSection.tsx
 
 import type { MeProfile, Resources } from "../../lib/api";
+import { getInfrastructureReceiptTone, summarizePublicInfrastructureReceipts } from "./cityPolishSummaries";
 
 type PublicInfrastructureReceiptsSectionProps = {
   receipts: NonNullable<MeProfile["publicInfrastructure"]>["receipts"];
@@ -8,25 +9,13 @@ type PublicInfrastructureReceiptsSectionProps = {
   formatServiceLabel: (service: string) => string;
 };
 
-function summarizeReceipts(receipts: NonNullable<MeProfile["publicInfrastructure"]>["receipts"]) {
-  const queueTotal = receipts.reduce((sum, receipt) => sum + Number(receipt.queueMinutes ?? 0), 0);
-  const highestStrain = receipts.reduce((max, receipt) => Math.max(max, Number(receipt.strainScore ?? 0)), 0);
-  const latest = receipts[0] ?? null;
-
-  return {
-    queueAverage: receipts.length ? Math.round((queueTotal / receipts.length) * 10) / 10 : 0,
-    highestStrain,
-    latest,
-  };
-}
-
 export function PublicInfrastructureReceiptsSection({
   receipts,
   formatLevy,
   formatServiceLabel,
 }: PublicInfrastructureReceiptsSectionProps) {
   const orderedReceipts = receipts.slice().reverse();
-  const summary = summarizeReceipts(orderedReceipts);
+  const summary = summarizePublicInfrastructureReceipts(orderedReceipts);
 
   return (
     <div style={{ display: "grid", gap: 8 }}>
@@ -63,8 +52,9 @@ export function PublicInfrastructureReceiptsSection({
 
           <div style={{ display: "grid", gap: 6 }}>
             {orderedReceipts.map((receipt) => {
-              const strainTone = receipt.strainScore >= 8 ? "#7a3d3d" : receipt.strainScore >= 5 ? "#77603a" : "#355d45";
-              const background = receipt.strainScore >= 8 ? "rgba(100,30,30,0.16)" : receipt.strainScore >= 5 ? "rgba(90,70,30,0.16)" : "rgba(30,70,40,0.16)";
+              const tone = getInfrastructureReceiptTone(receipt.strainScore);
+              const strainTone = tone === "danger" ? "#7a3d3d" : tone === "watch" ? "#77603a" : "#355d45";
+              const background = tone === "danger" ? "rgba(100,30,30,0.16)" : tone === "watch" ? "rgba(90,70,30,0.16)" : "rgba(30,70,40,0.16)";
 
               return (
                 <div key={receipt.id} style={{ border: `1px solid ${strainTone}`, borderRadius: 8, padding: 10, display: "grid", gap: 6, background }}>
