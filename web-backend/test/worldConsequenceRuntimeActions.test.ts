@@ -130,6 +130,21 @@ test("player action cards expose remaining resources after paying bounded respon
   assert.equal(starved?.runtime?.remainingAfterCost, undefined);
 });
 
+test("player action cards expose post-commit city state previews", () => {
+  const ps = seedPressure();
+  const actions = deriveWorldConsequenceActions(ps);
+  const stabilize = actions.playerActions.find((action) => action.id === "action_stabilize_supply_lanes");
+  assert.ok(stabilize?.runtime?.postCommitState);
+  assert.equal(stabilize?.runtime?.postCommitState?.unity, (ps.city.stats.unity ?? 0) + 1);
+  assert.equal(stabilize?.runtime?.postCommitState?.threatPressure, Math.max(0, (ps.cityStress.threatPressure ?? 0) - 5));
+  assert.equal(stabilize?.runtime?.postCommitState?.recoveryBurden, Math.max(0, (ps.cityStress.recoveryBurden ?? 0) - 4));
+  assert.equal(stabilize?.runtime?.postCommitState?.unityPressure, Math.max(0, (ps.cityStress.unityPressure ?? 0) - 1));
+
+  ps.resources.wealth = 0;
+  const starved = deriveWorldConsequenceActions(ps).playerActions.find((action) => action.id === "action_stabilize_supply_lanes");
+  assert.equal(starved?.runtime?.postCommitState, undefined);
+});
+
 test("player action cards expose runtime impact previews instead of hidden payoff math", () => {
   const ps = seedPressure();
   const actions = deriveWorldConsequenceActions(ps);

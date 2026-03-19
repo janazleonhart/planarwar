@@ -1295,6 +1295,11 @@ export function MePage() {
                             after spend {formatWorldActionCost(action.runtime.remainingAfterCost)}
                           </div>
                         ) : null}
+                        {action.runtime?.postCommitState ? (
+                          <div style={{ fontSize: 12, opacity: 0.74, color: "#9fd8c4" }}>
+                            after commit unity {action.runtime.postCommitState.unity} • threat {action.runtime.postCommitState.threatPressure} • recovery {action.runtime.postCommitState.recoveryBurden} • strain {action.runtime.postCommitState.total}
+                          </div>
+                        ) : null}
                         {action.runtime?.affordability === "cooldown_active" ? (
                           <div style={{ fontSize: 12, opacity: 0.78, color: "#9cc8ff" }}>
                             cooling down {formatWorldActionCooldown(action.runtime.cooldownMsRemaining)}{action.runtime.readyAt ? ` • ready ${new Date(action.runtime.readyAt).toLocaleTimeString()}` : ""}

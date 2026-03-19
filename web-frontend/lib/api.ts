@@ -870,6 +870,13 @@ export interface WorldConsequenceActionRuntimeView {
   remainingAfterCost?: Partial<Resources>;
   blockedFollowupActionIds?: string[];
   blockedFollowupActionTitles?: string[];
+  postCommitState?: {
+    unity: number;
+    threatPressure: number;
+    recoveryBurden: number;
+    unityPressure: number;
+    total: number;
+  };
 }
 
 export interface WorldConsequenceActionItem {
