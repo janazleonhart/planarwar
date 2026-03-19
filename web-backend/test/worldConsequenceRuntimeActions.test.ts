@@ -6,6 +6,7 @@ import assert from "node:assert/strict";
 import { getOrCreatePlayerState } from "../gameState";
 import { pushWorldConsequence, buildSetbackWorldConsequence } from "../domain/worldConsequences";
 import { executeWorldConsequenceAction } from "../domain/worldConsequenceRuntimeActions";
+import { deriveWorldConsequenceActions } from "../domain/worldConsequenceActions";
 
 function seedPressure() {
   const ps = getOrCreatePlayerState(`runtime_action_${Date.now()}_${Math.random()}`);
@@ -62,4 +63,21 @@ test("unsupported black-market exploit action remains advisory only", () => {
   const result = executeWorldConsequenceAction(ps, "action_black_market_window_exploit");
   assert.equal(result.ok, false);
   assert.equal(result.status, "not_executable");
+});
+
+
+test("player action cards expose runtime truth instead of frontend guesses", () => {
+  const ps = seedPressure();
+  const actions = deriveWorldConsequenceActions(ps);
+  const stabilize = actions.playerActions.find((action) => action.id === "action_stabilize_supply_lanes");
+  assert.ok(stabilize);
+  assert.equal(stabilize?.runtime?.executable, true);
+  assert.equal(stabilize?.runtime?.affordability, "affordable");
+  assert.deepEqual(stabilize?.runtime?.cost, { wealth: 10, materials: 8 });
+
+  ps.resources.wealth = 0;
+  const starved = deriveWorldConsequenceActions(ps).playerActions.find((action) => action.id === "action_stabilize_supply_lanes");
+  assert.ok(starved);
+  assert.equal(starved?.runtime?.executable, false);
+  assert.equal(starved?.runtime?.affordability, "insufficient_resources");
 });

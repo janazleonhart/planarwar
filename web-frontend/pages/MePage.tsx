@@ -238,16 +238,10 @@ function formatContractKind(kind: string | undefined): string {
 }
 
 
-function isRuntimeExecutableWorldAction(action: WorldConsequenceActionItem): boolean {
-  return action.id === "action_stabilize_supply_lanes" || action.id === "action_faction_stability" || action.id === "action_cartel_pressure" || action.id === "action_black_market_window_contain" || action.id.startsWith("action_region_");
-}
-
-function worldActionButtonLabel(action: WorldConsequenceActionItem): string {
-  if (action.id === "action_stabilize_supply_lanes") return "Fund stabilization";
-  if (action.id === "action_faction_stability") return "Fund civic response";
-  if (action.id === "action_cartel_pressure" || action.id === "action_black_market_window_contain") return "Fund containment";
-  if (action.id.startsWith("action_region_")) return "Dispatch response";
-  return "Advisory only";
+function formatWorldActionCost(cost: Partial<Resources> | undefined): string {
+  const entries = Object.entries(cost ?? {}).filter(([, value]) => Number(value ?? 0) > 0);
+  if (entries.length <= 0) return "no direct city cost";
+  return entries.map(([key, value]) => `${key} ${value}`).join(" • ");
 }
 
 function worldSeverityColor(severity: string): string {
@@ -1213,7 +1207,7 @@ export function MePage() {
                   {worldConsequenceActions.playerActions.length === 0 ? (
                     <div style={{ opacity: 0.7 }}>No player-facing action recommendations yet.</div>
                   ) : worldConsequenceActions.playerActions.map((action: WorldConsequenceActionItem) => {
-                    const executable = isRuntimeExecutableWorldAction(action);
+                    const executable = action.runtime?.executable ?? false;
                     const isBusy = worldActionBusyId === action.id;
                     return (
                       <div key={action.id} style={{ border: "1px solid #555", borderRadius: 8, padding: 10, display: "grid", gap: 8, background: "rgba(36,36,36,0.14)" }}>
@@ -1225,9 +1219,12 @@ export function MePage() {
                             <div key={`${action.id}_${idx}`}>• {move}</div>
                           ))}
                         </div>
+                        <div style={{ fontSize: 12, opacity: 0.76 }}>
+                          runtime cost {formatWorldActionCost(action.runtime?.cost)}
+                        </div>
                         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                           <div style={{ fontSize: 12, opacity: 0.7 }}>
-                            {executable ? "This lane can now be committed as a bounded runtime response." : "Advisory only — runtime still cannot execute this lane yet."}
+                            {action.runtime?.note ?? (executable ? "This lane can now be committed as a bounded runtime response." : "Advisory only — runtime still cannot execute this lane yet.")}
                           </div>
                           <button
                             type="button"
@@ -1243,7 +1240,7 @@ export function MePage() {
                               opacity: !executable || isBusy ? 0.65 : 1,
                             }}
                           >
-                            {isBusy ? "Executing…" : worldActionButtonLabel(action)}
+                            {isBusy ? "Executing…" : (action.runtime?.buttonLabel ?? "Advisory only")}
                           </button>
                         </div>
                       </div>

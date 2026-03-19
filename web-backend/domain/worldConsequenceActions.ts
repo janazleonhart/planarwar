@@ -1,6 +1,6 @@
 //web-backend/domain/worldConsequenceActions.ts
 
-import type { PlayerState } from "../gameState";
+import type { PlayerState, Resources } from "../gameState";
 import type { WorldConsequenceState } from "./worldConsequences";
 import type { WorldConsequenceHooksView } from "./worldConsequenceHooks";
 import { deriveWorldConsequenceHooks } from "./worldConsequenceHooks";
@@ -8,6 +8,25 @@ import { deriveWorldConsequenceHooks } from "./worldConsequenceHooks";
 export type WorldConsequenceActionPriority = "watch" | "high" | "critical";
 export type WorldConsequenceActionAudience = "player" | "admin" | "mother_brain";
 export type WorldConsequenceActionLane = "economy" | "black_market" | "cartel" | "faction" | "regional" | "observability";
+
+export interface RuntimeWorldConsequenceActionPlan {
+  contractKind: "stabilize_district" | "repair_works" | "relief_convoys" | "counter_rumors";
+  spent: Partial<Resources>;
+  pressureDelta: number;
+  recoveryDelta: number;
+  trustDelta: number;
+  controlDelta?: number;
+  threatDelta?: number;
+  summaryNote: string;
+}
+
+export interface WorldConsequenceActionRuntimeView {
+  executable: boolean;
+  affordability: "affordable" | "insufficient_resources" | "advisory_only";
+  buttonLabel: string;
+  cost: Partial<Resources>;
+  note: string;
+}
 
 export interface WorldConsequenceActionItem {
   id: string;
@@ -19,6 +38,7 @@ export interface WorldConsequenceActionItem {
   recommendedMoves: string[];
   sourceRegionId: string | null;
   sourceHook: string;
+  runtime?: WorldConsequenceActionRuntimeView;
 }
 
 export interface WorldConsequenceActionsView {
@@ -29,6 +49,99 @@ export interface WorldConsequenceActionsView {
   motherBrainActions: WorldConsequenceActionItem[];
 }
 
+
+
+export function getWorldConsequenceRuntimePlan(actionId: string): RuntimeWorldConsequenceActionPlan | null {
+  if (actionId === "action_stabilize_supply_lanes") {
+    return {
+      contractKind: "relief_convoys",
+      spent: { wealth: 10, materials: 8 },
+      pressureDelta: -5,
+      recoveryDelta: -4,
+      trustDelta: 1,
+      controlDelta: 1,
+      threatDelta: -2,
+      summaryNote: "Supply convoys and route escorts were funded to cool scarcity pressure.",
+    };
+  }
+
+  if (actionId === "action_faction_stability") {
+    return {
+      contractKind: "counter_rumors",
+      spent: { wealth: 8, unity: 6 },
+      pressureDelta: -3,
+      recoveryDelta: -2,
+      trustDelta: 6,
+      controlDelta: 1,
+      threatDelta: -1,
+      summaryNote: "A civic stabilization push was funded to stop local strain turning political.",
+    };
+  }
+
+  if (actionId === "action_cartel_pressure" || actionId === "action_black_market_window_contain") {
+    return {
+      contractKind: "repair_works",
+      spent: { wealth: 9, materials: 7, unity: 2 },
+      pressureDelta: -4,
+      recoveryDelta: -3,
+      trustDelta: 2,
+      controlDelta: 1,
+      threatDelta: -2,
+      summaryNote: "Containment teams were funded to cool illicit heat before it hardened into retaliation.",
+    };
+  }
+
+  if (actionId.startsWith("action_region_")) {
+    return {
+      contractKind: "stabilize_district",
+      spent: { wealth: 8, materials: 6, unity: 4 },
+      pressureDelta: -4,
+      recoveryDelta: -3,
+      trustDelta: 3,
+      controlDelta: 2,
+      threatDelta: -2,
+      summaryNote: "District recovery crews were dispatched into the hottest region.",
+    };
+  }
+
+  return null;
+}
+
+function canAffordAction(resources: Resources, spent: Partial<Resources>): boolean {
+  return Object.entries(spent).every(([key, value]) => Number(resources[key as keyof Resources] ?? 0) >= Number(value ?? 0));
+}
+
+function runtimeButtonLabel(actionId: string): string {
+  if (actionId === "action_stabilize_supply_lanes") return "Fund stabilization";
+  if (actionId === "action_faction_stability") return "Fund civic response";
+  if (actionId === "action_cartel_pressure" || actionId === "action_black_market_window_contain") return "Fund containment";
+  if (actionId.startsWith("action_region_")) return "Dispatch response";
+  return "Advisory only";
+}
+
+export function buildWorldConsequenceActionRuntimeView(ps: PlayerState, actionId: string): WorldConsequenceActionRuntimeView {
+  const plan = getWorldConsequenceRuntimePlan(actionId);
+  if (!plan) {
+    return {
+      executable: false,
+      affordability: "advisory_only",
+      buttonLabel: runtimeButtonLabel(actionId),
+      cost: {},
+      note: "This lane is still advice-only. Runtime cannot execute it yet.",
+    };
+  }
+
+  const affordable = canAffordAction(ps.resources, plan.spent);
+  return {
+    executable: affordable,
+    affordability: affordable ? "affordable" : "insufficient_resources",
+    buttonLabel: runtimeButtonLabel(actionId),
+    cost: plan.spent,
+    note: affordable
+      ? "This lane can be committed right now as a bounded runtime response."
+      : "This lane is real, but the city cannot currently afford to commit it.",
+  };
+}
 function pushUnique(target: WorldConsequenceActionItem[], item: WorldConsequenceActionItem) {
   if (!target.some((existing) => existing.id === item.id)) target.push(item);
 }
@@ -74,10 +187,11 @@ export function deriveWorldConsequenceActions(
       sourceRegionId: hottestRegion,
       sourceHook: "summary",
     };
+    const quietWithRuntime = { ...quiet, runtime: buildWorldConsequenceActionRuntimeView(ps, quiet.id) };
     return {
       headline: "No actionable world-consequence pressure yet.",
       recommendedPrimaryAction: quiet.title,
-      playerActions: [quiet],
+      playerActions: [quietWithRuntime],
       adminActions: [],
       motherBrainActions: [],
     };
@@ -257,7 +371,7 @@ export function deriveWorldConsequenceActions(
     });
   }
 
-  const sortedPlayer = sorted(playerActions).slice(0, 5);
+  const sortedPlayer = sorted(playerActions).slice(0, 5).map((item) => ({ ...item, runtime: buildWorldConsequenceActionRuntimeView(ps, item.id) }));
   const sortedAdmin = sorted(adminActions).slice(0, 5);
   const sortedMotherBrain = sorted(motherBrainActions).slice(0, 5);
   const recommendedPrimaryAction = sortedPlayer[0]?.title ?? sortedAdmin[0]?.title ?? sortedMotherBrain[0]?.title ?? "Keep observing";

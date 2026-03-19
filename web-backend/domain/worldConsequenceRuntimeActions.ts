@@ -3,7 +3,7 @@
 import type { GameEvent, PlayerState, Resources } from "../gameState";
 import type { RegionId } from "./world";
 import { buildRecoveryContractWorldConsequence, pushWorldConsequence } from "./worldConsequences";
-import { deriveWorldConsequenceActions, type WorldConsequenceActionItem } from "./worldConsequenceActions";
+import { buildWorldConsequenceActionRuntimeView, deriveWorldConsequenceActions, getWorldConsequenceRuntimePlan, type WorldConsequenceActionItem } from "./worldConsequenceActions";
 
 export interface WorldConsequenceActionExecutionResult {
   ok: boolean;
@@ -14,75 +14,8 @@ export interface WorldConsequenceActionExecutionResult {
   regionId?: string | null;
 }
 
-type RuntimeActionPlan = {
-  contractKind: "stabilize_district" | "repair_works" | "relief_convoys" | "counter_rumors";
-  spent: Partial<Resources>;
-  pressureDelta: number;
-  recoveryDelta: number;
-  trustDelta: number;
-  controlDelta?: number;
-  threatDelta?: number;
-  summaryNote: string;
-};
-
-function supportedPlanForActionId(actionId: string): RuntimeActionPlan | null {
-  if (actionId === "action_stabilize_supply_lanes") {
-    return {
-      contractKind: "relief_convoys",
-      spent: { wealth: 10, materials: 8 },
-      pressureDelta: -5,
-      recoveryDelta: -4,
-      trustDelta: 1,
-      controlDelta: 1,
-      threatDelta: -2,
-      summaryNote: "Supply convoys and route escorts were funded to cool scarcity pressure.",
-    };
-  }
-
-  if (actionId === "action_faction_stability") {
-    return {
-      contractKind: "counter_rumors",
-      spent: { wealth: 8, unity: 6 },
-      pressureDelta: -3,
-      recoveryDelta: -2,
-      trustDelta: 6,
-      controlDelta: 1,
-      threatDelta: -1,
-      summaryNote: "A civic stabilization push was funded to stop local strain turning political.",
-    };
-  }
-
-  if (actionId === "action_cartel_pressure" || actionId === "action_black_market_window_contain") {
-    return {
-      contractKind: "repair_works",
-      spent: { wealth: 9, materials: 7, unity: 2 },
-      pressureDelta: -4,
-      recoveryDelta: -3,
-      trustDelta: 2,
-      controlDelta: 1,
-      threatDelta: -2,
-      summaryNote: "Containment teams were funded to cool illicit heat before it hardened into retaliation.",
-    };
-  }
-
-  if (actionId.startsWith("action_region_")) {
-    return {
-      contractKind: "stabilize_district",
-      spent: { wealth: 8, materials: 6, unity: 4 },
-      pressureDelta: -4,
-      recoveryDelta: -3,
-      trustDelta: 3,
-      controlDelta: 2,
-      threatDelta: -2,
-      summaryNote: "District recovery crews were dispatched into the hottest region.",
-    };
-  }
-
-  return null;
-}
-
 function fallbackAction(actionId: string, ps: PlayerState): WorldConsequenceActionItem | null {
-  if (supportedPlanForActionId(actionId) == null) return null;
+  if (getWorldConsequenceRuntimePlan(actionId) == null) return null;
   const regionId = actionId.startsWith("action_region_") ? actionId.replace("action_region_", "") : ps.city.regionId;
   if (actionId === "action_stabilize_supply_lanes") {
     return {
@@ -150,7 +83,7 @@ export function executeWorldConsequenceAction(ps: PlayerState, actionId: string)
     return { ok: false, status: "unknown_action", message: "That consequence action is no longer available." };
   }
 
-  const plan = supportedPlanForActionId(action.id);
+  const plan = getWorldConsequenceRuntimePlan(action.id);
   if (!plan) {
     return {
       ok: false,
@@ -216,6 +149,6 @@ export function executeWorldConsequenceAction(ps: PlayerState, actionId: string)
   };
 }
 
-export function isExecutableWorldConsequenceAction(action: WorldConsequenceActionItem): boolean {
-  return supportedPlanForActionId(action.id) != null;
+export function isExecutableWorldConsequenceAction(ps: PlayerState, action: WorldConsequenceActionItem): boolean {
+  return buildWorldConsequenceActionRuntimeView(ps, action.id).executable;
 }

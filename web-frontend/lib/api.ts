@@ -810,6 +810,14 @@ export interface WorldConsequenceFactionHook {
 }
 
 
+export interface WorldConsequenceActionRuntimeView {
+  executable: boolean;
+  affordability: "affordable" | "insufficient_resources" | "advisory_only";
+  buttonLabel: string;
+  cost: Partial<Resources>;
+  note: string;
+}
+
 export interface WorldConsequenceActionItem {
   id: string;
   audience: "player" | "admin" | "mother_brain";
@@ -820,6 +828,7 @@ export interface WorldConsequenceActionItem {
   recommendedMoves: string[];
   sourceRegionId: string | null;
   sourceHook: string;
+  runtime?: WorldConsequenceActionRuntimeView;
 }
 
 export interface WorldConsequenceActionsView {
