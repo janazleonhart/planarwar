@@ -824,6 +824,7 @@ export interface WorldConsequenceActionRuntimeView {
   affordability: "affordable" | "insufficient_resources" | "advisory_only";
   buttonLabel: string;
   cost: Partial<Resources>;
+  shortfall?: Partial<Resources>;
   note: string;
   effect?: WorldConsequenceActionRuntimeEffectPreview;
 }

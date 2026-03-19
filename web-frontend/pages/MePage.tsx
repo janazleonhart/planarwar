@@ -1250,6 +1250,11 @@ export function MePage() {
                         <div style={{ fontSize: 12, opacity: 0.76 }}>
                           runtime cost {formatWorldActionCost(action.runtime?.cost)}
                         </div>
+                        {action.runtime?.shortfall && Object.keys(action.runtime.shortfall).length > 0 ? (
+                          <div style={{ fontSize: 12, opacity: 0.78, color: "#f3c77a" }}>
+                            still needed {formatWorldActionCost(action.runtime.shortfall)}
+                          </div>
+                        ) : null}
                         {action.runtime?.effect ? (
                           <div style={{ fontSize: 12, opacity: 0.78 }}>
                             expected effect pressure {formatWorldDelta(action.runtime.effect.pressureDelta)} • recovery {formatWorldDelta(action.runtime.effect.recoveryDelta)} • trust {formatWorldDelta(action.runtime.effect.trustDelta)} • control {formatWorldDelta(action.runtime.effect.controlDelta)} • threat {formatWorldDelta(action.runtime.effect.threatDelta)}

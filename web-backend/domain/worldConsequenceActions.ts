@@ -34,6 +34,7 @@ export interface WorldConsequenceActionRuntimeView {
   affordability: "affordable" | "insufficient_resources" | "advisory_only";
   buttonLabel: string;
   cost: Partial<Resources>;
+  shortfall?: Partial<Resources>;
   note: string;
   effect?: WorldConsequenceActionRuntimeEffectPreview;
 }
@@ -117,8 +118,18 @@ export function getWorldConsequenceRuntimePlan(actionId: string): RuntimeWorldCo
   return null;
 }
 
+function getActionShortfall(resources: Resources, spent: Partial<Resources>): Partial<Resources> {
+  const shortfall: Partial<Resources> = {};
+  for (const [key, value] of Object.entries(spent)) {
+    const typedKey = key as keyof Resources;
+    const missing = Math.max(0, Number(value ?? 0) - Number(resources[typedKey] ?? 0));
+    if (missing > 0) shortfall[typedKey] = missing;
+  }
+  return shortfall;
+}
+
 function canAffordAction(resources: Resources, spent: Partial<Resources>): boolean {
-  return Object.entries(spent).every(([key, value]) => Number(resources[key as keyof Resources] ?? 0) >= Number(value ?? 0));
+  return Object.keys(getActionShortfall(resources, spent)).length === 0;
 }
 
 function runtimeButtonLabel(actionId: string): string {
@@ -152,15 +163,17 @@ export function buildWorldConsequenceActionRuntimeView(ps: PlayerState, actionId
     };
   }
 
-  const affordable = canAffordAction(ps.resources, plan.spent);
+  const shortfall = getActionShortfall(ps.resources, plan.spent);
+  const affordable = Object.keys(shortfall).length === 0;
   return {
     executable: affordable,
     affordability: affordable ? "affordable" : "insufficient_resources",
     buttonLabel: runtimeButtonLabel(actionId),
     cost: plan.spent,
+    shortfall: affordable ? undefined : shortfall,
     note: affordable
       ? "This lane can be committed right now as a bounded runtime response."
-      : "This lane is real, but the city cannot currently afford to commit it.",
+      : `This lane is real, but the city still lacks ${Object.entries(shortfall).map(([key, value]) => `${key} ${value}`).join(", ")} to commit it.`,
     effect: buildRuntimeEffectPreview(plan),
   };
 }

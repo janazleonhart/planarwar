@@ -80,6 +80,13 @@ test("player action cards expose runtime truth instead of frontend guesses", () 
   assert.ok(starved);
   assert.equal(starved?.runtime?.executable, false);
   assert.equal(starved?.runtime?.affordability, "insufficient_resources");
+  assert.deepEqual(starved?.runtime?.shortfall, { wealth: 10 });
+  assert.match(starved?.runtime?.note ?? "", /wealth 10/i);
+
+  ps.resources.materials = 0;
+  const fullyStarved = deriveWorldConsequenceActions(ps).playerActions.find((action) => action.id === "action_stabilize_supply_lanes");
+  assert.ok(fullyStarved);
+  assert.deepEqual(fullyStarved?.runtime?.shortfall, { wealth: 10, materials: 8 });
 });
 
 
