@@ -828,6 +828,44 @@
         "City Builder public infrastructure receipts section"
       ],
       "service": "ui.component"
+    },
+    "web-frontend.components.city.cityMudBridgeConsumersSection": {
+      "class": null,
+      "ctorArgs": [],
+      "dependsOn": [
+        "web-frontend.lib.api"
+      ],
+      "kind": "ui",
+      "lifecycle": "singleton",
+      "notes": [
+        "Extracted bridge consumer guidance and advisory rendering from CityMudBridgePanel.",
+        "Keeps player-facing bridge state presentation readable without changing bridge summary or consumer logic."
+      ],
+      "owns": [],
+      "path": "web-frontend/components/city/CityMudBridgeConsumersSection.tsx",
+      "provides": [
+        "City Builder bridge consumer guidance section"
+      ],
+      "service": "ui.component"
+    },
+    "web-frontend.components.city.cityMudBridgeHooksSection": {
+      "class": null,
+      "ctorArgs": [],
+      "dependsOn": [
+        "web-frontend.lib.api"
+      ],
+      "kind": "ui",
+      "lifecycle": "singleton",
+      "notes": [
+        "Extracted bridge hook card rendering from CityMudBridgePanel.",
+        "Preserves the existing hook fields while reducing mixed concern density in the bridge presentation shell."
+      ],
+      "owns": [],
+      "path": "web-frontend/components/city/CityMudBridgeHooksSection.tsx",
+      "provides": [
+        "City Builder bridge hooks section"
+      ],
+      "service": "ui.component"
     }
   }
 }
