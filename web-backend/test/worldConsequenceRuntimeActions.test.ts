@@ -4,7 +4,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { getOrCreatePlayerState } from "../gameState";
-import { pushWorldConsequence, buildSetbackWorldConsequence } from "../domain/worldConsequences";
+import { pushWorldConsequence, buildSetbackWorldConsequence, summarizeWorldConsequenceResponseReceipts } from "../domain/worldConsequences";
 import { executeWorldConsequenceAction } from "../domain/worldConsequenceRuntimeActions";
 import { deriveWorldConsequenceActions } from "../domain/worldConsequenceActions";
 
@@ -80,4 +80,17 @@ test("player action cards expose runtime truth instead of frontend guesses", () 
   assert.ok(starved);
   assert.equal(starved?.runtime?.executable, false);
   assert.equal(starved?.runtime?.affordability, "insufficient_resources");
+});
+
+
+test("successful response action is surfaced as a bounded runtime receipt", () => {
+  const ps = seedPressure();
+  const result = executeWorldConsequenceAction(ps, "action_stabilize_supply_lanes");
+  assert.equal(result.ok, true);
+
+  const receipts = summarizeWorldConsequenceResponseReceipts(ps.worldConsequences ?? []);
+  assert.equal(receipts.totalRuntimeResponses, 1);
+  assert.equal(receipts.recent[0]?.outcome, "success");
+  assert.equal(receipts.recent[0]?.contractKind, "relief_convoys");
+  assert.match(receipts.recent[0]?.title ?? "", /Response action executed:/);
 });

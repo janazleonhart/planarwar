@@ -6,6 +6,7 @@ import { defaultPolicies, summarizeCityAlphaScopeLock, summarizeCityAlphaStatus,
 import { getAvailableTechsForPlayer, getTechById } from "../domain/tech";
 import { deriveWorldConsequenceHooks } from "../domain/worldConsequenceHooks";
 import { deriveWorldConsequenceActions } from "../domain/worldConsequenceActions";
+import { summarizeWorldConsequenceResponseReceipts } from "../domain/worldConsequences";
 import { deriveWorldConsequenceConsumers } from "../domain/worldConsequenceConsumers";
 import { deriveEconomyCartelResponseState } from "../domain/economyCartelResponse";
 import { getCityProductionPerTick, maxBuildingSlotsForTier } from "../domain/city";
@@ -80,6 +81,7 @@ function buildMePayload(viewer: Awaited<ReturnType<typeof resolveViewer>>, ps: P
       worldConsequenceState: null,
       worldConsequenceHooks: null,
       worldConsequenceActions: null,
+      worldConsequenceResponseReceipts: null,
       worldConsequenceConsumers: null,
       economyCartelResponseState: null,
     };
@@ -141,6 +143,7 @@ function buildMePayload(viewer: Awaited<ReturnType<typeof resolveViewer>>, ps: P
     worldConsequenceState: ps.worldConsequenceState ?? null,
     worldConsequenceHooks: deriveWorldConsequenceHooks(ps),
     worldConsequenceActions: deriveWorldConsequenceActions(ps),
+    worldConsequenceResponseReceipts: summarizeWorldConsequenceResponseReceipts(ps.worldConsequences ?? []),
     worldConsequenceConsumers: deriveWorldConsequenceConsumers(ps),
     economyCartelResponseState: deriveEconomyCartelResponseState(ps),
   };

@@ -106,6 +106,30 @@ export interface WorldConsequenceSummary {
   note: string;
 }
 
+export interface WorldConsequenceResponseReceipt {
+  id: string;
+  createdAt: string;
+  title: string;
+  summary: string;
+  regionId: string;
+  severity: WorldConsequenceSeverity;
+  outcome?: "success" | "partial" | "failure";
+  contractKind?: RecoveryContractKind;
+  metrics: {
+    pressureDelta: number;
+    recoveryDelta: number;
+    controlDelta: number;
+    threatDelta: number;
+  };
+}
+
+export interface WorldConsequenceResponseReceiptsView {
+  totalRuntimeResponses: number;
+  lastResponseAt?: string;
+  note: string;
+  recent: WorldConsequenceResponseReceipt[];
+}
+
 export const MAX_WORLD_CONSEQUENCE_LEDGER = 40;
 
 function clampSeverity(value: number): WorldConsequenceSeverity {
@@ -308,6 +332,42 @@ export function deriveWorldConsequenceState(entries: WorldConsequenceLedgerEntry
       note,
     },
     lastUpdatedAt,
+  };
+}
+
+export function summarizeWorldConsequenceResponseReceipts(entries: WorldConsequenceLedgerEntry[]): WorldConsequenceResponseReceiptsView {
+  const runtimeEntries = entries.filter(
+    (entry) => entry.source === "recovery_contract" && typeof entry.missionId === "string" && entry.missionId.startsWith("world_action_"),
+  );
+
+  const recent = runtimeEntries.slice(0, 5).map((entry) => ({
+    id: entry.id,
+    createdAt: entry.createdAt,
+    title: entry.title,
+    summary: entry.summary,
+    regionId: String(entry.regionId ?? "unknown"),
+    severity: entry.severity,
+    outcome: entry.outcome,
+    contractKind: entry.contractKind,
+    metrics: {
+      pressureDelta: Number(entry.metrics?.pressureDelta ?? 0),
+      recoveryDelta: Number(entry.metrics?.recoveryDelta ?? 0),
+      controlDelta: Number(entry.metrics?.controlDelta ?? 0),
+      threatDelta: Number(entry.metrics?.threatDelta ?? 0),
+    },
+  }));
+
+  const note = runtimeEntries.length === 0
+    ? "No bounded world response actions have been committed yet."
+    : runtimeEntries.length === 1
+    ? "One bounded world response has been committed and logged."
+    : `${runtimeEntries.length} bounded world responses have been committed and logged.`;
+
+  return {
+    totalRuntimeResponses: runtimeEntries.length,
+    lastResponseAt: runtimeEntries[0]?.createdAt,
+    note,
+    recent,
   };
 }
 

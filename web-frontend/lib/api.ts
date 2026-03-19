@@ -848,6 +848,29 @@ export interface WorldConsequenceActionExecutionResult {
   regionId?: string | null;
 }
 
+export interface WorldConsequenceResponseReceipt {
+  id: string;
+  createdAt: string;
+  title: string;
+  summary: string;
+  regionId: string;
+  severity: "watch" | "pressure" | "severe";
+  outcome?: "success" | "partial" | "failure";
+  contractKind?: string;
+  metrics: {
+    pressureDelta: number;
+    recoveryDelta: number;
+    controlDelta: number;
+    threatDelta: number;
+  };
+}
+
+export interface WorldConsequenceResponseReceiptsView {
+  totalRuntimeResponses: number;
+  lastResponseAt?: string;
+  note: string;
+  recent: WorldConsequenceResponseReceipt[];
+}
 
 export interface WorldConsequenceConsumersView {
   summary: {
@@ -966,6 +989,7 @@ export interface MeProfile {
   worldConsequenceState?: WorldConsequenceState | null;
   worldConsequenceHooks?: WorldConsequenceHooksView | null;
   worldConsequenceActions?: WorldConsequenceActionsView | null;
+  worldConsequenceResponseReceipts?: WorldConsequenceResponseReceiptsView | null;
   worldConsequenceConsumers?: WorldConsequenceConsumersView | null;
   economyCartelResponseState?: EconomyCartelResponseState | null;
 }
@@ -1075,6 +1099,7 @@ export async function executeWorldConsequenceAction(actionId: string): Promise<{
   worldConsequenceState: WorldConsequenceState | null;
   worldConsequences: WorldConsequenceLedgerEntry[];
   worldConsequenceActions: WorldConsequenceActionsView | null;
+  worldConsequenceResponseReceipts: WorldConsequenceResponseReceiptsView | null;
   worldConsequenceHooks: WorldConsequenceHooksView | null;
   worldConsequenceConsumers: WorldConsequenceConsumersView | null;
   responseState: EconomyCartelResponseState | null;

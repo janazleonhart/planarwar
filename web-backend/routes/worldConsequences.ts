@@ -9,6 +9,7 @@ import { deriveEconomyCartelResponseState } from "../domain/economyCartelRespons
 import { deriveCityMudConsumers, deriveVendorSupportPolicy, summarizeCityMudBridge } from "../domain/cityMudBridge";
 import { resolvePlayerAccess, withPlayerAccessMutation } from "./playerCityAccess";
 import { executeWorldConsequenceAction } from "../domain/worldConsequenceRuntimeActions";
+import { summarizeWorldConsequenceResponseReceipts } from "../domain/worldConsequences";
 
 const router = Router();
 
@@ -30,6 +31,7 @@ router.get("/status", async (req, res) => {
     hooks: deriveWorldConsequenceHooks(access.access.playerState),
     responseState: deriveEconomyCartelResponseState(access.access.playerState),
     actions: deriveWorldConsequenceActions(access.access.playerState),
+    responseReceipts: summarizeWorldConsequenceResponseReceipts(access.access.playerState.worldConsequences ?? []),
     consumers: consequenceConsumers,
     consumerTargets: {
       vendorPolicy,
@@ -69,6 +71,7 @@ router.post("/act", async (req, res) => {
         worldConsequences: access.playerState.worldConsequences ?? [],
         worldConsequenceHooks: deriveWorldConsequenceHooks(access.playerState),
         worldConsequenceActions: deriveWorldConsequenceActions(access.playerState),
+        worldConsequenceResponseReceipts: summarizeWorldConsequenceResponseReceipts(access.playerState.worldConsequences ?? []),
         worldConsequenceConsumers: consumers,
         responseState: deriveEconomyCartelResponseState(access.playerState),
         consumerTargets: {
@@ -94,6 +97,7 @@ router.get("/actions", async (req, res) => {
   return res.json({
     ok: true,
     actions: deriveWorldConsequenceActions(access.access.playerState),
+    responseReceipts: summarizeWorldConsequenceResponseReceipts(access.access.playerState.worldConsequences ?? []),
   });
 });
 
@@ -129,6 +133,7 @@ router.get("/hooks", async (req, res) => {
     hooks: deriveWorldConsequenceHooks(access.access.playerState),
     responseState: deriveEconomyCartelResponseState(access.access.playerState),
     actions: deriveWorldConsequenceActions(access.access.playerState),
+    responseReceipts: summarizeWorldConsequenceResponseReceipts(access.access.playerState.worldConsequences ?? []),
   });
 });
 
