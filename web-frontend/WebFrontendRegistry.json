@@ -233,7 +233,7 @@
       "kind": "ui",
       "lifecycle": "singleton",
       "notes": [
-        "Extracted City \u2194 MUD bridge posture, consumer guidance, and hook rendering from MePage.",
+        "Extracted City ↔ MUD bridge posture, consumer guidance, and hook rendering from MePage.",
         "Behavior is display-only; bridge math remains owned by web-backend/domain/cityMudBridge.ts."
       ],
       "owns": [],
@@ -536,10 +536,10 @@
         "Adds typed public infrastructure DTOs and fetchPublicInfrastructureStatus(serviceMode) for city-builder lane/quote previews.",
         "startTech() now accepts optional serviceMode so research can use private or NPC public lanes without raw ad-hoc payloads.",
         "Adds typed PublicPressureSource DTOs and includes pressureSources in public infrastructure status/quote payloads.",
-        "Adds typed CityMudBridge DTOs plus fetchCityMudBridgeStatus() so the frontend can preview city\u2192world support posture and exportable surplus.",
-        "Adds typed City \u2194 MUD bridge consumer DTOs so frontend panels can render vendor/mission/civic guidance instead of only raw hook scores.",
+        "Adds typed CityMudBridge DTOs plus fetchCityMudBridgeStatus() so the frontend can preview city→world support posture and exportable surplus.",
+        "Adds typed City ↔ MUD bridge consumer DTOs so frontend panels can render vendor/mission/civic guidance instead of only raw hook scores.",
         "Adds typed mission-board DTOs plus fetchMissionBoard(), startMission(), and completeMission() so mission offers can surface bridge-aware support guidance in the UI.",
-        "Adds typed City \u2194 MUD vendor policy DTOs so admin/vendor tooling can consume stock/price/cadence recommendations from the bridge status endpoint.",
+        "Adds typed City ↔ MUD vendor policy DTOs so admin/vendor tooling can consume stock/price/cadence recommendations from the bridge status endpoint.",
         "Admin vendor economy consumers may now receive bridge_runtime_effect preview fields on item rows from /api/admin/vendor_economy/items.",
         "Admin vendor economy flows may now call /api/admin/vendor_economy/bridge_runtime_guarded to preview/apply server-guarded runtime changes for selected rows.",
         "Adds typed vendor scenario replay/report DTOs plus fetchVendorScenarioReports() for the admin vendor economy reporting surface.",
@@ -750,10 +750,10 @@
         "Snapshot/Restore endpoints: POST /api/admin/spawn_points/snapshot, POST /api/admin/spawn_points/restore.",
         "Server snapshot endpoints: GET /api/admin/spawn_points/snapshots, POST /api/admin/spawn_points/snapshots/save, GET/DELETE /api/admin/spawn_points/snapshots/:id",
         "Restore safety UI: shows high-risk restore warning and requires confirm phrase 'RESTORE' for cross-shard and/or brain-owned restores, plus confirm token for destructive updates.",
-        "P2\u2013P3: Server snapshots UI: save/load/delete spawn snapshot docs stored on web-backend.",
+        "P2–P3: Server snapshots UI: save/load/delete spawn snapshot docs stored on web-backend.",
         "Snapshot save supports tags (comma list) + notes; list supports sort + tag filter + search via query params.",
         "Scatter tool uses server-provided protoId datalist (/api/admin/spawn_points/proto_options) with name+id labels and manual fallback.",
-        "P2\u2013P3: Server snapshots UI: save/load/delete spawn snapshot docs stored on web-backend.",
+        "P2–P3: Server snapshots UI: save/load/delete spawn snapshot docs stored on web-backend.",
         "Snapshot save supports tags (comma list) + notes; list supports sort + tag filter + search via query params.",
         "Scatter tool uses server-provided protoId datalist (/api/admin/spawn_points/proto_options) with name+id labels and manual fallback.",
         "Scatter tool adds quick-pick chips (common protoIds) to reduce typos and speed placement; manual entry still allowed.",
@@ -837,7 +837,7 @@
         "Editable vendor economy knobs (stockMax/restock cadence/price mults) with per-row save + optional stock reset.",
         "Uses ItemPicker for item filtering; displays item name + rarity from API join.",
         "Wrapped in AdminShell for consistent admin layout; internal logic unchanged.",
-        "v0.4 also consumes city\u2194MUD bridge vendorPolicy to preview recommended stock/price/cadence posture while tuning vendor_item_economy rows.",
+        "v0.4 also consumes city↔MUD bridge vendorPolicy to preview recommended stock/price/cadence posture while tuning vendor_item_economy rows.",
         "v0.5 stages and applies live bridge recommendations per row or across visible vendor items, turning policy preview into actionable tuning.",
         "v0.6 surfaces per-row bridge runtime previews (effective stock/cadence/price + fill-state) and allows staging those live runtime knobs directly into the admin editor.",
         "v0.7 adds preview/apply controls for server-guarded runtime changes so admins can stage or commit softened bridge-driven vendor updates without bypassing safety rails.",
@@ -872,7 +872,7 @@
         "Endpoints used include: /api/me, /api/city/bootstrap, /api/city/rename, /api/tech/start, /api/missions/start, /api/missions/complete, /api/missions/refresh_region, /api/buildings/construct, /api/buildings/upgrade, /api/city/tier-up, /api/warfront/assault, /api/armies/raise, /api/armies/reinforce, /api/garrisons/strike, /api/heroes/equip_attachment, /api/heroes/recruit, /api/workshop/craft, /api/workshop/collect, /api/policies/toggle.",
         "Now surfaces public infrastructure summary, quote previews, receipts, and a lane toggle for private_city vs npc_public service execution.",
         "City-builder action toasts now include publicService consequence details (levy/queue/note) returned by backend routes.",
-        "Now renders a City \u2194 MUD Economic Bridge panel with support posture, exportable surplus, and future-consumer hook summaries from /api/city_mud_bridge/status.",
+        "Now renders a City ↔ MUD Economic Bridge panel with support posture, exportable surplus, and future-consumer hook summaries from /api/city_mud_bridge/status.",
         "Now renders mission board cards that surface bridge-derived support guidance and allows start/complete flows from the same dashboard.",
         "Page shell now delegates public infrastructure, bridge, city core, and policy/army sections to dedicated city components while preserving runtime behavior."
       ],
@@ -890,7 +890,7 @@
         "Action buttons that POST to various /api/* endpoints",
         "Public infrastructure panel: lane toggle + quote previews + receipts",
         "City-builder action buttons that send serviceMode to eligible /api/* endpoints",
-        "City \u2194 MUD Economic Bridge panel: support posture + exportable surplus + hook summaries",
+        "City ↔ MUD Economic Bridge panel: support posture + exportable surplus + hook summaries",
         "Mission board panel: available offers + active missions + bridge-aware support notes"
       ],
       "service": "cityBuilder.me"
@@ -953,7 +953,7 @@
       "notes": [
         "Legacy App.tsx contains its own API_BASE/SHARD_WS computed from window.location.hostname (with localhost fallback).",
         "Admin pages now use same-origin /api (recommended) via Vite proxy in dev.",
-        "Endpoints used by the legacy App layer include: /api/auth/login, /api/auth/register, /api/characters (GET/POST), /api/characters/:id (GET), /api/spells?ids=\u2026, /api/items?ids=\u2026, /api/abilities\u2026",
+        "Endpoints used by the legacy App layer include: /api/auth/login, /api/auth/register, /api/characters (GET/POST), /api/characters/:id (GET), /api/spells?ids=…, /api/items?ids=…, /api/abilities…",
         "WebSocket sends ops: whereami, mud; expects mud_result, whereami_result, chat payloads.",
         "City-builder pages (MePage/OperationsPage) exist but are not currently routed from App.tsx.",
         "2026-01-28: Player Panels meta wired end-to-end: Inventory/Equipment uses /api/items, Spellbook uses /api/spells (q/ids) with cost+cooldown display, Abilities uses /api/abilities (DB catalog + unlock join).",
@@ -1016,6 +1016,44 @@
       "path": "web-frontend/components/city/MePageViewModel.ts",
       "provides": [
         "MePage derived view-state helper"
+      ],
+      "service": "ui.component"
+    },
+    "web-frontend.components.worldResponse.cityAlphaStatusSection": {
+      "class": null,
+      "ctorArgs": [],
+      "dependsOn": [
+        "web-frontend.lib.api"
+      ],
+      "kind": "ui",
+      "lifecycle": "singleton",
+      "notes": [
+        "Extracted City Alpha command board summary and top-pressure rendering from CityAlphaPanels.",
+        "Improves player-facing readiness/pressure readability without changing runtime or response logic."
+      ],
+      "owns": [],
+      "path": "web-frontend/components/worldResponse/CityAlphaStatusSection.tsx",
+      "provides": [
+        "City Alpha command board section"
+      ],
+      "service": "ui.component"
+    },
+    "web-frontend.components.worldResponse.cityAlphaScopeLockSection": {
+      "class": null,
+      "ctorArgs": [],
+      "dependsOn": [
+        "web-frontend.lib.api"
+      ],
+      "kind": "ui",
+      "lifecycle": "singleton",
+      "notes": [
+        "Extracted City Alpha scope lock and bounded response-state display from CityAlphaPanels.",
+        "Keeps scope-lock buckets readable without reopening maintenance-mode economy/cartel behavior."
+      ],
+      "owns": [],
+      "path": "web-frontend/components/worldResponse/CityAlphaScopeLockSection.tsx",
+      "provides": [
+        "City Alpha scope lock section"
       ],
       "service": "ui.component"
     }
