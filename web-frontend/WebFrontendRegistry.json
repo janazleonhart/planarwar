@@ -866,6 +866,44 @@
         "City Builder bridge hooks section"
       ],
       "service": "ui.component"
+    },
+    "web-frontend.components.city.cityPolicyTogglesSection": {
+      "class": null,
+      "ctorArgs": [],
+      "dependsOn": [
+        "web-frontend.lib.api"
+      ],
+      "kind": "ui",
+      "lifecycle": "singleton",
+      "notes": [
+        "Extracted policy toggle rendering from CityPolicyArmiesPanel.",
+        "Keeps player-facing policy state readable without changing toggle behavior."
+      ],
+      "owns": [],
+      "path": "web-frontend/components/city/CityPolicyTogglesSection.tsx",
+      "provides": [
+        "City Builder policy toggles section"
+      ],
+      "service": "ui.component"
+    },
+    "web-frontend.components.city.cityArmiesSection": {
+      "class": null,
+      "ctorArgs": [],
+      "dependsOn": [
+        "web-frontend.lib.api"
+      ],
+      "kind": "ui",
+      "lifecycle": "singleton",
+      "notes": [
+        "Extracted army raise, readiness, and reinforce rendering from CityPolicyArmiesPanel.",
+        "Improves city-side army readability without changing backend/runtime behavior."
+      ],
+      "owns": [],
+      "path": "web-frontend/components/city/CityArmiesSection.tsx",
+      "provides": [
+        "City Builder armies section"
+      ],
+      "service": "ui.component"
     }
   }
 }
