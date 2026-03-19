@@ -810,12 +810,22 @@ export interface WorldConsequenceFactionHook {
 }
 
 
+export interface WorldConsequenceActionRuntimeEffectPreview {
+  pressureDelta: number;
+  recoveryDelta: number;
+  trustDelta: number;
+  controlDelta: number;
+  threatDelta: number;
+  summary: string;
+}
+
 export interface WorldConsequenceActionRuntimeView {
   executable: boolean;
   affordability: "affordable" | "insufficient_resources" | "advisory_only";
   buttonLabel: string;
   cost: Partial<Resources>;
   note: string;
+  effect?: WorldConsequenceActionRuntimeEffectPreview;
 }
 
 export interface WorldConsequenceActionItem {

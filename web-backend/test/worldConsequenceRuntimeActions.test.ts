@@ -83,6 +83,21 @@ test("player action cards expose runtime truth instead of frontend guesses", () 
 });
 
 
+
+test("player action cards expose runtime impact previews instead of hidden payoff math", () => {
+  const ps = seedPressure();
+  const actions = deriveWorldConsequenceActions(ps);
+  const stabilize = actions.playerActions.find((action) => action.id === "action_stabilize_supply_lanes");
+  assert.ok(stabilize?.runtime?.effect);
+  assert.equal(stabilize?.runtime?.effect?.pressureDelta, -5);
+  assert.equal(stabilize?.runtime?.effect?.recoveryDelta, -4);
+  assert.equal(stabilize?.runtime?.effect?.threatDelta, -2);
+  assert.match(stabilize?.runtime?.effect?.summary ?? "", /scarcity pressure/i);
+
+  const exploit = actions.playerActions.find((action) => action.id === "action_black_market_window_exploit");
+  assert.equal(exploit?.runtime?.effect, undefined);
+});
+
 test("successful response action is surfaced as a bounded runtime receipt", () => {
   const ps = seedPressure();
   const result = executeWorldConsequenceAction(ps, "action_stabilize_supply_lanes");

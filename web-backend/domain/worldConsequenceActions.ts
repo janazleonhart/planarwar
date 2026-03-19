@@ -20,12 +20,22 @@ export interface RuntimeWorldConsequenceActionPlan {
   summaryNote: string;
 }
 
+export interface WorldConsequenceActionRuntimeEffectPreview {
+  pressureDelta: number;
+  recoveryDelta: number;
+  trustDelta: number;
+  controlDelta: number;
+  threatDelta: number;
+  summary: string;
+}
+
 export interface WorldConsequenceActionRuntimeView {
   executable: boolean;
   affordability: "affordable" | "insufficient_resources" | "advisory_only";
   buttonLabel: string;
   cost: Partial<Resources>;
   note: string;
+  effect?: WorldConsequenceActionRuntimeEffectPreview;
 }
 
 export interface WorldConsequenceActionItem {
@@ -119,6 +129,17 @@ function runtimeButtonLabel(actionId: string): string {
   return "Advisory only";
 }
 
+function buildRuntimeEffectPreview(plan: RuntimeWorldConsequenceActionPlan): WorldConsequenceActionRuntimeEffectPreview {
+  return {
+    pressureDelta: plan.pressureDelta,
+    recoveryDelta: plan.recoveryDelta,
+    trustDelta: plan.trustDelta,
+    controlDelta: plan.controlDelta ?? 0,
+    threatDelta: plan.threatDelta ?? 0,
+    summary: plan.summaryNote,
+  };
+}
+
 export function buildWorldConsequenceActionRuntimeView(ps: PlayerState, actionId: string): WorldConsequenceActionRuntimeView {
   const plan = getWorldConsequenceRuntimePlan(actionId);
   if (!plan) {
@@ -140,6 +161,7 @@ export function buildWorldConsequenceActionRuntimeView(ps: PlayerState, actionId
     note: affordable
       ? "This lane can be committed right now as a bounded runtime response."
       : "This lane is real, but the city cannot currently afford to commit it.",
+    effect: buildRuntimeEffectPreview(plan),
   };
 }
 function pushUnique(target: WorldConsequenceActionItem[], item: WorldConsequenceActionItem) {

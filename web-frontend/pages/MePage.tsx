@@ -1250,9 +1250,14 @@ export function MePage() {
                         <div style={{ fontSize: 12, opacity: 0.76 }}>
                           runtime cost {formatWorldActionCost(action.runtime?.cost)}
                         </div>
+                        {action.runtime?.effect ? (
+                          <div style={{ fontSize: 12, opacity: 0.78 }}>
+                            expected effect pressure {formatWorldDelta(action.runtime.effect.pressureDelta)} • recovery {formatWorldDelta(action.runtime.effect.recoveryDelta)} • trust {formatWorldDelta(action.runtime.effect.trustDelta)} • control {formatWorldDelta(action.runtime.effect.controlDelta)} • threat {formatWorldDelta(action.runtime.effect.threatDelta)}
+                          </div>
+                        ) : null}
                         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                           <div style={{ fontSize: 12, opacity: 0.7 }}>
-                            {action.runtime?.note ?? (executable ? "This lane can now be committed as a bounded runtime response." : "Advisory only — runtime still cannot execute this lane yet.")}
+                            {action.runtime?.effect?.summary ?? action.runtime?.note ?? (executable ? "This lane can now be committed as a bounded runtime response." : "Advisory only — runtime still cannot execute this lane yet.")}
                           </div>
                           <button
                             type="button"
