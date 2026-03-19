@@ -1,6 +1,6 @@
 // web-frontend/pages/MePage.tsx
 
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { CityCorePanel } from "../components/city/CityCorePanel";
 import { CityIdentityCard } from "../components/city/CityIdentityCard";
 import { CityResourcesCard } from "../components/city/CityResourcesCard";
@@ -8,6 +8,15 @@ import { CityMudBridgePanel } from "../components/city/CityMudBridgePanel";
 import { CityPolicyArmiesPanel } from "../components/city/CityPolicyArmiesPanel";
 import { PublicInfrastructurePanel } from "../components/city/PublicInfrastructurePanel";
 import { MissionResponsePanel } from "../components/worldResponse/MissionResponsePanel";
+import {
+  cardStyle,
+  formatExportableResources,
+  formatLevy,
+  formatServiceLabel,
+  getBuildingConstructionCost,
+  getBuildingUpgradeCost,
+  summarizeUsage,
+} from "../components/city/CityUiHelpers";
 import {
   formatWorldActionCooldown,
   formatWorldActionCost,
@@ -39,97 +48,6 @@ import {
   type WorldConsequenceActionItem,
 } from "../lib/api";
 
-function getBuildingUpgradeCost(b: CityBuilding) {
-  let baseMaterials = 20;
-  let baseWealth = 10;
-
-  switch (b.kind) {
-    case "housing":
-      baseMaterials = 20;
-      baseWealth = 10;
-      break;
-    case "farmland":
-      baseMaterials = 25;
-      baseWealth = 15;
-      break;
-    case "mine":
-      baseMaterials = 30;
-      baseWealth = 20;
-      break;
-    case "arcane_spire":
-      baseMaterials = 40;
-      baseWealth = 30;
-      break;
-    default:
-      break;
-  }
-
-  const mult = 1 + b.level * 0.5;
-
-  return {
-    materials: Math.round(baseMaterials * mult),
-    wealth: Math.round(baseWealth * mult),
-  };
-}
-
-function getBuildingConstructionCost(kind: CityBuilding["kind"]) {
-  switch (kind) {
-    case "housing":
-      return { materials: 30, wealth: 10 };
-    case "farmland":
-      return { materials: 20, wealth: 5 };
-    case "mine":
-      return { materials: 40, wealth: 15 };
-    case "arcane_spire":
-      return { materials: 50, wealth: 25 };
-    default:
-      return { materials: 20, wealth: 10 };
-  }
-}
-
-function cardStyle(extra: CSSProperties = {}): CSSProperties {
-  return {
-    border: "1px solid #444",
-    borderRadius: 8,
-    padding: 16,
-    display: "grid",
-    gap: 10,
-    ...extra,
-  };
-}
-
-function formatLevy(levy: Partial<Resources> | undefined): string {
-  if (!levy) return "none";
-  const parts = Object.entries(levy)
-    .filter(([, amount]) => Number(amount ?? 0) > 0)
-    .map(([key, amount]) => `${key} ${amount}`);
-  return parts.length ? parts.join(", ") : "none";
-}
-
-
-function formatExportableResources(resources: Partial<Resources> | undefined): string {
-  if (!resources) return "none";
-  const parts = Object.entries(resources)
-    .filter(([, amount]) => Number(amount ?? 0) > 0)
-    .map(([key, amount]) => `${key} ${amount}`);
-  return parts.length ? parts.join(", ") : "none";
-}
-
-function formatServiceLabel(service: string): string {
-  return service
-    .split("_")
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(" ");
-}
-
-function summarizeUsage(usage: AppliedPublicServiceUsage | null | undefined): string | null {
-  if (!usage) return null;
-  if (usage.quote.mode === "private_city") {
-    return `Private lane used. ${usage.summary.note}`;
-  }
-  const levyText = formatLevy(usage.quote.levy);
-  return `${formatServiceLabel(usage.quote.service)} via NPC public lane • levy ${levyText} • queue +${usage.queueAppliedMinutes}m`;
-}
 
 export function MePage() {
   const [me, setMe] = useState<MeProfile | null>(null);

@@ -942,6 +942,25 @@
         "Player Panels: Effects (StatusEffects v1.5 MVP view)"
       ],
       "service": "webConsole.app"
+    },
+    "web-frontend.components.city.cityUiHelpers": {
+      "class": null,
+      "ctorArgs": [],
+      "dependsOn": [
+        "web-frontend.lib.api"
+      ],
+      "kind": "ui",
+      "lifecycle": "singleton",
+      "notes": [
+        "Shared city-side UI helper module for card styling, building cost helpers, levy/exportability formatting, and public service usage summaries.",
+        "Keeps MePage focused on orchestration while preserving existing city action and quote behavior."
+      ],
+      "owns": [],
+      "path": "web-frontend/components/city/CityUiHelpers.ts",
+      "provides": [
+        "City Builder UI helper functions"
+      ],
+      "service": "ui.component"
     }
   }
 }
