@@ -8,10 +8,11 @@ import type {
   WorldConsequenceRegionState,
   WorldConsequenceResponseReceiptsView,
 } from "../../lib/api";
+import { WorldResponseHotspotsSection } from "./WorldResponseHotspotsSection";
+import { WorldResponseLedgerSection } from "./WorldResponseLedgerSection";
 import {
   formatWorldActionCooldown,
   formatWorldActionCost,
-  formatWorldConsequenceSource,
   formatWorldDelta,
   getRegionDisplayName,
   worldHookTone,
@@ -249,32 +250,9 @@ export function WorldResponsePanel({
         </div>
       ) : null}
 
-      <div style={{ display: "grid", gap: 6 }}>
-        <div style={{ fontWeight: 700, fontSize: 13 }}>Regional hotspots</div>
-        {highlightedWorldRegions.length === 0 ? (
-          <div style={{ opacity: 0.7 }}>No propagated regional hotspots yet.</div>
-        ) : highlightedWorldRegions.map((region) => (
-          <div key={region.regionId} style={{ border: "1px solid #555", borderRadius: 8, padding: 10, display: "grid", gap: 4, background: "rgba(70,35,20,0.08)" }}>
-            <div><strong>{getRegionDisplayName(region.regionId)}</strong> <span style={{ opacity: 0.72 }}>({region.regionId})</span> • <span style={{ color: worldSeverityColor(region.dominantSeverity) }}>{region.dominantSeverity}</span></div>
-            <div style={{ fontSize: 12, opacity: 0.82 }}>pressure {formatWorldDelta(region.netPressure)} • recovery {formatWorldDelta(region.netRecoveryLoad)} • control {formatWorldDelta(region.controlDrift)} • threat {formatWorldDelta(region.threatDrift)}</div>
-            <div style={{ fontSize: 12, opacity: 0.8 }}>trade {region.tradeDisruption} • black market heat {region.blackMarketHeat} • faction drift {region.factionDrift}</div>
-          </div>
-        ))}
-      </div>
+      <WorldResponseHotspotsSection highlightedWorldRegions={highlightedWorldRegions} />
 
-      <div style={{ display: "grid", gap: 6 }}>
-        <div style={{ fontWeight: 700, fontSize: 13 }}>World consequence ledger</div>
-        {highlightedWorldLedger.length === 0 ? (
-          <div style={{ opacity: 0.7 }}>No exported ledger entries yet.</div>
-        ) : highlightedWorldLedger.map((entry) => (
-          <div key={entry.id} style={{ border: "1px solid #555", borderRadius: 8, padding: 10, display: "grid", gap: 4, background: "rgba(20,40,65,0.10)" }}>
-            <div><strong>{entry.title}</strong> • <span style={{ color: worldSeverityColor(entry.severity) }}>{entry.severity}</span> • {formatWorldConsequenceSource(entry.source)}</div>
-            <div style={{ fontSize: 12, opacity: 0.82 }}>{entry.summary}</div>
-            <div style={{ fontSize: 12, opacity: 0.74 }}>{entry.detail}</div>
-            <div style={{ fontSize: 12, opacity: 0.76 }}>region {getRegionDisplayName(entry.regionId)} • pressure {formatWorldDelta(entry.metrics.pressureDelta)} • recovery {formatWorldDelta(entry.metrics.recoveryDelta)} • control {formatWorldDelta(entry.metrics.controlDelta)} • threat {formatWorldDelta(entry.metrics.threatDelta)}</div>
-          </div>
-        ))}
-      </div>
+      <WorldResponseLedgerSection highlightedWorldLedger={highlightedWorldLedger} />
     </>
   );
 }

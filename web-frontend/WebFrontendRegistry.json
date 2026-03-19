@@ -394,6 +394,44 @@
       ],
       "service": "ui.component"
     },
+    "web-frontend.components.worldResponse.worldResponseHotspotsSection": {
+      "class": null,
+      "ctorArgs": [],
+      "dependsOn": [
+        "web-frontend.lib.api"
+      ],
+      "kind": "ui",
+      "lifecycle": "singleton",
+      "notes": [
+        "Extracted regional hotspot presentation from WorldResponsePanel.",
+        "Keeps player-facing hotspot reporting readable without changing world consequence data or severity display."
+      ],
+      "owns": [],
+      "path": "web-frontend/components/worldResponse/WorldResponseHotspotsSection.tsx",
+      "provides": [
+        "World response regional hotspots section"
+      ],
+      "service": "ui.component"
+    },
+    "web-frontend.components.worldResponse.worldResponseLedgerSection": {
+      "class": null,
+      "ctorArgs": [],
+      "dependsOn": [
+        "web-frontend.lib.api"
+      ],
+      "kind": "ui",
+      "lifecycle": "singleton",
+      "notes": [
+        "Extracted world consequence ledger rendering from WorldResponsePanel.",
+        "Preserves ledger ordering and severity/source display while reducing player-facing reporting density."
+      ],
+      "owns": [],
+      "path": "web-frontend/components/worldResponse/WorldResponseLedgerSection.tsx",
+      "provides": [
+        "World response ledger section"
+      ],
+      "service": "ui.component"
+    },
     "web-frontend.components.itemPicker": {
       "class": null,
       "ctorArgs": [],
