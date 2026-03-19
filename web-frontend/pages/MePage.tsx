@@ -1283,6 +1283,11 @@ export function MePage() {
                             cooling down {formatWorldActionCooldown(action.runtime.cooldownMsRemaining)}{action.runtime.readyAt ? ` • ready ${new Date(action.runtime.readyAt).toLocaleTimeString()}` : ""}
                           </div>
                         ) : null}
+                        {action.runtime?.lastCommittedAt ? (
+                          <div style={{ fontSize: 12, opacity: 0.74, color: "#b8d6ff" }}>
+                            last committed {new Date(action.runtime.lastCommittedAt).toLocaleString()}{typeof action.runtime.successfulCommitCount === "number" ? ` • ${action.runtime.successfulCommitCount} successful run${action.runtime.successfulCommitCount === 1 ? "" : "s"}` : ""}
+                          </div>
+                        ) : null}
                         {action.runtime?.effect ? (
                           <div style={{ fontSize: 12, opacity: 0.78 }}>
                             expected effect pressure {formatWorldDelta(action.runtime.effect.pressureDelta)} • recovery {formatWorldDelta(action.runtime.effect.recoveryDelta)} • trust {formatWorldDelta(action.runtime.effect.trustDelta)} • control {formatWorldDelta(action.runtime.effect.controlDelta)} • threat {formatWorldDelta(action.runtime.effect.threatDelta)}

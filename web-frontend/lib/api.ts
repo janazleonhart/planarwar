@@ -829,6 +829,8 @@ export interface WorldConsequenceActionRuntimeView {
   effect?: WorldConsequenceActionRuntimeEffectPreview;
   cooldownMsRemaining?: number;
   readyAt?: string;
+  lastCommittedAt?: string;
+  successfulCommitCount?: number;
 }
 
 export interface WorldConsequenceActionItem {

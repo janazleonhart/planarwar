@@ -39,6 +39,8 @@ export interface WorldConsequenceActionRuntimeView {
   effect?: WorldConsequenceActionRuntimeEffectPreview;
   cooldownMsRemaining?: number;
   readyAt?: string;
+  lastCommittedAt?: string;
+  successfulCommitCount?: number;
 }
 
 export interface WorldConsequenceActionItem {
@@ -66,15 +68,18 @@ export interface WorldConsequenceActionsView {
 
 export const WORLD_CONSEQUENCE_ACTION_COOLDOWN_MS = 10 * 60 * 1000;
 
-function findRecentRuntimeActionReceipt(ps: PlayerState, actionId: string): { createdAt: string } | null {
+function summarizeRuntimeActionHistory(ps: PlayerState, actionId: string): { lastCommittedAt?: string; successfulCommitCount: number } {
   const receipts = ps.worldConsequences ?? [];
+  let lastCommittedAt: string | undefined;
+  let successfulCommitCount = 0;
   for (const entry of receipts) {
     if (entry.source !== "recovery_contract") continue;
     if (entry.runtimeActionId !== actionId) continue;
     if (entry.outcome !== "success") continue;
-    return { createdAt: entry.createdAt };
+    successfulCommitCount += 1;
+    if (!lastCommittedAt) lastCommittedAt = entry.createdAt;
   }
-  return null;
+  return { lastCommittedAt, successfulCommitCount };
 }
 
 export function getWorldConsequenceRuntimePlan(actionId: string): RuntimeWorldConsequenceActionPlan | null {
@@ -179,9 +184,9 @@ export function buildWorldConsequenceActionRuntimeView(ps: PlayerState, actionId
     };
   }
 
-  const recentReceipt = findRecentRuntimeActionReceipt(ps, actionId);
-  if (recentReceipt) {
-    const readyAtMs = new Date(recentReceipt.createdAt).getTime() + WORLD_CONSEQUENCE_ACTION_COOLDOWN_MS;
+  const history = summarizeRuntimeActionHistory(ps, actionId);
+  if (history.lastCommittedAt) {
+    const readyAtMs = new Date(history.lastCommittedAt).getTime() + WORLD_CONSEQUENCE_ACTION_COOLDOWN_MS;
     const cooldownMsRemaining = Math.max(0, readyAtMs - Date.now());
     if (cooldownMsRemaining > 0) {
       return {
@@ -193,6 +198,8 @@ export function buildWorldConsequenceActionRuntimeView(ps: PlayerState, actionId
         effect: buildRuntimeEffectPreview(plan),
         cooldownMsRemaining,
         readyAt: new Date(readyAtMs).toISOString(),
+        lastCommittedAt: history.lastCommittedAt,
+        successfulCommitCount: history.successfulCommitCount,
       };
     }
   }
@@ -209,6 +216,8 @@ export function buildWorldConsequenceActionRuntimeView(ps: PlayerState, actionId
       ? "This lane can be committed right now as a bounded runtime response."
       : `This lane is real, but the city still lacks ${Object.entries(shortfall).map(([key, value]) => `${key} ${value}`).join(", ")} to commit it.`,
     effect: buildRuntimeEffectPreview(plan),
+    lastCommittedAt: history.lastCommittedAt,
+    successfulCommitCount: history.successfulCommitCount,
   };
 }
 function pushUnique(target: WorldConsequenceActionItem[], item: WorldConsequenceActionItem) {

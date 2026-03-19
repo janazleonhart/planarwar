@@ -151,3 +151,17 @@ test("successful response action enters cooldown and exposes ready time truth", 
   assert.ok((second.action?.runtime?.cooldownMsRemaining ?? 0) > 0);
   assert.equal(second.action?.runtime?.readyAt, second.readyAt);
 });
+
+
+test("player action cards expose recent runtime action history", () => {
+  const ps = seedPressure();
+  const first = executeWorldConsequenceAction(ps, "action_stabilize_supply_lanes");
+  assert.equal(first.ok, true);
+
+  const view = deriveWorldConsequenceActions(ps);
+  const action = view.playerActions.find((entry) => entry.id === "action_stabilize_supply_lanes");
+  assert.ok(action);
+  assert.equal(action?.runtime?.affordability, "cooldown_active");
+  assert.equal(action?.runtime?.successfulCommitCount, 1);
+  assert.ok(typeof action?.runtime?.lastCommittedAt === "string");
+});
