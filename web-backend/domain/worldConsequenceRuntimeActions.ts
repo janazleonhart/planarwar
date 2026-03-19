@@ -12,6 +12,15 @@ export interface WorldConsequenceActionExecutionResult {
   action?: WorldConsequenceActionItem;
   spent?: Partial<Resources>;
   regionId?: string | null;
+  receiptId?: string;
+  appliedEffect?: {
+    pressureDelta: number;
+    recoveryDelta: number;
+    trustDelta: number;
+    controlDelta: number;
+    threatDelta: number;
+    summary: string;
+  };
 }
 
 function fallbackAction(actionId: string, ps: PlayerState): WorldConsequenceActionItem | null {
@@ -129,6 +138,8 @@ export function executeWorldConsequenceAction(ps: PlayerState, actionId: string)
   entry.metrics.threatDelta = plan.threatDelta ?? entry.metrics.threatDelta;
 
   pushWorldConsequence(ps, entry);
+  const receipts = ps.worldConsequences ?? [];
+  const persistedReceipt = receipts[receipts.length - 1];
   const eventRegionId = isRegionId(action.sourceRegionId) ? action.sourceRegionId : ps.city.regionId;
   const responseEvent: GameEvent = {
     id: `evt_${Date.now()}_${Math.floor(Math.random() * 100000)}`,
@@ -146,6 +157,15 @@ export function executeWorldConsequenceAction(ps: PlayerState, actionId: string)
     action,
     spent: plan.spent,
     regionId: action.sourceRegionId ?? ps.city.regionId,
+    receiptId: persistedReceipt?.id,
+    appliedEffect: {
+      pressureDelta: entry.metrics.pressureDelta,
+      recoveryDelta: entry.metrics.recoveryDelta,
+      trustDelta: plan.trustDelta,
+      controlDelta: entry.metrics.controlDelta,
+      threatDelta: entry.metrics.threatDelta,
+      summary: plan.summaryNote,
+    },
   };
 }
 

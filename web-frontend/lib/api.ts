@@ -857,6 +857,15 @@ export interface WorldConsequenceActionExecutionResult {
   message: string;
   spent?: Partial<Resources>;
   regionId?: string | null;
+  receiptId?: string;
+  appliedEffect?: {
+    pressureDelta: number;
+    recoveryDelta: number;
+    trustDelta: number;
+    controlDelta: number;
+    threatDelta: number;
+    summary: string;
+  };
 }
 
 export interface WorldConsequenceResponseReceipt {

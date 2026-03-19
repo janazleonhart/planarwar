@@ -503,7 +503,11 @@ export function MePage() {
     try {
       const result = await executeWorldConsequenceAction(action.id);
       await refreshMe(serviceMode);
-      setFlash("ok", result?.result?.message ?? `${action.title} executed.`);
+      const applied = result?.result?.appliedEffect;
+      const appliedSummary = applied
+        ? ` pressure ${formatWorldDelta(applied.pressureDelta)} • recovery ${formatWorldDelta(applied.recoveryDelta)} • trust ${formatWorldDelta(applied.trustDelta)} • control ${formatWorldDelta(applied.controlDelta)} • threat ${formatWorldDelta(applied.threatDelta)}`
+        : "";
+      setFlash("ok", `${result?.result?.message ?? `${action.title} executed.`}${appliedSummary}`);
     } catch (err: any) {
       console.error(err);
       setFlash("err", err?.message ?? `Failed to execute ${action.title}.`);

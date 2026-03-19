@@ -37,6 +37,11 @@ test("successful response action cools propagated world state", () => {
   const result = executeWorldConsequenceAction(ps, "action_stabilize_supply_lanes");
   assert.equal(result.ok, true);
   assert.equal(result.status, "ok");
+  assert.equal(result.appliedEffect?.pressureDelta, -5);
+  assert.equal(result.appliedEffect?.recoveryDelta, -4);
+  assert.equal(result.appliedEffect?.threatDelta, -2);
+  assert.match(result.appliedEffect?.summary ?? "", /scarcity pressure/i);
+  assert.ok(result.receiptId);
   assert.ok((ps.worldConsequenceState?.worldEconomy.tradePressure ?? 0) < beforeTrade);
   assert.ok((ps.worldConsequenceState?.summary.destabilizationScore ?? 0) < beforeDestabilization);
   assert.ok((ps.resources.wealth ?? 0) < beforeWealth);
