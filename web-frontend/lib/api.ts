@@ -867,6 +867,7 @@ export interface WorldConsequenceActionRuntimeView {
     threatDelta: number;
   };
   lastSpent?: Partial<Resources>;
+  remainingAfterCost?: Partial<Resources>;
 }
 
 export interface WorldConsequenceActionItem {

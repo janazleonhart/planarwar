@@ -1290,6 +1290,11 @@ export function MePage() {
                             still needed {formatWorldActionCost(action.runtime.shortfall)}
                           </div>
                         ) : null}
+                        {action.runtime?.remainingAfterCost && Object.keys(action.runtime.remainingAfterCost).length > 0 ? (
+                          <div style={{ fontSize: 12, opacity: 0.74, color: "#a7d7b5" }}>
+                            after spend {formatWorldActionCost(action.runtime.remainingAfterCost)}
+                          </div>
+                        ) : null}
                         {action.runtime?.affordability === "cooldown_active" ? (
                           <div style={{ fontSize: 12, opacity: 0.78, color: "#9cc8ff" }}>
                             cooling down {formatWorldActionCooldown(action.runtime.cooldownMsRemaining)}{action.runtime.readyAt ? ` • ready ${new Date(action.runtime.readyAt).toLocaleTimeString()}` : ""}

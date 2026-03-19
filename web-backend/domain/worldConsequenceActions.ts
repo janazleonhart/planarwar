@@ -62,6 +62,7 @@ export interface WorldConsequenceActionRuntimeView {
     threatDelta: number;
   };
   lastSpent?: Partial<Resources>;
+  remainingAfterCost?: Partial<Resources>;
 }
 
 export interface WorldConsequenceActionItem {
@@ -216,6 +217,15 @@ function getActionShortfall(resources: Resources, spent: Partial<Resources>): Pa
   return shortfall;
 }
 
+function getRemainingAfterCost(resources: Resources, spent: Partial<Resources>): Partial<Resources> {
+  const remaining: Partial<Resources> = {};
+  for (const [key, value] of Object.entries(spent)) {
+    const typedKey = key as keyof Resources;
+    remaining[typedKey] = Math.max(0, Number(resources[typedKey] ?? 0) - Number(value ?? 0));
+  }
+  return remaining;
+}
+
 function runtimeButtonLabel(
   actionId: string,
   affordability?: WorldConsequenceActionRuntimeView["affordability"],
@@ -278,6 +288,7 @@ export function buildWorldConsequenceActionRuntimeView(
         lastReceiptSummary: history.lastReceiptSummary,
         lastAppliedEffect: history.lastAppliedEffect,
         lastSpent: history.lastSpent,
+        remainingAfterCost: getRemainingAfterCost(ps.resources, plan.spent),
       };
     }
   }
@@ -303,6 +314,7 @@ export function buildWorldConsequenceActionRuntimeView(
     lastReceiptSummary: history.lastReceiptSummary,
     lastAppliedEffect: history.lastAppliedEffect,
     lastSpent: history.lastSpent,
+    remainingAfterCost: affordable ? getRemainingAfterCost(ps.resources, plan.spent) : undefined,
   };
 }
 
