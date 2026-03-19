@@ -466,6 +466,8 @@ export type VendorScenarioPresetKey = "scarcity_essentials_protection" | "luxury
 export type VendorScenarioBridgeBand = "open" | "strained" | "restricted";
 export type VendorScenarioVendorState = "abundant" | "stable" | "pressured" | "restricted";
 export type VendorScenarioRuntimeState = "surplus" | "normal" | "tight" | "scarce";
+export type VendorScenarioResponsePhase = "quiet" | "watch" | "active" | "severe";
+export type VendorScenarioPolicyMode = "bridge_only" | "consequence_aware";
 
 export interface VendorScenarioReportSampleItem {
   vendorItemId: number;
@@ -488,6 +490,9 @@ export interface VendorScenarioReportEntry {
   presetKey: VendorScenarioPresetKey | null;
   bridgeBand: VendorScenarioBridgeBand;
   vendorState: VendorScenarioVendorState;
+  policyMode: VendorScenarioPolicyMode;
+  responsePhase: VendorScenarioResponsePhase | null;
+  laneBias: "none" | "essentials_only" | "luxury_throttle" | "arcane_caution" | null;
   matchedCount: number;
   appliedCount: number;
   softenedCount: number;
@@ -544,6 +549,8 @@ export interface VendorScenarioReportResponse {
     byLane: VendorScenarioReviewBucket[];
     byBridgeBand: VendorScenarioReviewBucket[];
     byVendorState: VendorScenarioReviewBucket[];
+    byPolicyMode: VendorScenarioReviewBucket[];
+    byResponsePhase: VendorScenarioReviewBucket[];
   };
   filtersApplied: {
     action: VendorScenarioAction | null;
@@ -553,6 +560,8 @@ export interface VendorScenarioReportResponse {
     bridgeBand: VendorScenarioBridgeBand | null;
     vendorId: string | null;
     vendorState: VendorScenarioVendorState | null;
+    policyMode: VendorScenarioPolicyMode | null;
+    responsePhase: VendorScenarioResponsePhase | null;
     before: string | null;
     limit: number;
   };
@@ -569,6 +578,8 @@ export interface VendorScenarioReportQuery {
   bridgeBand?: VendorScenarioBridgeBand | "all";
   vendorId?: string;
   vendorState?: VendorScenarioVendorState | "all";
+  policyMode?: VendorScenarioPolicyMode | "all";
+  responsePhase?: VendorScenarioResponsePhase | "all";
   before?: string | null;
   limit?: number;
 }
@@ -997,6 +1008,8 @@ function buildVendorScenarioReportParams(query: VendorScenarioReportQuery = {}):
   if (query.bridgeBand && query.bridgeBand !== "all") params.set("bridgeBand", query.bridgeBand);
   if (query.vendorId) params.set("vendorId", query.vendorId);
   if (query.vendorState && query.vendorState !== "all") params.set("vendorState", query.vendorState);
+  if (query.policyMode && query.policyMode !== "all") params.set("policyMode", query.policyMode);
+  if (query.responsePhase && query.responsePhase !== "all") params.set("responsePhase", query.responsePhase);
   if (query.before) params.set("before", query.before);
   if (query.limit) params.set("limit", String(query.limit));
   return params;

@@ -4,7 +4,7 @@
 // Polished UX: dirty tracking, bulk save, filters, and same-origin API via lib/api.ts.
 
 import { useEffect, useMemo, useState } from "react";
-import { api, buildVendorScenarioReportExportUrl, fetchCityMudBridgeStatus, fetchVendorScenarioReports, getAdminCaps, getAuthToken, type CityMudBridgeStatusResponse, type CityMudVendorSupportPolicy, type VendorScenarioAction, type VendorScenarioReportEntry, type VendorScenarioReportResponse } from "../lib/api";
+import { api, buildVendorScenarioReportExportUrl, fetchCityMudBridgeStatus, fetchVendorScenarioReports, getAdminCaps, getAuthToken, type CityMudBridgeStatusResponse, type CityMudVendorSupportPolicy, type VendorScenarioAction, type VendorScenarioPolicyMode, type VendorScenarioReportEntry, type VendorScenarioReportResponse, type VendorScenarioResponsePhase } from "../lib/api";
 import { ItemPicker } from "../components/ItemPicker";
 import { AdminShell } from "../components/admin/AdminUI";
 
@@ -88,6 +88,17 @@ type VendorEconomyItem = {
   bridge_runtime_effect?: VendorRuntimeEffect | null;
 };
 
+type VendorRuntimeSummary = {
+  policyMode: "bridge_only" | "consequence_aware";
+  responsePhase: "quiet" | "watch" | "active" | "severe";
+  vendorState: "abundant" | "stable" | "pressured" | "restricted";
+  laneBias: "none" | "essentials_only" | "luxury_throttle" | "arcane_caution";
+  runtimeStateCounts: Record<string, number>;
+  laneCounts: Record<string, number>;
+  recommendedPreset?: { key: VendorPresetKey; label: string; laneFilters: VendorLane[]; reason: string; note: string } | null;
+  note: string;
+};
+
 type ItemsResponse = {
   ok: boolean;
   vendorId: string;
@@ -96,6 +107,7 @@ type ItemsResponse = {
   offset: number;
   items: VendorEconomyItem[];
   vendorPolicy?: CityMudVendorSupportPolicy | null;
+  vendorRuntimeSummary?: VendorRuntimeSummary | null;
   error?: string;
 };
 
@@ -303,6 +315,7 @@ export function AdminVendorEconomyPage() {
   const [notice, setNotice] = useState<string | null>(null);
   const [bridgeStatus, setBridgeStatus] = useState<CityMudBridgeStatusResponse | null>(null);
   const [vendorPolicy, setVendorPolicy] = useState<CityMudVendorSupportPolicy | null>(null);
+  const [vendorRuntimeSummary, setVendorRuntimeSummary] = useState<VendorRuntimeSummary | null>(null);
 
   const [nowMs, setNowMs] = useState(() => Date.now());
 
@@ -325,6 +338,8 @@ export function AdminVendorEconomyPage() {
   const [scenarioLaneFilter, setScenarioLaneFilter] = useState<"all" | VendorLane>("all");
   const [scenarioBridgeBandFilter, setScenarioBridgeBandFilter] = useState<"all" | "open" | "strained" | "restricted">("all");
   const [scenarioVendorStateFilter, setScenarioVendorStateFilter] = useState<"all" | "abundant" | "stable" | "pressured" | "restricted">("all");
+  const [scenarioPolicyModeFilter, setScenarioPolicyModeFilter] = useState<"all" | VendorScenarioPolicyMode>("all");
+  const [scenarioResponsePhaseFilter, setScenarioResponsePhaseFilter] = useState<"all" | VendorScenarioResponsePhase>("all");
   const [scenarioLimit, setScenarioLimit] = useState(12);
   const [scenarioVendorScope, setScenarioVendorScope] = useState<"current" | "all">("current");
 
@@ -403,6 +418,7 @@ export function AdminVendorEconomyPage() {
       setItems(data.items || []);
       setTotal(Number(data.total || 0));
       setVendorPolicy(data.vendorPolicy ?? null);
+      setVendorRuntimeSummary(data.vendorRuntimeSummary ?? null);
 
       // NOTE: this will reset edits for the page.
       // That’s OK for explicit refresh/paging/vendor change.
@@ -421,6 +437,8 @@ export function AdminVendorEconomyPage() {
       lane: scenarioLaneFilter,
       bridgeBand: scenarioBridgeBandFilter,
       vendorState: scenarioVendorStateFilter,
+      policyMode: scenarioPolicyModeFilter,
+      responsePhase: scenarioResponsePhaseFilter,
       vendorId: scenarioVendorScope === "current" ? vendorId : undefined,
       limit: scenarioLimit,
     };
@@ -508,7 +526,7 @@ export function AdminVendorEconomyPage() {
     if (scenarioVendorScope === "current" && !vendorId) return;
     void loadScenarioLogs();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [vendorId, scenarioActionFilter, scenarioPresetFilter, scenarioLaneFilter, scenarioBridgeBandFilter, scenarioVendorStateFilter, scenarioVendorScope, scenarioLimit]);
+  }, [vendorId, scenarioActionFilter, scenarioPresetFilter, scenarioLaneFilter, scenarioBridgeBandFilter, scenarioVendorStateFilter, scenarioPolicyModeFilter, scenarioResponsePhaseFilter, scenarioVendorScope, scenarioLimit]);
 
   useEffect(() => {
     if (!vendorId) return;
@@ -883,6 +901,40 @@ function stageRuntimePreview(row: VendorEconomyItem) {
         </div>
       )}
 
+      {vendorRuntimeSummary && (
+        <div
+          style={{
+            marginBottom: 16,
+            padding: 12,
+            borderRadius: 12,
+            border: "1px solid rgba(255,255,255,0.12)",
+            background: "rgba(255,255,255,0.03)",
+          }}
+        >
+          <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+            <div>
+              <div style={{ fontSize: 12, opacity: 0.75, textTransform: "uppercase", letterSpacing: 0.6 }}>
+                Consequence-aware vendor runtime summary
+              </div>
+              <div style={{ fontWeight: 700, marginTop: 4 }}>{vendorRuntimeSummary.note}</div>
+              <div style={{ fontSize: 12, opacity: 0.8, marginTop: 6 }}>
+                mode <b>{vendorRuntimeSummary.policyMode}</b> • phase <b>{vendorRuntimeSummary.responsePhase}</b> • state <b>{vendorRuntimeSummary.vendorState}</b> • lane bias <b>{vendorRuntimeSummary.laneBias}</b>
+              </div>
+            </div>
+            <div style={{ minWidth: 260 }}>
+              <div><b>Runtime states:</b> {Object.entries(vendorRuntimeSummary.runtimeStateCounts).map(([key, value]) => `${key} ${value}`).join(" • ") || "—"}</div>
+              <div><b>Lane counts:</b> {Object.entries(vendorRuntimeSummary.laneCounts).map(([key, value]) => `${key} ${value}`).join(" • ") || "—"}</div>
+              <div><b>Recommended preset:</b> {vendorRuntimeSummary.recommendedPreset?.label ?? "—"}</div>
+            </div>
+          </div>
+          {vendorRuntimeSummary.recommendedPreset ? (
+            <div style={{ marginTop: 10, fontSize: 13 }}>
+              <b>Why:</b> {vendorRuntimeSummary.recommendedPreset.reason}
+            </div>
+          ) : null}
+        </div>
+      )}
+
       <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 12, alignItems: "center" }}>
         <label style={{ display: "flex", gap: 6, alignItems: "center" }}>
           Vendor
@@ -1134,6 +1186,26 @@ function stageRuntimePreview(row: VendorEconomyItem) {
           </label>
 
           <label style={{ display: "flex", gap: 6, alignItems: "center" }}>
+            mode
+            <select value={scenarioPolicyModeFilter} onChange={(e) => setScenarioPolicyModeFilter(e.target.value as "all" | VendorScenarioPolicyMode)}>
+              <option value="all">all</option>
+              <option value="bridge_only">bridge_only</option>
+              <option value="consequence_aware">consequence_aware</option>
+            </select>
+          </label>
+
+          <label style={{ display: "flex", gap: 6, alignItems: "center" }}>
+            phase
+            <select value={scenarioResponsePhaseFilter} onChange={(e) => setScenarioResponsePhaseFilter(e.target.value as "all" | VendorScenarioResponsePhase)}>
+              <option value="all">all</option>
+              <option value="quiet">quiet</option>
+              <option value="watch">watch</option>
+              <option value="active">active</option>
+              <option value="severe">severe</option>
+            </select>
+          </label>
+
+          <label style={{ display: "flex", gap: 6, alignItems: "center" }}>
             rows
             <input
               type="number"
@@ -1189,6 +1261,8 @@ function stageRuntimePreview(row: VendorEconomyItem) {
           {renderScenarioBucketTable("Lane rollups", scenarioReport?.review.byLane ?? [])}
           {renderScenarioBucketTable("Bridge bands", scenarioReport?.review.byBridgeBand ?? [])}
           {renderScenarioBucketTable("Vendor states", scenarioReport?.review.byVendorState ?? [])}
+          {renderScenarioBucketTable("Policy modes", scenarioReport?.review.byPolicyMode ?? [])}
+          {renderScenarioBucketTable("Response phases", scenarioReport?.review.byResponsePhase ?? [])}
         </div>
 
         <div style={{ display: "grid", gap: 10, marginTop: 12 }}>
@@ -1213,6 +1287,9 @@ function stageRuntimePreview(row: VendorEconomyItem) {
                   <span><b>lanes:</b> {entry.laneFilters.length ? entry.laneFilters.join(", ") : "none"}</span>
                   <span><b>bridge:</b> {entry.bridgeBand}</span>
                   <span><b>state:</b> {entry.vendorState}</span>
+                  <span><b>mode:</b> {entry.policyMode}</span>
+                  <span><b>phase:</b> {entry.responsePhase ?? "—"}</span>
+                  <span><b>lane bias:</b> {entry.laneBias ?? "—"}</span>
                   <span><b>preset:</b> {entry.presetKey ?? "—"}</span>
                 </div>
 

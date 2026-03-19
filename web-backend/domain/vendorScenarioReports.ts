@@ -7,12 +7,18 @@ const VALID_LANES = new Set(["essentials", "comfort", "luxury", "arcane"]);
 const VALID_BRIDGE_BANDS = new Set(["open", "strained", "restricted"]);
 const VALID_VENDOR_STATES = new Set(["abundant", "stable", "pressured", "restricted"]);
 const VALID_RUNTIME_STATES = new Set(["surplus", "normal", "tight", "scarce"]);
+const VALID_RESPONSE_PHASES = new Set(["quiet", "watch", "active", "severe"]);
+const VALID_POLICY_MODES = new Set(["bridge_only", "consequence_aware"]);
+const VALID_LANE_BIASES = new Set(["none", "essentials_only", "luxury_throttle", "arcane_caution"]);
 
 type VendorScenarioAction = "preview" | "apply";
 type VendorScenarioLane = "essentials" | "comfort" | "luxury" | "arcane";
 type VendorScenarioBridgeBand = "open" | "strained" | "restricted";
 type VendorScenarioVendorState = "abundant" | "stable" | "pressured" | "restricted";
 type VendorScenarioRuntimeState = "surplus" | "normal" | "tight" | "scarce";
+type VendorScenarioResponsePhase = "quiet" | "watch" | "active" | "severe";
+type VendorScenarioPolicyMode = "bridge_only" | "consequence_aware";
+type VendorScenarioLaneBias = "none" | "essentials_only" | "luxury_throttle" | "arcane_caution";
 
 export type VendorScenarioReportSampleItem = {
   vendorItemId: number;
@@ -35,6 +41,9 @@ export type VendorScenarioReportEntry = {
   presetKey: string | null;
   bridgeBand: VendorScenarioBridgeBand;
   vendorState: VendorScenarioVendorState;
+  policyMode: VendorScenarioPolicyMode;
+  responsePhase: VendorScenarioResponsePhase | null;
+  laneBias: VendorScenarioLaneBias | null;
   matchedCount: number;
   appliedCount: number;
   softenedCount: number;
@@ -54,6 +63,8 @@ export type VendorScenarioReportFilter = {
   bridgeBand?: VendorScenarioBridgeBand;
   vendorId?: string;
   vendorState?: VendorScenarioVendorState;
+  policyMode?: VendorScenarioPolicyMode;
+  responsePhase?: VendorScenarioResponsePhase;
   before?: string;
   limit?: number;
 };
@@ -93,6 +104,8 @@ export type VendorScenarioReportReview = {
   byLane: VendorScenarioReviewBucket[];
   byBridgeBand: VendorScenarioReviewBucket[];
   byVendorState: VendorScenarioReviewBucket[];
+  byPolicyMode: VendorScenarioReviewBucket[];
+  byResponsePhase: VendorScenarioReviewBucket[];
 };
 
 export type VendorScenarioReportResponse = {
@@ -107,6 +120,8 @@ export type VendorScenarioReportResponse = {
     bridgeBand: VendorScenarioBridgeBand | null;
     vendorId: string | null;
     vendorState: VendorScenarioVendorState | null;
+    policyMode: VendorScenarioPolicyMode | null;
+    responsePhase: VendorScenarioResponsePhase | null;
     before: string | null;
     limit: number;
   };
@@ -173,6 +188,24 @@ function normalizeWarningList(value: unknown): string[] {
   return warnings;
 }
 
+function normalizeResponsePhase(value: unknown): VendorScenarioResponsePhase | null {
+  const phase = asString(value);
+  if (!phase || !VALID_RESPONSE_PHASES.has(phase)) return null;
+  return phase as VendorScenarioResponsePhase;
+}
+
+function normalizePolicyMode(value: unknown): VendorScenarioPolicyMode | null {
+  const mode = asString(value);
+  if (!mode || !VALID_POLICY_MODES.has(mode)) return null;
+  return mode as VendorScenarioPolicyMode;
+}
+
+function normalizeLaneBias(value: unknown): VendorScenarioLaneBias | null {
+  const bias = asString(value);
+  if (!bias || !VALID_LANE_BIASES.has(bias)) return null;
+  return bias as VendorScenarioLaneBias;
+}
+
 function normalizeRuntimeState(value: unknown): VendorScenarioRuntimeState | null {
   const state = asString(value);
   if (!state || !VALID_RUNTIME_STATES.has(state)) return null;
@@ -219,6 +252,9 @@ export function normalizeVendorScenarioReportEntry(raw: unknown): VendorScenario
   const bridgeBand = asString((raw as any).bridgeBand);
   const vendorState = asString((raw as any).vendorState);
   const vendorId = asString((raw as any).vendorId);
+  const policyMode = normalizePolicyMode((raw as any).policyMode) ?? "bridge_only";
+  const responsePhase = normalizeResponsePhase((raw as any).responsePhase);
+  const laneBias = normalizeLaneBias((raw as any).laneBias);
   const selectionLabel = asString((raw as any).selectionLabel);
   const note = asString((raw as any).note);
 
@@ -239,6 +275,9 @@ export function normalizeVendorScenarioReportEntry(raw: unknown): VendorScenario
     presetKey: asString((raw as any).presetKey),
     bridgeBand: bridgeBand as VendorScenarioBridgeBand,
     vendorState: vendorState as VendorScenarioVendorState,
+    policyMode,
+    responsePhase,
+    laneBias,
     matchedCount: asCount((raw as any).matchedCount),
     appliedCount: asCount((raw as any).appliedCount),
     softenedCount: asCount((raw as any).softenedCount),
@@ -267,6 +306,8 @@ export function filterVendorScenarioReportEntries(
     if (filter.bridgeBand && entry.bridgeBand !== filter.bridgeBand) return false;
     if (filter.vendorId && entry.vendorId !== filter.vendorId) return false;
     if (filter.vendorState && entry.vendorState !== filter.vendorState) return false;
+    if (filter.policyMode && entry.policyMode !== filter.policyMode) return false;
+    if (filter.responsePhase && entry.responsePhase !== filter.responsePhase) return false;
     if (Number.isFinite(beforeMs) && Date.parse(entry.at) >= beforeMs) return false;
     return true;
   });
@@ -363,6 +404,8 @@ function buildVendorScenarioReportReview(
     }),
     byBridgeBand: buildBuckets(reviewEntries, (entry) => [{ key: entry.bridgeBand, label: entry.bridgeBand }]),
     byVendorState: buildBuckets(reviewEntries, (entry) => [{ key: entry.vendorState, label: entry.vendorState }]),
+    byPolicyMode: buildBuckets(reviewEntries, (entry) => [{ key: entry.policyMode, label: entry.policyMode }]),
+    byResponsePhase: buildBuckets(reviewEntries, (entry) => [{ key: entry.responsePhase ?? "unknown", label: entry.responsePhase ?? "unknown" }]),
   };
 }
 
@@ -383,6 +426,9 @@ export function renderVendorScenarioReportCsv(entries: VendorScenarioReportEntry
     "preset_key",
     "bridge_band",
     "vendor_state",
+    "policy_mode",
+    "response_phase",
+    "lane_bias",
     "matched_count",
     "applied_count",
     "softened_count",
@@ -404,6 +450,9 @@ export function renderVendorScenarioReportCsv(entries: VendorScenarioReportEntry
       entry.presetKey ?? "",
       entry.bridgeBand,
       entry.vendorState,
+      entry.policyMode,
+      entry.responsePhase ?? "",
+      entry.laneBias ?? "",
       entry.matchedCount,
       entry.appliedCount,
       entry.softenedCount,
@@ -440,6 +489,8 @@ export function buildVendorScenarioReportResponse(
       bridgeBand: filter.bridgeBand ?? null,
       vendorId: filter.vendorId ?? null,
       vendorState: filter.vendorState ?? null,
+      policyMode: filter.policyMode ?? null,
+      responsePhase: filter.responsePhase ?? null,
       before: filter.before ?? null,
       limit,
     },

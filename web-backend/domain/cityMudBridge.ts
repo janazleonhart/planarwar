@@ -243,6 +243,9 @@ export interface CityMudVendorScenarioLogEntry {
   presetKey: CityMudVendorPresetKey | null;
   bridgeBand: CityMudBridgeBand;
   vendorState: CityMudConsumerState;
+  policyMode?: "bridge_only" | "consequence_aware";
+  responsePhase?: CityMudVendorResponsePhase | null;
+  laneBias?: CityMudVendorLaneBias | null;
   matchedCount: number;
   appliedCount: number;
   softenedCount: number;
@@ -262,6 +265,9 @@ export function buildVendorScenarioLogNote(input: {
   presetKey: CityMudVendorPresetKey | null;
   bridgeBand: CityMudBridgeBand;
   vendorState: CityMudConsumerState;
+  policyMode?: "bridge_only" | "consequence_aware";
+  responsePhase?: CityMudVendorResponsePhase | null;
+  laneBias?: CityMudVendorLaneBias | null;
   matchedCount: number;
   appliedCount: number;
   softenedCount: number;
@@ -272,7 +278,13 @@ export function buildVendorScenarioLogNote(input: {
   const touched = input.action === "apply" ? `${input.appliedCount}/${input.matchedCount} row(s)` : `${input.matchedCount} row(s)`;
   const softened = input.softenedCount > 0 ? ` guardrails softened ${input.softenedCount}` : "";
   const blocked = input.blockedCount > 0 ? ` blocked ${input.blockedCount}` : "";
-  return `${verb} guarded vendor runtime for ${input.selectionLabel}${preset}; ${touched}; bridge ${input.bridgeBand}, vendor ${input.vendorState}.${softened || blocked ? ` Summary:${softened}${blocked}.` : ""}`;
+  const response = input.responsePhase && input.responsePhase !== "quiet"
+    ? ` response ${input.responsePhase}`
+    : input.policyMode === "consequence_aware"
+      ? " response active"
+      : "";
+  const laneBias = input.laneBias && input.laneBias !== "none" ? ` lane-bias ${input.laneBias}` : "";
+  return `${verb} guarded vendor runtime for ${input.selectionLabel}${preset}; ${touched}; bridge ${input.bridgeBand}, vendor ${input.vendorState}${response ? `,${response.trim()}` : ""}${laneBias ? `,${laneBias.trim()}` : ""}.${softened || blocked ? ` Summary:${softened}${blocked}.` : ""}`;
 }
 export interface CityMudVendorEconomyRecommendation {
   stockMax: number;

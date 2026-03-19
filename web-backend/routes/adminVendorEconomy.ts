@@ -112,6 +112,8 @@ function readScenarioFilter(req: express.Request, defaultLimit = 25): VendorScen
     bridgeBand: req.query.bridgeBand === "open" || req.query.bridgeBand === "strained" || req.query.bridgeBand === "restricted" ? req.query.bridgeBand : undefined,
     vendorId: typeof req.query.vendorId === "string" && req.query.vendorId.trim() ? req.query.vendorId.trim() : undefined,
     vendorState: req.query.vendorState === "abundant" || req.query.vendorState === "stable" || req.query.vendorState === "pressured" || req.query.vendorState === "restricted" ? req.query.vendorState : undefined,
+    policyMode: req.query.policyMode === "bridge_only" || req.query.policyMode === "consequence_aware" ? req.query.policyMode : undefined,
+    responsePhase: req.query.responsePhase === "quiet" || req.query.responsePhase === "watch" || req.query.responsePhase === "active" || req.query.responsePhase === "severe" ? req.query.responsePhase : undefined,
     before: typeof req.query.before === "string" && req.query.before.trim() ? req.query.before.trim() : undefined,
     limit: clampInt(Number(req.query.limit ?? defaultLimit), 1, 5000),
   };
@@ -446,6 +448,9 @@ adminVendorEconomyRouter.post("/bridge_runtime_guarded", async (req, res) => {
     const warningMessages = Array.from(new Set(
       results.flatMap((result) => Array.isArray(result.guardrail?.warnings) ? result.guardrail.warnings : [])
     ));
+    const responsePhase = bridge.economyCartelResponseState?.summary?.responsePhase ?? null;
+    const laneBias = bridge.economyCartelResponseState?.vendors?.laneBias ?? null;
+    const policyMode = responsePhase && responsePhase !== "quiet" ? "consequence_aware" : "bridge_only";
     const scenarioEntry: CityMudVendorScenarioLogEntry = {
       at: new Date().toISOString(),
       actor: "admin_ui",
@@ -456,6 +461,9 @@ adminVendorEconomyRouter.post("/bridge_runtime_guarded", async (req, res) => {
       presetKey: preset?.key ?? null,
       bridgeBand: bridge.summary.bridgeBand,
       vendorState: bridge.consumers.vendorSupply.state,
+      policyMode,
+      responsePhase,
+      laneBias,
       matchedCount: results.length,
       appliedCount,
       softenedCount,
@@ -467,6 +475,9 @@ adminVendorEconomyRouter.post("/bridge_runtime_guarded", async (req, res) => {
         presetKey: preset?.key ?? null,
         bridgeBand: bridge.summary.bridgeBand,
         vendorState: bridge.consumers.vendorSupply.state,
+        policyMode,
+        responsePhase,
+        laneBias,
         matchedCount: results.length,
         appliedCount,
         softenedCount,

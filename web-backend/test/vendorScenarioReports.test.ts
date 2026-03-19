@@ -21,6 +21,9 @@ test("normalizeVendorScenarioReportEntry upgrades detailed scenario rows", () =>
     presetKey: "luxury_throttle",
     bridgeBand: "strained",
     vendorState: "pressured",
+    policyMode: "consequence_aware",
+    responsePhase: "active",
+    laneBias: "luxury_throttle",
     matchedCount: 6,
     appliedCount: 4,
     softenedCount: 2,
@@ -48,6 +51,8 @@ test("normalizeVendorScenarioReportEntry upgrades detailed scenario rows", () =>
   assert.ok(entry);
   assert.equal(entry?.selectionKind, "preset");
   assert.deepEqual(entry?.laneFilters, ["luxury", "comfort"]);
+  assert.equal(entry?.policyMode, "consequence_aware");
+  assert.equal(entry?.responsePhase, "active");
   assert.equal(entry?.sampleItems[0]?.vendorItemId, 77);
   assert.equal(entry?.sampleItems[0]?.lane, "luxury");
 });
@@ -64,6 +69,9 @@ test("filterVendorScenarioReportEntries filters by lane, action, vendor, and bef
       presetKey: "arcane_caution",
       bridgeBand: "restricted",
       vendorState: "restricted",
+      policyMode: "consequence_aware",
+      responsePhase: "severe",
+      laneBias: "arcane_caution",
       matchedCount: 3,
       appliedCount: 0,
       softenedCount: 1,
@@ -81,6 +89,9 @@ test("filterVendorScenarioReportEntries filters by lane, action, vendor, and bef
       presetKey: "luxury_throttle",
       bridgeBand: "strained",
       vendorState: "pressured",
+      policyMode: "consequence_aware",
+      responsePhase: "active",
+      laneBias: "luxury_throttle",
       matchedCount: 6,
       appliedCount: 4,
       softenedCount: 2,
@@ -98,6 +109,9 @@ test("filterVendorScenarioReportEntries filters by lane, action, vendor, and bef
       presetKey: null,
       bridgeBand: "open",
       vendorState: "stable",
+      policyMode: "bridge_only",
+      responsePhase: "quiet",
+      laneBias: "none",
       matchedCount: 5,
       appliedCount: 5,
       softenedCount: 0,
@@ -111,6 +125,7 @@ test("filterVendorScenarioReportEntries filters by lane, action, vendor, and bef
     action: "apply",
     lane: "luxury",
     vendorId: "vendor_blacksmith",
+    responsePhase: "active",
     before: "2026-03-17T14:00:00.000Z",
   });
 
@@ -130,6 +145,9 @@ test("buildVendorScenarioReportResponse aggregates rollups and tolerates malform
       presetKey: "arcane_caution",
       bridgeBand: "restricted",
       vendorState: "restricted",
+      policyMode: "consequence_aware",
+      responsePhase: "severe",
+      laneBias: "arcane_caution",
       matchedCount: 3,
       appliedCount: 0,
       softenedCount: 1,
@@ -147,6 +165,9 @@ test("buildVendorScenarioReportResponse aggregates rollups and tolerates malform
       presetKey: "luxury_throttle",
       bridgeBand: "strained",
       vendorState: "pressured",
+      policyMode: "consequence_aware",
+      responsePhase: "active",
+      laneBias: "luxury_throttle",
       matchedCount: 6,
       appliedCount: 4,
       softenedCount: 2,
@@ -186,6 +207,9 @@ test("buildVendorScenarioReportResponse includes grouped review buckets for the 
       presetKey: "luxury_throttle",
       bridgeBand: "strained",
       vendorState: "pressured",
+      policyMode: "consequence_aware",
+      responsePhase: "active",
+      laneBias: "luxury_throttle",
       matchedCount: 7,
       appliedCount: 5,
       softenedCount: 1,
@@ -203,6 +227,9 @@ test("buildVendorScenarioReportResponse includes grouped review buckets for the 
       presetKey: "scarcity_essentials_protection",
       bridgeBand: "restricted",
       vendorState: "pressured",
+      policyMode: "consequence_aware",
+      responsePhase: "severe",
+      laneBias: "essentials_only",
       matchedCount: 4,
       appliedCount: 0,
       softenedCount: 2,
@@ -220,6 +247,9 @@ test("buildVendorScenarioReportResponse includes grouped review buckets for the 
       presetKey: "arcane_caution",
       bridgeBand: "restricted",
       vendorState: "restricted",
+      policyMode: "consequence_aware",
+      responsePhase: "active",
+      laneBias: "arcane_caution",
       matchedCount: 3,
       appliedCount: 2,
       softenedCount: 1,
@@ -236,6 +266,8 @@ test("buildVendorScenarioReportResponse includes grouped review buckets for the 
   assert.equal(response.review.byLane[0]?.label, "luxury");
   assert.ok(response.review.byPreset.some((bucket) => bucket.label === "arcane_caution"));
   assert.equal(response.review.byBridgeBand[0]?.label, "restricted");
+  assert.equal(response.review.byPolicyMode[0]?.label, "consequence_aware");
+  assert.ok(response.review.byResponsePhase.some((bucket) => bucket.label === "severe"));
   assert.equal(response.review.windowRollups.previews, 1);
 });
 
