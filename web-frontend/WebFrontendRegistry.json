@@ -119,7 +119,7 @@
       "kind": "ui",
       "lifecycle": "singleton",
       "notes": [
-        "Extracted City ↔ MUD bridge posture, consumer guidance, and hook rendering from MePage.",
+        "Extracted City \u2194 MUD bridge posture, consumer guidance, and hook rendering from MePage.",
         "Behavior is display-only; bridge math remains owned by web-backend/domain/cityMudBridge.ts."
       ],
       "owns": [],
@@ -145,6 +145,44 @@
       "path": "web-frontend/components/city/CityCorePanel.tsx",
       "provides": [
         "City Builder city core panel"
+      ],
+      "service": "ui.component"
+    },
+    "web-frontend.components.city.cityOverviewSection": {
+      "class": null,
+      "ctorArgs": [],
+      "dependsOn": [
+        "web-frontend.lib.api"
+      ],
+      "kind": "ui",
+      "lifecycle": "singleton",
+      "notes": [
+        "Extracted city identity, stats, and per-tick production rendering from CityCorePanel.",
+        "Improves player-facing city readability without changing city actions or backend behavior."
+      ],
+      "owns": [],
+      "path": "web-frontend/components/city/CityOverviewSection.tsx",
+      "provides": [
+        "City Builder city overview section"
+      ],
+      "service": "ui.component"
+    },
+    "web-frontend.components.city.cityDevelopmentSection": {
+      "class": null,
+      "ctorArgs": [],
+      "dependsOn": [
+        "web-frontend.lib.api"
+      ],
+      "kind": "ui",
+      "lifecycle": "singleton",
+      "notes": [
+        "Extracted city building construction and upgrade rendering from CityCorePanel.",
+        "Keeps lane-aware build quotes and building upgrade actions intact while reducing city-core density."
+      ],
+      "owns": [],
+      "path": "web-frontend/components/city/CityDevelopmentSection.tsx",
+      "provides": [
+        "City Builder city development section"
       ],
       "service": "ui.component"
     },

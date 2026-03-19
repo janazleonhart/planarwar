@@ -9,7 +9,8 @@ import type {
   PublicServiceQuote,
   Resources,
 } from "../../lib/api";
-import { getRegionDisplayName } from "../worldResponse/worldResponseUi";
+import { CityDevelopmentSection } from "./CityDevelopmentSection";
+import { CityOverviewSection } from "./CityOverviewSection";
 
 type CityCorePanelProps = {
   cardStyle: (extra?: CSSProperties) => CSSProperties;
@@ -110,157 +111,27 @@ export function CityCorePanel({
         </div>
       ) : (
         <>
-          <div style={{ display: "grid", gap: 4 }}>
-            <div><strong>ID:</strong> {city.id}</div>
-            <div><strong>Shard:</strong> {city.shardId}</div>
-            <div><strong>Region:</strong> {getRegionDisplayName(city.regionId)} <span style={{ opacity: 0.7 }}>({city.regionId})</span></div>
-            <div><strong>Tier:</strong> {city.tier}</div>
-            <div><strong>Specialization:</strong> {city.specializationId ? `${city.specializationId} (★${city.specializationStars})` : "None"}</div>
-            <label style={{ display: "grid", gap: 6, maxWidth: 320 }}>
-              <span><strong>City name</strong></span>
-              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                <input
-                  value={cityNameDraft}
-                  onChange={(e) => setCityNameDraft(e.target.value)}
-                  maxLength={24}
-                  disabled={!!me.isDemo}
-                  style={{
-                    padding: "8px 10px",
-                    borderRadius: 6,
-                    border: "1px solid #666",
-                    background: "#111",
-                    color: "#eee",
-                    minWidth: 220,
-                  }}
-                />
-                {!me.isDemo ? (
-                  <button
-                    onClick={() => void handleRenameCity()}
-                    disabled={disabled || cityNameDraft.trim().length < 3 || cityNameDraft.trim() === city.name}
-                    style={{
-                      padding: "6px 10px",
-                      borderRadius: 6,
-                      border: "1px solid #777",
-                      background: "#111",
-                      cursor: disabled ? "not-allowed" : "pointer",
-                      opacity: disabled ? 0.6 : 1,
-                    }}
-                  >
-                    Rename City
-                  </button>
-                ) : null}
-              </div>
-            </label>
+          <CityOverviewSection
+            city={city}
+            me={me}
+            cityNameDraft={cityNameDraft}
+            setCityNameDraft={setCityNameDraft}
+            disabled={disabled}
+            handleRenameCity={handleRenameCity}
+            handleTierUpCity={handleTierUpCity}
+          />
 
-            <div><strong>Slots:</strong> {city.buildingSlotsUsed} / {city.buildingSlotsMax}</div>
-            <button
-              style={{
-                padding: "6px 10px",
-                borderRadius: 6,
-                border: "1px solid #777",
-                background: "#111",
-                cursor: disabled ? "not-allowed" : "pointer",
-                width: "fit-content",
-                opacity: disabled ? 0.6 : 1,
-              }}
-              onClick={() => void handleTierUpCity()}
-              disabled={disabled}
-            >
-              Tier Up City
-            </button>
-          </div>
-
-          <div style={{ display: "grid", gap: 6 }}>
-            <strong>Stats</strong>
-            <ul style={{ margin: 0, paddingLeft: 18, fontSize: 14 }}>
-              <li>Population: {city.stats.population}</li>
-              <li>Stability: {city.stats.stability}</li>
-              <li>Prosperity: {city.stats.prosperity}</li>
-              <li>Security: {city.stats.security}</li>
-              <li>Infrastructure: {city.stats.infrastructure}</li>
-              <li>Arcane: {city.stats.arcaneSaturation}</li>
-              <li>Influence: {city.stats.influence}</li>
-              <li>Unity: {city.stats.unity}</li>
-            </ul>
-          </div>
-
-          <div style={{ display: "grid", gap: 6 }}>
-            <strong>Per-tick production</strong>
-            <ul style={{ margin: 0, paddingLeft: 18, fontSize: 14 }}>
-              <li>Food: {city.production.foodPerTick}</li>
-              <li>Materials: {city.production.materialsPerTick}</li>
-              <li>Wealth: {city.production.wealthPerTick}</li>
-              <li>Mana: {city.production.manaPerTick}</li>
-              <li>Knowledge: {city.production.knowledgePerTick}</li>
-              <li>Unity: {city.production.unityPerTick}</li>
-            </ul>
-          </div>
-
-          <div style={{ border: "1px solid #555", borderRadius: 8, padding: 12, display: "grid", gap: 8 }}>
-            <strong>Construct building</strong>
-            <div style={{ fontSize: 12, opacity: 0.75 }}>
-              Current lane: <strong>{serviceMode}</strong>. Build quote: {formatLevy(quoteMap.get("building_construct")?.levy)} / +{quoteMap.get("building_construct")?.queueMinutes ?? 0}m
-            </div>
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-              {(["housing", "farmland", "mine", "arcane_spire"] as const).map((kind) => {
-                const cost = getBuildingConstructionCost(kind);
-                return (
-                  <button
-                    key={kind}
-                    style={{
-                      padding: "6px 10px",
-                      borderRadius: 6,
-                      border: "1px solid #777",
-                      background: "#111",
-                      cursor: disabled ? "not-allowed" : "pointer",
-                      opacity: disabled ? 0.6 : 1,
-                    }}
-                    onClick={() => void handleBuildBuilding(kind)}
-                    title={`Cost: ${cost.materials} materials, ${cost.wealth} wealth`}
-                    disabled={disabled}
-                  >
-                    Build {kind.replace("_", " ")} (m{cost.materials}/w{cost.wealth})
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          <div style={{ display: "grid", gap: 8 }}>
-            <strong>Buildings</strong>
-            {city.buildings.length === 0 ? (
-              <p style={{ opacity: 0.8 }}>No buildings yet.</p>
-            ) : (
-              <div style={{ display: "grid", gap: 6 }}>
-                {city.buildings.map((building) => {
-                  const cost = getBuildingUpgradeCost(building);
-                  return (
-                    <div key={building.id} style={{ border: "1px solid #555", borderRadius: 8, padding: 10, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
-                      <div>
-                        <div><strong>{building.name}</strong> ({building.kind})</div>
-                        <div style={{ opacity: 0.85 }}>Level: {building.level}</div>
-                      </div>
-                      <button
-                        style={{
-                          padding: "6px 10px",
-                          borderRadius: 6,
-                          border: "1px solid #777",
-                          background: "#111",
-                          cursor: disabled ? "not-allowed" : "pointer",
-                          opacity: disabled ? 0.6 : 1,
-                        }}
-                        onClick={() => void handleUpgradeBuilding(building.id)}
-                        title={`Cost: ${cost.materials} materials, ${cost.wealth} wealth`}
-                        disabled={disabled}
-                      >
-                        Upgrade (m{cost.materials}/w{cost.wealth})
-                      </button>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
+          <CityDevelopmentSection
+            city={city}
+            serviceMode={serviceMode}
+            quoteMap={quoteMap}
+            formatLevy={formatLevy}
+            disabled={disabled}
+            getBuildingConstructionCost={getBuildingConstructionCost}
+            getBuildingUpgradeCost={getBuildingUpgradeCost}
+            handleBuildBuilding={handleBuildBuilding}
+            handleUpgradeBuilding={handleUpgradeBuilding}
+          />
 
           <div style={{ display: "grid", gap: 8 }}>
             <strong>Heroes</strong>
