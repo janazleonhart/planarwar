@@ -150,6 +150,8 @@ export function MePage() {
 
       <CityResourcesCard
         resources={me.resources}
+        city={me.city}
+        cityStress={me.cityStress}
         cardStyle={cardStyle}
       />
 
