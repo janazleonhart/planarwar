@@ -771,6 +771,63 @@
         "City Builder workshop and tech section"
       ],
       "service": "ui.component"
+    },
+    "web-frontend.components.city.cityActionQuoteLine": {
+      "class": null,
+      "ctorArgs": [],
+      "dependsOn": [
+        "web-frontend.lib.api"
+      ],
+      "kind": "ui",
+      "lifecycle": "singleton",
+      "notes": [
+        "Shared city-facing quote line renderer for levy/queue display across building, hero, workshop, and tech sections.",
+        "Keeps player-facing quote presentation consistent without changing quote math or action handlers."
+      ],
+      "owns": [],
+      "path": "web-frontend/components/city/CityActionQuoteLine.tsx",
+      "provides": [
+        "City Builder action quote line"
+      ],
+      "service": "ui.component"
+    },
+    "web-frontend.components.city.publicInfrastructureQuotesSection": {
+      "class": null,
+      "ctorArgs": [],
+      "dependsOn": [
+        "web-frontend.lib.api"
+      ],
+      "kind": "ui",
+      "lifecycle": "singleton",
+      "notes": [
+        "Extracted projected public-service quote rendering from PublicInfrastructurePanel.",
+        "Keeps public infrastructure quote presentation readable while preserving existing quote content and lane behavior."
+      ],
+      "owns": [],
+      "path": "web-frontend/components/city/PublicInfrastructureQuotesSection.tsx",
+      "provides": [
+        "City Builder public infrastructure quotes section"
+      ],
+      "service": "ui.component"
+    },
+    "web-frontend.components.city.publicInfrastructureReceiptsSection": {
+      "class": null,
+      "ctorArgs": [],
+      "dependsOn": [
+        "web-frontend.lib.api"
+      ],
+      "kind": "ui",
+      "lifecycle": "singleton",
+      "notes": [
+        "Extracted recent public-service receipt rendering from PublicInfrastructurePanel.",
+        "Keeps ruler-facing receipt history readable without changing receipt ordering or fields."
+      ],
+      "owns": [],
+      "path": "web-frontend/components/city/PublicInfrastructureReceiptsSection.tsx",
+      "provides": [
+        "City Builder public infrastructure receipts section"
+      ],
+      "service": "ui.component"
     }
   }
 }

@@ -1,5 +1,6 @@
 //web-frontend/components/city/CityDevelopmentSection.tsx
 
+import { CityActionQuoteLine } from "./CityActionQuoteLine";
 import type { CSSProperties } from "react";
 import type { CityBuilding, InfrastructureMode, PublicServiceQuote, Resources } from "../../lib/api";
 
@@ -41,9 +42,12 @@ export function CityDevelopmentSection({
     <>
       <div style={{ border: "1px solid #555", borderRadius: 8, padding: 12, display: "grid", gap: 8 }}>
         <strong>Construct building</strong>
-        <div style={{ fontSize: 12, opacity: 0.75 }}>
-          Current lane: <strong>{serviceMode}</strong>. Build quote: {formatLevy(quoteMap.get("building_construct")?.levy)} / +{quoteMap.get("building_construct")?.queueMinutes ?? 0}m
-        </div>
+        <CityActionQuoteLine
+          prefix={`Current lane: ${serviceMode}.`}
+          label="Build quote"
+          quote={quoteMap.get("building_construct")}
+          formatLevy={formatLevy}
+        />
         <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
           {(["housing", "farmland", "mine", "arcane_spire"] as const).map((kind) => {
             const cost = getBuildingConstructionCost(kind);

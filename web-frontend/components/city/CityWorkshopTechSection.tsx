@@ -1,5 +1,6 @@
 //web-frontend/components/city/CityWorkshopTechSection.tsx
 
+import { CityActionQuoteLine } from "./CityActionQuoteLine";
 import type { CSSProperties } from "react";
 import type { MeProfile, PublicServiceQuote, Resources } from "../../lib/api";
 
@@ -36,9 +37,11 @@ export function CityWorkshopTechSection({
     <>
       <div style={{ display: "grid", gap: 8 }}>
         <strong>Workshop</strong>
-        <div style={{ fontSize: 12, opacity: 0.75 }}>
-          Craft quote: {formatLevy(quoteMap.get("workshop_craft")?.levy)} / +{quoteMap.get("workshop_craft")?.queueMinutes ?? 0}m
-        </div>
+        <CityActionQuoteLine
+          label="Craft quote"
+          quote={quoteMap.get("workshop_craft")}
+          formatLevy={formatLevy}
+        />
         <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
           {(["valor_charm", "scouting_cloak", "arcane_focus"] as const).map((kind) => (
             <button
@@ -72,9 +75,11 @@ export function CityWorkshopTechSection({
 
       <div style={{ display: "grid", gap: 8 }}>
         <strong>Tech</strong>
-        <div style={{ fontSize: 12, opacity: 0.75 }}>
-          Research quote: {formatLevy(quoteMap.get("tech_research")?.levy)} / +{quoteMap.get("tech_research")?.queueMinutes ?? 0}m
-        </div>
+        <CityActionQuoteLine
+          label="Research quote"
+          quote={quoteMap.get("tech_research")}
+          formatLevy={formatLevy}
+        />
         <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
           {techOptions.map((tech) => (
             <button

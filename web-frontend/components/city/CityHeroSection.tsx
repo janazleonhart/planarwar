@@ -1,5 +1,6 @@
 //web-frontend/components/city/CityHeroSection.tsx
 
+import { CityActionQuoteLine } from "./CityActionQuoteLine";
 import type { CSSProperties } from "react";
 import type { HeroRole, MeProfile, PublicServiceQuote, Resources } from "../../lib/api";
 
@@ -31,9 +32,11 @@ export function CityHeroSection({
   return (
     <div style={{ display: "grid", gap: 8 }}>
       <strong>Heroes</strong>
-      <div style={{ fontSize: 12, opacity: 0.75 }}>
-        Recruit quote: {formatLevy(quoteMap.get("hero_recruit")?.levy)} / +{quoteMap.get("hero_recruit")?.queueMinutes ?? 0}m
-      </div>
+      <CityActionQuoteLine
+        label="Recruit quote"
+        quote={quoteMap.get("hero_recruit")}
+        formatLevy={formatLevy}
+      />
       <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
         {(["champion", "scout", "tactician", "mage"] as const).map((role) => (
           <button

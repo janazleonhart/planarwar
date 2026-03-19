@@ -5,9 +5,10 @@ import type {
   InfrastructureMode,
   MeProfile,
   PublicInfrastructureStatusResponse,
-  PublicServiceQuote,
   Resources,
 } from "../../lib/api";
+import { PublicInfrastructureQuotesSection } from "./PublicInfrastructureQuotesSection";
+import { PublicInfrastructureReceiptsSection } from "./PublicInfrastructureReceiptsSection";
 
 type PublicInfrastructurePanelProps = {
   cardStyle: (extra?: CSSProperties) => CSSProperties;
@@ -88,43 +89,18 @@ export function PublicInfrastructurePanel({
         <div style={{ opacity: 0.7 }}>No public infrastructure profile yet.</div>
       )}
 
-      <div style={{ display: "grid", gap: 6 }}>
-        <strong>Projected service quotes ({serviceMode})</strong>
-        {(infraStatus?.quotes ?? []).length === 0 ? (
-          <div style={{ opacity: 0.7 }}>No quote data.</div>
-        ) : (
-          <div style={{ display: "grid", gap: 6 }}>
-            {(infraStatus?.quotes ?? []).map((quote: PublicServiceQuote) => (
-              <div key={quote.service} style={{ border: "1px solid #555", borderRadius: 8, padding: 10 }}>
-                <div><strong>{formatServiceLabel(quote.service)}</strong></div>
-                <div style={{ fontSize: 13, opacity: 0.9 }}>
-                  Levy: {formatLevy(quote.levy)} • Queue: +{quote.queueMinutes}m • Strain: {quote.strainScore}
-                </div>
-                <div style={{ fontSize: 12, opacity: 0.75 }}>{quote.note}</div>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
+      <PublicInfrastructureQuotesSection
+        serviceMode={serviceMode}
+        infraStatus={infraStatus}
+        formatLevy={formatLevy}
+        formatServiceLabel={formatServiceLabel}
+      />
 
-      <div style={{ display: "grid", gap: 6 }}>
-        <strong>Recent public receipts</strong>
-        {receipts.length === 0 ? (
-          <div style={{ opacity: 0.7 }}>No public service receipts yet.</div>
-        ) : (
-          <div style={{ display: "grid", gap: 6 }}>
-            {receipts.slice().reverse().map((receipt) => (
-              <div key={receipt.id} style={{ border: "1px solid #555", borderRadius: 8, padding: 10 }}>
-                <div><strong>{formatServiceLabel(receipt.service)}</strong> • {receipt.mode} • {new Date(receipt.createdAt).toLocaleString()}</div>
-                <div style={{ fontSize: 13, opacity: 0.9 }}>
-                  Levy: {formatLevy(receipt.levy)} • Queue: +{receipt.queueMinutes}m • Strain: {receipt.strainScore}
-                </div>
-                <div style={{ fontSize: 12, opacity: 0.75 }}>{receipt.note}</div>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
+      <PublicInfrastructureReceiptsSection
+        receipts={receipts}
+        formatLevy={formatLevy}
+        formatServiceLabel={formatServiceLabel}
+      />
     </div>
   );
 }
