@@ -17,6 +17,7 @@ import type {
 } from "../../lib/api";
 import { ActiveMissionsSection } from "./ActiveMissionsSection";
 import { CityAlphaPanels } from "./CityAlphaPanels";
+import { MissionBoardDigest } from "./MissionBoardDigest";
 import { MissionDefenseReceiptsSection } from "./MissionDefenseReceiptsSection";
 import { MissionOffersSection } from "./MissionOffersSection";
 import { MissionPressureMapSection } from "./MissionPressureMapSection";
@@ -89,12 +90,22 @@ export function MissionResponsePanel({
   onExecuteWorldAction,
 }: MissionResponsePanelProps) {
   return (
-    <div style={{ border: "1px solid #444", borderRadius: 8, padding: 16, display: "grid", gap: 10 }}>
-      <h3 style={{ marginTop: 0 }}>Mission Board</h3>
+    <div style={{ border: "1px solid #444", borderRadius: 8, padding: 16, display: "grid", gap: 12 }}>
+      <h3 style={{ marginTop: 0, marginBottom: 0 }}>Mission Command Board</h3>
       <div style={{ fontSize: 13, opacity: 0.82 }}>Mission offers now consume the city ↔ MUD bridge posture instead of pretending logistics are imaginary.</div>
       {me.cityStress ? (
         <div style={{ fontSize: 12, opacity: 0.8 }}>City stress {me.cityStress.stage} • total {me.cityStress.total} • recovery burden {me.cityStress.recoveryBurden}</div>
       ) : null}
+
+      <MissionBoardDigest
+        me={me}
+        missionOffers={missionOffers}
+        activeMissions={activeMissions}
+        highlightedWarnings={highlightedWarnings}
+        highlightedPressure={highlightedPressure}
+        highlightedReceipts={highlightedReceipts}
+        economyCartelResponseState={economyCartelResponseState}
+      />
 
       {missionBoard?.bridgeConsumers?.missionBoard ? (
         <div style={{ border: "1px solid #555", borderRadius: 8, padding: 10, display: "grid", gap: 4 }}>
@@ -105,49 +116,63 @@ export function MissionResponsePanel({
         </div>
       ) : null}
 
-      <MissionWarningWindowsSection highlightedWarnings={highlightedWarnings} />
+      <div style={{ display: "grid", gap: 8 }}>
+        <div style={{ fontSize: 12, textTransform: "uppercase", letterSpacing: 0.6, opacity: 0.72 }}>Incoming pressure</div>
+        <MissionWarningWindowsSection highlightedWarnings={highlightedWarnings} />
+        <MissionPressureMapSection highlightedPressure={highlightedPressure} />
+      </div>
 
-      <CityAlphaPanels
-        cityAlphaStatus={cityAlphaStatus}
-        cityAlphaScopeLock={cityAlphaScopeLock}
-        economyCartelResponseState={economyCartelResponseState}
-        highlightedPressureCount={highlightedPressure.length}
-        getThreatFamilyDisplayName={getThreatFamilyDisplayName}
-      />
+      <div style={{ display: "grid", gap: 8 }}>
+        <div style={{ fontSize: 12, textTransform: "uppercase", letterSpacing: 0.6, opacity: 0.72 }}>Strategic status</div>
+        <CityAlphaPanels
+          cityAlphaStatus={cityAlphaStatus}
+          cityAlphaScopeLock={cityAlphaScopeLock}
+          economyCartelResponseState={economyCartelResponseState}
+          highlightedPressureCount={highlightedPressure.length}
+          getThreatFamilyDisplayName={getThreatFamilyDisplayName}
+        />
+      </div>
 
-      <MissionOffersSection
-        me={me}
-        missionOffers={missionOffers}
-        disabled={disabled}
-        missionHeroSelection={missionHeroSelection}
-        missionArmySelection={missionArmySelection}
-        missionPostureSelection={missionPostureSelection}
-        setMissionHeroSelection={setMissionHeroSelection}
-        setMissionArmySelection={setMissionArmySelection}
-        setMissionPostureSelection={setMissionPostureSelection}
-        handleStartMission={handleStartMission}
-      />
+      <div style={{ display: "grid", gap: 8 }}>
+        <div style={{ fontSize: 12, textTransform: "uppercase", letterSpacing: 0.6, opacity: 0.72 }}>Decision desk</div>
+        <MissionOffersSection
+          me={me}
+          missionOffers={missionOffers}
+          disabled={disabled}
+          missionHeroSelection={missionHeroSelection}
+          missionArmySelection={missionArmySelection}
+          missionPostureSelection={missionPostureSelection}
+          setMissionHeroSelection={setMissionHeroSelection}
+          setMissionArmySelection={setMissionArmySelection}
+          setMissionPostureSelection={setMissionPostureSelection}
+          handleStartMission={handleStartMission}
+        />
 
-      <ActiveMissionsSection
-        activeMissions={activeMissions}
-        disabled={disabled}
-        handleCompleteMission={handleCompleteMission}
-      />
+        <ActiveMissionsSection
+          activeMissions={activeMissions}
+          disabled={disabled}
+          handleCompleteMission={handleCompleteMission}
+        />
+      </div>
 
-      <MissionPressureMapSection highlightedPressure={highlightedPressure} />
+      <div style={{ display: "grid", gap: 8 }}>
+        <div style={{ fontSize: 12, textTransform: "uppercase", letterSpacing: 0.6, opacity: 0.72 }}>Operational history</div>
+        <MissionDefenseReceiptsSection highlightedReceipts={highlightedReceipts} />
+      </div>
 
-      <MissionDefenseReceiptsSection highlightedReceipts={highlightedReceipts} />
-
-      <WorldResponseSection
-        worldConsequences={worldConsequences ?? []}
-        worldConsequenceState={worldConsequenceState ?? null}
-        worldConsequenceHooks={worldConsequenceHooks ?? null}
-        worldConsequenceConsumers={worldConsequenceConsumers ?? null}
-        worldConsequenceResponseReceipts={worldConsequenceResponseReceipts ?? null}
-        worldConsequenceActions={worldConsequenceActions ?? null}
-        worldActionBusyId={worldActionBusyId}
-        onExecuteWorldAction={onExecuteWorldAction}
-      />
+      <div style={{ display: "grid", gap: 8 }}>
+        <div style={{ fontSize: 12, textTransform: "uppercase", letterSpacing: 0.6, opacity: 0.72 }}>World spillover</div>
+        <WorldResponseSection
+          worldConsequences={worldConsequences ?? []}
+          worldConsequenceState={worldConsequenceState ?? null}
+          worldConsequenceHooks={worldConsequenceHooks ?? null}
+          worldConsequenceConsumers={worldConsequenceConsumers ?? null}
+          worldConsequenceResponseReceipts={worldConsequenceResponseReceipts ?? null}
+          worldConsequenceActions={worldConsequenceActions ?? null}
+          worldActionBusyId={worldActionBusyId}
+          onExecuteWorldAction={onExecuteWorldAction}
+        />
+      </div>
     </div>
   );
 }
