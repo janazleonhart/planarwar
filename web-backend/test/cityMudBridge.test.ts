@@ -3,7 +3,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { buildVendorScenarioLogNote, describeVendorLaneSelection, deriveCityMudConsumers, deriveVendorEconomyRecommendation, deriveVendorGuardrailApplication, deriveVendorLanePolicy, deriveVendorRuntimeEffect, deriveVendorSupportPolicy, getVendorPreset, matchesVendorLaneSelection, normalizeVendorLaneSelection, normalizeVendorPresetKey, summarizeCityMudBridge } from "../domain/cityMudBridge";
+import { buildVendorScenarioLogNote, describeVendorLaneSelection, deriveCityMudConsumers, deriveVendorEconomyRecommendation, deriveVendorGuardrailApplication, deriveVendorLanePolicy, deriveVendorPresetRecommendation, deriveVendorRuntimeEffect, deriveVendorSupportPolicy, getVendorPreset, matchesVendorLaneSelection, normalizeVendorLaneSelection, normalizeVendorPresetKey, summarizeCityMudBridge } from "../domain/cityMudBridge";
 import { applyMissionConsumerGuidance, generateMissionOffers } from "../domain/missions";
 import { createInitialPublicInfrastructureState } from "../domain/publicInfrastructure";
 import { getOrCreatePlayerState } from "../gameState";
@@ -442,6 +442,76 @@ test("vendor preset helpers return audited lane targets", () => {
   assert.equal(preset.label, "Scarcity essentials protection");
   assert.deepEqual(preset.laneFilters, ["essentials"]);
   assert.match(preset.detail, /protect essentials/i);
+});
+
+
+test("vendor preset recommendation follows response phase and lane bias", () => {
+  const severe = deriveVendorPresetRecommendation({
+    policyState: "restricted",
+    responsePhase: "severe",
+    laneBias: "essentials_only",
+  });
+  const activeLuxury = deriveVendorPresetRecommendation({
+    policyState: "pressured",
+    responsePhase: "active",
+    laneBias: "luxury_throttle",
+  });
+  const activeArcane = deriveVendorPresetRecommendation({
+    policyState: "pressured",
+    responsePhase: "active",
+    laneBias: "arcane_caution",
+  });
+  const quiet = deriveVendorPresetRecommendation({
+    policyState: "stable",
+    responsePhase: "quiet",
+    laneBias: "none",
+  });
+
+  assert.equal(severe?.key, "scarcity_essentials_protection");
+  assert.match(severe?.reason ?? "", /protect essentials/i);
+  assert.equal(activeLuxury?.key, "luxury_throttle");
+  assert.match(activeLuxury?.reason ?? "", /luxury/i);
+  assert.equal(activeArcane?.key, "arcane_caution");
+  assert.match(activeArcane?.reason ?? "", /arcane/i);
+  assert.equal(quiet?.key, "broad_recovery");
+});
+
+
+test("vendor lane policy can be re-derived from consequence-aware posture without lying about scarcity", () => {
+  const ps = makePlayer();
+  ps.resources.food = 210;
+  ps.resources.materials = 190;
+  ps.resources.wealth = 175;
+  ps.city.stats.infrastructure = 48;
+  ps.city.stats.prosperity = 42;
+  ps.city.stats.security = 36;
+  ps.cityStress.total = 46;
+  ps.cityStress.stage = "strained";
+  ps.publicInfrastructure.serviceHeat = 41;
+
+  const summary = summarizeCityMudBridge(ps);
+  const consumers = deriveCityMudConsumers(summary);
+  const basePolicy = deriveVendorSupportPolicy(summary, consumers);
+  const luxuryLane = deriveVendorLanePolicy(summary, consumers, basePolicy, {
+    itemId: "gem_1",
+    itemName: "Opulent Gem",
+    itemRarity: "epic",
+  });
+  const runtime = deriveVendorRuntimeEffect(
+    {
+      stock: 8,
+      stockMax: 60,
+      restockEverySec: 300,
+      restockAmount: 4,
+      priceMinMult: 0.9,
+      priceMaxMult: 1.5,
+    },
+    luxuryLane,
+  );
+
+  assert.ok(["tight", "scarce"].includes(runtime.state));
+  assert.ok(runtime.effectivePriceMaxMult >= 1.5);
+  assert.ok(runtime.effectiveRestockEverySec >= 300);
 });
 
 

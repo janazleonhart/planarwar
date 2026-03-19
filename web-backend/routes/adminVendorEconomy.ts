@@ -7,7 +7,7 @@ import express from "express";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { db } from "../../worldcore/db/Database";
-import { buildVendorScenarioLogNote, describeVendorLaneSelection, deriveCityMudConsumers, deriveVendorEconomyRecommendation, deriveVendorGuardrailApplication, deriveVendorLanePolicy, deriveVendorRuntimeEffect, deriveVendorSupportPolicy, getVendorPreset, matchesVendorLaneSelection, normalizeVendorLaneSelection, normalizeVendorPresetKey, summarizeCityMudBridge, type CityMudVendorLane, type CityMudVendorPresetKey, type CityMudVendorScenarioLogEntry } from "../domain/cityMudBridge";
+import { buildVendorScenarioLogNote, describeVendorLaneSelection, deriveCityMudConsumers, deriveVendorEconomyRecommendation, deriveVendorGuardrailApplication, deriveVendorLanePolicy, deriveVendorPresetRecommendation, deriveVendorRuntimeEffect, deriveVendorSupportPolicy, getVendorPreset, matchesVendorLaneSelection, normalizeVendorLaneSelection, normalizeVendorPresetKey, summarizeCityMudBridge, type CityMudVendorLane, type CityMudVendorPresetKey, type CityMudVendorScenarioLogEntry } from "../domain/cityMudBridge";
 import { applyWorldConsequenceVendorPolicy, deriveWorldConsequenceConsumers } from "../domain/worldConsequenceConsumers";
 import { deriveEconomyCartelResponseState } from "../domain/economyCartelResponse";
 import { readVendorScenarioReportFromFile, renderVendorScenarioReportCsv, type VendorScenarioReportFilter } from "../domain/vendorScenarioReports";
@@ -205,9 +205,17 @@ adminVendorEconomyRouter.get("/items", async (req, res) => {
     )) as { rows: VendorEconomyItemRow[] };
 
     const bridge = await getBridgeVendorPolicyOrNull(req);
+    const effectiveVendorPolicy = bridge?.vendorPolicyWithConsequences ?? bridge?.vendorPolicy ?? null;
+    const presetRecommendation = bridge && effectiveVendorPolicy
+      ? deriveVendorPresetRecommendation({
+          policyState: effectiveVendorPolicy.state,
+          responsePhase: bridge.economyCartelResponseState?.summary?.responsePhase ?? null,
+          laneBias: bridge.economyCartelResponseState?.vendors?.laneBias ?? null,
+        })
+      : null;
     const items = (r.rows ?? []).map((row) => {
-      const lanePolicy = bridge
-        ? deriveVendorLanePolicy(bridge.summary, bridge.consumers, bridge.vendorPolicy, {
+      const lanePolicy = bridge && effectiveVendorPolicy
+        ? deriveVendorLanePolicy(bridge.summary, bridge.consumers, effectiveVendorPolicy, {
             itemId: row.item_id,
             itemName: row.item_name,
             itemRarity: row.item_rarity,
@@ -246,6 +254,17 @@ adminVendorEconomyRouter.get("/items", async (req, res) => {
       };
     });
 
+    const runtimeStateCounts = items.reduce<Record<string, number>>((acc, item) => {
+      const state = item.bridge_runtime_effect?.state ?? "unknown";
+      acc[state] = (acc[state] ?? 0) + 1;
+      return acc;
+    }, {});
+    const laneCounts = items.reduce<Record<string, number>>((acc, item) => {
+      const lane = item.bridge_lane_policy?.lane ?? "unknown";
+      acc[lane] = (acc[lane] ?? 0) + 1;
+      return acc;
+    }, {});
+
     res.json({
       ok: true,
       vendorId: params[0],
@@ -258,7 +277,19 @@ adminVendorEconomyRouter.get("/items", async (req, res) => {
       vendorPolicy: bridge?.vendorPolicy ?? null,
       consequenceConsumers: bridge?.consequenceConsumers ?? null,
       economyCartelResponseState: bridge?.economyCartelResponseState ?? null,
-      vendorPolicyWithConsequences: bridge?.vendorPolicyWithConsequences ?? bridge?.vendorPolicy ?? null,
+      vendorPolicyWithConsequences: effectiveVendorPolicy,
+      vendorRuntimeSummary: bridge && effectiveVendorPolicy ? {
+        policyMode: bridge?.economyCartelResponseState?.summary?.responsePhase && bridge.economyCartelResponseState.summary.responsePhase !== "quiet" ? "consequence_aware" : "bridge_only",
+        responsePhase: bridge.economyCartelResponseState?.summary?.responsePhase ?? "quiet",
+        vendorState: effectiveVendorPolicy.state,
+        laneBias: bridge.economyCartelResponseState?.vendors?.laneBias ?? "none",
+        runtimeStateCounts,
+        laneCounts,
+        recommendedPreset: presetRecommendation,
+        note: presetRecommendation
+          ? `${presetRecommendation.reason} ${presetRecommendation.note}`.trim()
+          : "No extra preset recommendation is needed while the current response phase stays quiet.",
+      } : null,
     });
   } catch (err: any) {
     res.status(500).json({ ok: false, error: err?.message ?? String(err) });

@@ -69,6 +69,16 @@ export interface CityMudVendorSupportPolicy {
   recommendedAction: string;
 }
 
+export type CityMudVendorResponsePhase = "quiet" | "watch" | "active" | "severe";
+export type CityMudVendorLaneBias = "none" | "essentials_only" | "luxury_throttle" | "arcane_caution";
+
+export interface CityMudVendorPresetRecommendation {
+  key: CityMudVendorPresetKey;
+  label: string;
+  laneFilters: CityMudVendorLane[];
+  reason: string;
+  note: string;
+}
 
 export type CityMudVendorLane = "essentials" | "comfort" | "luxury" | "arcane";
 export type CityMudVendorPresetKey = "scarcity_essentials_protection" | "luxury_throttle" | "arcane_caution" | "broad_recovery";
@@ -105,6 +115,47 @@ export function describeVendorLaneSelection(lanes: CityMudVendorLane[]): string 
 }
 export function isCityMudVendorPresetKey(value: unknown): value is CityMudVendorPresetKey {
   return typeof value === "string" && (ALL_CITY_MUD_VENDOR_PRESET_KEYS as string[]).includes(value);
+}
+
+export function deriveVendorPresetRecommendation(input: {
+  policyState: CityMudConsumerState;
+  responsePhase?: CityMudVendorResponsePhase | null;
+  laneBias?: CityMudVendorLaneBias | null;
+}): CityMudVendorPresetRecommendation | null {
+  const responsePhase = input.responsePhase ?? null;
+  const laneBias = input.laneBias ?? null;
+
+  let key: CityMudVendorPresetKey | null = null;
+  let reason = "";
+  let note = "";
+
+  if (responsePhase === "severe" || input.policyState === "restricted" || laneBias === "essentials_only") {
+    key = "scarcity_essentials_protection";
+    reason = "Severe response or restricted vendor posture should protect essentials first.";
+    note = "This is the safest bounded preset when runtime pressure is hot enough to squeeze shelves broadly.";
+  } else if (laneBias === "luxury_throttle") {
+    key = "luxury_throttle";
+    reason = "Live response pressure is explicitly asking luxury lanes to absorb pain first.";
+    note = "Use this when cartel/black-market heat is real but you do not need full scarcity theater across every lane.";
+  } else if (laneBias === "arcane_caution") {
+    key = "arcane_caution";
+    reason = "Live response pressure is asking arcane lanes to stay available with measured caution.";
+    note = "Use this when active pressure should slow fragile or magical inventory without pretending everything is collapsing.";
+  } else if (responsePhase === "quiet" && (input.policyState === "stable" || input.policyState === "abundant")) {
+    key = "broad_recovery";
+    reason = "Quiet response conditions can support broad recovery instead of emergency throttling.";
+    note = "This is a recovery preset, not a pressure preset; use it only when the response phase has cooled off.";
+  }
+
+  if (!key) return null;
+  const preset = getVendorPreset(key);
+  return {
+    key: preset.key,
+    label: preset.label,
+    laneFilters: [...preset.laneFilters],
+    reason,
+    note,
+  };
 }
 
 export function getVendorPreset(key: CityMudVendorPresetKey): CityMudVendorPreset {
