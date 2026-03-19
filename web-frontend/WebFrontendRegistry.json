@@ -350,7 +350,10 @@
         "Keeps MePage focused on orchestration while preserving the existing private_city vs npc_public UI behavior."
       ],
       "owns": [],
-      "path": "web-frontend/components/city/PublicInfrastructurePanel.tsx",
+      "path": [ "web-frontend/components/city/PublicInfrastructurePanel.tsx",
+                "web-frontend/components/city/PublicInfrastructureModeToggle.tsx",
+                "web-frontend/components/city/PublicInfrastructureSummarySection.tsx"
+      ],
       "provides": [
         "City Builder public infrastructure panel"
       ],
