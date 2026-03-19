@@ -2,15 +2,13 @@
 
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { CityAlphaPanels } from "../components/worldResponse/CityAlphaPanels";
-import { WorldConsequenceOutlookPanel } from "../components/worldResponse/WorldConsequenceOutlookPanel";
-import { WorldResponsePanel } from "../components/worldResponse/WorldResponsePanel";
+import { WorldResponseSection } from "../components/worldResponse/WorldResponseSection";
 import {
   formatWorldActionCooldown,
   formatWorldActionCost,
   formatWorldDelta,
   getRegionDisplayName,
   worldHookTone,
-  worldRegionScore,
 } from "../components/worldResponse/worldResponseUi";
 import {
   api,
@@ -467,8 +465,6 @@ export function MePage() {
   const worldConsequenceResponseReceipts = me?.worldConsequenceResponseReceipts ?? null;
   const worldConsequenceConsumers = me?.worldConsequenceConsumers ?? null;
   const economyCartelResponseState = me?.economyCartelResponseState ?? null;
-  const highlightedWorldLedger = [...worldConsequences].slice(0, 5);
-  const highlightedWorldRegions = [...(worldConsequenceState?.regions ?? [])].sort((a, b) => worldRegionScore(b) - worldRegionScore(a)).slice(0, 3);
 
   if (loading && !me) return <p>Loading /api/me…</p>;
 
@@ -912,25 +908,16 @@ export function MePage() {
             )}
         </div>
 
-        <div style={{ display: "grid", gap: 6 }}>
-          <strong>World consequence outlook</strong>
-          <div style={{ display: "grid", gap: 8 }}>
-              <WorldConsequenceOutlookPanel
-                worldConsequenceState={worldConsequenceState}
-                worldConsequenceHooks={worldConsequenceHooks}
-              />
-
-              <WorldResponsePanel
-                worldConsequenceConsumers={worldConsequenceConsumers}
-                worldConsequenceResponseReceipts={worldConsequenceResponseReceipts}
-                worldConsequenceActions={worldConsequenceActions}
-                highlightedWorldRegions={highlightedWorldRegions}
-                highlightedWorldLedger={highlightedWorldLedger}
-                worldActionBusyId={worldActionBusyId}
-                onExecuteWorldAction={handleExecuteWorldAction}
-              />
-            </div>
-        </div>
+        <WorldResponseSection
+          worldConsequences={worldConsequences}
+          worldConsequenceState={worldConsequenceState}
+          worldConsequenceHooks={worldConsequenceHooks}
+          worldConsequenceConsumers={worldConsequenceConsumers}
+          worldConsequenceResponseReceipts={worldConsequenceResponseReceipts}
+          worldConsequenceActions={worldConsequenceActions}
+          worldActionBusyId={worldActionBusyId}
+          onExecuteWorldAction={handleExecuteWorldAction}
+        />
       </div>
 
       <div style={cardStyle()}>
