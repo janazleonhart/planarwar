@@ -108,8 +108,8 @@ export type MissionResponsePosture = "cautious" | "balanced" | "aggressive" | "d
 export interface ActiveMission {
   instanceId: string;
   mission: MissionOffer;
-  startedAt: string; // ISO string
-  finishesAt: string; // ISO string
+  startedAt: string;
+  finishesAt: string;
   responsePosture: MissionResponsePosture;
   committedResources?: Partial<Resources>;
   assignedHeroId?: string;
@@ -117,11 +117,26 @@ export interface ActiveMission {
 }
 
 export type WarningIntelQuality = "faint" | "usable" | "clear" | "precise";
-export type ThreatFamily = "bandits" | "mercs" | "desperate_towns" | "organized_hostile_forces" | "early_planar_strike";
-export type RecoveryContractKind = "stabilize_district" | "repair_works" | "relief_convoys" | "counter_rumors";
+export type ThreatFamily =
+  | "bandits"
+  | "mercs"
+  | "desperate_towns"
+  | "organized_hostile_forces"
+  | "early_planar_strike";
+export type RecoveryContractKind =
+  | "stabilize_district"
+  | "repair_works"
+  | "relief_convoys"
+  | "counter_rumors";
 
 export interface MissionSetback {
-  kind: "resource_loss" | "infrastructure_damage" | "unrest" | "hero_injury" | "army_attrition" | "threat_surge";
+  kind:
+    | "resource_loss"
+    | "infrastructure_damage"
+    | "unrest"
+    | "hero_injury"
+    | "army_attrition"
+    | "threat_surge";
   severity: number;
   summary: string;
   detail: string;
@@ -276,11 +291,9 @@ export interface Hero {
   tags: string[];
   status: "idle" | "on_mission";
   currentMissionId?: string;
-
   level?: number;
   xp?: number;
   xpToNext?: number;
-
   attachments?: HeroAttachment[];
 }
 
@@ -304,7 +317,6 @@ export interface WorkshopJob {
 
 export type ArmyType = "militia" | "line" | "vanguard";
 export type ArmyStatus = "idle" | "on_mission";
-
 export type ArmyResponseRole = "frontline" | "command" | "defense" | "recovery" | "warding" | "recon";
 
 export interface Army {
@@ -342,8 +354,8 @@ export interface ActiveResearchView {
 
 export interface RegionWarState {
   regionId: string;
-  control: number; // 0–100
-  threat: number; // 0–100
+  control: number;
+  threat: number;
 }
 
 export type GameEventKind =
@@ -384,10 +396,14 @@ export interface CityStressState {
   lastUpdatedAt: string;
 }
 
-
 export type InfrastructureMode = "private_city" | "npc_public";
 export type CivicPermitTier = "novice" | "standard" | "trusted";
-export type PublicPressureSourceKey = "civic_instability" | "regional_threat" | "queue_backlog" | "service_heat" | "mission_load";
+export type PublicPressureSourceKey =
+  | "civic_instability"
+  | "regional_threat"
+  | "queue_backlog"
+  | "service_heat"
+  | "mission_load";
 
 export interface PublicPressureSource {
   key: PublicPressureSourceKey;
@@ -459,10 +475,13 @@ export interface PublicInfrastructureStatusResponse {
   cityStress: CityStressState | null;
 }
 
-
 export type VendorScenarioAction = "preview" | "apply";
 export type VendorScenarioLane = "essentials" | "comfort" | "luxury" | "arcane";
-export type VendorScenarioPresetKey = "scarcity_essentials_protection" | "luxury_throttle" | "arcane_caution" | "broad_recovery";
+export type VendorScenarioPresetKey =
+  | "scarcity_essentials_protection"
+  | "luxury_throttle"
+  | "arcane_caution"
+  | "broad_recovery";
 export type VendorScenarioBridgeBand = "open" | "strained" | "restricted";
 export type VendorScenarioVendorState = "abundant" | "stable" | "pressured" | "restricted";
 export type VendorScenarioRuntimeState = "surplus" | "normal" | "tight" | "scarce";
@@ -587,7 +606,12 @@ export interface VendorScenarioReportQuery {
 export type VendorScenarioExportFormat = "csv" | "json";
 
 export interface CityMudBridgeHook {
-  key: "vendor_supply" | "caravan_risk" | "mission_support" | "recruitment_pressure" | "public_service_drag";
+  key:
+    | "vendor_supply"
+    | "caravan_risk"
+    | "mission_support"
+    | "recruitment_pressure"
+    | "public_service_drag";
   label: string;
   score: number;
   direction: "up" | "down" | "neutral";
@@ -649,7 +673,6 @@ export interface CityMudBridgeStatusResponse {
   vendorPolicy?: CityMudVendorSupportPolicy | null;
 }
 
-
 export interface MissionBoardResponse {
   missions: MissionOffer[];
   activeMissions: ActiveMission[];
@@ -685,7 +708,6 @@ export interface CompleteMissionResponse {
   resources: Resources;
   regionWar: RegionWarState[];
 }
-
 
 export interface WorldConsequenceLedgerMetrics {
   pressureDelta: number;
@@ -809,7 +831,6 @@ export interface WorldConsequenceFactionHook {
   note: string;
 }
 
-
 export interface WorldConsequenceActionRuntimeEffectPreview {
   pressureDelta: number;
   recoveryDelta: number;
@@ -817,6 +838,12 @@ export interface WorldConsequenceActionRuntimeEffectPreview {
   controlDelta: number;
   threatDelta: number;
   summary: string;
+}
+
+export interface WorldConsequenceActionEvidenceItem {
+  label: string;
+  value: number;
+  tone?: "watch" | "high" | "critical";
 }
 
 export interface WorldConsequenceActionRuntimeView {
@@ -851,6 +878,7 @@ export interface WorldConsequenceActionItem {
   recommendedMoves: string[];
   sourceRegionId: string | null;
   sourceHook: string;
+  evidence?: WorldConsequenceActionEvidenceItem[];
   runtime?: WorldConsequenceActionRuntimeView;
 }
 
@@ -861,7 +889,6 @@ export interface WorldConsequenceActionsView {
   adminActions: WorldConsequenceActionItem[];
   motherBrainActions: WorldConsequenceActionItem[];
 }
-
 
 export interface WorldConsequenceActionExecutionResult {
   ok: boolean;
@@ -934,7 +961,6 @@ export interface WorldConsequenceConsumersView {
     note: string;
   };
 }
-
 
 export interface EconomyCartelResponseState {
   summary: {
@@ -1036,12 +1062,7 @@ function normalizeBase(raw: string): string {
 export const API_BASE_URL = (() => {
   const env = ((import.meta as any).env ?? {}) as Record<string, any>;
   const raw = String(env.VITE_API_BASE_URL ?? "").trim();
-
-  // Explicit override (requires CORS on web-backend if cross-origin)
   if (raw) return normalizeBase(raw);
-
-  // Default: SAME-ORIGIN.
-  // In dev, Vite should proxy /api -> web-backend (no CORS headaches).
   return "";
 })();
 
@@ -1058,7 +1079,7 @@ async function parseJsonOrThrow(res: Response, normalizedPath: string) {
   throw new Error(
     `Expected JSON from ${normalizedPath} but got ${contentType || "unknown content-type"}.\n` +
       `API_BASE_URL="${API_BASE_URL || "(same-origin)"}" response head="${head}".\n` +
-      `If you're on Vite dev server, ensure it proxies /api to web-backend (or set VITE_API_BASE_URL and enable CORS).`
+      `If you're on Vite dev server, ensure it proxies /api to web-backend (or set VITE_API_BASE_URL and enable CORS).`,
   );
 }
 
@@ -1066,7 +1087,9 @@ export async function fetchMe(): Promise<MeProfile> {
   return api<MeProfile>("/api/me");
 }
 
-export async function fetchPublicInfrastructureStatus(serviceMode: InfrastructureMode): Promise<PublicInfrastructureStatusResponse> {
+export async function fetchPublicInfrastructureStatus(
+  serviceMode: InfrastructureMode,
+): Promise<PublicInfrastructureStatusResponse> {
   const query = new URLSearchParams({ serviceMode }).toString();
   return api<PublicInfrastructureStatusResponse>(`/api/public_infrastructure/status?${query}`);
 }
@@ -1074,7 +1097,6 @@ export async function fetchPublicInfrastructureStatus(serviceMode: Infrastructur
 export async function fetchCityMudBridgeStatus(): Promise<CityMudBridgeStatusResponse> {
   return api<CityMudBridgeStatusResponse>("/api/city_mud_bridge/status");
 }
-
 
 function buildVendorScenarioReportParams(query: VendorScenarioReportQuery = {}): URLSearchParams {
   const params = new URLSearchParams();
@@ -1092,7 +1114,9 @@ function buildVendorScenarioReportParams(query: VendorScenarioReportQuery = {}):
   return params;
 }
 
-export async function fetchVendorScenarioReports(query: VendorScenarioReportQuery = {}): Promise<VendorScenarioReportResponse> {
+export async function fetchVendorScenarioReports(
+  query: VendorScenarioReportQuery = {},
+): Promise<VendorScenarioReportResponse> {
   const qs = buildVendorScenarioReportParams(query).toString();
   return api<VendorScenarioReportResponse>(`/api/admin/vendor_economy/scenarios${qs ? `?${qs}` : ""}`);
 }
@@ -1111,7 +1135,12 @@ export async function fetchMissionBoard(): Promise<MissionBoardResponse> {
   return api<MissionBoardResponse>("/api/missions/offers");
 }
 
-export async function startMission(missionId: string, heroId?: string, armyId?: string, responsePosture?: MissionResponsePosture): Promise<StartMissionResponse> {
+export async function startMission(
+  missionId: string,
+  heroId?: string,
+  armyId?: string,
+  responsePosture?: MissionResponsePosture,
+): Promise<StartMissionResponse> {
   return api<StartMissionResponse>("/api/missions/start", {
     method: "POST",
     body: JSON.stringify({ missionId, heroId, armyId, responsePosture }),
@@ -1124,7 +1153,6 @@ export async function completeMission(instanceId: string): Promise<CompleteMissi
     body: JSON.stringify({ instanceId }),
   });
 }
-
 
 export async function executeWorldConsequenceAction(actionId: string): Promise<{
   ok: true;
@@ -1152,16 +1180,18 @@ export async function executeWorldConsequenceAction(actionId: string): Promise<{
   });
 
   const contentType = res.headers.get("content-type") || "";
-  const body = res.status === 204
-    ? undefined
-    : contentType.includes("application/json")
-      ? await res.json()
-      : await res.text();
+  const body =
+    res.status === 204
+      ? undefined
+      : contentType.includes("application/json")
+        ? await res.json()
+        : await res.text();
 
   if (!res.ok) {
-    const message = typeof body === "object" && body && "error" in body
-      ? String((body as any).error)
-      : `Failed to fetch ${normalizedPath}: ${res.status}`;
+    const message =
+      typeof body === "object" && body && "error" in body
+        ? String((body as any).error)
+        : `Failed to fetch ${normalizedPath}: ${res.status}`;
     throw new ApiResponseError(message, res.status, typeof body === "object" ? body : undefined);
   }
 
@@ -1174,7 +1204,6 @@ export async function startTech(techId: string, serviceMode?: InfrastructureMode
     body: JSON.stringify(serviceMode ? { techId, serviceMode } : { techId }),
   });
 }
-
 
 export type CityTierUpResult = { ok: boolean; result?: any; error?: string };
 export type CityMorphResult = { ok: boolean; result?: any; error?: string };
@@ -1225,8 +1254,14 @@ export async function fetchCityConfig(): Promise<CityConfigResult> {
   return api<CityConfigResult>("/api/city/config");
 }
 
-
-export type CityBootstrapResult = { ok: boolean; created?: boolean; playerId?: string; city?: CitySummary; resources?: Resources; error?: string };
+export type CityBootstrapResult = {
+  ok: boolean;
+  created?: boolean;
+  playerId?: string;
+  city?: CitySummary;
+  resources?: Resources;
+  error?: string;
+};
 export type CityRenameResult = { ok: boolean; city?: CitySummary; error?: string };
 
 export async function bootstrapCity(name: string, shardId?: string): Promise<CityBootstrapResult> {
@@ -1242,8 +1277,7 @@ export async function renameCity(name: string): Promise<CityRenameResult> {
     body: JSON.stringify({ name }),
   });
 }
-// Auth token helper used across MUD / City Builder / Admin tools.
-// Stored by the login UI under localStorage key 'pw_auth_v1'.
+
 export function getAuthToken(): string | null {
   try {
     if (typeof window === "undefined") return null;
@@ -1257,9 +1291,6 @@ export function getAuthToken(): string | null {
     return null;
   }
 }
-
-
-// --- Admin RBAC helpers (System L) ------------------------------------
 
 export type AdminRole = "readonly" | "editor" | "root";
 
@@ -1277,11 +1308,6 @@ function normalizeAdminRole(v: any): AdminRole | null {
   return null;
 }
 
-// Canonical modern key:
-//   flags.adminRole: "readonly" | "editor" | "root"
-// Back-compat fallbacks:
-//   flags.isDev -> root, flags.isGM -> editor, flags.isGuide -> readonly
-//   flags.admin / flags.isAdmin / flags.role==="admin" -> editor
 export function resolveAdminRoleFromFlags(flags: any): AdminRole | null {
   if (!flags || typeof flags !== "object") return null;
 
@@ -1305,10 +1331,7 @@ function safeReadFlagsFromLocalStorage(): Record<string, any> {
     const raw = window.localStorage.getItem("pw_auth_v1");
     if (!raw) return {};
     const parsed = JSON.parse(raw);
-
-    // Old format might be a string token only.
     if (typeof parsed === "string") return {};
-
     const account = (parsed as any)?.account;
     const flags = account?.flags;
     return flags && typeof flags === "object" ? flags : {};
@@ -1342,7 +1365,6 @@ export function explainAdminError(code: string): string {
       return c || "Unknown error.";
   }
 }
-
 
 export class ApiResponseError<T = any> extends Error {
   status: number;

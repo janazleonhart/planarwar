@@ -1265,6 +1265,15 @@ export function MePage() {
                         <div><strong>{action.title}</strong> <span style={{ color: worldHookTone(action.priority) }}>{action.priority}</span></div>
                         <div style={{ fontSize: 12, opacity: 0.82 }}>{action.summary}</div>
                         <div style={{ fontSize: 12, opacity: 0.76 }}>lane {action.lane}{action.sourceRegionId ? ` • region ${getRegionDisplayName(action.sourceRegionId)}` : ""}</div>
+                        {action.evidence && action.evidence.length > 0 ? (
+                          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", fontSize: 12, opacity: 0.82 }}>
+                            {action.evidence.map((entry, idx) => (
+                              <span key={`${action.id}_evidence_${idx}`} style={{ border: "1px solid #555", borderRadius: 999, padding: "2px 8px", color: worldHookTone(entry.tone ?? action.priority) }}>
+                                {entry.label} {entry.value}
+                              </span>
+                            ))}
+                          </div>
+                        ) : null}
                         <div style={{ display: "grid", gap: 2, fontSize: 12, opacity: 0.8 }}>
                           {action.recommendedMoves.map((move, idx) => (
                             <div key={`${action.id}_${idx}`}>• {move}</div>

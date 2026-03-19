@@ -4,7 +4,11 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { getOrCreatePlayerState } from "../gameState";
-import { pushWorldConsequence, buildSetbackWorldConsequence, summarizeWorldConsequenceResponseReceipts } from "../domain/worldConsequences";
+import {
+  pushWorldConsequence,
+  buildSetbackWorldConsequence,
+  summarizeWorldConsequenceResponseReceipts,
+} from "../domain/worldConsequences";
 import { executeWorldConsequenceAction } from "../domain/worldConsequenceRuntimeActions";
 import { deriveWorldConsequenceActions } from "../domain/worldConsequenceActions";
 
@@ -70,7 +74,6 @@ test("unsupported black-market exploit action remains advisory only", () => {
   assert.equal(result.status, "not_executable");
 });
 
-
 test("player action cards expose runtime truth instead of frontend guesses", () => {
   const ps = seedPressure();
   const actions = deriveWorldConsequenceActions(ps);
@@ -93,8 +96,6 @@ test("player action cards expose runtime truth instead of frontend guesses", () 
   assert.ok(fullyStarved);
   assert.deepEqual(fullyStarved?.runtime?.shortfall, { wealth: 10, materials: 8 });
 });
-
-
 
 test("player action cards expose runtime impact previews instead of hidden payoff math", () => {
   const ps = seedPressure();
@@ -122,7 +123,6 @@ test("successful response action is surfaced as a bounded runtime receipt", () =
   assert.match(receipts.recent[0]?.title ?? "", /Response action executed:/);
 });
 
-
 test("insufficient resource execution returns exact shortfall truth", () => {
   const ps = seedPressure();
   ps.resources.wealth = 0;
@@ -134,7 +134,6 @@ test("insufficient resource execution returns exact shortfall truth", () => {
   assert.equal(result.action?.runtime?.affordability, "insufficient_resources");
   assert.deepEqual(result.action?.runtime?.shortfall, { wealth: 10 });
 });
-
 
 test("successful response action enters cooldown and exposes ready time truth", () => {
   const ps = seedPressure();
@@ -152,7 +151,6 @@ test("successful response action enters cooldown and exposes ready time truth", 
   assert.equal(second.action?.runtime?.readyAt, second.readyAt);
 });
 
-
 test("player action cards expose recent runtime action history", () => {
   const ps = seedPressure();
   const first = executeWorldConsequenceAction(ps, "action_stabilize_supply_lanes");
@@ -166,18 +164,33 @@ test("player action cards expose recent runtime action history", () => {
   assert.ok(typeof action?.runtime?.lastCommittedAt === "string");
 });
 
-
-test("player action cards expose the last applied runtime result", () => {
+test("player action cards expose action evidence instead of just vibes", () => {
   const ps = seedPressure();
-  const first = executeWorldConsequenceAction(ps, "action_stabilize_supply_lanes");
-  assert.equal(first.ok, true);
+  const actions = deriveWorldConsequenceActions(ps);
+  const stabilize = actions.playerActions.find((action) => action.id === "action_stabilize_supply_lanes");
+  assert.ok(stabilize);
+  assert.deepEqual(
+    stabilize?.evidence?.map((entry) => entry.label),
+    ["trade pressure", "supply friction", "destabilization"],
+  );
+  assert.equal(stabilize?.evidence?.[0]?.value, ps.worldConsequenceState?.worldEconomy.tradePressure ?? 0);
+  assert.equal(stabilize?.evidence?.[0]?.tone, "high");
+});
 
-  const view = deriveWorldConsequenceActions(ps);
-  const action = view.playerActions.find((entry) => entry.id === "action_stabilize_supply_lanes");
-  assert.ok(action);
-  assert.ok(action?.runtime?.lastReceiptId);
-  assert.equal(action?.runtime?.lastAppliedEffect?.pressureDelta, -5);
-  assert.equal(action?.runtime?.lastAppliedEffect?.recoveryDelta, -4);
-  assert.equal(action?.runtime?.lastAppliedEffect?.threatDelta, -2);
-  assert.match(action?.runtime?.lastReceiptSummary ?? "", /Costs committed:/i);
+test("player action cards expose last applied world action results", () => {
+  const ps = seedPressure();
+  const result = executeWorldConsequenceAction(ps, "action_stabilize_supply_lanes");
+  assert.equal(result.ok, true);
+
+  const actions = deriveWorldConsequenceActions(ps);
+  const stabilize = actions.playerActions.find((action) => action.id === "action_stabilize_supply_lanes");
+  assert.ok(stabilize);
+  assert.ok(stabilize?.runtime?.lastReceiptId);
+  assert.match(stabilize?.runtime?.lastReceiptSummary ?? "", /scarcity pressure|Costs committed/i);
+  assert.deepEqual(stabilize?.runtime?.lastAppliedEffect, {
+    pressureDelta: -5,
+    recoveryDelta: -4,
+    controlDelta: 1,
+    threatDelta: -2,
+  });
 });

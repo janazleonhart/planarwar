@@ -7,7 +7,13 @@ import { deriveWorldConsequenceHooks } from "./worldConsequenceHooks";
 
 export type WorldConsequenceActionPriority = "watch" | "high" | "critical";
 export type WorldConsequenceActionAudience = "player" | "admin" | "mother_brain";
-export type WorldConsequenceActionLane = "economy" | "black_market" | "cartel" | "faction" | "regional" | "observability";
+export type WorldConsequenceActionLane =
+  | "economy"
+  | "black_market"
+  | "cartel"
+  | "faction"
+  | "regional"
+  | "observability";
 
 export interface RuntimeWorldConsequenceActionPlan {
   contractKind: "stabilize_district" | "repair_works" | "relief_convoys" | "counter_rumors";
@@ -27,6 +33,12 @@ export interface WorldConsequenceActionRuntimeEffectPreview {
   controlDelta: number;
   threatDelta: number;
   summary: string;
+}
+
+export interface WorldConsequenceActionEvidenceItem {
+  label: string;
+  value: number;
+  tone?: "watch" | "high" | "critical";
 }
 
 export interface WorldConsequenceActionRuntimeView {
@@ -61,6 +73,7 @@ export interface WorldConsequenceActionItem {
   recommendedMoves: string[];
   sourceRegionId: string | null;
   sourceHook: string;
+  evidence?: WorldConsequenceActionEvidenceItem[];
   runtime?: WorldConsequenceActionRuntimeView;
 }
 
@@ -72,11 +85,12 @@ export interface WorldConsequenceActionsView {
   motherBrainActions: WorldConsequenceActionItem[];
 }
 
-
-
 export const WORLD_CONSEQUENCE_ACTION_COOLDOWN_MS = 10 * 60 * 1000;
 
-function summarizeRuntimeActionHistory(ps: PlayerState, actionId: string): {
+function summarizeRuntimeActionHistory(
+  ps: PlayerState,
+  actionId: string,
+): {
   lastCommittedAt?: string;
   successfulCommitCount: number;
   lastReceiptId?: string;
@@ -101,11 +115,14 @@ function summarizeRuntimeActionHistory(ps: PlayerState, actionId: string): {
         threatDelta: number;
       }
     | undefined;
+
   for (const entry of receipts) {
     if (entry.source !== "recovery_contract") continue;
     if (entry.runtimeActionId !== actionId) continue;
     if (entry.outcome !== "success") continue;
+
     successfulCommitCount += 1;
+
     if (!lastCommittedAt) {
       lastCommittedAt = entry.createdAt;
       lastReceiptId = entry.id;
@@ -118,7 +135,14 @@ function summarizeRuntimeActionHistory(ps: PlayerState, actionId: string): {
       };
     }
   }
-  return { lastCommittedAt, successfulCommitCount, lastReceiptId, lastReceiptSummary, lastAppliedEffect };
+
+  return {
+    lastCommittedAt,
+    successfulCommitCount,
+    lastReceiptId,
+    lastReceiptSummary,
+    lastAppliedEffect,
+  };
 }
 
 export function getWorldConsequenceRuntimePlan(actionId: string): RuntimeWorldConsequenceActionPlan | null {
@@ -187,20 +211,23 @@ function getActionShortfall(resources: Resources, spent: Partial<Resources>): Pa
   return shortfall;
 }
 
-function canAffordAction(resources: Resources, spent: Partial<Resources>): boolean {
-  return Object.keys(getActionShortfall(resources, spent)).length === 0;
-}
-
-function runtimeButtonLabel(actionId: string, affordability?: WorldConsequenceActionRuntimeView["affordability"]): string {
+function runtimeButtonLabel(
+  actionId: string,
+  affordability?: WorldConsequenceActionRuntimeView["affordability"],
+): string {
   if (affordability === "cooldown_active") return "Cooling down";
   if (actionId === "action_stabilize_supply_lanes") return "Fund stabilization";
   if (actionId === "action_faction_stability") return "Fund civic response";
-  if (actionId === "action_cartel_pressure" || actionId === "action_black_market_window_contain") return "Fund containment";
+  if (actionId === "action_cartel_pressure" || actionId === "action_black_market_window_contain") {
+    return "Fund containment";
+  }
   if (actionId.startsWith("action_region_")) return "Dispatch response";
   return "Advisory only";
 }
 
-function buildRuntimeEffectPreview(plan: RuntimeWorldConsequenceActionPlan): WorldConsequenceActionRuntimeEffectPreview {
+function buildRuntimeEffectPreview(
+  plan: RuntimeWorldConsequenceActionPlan,
+): WorldConsequenceActionRuntimeEffectPreview {
   return {
     pressureDelta: plan.pressureDelta,
     recoveryDelta: plan.recoveryDelta,
@@ -211,7 +238,10 @@ function buildRuntimeEffectPreview(plan: RuntimeWorldConsequenceActionPlan): Wor
   };
 }
 
-export function buildWorldConsequenceActionRuntimeView(ps: PlayerState, actionId: string): WorldConsequenceActionRuntimeView {
+export function buildWorldConsequenceActionRuntimeView(
+  ps: PlayerState,
+  actionId: string,
+): WorldConsequenceActionRuntimeView {
   const plan = getWorldConsequenceRuntimePlan(actionId);
   if (!plan) {
     return {
@@ -248,6 +278,7 @@ export function buildWorldConsequenceActionRuntimeView(ps: PlayerState, actionId
 
   const shortfall = getActionShortfall(ps.resources, plan.spent);
   const affordable = Object.keys(shortfall).length === 0;
+
   return {
     executable: affordable,
     affordability: affordable ? "affordable" : "insufficient_resources",
@@ -256,7 +287,9 @@ export function buildWorldConsequenceActionRuntimeView(ps: PlayerState, actionId
     shortfall: affordable ? undefined : shortfall,
     note: affordable
       ? "This lane can be committed right now as a bounded runtime response."
-      : `This lane is real, but the city still lacks ${Object.entries(shortfall).map(([key, value]) => `${key} ${value}`).join(", ")} to commit it.`,
+      : `This lane is real, but the city still lacks ${Object.entries(shortfall)
+          .map(([key, value]) => `${key} ${value}`)
+          .join(", ")} to commit it.`,
     effect: buildRuntimeEffectPreview(plan),
     lastCommittedAt: history.lastCommittedAt,
     successfulCommitCount: history.successfulCommitCount,
@@ -265,6 +298,118 @@ export function buildWorldConsequenceActionRuntimeView(ps: PlayerState, actionId
     lastAppliedEffect: history.lastAppliedEffect,
   };
 }
+
+function toneForValue(value: number): "watch" | "high" | "critical" {
+  if (value >= 12) return "critical";
+  if (value >= 6) return "high";
+  return "watch";
+}
+
+function buildActionEvidence(
+  actionId: string,
+  propagated: WorldConsequenceState | null,
+  hooks: WorldConsequenceHooksView,
+  sourceRegionId: string | null,
+): WorldConsequenceActionEvidenceItem[] {
+  if (!propagated) return [];
+
+  if (actionId === "action_stabilize_supply_lanes") {
+    return [
+      {
+        label: "trade pressure",
+        value: Number(propagated.worldEconomy.tradePressure ?? 0),
+        tone: toneForValue(Number(propagated.worldEconomy.tradePressure ?? 0)),
+      },
+      {
+        label: "supply friction",
+        value: Number(propagated.worldEconomy.supplyFriction ?? 0),
+        tone: toneForValue(Number(propagated.worldEconomy.supplyFriction ?? 0)),
+      },
+      {
+        label: "destabilization",
+        value: Number(propagated.summary?.destabilizationScore ?? 0),
+        tone: toneForValue(Number(propagated.summary?.destabilizationScore ?? 0)),
+      },
+    ].filter((entry) => entry.value > 0);
+  }
+
+  if (actionId === "action_faction_stability") {
+    return [
+      {
+        label: "instability",
+        value: Number(propagated.factionPressure.instability ?? 0),
+        tone: toneForValue(Number(propagated.factionPressure.instability ?? 0)),
+      },
+      {
+        label: "drift score",
+        value: Number(propagated.factionPressure.driftScore ?? 0),
+        tone: toneForValue(Number(propagated.factionPressure.driftScore ?? 0)),
+      },
+    ].filter((entry) => entry.value > 0);
+  }
+
+  if (
+    actionId === "action_cartel_pressure" ||
+    actionId === "action_black_market_window_contain" ||
+    actionId === "action_black_market_window_exploit"
+  ) {
+    return [
+      {
+        label: "cartel attention",
+        value: Number(hooks.cartel.attention ?? 0),
+        tone: toneForValue(Number(hooks.cartel.attention ?? 0)),
+      },
+      {
+        label: "black-market heat",
+        value: Number(propagated.blackMarket.heat ?? 0),
+        tone: toneForValue(Number(propagated.blackMarket.heat ?? 0)),
+      },
+      {
+        label: "opportunity",
+        value: Number(propagated.blackMarket.opportunityScore ?? 0),
+        tone: toneForValue(Number(propagated.blackMarket.opportunityScore ?? 0)),
+      },
+    ].filter((entry) => entry.value > 0);
+  }
+
+  if (actionId.startsWith("action_region_")) {
+    const hotspot = hooks.hotspots.find((entry) => entry.regionId === sourceRegionId) ?? hooks.hotspots[0];
+    if (!hotspot) return [];
+    return [
+      {
+        label: "regional trade disruption",
+        value: Number(hotspot.tradeDisruption ?? 0),
+        tone: toneForValue(Number(hotspot.tradeDisruption ?? 0)),
+      },
+      {
+        label: "regional black-market heat",
+        value: Number(hotspot.blackMarketHeat ?? 0),
+        tone: toneForValue(Number(hotspot.blackMarketHeat ?? 0)),
+      },
+      {
+        label: "regional faction drift",
+        value: Number(hotspot.factionDrift ?? 0),
+        tone: toneForValue(Number(hotspot.factionDrift ?? 0)),
+      },
+    ].filter((entry) => entry.value > 0);
+  }
+
+  return [];
+}
+
+function attachActionTruth(
+  item: WorldConsequenceActionItem,
+  ps: PlayerState,
+  propagated: WorldConsequenceState | null,
+  hooks: WorldConsequenceHooksView,
+): WorldConsequenceActionItem {
+  return {
+    ...item,
+    evidence: buildActionEvidence(item.id, propagated, hooks, item.sourceRegionId),
+    runtime: buildWorldConsequenceActionRuntimeView(ps, item.id),
+  };
+}
+
 function pushUnique(target: WorldConsequenceActionItem[], item: WorldConsequenceActionItem) {
   if (!target.some((existing) => existing.id === item.id)) target.push(item);
 }
@@ -302,7 +447,8 @@ export function deriveWorldConsequenceActions(
       lane: "observability",
       priority: "watch",
       title: "Keep observing until exported pressure is real",
-      summary: "Mother Brain is receiving the seam, but the city has not generated a meaningful world consequence trail yet.",
+      summary:
+        "Mother Brain is receiving the seam, but the city has not generated a meaningful world consequence trail yet.",
       recommendedMoves: [
         "Let at least one setback or recovery contract fully resolve.",
         "Refresh the Mother Brain page and confirm the ledger count rises above zero.",
@@ -310,25 +456,28 @@ export function deriveWorldConsequenceActions(
       sourceRegionId: hottestRegion,
       sourceHook: "summary",
     };
-    const quietWithRuntime = { ...quiet, runtime: buildWorldConsequenceActionRuntimeView(ps, quiet.id) };
+
     return {
       headline: "No actionable world-consequence pressure yet.",
       recommendedPrimaryAction: quiet.title,
-      playerActions: [quietWithRuntime],
+      playerActions: [attachActionTruth(quiet, ps, propagated, hooks)],
       adminActions: [],
       motherBrainActions: [],
     };
   }
 
   if (hooks.worldEconomy.riskTier === "active" || hooks.worldEconomy.riskTier === "severe") {
-    const priority: WorldConsequenceActionPriority = hooks.worldEconomy.riskTier === "severe" ? "critical" : "high";
+    const priority: WorldConsequenceActionPriority =
+      hooks.worldEconomy.riskTier === "severe" ? "critical" : "high";
+
     pushUnique(playerActions, {
       id: "action_stabilize_supply_lanes",
       audience: "player",
       lane: "economy",
       priority,
       title: "Stabilize supply lanes before scarcity hardens",
-      summary: "Trade disruption and supply friction are high enough to spill back into city pressure if left alone.",
+      summary:
+        "Trade disruption and supply friction are high enough to spill back into city pressure if left alone.",
       recommendedMoves: [
         "Favor recovery or logistics contracts over greedier mission picks for a cycle.",
         "Keep public services and essentials supplied so economy pressure does not echo into fresh setbacks.",
@@ -336,13 +485,15 @@ export function deriveWorldConsequenceActions(
       sourceRegionId: hottestRegion,
       sourceHook: "worldEconomy",
     });
+
     pushUnique(adminActions, {
       id: "admin_watch_trade_pressure",
       audience: "admin",
       lane: "economy",
       priority,
       title: "Watch economy pressure and scarcity-facing systems",
-      summary: "The world economy hook is live enough that downstream scarcity, route strain, or merchant throttling should be considered expected behavior.",
+      summary:
+        "The world economy hook is live enough that downstream scarcity, route strain, or merchant throttling should be considered expected behavior.",
       recommendedMoves: [
         "Confirm vendor and route-facing systems are not contradicting the propagated pressure state.",
         "Audit whether future economy consumers should read the same consequence hook instead of inventing a parallel signal.",
@@ -359,7 +510,8 @@ export function deriveWorldConsequenceActions(
       lane: "black_market",
       priority: "watch",
       title: "A black-market seam is opening, but the city cannot exploit it yet",
-      summary: "Pressure is creating illicit opportunity, but the city still lacks the unlock or doctrine to act on it.",
+      summary:
+        "Pressure is creating illicit opportunity, but the city still lacks the unlock or doctrine to act on it.",
       recommendedMoves: [
         "Treat this as a warning, not free money.",
         "Either unlock the lane later or contain the conditions creating the opening now.",
@@ -370,8 +522,11 @@ export function deriveWorldConsequenceActions(
   }
 
   if (hooks.blackMarket.status === "active" || hooks.blackMarket.status === "surging") {
-    const priority: WorldConsequenceActionPriority = hooks.blackMarket.status === "surging" ? "critical" : "high";
-    const exploit = hooks.blackMarket.recommendedPosture === "exploit" || hooks.blackMarket.recommendedPosture === "probe";
+    const priority: WorldConsequenceActionPriority =
+      hooks.blackMarket.status === "surging" ? "critical" : "high";
+    const exploit =
+      hooks.blackMarket.recommendedPosture === "exploit" || hooks.blackMarket.recommendedPosture === "probe";
+
     pushUnique(playerActions, {
       id: exploit ? "action_black_market_window_exploit" : "action_black_market_window_contain",
       audience: "player",
@@ -396,14 +551,17 @@ export function deriveWorldConsequenceActions(
   }
 
   if (hooks.cartel.pressureTier === "active" || hooks.cartel.pressureTier === "severe") {
-    const priority: WorldConsequenceActionPriority = hooks.cartel.pressureTier === "severe" ? "critical" : "high";
+    const priority: WorldConsequenceActionPriority =
+      hooks.cartel.pressureTier === "severe" ? "critical" : "high";
+
     pushUnique(playerActions, {
       id: "action_cartel_pressure",
       audience: "player",
       lane: "cartel",
       priority,
       title: "Cartel attention is active on your consequence trail",
-      summary: "Route pressure and illicit openings are attracting cartel behavior that will punish sloppy recovery choices.",
+      summary:
+        "Route pressure and illicit openings are attracting cartel behavior that will punish sloppy recovery choices.",
       recommendedMoves: [
         "Protect essentials first; luxury recovery can wait.",
         "Do not stack more heat in the hottest region unless you actually want a harder world response.",
@@ -411,13 +569,15 @@ export function deriveWorldConsequenceActions(
       sourceRegionId: hottestRegion,
       sourceHook: "cartel",
     });
+
     pushUnique(adminActions, {
       id: "admin_cartel_observability",
       audience: "admin",
       lane: "cartel",
       priority,
       title: "Track cartel attention as a real downstream consumer candidate",
-      summary: "The cartel hook is strong enough to justify future runtime consumers and admin audits instead of leaving it as passive telemetry.",
+      summary:
+        "The cartel hook is strong enough to justify future runtime consumers and admin audits instead of leaving it as passive telemetry.",
       recommendedMoves: [
         "Confirm logs and dashboards surface cartel pressure alongside black-market opportunity.",
         "Queue any future cartel runtime work to consume this hook directly rather than rebuilding the math elsewhere.",
@@ -428,14 +588,17 @@ export function deriveWorldConsequenceActions(
   }
 
   if (hooks.faction.responseBias === "watch" || hooks.faction.responseBias === "fracture_risk") {
-    const priority: WorldConsequenceActionPriority = hooks.faction.responseBias === "fracture_risk" ? "critical" : "high";
+    const priority: WorldConsequenceActionPriority =
+      hooks.faction.responseBias === "fracture_risk" ? "critical" : "high";
+
     pushUnique(playerActions, {
       id: "action_faction_stability",
       audience: "player",
       lane: "faction",
       priority,
       title: "Repair faction stability before local pressure turns political",
-      summary: "Faction drift is no longer quiet, which means recovery choices should favor stability instead of raw extraction.",
+      summary:
+        "Faction drift is no longer quiet, which means recovery choices should favor stability instead of raw extraction.",
       recommendedMoves: [
         "Prefer unity-positive or recovery-positive outcomes for a cycle.",
         "Avoid stacking fresh setbacks in already hot regions while faction posture is wobbling.",
@@ -443,13 +606,15 @@ export function deriveWorldConsequenceActions(
       sourceRegionId: hottestRegion,
       sourceHook: "faction",
     });
+
     pushUnique(motherBrainActions, {
       id: "mb_prioritize_unstable_regions",
       audience: "mother_brain",
       lane: "faction",
       priority,
       title: "Prioritize unstable regions in consequence-aware observation",
-      summary: "Faction posture has drifted far enough that Mother Brain should keep unstable regions visible in reporting and future goal packs.",
+      summary:
+        "Faction posture has drifted far enough that Mother Brain should keep unstable regions visible in reporting and future goal packs.",
       recommendedMoves: [
         "Keep the hottest region near the top of summaries and smoke coverage.",
         "Do not mutate the world from this alone yet; remain observe-only and auditable.",
@@ -484,7 +649,8 @@ export function deriveWorldConsequenceActions(
       lane: "observability",
       priority: hooks.summary.hasActiveHooks ? "high" : "watch",
       title: "Keep consequence visibility aligned across player, admin, and Mother Brain surfaces",
-      summary: "The seam is live now, so stale dashboards or silent logs become a trust problem instead of a cosmetic one.",
+      summary:
+        "The seam is live now, so stale dashboards or silent logs become a trust problem instead of a cosmetic one.",
       recommendedMoves: [
         "Confirm /api/me, world consequence routes, and Mother Brain snapshot all describe the same pressure story.",
         "When logs are quiet, verify whether the city simply has no live pressure instead of assuming the seam is broken.",
@@ -494,10 +660,15 @@ export function deriveWorldConsequenceActions(
     });
   }
 
-  const sortedPlayer = sorted(playerActions).slice(0, 5).map((item) => ({ ...item, runtime: buildWorldConsequenceActionRuntimeView(ps, item.id) }));
-  const sortedAdmin = sorted(adminActions).slice(0, 5);
-  const sortedMotherBrain = sorted(motherBrainActions).slice(0, 5);
-  const recommendedPrimaryAction = sortedPlayer[0]?.title ?? sortedAdmin[0]?.title ?? sortedMotherBrain[0]?.title ?? "Keep observing";
+  const sortedPlayer = sorted(playerActions).slice(0, 5).map((item) => attachActionTruth(item, ps, propagated, hooks));
+  const sortedAdmin = sorted(adminActions).slice(0, 5).map((item) => attachActionTruth(item, ps, propagated, hooks));
+  const sortedMotherBrain = sorted(motherBrainActions)
+    .slice(0, 5)
+    .map((item) => attachActionTruth(item, ps, propagated, hooks));
+
+  const recommendedPrimaryAction =
+    sortedPlayer[0]?.title ?? sortedAdmin[0]?.title ?? sortedMotherBrain[0]?.title ?? "Keep observing";
+
   const headline =
     sortedPlayer[0]?.summary ??
     sortedAdmin[0]?.summary ??
