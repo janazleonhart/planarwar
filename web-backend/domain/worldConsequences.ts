@@ -122,6 +122,10 @@ function clampNonNegative(value: number): number {
   return Math.max(0, Math.round(value));
 }
 
+function roundSigned(value: number): number {
+  return Math.round(value);
+}
+
 function scaleSeverityWeight(severity: WorldConsequenceSeverity): number {
   switch (severity) {
     case "severe": return 3;
@@ -230,25 +234,30 @@ export function deriveWorldConsequenceState(entries: WorldConsequenceLedgerEntry
     const controlDelta = Number(entry.metrics?.controlDelta ?? 0);
     const threatDelta = Number(entry.metrics?.threatDelta ?? 0);
 
+    const tradeTagShift = entry.tags.includes("trade_disruption") ? (pressureDelta < 0 || threatDelta < 0 || entry.outcome === "success" ? -2 : 2) : 0;
+    const blackMarketTagShift = entry.tags.includes("black_market_opening") ? (pressureDelta < 0 || recoveryDelta < 0 || entry.outcome === "success" ? -4 : 4) : 0;
+    const factionTagShift = entry.tags.includes("faction_drift") ? (threatDelta < 0 || controlDelta > 0 || entry.outcome === "success" ? -2 : 2) : 0;
+    const economyHookShift = entry.tags.includes("world_economy_hook") ? (pressureDelta < 0 || threatDelta < 0 || entry.outcome === "success" ? -3 : 3) : 0;
+
     current.entryCount += 1;
     current.netPressure += pressureDelta;
     current.netRecoveryLoad += recoveryDelta;
     current.controlDrift += controlDelta;
     current.threatDrift += threatDelta;
-    current.tradeDisruption += clampNonNegative(threatDelta + Math.max(0, pressureDelta * 0.5) + (entry.tags.includes("trade_disruption") ? 2 : 0));
-    current.blackMarketHeat += clampNonNegative(Math.max(0, pressureDelta) + Math.max(0, recoveryDelta * 0.5) + (entry.tags.includes("black_market_opening") ? 4 : 0));
-    current.factionDrift += clampNonNegative(Math.max(0, threatDelta) + Math.max(0, -controlDelta) + (entry.tags.includes("faction_drift") ? 2 : 0));
+    current.tradeDisruption = clampNonNegative(current.tradeDisruption + roundSigned(threatDelta + pressureDelta * 0.5 + tradeTagShift));
+    current.blackMarketHeat = clampNonNegative(current.blackMarketHeat + roundSigned(pressureDelta + recoveryDelta * 0.5 + blackMarketTagShift));
+    current.factionDrift = clampNonNegative(current.factionDrift + roundSigned(threatDelta + Math.max(0, -controlDelta) - Math.max(0, controlDelta) + factionTagShift));
     current.dominantSeverity = severityWeight >= scaleSeverityWeight(current.dominantSeverity) ? entry.severity : current.dominantSeverity;
     current.lastEventAt = entry.createdAt;
     regionMap.set(regionId, current);
 
-    tradePressure += clampNonNegative(current.tradeDisruption === 0 ? threatDelta : 0) + clampNonNegative(threatDelta + Math.max(0, pressureDelta * 0.4));
-    supplyFriction += clampNonNegative(Math.max(0, recoveryDelta) + Math.max(0, -controlDelta));
-    cartelAttention += clampNonNegative(Math.max(0, pressureDelta * 0.6) + Math.max(0, threatDelta) + (entry.tags.includes("world_economy_hook") ? 3 : 0));
-    blackMarketOpportunity += clampNonNegative(Math.max(0, pressureDelta) + Math.max(0, recoveryDelta * 0.35) + (entry.tags.includes("black_market_opening") ? 5 : 0));
-    blackMarketHeat += clampNonNegative(Math.max(0, pressureDelta * 0.4) + Math.max(0, threatDelta * 0.5));
-    factionDriftScore += clampNonNegative(Math.max(0, threatDelta) + Math.max(0, -controlDelta) + (entry.tags.includes("faction_drift") ? 3 : 0));
-    factionInstability += clampNonNegative(Math.max(0, pressureDelta * 0.5) + Math.max(0, recoveryDelta * 0.35) + Math.max(0, threatDelta));
+    tradePressure += roundSigned(threatDelta + pressureDelta * 0.4 + tradeTagShift);
+    supplyFriction += roundSigned(recoveryDelta - Math.max(0, controlDelta * 0.5) + Math.max(0, -controlDelta));
+    cartelAttention += roundSigned(pressureDelta * 0.6 + threatDelta + economyHookShift);
+    blackMarketOpportunity += roundSigned(pressureDelta + recoveryDelta * 0.35 + (entry.tags.includes("black_market_opening") ? (entry.outcome === "success" || pressureDelta < 0 || recoveryDelta < 0 ? -5 : 5) : 0));
+    blackMarketHeat += roundSigned(pressureDelta * 0.4 + threatDelta * 0.5);
+    factionDriftScore += roundSigned(threatDelta + Math.max(0, -controlDelta) - Math.max(0, controlDelta) + (entry.tags.includes("faction_drift") ? (entry.outcome === "success" ? -3 : 3) : 0));
+    factionInstability += roundSigned(pressureDelta * 0.5 + recoveryDelta * 0.35 + threatDelta);
     if (entry.severity === "severe") severeCount += 1;
     if (!lastUpdatedAt || entry.createdAt > lastUpdatedAt) lastUpdatedAt = entry.createdAt;
   }
@@ -275,27 +284,27 @@ export function deriveWorldConsequenceState(entries: WorldConsequenceLedgerEntry
   return {
     regions,
     worldEconomy: {
-      tradePressure,
-      supplyFriction,
-      cartelAttention,
-      destabilization: destabilizationScore,
-      outlook: economyOutlook(tradePressure + supplyFriction + cartelAttention),
+      tradePressure: clampNonNegative(tradePressure),
+      supplyFriction: clampNonNegative(supplyFriction),
+      cartelAttention: clampNonNegative(cartelAttention),
+      destabilization: clampNonNegative(destabilizationScore),
+      outlook: economyOutlook(clampNonNegative(tradePressure + supplyFriction + cartelAttention)),
     },
     blackMarket: {
-      opportunityScore: blackMarketOpportunity,
-      heat: blackMarketHeat,
-      outlook: blackMarketOutlook(blackMarketScore),
+      opportunityScore: clampNonNegative(blackMarketOpportunity),
+      heat: clampNonNegative(blackMarketHeat),
+      outlook: blackMarketOutlook(clampNonNegative(blackMarketScore)),
     },
     factionPressure: {
-      driftScore: factionDriftScore,
-      instability: factionInstability,
+      driftScore: clampNonNegative(factionDriftScore),
+      instability: clampNonNegative(factionInstability),
       dominantStance,
     },
     summary: {
       affectedRegionIds: regions.map((entry) => entry.regionId),
       totalLedgerEntries: entries.length,
       severeCount,
-      destabilizationScore,
+      destabilizationScore: clampNonNegative(destabilizationScore),
       note,
     },
     lastUpdatedAt,
@@ -380,11 +389,13 @@ export function buildRecoveryContractWorldConsequence(input: {
 }): Omit<WorldConsequenceLedgerEntry, "id" | "createdAt" | "playerId" | "cityId"> {
   const severityScore = Math.abs(input.pressureDelta) + Math.abs(input.recoveryDelta) + Math.max(0, -input.trustDelta);
   const severity = clampSeverity(severityScore);
-  const tags: WorldConsequenceTag[] = ["city_pressure_export", "recovery_load"];
+  const tags: WorldConsequenceTag[] = ["city_pressure_export"];
+  if (input.recoveryDelta > 0) tags.push("recovery_load");
   if (input.outcome === "success") {
-    tags.push("faction_drift");
+    if (input.pressureDelta > 0 || input.trustDelta < 0) tags.push("regional_instability");
   } else {
     tags.push("regional_instability", "trade_disruption");
+    if (input.trustDelta < 0) tags.push("faction_drift");
   }
   if (input.outcome === "failure" || input.pressureDelta >= 4) {
     tags.push("black_market_opening", "world_economy_hook");

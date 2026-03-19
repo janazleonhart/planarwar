@@ -7,7 +7,8 @@ import { deriveWorldConsequenceActions } from "../domain/worldConsequenceActions
 import { applyWorldConsequenceVendorPolicy, deriveWorldConsequenceConsumers } from "../domain/worldConsequenceConsumers";
 import { deriveEconomyCartelResponseState } from "../domain/economyCartelResponse";
 import { deriveCityMudConsumers, deriveVendorSupportPolicy, summarizeCityMudBridge } from "../domain/cityMudBridge";
-import { resolvePlayerAccess } from "./playerCityAccess";
+import { resolvePlayerAccess, withPlayerAccessMutation } from "./playerCityAccess";
+import { executeWorldConsequenceAction } from "../domain/worldConsequenceRuntimeActions";
 
 const router = Router();
 
@@ -36,6 +37,52 @@ router.get("/status", async (req, res) => {
       bridgeSummary,
     },
   });
+});
+
+
+router.post("/act", async (req, res) => {
+  const actionId = typeof req.body?.actionId === "string" ? req.body.actionId.trim() : "";
+  if (!actionId) {
+    return res.status(400).json({ ok: false, error: "actionId is required" });
+  }
+
+  const access = await withPlayerAccessMutation(req, (access) => {
+    const result = executeWorldConsequenceAction(access.playerState, actionId);
+    if (!result.ok) {
+      const code = result.status === "unknown_action" ? 404 : 400;
+      return { ok: false as const, code, body: { ok: false, error: result.message, status: result.status, actionId } };
+    }
+
+    const bridgeSummary = summarizeCityMudBridge(access.playerState);
+    const bridgeConsumers = deriveCityMudConsumers(bridgeSummary);
+    const vendorPolicy = deriveVendorSupportPolicy(bridgeSummary, bridgeConsumers);
+    const consumers = deriveWorldConsequenceConsumers(access.playerState);
+
+    return {
+      ok: true as const,
+      body: {
+        ok: true,
+        result,
+        resources: access.playerState.resources,
+        cityStress: access.playerState.cityStress,
+        worldConsequenceState: access.playerState.worldConsequenceState ?? null,
+        worldConsequences: access.playerState.worldConsequences ?? [],
+        worldConsequenceHooks: deriveWorldConsequenceHooks(access.playerState),
+        worldConsequenceActions: deriveWorldConsequenceActions(access.playerState),
+        worldConsequenceConsumers: consumers,
+        responseState: deriveEconomyCartelResponseState(access.playerState),
+        consumerTargets: {
+          vendorPolicy,
+          vendorPolicyWithConsequences: applyWorldConsequenceVendorPolicy(vendorPolicy, consumers),
+          bridgeSummary,
+        },
+      },
+    };
+  });
+
+  if (access.ok === false) return res.status(access.status).json({ ok: false, error: access.error });
+  if (!access.value.ok) return res.status(access.value.code).json(access.value.body);
+  return res.json(access.value.body);
 });
 
 router.get("/actions", async (req, res) => {

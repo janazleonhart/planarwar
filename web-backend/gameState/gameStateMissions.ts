@@ -8,7 +8,7 @@ import type { Hero, HeroAttachment, HeroResponseRole, HeroTrait } from "../domai
 import { getHeroAttachmentDef } from "./gameStateHeroes";
 import type { MissionDefenseReceipt, MissionDifficulty, MissionOffer, MissionResponsePosture, MissionResponseTag, MissionSetback, MotherBrainPressureWindow, PressureMapConfidence, RecoveryContractKind, RewardBundle, ThreatFamily, ThreatWarning, WarningIntelQuality } from "../domain/missions";
 import type { RegionId, World } from "../domain/world";
-import { buildRecoveryContractWorldConsequence, buildSetbackWorldConsequence, pushWorldConsequence, summarizeWorldConsequences, recomputeWorldConsequenceState } from "../domain/worldConsequences";
+import { buildRecoveryContractWorldConsequence, buildSetbackWorldConsequence, deriveWorldConsequenceState, pushWorldConsequence, summarizeWorldConsequences } from "../domain/worldConsequences";
 import { deriveEconomyCartelResponseState } from "../domain/economyCartelResponse";
 import type {
   ActiveMission,
@@ -508,7 +508,7 @@ function buildCityAlphaScopeLockItems(ps: PlayerState): CityAlphaScopeLockSummar
 export function summarizePlayerWorldConsequences(ps: PlayerState) {
   return {
     ...summarizeWorldConsequences(ps.worldConsequences ?? []),
-    propagatedState: recomputeWorldConsequenceState(ps),
+    propagatedState: deriveWorldConsequenceState(ps.worldConsequences ?? []),
   };
 }
 
@@ -1726,7 +1726,7 @@ export function completeMissionForPlayer(
 
   ps.activeMissions.splice(index, 1);
   syncRecoveryContractsForState(ps, now);
-  recomputeWorldConsequenceState(ps);
+  ps.worldConsequenceState = deriveWorldConsequenceState(ps.worldConsequences ?? []);
 
   return { status: "ok", rewards, resources: ps.resources, outcome, receipt };
 }

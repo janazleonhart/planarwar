@@ -10,6 +10,7 @@ import {
   fetchMissionBoard,
   fetchPublicInfrastructureStatus,
   renameCity,
+  executeWorldConsequenceAction,
   startMission,
   startTech,
   type AppliedPublicServiceUsage,
@@ -237,6 +238,18 @@ function formatContractKind(kind: string | undefined): string {
 }
 
 
+function isRuntimeExecutableWorldAction(action: WorldConsequenceActionItem): boolean {
+  return action.id === "action_stabilize_supply_lanes" || action.id === "action_faction_stability" || action.id === "action_cartel_pressure" || action.id === "action_black_market_window_contain" || action.id.startsWith("action_region_");
+}
+
+function worldActionButtonLabel(action: WorldConsequenceActionItem): string {
+  if (action.id === "action_stabilize_supply_lanes") return "Fund stabilization";
+  if (action.id === "action_faction_stability") return "Fund civic response";
+  if (action.id === "action_cartel_pressure" || action.id === "action_black_market_window_contain") return "Fund containment";
+  if (action.id.startsWith("action_region_")) return "Dispatch response";
+  return "Advisory only";
+}
+
 function worldSeverityColor(severity: string): string {
   switch (severity) {
     case "severe": return "#ff7a7a";
@@ -303,6 +316,7 @@ export function MePage() {
   const [missionHeroSelection, setMissionHeroSelection] = useState<Record<string, string>>({});
   const [missionArmySelection, setMissionArmySelection] = useState<Record<string, string>>({});
   const [missionPostureSelection, setMissionPostureSelection] = useState<Record<string, "cautious" | "balanced" | "aggressive" | "desperate">>({});
+  const [worldActionBusyId, setWorldActionBusyId] = useState<string | null>(null);
   const [notice, setNotice] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
 
   const noticeTimer = useRef<number | null>(null);
@@ -487,6 +501,22 @@ export function MePage() {
       () => completeMission(instanceId),
       () => "Mission resolved and city state refreshed."
     );
+
+  const handleExecuteWorldAction = async (action: WorldConsequenceActionItem) => {
+    if (worldActionBusyId) return;
+    setWorldActionBusyId(action.id);
+    setError(null);
+    try {
+      const result = await executeWorldConsequenceAction(action.id);
+      await refreshMe(serviceMode);
+      setFlash("ok", result?.result?.message ?? `${action.title} executed.`);
+    } catch (err: any) {
+      console.error(err);
+      setFlash("err", err?.message ?? `Failed to execute ${action.title}.`);
+    } finally {
+      setWorldActionBusyId(null);
+    }
+  };
 
   const city = me?.city ?? null;
   const disabled = !!busyAction;
@@ -1182,18 +1212,43 @@ export function MePage() {
                   </div>
                   {worldConsequenceActions.playerActions.length === 0 ? (
                     <div style={{ opacity: 0.7 }}>No player-facing action recommendations yet.</div>
-                  ) : worldConsequenceActions.playerActions.map((action: WorldConsequenceActionItem) => (
-                    <div key={action.id} style={{ border: "1px solid #555", borderRadius: 8, padding: 10, display: "grid", gap: 4, background: "rgba(36,36,36,0.14)" }}>
-                      <div><strong>{action.title}</strong> <span style={{ color: worldHookTone(action.priority) }}>{action.priority}</span></div>
-                      <div style={{ fontSize: 12, opacity: 0.82 }}>{action.summary}</div>
-                      <div style={{ fontSize: 12, opacity: 0.76 }}>lane {action.lane}{action.sourceRegionId ? ` • region ${getRegionDisplayName(action.sourceRegionId)}` : ""}</div>
-                      <div style={{ display: "grid", gap: 2, fontSize: 12, opacity: 0.8 }}>
-                        {action.recommendedMoves.map((move, idx) => (
-                          <div key={`${action.id}_${idx}`}>• {move}</div>
-                        ))}
+                  ) : worldConsequenceActions.playerActions.map((action: WorldConsequenceActionItem) => {
+                    const executable = isRuntimeExecutableWorldAction(action);
+                    const isBusy = worldActionBusyId === action.id;
+                    return (
+                      <div key={action.id} style={{ border: "1px solid #555", borderRadius: 8, padding: 10, display: "grid", gap: 8, background: "rgba(36,36,36,0.14)" }}>
+                        <div><strong>{action.title}</strong> <span style={{ color: worldHookTone(action.priority) }}>{action.priority}</span></div>
+                        <div style={{ fontSize: 12, opacity: 0.82 }}>{action.summary}</div>
+                        <div style={{ fontSize: 12, opacity: 0.76 }}>lane {action.lane}{action.sourceRegionId ? ` • region ${getRegionDisplayName(action.sourceRegionId)}` : ""}</div>
+                        <div style={{ display: "grid", gap: 2, fontSize: 12, opacity: 0.8 }}>
+                          {action.recommendedMoves.map((move, idx) => (
+                            <div key={`${action.id}_${idx}`}>• {move}</div>
+                          ))}
+                        </div>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                          <div style={{ fontSize: 12, opacity: 0.7 }}>
+                            {executable ? "This lane can now be committed as a bounded runtime response." : "Advisory only — runtime still cannot execute this lane yet."}
+                          </div>
+                          <button
+                            type="button"
+                            disabled={!executable || isBusy}
+                            onClick={() => void handleExecuteWorldAction(action)}
+                            style={{
+                              padding: "6px 10px",
+                              borderRadius: 6,
+                              border: "1px solid #666",
+                              background: executable ? "#111" : "#222",
+                              color: executable ? "#fff" : "#888",
+                              cursor: !executable || isBusy ? "not-allowed" : "pointer",
+                              opacity: !executable || isBusy ? 0.65 : 1,
+                            }}
+                          >
+                            {isBusy ? "Executing…" : worldActionButtonLabel(action)}
+                          </button>
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               ) : null}
 

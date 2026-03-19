@@ -1,7 +1,7 @@
 //web-backend/gameState/cityRuntimeSnapshot.ts
 
 import type { PlayerState } from "../gameState";
-import { recomputeWorldConsequenceState } from "../domain/worldConsequences";
+import { deriveWorldConsequenceState } from "../domain/worldConsequences";
 
 const CITY_RUNTIME_SNAPSHOT_VERSION = 1;
 const MAX_SNAPSHOT_EVENT_LOG = 60;
@@ -225,7 +225,7 @@ export function applyCityRuntimeSnapshot(ps: PlayerState, snapshot: CityRuntimeS
     ? (deepCloneJson(snapshot.publicInfrastructure) as PlayerState["publicInfrastructure"])
     : ps.publicInfrastructure;
   if (!isRecord((snapshot as any).worldConsequenceState)) {
-    recomputeWorldConsequenceState(ps);
+    ps.worldConsequenceState = deriveWorldConsequenceState(ps.worldConsequences ?? []);
   }
   return ps;
 }

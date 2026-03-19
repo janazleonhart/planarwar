@@ -831,6 +831,15 @@ export interface WorldConsequenceActionsView {
 }
 
 
+export interface WorldConsequenceActionExecutionResult {
+  ok: boolean;
+  status: "ok" | "unknown_action" | "not_executable" | "insufficient_resources";
+  message: string;
+  spent?: Partial<Resources>;
+  regionId?: string | null;
+}
+
+
 export interface WorldConsequenceConsumersView {
   summary: {
     pressureTier: "quiet" | "watch" | "active" | "severe";
@@ -1045,6 +1054,25 @@ export async function completeMission(instanceId: string): Promise<CompleteMissi
   return api<CompleteMissionResponse>("/api/missions/complete", {
     method: "POST",
     body: JSON.stringify({ instanceId }),
+  });
+}
+
+
+export async function executeWorldConsequenceAction(actionId: string): Promise<{
+  ok: true;
+  result: WorldConsequenceActionExecutionResult;
+  resources: Resources;
+  cityStress: CityStressState;
+  worldConsequenceState: WorldConsequenceState | null;
+  worldConsequences: WorldConsequenceLedgerEntry[];
+  worldConsequenceActions: WorldConsequenceActionsView | null;
+  worldConsequenceHooks: WorldConsequenceHooksView | null;
+  worldConsequenceConsumers: WorldConsequenceConsumersView | null;
+  responseState: EconomyCartelResponseState | null;
+}> {
+  return api("/api/world_consequences/act", {
+    method: "POST",
+    body: JSON.stringify({ actionId }),
   });
 }
 
