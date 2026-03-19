@@ -40,6 +40,56 @@ export function worldSeverityColor(severity: string): string {
   }
 }
 
+export function cityAlphaSeverityLabel(severity: string): string {
+  switch (severity) {
+    case "critical": return "Critical";
+    case "pressed": return "Pressed";
+    case "watch": return "Watch";
+    default: return "Calm";
+  }
+}
+
+export function cityAlphaSeverityColor(severity: string): string {
+  switch (severity) {
+    case "critical": return "#ff7a7a";
+    case "pressed": return "#ffca6b";
+    case "watch": return "#9ad0ff";
+    default: return "#9ef7b2";
+  }
+}
+
+export function cityAlphaScopeBucketLabel(bucket: string): string {
+  switch (bucket) {
+    case "already_exists": return "Already exists";
+    case "exists_but_weak": return "Exists but weak";
+    case "missing": return "Missing";
+    case "excluded": return "Excluded";
+    default: return bucket;
+  }
+}
+
+export function cityAlphaScopeBucketColor(bucket: string): string {
+  switch (bucket) {
+    case "already_exists": return "#3f8f55";
+    case "exists_but_weak": return "#a67c2d";
+    case "missing": return "#a64545";
+    case "excluded": return "#5d5d88";
+    default: return "#555";
+  }
+}
+
+export function formatResponseLaneList(tags: string[] | undefined): string {
+  return tags && tags.length ? tags.join("/") : "general coverage";
+}
+
+export function formatWhenShort(iso?: string): string {
+  if (!iso) return "now";
+  const date = new Date(iso);
+  return Number.isFinite(date.getTime())
+    ? date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+    : iso;
+}
+
 export function worldHookTone(state: string): string {
   switch (state) {
     case "surging":

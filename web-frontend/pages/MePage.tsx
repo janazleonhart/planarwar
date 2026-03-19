@@ -1,6 +1,7 @@
 // web-frontend/pages/MePage.tsx
 
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { CityAlphaPanels } from "../components/worldResponse/CityAlphaPanels";
 import { WorldConsequenceOutlookPanel } from "../components/worldResponse/WorldConsequenceOutlookPanel";
 import { WorldResponsePanel } from "../components/worldResponse/WorldResponsePanel";
 import {
@@ -10,7 +11,6 @@ import {
   getRegionDisplayName,
   worldHookTone,
   worldRegionScore,
-  worldSeverityColor,
 } from "../components/worldResponse/worldResponseUi";
 import {
   api,
@@ -165,56 +165,6 @@ function pressureConfidenceLabel(confidence: string): string {
   }
 }
 
-
-function cityAlphaSeverityLabel(severity: string): string {
-  switch (severity) {
-    case "critical": return "Critical";
-    case "pressed": return "Pressed";
-    case "watch": return "Watch";
-    default: return "Calm";
-  }
-}
-
-function cityAlphaSeverityColor(severity: string): string {
-  switch (severity) {
-    case "critical": return "#ff7a7a";
-    case "pressed": return "#ffca6b";
-    case "watch": return "#9ad0ff";
-    default: return "#9ef7b2";
-  }
-}
-
-function cityAlphaScopeBucketLabel(bucket: string) {
-  switch (bucket) {
-    case "already_exists": return "Already exists";
-    case "exists_but_weak": return "Exists but weak";
-    case "missing": return "Missing";
-    case "excluded": return "Excluded";
-    default: return bucket;
-  }
-}
-
-function cityAlphaScopeBucketColor(bucket: string) {
-  switch (bucket) {
-    case "already_exists": return "#3f8f55";
-    case "exists_but_weak": return "#a67c2d";
-    case "missing": return "#a64545";
-    case "excluded": return "#5d5d88";
-    default: return "#555";
-  }
-}
-
-function formatResponseLaneList(tags: string[] | undefined): string {
-  return tags && tags.length ? tags.join("/") : "general coverage";
-}
-
-function formatWhenShort(iso?: string): string {
-  if (!iso) return "now";
-  const date = new Date(iso);
-  return Number.isFinite(date.getTime())
-    ? date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
-    : iso;
-}
 
 function formatPressureWindow(startIso: string, endIso: string): string {
   return formatWarningWindow(startIso, endIso);
@@ -772,121 +722,13 @@ export function MePage() {
             )}
         </div>
 
-        <div style={{ display: "grid", gap: 10 }}>
-          <strong>City Alpha command board</strong>
-          {cityAlphaStatus ? (
-            <div style={{ border: `1px solid ${cityAlphaSeverityColor(cityAlphaStatus.severity)}`, borderRadius: 10, padding: 12, display: "grid", gap: 8, background: "rgba(20,20,28,0.55)" }}>
-              <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
-                <div>
-                  <div><strong>{cityAlphaStatus.headline}</strong> • {cityAlphaSeverityLabel(cityAlphaStatus.severity)}</div>
-                  <div style={{ fontSize: 12, opacity: 0.82 }}>{cityAlphaStatus.detail}</div>
-                </div>
-                <div style={{ fontSize: 12, opacity: 0.86 }}>
-                  Readiness {cityAlphaStatus.readinessScore}/100 • burden {cityAlphaStatus.recoveryBurden}/100
-                </div>
-              </div>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 8 }}>
-                <div style={{ border: "1px solid #444", borderRadius: 8, padding: 8 }}><strong>Warnings</strong><div style={{ fontSize: 12, opacity: 0.84 }}>{cityAlphaStatus.openWarningCount} live • next {formatWhenShort(cityAlphaStatus.nextImpactAt)}</div></div>
-                <div style={{ border: "1px solid #444", borderRadius: 8, padding: 8 }}><strong>Pressure windows</strong><div style={{ fontSize: 12, opacity: 0.84 }}>{cityAlphaStatus.urgentPressureCount} urgent • {highlightedPressure.length} surfaced</div></div>
-                <div style={{ border: "1px solid #444", borderRadius: 8, padding: 8 }}><strong>Response teams</strong><div style={{ fontSize: 12, opacity: 0.84 }}>{cityAlphaStatus.idleHeroCount} idle heroes • {cityAlphaStatus.readyArmyCount} ready armies • avg {cityAlphaStatus.averageArmyReadiness}</div></div>
-                <div style={{ border: "1px solid #444", borderRadius: 8, padding: 8 }}><strong>Receipts</strong><div style={{ fontSize: 12, opacity: 0.84 }}>{cityAlphaStatus.recentReceiptCount} recent • {cityAlphaStatus.activeMissionCount} active missions</div></div>
-              </div>
-              <div style={{ display: "grid", gap: 4 }}>
-                <strong style={{ fontSize: 13 }}>Tester focus</strong>
-                {(cityAlphaStatus.testerFocus ?? []).map((focus, index) => (
-                  <div key={`${index}_${focus}`} style={{ fontSize: 12, opacity: 0.84 }}>• {focus}</div>
-                ))}
-              </div>
-              <div style={{ display: "grid", gap: 6 }}>
-                <strong style={{ fontSize: 13 }}>Top pressure items</strong>
-                {(cityAlphaStatus.topItems ?? []).length === 0 ? (
-                  <div style={{ fontSize: 12, opacity: 0.7 }}>No active pressure items yet.</div>
-                ) : (
-                  <div style={{ display: "grid", gap: 6 }}>
-                    {(cityAlphaStatus.topItems ?? []).map((item) => (
-                      <div key={item.id} style={{ border: "1px solid #444", borderRadius: 8, padding: 8, display: "grid", gap: 3 }}>
-                        <div><strong>{item.headline}</strong> • {item.kind} • severity {item.severity}</div>
-                        <div style={{ fontSize: 12, opacity: 0.8 }}>{item.detail}</div>
-                        <div style={{ fontSize: 12, opacity: 0.72 }}>
-                          {item.threatFamily ? `${getThreatFamilyDisplayName(item.threatFamily)} • ` : ""}
-                          lanes {formatResponseLaneList(item.responseTags)}{item.when ? ` • ${formatWhenShort(item.when)}` : ""}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
-          ) : (
-            <div style={{ opacity: 0.72 }}>City Alpha summary will appear once a city profile is loaded.</div>
-          )}
-        </div>
-
-        <div style={{ display: "grid", gap: 10 }}>
-          <strong>City Alpha scope lock</strong>
-          {cityAlphaScopeLock ? (
-            <div style={{ border: "1px solid #444", borderRadius: 10, padding: 12, display: "grid", gap: 10, background: "rgba(18,18,24,0.5)" }}>
-              <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
-                <div>
-                  <div><strong>{cityAlphaScopeLock.headline}</strong></div>
-                  <div style={{ fontSize: 12, opacity: 0.82 }}>{cityAlphaScopeLock.detail}</div>
-                </div>
-                <div style={{ fontSize: 12, opacity: 0.86 }}>
-                  readiness lock {cityAlphaScopeLock.alphaReadyPercent}% • ambiguity {cityAlphaScopeLock.ambiguityCount}
-                </div>
-              </div>
-
-              {economyCartelResponseState ? (
-                <div style={{ border: "1px solid #555", borderRadius: 8, padding: 10, display: "grid", gap: 5, background: "rgba(56,36,18,0.16)" }}>
-                  <div><strong>{economyCartelResponseState.summary.headline}</strong></div>
-                  <div style={{ fontSize: 12, opacity: 0.82 }}>phase <strong style={{ color: worldSeverityColor(economyCartelResponseState.summary.responsePhase) }}>{economyCartelResponseState.summary.responsePhase}</strong> • runtime {economyCartelResponseState.summary.shouldNudgeRuntime ? "nudging" : "observe only"}</div>
-                  <div style={{ fontSize: 12, opacity: 0.8 }}>black market {economyCartelResponseState.blackMarket.state} / {economyCartelResponseState.blackMarket.posture} • cartel {economyCartelResponseState.cartel.tier} / {economyCartelResponseState.cartel.posture}</div>
-                  <div style={{ fontSize: 12, opacity: 0.76 }}>{economyCartelResponseState.blackMarket.note}</div>
-                  <div style={{ fontSize: 12, opacity: 0.76 }}>{economyCartelResponseState.cartel.note}</div>
-                </div>
-              ) : null}
-
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 8 }}>
-                <div style={{ border: "1px solid #444", borderRadius: 8, padding: 8 }}><strong>Already exists</strong><div style={{ fontSize: 12, opacity: 0.84 }}>{(cityAlphaScopeLock.alreadyExists ?? []).length} locked</div></div>
-                <div style={{ border: "1px solid #444", borderRadius: 8, padding: 8 }}><strong>Exists but weak</strong><div style={{ fontSize: 12, opacity: 0.84 }}>{(cityAlphaScopeLock.existsButWeak ?? []).length} follow-up targets</div></div>
-                <div style={{ border: "1px solid #444", borderRadius: 8, padding: 8 }}><strong>Missing</strong><div style={{ fontSize: 12, opacity: 0.84 }}>{(cityAlphaScopeLock.missing ?? []).length} deferred beyond alpha</div></div>
-                <div style={{ border: "1px solid #444", borderRadius: 8, padding: 8 }}><strong>Frozen exclusions</strong><div style={{ fontSize: 12, opacity: 0.84 }}>{(cityAlphaScopeLock.exclusions ?? []).length} explicitly out</div></div>
-              </div>
-              <div style={{ display: "grid", gap: 8 }}>
-                {[
-                  ["already_exists", cityAlphaScopeLock.alreadyExists],
-                  ["exists_but_weak", cityAlphaScopeLock.existsButWeak],
-                  ["missing", cityAlphaScopeLock.missing],
-                  ["excluded", cityAlphaScopeLock.exclusions],
-                ].map(([bucket, items]) => (
-                  <div key={String(bucket)} style={{ display: "grid", gap: 6 }}>
-                    <strong style={{ fontSize: 13 }}>{cityAlphaScopeBucketLabel(String(bucket))}</strong>
-                    {(items as any[]).length === 0 ? (
-                      <div style={{ fontSize: 12, opacity: 0.68 }}>No items in this bucket.</div>
-                    ) : (
-                      <div style={{ display: "grid", gap: 6 }}>
-                        {(items as any[]).map((item) => (
-                          <div key={item.id} style={{ border: `1px solid ${cityAlphaScopeBucketColor(String(bucket))}`, borderRadius: 8, padding: 8, display: "grid", gap: 3 }}>
-                            <div><strong>{item.label}</strong></div>
-                            <div style={{ fontSize: 12, opacity: 0.82 }}>{item.detail}</div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
-              <div style={{ display: "grid", gap: 4 }}>
-                <strong style={{ fontSize: 13 }}>Frozen exclusions</strong>
-                {(cityAlphaScopeLock.frozenExclusions ?? []).map((entry) => (
-                  <div key={entry} style={{ fontSize: 12, opacity: 0.8 }}>• {entry}</div>
-                ))}
-              </div>
-            </div>
-          ) : (
-            <div style={{ opacity: 0.72 }}>Scope lock summary will appear once a city profile is loaded.</div>
-          )}
-        </div>
+        <CityAlphaPanels
+          cityAlphaStatus={cityAlphaStatus}
+          cityAlphaScopeLock={cityAlphaScopeLock}
+          economyCartelResponseState={economyCartelResponseState}
+          highlightedPressureCount={highlightedPressure.length}
+          getThreatFamilyDisplayName={getThreatFamilyDisplayName}
+        />
 
         <div style={{ display: "grid", gap: 6 }}>
           <strong>Available offers</strong>
