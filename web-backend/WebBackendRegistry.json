@@ -317,7 +317,8 @@
       "dependsOn": [
         "web-backend.gameState",
         "web-backend.domain.city",
-        "web-backend.domain.publicInfrastructure"
+        "web-backend.domain.publicInfrastructure",
+        "web-backend.domain.cityMudBridgeSummary"
       ],
       "kind": "module",
       "lifecycle": "singleton",
@@ -332,7 +333,8 @@
         "v0.8 adds lane-aware vendor policy derivation so essentials, comfort goods, luxury goods, and arcane stock can respond differently to the same bridge posture.",
         "v0.9 adds explicit lane-set selection helpers so guarded vendor applies can target audited lane groups instead of depending on whatever rows happen to be visible.",
         "v1.0 adds audited vendor posture presets (scarcity essentials protection, luxury throttle, arcane caution, broad recovery) so guarded tooling can target reusable lane groups without re-encoding them in the UI.",
-        "v1.1 adds CityMudVendorScenarioLogEntry plus buildVendorScenarioLogNote(...) so guarded vendor runtime previews/applies can be logged with consistent audit text."
+        "v1.1 adds CityMudVendorScenarioLogEntry plus buildVendorScenarioLogNote(...) so guarded vendor runtime previews/applies can be logged with consistent audit text.",
+        "v1.2 splits bridge summary/consumer-policy derivation into web-backend/domain/cityMudBridgeSummary.ts so bridge posture math can be maintained separately from vendor runtime helpers without changing callers."
       ],
       "owns": [
         "City \u2194 MUD bridge summary heuristics",
@@ -351,7 +353,8 @@
         "deriveVendorGuardrailApplication(base, runtime)",
         "Guarded vendor runtime application preview (safe one-step knobs + warnings)",
         "deriveVendorLanePolicy(summary, consumers, basePolicy, item)",
-        "getVendorPreset(key) + normalizeVendorPresetKey(value)"
+        "getVendorPreset(key) + normalizeVendorPresetKey(value)",
+        "Re-exports summarizeCityMudBridge(ps), deriveCityMudConsumers(summary), deriveVendorSupportPolicy(summary, consumers) from cityMudBridgeSummary.ts"
       ],
       "service": "city.cityMudBridge"
     },
@@ -2680,6 +2683,32 @@
         "renderVendorScenarioReportCsv(entries)"
       ],
       "service": "vendorScenarioReports.domain"
+    },
+    "web-backend.domain.cityMudBridgeSummary": {
+      "class": null,
+      "ctorArgs": [],
+      "dependsOn": [
+        "web-backend.gameState",
+        "web-backend.domain.city",
+        "web-backend.domain.publicInfrastructure"
+      ],
+      "kind": "module",
+      "lifecycle": "singleton",
+      "notes": [
+        "Owns the city\u2194MUD bridge summary math: exportable surplus, support capacity, pressure scores, hook ordering, consumer guidance, and vendor support posture derivation.",
+        "Extracted from web-backend/domain/cityMudBridge.ts during City\u2194MUD Bridge Consolidation v1a so summary shaping can harden without tangling vendor runtime preview/apply helpers."
+      ],
+      "owns": [
+        "City \u2194 MUD bridge summary heuristics",
+        "Consumer guidance + top-level vendor support policy derivation"
+      ],
+      "path": "web-backend/domain/cityMudBridgeSummary.ts",
+      "provides": [
+        "summarizeCityMudBridge(ps)",
+        "deriveCityMudConsumers(summary)",
+        "deriveVendorSupportPolicy(summary, consumers)"
+      ],
+      "service": "city.cityMudBridgeSummary"
     }
   }
 }
