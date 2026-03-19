@@ -2,6 +2,8 @@
 
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { CityCorePanel } from "../components/city/CityCorePanel";
+import { CityIdentityCard } from "../components/city/CityIdentityCard";
+import { CityResourcesCard } from "../components/city/CityResourcesCard";
 import { CityMudBridgePanel } from "../components/city/CityMudBridgePanel";
 import { CityPolicyArmiesPanel } from "../components/city/CityPolicyArmiesPanel";
 import { PublicInfrastructurePanel } from "../components/city/PublicInfrastructurePanel";
@@ -447,24 +449,15 @@ export function MePage() {
 
       {busyAction ? <div style={{ fontSize: 13, opacity: 0.8 }}>Working: {busyAction}…</div> : null}
 
-      <div style={cardStyle()}>
-        <div>
-          <strong>User:</strong> {me.username ?? "(unknown)"} <span style={{ opacity: 0.7 }}>({me.userId ?? "?"})</span>
-        </div>
-        <div>
-          <strong>City:</strong> {city ? `${city.name} (Tier ${city.tier})` : "No city yet"}
-        </div>
-      </div>
+      <CityIdentityCard
+        me={me}
+        cardStyle={cardStyle}
+      />
 
-      <div style={cardStyle()}>
-        <h3 style={{ marginTop: 0 }}>Resources</h3>
-        <div>Food: {me.resources.food}</div>
-        <div>Materials: {me.resources.materials}</div>
-        <div>Wealth: {me.resources.wealth}</div>
-        <div>Mana: {me.resources.mana}</div>
-        <div>Knowledge: {me.resources.knowledge}</div>
-        <div>Unity: {me.resources.unity}</div>
-      </div>
+      <CityResourcesCard
+        resources={me.resources}
+        cardStyle={cardStyle}
+      />
 
       <PublicInfrastructurePanel
         cardStyle={cardStyle}
