@@ -63,6 +63,8 @@ export interface WorldConsequenceActionRuntimeView {
   };
   lastSpent?: Partial<Resources>;
   remainingAfterCost?: Partial<Resources>;
+  blockedFollowupActionIds?: string[];
+  blockedFollowupActionTitles?: string[];
 }
 
 export interface WorldConsequenceActionItem {
@@ -226,6 +228,52 @@ function getRemainingAfterCost(resources: Resources, spent: Partial<Resources>):
   return remaining;
 }
 
+function getHypotheticalResourcesAfterCost(resources: Resources, spent: Partial<Resources>): Resources {
+  return {
+    ...resources,
+    food: Math.max(0, Number(resources.food ?? 0) - Number(spent.food ?? 0)),
+    materials: Math.max(0, Number(resources.materials ?? 0) - Number(spent.materials ?? 0)),
+    wealth: Math.max(0, Number(resources.wealth ?? 0) - Number(spent.wealth ?? 0)),
+    mana: Math.max(0, Number(resources.mana ?? 0) - Number(spent.mana ?? 0)),
+    knowledge: Math.max(0, Number(resources.knowledge ?? 0) - Number(spent.knowledge ?? 0)),
+    unity: Math.max(0, Number(resources.unity ?? 0) - Number(spent.unity ?? 0)),
+  };
+}
+
+function getBlockedFollowupActions(
+  ps: PlayerState,
+  actionId: string,
+  candidates: Pick<WorldConsequenceActionItem, "id" | "title">[],
+): { ids: string[]; titles: string[] } | undefined {
+  const plan = getWorldConsequenceRuntimePlan(actionId);
+  if (!plan) return undefined;
+
+  const hypotheticalResources = getHypotheticalResourcesAfterCost(ps.resources, plan.spent);
+  const ids: string[] = [];
+  const titles: string[] = [];
+
+  for (const candidate of candidates) {
+    if (candidate.id === actionId) continue;
+    const candidatePlan = getWorldConsequenceRuntimePlan(candidate.id);
+    if (!candidatePlan) continue;
+
+    const history = summarizeRuntimeActionHistory(ps, candidate.id);
+    if (history.lastCommittedAt) {
+      const readyAtMs = new Date(history.lastCommittedAt).getTime() + WORLD_CONSEQUENCE_ACTION_COOLDOWN_MS;
+      if (Math.max(0, readyAtMs - Date.now()) > 0) continue;
+    }
+
+    const currentShortfall = getActionShortfall(ps.resources, candidatePlan.spent);
+    const hypotheticalShortfall = getActionShortfall(hypotheticalResources, candidatePlan.spent);
+    if (Object.keys(currentShortfall).length === 0 && Object.keys(hypotheticalShortfall).length > 0) {
+      ids.push(candidate.id);
+      titles.push(candidate.title);
+    }
+  }
+
+  return ids.length > 0 ? { ids, titles } : undefined;
+}
+
 function runtimeButtonLabel(
   actionId: string,
   affordability?: WorldConsequenceActionRuntimeView["affordability"],
@@ -256,6 +304,7 @@ function buildRuntimeEffectPreview(
 export function buildWorldConsequenceActionRuntimeView(
   ps: PlayerState,
   actionId: string,
+  candidates: Pick<WorldConsequenceActionItem, "id" | "title">[] = [],
 ): WorldConsequenceActionRuntimeView {
   const plan = getWorldConsequenceRuntimePlan(actionId);
   if (!plan) {
@@ -269,6 +318,7 @@ export function buildWorldConsequenceActionRuntimeView(
   }
 
   const history = summarizeRuntimeActionHistory(ps, actionId);
+  const blockedFollowups = getBlockedFollowupActions(ps, actionId, candidates);
   if (history.lastCommittedAt) {
     const readyAtMs = new Date(history.lastCommittedAt).getTime() + WORLD_CONSEQUENCE_ACTION_COOLDOWN_MS;
     const cooldownMsRemaining = Math.max(0, readyAtMs - Date.now());
@@ -289,6 +339,8 @@ export function buildWorldConsequenceActionRuntimeView(
         lastAppliedEffect: history.lastAppliedEffect,
         lastSpent: history.lastSpent,
         remainingAfterCost: getRemainingAfterCost(ps.resources, plan.spent),
+        blockedFollowupActionIds: blockedFollowups?.ids,
+        blockedFollowupActionTitles: blockedFollowups?.titles,
       };
     }
   }
@@ -315,6 +367,8 @@ export function buildWorldConsequenceActionRuntimeView(
     lastAppliedEffect: history.lastAppliedEffect,
     lastSpent: history.lastSpent,
     remainingAfterCost: affordable ? getRemainingAfterCost(ps.resources, plan.spent) : undefined,
+    blockedFollowupActionIds: affordable ? blockedFollowups?.ids : undefined,
+    blockedFollowupActionTitles: affordable ? blockedFollowups?.titles : undefined,
   };
 }
 
@@ -421,11 +475,12 @@ function attachActionTruth(
   ps: PlayerState,
   propagated: WorldConsequenceState | null,
   hooks: WorldConsequenceHooksView,
+  candidates: Pick<WorldConsequenceActionItem, "id" | "title">[],
 ): WorldConsequenceActionItem {
   return {
     ...item,
     evidence: buildActionEvidence(item.id, propagated, hooks, item.sourceRegionId),
-    runtime: buildWorldConsequenceActionRuntimeView(ps, item.id),
+    runtime: buildWorldConsequenceActionRuntimeView(ps, item.id, candidates),
   };
 }
 
@@ -479,7 +534,7 @@ export function deriveWorldConsequenceActions(
     return {
       headline: "No actionable world-consequence pressure yet.",
       recommendedPrimaryAction: quiet.title,
-      playerActions: [attachActionTruth(quiet, ps, propagated, hooks)],
+      playerActions: [attachActionTruth(quiet, ps, propagated, hooks, [quiet])],
       adminActions: [],
       motherBrainActions: [],
     };
@@ -679,11 +734,17 @@ export function deriveWorldConsequenceActions(
     });
   }
 
-  const sortedPlayer = sorted(playerActions).slice(0, 5).map((item) => attachActionTruth(item, ps, propagated, hooks));
-  const sortedAdmin = sorted(adminActions).slice(0, 5).map((item) => attachActionTruth(item, ps, propagated, hooks));
-  const sortedMotherBrain = sorted(motherBrainActions)
-    .slice(0, 5)
-    .map((item) => attachActionTruth(item, ps, propagated, hooks));
+  const sortedPlayerBase = sorted(playerActions).slice(0, 5);
+  const sortedAdminBase = sorted(adminActions).slice(0, 5);
+  const sortedMotherBrainBase = sorted(motherBrainActions).slice(0, 5);
+
+  const playerCandidates = sortedPlayerBase.map((item) => ({ id: item.id, title: item.title }));
+  const adminCandidates = sortedAdminBase.map((item) => ({ id: item.id, title: item.title }));
+  const motherBrainCandidates = sortedMotherBrainBase.map((item) => ({ id: item.id, title: item.title }));
+
+  const sortedPlayer = sortedPlayerBase.map((item) => attachActionTruth(item, ps, propagated, hooks, playerCandidates));
+  const sortedAdmin = sortedAdminBase.map((item) => attachActionTruth(item, ps, propagated, hooks, adminCandidates));
+  const sortedMotherBrain = sortedMotherBrainBase.map((item) => attachActionTruth(item, ps, propagated, hooks, motherBrainCandidates));
 
   const recommendedPrimaryAction =
     sortedPlayer[0]?.title ?? sortedAdmin[0]?.title ?? sortedMotherBrain[0]?.title ?? "Keep observing";

@@ -868,6 +868,8 @@ export interface WorldConsequenceActionRuntimeView {
   };
   lastSpent?: Partial<Resources>;
   remainingAfterCost?: Partial<Resources>;
+  blockedFollowupActionIds?: string[];
+  blockedFollowupActionTitles?: string[];
 }
 
 export interface WorldConsequenceActionItem {

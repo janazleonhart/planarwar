@@ -97,6 +97,22 @@ test("player action cards expose runtime truth instead of frontend guesses", () 
   assert.deepEqual(fullyStarved?.runtime?.shortfall, { wealth: 10, materials: 8 });
 });
 
+test("player action cards expose which follow-up actions a spend would block", () => {
+  const ps = seedPressure();
+  ps.resources.wealth = 17;
+  ps.resources.materials = 8;
+  ps.resources.unity = 6;
+
+  const actions = deriveWorldConsequenceActions(ps);
+  const stabilize = actions.playerActions.find((action) => action.id === "action_stabilize_supply_lanes");
+  assert.ok(stabilize);
+  assert.ok(stabilize?.runtime?.blockedFollowupActionIds?.includes("action_faction_stability"));
+  assert.ok(
+    stabilize?.runtime?.blockedFollowupActionTitles?.includes(
+      "Repair faction stability before local pressure turns political",
+    ),
+  );
+});
 
 
 test("player action cards expose remaining resources after paying bounded response cost", () => {
@@ -113,6 +129,7 @@ test("player action cards expose remaining resources after paying bounded respon
   const starved = deriveWorldConsequenceActions(ps).playerActions.find((action) => action.id === "action_stabilize_supply_lanes");
   assert.equal(starved?.runtime?.remainingAfterCost, undefined);
 });
+
 test("player action cards expose runtime impact previews instead of hidden payoff math", () => {
   const ps = seedPressure();
   const actions = deriveWorldConsequenceActions(ps);
