@@ -961,6 +961,25 @@
         "City Builder UI helper functions"
       ],
       "service": "ui.component"
+    },
+    "web-frontend.components.city.mePageViewModel": {
+      "class": null,
+      "ctorArgs": [],
+      "dependsOn": [
+        "web-frontend.lib.api"
+      ],
+      "kind": "ui",
+      "lifecycle": "singleton",
+      "notes": [
+        "Derived MePage city, mission, and bridge view-state helper extracted from the page shell.",
+        "Reduces page-level selector and highlighting sludge without changing runtime behavior or action wiring."
+      ],
+      "owns": [],
+      "path": "web-frontend/components/city/MePageViewModel.ts",
+      "provides": [
+        "MePage derived view-state helper"
+      ],
+      "service": "ui.component"
     }
   }
 }
