@@ -245,6 +245,14 @@ function formatWorldActionCost(cost: Partial<Resources> | undefined): string {
   return entries.map(([key, value]) => `${key} ${value}`).join(" • ");
 }
 
+function formatWorldActionCooldown(msRemaining: number | undefined): string {
+  const totalSeconds = Math.max(0, Math.ceil(Number(msRemaining ?? 0) / 1000));
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  if (minutes <= 0) return `${seconds}s`;
+  return `${minutes}m ${seconds}s`;
+}
+
 function worldSeverityColor(severity: string): string {
   switch (severity) {
     case "severe": return "#ff7a7a";
@@ -511,11 +519,17 @@ export function MePage() {
       setFlash("ok", `${result?.result?.message ?? `${action.title} executed.`}${appliedSummary}`);
     } catch (err: any) {
       console.error(err);
-      const shortfall = err instanceof ApiResponseError ? err.data?.result?.shortfall : undefined;
+      const result = err instanceof ApiResponseError ? err.data?.result : undefined;
+      const shortfall = result?.shortfall;
       const shortfallText = shortfall && Object.keys(shortfall).length > 0
         ? ` Still needed ${formatWorldActionCost(shortfall)}.`
         : "";
-      setFlash("err", `${err?.message ?? `Failed to execute ${action.title}.`}${shortfallText}`);
+      const cooldownText = result?.status === "cooldown_active" && result?.cooldownMsRemaining
+        ? ` Ready again in ${formatWorldActionCooldown(result.cooldownMsRemaining)}.`
+        : result?.status === "cooldown_active" && result?.readyAt
+          ? ` Ready again at ${new Date(result.readyAt).toLocaleString()}.`
+          : "";
+      setFlash("err", `${err?.message ?? `Failed to execute ${action.title}.`}${shortfallText}${cooldownText}`);
     } finally {
       setWorldActionBusyId(null);
     }
@@ -1262,6 +1276,11 @@ export function MePage() {
                         {action.runtime?.shortfall && Object.keys(action.runtime.shortfall).length > 0 ? (
                           <div style={{ fontSize: 12, opacity: 0.78, color: "#f3c77a" }}>
                             still needed {formatWorldActionCost(action.runtime.shortfall)}
+                          </div>
+                        ) : null}
+                        {action.runtime?.affordability === "cooldown_active" ? (
+                          <div style={{ fontSize: 12, opacity: 0.78, color: "#9cc8ff" }}>
+                            cooling down {formatWorldActionCooldown(action.runtime.cooldownMsRemaining)}{action.runtime.readyAt ? ` • ready ${new Date(action.runtime.readyAt).toLocaleTimeString()}` : ""}
                           </div>
                         ) : null}
                         {action.runtime?.effect ? (

@@ -7,11 +7,13 @@ import { buildWorldConsequenceActionRuntimeView, deriveWorldConsequenceActions, 
 
 export interface WorldConsequenceActionExecutionResult {
   ok: boolean;
-  status: "ok" | "unknown_action" | "not_executable" | "insufficient_resources";
+  status: "ok" | "unknown_action" | "not_executable" | "insufficient_resources" | "cooldown_active";
   message: string;
   action?: WorldConsequenceActionItem;
   spent?: Partial<Resources>;
   shortfall?: Partial<Resources>;
+  readyAt?: string;
+  cooldownMsRemaining?: number;
   regionId?: string | null;
   receiptId?: string;
   appliedEffect?: {
@@ -103,8 +105,21 @@ export function executeWorldConsequenceAction(ps: PlayerState, actionId: string)
     };
   }
 
+  const runtime = buildWorldConsequenceActionRuntimeView(ps, action.id);
+  if (!runtime.executable && runtime.affordability === "cooldown_active") {
+    return {
+      ok: false,
+      status: "cooldown_active",
+      message: runtime.note,
+      action: { ...action, runtime },
+      spent: plan.spent,
+      readyAt: runtime.readyAt,
+      cooldownMsRemaining: runtime.cooldownMsRemaining,
+      regionId: action.sourceRegionId,
+    };
+  }
+
   if (!canAfford(ps.resources, plan.spent)) {
-    const runtime = buildWorldConsequenceActionRuntimeView(ps, action.id);
     return {
       ok: false,
       status: "insufficient_resources",
@@ -132,6 +147,7 @@ export function executeWorldConsequenceAction(ps: PlayerState, actionId: string)
     pressureDelta: plan.pressureDelta,
     recoveryDelta: plan.recoveryDelta,
     trustDelta: plan.trustDelta,
+    runtimeActionId: action.id,
   });
 
   entry.title = `Response action executed: ${action.title}`;

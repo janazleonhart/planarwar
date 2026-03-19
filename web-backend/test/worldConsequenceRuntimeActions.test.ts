@@ -134,3 +134,20 @@ test("insufficient resource execution returns exact shortfall truth", () => {
   assert.equal(result.action?.runtime?.affordability, "insufficient_resources");
   assert.deepEqual(result.action?.runtime?.shortfall, { wealth: 10 });
 });
+
+
+test("successful response action enters cooldown and exposes ready time truth", () => {
+  const ps = seedPressure();
+  const first = executeWorldConsequenceAction(ps, "action_stabilize_supply_lanes");
+  assert.equal(first.ok, true);
+
+  const second = executeWorldConsequenceAction(ps, "action_stabilize_supply_lanes");
+  assert.equal(second.ok, false);
+  assert.equal(second.status, "cooldown_active");
+  assert.ok(second.readyAt);
+  assert.ok((second.cooldownMsRemaining ?? 0) > 0);
+  assert.equal(second.action?.runtime?.affordability, "cooldown_active");
+  assert.equal(second.action?.runtime?.buttonLabel, "Cooling down");
+  assert.ok((second.action?.runtime?.cooldownMsRemaining ?? 0) > 0);
+  assert.equal(second.action?.runtime?.readyAt, second.readyAt);
+});

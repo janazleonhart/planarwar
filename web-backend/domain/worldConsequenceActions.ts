@@ -31,12 +31,14 @@ export interface WorldConsequenceActionRuntimeEffectPreview {
 
 export interface WorldConsequenceActionRuntimeView {
   executable: boolean;
-  affordability: "affordable" | "insufficient_resources" | "advisory_only";
+  affordability: "affordable" | "insufficient_resources" | "cooldown_active" | "advisory_only";
   buttonLabel: string;
   cost: Partial<Resources>;
   shortfall?: Partial<Resources>;
   note: string;
   effect?: WorldConsequenceActionRuntimeEffectPreview;
+  cooldownMsRemaining?: number;
+  readyAt?: string;
 }
 
 export interface WorldConsequenceActionItem {
@@ -61,6 +63,19 @@ export interface WorldConsequenceActionsView {
 }
 
 
+
+export const WORLD_CONSEQUENCE_ACTION_COOLDOWN_MS = 10 * 60 * 1000;
+
+function findRecentRuntimeActionReceipt(ps: PlayerState, actionId: string): { createdAt: string } | null {
+  const receipts = ps.worldConsequences ?? [];
+  for (const entry of receipts) {
+    if (entry.source !== "recovery_contract") continue;
+    if (entry.runtimeActionId !== actionId) continue;
+    if (entry.outcome !== "success") continue;
+    return { createdAt: entry.createdAt };
+  }
+  return null;
+}
 
 export function getWorldConsequenceRuntimePlan(actionId: string): RuntimeWorldConsequenceActionPlan | null {
   if (actionId === "action_stabilize_supply_lanes") {
@@ -132,7 +147,8 @@ function canAffordAction(resources: Resources, spent: Partial<Resources>): boole
   return Object.keys(getActionShortfall(resources, spent)).length === 0;
 }
 
-function runtimeButtonLabel(actionId: string): string {
+function runtimeButtonLabel(actionId: string, affordability?: WorldConsequenceActionRuntimeView["affordability"]): string {
+  if (affordability === "cooldown_active") return "Cooling down";
   if (actionId === "action_stabilize_supply_lanes") return "Fund stabilization";
   if (actionId === "action_faction_stability") return "Fund civic response";
   if (actionId === "action_cartel_pressure" || actionId === "action_black_market_window_contain") return "Fund containment";
@@ -157,10 +173,28 @@ export function buildWorldConsequenceActionRuntimeView(ps: PlayerState, actionId
     return {
       executable: false,
       affordability: "advisory_only",
-      buttonLabel: runtimeButtonLabel(actionId),
+      buttonLabel: runtimeButtonLabel(actionId, "advisory_only"),
       cost: {},
       note: "This lane is still advice-only. Runtime cannot execute it yet.",
     };
+  }
+
+  const recentReceipt = findRecentRuntimeActionReceipt(ps, actionId);
+  if (recentReceipt) {
+    const readyAtMs = new Date(recentReceipt.createdAt).getTime() + WORLD_CONSEQUENCE_ACTION_COOLDOWN_MS;
+    const cooldownMsRemaining = Math.max(0, readyAtMs - Date.now());
+    if (cooldownMsRemaining > 0) {
+      return {
+        executable: false,
+        affordability: "cooldown_active",
+        buttonLabel: runtimeButtonLabel(actionId, "cooldown_active"),
+        cost: plan.spent,
+        note: `This lane was just committed. It will be ready again at ${new Date(readyAtMs).toISOString()}.`,
+        effect: buildRuntimeEffectPreview(plan),
+        cooldownMsRemaining,
+        readyAt: new Date(readyAtMs).toISOString(),
+      };
+    }
   }
 
   const shortfall = getActionShortfall(ps.resources, plan.spent);
@@ -168,7 +202,7 @@ export function buildWorldConsequenceActionRuntimeView(ps: PlayerState, actionId
   return {
     executable: affordable,
     affordability: affordable ? "affordable" : "insufficient_resources",
-    buttonLabel: runtimeButtonLabel(actionId),
+    buttonLabel: runtimeButtonLabel(actionId, affordable ? "affordable" : "insufficient_resources"),
     cost: plan.spent,
     shortfall: affordable ? undefined : shortfall,
     note: affordable

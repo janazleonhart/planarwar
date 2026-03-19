@@ -821,12 +821,14 @@ export interface WorldConsequenceActionRuntimeEffectPreview {
 
 export interface WorldConsequenceActionRuntimeView {
   executable: boolean;
-  affordability: "affordable" | "insufficient_resources" | "advisory_only";
+  affordability: "affordable" | "insufficient_resources" | "cooldown_active" | "advisory_only";
   buttonLabel: string;
   cost: Partial<Resources>;
   shortfall?: Partial<Resources>;
   note: string;
   effect?: WorldConsequenceActionRuntimeEffectPreview;
+  cooldownMsRemaining?: number;
+  readyAt?: string;
 }
 
 export interface WorldConsequenceActionItem {
@@ -853,11 +855,13 @@ export interface WorldConsequenceActionsView {
 
 export interface WorldConsequenceActionExecutionResult {
   ok: boolean;
-  status: "ok" | "unknown_action" | "not_executable" | "insufficient_resources";
+  status: "ok" | "unknown_action" | "not_executable" | "insufficient_resources" | "cooldown_active";
   message: string;
   spent?: Partial<Resources>;
   regionId?: string | null;
   receiptId?: string;
+  readyAt?: string;
+  cooldownMsRemaining?: number;
   appliedEffect?: {
     pressureDelta: number;
     recoveryDelta: number;
@@ -877,6 +881,7 @@ export interface WorldConsequenceResponseReceipt {
   severity: "watch" | "pressure" | "severe";
   outcome?: "success" | "partial" | "failure";
   contractKind?: string;
+  runtimeActionId?: string;
   metrics: {
     pressureDelta: number;
     recoveryDelta: number;

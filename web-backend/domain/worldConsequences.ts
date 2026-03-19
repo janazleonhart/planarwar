@@ -43,6 +43,7 @@ export interface WorldConsequenceLedgerEntry {
   threatFamily?: ThreatFamily;
   contractKind?: RecoveryContractKind;
   outcome?: "success" | "partial" | "failure";
+  runtimeActionId?: string;
 }
 
 export interface WorldConsequenceRegionState {
@@ -115,6 +116,7 @@ export interface WorldConsequenceResponseReceipt {
   severity: WorldConsequenceSeverity;
   outcome?: "success" | "partial" | "failure";
   contractKind?: RecoveryContractKind;
+  runtimeActionId?: string;
   metrics: {
     pressureDelta: number;
     recoveryDelta: number;
@@ -349,6 +351,7 @@ export function summarizeWorldConsequenceResponseReceipts(entries: WorldConseque
     severity: entry.severity,
     outcome: entry.outcome,
     contractKind: entry.contractKind,
+    runtimeActionId: entry.runtimeActionId,
     metrics: {
       pressureDelta: Number(entry.metrics?.pressureDelta ?? 0),
       recoveryDelta: Number(entry.metrics?.recoveryDelta ?? 0),
@@ -402,6 +405,7 @@ export function buildSetbackWorldConsequence(input: {
   controlDelta: number;
   threatDelta: number;
   setbackCount: number;
+  runtimeActionId?: string;
 }): Omit<WorldConsequenceLedgerEntry, "id" | "createdAt" | "playerId" | "cityId"> {
   const severityScore = Math.abs(input.pressureDelta) + Math.abs(input.recoveryDelta) + Math.abs(input.controlDelta) + Math.abs(input.threatDelta) + input.setbackCount;
   const severity = clampSeverity(severityScore);
@@ -434,6 +438,7 @@ export function buildSetbackWorldConsequence(input: {
     missionTitle: input.missionTitle,
     threatFamily: input.threatFamily,
     outcome: input.outcome,
+    runtimeActionId: input.runtimeActionId,
   };
 }
 
@@ -446,6 +451,7 @@ export function buildRecoveryContractWorldConsequence(input: {
   pressureDelta: number;
   recoveryDelta: number;
   trustDelta: number;
+  runtimeActionId?: string;
 }): Omit<WorldConsequenceLedgerEntry, "id" | "createdAt" | "playerId" | "cityId"> {
   const severityScore = Math.abs(input.pressureDelta) + Math.abs(input.recoveryDelta) + Math.max(0, -input.trustDelta);
   const severity = clampSeverity(severityScore);
@@ -482,5 +488,6 @@ export function buildRecoveryContractWorldConsequence(input: {
     missionTitle: input.missionTitle,
     contractKind: input.contractKind,
     outcome: input.outcome,
+    runtimeActionId: input.runtimeActionId,
   };
 }
