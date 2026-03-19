@@ -65,6 +65,8 @@ export interface WorldConsequenceActionRuntimeView {
   remainingAfterCost?: Partial<Resources>;
   blockedFollowupActionIds?: string[];
   blockedFollowupActionTitles?: string[];
+  availableFollowupActionIds?: string[];
+  availableFollowupActionTitles?: string[];
   postCommitState?: {
     currentStage: "stable" | "strained" | "crisis" | "lockdown";
     stage: "stable" | "strained" | "crisis" | "lockdown";
@@ -285,17 +287,19 @@ function buildPostCommitStatePreview(ps: PlayerState, plan: RuntimeWorldConseque
 }
 
 
-function getBlockedFollowupActions(
+function getFollowupActionOutcomes(
   ps: PlayerState,
   actionId: string,
   candidates: Pick<WorldConsequenceActionItem, "id" | "title">[],
-): { ids: string[]; titles: string[] } | undefined {
+): { blockedIds: string[]; blockedTitles: string[]; availableIds: string[]; availableTitles: string[] } | undefined {
   const plan = getWorldConsequenceRuntimePlan(actionId);
   if (!plan) return undefined;
 
   const hypotheticalResources = getHypotheticalResourcesAfterCost(ps.resources, plan.spent);
-  const ids: string[] = [];
-  const titles: string[] = [];
+  const blockedIds: string[] = [];
+  const blockedTitles: string[] = [];
+  const availableIds: string[] = [];
+  const availableTitles: string[] = [];
 
   for (const candidate of candidates) {
     if (candidate.id === actionId) continue;
@@ -311,12 +315,16 @@ function getBlockedFollowupActions(
     const currentShortfall = getActionShortfall(ps.resources, candidatePlan.spent);
     const hypotheticalShortfall = getActionShortfall(hypotheticalResources, candidatePlan.spent);
     if (Object.keys(currentShortfall).length === 0 && Object.keys(hypotheticalShortfall).length > 0) {
-      ids.push(candidate.id);
-      titles.push(candidate.title);
+      blockedIds.push(candidate.id);
+      blockedTitles.push(candidate.title);
+    } else if (Object.keys(currentShortfall).length === 0 && Object.keys(hypotheticalShortfall).length === 0) {
+      availableIds.push(candidate.id);
+      availableTitles.push(candidate.title);
     }
   }
 
-  return ids.length > 0 ? { ids, titles } : undefined;
+  if (blockedIds.length === 0 && availableIds.length === 0) return undefined;
+  return { blockedIds, blockedTitles, availableIds, availableTitles };
 }
 
 function runtimeButtonLabel(
@@ -363,7 +371,7 @@ export function buildWorldConsequenceActionRuntimeView(
   }
 
   const history = summarizeRuntimeActionHistory(ps, actionId);
-  const blockedFollowups = getBlockedFollowupActions(ps, actionId, candidates);
+  const followupOutcomes = getFollowupActionOutcomes(ps, actionId, candidates);
   if (history.lastCommittedAt) {
     const readyAtMs = new Date(history.lastCommittedAt).getTime() + WORLD_CONSEQUENCE_ACTION_COOLDOWN_MS;
     const cooldownMsRemaining = Math.max(0, readyAtMs - Date.now());
@@ -384,8 +392,10 @@ export function buildWorldConsequenceActionRuntimeView(
         lastAppliedEffect: history.lastAppliedEffect,
         lastSpent: history.lastSpent,
         remainingAfterCost: getRemainingAfterCost(ps.resources, plan.spent),
-        blockedFollowupActionIds: blockedFollowups?.ids,
-        blockedFollowupActionTitles: blockedFollowups?.titles,
+        blockedFollowupActionIds: followupOutcomes?.blockedIds,
+        blockedFollowupActionTitles: followupOutcomes?.blockedTitles,
+        availableFollowupActionIds: followupOutcomes?.availableIds,
+        availableFollowupActionTitles: followupOutcomes?.availableTitles,
         postCommitState: buildPostCommitStatePreview(ps, plan),
       };
     }
@@ -413,8 +423,10 @@ export function buildWorldConsequenceActionRuntimeView(
     lastAppliedEffect: history.lastAppliedEffect,
     lastSpent: history.lastSpent,
     remainingAfterCost: affordable ? getRemainingAfterCost(ps.resources, plan.spent) : undefined,
-    blockedFollowupActionIds: affordable ? blockedFollowups?.ids : undefined,
-    blockedFollowupActionTitles: affordable ? blockedFollowups?.titles : undefined,
+    blockedFollowupActionIds: affordable ? followupOutcomes?.blockedIds : undefined,
+    blockedFollowupActionTitles: affordable ? followupOutcomes?.blockedTitles : undefined,
+    availableFollowupActionIds: affordable ? followupOutcomes?.availableIds : undefined,
+    availableFollowupActionTitles: affordable ? followupOutcomes?.availableTitles : undefined,
     postCommitState: affordable ? buildPostCommitStatePreview(ps, plan) : undefined,
   };
 }

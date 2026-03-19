@@ -1295,6 +1295,16 @@ export function MePage() {
                             after spend {formatWorldActionCost(action.runtime.remainingAfterCost)}
                           </div>
                         ) : null}
+                        {action.runtime?.blockedFollowupActionTitles && action.runtime.blockedFollowupActionTitles.length > 0 ? (
+                          <div style={{ fontSize: 12, opacity: 0.76, color: "#fca5a5" }}>
+                            would block follow-up {action.runtime.blockedFollowupActionTitles.join(", ")}
+                          </div>
+                        ) : null}
+                        {action.runtime?.availableFollowupActionTitles && action.runtime.availableFollowupActionTitles.length > 0 ? (
+                          <div style={{ fontSize: 12, opacity: 0.76, color: "#86efac" }}>
+                            follow-up still open {action.runtime.availableFollowupActionTitles.join(", ")}
+                          </div>
+                        ) : null}
                         {action.runtime?.postCommitState ? (
                           <div style={{ fontSize: 12, opacity: 0.74, color: "#9fd8c4" }}>
                             after commit stage {action.runtime.postCommitState.stage}

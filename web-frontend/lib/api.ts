@@ -870,6 +870,8 @@ export interface WorldConsequenceActionRuntimeView {
   remainingAfterCost?: Partial<Resources>;
   blockedFollowupActionIds?: string[];
   blockedFollowupActionTitles?: string[];
+  availableFollowupActionIds?: string[];
+  availableFollowupActionTitles?: string[];
   postCommitState?: {
     currentStage: "stable" | "strained" | "crisis" | "lockdown";
     stage: "stable" | "strained" | "crisis" | "lockdown";
