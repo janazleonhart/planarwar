@@ -866,6 +866,7 @@ export interface WorldConsequenceActionRuntimeView {
     controlDelta: number;
     threatDelta: number;
   };
+  lastSpent?: Partial<Resources>;
 }
 
 export interface WorldConsequenceActionItem {
@@ -919,6 +920,7 @@ export interface WorldConsequenceResponseReceipt {
   outcome?: "success" | "partial" | "failure";
   contractKind?: string;
   runtimeActionId?: string;
+  spent?: Partial<Resources>;
   metrics: {
     pressureDelta: number;
     recoveryDelta: number;

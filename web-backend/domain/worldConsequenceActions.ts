@@ -61,6 +61,7 @@ export interface WorldConsequenceActionRuntimeView {
     controlDelta: number;
     threatDelta: number;
   };
+  lastSpent?: Partial<Resources>;
 }
 
 export interface WorldConsequenceActionItem {
@@ -101,6 +102,7 @@ function summarizeRuntimeActionHistory(
     controlDelta: number;
     threatDelta: number;
   };
+  lastSpent?: Partial<Resources>;
 } {
   const receipts = ps.worldConsequences ?? [];
   let lastCommittedAt: string | undefined;
@@ -115,6 +117,7 @@ function summarizeRuntimeActionHistory(
         threatDelta: number;
       }
     | undefined;
+  let lastSpent: Partial<Resources> | undefined;
 
   for (const entry of receipts) {
     if (entry.source !== "recovery_contract") continue;
@@ -133,6 +136,7 @@ function summarizeRuntimeActionHistory(
         controlDelta: entry.metrics.controlDelta,
         threatDelta: entry.metrics.threatDelta,
       };
+      lastSpent = entry.runtimeSpent;
     }
   }
 
@@ -142,6 +146,7 @@ function summarizeRuntimeActionHistory(
     lastReceiptId,
     lastReceiptSummary,
     lastAppliedEffect,
+    lastSpent,
   };
 }
 
@@ -272,6 +277,7 @@ export function buildWorldConsequenceActionRuntimeView(
         lastReceiptId: history.lastReceiptId,
         lastReceiptSummary: history.lastReceiptSummary,
         lastAppliedEffect: history.lastAppliedEffect,
+        lastSpent: history.lastSpent,
       };
     }
   }
@@ -296,6 +302,7 @@ export function buildWorldConsequenceActionRuntimeView(
     lastReceiptId: history.lastReceiptId,
     lastReceiptSummary: history.lastReceiptSummary,
     lastAppliedEffect: history.lastAppliedEffect,
+    lastSpent: history.lastSpent,
   };
 }
 

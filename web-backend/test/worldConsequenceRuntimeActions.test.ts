@@ -121,6 +121,7 @@ test("successful response action is surfaced as a bounded runtime receipt", () =
   assert.equal(receipts.recent[0]?.outcome, "success");
   assert.equal(receipts.recent[0]?.contractKind, "relief_convoys");
   assert.match(receipts.recent[0]?.title ?? "", /Response action executed:/);
+  assert.deepEqual(receipts.recent[0]?.spent, { wealth: 10, materials: 8 });
 });
 
 test("insufficient resource execution returns exact shortfall truth", () => {
@@ -193,4 +194,16 @@ test("player action cards expose last applied world action results", () => {
     controlDelta: 1,
     threatDelta: -2,
   });
+});
+
+
+test("player action cards expose last actual spend for bounded runtime responses", () => {
+  const ps = seedPressure();
+  const result = executeWorldConsequenceAction(ps, "action_stabilize_supply_lanes");
+  assert.equal(result.ok, true);
+
+  const actions = deriveWorldConsequenceActions(ps);
+  const stabilize = actions.playerActions.find((action) => action.id === "action_stabilize_supply_lanes");
+  assert.ok(stabilize);
+  assert.deepEqual(stabilize?.runtime?.lastSpent, { wealth: 10, materials: 8 });
 });

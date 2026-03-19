@@ -1240,6 +1240,9 @@ export function MePage() {
                       <div style={{ fontSize: 12, opacity: 0.76 }}>
                         region {getRegionDisplayName(receipt.regionId)} • pressure {formatWorldDelta(receipt.metrics.pressureDelta)} • recovery {formatWorldDelta(receipt.metrics.recoveryDelta)} • threat {formatWorldDelta(receipt.metrics.threatDelta)}
                       </div>
+                      <div style={{ fontSize: 12, opacity: 0.74, color: "#d8c79f" }}>
+                        {receipt.spent && Object.keys(receipt.spent).length > 0 ? `spend ${formatWorldActionCost(receipt.spent)}` : "no tracked spend"}
+                      </div>
                       <div style={{ fontSize: 12, opacity: 0.7 }}>
                         {receipt.contractKind ? `contract ${receipt.contractKind} • ` : ""}{receipt.outcome ?? "unknown"} • {new Date(receipt.createdAt).toLocaleString()}
                       </div>
@@ -1300,6 +1303,11 @@ export function MePage() {
                         {action.runtime?.lastAppliedEffect ? (
                           <div style={{ fontSize: 12, opacity: 0.74, color: "#9fd8c4" }}>
                             last applied pressure {formatWorldDelta(action.runtime.lastAppliedEffect.pressureDelta)} • recovery {formatWorldDelta(action.runtime.lastAppliedEffect.recoveryDelta)} • control {formatWorldDelta(action.runtime.lastAppliedEffect.controlDelta)} • threat {formatWorldDelta(action.runtime.lastAppliedEffect.threatDelta)}
+                          </div>
+                        ) : null}
+                        {action.runtime?.lastSpent && Object.keys(action.runtime.lastSpent).length > 0 ? (
+                          <div style={{ fontSize: 12, opacity: 0.72, color: "#d8c79f" }}>
+                            last spend {formatWorldActionCost(action.runtime.lastSpent)}
                           </div>
                         ) : null}
                         {action.runtime?.lastReceiptSummary ? (

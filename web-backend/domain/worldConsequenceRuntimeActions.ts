@@ -148,6 +148,7 @@ export function executeWorldConsequenceAction(ps: PlayerState, actionId: string)
     recoveryDelta: plan.recoveryDelta,
     trustDelta: plan.trustDelta,
     runtimeActionId: action.id,
+    runtimeSpent: plan.spent,
   });
 
   entry.title = `Response action executed: ${action.title}`;
@@ -156,9 +157,7 @@ export function executeWorldConsequenceAction(ps: PlayerState, actionId: string)
   entry.metrics.controlDelta = plan.controlDelta ?? entry.metrics.controlDelta;
   entry.metrics.threatDelta = plan.threatDelta ?? entry.metrics.threatDelta;
 
-  pushWorldConsequence(ps, entry);
-  const receipts = ps.worldConsequences ?? [];
-  const persistedReceipt = receipts[receipts.length - 1];
+  const persistedReceipt = pushWorldConsequence(ps, entry);
   const eventRegionId = isRegionId(action.sourceRegionId) ? action.sourceRegionId : ps.city.regionId;
   const responseEvent: GameEvent = {
     id: `evt_${Date.now()}_${Math.floor(Math.random() * 100000)}`,
