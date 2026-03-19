@@ -10,7 +10,9 @@ import type {
   Resources,
 } from "../../lib/api";
 import { CityDevelopmentSection } from "./CityDevelopmentSection";
+import { CityHeroSection } from "./CityHeroSection";
 import { CityOverviewSection } from "./CityOverviewSection";
+import { CityWorkshopTechSection } from "./CityWorkshopTechSection";
 
 type CityCorePanelProps = {
   cardStyle: (extra?: CSSProperties) => CSSProperties;
@@ -133,124 +135,25 @@ export function CityCorePanel({
             handleUpgradeBuilding={handleUpgradeBuilding}
           />
 
-          <div style={{ display: "grid", gap: 8 }}>
-            <strong>Heroes</strong>
-            <div style={{ fontSize: 12, opacity: 0.75 }}>
-              Recruit quote: {formatLevy(quoteMap.get("hero_recruit")?.levy)} / +{quoteMap.get("hero_recruit")?.queueMinutes ?? 0}m
-            </div>
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-              {(["champion", "scout", "tactician", "mage"] as const).map((role) => (
-                <button
-                  key={role}
-                  style={{ padding: "6px 10px", borderRadius: 6, border: "1px solid #777", background: "#111", opacity: disabled ? 0.6 : 1 }}
-                  disabled={disabled}
-                  onClick={() => void handleRecruitHero(role)}
-                >
-                  Recruit {role}
-                </button>
-              ))}
-            </div>
-            <div style={{ display: "grid", gap: 6 }}>
-              {me.heroes.map((hero) => (
-                <div key={hero.id} style={{ border: "1px solid #555", borderRadius: 8, padding: 10, display: "grid", gap: 6 }}>
-                  <div><strong>{hero.name}</strong> ({hero.role}) • power {hero.power} • {hero.status}</div>
-                  <div style={{ fontSize: 12, opacity: 0.8 }}>Response roles: {hero.responseRoles?.join(", ") || "generalist"}</div>
-                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                    {(hero.traits ?? []).map((trait) => (
-                      <span key={trait.id} style={{ border: `1px solid ${trait.polarity === "pro" ? "#2a6" : "#844"}`, borderRadius: 999, padding: "2px 8px", fontSize: 12, opacity: 0.9 }} title={trait.summary}>
-                        {trait.polarity === "pro" ? "+" : "−"} {trait.name}
-                      </span>
-                    ))}
-                  </div>
-                  <div style={{ display: "grid", gap: 6 }}>
-                    <div style={{ fontSize: 12, opacity: 0.82 }}>Gear:</div>
-                    {(hero.attachments?.length ?? 0) === 0 ? (
-                      <div style={{ fontSize: 12, opacity: 0.62 }}>No gear equipped.</div>
-                    ) : (
-                      <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                        {(hero.attachments ?? []).map((attachment) => (
-                          <span key={attachment.id} style={{ border: "1px solid #446", borderRadius: 999, padding: "2px 8px", fontSize: 12, opacity: 0.92 }} title={attachment.summary ?? `${attachment.family} gear`}>
-                            {attachment.name} • {attachment.slot} • {(attachment.responseTags ?? []).join("/")}
-                          </span>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                    {(["valor_charm", "scouting_cloak", "arcane_focus"] as const).map((kind) => (
-                      <button
-                        key={kind}
-                        style={{ padding: "6px 10px", borderRadius: 6, border: "1px solid #777", background: "#111", opacity: disabled ? 0.6 : 1 }}
-                        disabled={disabled}
-                        onClick={() => void handleEquipHeroAttachment(hero.id, kind)}
-                        title={kind === "valor_charm" ? "Trinket slot • frontline/recovery" : kind === "scouting_cloak" ? "Utility slot • recon/recovery" : "Focus slot • warding/command"}
-                      >
-                        Equip {kind}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
+          <CityHeroSection
+            me={me}
+            disabled={disabled}
+            quoteMap={quoteMap}
+            formatLevy={formatLevy}
+            handleRecruitHero={handleRecruitHero}
+            handleEquipHeroAttachment={handleEquipHeroAttachment}
+          />
 
-          <div style={{ display: "grid", gap: 8 }}>
-            <strong>Workshop</strong>
-            <div style={{ fontSize: 12, opacity: 0.75 }}>
-              Craft quote: {formatLevy(quoteMap.get("workshop_craft")?.levy)} / +{quoteMap.get("workshop_craft")?.queueMinutes ?? 0}m
-            </div>
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-              {(["valor_charm", "scouting_cloak", "arcane_focus"] as const).map((kind) => (
-                <button
-                  key={kind}
-                  style={{ padding: "6px 10px", borderRadius: 6, border: "1px solid #777", background: "#111", opacity: disabled ? 0.6 : 1 }}
-                  disabled={disabled}
-                  onClick={() => void handleWorkshopCraft(kind)}
-                >
-                  Craft {kind}
-                </button>
-              ))}
-            </div>
-            <div style={{ display: "grid", gap: 6 }}>
-              {me.workshopJobs.map((job) => (
-                <div key={job.id} style={{ border: "1px solid #555", borderRadius: 8, padding: 10, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
-                  <div>
-                    <div><strong>{job.attachmentKind}</strong></div>
-                    <div style={{ opacity: 0.8, fontSize: 13 }}>Finishes: {new Date(job.finishesAt).toLocaleString()} • {job.completed ? "completed" : "in progress"}</div>
-                  </div>
-                  <button
-                    style={{ padding: "6px 10px", borderRadius: 6, border: "1px solid #777", background: "#111", opacity: disabled ? 0.6 : 1 }}
-                    disabled={disabled || !job.completed}
-                    onClick={() => void handleWorkshopCollect(job.id)}
-                  >
-                    Collect
-                  </button>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <div style={{ display: "grid", gap: 8 }}>
-            <strong>Tech</strong>
-            <div style={{ fontSize: 12, opacity: 0.75 }}>
-              Research quote: {formatLevy(quoteMap.get("tech_research")?.levy)} / +{quoteMap.get("tech_research")?.queueMinutes ?? 0}m
-            </div>
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-              {techOptions.map((tech) => (
-                <button
-                  key={tech.id}
-                  style={{ padding: "6px 10px", borderRadius: 6, border: "1px solid #777", background: "#111", opacity: disabled ? 0.6 : 1 }}
-                  disabled={disabled}
-                  onClick={() => void handleStartTech(tech.id)}
-                  title={tech.description ?? tech.id}
-                >
-                  Start: {tech.name}
-                </button>
-              ))}
-              {!techOptions.length ? <span style={{ opacity: 0.7, fontSize: 13 }}>No tech options (yet).</span> : null}
-            </div>
-            {me.activeResearch ? <div style={{ fontSize: 13, opacity: 0.85 }}>Active research: {me.activeResearch.name} ({me.activeResearch.progress}/{me.activeResearch.cost})</div> : null}
-          </div>
+          <CityWorkshopTechSection
+            me={me}
+            disabled={disabled}
+            techOptions={techOptions}
+            quoteMap={quoteMap}
+            formatLevy={formatLevy}
+            handleWorkshopCraft={handleWorkshopCraft}
+            handleWorkshopCollect={handleWorkshopCollect}
+            handleStartTech={handleStartTech}
+          />
         </>
       )}
     </div>

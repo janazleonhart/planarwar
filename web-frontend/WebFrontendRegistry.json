@@ -733,6 +733,44 @@
         "Player Panels: Effects (StatusEffects v1.5 MVP view)"
       ],
       "service": "webConsole.app"
+    },
+    "web-frontend.components.city.cityHeroSection": {
+      "class": null,
+      "ctorArgs": [],
+      "dependsOn": [
+        "web-frontend.lib.api"
+      ],
+      "kind": "ui",
+      "lifecycle": "singleton",
+      "notes": [
+        "Extracted hero recruitment, roster, trait, and gear rendering from CityCorePanel.",
+        "Preserves city-side hero actions and quote display while reducing city-core readability debt."
+      ],
+      "owns": [],
+      "path": "web-frontend/components/city/CityHeroSection.tsx",
+      "provides": [
+        "City Builder hero management section"
+      ],
+      "service": "ui.component"
+    },
+    "web-frontend.components.city.cityWorkshopTechSection": {
+      "class": null,
+      "ctorArgs": [],
+      "dependsOn": [
+        "web-frontend.lib.api"
+      ],
+      "kind": "ui",
+      "lifecycle": "singleton",
+      "notes": [
+        "Extracted workshop crafting/jobs and tech research rendering from CityCorePanel.",
+        "Keeps city-side craft and research actions intact while making the ruler-facing surface easier to scan."
+      ],
+      "owns": [],
+      "path": "web-frontend/components/city/CityWorkshopTechSection.tsx",
+      "provides": [
+        "City Builder workshop and tech section"
+      ],
+      "service": "ui.component"
     }
   }
 }
