@@ -3,7 +3,8 @@
 import type { GameEvent, PlayerState, Resources } from "../gameState";
 import type { RegionId } from "./world";
 import { buildRecoveryContractWorldConsequence, pushWorldConsequence } from "./worldConsequences";
-import { buildWorldConsequenceActionRuntimeView, deriveWorldConsequenceActions, getWorldConsequenceRuntimePlan, type WorldConsequenceActionItem } from "./worldConsequenceActions";
+import { type WorldConsequenceActionItem, deriveWorldConsequenceActions } from "./worldConsequenceActions";
+import { buildWorldConsequenceActionRuntimeView, getWorldConsequenceRuntimePlan } from "./worldConsequenceActionRuntime";
 
 export interface WorldConsequenceActionExecutionResult {
   ok: boolean;
