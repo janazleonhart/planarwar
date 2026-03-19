@@ -318,7 +318,8 @@
         "web-backend.gameState",
         "web-backend.domain.city",
         "web-backend.domain.publicInfrastructure",
-        "web-backend.domain.cityMudBridgeSummary"
+        "web-backend.domain.cityMudBridgeSummary",
+        "web-backend.domain.cityMudBridgeVendorPolicy"
       ],
       "kind": "module",
       "lifecycle": "singleton",
@@ -334,7 +335,7 @@
         "v0.9 adds explicit lane-set selection helpers so guarded vendor applies can target audited lane groups instead of depending on whatever rows happen to be visible.",
         "v1.0 adds audited vendor posture presets (scarcity essentials protection, luxury throttle, arcane caution, broad recovery) so guarded tooling can target reusable lane groups without re-encoding them in the UI.",
         "v1.1 adds CityMudVendorScenarioLogEntry plus buildVendorScenarioLogNote(...) so guarded vendor runtime previews/applies can be logged with consistent audit text.",
-        "v1.2 splits bridge summary/consumer-policy derivation into web-backend/domain/cityMudBridgeSummary.ts so bridge posture math can be maintained separately from vendor runtime helpers without changing callers."
+        "v1.3 splits vendor lane selection, presets, and lane-policy overlays into web-backend/domain/cityMudBridgeVendorPolicy.ts so bridge runtime math can keep shrinking without changing callers."
       ],
       "owns": [
         "City \u2194 MUD bridge summary heuristics",
@@ -354,7 +355,7 @@
         "Guarded vendor runtime application preview (safe one-step knobs + warnings)",
         "deriveVendorLanePolicy(summary, consumers, basePolicy, item)",
         "getVendorPreset(key) + normalizeVendorPresetKey(value)",
-        "Re-exports summarizeCityMudBridge(ps), deriveCityMudConsumers(summary), deriveVendorSupportPolicy(summary, consumers) from cityMudBridgeSummary.ts"
+        "Re-exports summary + vendor-lane policy helpers from cityMudBridgeSummary.ts and cityMudBridgeVendorPolicy.ts"
       ],
       "service": "city.cityMudBridge"
     },
@@ -2709,6 +2710,32 @@
         "deriveVendorSupportPolicy(summary, consumers)"
       ],
       "service": "city.cityMudBridgeSummary"
+    },
+    "web-backend.domain.cityMudBridgeVendorPolicy": {
+      "class": null,
+      "ctorArgs": [],
+      "dependsOn": [
+        "web-backend.domain.cityMudBridge"
+      ],
+      "kind": "module",
+      "lifecycle": "singleton",
+      "notes": [
+        "Owns vendor lane selection helpers, lane-aware policy overlays, reusable preset definitions, and lane-filter normalization for the city\u2194MUD bridge.",
+        "Extracted from web-backend/domain/cityMudBridge.ts during City\u2194MUD Bridge Consolidation v1b so vendor-lane policy logic can harden separately from runtime recommendation/guardrail math."
+      ],
+      "owns": [
+        "Vendor lane classification for essentials/comfort/luxury/arcane stock",
+        "Vendor preset + lane-filter helper logic for guarded admin tooling"
+      ],
+      "path": "web-backend/domain/cityMudBridgeVendorPolicy.ts",
+      "provides": [
+        "deriveVendorLanePolicy(summary, consumers, basePolicy, item)",
+        "deriveVendorPresetRecommendation(input)",
+        "normalizeVendorLaneSelection(values) + describeVendorLaneSelection(lanes)",
+        "getVendorPreset(key) + normalizeVendorPresetKey(value)",
+        "matchesVendorLaneSelection(policy, lanes)"
+      ],
+      "service": "city.cityMudBridgeVendorPolicy"
     }
   }
 }

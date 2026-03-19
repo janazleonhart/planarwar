@@ -10,6 +10,9 @@ import {
   deriveVendorPresetRecommendation,
   deriveVendorRuntimeEffect,
   deriveVendorSupportPolicy,
+  describeVendorLaneSelection,
+  matchesVendorLaneSelection,
+  normalizeVendorLaneSelection,
   summarizeCityMudBridge,
 } from "../domain/cityMudBridge";
 import { createInitialPublicInfrastructureState } from "../domain/publicInfrastructure";
@@ -128,4 +131,14 @@ test("vendor guardrails keep scarce runtime changes bounded and operator-gated",
   assert.ok(guarded.warnings.length > 0);
   assert.ok(guarded.priceMinMult <= guarded.priceMaxMult);
   assert.match(guarded.headline, /guardrails/i);
+});
+
+
+test("vendor lane selection helpers remain callable through cityMudBridge barrel", () => {
+  const selected = normalizeVendorLaneSelection(["luxury", "essentials", "luxury", "bogus"]);
+  assert.deepEqual(selected, ["luxury", "essentials"]);
+  assert.equal(describeVendorLaneSelection(selected), "luxury, essentials lanes");
+  assert.equal(describeVendorLaneSelection([]), "selected rows");
+  assert.equal(matchesVendorLaneSelection({ lane: "luxury" }, selected), true);
+  assert.equal(matchesVendorLaneSelection({ lane: "arcane" }, selected), false);
 });
