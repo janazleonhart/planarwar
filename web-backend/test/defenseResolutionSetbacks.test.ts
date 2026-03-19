@@ -142,5 +142,124 @@ test("failed defense missions generate readable setback receipts", () => {
   assert.ok(ps.missionReceipts.length > 0);
   assert.ok(ps.city.stats.security < 58);
   assert.ok(ps.city.stats.infrastructure < 52);
-}
-);
+});
+
+
+test("economy/cartel response applies mission runtime pressure beyond offer text", () => {
+  const now = new Date("2026-03-18T20:00:00Z");
+
+  const baseline = getOrCreatePlayerState("defense_cartel_runtime_baseline");
+  baseline.resources.wealth = 900;
+  baseline.resources.materials = 900;
+  baseline.resources.mana = 300;
+  baseline.resources.unity = 200;
+  baseline.armies = [
+    {
+      id: "army_cartel_line",
+      cityId: baseline.city.id,
+      name: "Steel Procession",
+      type: "line",
+      power: 132,
+      size: 360,
+      readiness: 86,
+      upkeep: { wealth: 10, materials: 7 },
+      specialties: ["frontline", "command", "defense"],
+      status: "idle",
+    },
+  ] as any;
+  baseline.currentOffers = [
+    {
+      id: "cartel_runtime_test",
+      kind: "army",
+      difficulty: "high",
+      title: "Stabilize the smuggler roads",
+      description: "Cartel intimidation is choking the approach lanes.",
+      regionId: baseline.city.regionId,
+      recommendedPower: 150,
+      expectedRewards: { materials: 35 },
+      risk: { casualtyRisk: "high" },
+      responseTags: ["frontline", "command", "defense"],
+      threatFamily: "organized_hostile_forces",
+    },
+  ] as any;
+
+  const baselineActive = startMissionForPlayer(baseline.playerId, "cartel_runtime_test", now, undefined, "army_cartel_line", "balanced");
+  assert.ok(baselineActive);
+  baselineActive!.finishesAt = now.toISOString();
+  const baselineResult = withRandomSequence([0.5, 0.2], () =>
+    completeMissionForPlayer(baseline.playerId, baselineActive!.instanceId, now),
+  );
+  assert.equal(baselineResult.status, "ok");
+
+  const ps = getOrCreatePlayerState("defense_cartel_runtime_player");
+  ps.techFlags = ["BLACK_MARKET_ENABLED"];
+  ps.resources.wealth = 900;
+  ps.resources.materials = 900;
+  ps.resources.mana = 300;
+  ps.resources.unity = 200;
+  ps.armies = [
+    {
+      id: "army_cartel_line",
+      cityId: ps.city.id,
+      name: "Steel Procession",
+      type: "line",
+      power: 132,
+      size: 360,
+      readiness: 86,
+      upkeep: { wealth: 10, materials: 7 },
+      specialties: ["frontline", "command", "defense"],
+      status: "idle",
+    },
+  ] as any;
+
+  ps.worldConsequenceState = {
+    regions: [
+      {
+        regionId: ps.city.regionId,
+        tradeDisruption: 18,
+        blackMarketHeat: 15,
+        recoveryBurden: 7,
+        factionDrift: -4,
+      },
+    ],
+    worldEconomy: { tradePressure: 16, supplyFriction: 12, cartelAttention: 20, destabilization: 37, outlook: "crisis" },
+    blackMarket: { opportunityScore: 22, heat: 15, outlook: "surging" },
+    factionPressure: { driftScore: -5, instability: 9, dominantStance: "fraying" },
+    summary: {
+      affectedRegionIds: [ps.city.regionId],
+      totalLedgerEntries: 4,
+      severeCount: 2,
+      destabilizationScore: 37,
+      note: "Cartel pressure is degrading mission logistics.",
+    },
+  } as any;
+
+  ps.currentOffers = [
+    {
+      id: "cartel_runtime_test",
+      kind: "army",
+      difficulty: "high",
+      title: "Stabilize the smuggler roads",
+      description: "Cartel intimidation is choking the approach lanes.",
+      regionId: ps.city.regionId,
+      recommendedPower: 150,
+      expectedRewards: { materials: 35 },
+      risk: { casualtyRisk: "high" },
+      responseTags: ["frontline", "command", "defense"],
+      threatFamily: "organized_hostile_forces",
+    },
+  ] as any;
+
+  const active = startMissionForPlayer(ps.playerId, "cartel_runtime_test", now, undefined, "army_cartel_line", "desperate");
+  assert.ok(active);
+  assert.equal(active!.responsePosture, "balanced", "severe response should cap mission posture into defensive triage");
+  assert.ok((active!.committedResources?.wealth ?? 0) > (baselineActive!.committedResources?.wealth ?? 0), "runtime pressure should tax committed logistics beyond the quiet baseline");
+
+  active!.finishesAt = now.toISOString();
+  const result = withRandomSequence([0.5, 0.2], () =>
+    completeMissionForPlayer(ps.playerId, active!.instanceId, now),
+  );
+  assert.equal(result.status, "ok");
+  assert.ok((result.outcome?.successChance ?? 0) < (baselineResult.outcome?.successChance ?? 1), "runtime pressure should reduce success odds on the same force package");
+  assert.ok((result.outcome?.casualtyRate ?? 0) > (baselineResult.outcome?.casualtyRate ?? 0), "runtime pressure should materially raise casualty exposure against the quiet baseline");
+});

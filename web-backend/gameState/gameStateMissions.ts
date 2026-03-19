@@ -9,6 +9,7 @@ import { getHeroAttachmentDef } from "./gameStateHeroes";
 import type { MissionDefenseReceipt, MissionDifficulty, MissionOffer, MissionResponsePosture, MissionResponseTag, MissionSetback, MotherBrainPressureWindow, PressureMapConfidence, RecoveryContractKind, RewardBundle, ThreatFamily, ThreatWarning, WarningIntelQuality } from "../domain/missions";
 import type { RegionId, World } from "../domain/world";
 import { buildRecoveryContractWorldConsequence, buildSetbackWorldConsequence, pushWorldConsequence, summarizeWorldConsequences, recomputeWorldConsequenceState } from "../domain/worldConsequences";
+import { deriveEconomyCartelResponseState } from "../domain/economyCartelResponse";
 import type {
   ActiveMission,
   CityAlphaScopeLockItem,
@@ -819,8 +820,13 @@ export function startMissionForPlayer(
   const mission = ps.currentOffers.find((m) => m.id === missionId);
   if (!mission) return null;
 
-  const posture = normalizePosture(responsePosture);
-  const committedResources = postureResourceCommitment(mission, posture, ps.resources);
+  const runtimePressure = deriveEconomyCartelMissionRuntime(ps);
+  const posture = postureAtOrBelow(normalizePosture(responsePosture), runtimePressure.maxPosture);
+  const committedResources = scaleCommittedResources(
+    postureResourceCommitment(mission, posture, ps.resources),
+    runtimePressure.commitmentMultiplier,
+    ps.resources,
+  );
   spendCommittedResources(ps, committedResources);
 
   let assignedHeroId: string | undefined;
@@ -862,7 +868,7 @@ export function startMissionForPlayer(
 
   deps.pushEvent(ps, {
     kind: "mission_start",
-    message: `Mission started: ${mission.title} (${posture} posture)`,
+    message: `Mission started: ${mission.title} (${posture} posture${runtimePressure.note ? `, ${runtimePressure.note.toLowerCase()}` : ""})`,
     missionId: mission.id,
     heroId: assignedHeroId,
     armyId: assignedArmyId,
@@ -1192,6 +1198,81 @@ function normalizePosture(posture: MissionResponsePosture | undefined): MissionR
   return posture ?? "balanced";
 }
 
+function postureRank(posture: MissionResponsePosture): number {
+  switch (posture) {
+    case "cautious":
+      return 0;
+    case "balanced":
+      return 1;
+    case "aggressive":
+      return 2;
+    case "desperate":
+      return 3;
+    default:
+      return 1;
+  }
+}
+
+function postureAtOrBelow(requested: MissionResponsePosture, maxPosture: MissionResponsePosture): MissionResponsePosture {
+  if (postureRank(requested) <= postureRank(maxPosture)) return requested;
+  return maxPosture;
+}
+
+function scaleCommittedResources(committed: Partial<Resources>, multiplier: number, resources: Resources): Partial<Resources> {
+  if (!Number.isFinite(multiplier) || multiplier <= 1) return committed;
+  const next: Partial<Resources> = { ...committed };
+  for (const key of Object.keys(committed) as (keyof Resources)[]) {
+    const base = Math.max(0, Math.round(Number(committed[key] ?? 0)));
+    if (!base) continue;
+    next[key] = Math.min(resources[key], Math.max(base, Math.round(base * multiplier)));
+  }
+  return next;
+}
+
+function deriveEconomyCartelMissionRuntime(ps: PlayerState): {
+  maxPosture: MissionResponsePosture;
+  commitmentMultiplier: number;
+  successChanceDelta: number;
+  casualtyDelta: number;
+  note: string | null;
+} {
+  const response = deriveEconomyCartelResponseState(ps);
+  if (response.summary.responsePhase === "severe" || response.cartel.tier === "crackdown") {
+    return {
+      maxPosture: "balanced",
+      commitmentMultiplier: 1.18,
+      successChanceDelta: -0.08,
+      casualtyDelta: 0.08,
+      note: "Severe economy/cartel response is forcing mission logistics into defensive triage.",
+    };
+  }
+  if (response.summary.responsePhase === "active" || response.cartel.tier === "active") {
+    return {
+      maxPosture: "aggressive",
+      commitmentMultiplier: 1.1,
+      successChanceDelta: -0.04,
+      casualtyDelta: 0.04,
+      note: "Active economy/cartel pressure is slowing mission logistics and raising operational risk.",
+    };
+  }
+  if (response.summary.responsePhase === "watch" || response.cartel.tier === "probing") {
+    return {
+      maxPosture: "desperate",
+      commitmentMultiplier: 1.04,
+      successChanceDelta: -0.02,
+      casualtyDelta: 0.02,
+      note: "Warming economy/cartel pressure is beginning to tax mission logistics.",
+    };
+  }
+  return {
+    maxPosture: "desperate",
+    commitmentMultiplier: 1,
+    successChanceDelta: 0,
+    casualtyDelta: 0,
+    note: null,
+  };
+}
+
 function postureResourceCommitment(mission: MissionOffer, posture: MissionResponsePosture, resources: Resources): Partial<Resources> {
   const mult = posture === "cautious" ? 0.5 : posture === "balanced" ? 0.8 : posture === "aggressive" ? 1.05 : 1.3;
   const base = mission.difficulty === "low" ? 8 : mission.difficulty === "medium" ? 16 : mission.difficulty === "high" ? 28 : 44;
@@ -1346,6 +1427,7 @@ function resolveMissionOutcome(ps: PlayerState, active: ActiveMission): MissionO
   const recommended = mission.recommendedPower || 0;
   const posture = normalizePosture(active.responsePosture);
   const postureMod = postureModifiers(posture);
+  const runtimePressure = deriveEconomyCartelMissionRuntime(ps);
   const budgetScore = budgetSupportScore(mission, active.committedResources);
 
   let forcePower = 0;
@@ -1371,6 +1453,7 @@ function resolveMissionOutcome(ps: PlayerState, active: ActiveMission): MissionO
   if (armyEffect) successChance += armyEffect.successBonus;
   successChance += (budgetScore - 0.55) * 0.18;
   successChance += postureMod.success;
+  successChance += runtimePressure.successChanceDelta;
   successChance = Math.max(0.08, Math.min(0.96, successChance));
 
   const roll = Math.random();
@@ -1398,6 +1481,7 @@ function resolveMissionOutcome(ps: PlayerState, active: ActiveMission): MissionO
   }
 
   casualtyRate += postureMod.casualty;
+  casualtyRate += runtimePressure.casualtyDelta;
   if (budgetScore >= 0.95) casualtyRate -= 0.04;
   else if (budgetScore <= 0.4) casualtyRate += 0.06;
 
