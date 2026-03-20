@@ -1006,7 +1006,10 @@
         "web-frontend.pages.adminQuests",
         "web-frontend.pages.adminNpcs",
         "web-frontend.pages.adminItems",
-        "web-frontend.pages.adminSpawnPoints"
+        "web-frontend.pages.adminSpawnPoints",
+        "web-backend.routes.items",
+        "web-backend.routes.abilities",
+        "web-backend.routes.spells"
       ],
       "kind": "ui",
       "lifecycle": "singleton",
@@ -1015,7 +1018,7 @@
         "Admin pages now use same-origin /api (recommended) via Vite proxy in dev.",
         "Endpoints used by the legacy App layer include: /api/auth/login, /api/auth/register, /api/characters (GET/POST), /api/characters/:id (GET), /api/spells?ids=\u2026, /api/items?ids=\u2026, /api/abilities\u2026",
         "WebSocket sends ops: whereami, mud; expects mud_result, whereami_result, chat payloads.",
-        "City-builder pages (MePage/OperationsPage) exist but are not currently routed from App.tsx.",
+        "CityShellPage handles /city routes; MePage and OperationsPage now render beneath that shell rather than directly from legacy App.tsx panels.",
         "2026-01-28: Player Panels meta wired end-to-end: Inventory/Equipment uses /api/items, Spellbook uses /api/spells (q/ids) with cost+cooldown display, Abilities uses /api/abilities (DB catalog + unlock join).",
         "App.tsx is large; keep known-good commits before major UI polish passes to avoid JSX cascade errors."
       ],
