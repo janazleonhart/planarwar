@@ -2002,13 +2002,18 @@
       "notes": [
         "Admin-safe test-fixture endpoints for deterministic smoke tests.",
         "Must not mutate persistent world state.",
-        "Mounted at /api/admin/test_fixtures (see web-backend/index.ts)."
+        "Mounted at /api/admin/test_fixtures (see web-backend/index.ts).",
+        "Read-only deterministic smoke endpoints for auth/proxy/clock/DB sanity checks.",
+        "GET /db_counts is a non-mutating connectivity/count probe over a fixed allowlist of tables."
       ],
       "owns": [],
       "path": "web-backend/routes/adminTestFixtures.ts",
       "provides": [
         "GET /api/admin/test_fixtures/ping",
-        "POST /api/admin/test_fixtures/ping"
+        "POST /api/admin/test_fixtures/ping",
+        "GET /api/admin/test_fixtures/time",
+        "GET /api/admin/test_fixtures/echo_headers",
+        "GET /api/admin/test_fixtures/db_counts"
       ],
       "service": "web-backend.routes"
     },
