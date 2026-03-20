@@ -172,7 +172,8 @@
       "class": null,
       "ctorArgs": [],
       "dependsOn": [
-        "web-frontend.lib.api"
+        "web-frontend.lib.api",
+        "web-frontend.components.worldResponse.worldResponseUi"
       ],
       "kind": "ui",
       "lifecycle": "singleton",
@@ -248,7 +249,8 @@
       "class": null,
       "ctorArgs": [],
       "dependsOn": [
-        "web-frontend.lib.api"
+        "web-frontend.lib.api",
+        "web-frontend.components.worldResponse.worldResponseUi"
       ],
       "kind": "ui",
       "lifecycle": "singleton",
@@ -304,7 +306,8 @@
       "class": null,
       "ctorArgs": [],
       "dependsOn": [
-        "web-frontend.lib.api"
+        "web-frontend.lib.api",
+        "web-frontend.components.city.cityPolishSummaries"
       ],
       "kind": "ui",
       "lifecycle": "singleton",
@@ -342,7 +345,9 @@
       "class": null,
       "ctorArgs": [],
       "dependsOn": [
-        "web-frontend.lib.api"
+        "web-frontend.lib.api",
+        "web-frontend.components.city.publicInfrastructureModeToggle",
+        "web-frontend.components.city.publicInfrastructureSummarySection"
       ],
       "kind": "ui",
       "lifecycle": "singleton",
@@ -383,7 +388,8 @@
       "class": null,
       "ctorArgs": [],
       "dependsOn": [
-        "web-frontend.lib.api"
+        "web-frontend.lib.api",
+        "web-frontend.components.city.cityPolishSummaries"
       ],
       "kind": "ui",
       "lifecycle": "singleton",
@@ -1270,7 +1276,8 @@
         "web-backend.routes.policies",
         "web-backend.routes.tech",
         "web-backend.routes.missions",
-        "web-backend.routes.worldConsequences"
+        "web-backend.routes.worldConsequences",
+        "web-frontend.components.worldResponse.worldResponseUi"
       ],
       "kind": "ui",
       "lifecycle": "singleton",
@@ -1386,7 +1393,9 @@
       "provides": [
         "Mission defense receipts section"
       ],
-      "dependsOn": [],
+      "dependsOn": [
+        "web-frontend.components.worldResponse.worldResponsePolishSummaries"
+      ],
       "owns": [
         "Mission defense receipt rendering used by MissionResponsePanel"
       ],
@@ -1404,7 +1413,9 @@
       "provides": [
         "Mission pressure map section"
       ],
-      "dependsOn": [],
+      "dependsOn": [
+        "web-frontend.components.worldResponse.worldResponseUi"
+      ],
       "owns": [
         "Mission pressure window rendering used by MissionResponsePanel"
       ],
@@ -1422,7 +1433,9 @@
       "provides": [
         "Mission warning windows section"
       ],
-      "dependsOn": [],
+      "dependsOn": [
+        "web-frontend.components.worldResponse.worldResponseUi"
+      ],
       "owns": [
         "Mission threat warning rendering used by MissionResponsePanel"
       ],
@@ -1440,7 +1453,9 @@
       "provides": [
         "World consequence outlook panel"
       ],
-      "dependsOn": [],
+      "dependsOn": [
+        "web-frontend.components.worldResponse.worldResponseUi"
+      ],
       "owns": [
         "World consequence outlook summary used by WorldResponseSection"
       ],
@@ -1484,7 +1499,8 @@
       ],
       "dependsOn": [
         "web-frontend.components.worldResponse.worldConsequenceOutlookPanel",
-        "web-frontend.components.worldResponse.worldResponsePanel"
+        "web-frontend.components.worldResponse.worldResponsePanel",
+        "web-frontend.components.worldResponse.worldResponseUi"
       ],
       "owns": [
         "World response section used by MissionResponsePanel"
@@ -1511,13 +1527,133 @@
         "web-frontend.components.worldResponse.missionWarningWindowsSection",
         "web-frontend.components.worldResponse.missionPressureMapSection",
         "web-frontend.components.worldResponse.missionDefenseReceiptsSection",
-        "web-frontend.components.worldResponse.worldResponseSection"
+        "web-frontend.components.worldResponse.worldResponseSection",
+        "web-frontend.components.worldResponse.worldResponseUi"
       ],
       "owns": [
         "Mission response command board used by MePage"
       ],
       "notes": [
         "Imported directly by MePage for mission command and bounded world response rendering."
+      ]
+    },
+    "web-frontend.components.worldResponse.worldResponseUi": {
+      "service": "ui.component",
+      "kind": "ui",
+      "lifecycle": "singleton",
+      "path": "web-frontend/components/worldResponse/worldResponseUi.ts",
+      "class": null,
+      "ctorArgs": [],
+      "dependsOn": [
+        "web-frontend.lib.api",
+        "web-frontend.lib.apiTypes"
+      ],
+      "provides": [
+        "World response shared UI formatting helpers"
+      ],
+      "owns": [
+        "shared presentation helpers for world response and mission-related UI sections"
+      ],
+      "notes": [
+        "Shared formatting/render helpers imported by multiple world response and city presentation components.",
+        "Registry-added to cover direct helper imports from MissionResponsePanel and sibling world-response sections."
+      ]
+    },
+    "web-frontend.components.worldResponse.worldResponsePolishSummaries": {
+      "service": "ui.component",
+      "kind": "ui",
+      "lifecycle": "singleton",
+      "path": "web-frontend/components/worldResponse/worldResponsePolishSummaries.ts",
+      "class": null,
+      "ctorArgs": [],
+      "dependsOn": [
+        "web-frontend.components.city.cityPolishSummaries",
+        "web-frontend.lib.apiTypes"
+      ],
+      "provides": [
+        "World response polish summary helpers"
+      ],
+      "owns": [
+        "shared summary formatting for defense receipts and mission/world response UI polish"
+      ],
+      "notes": [
+        "Utility helper module for world-response composite sections."
+      ]
+    },
+    "web-frontend.components.city.cityPolishSummaries": {
+      "service": "ui.component",
+      "kind": "ui",
+      "lifecycle": "singleton",
+      "path": "web-frontend/components/city/cityPolishSummaries.ts",
+      "class": null,
+      "ctorArgs": [],
+      "dependsOn": [
+        "web-frontend.lib.apiTypes"
+      ],
+      "provides": [
+        "City polish summary helpers"
+      ],
+      "owns": [
+        "shared summary formatting used by city and world-response presentation helpers"
+      ],
+      "notes": [
+        "Utility helper module for city summary/polish text extraction."
+      ]
+    },
+    "web-frontend.lib.apiTypes": {
+      "service": "ui.component",
+      "kind": "ui",
+      "lifecycle": "singleton",
+      "path": "web-frontend/lib/apiTypes.ts",
+      "class": null,
+      "ctorArgs": [],
+      "dependsOn": [],
+      "provides": [
+        "Shared frontend API type definitions"
+      ],
+      "owns": [
+        "frontend type layer for API payload shapes used by city and world-response helpers"
+      ],
+      "notes": [
+        "Directly imported by shared helper modules such as lib/api.ts, cityPolishSummaries, and worldResponsePolishSummaries."
+      ]
+    },
+    "web-frontend.components.city.publicInfrastructureModeToggle": {
+      "service": "ui.component",
+      "kind": "ui",
+      "lifecycle": "singleton",
+      "path": "web-frontend/components/city/PublicInfrastructureModeToggle.tsx",
+      "class": null,
+      "ctorArgs": [],
+      "dependsOn": [],
+      "provides": [
+        "Public infrastructure mode toggle"
+      ],
+      "owns": [
+        "UI toggle for switching public infrastructure panel presentation mode"
+      ],
+      "notes": [
+        "Directly imported by PublicInfrastructurePanel."
+      ]
+    },
+    "web-frontend.components.city.publicInfrastructureSummarySection": {
+      "service": "ui.component",
+      "kind": "ui",
+      "lifecycle": "singleton",
+      "path": "web-frontend/components/city/PublicInfrastructureSummarySection.tsx",
+      "class": null,
+      "ctorArgs": [],
+      "dependsOn": [
+        "web-frontend.components.city.cityPolishSummaries"
+      ],
+      "provides": [
+        "Public infrastructure summary section"
+      ],
+      "owns": [
+        "summary subsection rendered within PublicInfrastructurePanel"
+      ],
+      "notes": [
+        "Directly imported by PublicInfrastructurePanel."
       ]
     }
   }
