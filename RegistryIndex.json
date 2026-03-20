@@ -51,8 +51,10 @@
       "path": ".github/GithubRegistry.json",
       "kind": "ops_registry",
       "notes": [
-        "GitHub workflows and repo automation metadata."
-      ]
+        "GitHub workflows and repo automation metadata.",
+        "Not included in authoritative work bundles; tracked separately from bundle-visible package registries."
+      ],
+      "bundleVisible": false
     }
   ]
 }
