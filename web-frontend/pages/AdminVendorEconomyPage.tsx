@@ -342,6 +342,8 @@ export function AdminVendorEconomyPage() {
   const [scenarioResponsePhaseFilter, setScenarioResponsePhaseFilter] = useState<"all" | VendorScenarioResponsePhase>("all");
   const [scenarioLimit, setScenarioLimit] = useState(12);
   const [scenarioVendorScope, setScenarioVendorScope] = useState<"current" | "all">("current");
+  const [scenarioBeforeCursor, setScenarioBeforeCursor] = useState<string | null>(null);
+  const [scenarioCursorStack, setScenarioCursorStack] = useState<string[]>([]);
 
   async function loadBridgeStatus() {
     try {
@@ -430,7 +432,7 @@ export function AdminVendorEconomyPage() {
     }
   }
 
-  function getScenarioQuery() {
+  function getScenarioQuery(before: string | null = scenarioBeforeCursor) {
     return {
       action: scenarioActionFilter === "all" ? undefined : scenarioActionFilter,
       presetKey: scenarioPresetFilter,
@@ -440,6 +442,7 @@ export function AdminVendorEconomyPage() {
       policyMode: scenarioPolicyModeFilter,
       responsePhase: scenarioResponsePhaseFilter,
       vendorId: scenarioVendorScope === "current" ? vendorId : undefined,
+      before,
       limit: scenarioLimit,
     };
   }
@@ -507,6 +510,21 @@ export function AdminVendorEconomyPage() {
     detail?: string;
   };
 
+  function buildScenarioActiveFilterChips(): Array<{ key: string; label: string; value: string }> {
+    const chips: Array<{ key: string; label: string; value: string }> = [];
+    chips.push({ key: "scope", label: "scope", value: scenarioVendorScope === "current" && vendorId ? `vendor ${vendorId}` : "all vendors" });
+    if (scenarioActionFilter !== "all") chips.push({ key: "action", label: "action", value: scenarioActionFilter });
+    if (scenarioPresetFilter !== "all") chips.push({ key: "preset", label: "preset", value: scenarioPresetFilter });
+    if (scenarioLaneFilter !== "all") chips.push({ key: "lane", label: "lane", value: scenarioLaneFilter });
+    if (scenarioBridgeBandFilter !== "all") chips.push({ key: "bridge", label: "bridge", value: scenarioBridgeBandFilter });
+    if (scenarioVendorStateFilter !== "all") chips.push({ key: "state", label: "state", value: scenarioVendorStateFilter });
+    if (scenarioPolicyModeFilter !== "all") chips.push({ key: "mode", label: "mode", value: scenarioPolicyModeFilter });
+    if (scenarioResponsePhaseFilter !== "all") chips.push({ key: "phase", label: "phase", value: scenarioResponsePhaseFilter });
+    chips.push({ key: "rows", label: "rows", value: String(scenarioLimit) });
+    if (scenarioBeforeCursor) chips.push({ key: "before", label: "before", value: formatScenarioTimestamp(scenarioBeforeCursor) });
+    return chips;
+  }
+
   function buildScenarioHighlightCards(): ScenarioHighlightCard[] {
     if (!scenarioReport) {
       return [];
@@ -563,11 +581,12 @@ export function AdminVendorEconomyPage() {
     ];
   }
 
-  async function loadScenarioLogs() {
+  async function loadScenarioLogs(before: string | null = scenarioBeforeCursor) {
     try {
-      const data = await fetchVendorScenarioReports(getScenarioQuery());
+      const data = await fetchVendorScenarioReports(getScenarioQuery(before));
       if (!data?.ok) throw new Error(data?.error || "Unknown error");
       setScenarioReport(data);
+      setScenarioBeforeCursor(before);
       setScenarioExpandedAt((prev) => (data.entries.some((entry) => entry.at === prev) ? prev : null));
     } catch (e: any) {
       setError((prev) => prev ?? (e?.message || String(e)));
@@ -587,7 +606,9 @@ export function AdminVendorEconomyPage() {
 
   useEffect(() => {
     if (scenarioVendorScope === "current" && !vendorId) return;
-    void loadScenarioLogs();
+    setScenarioBeforeCursor(null);
+    setScenarioCursorStack([]);
+    void loadScenarioLogs(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [vendorId, scenarioActionFilter, scenarioPresetFilter, scenarioLaneFilter, scenarioBridgeBandFilter, scenarioVendorStateFilter, scenarioPolicyModeFilter, scenarioResponsePhaseFilter, scenarioVendorScope, scenarioLimit]);
 
@@ -1279,6 +1300,52 @@ function stageRuntimePreview(row: VendorEconomyItem) {
               style={{ width: 80 }}
             />
           </label>
+        </div>
+
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 12, alignItems: "center" }}>
+          <button
+            onClick={() => {
+              setScenarioCursorStack([]);
+              void loadScenarioLogs(null);
+            }}
+            disabled={busy || !scenarioBeforeCursor}
+          >
+            Newest
+          </button>
+          <button
+            onClick={() => {
+              const previous = scenarioCursorStack[scenarioCursorStack.length - 1] ?? null;
+              setScenarioCursorStack((prev) => prev.slice(0, -1));
+              void loadScenarioLogs(previous);
+            }}
+            disabled={busy || scenarioCursorStack.length === 0}
+          >
+            Newer
+          </button>
+          <button
+            onClick={() => {
+              const next = scenarioReport?.nextCursor ?? null;
+              if (!next) return;
+              setScenarioCursorStack((prev) => [...prev, scenarioBeforeCursor ?? ""]);
+              void loadScenarioLogs(next);
+            }}
+            disabled={busy || !scenarioReport?.nextCursor}
+          >
+            Older
+          </button>
+          <div style={{ fontSize: 12, opacity: 0.76 }}>
+            {scenarioBeforeCursor ? `paged before ${formatScenarioTimestamp(scenarioBeforeCursor)}` : "showing newest window"}
+            {scenarioReport?.nextCursor ? " · older history available" : " · newest available in current filters"}
+          </div>
+        </div>
+
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 12 }}>
+          {buildScenarioActiveFilterChips().map((chip) => (
+            <div key={chip.key} style={{ padding: "6px 10px", borderRadius: 999, background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.08)", fontSize: 12 }}>
+              <span style={{ opacity: 0.68, marginRight: 6 }}>{chip.label}</span>
+              <b>{chip.value}</b>
+            </div>
+          ))}
         </div>
 
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 12 }}>
