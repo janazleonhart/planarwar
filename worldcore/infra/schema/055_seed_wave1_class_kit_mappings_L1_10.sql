@@ -12,6 +12,7 @@ BEGIN;
 -- ===== Wave1 class->kit mapping table (preferred) =====
 -- Some pipelines use public.class_kit_mappings to resolve coverage kits.
 -- We seed it defensively (column-name tolerant) and keep Crusader OUT (it has a bespoke kit).
+-- Classes with later bespoke spellkit seeds must not remain mapped here in final repo truth.
 DO $$
 BEGIN
   IF EXISTS (
@@ -24,39 +25,30 @@ BEGIN
       WHERE table_schema='public' AND table_name='class_kit_mappings' AND column_name='kit_class_id'
     ) THEN
       EXECUTE $wave1sql$
-        DELETE FROM public.class_kit_mappings WHERE class_id IN ('templar','hierophant','ascetic','prophet');
+        DELETE FROM public.class_kit_mappings WHERE class_id IN ('templar');
         INSERT INTO public.class_kit_mappings (class_id, kit_class_id, note)
         VALUES
-          ('templar','templar','wave1 kit: templar map'),
-          ('hierophant','templar','wave1 kit: templar map'),
-          ('ascetic','templar','wave1 kit: templar map'),
-          ('prophet','templar','wave1 kit: templar map');
+          ('templar','templar','wave1 kit: templar map');
 $wave1sql$;
     ELSIF EXISTS (
       SELECT 1 FROM information_schema.columns
       WHERE table_schema='public' AND table_name='class_kit_mappings' AND column_name='kit_id'
     ) THEN
       EXECUTE $wave1sql$
-        DELETE FROM public.class_kit_mappings WHERE class_id IN ('templar','hierophant','ascetic','prophet');
+        DELETE FROM public.class_kit_mappings WHERE class_id IN ('templar');
         INSERT INTO public.class_kit_mappings (class_id, kit_id, note)
         VALUES
-          ('templar','templar','wave1 kit: templar map'),
-          ('hierophant','templar','wave1 kit: templar map'),
-          ('ascetic','templar','wave1 kit: templar map'),
-          ('prophet','templar','wave1 kit: templar map');
+          ('templar','templar','wave1 kit: templar map');
 $wave1sql$;
     ELSIF EXISTS (
       SELECT 1 FROM information_schema.columns
       WHERE table_schema='public' AND table_name='class_kit_mappings' AND column_name='kit'
     ) THEN
       EXECUTE $wave1sql$
-        DELETE FROM public.class_kit_mappings WHERE class_id IN ('templar','hierophant','ascetic','prophet');
+        DELETE FROM public.class_kit_mappings WHERE class_id IN ('templar');
         INSERT INTO public.class_kit_mappings (class_id, kit, note)
         VALUES
-          ('templar','templar','wave1 kit: templar map'),
-          ('hierophant','templar','wave1 kit: templar map'),
-          ('ascetic','templar','wave1 kit: templar map'),
-          ('prophet','templar','wave1 kit: templar map');
+          ('templar','templar','wave1 kit: templar map');
 $wave1sql$;
     ELSE
       RAISE NOTICE '[wave1 kit mappings] public.class_kit_mappings exists but has no recognized kit column; skipping.';
