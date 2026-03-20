@@ -64,6 +64,9 @@ test("[contract] /api/admin mounts are gated + adminAuth semantics exist", () =>
     { mount: "/api/admin/spawn_points", routerName: "adminSpawnPointsRouter" },
     { mount: "/api/admin/vendor_audit", routerName: "adminVendorAuditRouter" },
     { mount: "/api/admin/vendor_economy", routerName: "adminVendorEconomyRouter" },
+    { mount: "/api/admin/mother_brain", routerName: "adminMotherBrainRouter" },
+    { mount: "/api/admin/heartbeats", routerName: "adminHeartbeatsRouter" },
+    { mount: "/api/admin/test_fixtures", routerName: "adminTestFixturesRouter" },
   ];
 
   for (const m of mounts) {
