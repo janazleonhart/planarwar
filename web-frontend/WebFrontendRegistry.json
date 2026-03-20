@@ -3,6 +3,7 @@
     "adminPages": [
       "/admin",
       "/admin/mother_brain",
+      "/admin/heartbeats",
       "/admin/spawn_points",
       "/admin/quests",
       "/admin/npcs",
