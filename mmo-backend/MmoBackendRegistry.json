@@ -47,7 +47,7 @@
         "On connect: creates Session, optionally attaches identity/character, joins room, streams entities",
         "Routes all incoming WS messages through worldcore router.handleRawMessage(session, data)",
         "Starts TickEngine + Heartbeat idle cleanup",
-        "HTTP admin endpoint: POST /api/admin/characters/smoke_cycle (service-token gated; editor/root only)"
+        "HTTP admin endpoints: POST /api/admin/characters/create|rename|delete|smoke_cycle (service-token gated; editor/root only)"
       ],
       "owns": [
         "HTTP server instance",
@@ -141,14 +141,20 @@
         "worldcore:auth/PostgresAuthService"
       ],
       "provides": [
-        "POST /api/admin/characters/smoke_cycle (create→rename→delete temp character; JSON result)"
+        "POST /api/admin/characters/create (create character for a user; JSON result)",
+        "POST /api/admin/characters/rename (rename character for a user; JSON result)",
+        "POST /api/admin/characters/delete (delete character for a user; JSON result)",
+        "POST /api/admin/characters/smoke_cycle (create\u2192rename\u2192delete temp character; JSON result)"
       ],
       "owns": [
         "Admin-only canary endpoint for Mother Brain smoke packs"
       ],
       "notes": [
         "Requires Authorization: Bearer svc:... token with role editor/root; readonly should fail.",
-        "Request body: {\"userId\":\"<uuid>\"} (account/user UUID under which temp chars are created)."
+        "create body: {\"userId\":\"<uuid>\",\"name\":\"<string>\",\"classId\":\"pw_class_adventurer\"?,\"shardId\":\"prime_shard\"?}.",
+        "rename body: {\"userId\":\"<uuid>\",\"charId\":\"<uuid>\",\"name\":\"<string>\"}.",
+        "delete body: {\"userId\":\"<uuid>\",\"charId\":\"<uuid>\"}.",
+        "smoke_cycle body: {\"userId\":\"<uuid>\",\"classId\":\"pw_class_adventurer\"?,\"shardId\":\"prime_shard\"?,\"namePrefix\":\"MB\"?}."
       ]
     }
   }
