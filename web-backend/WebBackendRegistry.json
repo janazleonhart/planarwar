@@ -890,13 +890,17 @@
       "kind": "module",
       "lifecycle": "singleton",
       "notes": [
-        "Admin endpoint returning rows from public.service_heartbeats.",
-        "Tolerates missing/outdated table (returns ok:true, heartbeats:[], warning:...)."
+        "Mounted at /api/admin/heartbeats (see web-backend/index.ts).",
+        "Admin endpoints returning rows from public.service_heartbeats and optional dev-only restart controls.",
+        "Tolerates missing/outdated table (returns ok:true, heartbeats:[], warning:...).",
+        "POST /api/admin/heartbeats/restart and POST /api/admin/heartbeats/restart_many stay gated behind PW_ADMIN_ALLOW_RESTART=true and always deny web-backend self-restart."
       ],
       "owns": [],
       "path": "web-backend/routes/adminHeartbeats.ts",
       "provides": [
-        "GET /api/admin/heartbeats"
+        "GET /api/admin/heartbeats",
+        "POST /api/admin/heartbeats/restart",
+        "POST /api/admin/heartbeats/restart_many"
       ],
       "service": "web-backend.routes"
     },
