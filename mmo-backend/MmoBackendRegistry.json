@@ -34,7 +34,7 @@
         "worldcore:characters/PostgresCharacterService",
         "worldcore:quests/PostgresQuestService",
         "worldcore:npc/PostgresNpcService",
-        "worldcore:world/NpcSpawnController",
+        "worldcore:npc/NpcSpawnController",
         "worldcore:core/SessionManager",
         "worldcore:core/RoomManager",
         "worldcore:core/MessageRouter",
