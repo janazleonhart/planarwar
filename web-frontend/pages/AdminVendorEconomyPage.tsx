@@ -342,8 +342,6 @@ export function AdminVendorEconomyPage() {
   const [scenarioResponsePhaseFilter, setScenarioResponsePhaseFilter] = useState<"all" | VendorScenarioResponsePhase>("all");
   const [scenarioLimit, setScenarioLimit] = useState(12);
   const [scenarioVendorScope, setScenarioVendorScope] = useState<"current" | "all">("current");
-  const [scenarioBeforeCursor, setScenarioBeforeCursor] = useState<string | null>(null);
-  const [scenarioCursorHistory, setScenarioCursorHistory] = useState<Array<string | null>>([]);
 
   async function loadBridgeStatus() {
     try {
@@ -442,7 +440,6 @@ export function AdminVendorEconomyPage() {
       policyMode: scenarioPolicyModeFilter,
       responsePhase: scenarioResponsePhaseFilter,
       vendorId: scenarioVendorScope === "current" ? vendorId : undefined,
-      before: scenarioBeforeCursor ?? undefined,
       limit: scenarioLimit,
     };
   }
@@ -468,42 +465,6 @@ export function AdminVendorEconomyPage() {
     } catch (e: any) {
       setError(e?.message || String(e));
     }
-  }
-
-  function buildScenarioFilterChips() {
-    const chips: string[] = [];
-    chips.push(scenarioVendorScope === "current" && vendorId ? `scope:${vendorId}` : "scope:all vendors");
-    if (scenarioActionFilter !== "all") chips.push(`action:${scenarioActionFilter}`);
-    if (scenarioPresetFilter !== "all") chips.push(`preset:${scenarioPresetFilter}`);
-    if (scenarioLaneFilter !== "all") chips.push(`lane:${scenarioLaneFilter}`);
-    if (scenarioBridgeBandFilter !== "all") chips.push(`bridge:${scenarioBridgeBandFilter}`);
-    if (scenarioVendorStateFilter !== "all") chips.push(`state:${scenarioVendorStateFilter}`);
-    if (scenarioPolicyModeFilter !== "all") chips.push(`mode:${scenarioPolicyModeFilter}`);
-    if (scenarioResponsePhaseFilter !== "all") chips.push(`phase:${scenarioResponsePhaseFilter}`);
-    chips.push(`rows:${scenarioLimit}`);
-    return chips;
-  }
-
-  function resetScenarioWindowToNewest() {
-    setScenarioCursorHistory([]);
-    setScenarioBeforeCursor(null);
-  }
-
-  function loadOlderScenarioWindow() {
-    const nextCursor = scenarioReport?.nextCursor ?? null;
-    if (!nextCursor) return;
-    setScenarioCursorHistory((prev) => [...prev, scenarioBeforeCursor]);
-    setScenarioBeforeCursor(nextCursor);
-  }
-
-  function loadNewerScenarioWindow() {
-    setScenarioCursorHistory((prev) => {
-      if (prev.length === 0) return prev;
-      const next = [...prev];
-      const target = next.pop() ?? null;
-      setScenarioBeforeCursor(target);
-      return next;
-    });
   }
 
   function renderScenarioBucketTable(
@@ -539,6 +500,69 @@ export function AdminVendorEconomyPage() {
     );
   }
 
+  type ScenarioHighlightCard = {
+    key: string;
+    label: string;
+    value: string;
+    detail?: string;
+  };
+
+  function buildScenarioHighlightCards(): ScenarioHighlightCard[] {
+    if (!scenarioReport) {
+      return [];
+    }
+
+    const review = scenarioReport.review;
+    const total = review.windowRollups.matched;
+    const applied = review.windowRollups.applied;
+    const warnings = review.windowRollups.warnings;
+    const blocked = review.windowRollups.blocked;
+    const applyRate = total > 0 ? `${Math.round((applied / total) * 100)}%` : '0%';
+    const guardrailPressure = total > 0 ? `${Math.round(((blocked + warnings) / total) * 100)}%` : '0%';
+
+    const firstBucketLabel = (buckets: Array<{ label: string; entryCount: number }>): string =>
+      buckets.length > 0 ? buckets[0].label : '—';
+
+    return [
+      {
+        key: 'apply-rate',
+        label: 'apply rate',
+        value: applyRate,
+        detail: `${applied} applied of ${total} matched`,
+      },
+      {
+        key: 'guardrail-pressure',
+        label: 'guardrail pressure',
+        value: guardrailPressure,
+        detail: `${blocked} blocked · ${warnings} warnings`,
+      },
+      {
+        key: 'dominant-action',
+        label: 'dominant action',
+        value: firstBucketLabel(review.byAction),
+        detail: 'Top action in current review window',
+      },
+      {
+        key: 'top-preset',
+        label: 'top preset',
+        value: firstBucketLabel(review.byPreset),
+        detail: 'Preset leading this filter window',
+      },
+      {
+        key: 'top-lane',
+        label: 'top lane',
+        value: firstBucketLabel(review.byLane),
+        detail: 'Lane rollup leader',
+      },
+      {
+        key: 'bridge-band',
+        label: 'bridge / state',
+        value: `${firstBucketLabel(review.byBridgeBand)} · ${firstBucketLabel(review.byVendorState)}`,
+        detail: 'Leading bridge band and vendor state',
+      },
+    ];
+  }
+
   async function loadScenarioLogs() {
     try {
       const data = await fetchVendorScenarioReports(getScenarioQuery());
@@ -565,11 +589,6 @@ export function AdminVendorEconomyPage() {
     if (scenarioVendorScope === "current" && !vendorId) return;
     void loadScenarioLogs();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [vendorId, scenarioActionFilter, scenarioPresetFilter, scenarioLaneFilter, scenarioBridgeBandFilter, scenarioVendorStateFilter, scenarioPolicyModeFilter, scenarioResponsePhaseFilter, scenarioVendorScope, scenarioLimit, scenarioBeforeCursor]);
-
-  useEffect(() => {
-    setScenarioBeforeCursor(null);
-    setScenarioCursorHistory([]);
   }, [vendorId, scenarioActionFilter, scenarioPresetFilter, scenarioLaneFilter, scenarioBridgeBandFilter, scenarioVendorStateFilter, scenarioPolicyModeFilter, scenarioResponsePhaseFilter, scenarioVendorScope, scenarioLimit]);
 
   useEffect(() => {
@@ -1262,37 +1281,6 @@ function stageRuntimePreview(row: VendorEconomyItem) {
           </label>
         </div>
 
-
-        <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap", alignItems: "center", marginTop: 12, padding: 10, borderRadius: 10, background: "rgba(255,255,255,0.04)" }}>
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", fontSize: 12, opacity: 0.82 }}>
-            <span><b>window:</b> {scenarioBeforeCursor ? `before ${formatScenarioTimestamp(scenarioBeforeCursor)}` : "newest"}</span>
-            <span><b>older:</b> {scenarioReport?.nextCursor ? "available" : "none"}</span>
-            <span><b>newer:</b> {scenarioCursorHistory.length > 0 ? "available" : "none"}</span>
-          </div>
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            <button onClick={resetScenarioWindowToNewest} disabled={busy || (!scenarioBeforeCursor && scenarioCursorHistory.length === 0)}>Newest</button>
-            <button onClick={loadNewerScenarioWindow} disabled={busy || scenarioCursorHistory.length === 0}>Newer</button>
-            <button onClick={loadOlderScenarioWindow} disabled={busy || !scenarioReport?.nextCursor}>Older</button>
-          </div>
-        </div>
-
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 12 }}>
-          {buildScenarioFilterChips().map((chip) => (
-            <span
-              key={chip}
-              style={{
-                padding: "4px 8px",
-                borderRadius: 999,
-                background: "rgba(255,255,255,0.06)",
-                border: "1px solid rgba(255,255,255,0.08)",
-                fontSize: 12,
-                opacity: 0.84,
-              }}
-            >
-              {chip}
-            </span>
-          ))}
-        </div>
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 12 }}>
           {[
             ["matched", scenarioReport?.review.windowRollups.matched ?? 0],
@@ -1329,6 +1317,18 @@ function stageRuntimePreview(row: VendorEconomyItem) {
             </div>
           ))}
         </div>
+
+        {buildScenarioHighlightCards().length > 0 && (
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 10, marginTop: 12 }}>
+            {buildScenarioHighlightCards().map((card: ScenarioHighlightCard) => (
+              <div key={card.key} style={{ padding: 10, borderRadius: 12, background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.08)" }}>
+                <div style={{ fontSize: 11, opacity: 0.72, textTransform: "uppercase", letterSpacing: 0.5 }}>{card.label}</div>
+                <div style={{ fontSize: 18, fontWeight: 700, marginTop: 6 }}>{card.value}</div>
+                {card.detail && <div style={{ fontSize: 12, opacity: 0.74, marginTop: 6 }}>{card.detail}</div>}
+              </div>
+            ))}
+          </div>
+        )}
 
         <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginTop: 12 }}>
           {renderScenarioBucketTable("Action mix", scenarioReport?.review.byAction ?? [])}
