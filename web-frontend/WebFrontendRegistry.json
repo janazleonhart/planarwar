@@ -439,12 +439,15 @@
     "web-frontend.components.itemPicker": {
       "class": null,
       "ctorArgs": [],
-      "dependsOn": [],
+      "dependsOn": [
+        "web-backend.routes.adminItems"
+      ],
       "kind": "ui",
       "lifecycle": "singleton",
       "notes": [
         "Reusable item id picker with server-backed autocomplete via /api/admin/items/options.",
-        "Resolves (id -> name/rarity) and exposes validity for forms that must prevent dangling item references."
+        "Resolves (id -> name/rarity) and exposes validity for forms that must prevent dangling item references.",
+        "Registry-aligned with ItemPicker literal consumer for /api/admin/items/options."
       ],
       "owns": [
         "client-side option cache for item lookups"
