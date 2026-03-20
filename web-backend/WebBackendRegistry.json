@@ -986,7 +986,7 @@
       "kind": "module",
       "lifecycle": "singleton",
       "notes": [
-        "Admin route for Mother Brain status, wave budget controls, goal proxy endpoints, and JSONL report tail viewing.",
+        "Admin route for Mother Brain status, wave budget controls, city consequence signal inspection, goal proxy endpoints, and JSONL report tail viewing.",
         "Mounted at /api/admin/mother_brain (see web-backend/index.ts).",
         "Delegates HTTP proxy, report-tail file IO, and shared parsing helpers to focused route helper modules."
       ],
@@ -997,6 +997,7 @@
         "GET /api/admin/mother_brain/wave_budget",
         "POST /api/admin/mother_brain/wave_budget",
         "DELETE /api/admin/mother_brain/wave_budget/:shardId/:type",
+        "GET /api/admin/mother_brain/city_signals",
         "GET /api/admin/mother_brain/goals/report_tail",
         "GET /api/admin/mother_brain/goals_proxy_info",
         "GET /api/admin/mother_brain/goals",
