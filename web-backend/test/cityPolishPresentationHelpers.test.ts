@@ -14,7 +14,7 @@ import {
   getMissionDefenseReceiptTone,
   summarizeMissionDefenseReceipts,
 } from "../../web-frontend/components/worldResponse/worldResponsePolishSummaries";
-import type { CityStressState, CitySummary, MissionDefenseReceipt, Resources } from "../../web-frontend/lib/api";
+import type { CityStressState, CitySummary, MissionDefenseReceipt, Resources } from "../../web-frontend/lib/apiTypes";
 
 function makeResources(overrides: Partial<Resources> = {}): Resources {
   return {

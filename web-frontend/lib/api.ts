@@ -1078,8 +1078,31 @@ function normalizeBase(raw: string): string {
   return raw.replace(/\/+$/, "");
 }
 
+type LocalStorageLike = {
+  getItem(key: string): string | null;
+};
+
+function readViteEnv(): Record<string, any> {
+  try {
+    return Function("try { return import.meta.env ?? {}; } catch { return {}; }")() as Record<string, any>;
+  } catch {
+    return {};
+  }
+}
+
+function getBrowserLocalStorage(): LocalStorageLike | null {
+  try {
+    const g = globalThis as { localStorage?: LocalStorageLike; window?: { localStorage?: LocalStorageLike } };
+    if (g.window?.localStorage) return g.window.localStorage;
+    if (g.localStorage) return g.localStorage;
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 export const API_BASE_URL = (() => {
-  const env = ((import.meta as any).env ?? {}) as Record<string, any>;
+  const env = readViteEnv();
   const raw = String(env.VITE_API_BASE_URL ?? "").trim();
   if (raw) return normalizeBase(raw);
   return "";
@@ -1299,8 +1322,9 @@ export async function renameCity(name: string): Promise<CityRenameResult> {
 
 export function getAuthToken(): string | null {
   try {
-    if (typeof window === "undefined") return null;
-    const raw = window.localStorage.getItem("pw_auth_v1");
+    const storage = getBrowserLocalStorage();
+    if (!storage) return null;
+    const raw = storage.getItem("pw_auth_v1");
     if (!raw) return null;
     const parsed = JSON.parse(raw);
     if (typeof parsed === "string") return parsed;
@@ -1346,8 +1370,9 @@ export function resolveAdminRoleFromFlags(flags: any): AdminRole | null {
 
 function safeReadFlagsFromLocalStorage(): Record<string, any> {
   try {
-    if (typeof window === "undefined") return {};
-    const raw = window.localStorage.getItem("pw_auth_v1");
+    const storage = getBrowserLocalStorage();
+    if (!storage) return {};
+    const raw = storage.getItem("pw_auth_v1");
     if (!raw) return {};
     const parsed = JSON.parse(raw);
     if (typeof parsed === "string") return {};

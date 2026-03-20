@@ -1,6 +1,6 @@
 //web-frontend/components/worldResponse/worldResponsePolishSummaries.ts
 
-import type { MissionDefenseReceipt } from "../../lib/api";
+import type { MissionDefenseReceipt } from "../../lib/apiTypes";
 import type { SummaryTone } from "../city/cityPolishSummaries";
 
 export function getMissionDefenseReceiptTone(receipt: MissionDefenseReceipt): SummaryTone {

@@ -1,6 +1,6 @@
 //web-frontend/components/city/cityPolishSummaries.ts
 
-import type { CitySummary, MeProfile, Resources } from "../../lib/api";
+import type { CityStressState, CitySummary, Resources } from "../../lib/apiTypes";
 
 export type SummaryTone = "calm" | "watch" | "danger";
 
@@ -22,7 +22,7 @@ export function formatProductionDelta(city: CitySummary | null, key: keyof Resou
 
 export function summarizeTreasury(
   resources: Resources,
-  cityStress: MeProfile["cityStress"],
+  cityStress: CityStressState,
 ): { headline: string; detail: string } {
   const total = Object.values(resources).reduce((sum, value) => sum + Number(value ?? 0), 0);
 
