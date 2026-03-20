@@ -119,15 +119,15 @@ ON CONFLICT (class_id, spell_id) DO UPDATE SET
 INSERT INTO public.spell_unlocks (class_id, spell_id, min_level, auto_grant, is_enabled, notes)
 VALUES
   ('revenant', 'warlock_shadow_bolt', 1, true, true, 'wave1 kit: warlock map'),
-  ('revenant', 'warlock_weakening_curse', 3, true, true, 'wave1 kit: warlock map'),
-  ('revenant', 'warlock_corruption', 5, true, true, 'wave1 kit: warlock map'),
-  ('revenant', 'warlock_demonic_barrier', 7, true, true, 'wave1 kit: warlock map'),
-  ('revenant', 'warlock_soul_siphon', 9, true, true, 'wave1 kit: warlock map'),
+  ('revenant', 'warlock_siphon_life', 3, true, true, 'wave1 kit: warlock map'),
+  ('revenant', 'warlock_drain_soul', 5, true, true, 'wave1 kit: warlock map'),
+  ('revenant', 'warlock_unholy_brand', 7, true, true, 'wave1 kit: warlock map'),
+  ('revenant', 'warlock_demon_skin', 9, true, true, 'wave1 kit: warlock map'),
   ('defiler', 'warlock_shadow_bolt', 1, true, true, 'wave1 kit: warlock map'),
-  ('defiler', 'warlock_weakening_curse', 3, true, true, 'wave1 kit: warlock map'),
-  ('defiler', 'warlock_corruption', 5, true, true, 'wave1 kit: warlock map'),
-  ('defiler', 'warlock_demonic_barrier', 7, true, true, 'wave1 kit: warlock map'),
-  ('defiler', 'warlock_soul_siphon', 9, true, true, 'wave1 kit: warlock map')
+  ('defiler', 'warlock_siphon_life', 3, true, true, 'wave1 kit: warlock map'),
+  ('defiler', 'warlock_drain_soul', 5, true, true, 'wave1 kit: warlock map'),
+  ('defiler', 'warlock_unholy_brand', 7, true, true, 'wave1 kit: warlock map'),
+  ('defiler', 'warlock_demon_skin', 9, true, true, 'wave1 kit: warlock map')
 ON CONFLICT (class_id, spell_id) DO UPDATE SET
   min_level = EXCLUDED.min_level,
   auto_grant = EXCLUDED.auto_grant,
