@@ -36,9 +36,16 @@ export function CityWorkshopTechSection({
   return (
     <>
       <div style={{ display: "grid", gap: 8 }}>
-        <strong>Workshop</strong>
+        <div style={{ display: "grid", gap: 2 }}>
+          <strong>Workshop queue</strong>
+          <div style={{ fontSize: 12, opacity: 0.76 }}>
+            {me.workshopJobs.length === 0
+              ? "No workshop jobs are in flight."
+              : `${me.workshopJobs.length} crafting job${me.workshopJobs.length === 1 ? "" : "s"} currently tracked.`}
+          </div>
+        </div>
         <CityActionQuoteLine
-          label="Craft quote"
+          label="Craft estimate"
           quote={quoteMap.get("workshop_craft")}
           formatLevy={formatLevy}
         />
@@ -50,16 +57,20 @@ export function CityWorkshopTechSection({
               disabled={disabled}
               onClick={() => void handleWorkshopCraft(kind)}
             >
-              Craft {kind}
+              Craft {kind.replace(/_/g, " ")}
             </button>
           ))}
         </div>
         <div style={{ display: "grid", gap: 6 }}>
+          {me.workshopJobs.length === 0 ? (
+            <div style={{ fontSize: 12, opacity: 0.65 }}>No workshop receipts yet.</div>
+          ) : null}
           {me.workshopJobs.map((job) => (
             <div key={job.id} style={{ border: "1px solid #555", borderRadius: 8, padding: 10, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
-              <div>
-                <div><strong>{job.attachmentKind}</strong></div>
-                <div style={{ opacity: 0.8, fontSize: 13 }}>Finishes: {new Date(job.finishesAt).toLocaleString()} • {job.completed ? "completed" : "in progress"}</div>
+              <div style={{ display: "grid", gap: 3 }}>
+                <div><strong>{job.attachmentKind.replace(/_/g, " ")}</strong></div>
+                <div style={{ opacity: 0.8, fontSize: 13 }}>Finishes: {new Date(job.finishesAt).toLocaleString()}</div>
+                <div style={{ fontSize: 12, opacity: 0.72 }}>{job.completed ? "Ready for collection." : "Still in progress."}</div>
               </div>
               <button
                 style={buttonStyle(disabled)}
@@ -74,9 +85,14 @@ export function CityWorkshopTechSection({
       </div>
 
       <div style={{ display: "grid", gap: 8 }}>
-        <strong>Tech</strong>
+        <div style={{ display: "grid", gap: 2 }}>
+          <strong>Research desk</strong>
+          <div style={{ fontSize: 12, opacity: 0.76 }}>
+            Queue long-term city improvements without digging through raw identifiers.
+          </div>
+        </div>
         <CityActionQuoteLine
-          label="Research quote"
+          label="Research estimate"
           quote={quoteMap.get("tech_research")}
           formatLevy={formatLevy}
         />
@@ -89,10 +105,10 @@ export function CityWorkshopTechSection({
               onClick={() => void handleStartTech(tech.id)}
               title={tech.description ?? tech.id}
             >
-              Start: {tech.name}
+              Start {tech.name}
             </button>
           ))}
-          {!techOptions.length ? <span style={{ opacity: 0.7, fontSize: 13 }}>No tech options (yet).</span> : null}
+          {!techOptions.length ? <span style={{ opacity: 0.7, fontSize: 13 }}>No tech options available right now.</span> : null}
         </div>
         {me.activeResearch ? <div style={{ fontSize: 13, opacity: 0.85 }}>Active research: {me.activeResearch.name} ({me.activeResearch.progress}/{me.activeResearch.cost})</div> : null}
       </div>

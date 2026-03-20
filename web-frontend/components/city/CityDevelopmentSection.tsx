@@ -27,6 +27,10 @@ const buttonStyle = (disabled: boolean): CSSProperties => ({
   opacity: disabled ? 0.6 : 1,
 });
 
+function formatKindLabel(kind: string) {
+  return kind.replace(/_/g, " ");
+}
+
 export function CityDevelopmentSection({
   city,
   serviceMode,
@@ -41,10 +45,13 @@ export function CityDevelopmentSection({
   return (
     <>
       <div style={{ border: "1px solid #555", borderRadius: 8, padding: 12, display: "grid", gap: 8 }}>
-        <strong>Construct building</strong>
+        <strong>Construction desk</strong>
+        <div style={{ fontSize: 12, opacity: 0.76 }}>
+          Queue new civic work with the current service lane cost already surfaced.
+        </div>
         <CityActionQuoteLine
-          prefix={`Current lane: ${serviceMode}.`}
-          label="Build quote"
+          prefix={`Current lane: ${serviceMode.replace(/_/g, " ")}.`}
+          label="Build estimate"
           quote={quoteMap.get("building_construct")}
           formatLevy={formatLevy}
         />
@@ -59,7 +66,7 @@ export function CityDevelopmentSection({
                 title={`Cost: ${cost.materials} materials, ${cost.wealth} wealth`}
                 disabled={disabled}
               >
-                Build {kind.replace("_", " ")} (m{cost.materials}/w{cost.wealth})
+                Build {formatKindLabel(kind)} (m{cost.materials}/w{cost.wealth})
               </button>
             );
           })}
@@ -67,7 +74,14 @@ export function CityDevelopmentSection({
       </div>
 
       <div style={{ display: "grid", gap: 8 }}>
-        <strong>Buildings</strong>
+        <div style={{ display: "grid", gap: 2 }}>
+          <strong>Building ledger</strong>
+          <div style={{ fontSize: 12, opacity: 0.76 }}>
+            {city.buildings.length === 0
+              ? "No active structures yet."
+              : `${city.buildings.length} active structure${city.buildings.length === 1 ? "" : "s"} ready for review.`}
+          </div>
+        </div>
         {city.buildings.length === 0 ? (
           <p style={{ opacity: 0.8 }}>No buildings yet.</p>
         ) : (
@@ -76,9 +90,10 @@ export function CityDevelopmentSection({
               const cost = getBuildingUpgradeCost(building);
               return (
                 <div key={building.id} style={{ border: "1px solid #555", borderRadius: 8, padding: 10, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
-                  <div>
-                    <div><strong>{building.name}</strong> ({building.kind})</div>
-                    <div style={{ opacity: 0.85 }}>Level: {building.level}</div>
+                  <div style={{ display: "grid", gap: 3 }}>
+                    <div><strong>{building.name}</strong> ({formatKindLabel(building.kind)})</div>
+                    <div style={{ opacity: 0.85 }}>Level {building.level}</div>
+                    <div style={{ fontSize: 12, opacity: 0.72 }}>Upgrade estimate: {cost.materials} materials, {cost.wealth} wealth</div>
                   </div>
                   <button
                     style={buttonStyle(disabled)}
@@ -86,7 +101,7 @@ export function CityDevelopmentSection({
                     title={`Cost: ${cost.materials} materials, ${cost.wealth} wealth`}
                     disabled={disabled}
                   >
-                    Upgrade (m{cost.materials}/w{cost.wealth})
+                    Upgrade
                   </button>
                 </div>
               );
