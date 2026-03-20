@@ -447,6 +447,35 @@ export function AdminVendorEconomyPage() {
     };
   }
 
+  function sanitizeScenarioFileToken(value: string) {
+    return value
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .slice(0, 48) || "all";
+  }
+
+  function buildScenarioExportFilename(format: "csv" | "json") {
+    const scopeToken = scenarioVendorScope === "current" && vendorId ? `vendor-${sanitizeScenarioFileToken(vendorId)}` : "all-vendors";
+    const actionToken = scenarioActionFilter === "all" ? "all-actions" : sanitizeScenarioFileToken(scenarioActionFilter);
+    const laneToken = scenarioLaneFilter === "all" ? "all-lanes" : sanitizeScenarioFileToken(scenarioLaneFilter);
+    const presetToken = scenarioPresetFilter === "all" ? "all-presets" : sanitizeScenarioFileToken(scenarioPresetFilter);
+    const beforeToken = scenarioBeforeCursor ? `before-${sanitizeScenarioFileToken(scenarioBeforeCursor)}` : "newest";
+    return `vendor-scenarios-${scopeToken}-${actionToken}-${laneToken}-${presetToken}-${beforeToken}.${format}`;
+  }
+
+  function buildScenarioExportContextLine() {
+    const parts = [
+      scenarioVendorScope === "current" && vendorId ? `scope vendor ${vendorId}` : "scope all vendors",
+      scenarioActionFilter === "all" ? "action all" : `action ${scenarioActionFilter}`,
+      scenarioLaneFilter === "all" ? "lane all" : `lane ${scenarioLaneFilter}`,
+      scenarioPresetFilter === "all" ? "preset all" : `preset ${scenarioPresetFilter}`,
+      scenarioBeforeCursor ? `before ${formatScenarioTimestamp(scenarioBeforeCursor)}` : "newest window",
+      `${scenarioLimit} row window`,
+    ];
+    return parts.join(" · ");
+  }
+
   async function downloadScenarioExport(format: "csv" | "json") {
     try {
       setError(null);
@@ -458,9 +487,8 @@ export function AdminVendorEconomyPage() {
       const blob = await response.blob();
       const url = window.URL.createObjectURL(blob);
       const anchor = document.createElement("a");
-      const vendorScope = scenarioVendorScope === "current" && vendorId ? vendorId : "all-vendors";
       anchor.href = url;
-      anchor.download = `vendor-scenarios-${vendorScope}.${format}`;
+      anchor.download = buildScenarioExportFilename(format);
       document.body.appendChild(anchor);
       anchor.click();
       anchor.remove();
@@ -1210,6 +1238,10 @@ function stageRuntimePreview(row: VendorEconomyItem) {
               Download JSON
             </button>
           </div>
+        </div>
+
+        <div style={{ marginTop: 10, fontSize: 12, opacity: 0.76 }}>
+          Export uses the current filtered review window. {buildScenarioExportContextLine()}
         </div>
 
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center", marginTop: 12 }}>
