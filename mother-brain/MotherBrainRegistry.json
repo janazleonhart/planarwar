@@ -26,9 +26,64 @@
     "v0.48+ adds class_playtest goal pack: create \u2192 WS attach \u2192 per-class MUD script \u2192 delete loop.",
     "v0.49+ adds DB-derived class kit inference (spell_unlocks/ability_unlocks) so kitless classes are skipped (signal stays clean).",
     "v0.50+ kit smoke improvements: tolerant spell/ability verb variants, better readiness probes to avoid first-command timeouts, and last-run report file kept always-current under logs/mother-brain/mother-brain-goals-last.json.",
-    "v0.45 prefers daemon service tokens (x-service-token) over expiring human JWTs for web-backend admin_smoke; removes Bearer usage for service tokens in internal calls."
+    "v0.45 prefers daemon service tokens (x-service-token) over expiring human JWTs for web-backend admin_smoke; removes Bearer usage for service tokens in internal calls.",
+    "Compatibility: services mirrors entries so cross-registry tooling can resolve Mother Brain ownership through the same top-level key used by other registries."
   ],
-  "services": {},
+  "services": {
+    "mother-brain.service.MotherBrain": {
+      "kind": "service",
+      "service": "mother-brain",
+      "path": "mother-brain/index.ts",
+      "class": "(entrypoint)",
+      "lifecycle": "daemon",
+      "ctorArgs": [],
+      "dependsOn": [],
+      "provides": [
+        "mother-brain:daemon"
+      ],
+      "owns": [
+        "Mother Brain runtime loop",
+        "Goals Runner cadence + reports"
+      ]
+    },
+    "mother-brain.module.Goals": {
+      "kind": "module",
+      "service": "mother-brain",
+      "path": "mother-brain/Goals.ts",
+      "class": null,
+      "lifecycle": "static",
+      "ctorArgs": [],
+      "dependsOn": [
+        "node:fs",
+        "node:path"
+      ],
+      "provides": [
+        "Goal packs + suite runner",
+        "ws_mud_script + class_playtest_loop goal kinds",
+        "boosted class playtest generation + live-kit validation"
+      ],
+      "owns": [
+        "Goal normalization + execution + reporting formats",
+        "service-auth boosted class playtest flow",
+        "usable-first/live-kit-aware class smoke behavior"
+      ]
+    },
+    "mother-brain.tool.genServiceToken": {
+      "kind": "tool",
+      "service": "mother-brain",
+      "path": "mother-brain/tools/genServiceToken.js",
+      "class": "(script)",
+      "lifecycle": "manual",
+      "ctorArgs": [],
+      "dependsOn": [],
+      "provides": [
+        "mother-brain:tool:gen-service-token"
+      ],
+      "owns": [
+        "Service token helper"
+      ]
+    }
+  },
   "entries": {
     "mother-brain.service.MotherBrain": {
       "kind": "service",
