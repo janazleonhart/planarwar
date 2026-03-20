@@ -98,7 +98,7 @@ export function CityIdentityCard({ me, cardStyle }: CityIdentityCardProps) {
         <div style={{ fontSize: 13, opacity: 0.76 }}>
           {city
             ? "Top-level city posture and pressure markers, without having to spelunk through the rest of the board."
-            : "Founding a city is still the main threshold before the rest of this surface wakes up."}
+            : "This seat is still unfounded. Claim the city here and the rest of the board wakes up from a planning table into an actual seat of rule."}
         </div>
       </div>
 

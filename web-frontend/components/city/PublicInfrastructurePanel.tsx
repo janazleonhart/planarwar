@@ -36,9 +36,11 @@ export function PublicInfrastructurePanel({
   return (
     <div style={cardStyle()}>
       <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
-        <div>
+        <div style={{ display: "grid", gap: 4 }}>
           <h3 style={{ margin: 0 }}>Public Infrastructure</h3>
-          <div style={{ opacity: 0.8, fontSize: 13 }}>Choose whether eligible actions use private city lanes or NPC public service lanes.</div>
+          <div style={{ opacity: 0.8, fontSize: 13 }}>
+            Decide whether eligible work runs through your own civic lanes or the public desks, then read the cost, queue, and strain picture before you file the order.
+          </div>
         </div>
         <PublicInfrastructureModeToggle
           disabled={disabled}

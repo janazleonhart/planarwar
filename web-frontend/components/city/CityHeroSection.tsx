@@ -85,7 +85,7 @@ export function CityHeroSection({
             <div style={{ display: "grid", gap: 6 }}>
               <div style={{ fontSize: 12, opacity: 0.82 }}>Field kit</div>
               {(hero.attachments?.length ?? 0) === 0 ? (
-                <div style={{ fontSize: 12, opacity: 0.62 }}>No gear equipped.</div>
+                <div style={{ fontSize: 12, opacity: 0.62 }}>No field kit is assigned yet. Issue attachments here when this officer needs more than a title and a clean tabard.</div>
               ) : (
                 <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
                   {(hero.attachments ?? []).map((attachment) => (
