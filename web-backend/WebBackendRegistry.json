@@ -1976,8 +1976,20 @@
         "spells",
         "editor"
       ],
-      "notes": "Admin Spell Editor (v1) routes: list/search, get by id, upsert",
-      "kind": "module"
+      "notes": [
+        "Mounted at /api/admin/spells behind maybeRequireAdmin(\"/api/admin/spells\").",
+        "Admin spell routes: GET /api/admin/spells, GET /api/admin/spells/:id, POST /api/admin/spells.",
+        "Used by the admin spell editor/service-token gated admin surface."
+      ],
+      "kind": "module",
+      "provides": [
+        "GET /api/admin/spells",
+        "GET /api/admin/spells/:id",
+        "POST /api/admin/spells"
+      ],
+      "owns": [
+        "/api/admin/spells"
+      ]
     },
     "web-backend.routes.adminTestFixtures": {
       "class": null,
