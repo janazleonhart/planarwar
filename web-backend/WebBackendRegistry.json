@@ -744,7 +744,7 @@
       "path": "web-backend/gameState/gameStateCore.ts",
       "lifecycle": "singleton-helper",
       "dependsOn": [
-        "web-backend.config",
+        "web-backend.config.demo",
         "web-backend.domain.world",
         "web-backend.domain.city",
         "web-backend.domain.heroes",
@@ -2814,6 +2814,135 @@
         "mountRouteGroups(app)"
       ],
       "service": "http.routes"
+    },
+    "web-backend.gameState.cityRuntimeSnapshot": {
+      "class": null,
+      "ctorArgs": [],
+      "dependsOn": [
+        "web-backend.gameState.gameStateCore"
+      ],
+      "kind": "module",
+      "lifecycle": "static",
+      "notes": [
+        "Snapshot save/load helper for web city runtime state. Used by support/admin restore and verification flows."
+      ],
+      "owns": [],
+      "path": "web-backend/gameState/cityRuntimeSnapshot.ts",
+      "provides": [
+        "saveCityRuntimeSnapshot(state)",
+        "loadCityRuntimeSnapshot(raw)",
+        "types: CityRuntimeSnapshot"
+      ],
+      "service": "gameState.cityRuntimeSnapshot"
+    },
+    "web-backend.domain.worldConsequenceHooks": {
+      "class": null,
+      "ctorArgs": [],
+      "dependsOn": [],
+      "kind": "module",
+      "lifecycle": "static",
+      "notes": [
+        "World consequence hook policy helpers for player-facing consequence orchestration."
+      ],
+      "owns": [],
+      "path": "web-backend/domain/worldConsequenceHooks.ts",
+      "provides": [
+        "listWorldConsequenceHooks(state, opts)",
+        "types: WorldConsequenceHook*"
+      ],
+      "service": "domain.worldConsequenceHooks"
+    },
+    "web-backend.domain.worldConsequenceActions": {
+      "class": null,
+      "ctorArgs": [],
+      "dependsOn": [],
+      "kind": "module",
+      "lifecycle": "static",
+      "notes": [
+        "Action availability and execution helpers for world consequence flows."
+      ],
+      "owns": [],
+      "path": "web-backend/domain/worldConsequenceActions.ts",
+      "provides": [
+        "listWorldConsequenceActions(state, opts)",
+        "resolveWorldConsequenceAction(...)"
+      ],
+      "service": "domain.worldConsequenceActions"
+    },
+    "web-backend.domain.worldConsequenceConsumers": {
+      "class": null,
+      "ctorArgs": [],
+      "dependsOn": [],
+      "kind": "module",
+      "lifecycle": "static",
+      "notes": [
+        "Consumer/recipient inspection helpers for world consequence projections and receipts."
+      ],
+      "owns": [],
+      "path": "web-backend/domain/worldConsequenceConsumers.ts",
+      "provides": [
+        "listWorldConsequenceConsumers(state, opts)",
+        "types: WorldConsequenceConsumer*"
+      ],
+      "service": "domain.worldConsequenceConsumers"
+    },
+    "web-backend.domain.worldConsequenceRuntimeActions": {
+      "class": null,
+      "ctorArgs": [],
+      "dependsOn": [
+        "web-backend.domain.worldConsequenceActions"
+      ],
+      "kind": "module",
+      "lifecycle": "static",
+      "notes": [
+        "Runtime action execution helpers layered on top of static world consequence action rules."
+      ],
+      "owns": [],
+      "path": "web-backend/domain/worldConsequenceRuntimeActions.ts",
+      "provides": [
+        "executeWorldConsequenceAction(state, actor, actionId, opts)",
+        "types: WorldConsequenceRuntimeActionResult"
+      ],
+      "service": "domain.worldConsequenceRuntimeActions"
+    },
+    "web-backend.domain.worldConsequences": {
+      "class": null,
+      "ctorArgs": [],
+      "dependsOn": [
+        "web-backend.domain.worldConsequenceActions",
+        "web-backend.domain.worldConsequenceConsumers",
+        "web-backend.domain.worldConsequenceHooks"
+      ],
+      "kind": "module",
+      "lifecycle": "static",
+      "notes": [
+        "World consequence status/digest projection helpers for player-facing web routes."
+      ],
+      "owns": [],
+      "path": "web-backend/domain/worldConsequences.ts",
+      "provides": [
+        "getWorldConsequencesStatus(state, opts)",
+        "types: WorldConsequencesStatus*"
+      ],
+      "service": "domain.worldConsequences"
+    },
+    "web-backend.domain.economyCartelResponse": {
+      "class": null,
+      "ctorArgs": [],
+      "dependsOn": [],
+      "kind": "module",
+      "lifecycle": "static",
+      "notes": [
+        "Cartel response ladder/state helpers shared by vendor economy and world consequence flows."
+      ],
+      "owns": [],
+      "path": "web-backend/domain/economyCartelResponse.ts",
+      "provides": [
+        "getCartelResponseState(state)",
+        "advanceCartelResponseState(state, evt)",
+        "types: CartelResponse*"
+      ],
+      "service": "domain.economyCartelResponse"
     }
   }
 }
