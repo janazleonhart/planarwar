@@ -23,7 +23,7 @@ VALUES
   ('warlock', 'warlock_shadow_bolt',     1, true, true, 'Ref kit L1–10: starter nuke'),
   ('warlock', 'warlock_siphon_life',     3, true, true, 'Ref kit L1–10: DOT sustain'),
   ('warlock', 'warlock_drain_soul',      5, true, true, 'Ref kit L1–10: focused drain'),
-  ('warlock', 'warlock_unholy_brand',    7, true, true, 'Ref kit L1–10: damageDealtPct debuff'),
+  ('warlock', 'warlock_unholy_brand',    7, true, true, 'Ref kit L1–10: damageTakenPct debuff'),
   ('warlock', 'warlock_demon_skin',      9, true, true, 'Ref kit L1–10: self shield'),
 
 
