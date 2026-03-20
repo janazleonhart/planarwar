@@ -342,6 +342,8 @@ export function AdminVendorEconomyPage() {
   const [scenarioResponsePhaseFilter, setScenarioResponsePhaseFilter] = useState<"all" | VendorScenarioResponsePhase>("all");
   const [scenarioLimit, setScenarioLimit] = useState(12);
   const [scenarioVendorScope, setScenarioVendorScope] = useState<"current" | "all">("current");
+  const [scenarioBeforeCursor, setScenarioBeforeCursor] = useState<string | null>(null);
+  const [scenarioCursorHistory, setScenarioCursorHistory] = useState<Array<string | null>>([]);
 
   async function loadBridgeStatus() {
     try {
@@ -440,6 +442,7 @@ export function AdminVendorEconomyPage() {
       policyMode: scenarioPolicyModeFilter,
       responsePhase: scenarioResponsePhaseFilter,
       vendorId: scenarioVendorScope === "current" ? vendorId : undefined,
+      before: scenarioBeforeCursor ?? undefined,
       limit: scenarioLimit,
     };
   }
@@ -465,6 +468,42 @@ export function AdminVendorEconomyPage() {
     } catch (e: any) {
       setError(e?.message || String(e));
     }
+  }
+
+  function buildScenarioFilterChips() {
+    const chips: string[] = [];
+    chips.push(scenarioVendorScope === "current" && vendorId ? `scope:${vendorId}` : "scope:all vendors");
+    if (scenarioActionFilter !== "all") chips.push(`action:${scenarioActionFilter}`);
+    if (scenarioPresetFilter !== "all") chips.push(`preset:${scenarioPresetFilter}`);
+    if (scenarioLaneFilter !== "all") chips.push(`lane:${scenarioLaneFilter}`);
+    if (scenarioBridgeBandFilter !== "all") chips.push(`bridge:${scenarioBridgeBandFilter}`);
+    if (scenarioVendorStateFilter !== "all") chips.push(`state:${scenarioVendorStateFilter}`);
+    if (scenarioPolicyModeFilter !== "all") chips.push(`mode:${scenarioPolicyModeFilter}`);
+    if (scenarioResponsePhaseFilter !== "all") chips.push(`phase:${scenarioResponsePhaseFilter}`);
+    chips.push(`rows:${scenarioLimit}`);
+    return chips;
+  }
+
+  function resetScenarioWindowToNewest() {
+    setScenarioCursorHistory([]);
+    setScenarioBeforeCursor(null);
+  }
+
+  function loadOlderScenarioWindow() {
+    const nextCursor = scenarioReport?.nextCursor ?? null;
+    if (!nextCursor) return;
+    setScenarioCursorHistory((prev) => [...prev, scenarioBeforeCursor]);
+    setScenarioBeforeCursor(nextCursor);
+  }
+
+  function loadNewerScenarioWindow() {
+    setScenarioCursorHistory((prev) => {
+      if (prev.length === 0) return prev;
+      const next = [...prev];
+      const target = next.pop() ?? null;
+      setScenarioBeforeCursor(target);
+      return next;
+    });
   }
 
   function renderScenarioBucketTable(
@@ -526,6 +565,11 @@ export function AdminVendorEconomyPage() {
     if (scenarioVendorScope === "current" && !vendorId) return;
     void loadScenarioLogs();
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [vendorId, scenarioActionFilter, scenarioPresetFilter, scenarioLaneFilter, scenarioBridgeBandFilter, scenarioVendorStateFilter, scenarioPolicyModeFilter, scenarioResponsePhaseFilter, scenarioVendorScope, scenarioLimit, scenarioBeforeCursor]);
+
+  useEffect(() => {
+    setScenarioBeforeCursor(null);
+    setScenarioCursorHistory([]);
   }, [vendorId, scenarioActionFilter, scenarioPresetFilter, scenarioLaneFilter, scenarioBridgeBandFilter, scenarioVendorStateFilter, scenarioPolicyModeFilter, scenarioResponsePhaseFilter, scenarioVendorScope, scenarioLimit]);
 
   useEffect(() => {
@@ -1218,6 +1262,37 @@ function stageRuntimePreview(row: VendorEconomyItem) {
           </label>
         </div>
 
+
+        <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap", alignItems: "center", marginTop: 12, padding: 10, borderRadius: 10, background: "rgba(255,255,255,0.04)" }}>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", fontSize: 12, opacity: 0.82 }}>
+            <span><b>window:</b> {scenarioBeforeCursor ? `before ${formatScenarioTimestamp(scenarioBeforeCursor)}` : "newest"}</span>
+            <span><b>older:</b> {scenarioReport?.nextCursor ? "available" : "none"}</span>
+            <span><b>newer:</b> {scenarioCursorHistory.length > 0 ? "available" : "none"}</span>
+          </div>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <button onClick={resetScenarioWindowToNewest} disabled={busy || (!scenarioBeforeCursor && scenarioCursorHistory.length === 0)}>Newest</button>
+            <button onClick={loadNewerScenarioWindow} disabled={busy || scenarioCursorHistory.length === 0}>Newer</button>
+            <button onClick={loadOlderScenarioWindow} disabled={busy || !scenarioReport?.nextCursor}>Older</button>
+          </div>
+        </div>
+
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 12 }}>
+          {buildScenarioFilterChips().map((chip) => (
+            <span
+              key={chip}
+              style={{
+                padding: "4px 8px",
+                borderRadius: 999,
+                background: "rgba(255,255,255,0.06)",
+                border: "1px solid rgba(255,255,255,0.08)",
+                fontSize: 12,
+                opacity: 0.84,
+              }}
+            >
+              {chip}
+            </span>
+          ))}
+        </div>
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 12 }}>
           {[
             ["matched", scenarioReport?.review.windowRollups.matched ?? 0],
