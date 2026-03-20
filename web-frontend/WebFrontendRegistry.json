@@ -1009,7 +1009,9 @@
         "web-frontend.pages.adminSpawnPoints",
         "web-backend.routes.items",
         "web-backend.routes.abilities",
-        "web-backend.routes.spells"
+        "web-backend.routes.spells",
+        "web-backend.routes.auth",
+        "web-backend.routes.characters"
       ],
       "kind": "ui",
       "lifecycle": "singleton",
@@ -1020,7 +1022,8 @@
         "WebSocket sends ops: whereami, mud; expects mud_result, whereami_result, chat payloads.",
         "CityShellPage handles /city routes; MePage and OperationsPage now render beneath that shell rather than directly from legacy App.tsx panels.",
         "2026-01-28: Player Panels meta wired end-to-end: Inventory/Equipment uses /api/items, Spellbook uses /api/spells (q/ids) with cost+cooldown display, Abilities uses /api/abilities (DB catalog + unlock join).",
-        "App.tsx is large; keep known-good commits before major UI polish passes to avoid JSX cascade errors."
+        "App.tsx is large; keep known-good commits before major UI polish passes to avoid JSX cascade errors.",
+        "Registry-aligned with direct legacy App.tsx consumers for /api/auth/*, /api/characters, /api/items, /api/abilities, and /api/spells."
       ],
       "owns": [
         "auth token persistence in localStorage (pw_auth_v1)",
