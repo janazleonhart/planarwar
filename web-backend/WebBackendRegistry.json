@@ -328,7 +328,7 @@
         "Intended as an auditable export seam so later MUD/world services can consume city-side support signals without coupling directly to city-builder route internals.",
         "v0.2 adds concrete consumer guidance for vendor supply, mission board support posture, civic services drag, and top-level operational advisories.",
         "v0.4 adds deriveVendorSupportPolicy(summary, consumers) so vendor-facing systems can consume bridge posture as concrete stock/price/cadence recommendations instead of only reading generic guidance cards.",
-        "v0.5 adds concrete vendor economy recommendations (stock/restock/price) derived from live city\u2194MUD vendor policy for downstream consumers.",
+        "v0.5 adds concrete vendor economy recommendations (stock/restock/price) derived from live city↔MUD vendor policy for downstream consumers.",
         "v0.6 adds deriveVendorRuntimeEffect(base, policy) so vendor/admin tooling can preview live runtime stock/cadence/price behavior under current bridge pressure, including fill-state-aware scarcity messaging.",
         "v0.7 adds deriveVendorGuardrailApplication(base, runtime) so runtime previews can be staged/applied through a server-side safe one-step window instead of full-strength jumps.",
         "v0.8 adds lane-aware vendor policy derivation so essentials, comfort goods, luxury goods, and arcane stock can respond differently to the same bridge posture.",
@@ -338,14 +338,14 @@
         "v1.3 splits vendor lane selection, presets, and lane-policy overlays into web-backend/domain/cityMudBridgeVendorPolicy.ts so bridge runtime math can keep shrinking without changing callers."
       ],
       "owns": [
-        "City \u2194 MUD bridge summary heuristics",
+        "City ↔ MUD bridge summary heuristics",
         "Lane-aware vendor policy overlays for essentials/comfort/luxury/arcane stock."
       ],
       "path": "web-backend/domain/cityMudBridge.ts",
       "provides": [
         "summarizeCityMudBridge(ps)",
         "deriveCityMudConsumers(summary)",
-        "City \u2194 MUD bridge summary (supportCapacity, pressures, exportableResources, hooks, posture)",
+        "City ↔ MUD bridge summary (supportCapacity, pressures, exportableResources, hooks, posture)",
         "Concrete consumer guidance for vendor supply / mission board / civic services",
         "deriveVendorSupportPolicy(summary, consumers)",
         "Vendor support policy (stock/price/cadence posture + recommended multipliers)",
@@ -370,11 +370,11 @@
       "kind": "module",
       "lifecycle": "singleton",
       "notes": [
-        "Owns the city\u2194MUD bridge summary math: exportable surplus, support capacity, pressure scores, hook ordering, consumer guidance, and vendor support posture derivation.",
-        "Extracted from web-backend/domain/cityMudBridge.ts during City\u2194MUD Bridge Consolidation v1a so summary shaping can harden without tangling vendor runtime preview/apply helpers."
+        "Owns the city↔MUD bridge summary math: exportable surplus, support capacity, pressure scores, hook ordering, consumer guidance, and vendor support posture derivation.",
+        "Extracted from web-backend/domain/cityMudBridge.ts during City↔MUD Bridge Consolidation v1a so summary shaping can harden without tangling vendor runtime preview/apply helpers."
       ],
       "owns": [
-        "City \u2194 MUD bridge summary heuristics",
+        "City ↔ MUD bridge summary heuristics",
         "Consumer guidance + top-level vendor support policy derivation"
       ],
       "path": "web-backend/domain/cityMudBridgeSummary.ts",
@@ -394,8 +394,8 @@
       "kind": "module",
       "lifecycle": "singleton",
       "notes": [
-        "Owns vendor lane selection helpers, lane-aware policy overlays, reusable preset definitions, and lane-filter normalization for the city\u2194MUD bridge.",
-        "Extracted from web-backend/domain/cityMudBridge.ts during City\u2194MUD Bridge Consolidation v1b so vendor-lane policy logic can harden separately from runtime recommendation/guardrail math."
+        "Owns vendor lane selection helpers, lane-aware policy overlays, reusable preset definitions, and lane-filter normalization for the city↔MUD bridge.",
+        "Extracted from web-backend/domain/cityMudBridge.ts during City↔MUD Bridge Consolidation v1b so vendor-lane policy logic can harden separately from runtime recommendation/guardrail math."
       ],
       "owns": [
         "Vendor lane classification for essentials/comfort/luxury/arcane stock",
@@ -440,7 +440,7 @@
       "lifecycle": "static",
       "notes": [
         "Mission offer generation and reward/risk shaping for web-city-builder demo.",
-        "v0.3 adds applyMissionConsumerGuidance() so mission offers inherit city\u2194MUD bridge posture, support caveats, and pressure-aware risk notes."
+        "v0.3 adds applyMissionConsumerGuidance() so mission offers inherit city↔MUD bridge posture, support caveats, and pressure-aware risk notes."
       ],
       "owns": [],
       "path": "web-backend/domain/missions.ts",
@@ -952,8 +952,9 @@
       "owns": [],
       "path": "web-backend/routes/abilities.ts",
       "provides": [
-        "GET /api/abilities?classId=\u2026&level=\u2026 -> { ok, abilities: AbilityUnlockView[] }",
-        "GET /api/abilities?ids=\u2026 -> { ok, abilities: AbilityMeta[] }"
+        "GET /api/abilities?classId=…&level=… -> { ok, abilities: AbilityUnlockView[] }",
+        "GET /api/abilities?ids=… -> { ok, abilities: AbilityMeta[] }",
+        "GET /api/abilities"
       ],
       "service": "api.abilities"
     },
@@ -1327,7 +1328,7 @@
         "DELETE /api/admin/spawn_points/snapshots/:id",
         "Server-side stored snapshots live under data/spawn_snapshots (override PLANARWAR_SPAWN_SNAPSHOT_DIR).",
         "Restore safety: commit restore requires confirm phrase 'RESTORE' when cross-shard and/or allowBrainOwned is enabled (in addition to confirm token when updating existing rows).",
-        "P2\u2013P3: Server-side spawn snapshot storage under web-backend (admin-owned JSON docs).",
+        "P2–P3: Server-side spawn snapshot storage under web-backend (admin-owned JSON docs).",
         "GET /api/admin/spawn_points/snapshots supports query params: sort=(newest|oldest|name), tag=<tag>, q=<search>, limit=<n>.",
         "POST /api/admin/spawn_points/snapshots/save accepts optional metadata: tags (comma list or array) + notes (string).",
         "Adds /proto_options endpoint to supply resource + station protoId autocomplete options (decorated with item names when available).",
@@ -2143,7 +2144,7 @@
         "Mounted at /api/admin/vendor_economy.",
         "Admin editor endpoints for vendor_item_economy (stock/restock/price multipliers) with optional stock reset.",
         "GET /items joins items table to return item_name + item_rarity for nicer admin display.",
-        "v0.4 is now intended to be informed by city\u2194MUD vendor policy previews in the admin UI, even though the endpoint still persists global vendor_item_economy settings.",
+        "v0.4 is now intended to be informed by city↔MUD vendor policy previews in the admin UI, even though the endpoint still persists global vendor_item_economy settings.",
         "v0.5 now returns per-row bridge recommendations plus current vendor policy so admin tooling can stage/apply live city-aware tuning.",
         "v0.6 now returns per-row bridge_runtime_effect previews so admin/vendor tooling can inspect live effective runtime knobs without persisting them first.",
         "v0.7 adds POST /api/admin/vendor_economy/bridge_runtime_guarded for preview/apply of server-guarded runtime changes across selected vendor rows, with softened deltas and operator warnings.",
@@ -2259,7 +2260,8 @@
         "GET /api/characters/:id",
         "POST /api/characters/:id/xp",
         "POST /api/characters/:id/learn-spell",
-        "POST /api/characters/:id/equip"
+        "POST /api/characters/:id/equip",
+        "PATCH /api/characters/:id"
       ],
       "service": "http.routes"
     },
@@ -2404,7 +2406,8 @@
       "owns": [],
       "path": "web-backend/routes/items.ts",
       "provides": [
-        "GET /api/items?ids=\u2026 (bulk) -> { ok, items: ItemMeta[] }"
+        "GET /api/items?ids=… (bulk) -> { ok, items: ItemMeta[] }",
+        "GET /api/items"
       ],
       "service": "api.items"
     },
@@ -2430,7 +2433,8 @@
       "owns": [],
       "path": "web-backend/routes/me.ts",
       "provides": [
-        "GET /api/me -> demo or authed CityBuilder profile snapshot"
+        "GET /api/me -> demo or authed CityBuilder profile snapshot",
+        "GET /api/me"
       ],
       "service": "http.routes"
     },
@@ -2592,8 +2596,9 @@
       "owns": [],
       "path": "web-backend/routes/spells.ts",
       "provides": [
-        "GET /api/spells?q=\u2026 (search) -> { ok, spells: SpellMeta[] }",
-        "GET /api/spells?ids=\u2026 (bulk) -> { ok, spells: SpellMeta[] }"
+        "GET /api/spells?q=… (search) -> { ok, spells: SpellMeta[] }",
+        "GET /api/spells?ids=… (bulk) -> { ok, spells: SpellMeta[] }",
+        "GET /api/spells"
       ],
       "service": "api.spells"
     },
