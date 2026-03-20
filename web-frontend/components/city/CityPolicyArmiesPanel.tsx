@@ -24,7 +24,12 @@ export function CityPolicyArmiesPanel({
 }: CityPolicyArmiesPanelProps) {
   return (
     <div style={cardStyle()}>
-      <h3 style={{ marginTop: 0 }}>Policies & Armies</h3>
+      <div style={{ display: "grid", gap: 6 }}>
+        <h3 style={{ margin: 0 }}>Policy & armies desk</h3>
+        <div style={{ fontSize: 13, opacity: 0.78 }}>
+          Standing orders and force readiness belong together here: one half decides what burdens the city accepts, the other decides whether anyone can enforce those decisions when the bill comes due.
+        </div>
+      </div>
 
       <CityPolicyTogglesSection
         policies={me.policies}
