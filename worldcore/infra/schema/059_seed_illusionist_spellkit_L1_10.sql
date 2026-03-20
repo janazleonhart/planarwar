@@ -108,7 +108,7 @@ BEGIN
           "tags":["debuff","snare","arcane","illusionist","reference_kit"],
           "maxStacks":1,
           "durationMs":8000,
-          "modifiers":{ "damageDealtPct":-10 }
+          "modifiers":{ "damageDealtPct":-0.10 }
         }'::jsonb
       ),
       NULL
@@ -142,7 +142,7 @@ BEGIN
           "tags":["debuff","mez","arcane","illusionist","reference_kit"],
           "maxStacks":1,
           "durationMs":6000,
-          "modifiers":{ "damageDealtPct":-100 }
+          "modifiers":{ "damageDealtPct":-1.0 }
         }'::jsonb
       ),
       NULL
@@ -177,7 +177,7 @@ BEGIN
           "maxStacks":1,
           "durationMs":10000,
           "modifiers":{
-            "damageTakenPct":-8,
+            "damageTakenPct":-0.08,
             "attributes":{ "agi":2, "int":2 }
           }
         }'::jsonb

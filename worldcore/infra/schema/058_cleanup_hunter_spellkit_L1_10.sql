@@ -154,7 +154,7 @@ BEGIN
           "maxStacks":1,
           "durationMs":8000,
           "modifiers":{
-            "damageTakenPct":8
+            "damageTakenPct":0.08
           }
         }'::jsonb
       ),

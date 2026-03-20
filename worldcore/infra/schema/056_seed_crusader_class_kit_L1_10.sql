@@ -50,7 +50,7 @@ VALUES
     false,
     true,
     '{"kit":"ref_l1_10"}'::jsonb,
-    '["holy","crusader","reference_kit","ref_l1_10"]'::jsonb,
+    ARRAY['holy','crusader','reference_kit','ref_l1_10']::text[],
     false,
     'player',
     NULL,
@@ -75,7 +75,7 @@ VALUES
     false,
     true,
     '{"kit":"ref_l1_10"}'::jsonb,
-    '["holy","crusader","shield","reference_kit","ref_l1_10"]'::jsonb,
+    ARRAY['holy','crusader','shield','reference_kit','ref_l1_10']::text[],
     false,
     'player',
     '{"id":"shield_crusader_sanctuary","name":"Sanctuary","kind":"shield","durationMs":12000,"shieldAmount":20,"tags":["shield","holy","crusader","reference_kit","ref_l1_10"]}'::jsonb,
@@ -100,7 +100,7 @@ VALUES
     false,
     true,
     '{"kit":"ref_l1_10"}'::jsonb,
-    '["holy","crusader","cleanse","reference_kit","ref_l1_10"]'::jsonb,
+    ARRAY['holy','crusader','cleanse','reference_kit','ref_l1_10']::text[],
     false,
     'player',
     '{"id":"cleanse_crusader_purging_vow","name":"Purging Vow","kind":"cleanse","maxToRemove":1,"tags":["cleanse","holy","crusader","reference_kit","ref_l1_10"]}'::jsonb,
@@ -125,10 +125,10 @@ VALUES
     false,
     true,
     '{"kit":"ref_l1_10"}'::jsonb,
-    '["holy","crusader","buff","reference_kit","ref_l1_10"]'::jsonb,
+    ARRAY['holy','crusader','buff','reference_kit','ref_l1_10']::text[],
     false,
     'player',
-    '{"id":"buff_crusader_fervor","name":"Fervor","kind":"buff","durationMs":10000,"maxStacks":1,"stacks":1,"modifiers":{"damageDealtPct":7},"tags":["buff","holy","crusader","reference_kit","ref_l1_10"]}'::jsonb,
+    '{"id":"buff_crusader_fervor","name":"Fervor","kind":"buff","durationMs":10000,"maxStacks":1,"stacks":1,"modifiers":{"damageDealtPct":0.07},"tags":["buff","holy","crusader","reference_kit","ref_l1_10"]}'::jsonb,
     NULL
   ),
   (
@@ -150,10 +150,10 @@ VALUES
     false,
     true,
     '{"kit":"ref_l1_10"}'::jsonb,
-    '["holy","crusader","debuff","reference_kit","ref_l1_10"]'::jsonb,
+    ARRAY['holy','crusader','debuff','reference_kit','ref_l1_10']::text[],
     false,
     'player',
-    '{"id":"debuff_crusader_verdict","name":"Verdict","kind":"debuff","durationMs":12000,"maxStacks":1,"stacks":1,"modifiers":{"damageTakenPct":7},"tags":["debuff","holy","crusader","reference_kit","ref_l1_10"]}'::jsonb,
+    '{"id":"debuff_crusader_verdict","name":"Verdict","kind":"debuff","durationMs":12000,"maxStacks":1,"stacks":1,"modifiers":{"damageTakenPct":0.07},"tags":["debuff","holy","crusader","reference_kit","ref_l1_10"]}'::jsonb,
     NULL
   )
 ON CONFLICT (id) DO UPDATE SET

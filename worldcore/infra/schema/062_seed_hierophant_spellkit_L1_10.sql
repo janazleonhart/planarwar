@@ -109,7 +109,7 @@ BEGIN
           "tags":["debuff","snare","nature","hierophant","reference_kit"],
           "maxStacks":1,
           "durationMs":10000,
-          "modifiers":{ "damageDealtPct":-12 }
+          "modifiers":{ "damageDealtPct":-0.12 }
         }'::jsonb
       ),
       NULL
@@ -178,7 +178,7 @@ BEGIN
           "tags":["buff","nature","hierophant","reference_kit"],
           "maxStacks":1,
           "durationMs":12000,
-          "modifiers":{ "damageTakenPct":-8 }
+          "modifiers":{ "damageTakenPct":-0.08 }
         }'::jsonb
       ),
       NULL

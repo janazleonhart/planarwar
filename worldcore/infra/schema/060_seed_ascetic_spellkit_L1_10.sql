@@ -133,7 +133,7 @@ BEGIN
           "tags":["debuff","martial","ascetic","reference_kit"],
           "maxStacks":1,
           "durationMs":8000,
-          "modifiers":{ "damageDealtPct":-10 }
+          "modifiers":{ "damageDealtPct":-0.10 }
         }'::jsonb
       ),
       NULL
@@ -193,7 +193,7 @@ BEGIN
           "maxStacks":1,
           "durationMs":10000,
           "modifiers":{
-            "damageTakenPct":-8,
+            "damageTakenPct":-0.08,
             "attributes":{ "agi":2, "sta":2 }
           }
         }'::jsonb

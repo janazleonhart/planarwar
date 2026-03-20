@@ -204,7 +204,7 @@ BEGIN
           "tags":["debuff","fear","shadow","revenant","reference_kit"],
           "maxStacks":1,
           "durationMs":10000,
-          "modifiers":{ "damageDealtPct":-12 }
+          "modifiers":{ "damageDealtPct":-0.12 }
         }'::jsonb
       ),
       NULL

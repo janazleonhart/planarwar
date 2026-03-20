@@ -146,7 +146,7 @@ BEGIN
           "tags":["debuff","nature","outrider","reference_kit"],
           "maxStacks":1,
           "durationMs":10000,
-          "modifiers":{"damageTakenPct":7}
+          "modifiers":{"damageTakenPct":0.07}
         }'::jsonb
       ),
       NULL
@@ -180,7 +180,7 @@ BEGIN
           "tags":["buff","nature","outrider","reference_kit"],
           "maxStacks":1,
           "durationMs":6000,
-          "modifiers":{"damageTakenPct":-8}
+          "modifiers":{"damageTakenPct":-0.08}
         }'::jsonb
       ),
       NULL
