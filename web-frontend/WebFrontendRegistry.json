@@ -617,8 +617,20 @@
         "abilities",
         "editor"
       ],
-      "notes": "Admin Abilities Editor UI (v1): ability catalog + unlock rules, list/search + edit + upsert.",
-      "kind": "ui"
+      "notes": [
+        "Admin Abilities Editor UI (v1): ability catalog + unlock rules, list/search + edit + upsert."
+      ],
+      "kind": "page",
+      "service": "web.adminPages",
+      "lifecycle": "page",
+      "ctorArgs": [],
+      "dependsOn": [],
+      "owns": [
+        "admin abilities editor state"
+      ],
+      "provides": [
+        "route:/admin/abilities"
+      ]
     },
     "web-frontend.pages.adminHub": {
       "class": null,
@@ -635,6 +647,7 @@
       ],
       "path": "web-frontend/pages/AdminHubPage.tsx",
       "provides": [
+        "route:/admin",
         "Admin landing page (hub navigation)"
       ],
       "service": "admin.hub"
@@ -656,6 +669,7 @@
       ],
       "path": "web-frontend/pages/AdminItemsPage.tsx",
       "provides": [
+        "route:/admin/items",
         "Item list + edit/create UI",
         "Search + paging for item list",
         "Edits flagsText/statsText serialized fields"
@@ -683,7 +697,7 @@
       ],
       "path": "web-frontend/pages/AdminMotherBrainPage.tsx",
       "provides": [
-        "/admin/mother_brain"
+        "route:/admin/mother_brain"
       ],
       "service": "web.adminPages"
     },
@@ -704,6 +718,7 @@
       ],
       "path": "web-frontend/pages/AdminNpcsPage.tsx",
       "provides": [
+        "route:/admin/npcs",
         "NPC list + edit/create UI",
         "Loot editor with item autocomplete + validation (chance/min/max)"
       ],
@@ -726,6 +741,7 @@
       ],
       "path": "web-frontend/pages/AdminQuestsPage.tsx",
       "provides": [
+        "route:/admin/quests",
         "Quest list + edit/create UI",
         "Objective kinds: kill/harvest/collect_item/craft/talk_to/city",
         "Writes to /api/admin/quests"
@@ -771,6 +787,7 @@
       ],
       "path": "web-frontend/pages/AdminSpawnPointsPage.tsx",
       "provides": [
+        "route:/admin/spawn_points",
         "Spawn Points Editor (v1): browse/edit",
         "Client-side quick search (type/archetype/proto/spawn/region) over the loaded list",
         "Diff/summary panels for Mother Brain wave/wipe and Town Baseline plan/apply (plus expandable raw JSON)",
@@ -799,6 +816,7 @@
         "search + paging state (q/limit/offset)"
       ],
       "provides": [
+        "route:/admin/spells",
         "Spell list + edit/create UI",
         "Search + paging for spell list",
         "Edits tagsText/effectsText serialized fields"
@@ -822,7 +840,7 @@
       ],
       "path": "web-frontend/pages/AdminVendorAuditPage.tsx",
       "provides": [
-        "/admin/vendor_audit"
+        "route:/admin/vendor_audit"
       ],
       "service": "web.adminPages"
     },
@@ -857,7 +875,7 @@
       ],
       "path": "web-frontend/pages/AdminVendorEconomyPage.tsx",
       "provides": [
-        "/admin/vendor_economy"
+        "route:/admin/vendor_economy"
       ],
       "service": "web.adminPages"
     },
