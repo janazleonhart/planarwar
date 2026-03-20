@@ -527,7 +527,16 @@
     "web-frontend.lib.api": {
       "class": null,
       "ctorArgs": [],
-      "dependsOn": [],
+      "dependsOn": [
+        "web-backend.routes.me",
+        "web-backend.routes.publicInfrastructure",
+        "web-backend.routes.cityMudBridge",
+        "web-backend.routes.missions",
+        "web-backend.routes.worldConsequences",
+        "web-backend.routes.tech",
+        "web-backend.routes.city",
+        "web-backend.routes.adminVendorEconomy"
+      ],
       "kind": "module",
       "lifecycle": "static",
       "notes": [
@@ -547,7 +556,8 @@
         "Admin vendor economy consumers may now receive bridge_runtime_effect preview fields on item rows from /api/admin/vendor_economy/items.",
         "Admin vendor economy flows may now call /api/admin/vendor_economy/bridge_runtime_guarded to preview/apply server-guarded runtime changes for selected rows.",
         "Adds typed vendor scenario replay/report DTOs plus fetchVendorScenarioReports() for the admin vendor economy reporting surface.",
-        "Adds vendor scenario export URL builder plus typed grouped review buckets so the admin UI can download CSV/JSON review packs without rebuilding query strings ad hoc."
+        "Adds vendor scenario export URL builder plus typed grouped review buckets so the admin UI can download CSV/JSON review packs without rebuilding query strings ad hoc.",
+        "Registry-aligned with literal lib/api.ts consumers for /api/me, /api/public_infrastructure, /api/city_mud_bridge, /api/missions, /api/world_consequences, /api/tech, /api/city, and /api/admin/vendor_economy."
       ],
       "owns": [],
       "path": "web-frontend/lib/api.ts",
