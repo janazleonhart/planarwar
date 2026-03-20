@@ -901,7 +901,20 @@
       "class": null,
       "ctorArgs": [],
       "dependsOn": [
-        "web-frontend.lib.api"
+        "web-frontend.lib.api",
+        "web-backend.routes.me",
+        "web-backend.routes.city",
+        "web-backend.routes.publicInfrastructure",
+        "web-backend.routes.cityMudBridge",
+        "web-backend.routes.missions",
+        "web-backend.routes.tech",
+        "web-backend.routes.buildings",
+        "web-backend.routes.warfront",
+        "web-backend.routes.armies",
+        "web-backend.routes.garrisons",
+        "web-backend.routes.heroes",
+        "web-backend.routes.workshop",
+        "web-backend.routes.policies"
       ],
       "kind": "ui",
       "lifecycle": "singleton",
@@ -959,7 +972,9 @@
       "class": null,
       "ctorArgs": [],
       "dependsOn": [
-        "web-frontend.lib.api"
+        "web-frontend.lib.api",
+        "web-backend.routes.me",
+        "web-backend.routes.city"
       ],
       "kind": "ui",
       "lifecycle": "singleton",
