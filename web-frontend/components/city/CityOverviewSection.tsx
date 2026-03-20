@@ -14,8 +14,17 @@ type CityOverviewSectionProps = {
   handleTierUpCity: () => void | Promise<void>;
 };
 
-const detailGridStyle: CSSProperties = { display: "grid", gap: 4 };
-const sectionStyle: CSSProperties = { display: "grid", gap: 6 };
+type Tone = "calm" | "watch" | "danger";
+
+type OverviewCard = {
+  label: string;
+  value: string;
+  hint: string;
+  tone: Tone;
+};
+
+const detailGridStyle: CSSProperties = { display: "grid", gap: 10 };
+const sectionStyle: CSSProperties = { display: "grid", gap: 8 };
 const listStyle: CSSProperties = { margin: 0, paddingLeft: 18, fontSize: 14 };
 const actionButtonStyle = (disabled: boolean): CSSProperties => ({
   padding: "6px 10px",
@@ -27,6 +36,32 @@ const actionButtonStyle = (disabled: boolean): CSSProperties => ({
   opacity: disabled ? 0.6 : 1,
 });
 
+const toneStyles: Record<Tone, CSSProperties> = {
+  calm: { borderColor: "#355d45", background: "rgba(30,70,40,0.16)" },
+  watch: { borderColor: "#77603a", background: "rgba(90,70,30,0.16)" },
+  danger: { borderColor: "#7a3d3d", background: "rgba(100,30,30,0.16)" },
+};
+
+function getSlotTone(used: number, max: number): Tone {
+  if (max <= 0) return "danger";
+  const ratio = used / max;
+  if (ratio >= 0.9) return "danger";
+  if (ratio >= 0.7) return "watch";
+  return "calm";
+}
+
+function getTierTone(tier: number): Tone {
+  if (tier >= 4) return "calm";
+  if (tier >= 2) return "watch";
+  return "danger";
+}
+
+function formatSpecializationLabel(city: NonNullable<MeProfile["city"]>): string {
+  return city.specializationId
+    ? `${city.specializationId.replace(/_/g, " ")} ★${city.specializationStars}`
+    : "Unspecialized";
+}
+
 export function CityOverviewSection({
   city,
   me,
@@ -36,16 +71,78 @@ export function CityOverviewSection({
   handleRenameCity,
   handleTierUpCity,
 }: CityOverviewSectionProps) {
+  const overviewCards: OverviewCard[] = [
+    {
+      label: "Region desk",
+      value: getRegionDisplayName(city.regionId),
+      hint: city.regionId,
+      tone: "calm",
+    },
+    {
+      label: "Tier standing",
+      value: `Tier ${city.tier}`,
+      hint: city.tier >= 4 ? "well-established city posture" : city.tier >= 2 ? "developing city posture" : "still in early growth",
+      tone: getTierTone(city.tier),
+    },
+    {
+      label: "Specialization",
+      value: formatSpecializationLabel(city),
+      hint: city.specializationId ? "current city doctrine" : "no civic doctrine locked yet",
+      tone: city.specializationId ? "calm" : "watch",
+    },
+    {
+      label: "Build capacity",
+      value: `${city.buildingSlotsUsed}/${city.buildingSlotsMax}`,
+      hint: city.buildingSlotsUsed >= city.buildingSlotsMax ? "construction capacity capped" : "expansion room remains",
+      tone: getSlotTone(city.buildingSlotsUsed, city.buildingSlotsMax),
+    },
+  ];
+
   return (
-    <>
+    <div style={{ display: "grid", gap: 14 }}>
+      <div style={{ display: "grid", gap: 6 }}>
+        <strong>City overview desk</strong>
+        <div style={{ fontSize: 13, opacity: 0.78 }}>
+          Identity, civic posture, and administrative controls for the city itself. This is the ruler-facing summary lane, not the place for scavenger hunts.
+        </div>
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))", gap: 8 }}>
+        {overviewCards.map((card) => {
+          const toneStyle = toneStyles[card.tone];
+          return (
+            <div
+              key={card.label}
+              style={{
+                border: `1px solid ${typeof toneStyle.borderColor === "string" ? toneStyle.borderColor : "#555"}`,
+                background: typeof toneStyle.background === "string" ? toneStyle.background : undefined,
+                borderRadius: 10,
+                padding: 10,
+                display: "grid",
+                gap: 3,
+              }}
+            >
+              <div style={{ fontSize: 12, opacity: 0.72 }}>{card.label}</div>
+              <div style={{ fontSize: 18, fontWeight: 700 }}>{card.value}</div>
+              <div style={{ fontSize: 12, opacity: 0.76 }}>{card.hint}</div>
+            </div>
+          );
+        })}
+      </div>
+
       <div style={detailGridStyle}>
-        <div><strong>ID:</strong> {city.id}</div>
-        <div><strong>Shard:</strong> {city.shardId}</div>
-        <div><strong>Region:</strong> {getRegionDisplayName(city.regionId)} <span style={{ opacity: 0.7 }}>({city.regionId})</span></div>
-        <div><strong>Tier:</strong> {city.tier}</div>
-        <div><strong>Specialization:</strong> {city.specializationId ? `${city.specializationId} (★${city.specializationStars})` : "None"}</div>
-        <label style={{ display: "grid", gap: 6, maxWidth: 320 }}>
-          <span><strong>City name</strong></span>
+        <div style={{ display: "grid", gap: 4 }}>
+          <strong>Administrative record</strong>
+          <div><strong>ID:</strong> {city.id}</div>
+          <div><strong>Shard:</strong> {city.shardId}</div>
+          <div><strong>Region:</strong> {getRegionDisplayName(city.regionId)} <span style={{ opacity: 0.7 }}>({city.regionId})</span></div>
+        </div>
+
+        <label style={{ display: "grid", gap: 6, maxWidth: 420 }}>
+          <span><strong>City naming desk</strong></span>
+          <div style={{ fontSize: 12, opacity: 0.74 }}>
+            Rename the city without leaving the command board. Demo profiles stay read-only here.
+          </div>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
             <input
               value={cityNameDraft}
@@ -67,38 +164,48 @@ export function CityOverviewSection({
                 disabled={disabled || cityNameDraft.trim().length < 3 || cityNameDraft.trim() === city.name}
                 style={actionButtonStyle(disabled)}
               >
-                Rename City
+                Rename city
               </button>
             ) : null}
           </div>
         </label>
 
-        <div><strong>Slots:</strong> {city.buildingSlotsUsed} / {city.buildingSlotsMax}</div>
-        <button
-          style={actionButtonStyle(disabled)}
-          onClick={() => void handleTierUpCity()}
-          disabled={disabled}
-        >
-          Tier Up City
-        </button>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+          <button
+            style={actionButtonStyle(disabled)}
+            onClick={() => void handleTierUpCity()}
+            disabled={disabled}
+          >
+            Advance city tier
+          </button>
+          <div style={{ fontSize: 12, opacity: 0.74 }}>
+            Use this when the city is ready to climb, not merely because the button exists and mocked you.
+          </div>
+        </div>
       </div>
 
       <div style={sectionStyle}>
-        <strong>Stats</strong>
+        <strong>City stat ledger</strong>
+        <div style={{ fontSize: 12, opacity: 0.76 }}>
+          Core city ratings that influence resilience, growth, and how much punishment this place can absorb before it starts making your life interesting.
+        </div>
         <ul style={listStyle}>
           <li>Population: {city.stats.population}</li>
           <li>Stability: {city.stats.stability}</li>
           <li>Prosperity: {city.stats.prosperity}</li>
           <li>Security: {city.stats.security}</li>
           <li>Infrastructure: {city.stats.infrastructure}</li>
-          <li>Arcane: {city.stats.arcaneSaturation}</li>
+          <li>Arcane saturation: {city.stats.arcaneSaturation}</li>
           <li>Influence: {city.stats.influence}</li>
           <li>Unity: {city.stats.unity}</li>
         </ul>
       </div>
 
       <div style={sectionStyle}>
-        <strong>Per-tick production</strong>
+        <strong>Per-tick production ledger</strong>
+        <div style={{ fontSize: 12, opacity: 0.76 }}>
+          Passive output from the current city state. This is the quiet stream feeding the rest of the board, for better or worse.
+        </div>
         <ul style={listStyle}>
           <li>Food: {city.production.foodPerTick}</li>
           <li>Materials: {city.production.materialsPerTick}</li>
@@ -108,6 +215,6 @@ export function CityOverviewSection({
           <li>Unity: {city.production.unityPerTick}</li>
         </ul>
       </div>
-    </>
+    </div>
   );
 }
