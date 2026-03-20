@@ -2050,6 +2050,7 @@
       "kind": "module",
       "lifecycle": "singleton",
       "notes": [
+        "Mounted at /api/admin/vendor_economy.",
         "Admin editor endpoints for vendor_item_economy (stock/restock/price multipliers) with optional stock reset.",
         "GET /items joins items table to return item_name + item_rarity for nicer admin display.",
         "v0.4 is now intended to be informed by city\u2194MUD vendor policy previews in the admin UI, even though the endpoint still persists global vendor_item_economy settings.",
@@ -2070,6 +2071,7 @@
         "GET /api/admin/vendor_economy/items",
         "POST /api/admin/vendor_economy/items/:vendorItemId",
         "POST /api/admin/vendor_economy/bridge_runtime_guarded",
+        "GET /api/admin/vendor_economy/bridge_runtime_guarded_log",
         "POST /api/admin/vendor_economy/bridge_runtime_guarded presetKey support",
         "GET /api/admin/vendor_economy/scenarios",
         "GET /api/admin/vendor_economy/scenarios/export"
