@@ -1333,6 +1333,192 @@
       "notes": [
         "Shared admin theme wrapper imported directly by App.tsx for /admin routes."
       ]
+    },
+    "web-frontend.components.worldResponse.cityAlphaPanels": {
+      "service": "ui.component",
+      "kind": "ui",
+      "lifecycle": "singleton",
+      "path": "web-frontend/components/worldResponse/CityAlphaPanels.tsx",
+      "class": null,
+      "ctorArgs": [],
+      "provides": [
+        "City alpha scope/status composite panel"
+      ],
+      "dependsOn": [
+        "web-frontend.components.worldResponse.cityAlphaStatusSection",
+        "web-frontend.components.worldResponse.cityAlphaScopeLockSection"
+      ],
+      "owns": [
+        "Composite city-alpha advisory panels used by MissionResponsePanel"
+      ],
+      "notes": [
+        "Imported directly by MissionResponsePanel to render city alpha status and scope lock summaries."
+      ]
+    },
+    "web-frontend.components.worldResponse.missionBoardDigest": {
+      "service": "ui.component",
+      "kind": "ui",
+      "lifecycle": "singleton",
+      "path": "web-frontend/components/worldResponse/MissionBoardDigest.tsx",
+      "class": null,
+      "ctorArgs": [],
+      "provides": [
+        "Mission board digest summary"
+      ],
+      "dependsOn": [
+        "web-frontend.components.worldResponse.missionOffersSection",
+        "web-frontend.components.worldResponse.activeMissionsSection"
+      ],
+      "owns": [
+        "Composite mission board digest shell used by MissionResponsePanel"
+      ],
+      "notes": [
+        "Imported directly by MissionResponsePanel for mission offer/active mission summary rendering."
+      ]
+    },
+    "web-frontend.components.worldResponse.missionDefenseReceiptsSection": {
+      "service": "ui.component",
+      "kind": "ui",
+      "lifecycle": "singleton",
+      "path": "web-frontend/components/worldResponse/MissionDefenseReceiptsSection.tsx",
+      "class": null,
+      "ctorArgs": [],
+      "provides": [
+        "Mission defense receipts section"
+      ],
+      "dependsOn": [],
+      "owns": [
+        "Mission defense receipt rendering used by MissionResponsePanel"
+      ],
+      "notes": [
+        "Imported directly by MissionResponsePanel."
+      ]
+    },
+    "web-frontend.components.worldResponse.missionPressureMapSection": {
+      "service": "ui.component",
+      "kind": "ui",
+      "lifecycle": "singleton",
+      "path": "web-frontend/components/worldResponse/MissionPressureMapSection.tsx",
+      "class": null,
+      "ctorArgs": [],
+      "provides": [
+        "Mission pressure map section"
+      ],
+      "dependsOn": [],
+      "owns": [
+        "Mission pressure window rendering used by MissionResponsePanel"
+      ],
+      "notes": [
+        "Imported directly by MissionResponsePanel."
+      ]
+    },
+    "web-frontend.components.worldResponse.missionWarningWindowsSection": {
+      "service": "ui.component",
+      "kind": "ui",
+      "lifecycle": "singleton",
+      "path": "web-frontend/components/worldResponse/MissionWarningWindowsSection.tsx",
+      "class": null,
+      "ctorArgs": [],
+      "provides": [
+        "Mission warning windows section"
+      ],
+      "dependsOn": [],
+      "owns": [
+        "Mission threat warning rendering used by MissionResponsePanel"
+      ],
+      "notes": [
+        "Imported directly by MissionResponsePanel."
+      ]
+    },
+    "web-frontend.components.worldResponse.worldConsequenceOutlookPanel": {
+      "service": "ui.component",
+      "kind": "ui",
+      "lifecycle": "singleton",
+      "path": "web-frontend/components/worldResponse/WorldConsequenceOutlookPanel.tsx",
+      "class": null,
+      "ctorArgs": [],
+      "provides": [
+        "World consequence outlook panel"
+      ],
+      "dependsOn": [],
+      "owns": [
+        "World consequence outlook summary used by WorldResponseSection"
+      ],
+      "notes": [
+        "Imported directly by WorldResponseSection."
+      ]
+    },
+    "web-frontend.components.worldResponse.worldResponsePanel": {
+      "service": "ui.component",
+      "kind": "ui",
+      "lifecycle": "singleton",
+      "path": "web-frontend/components/worldResponse/WorldResponsePanel.tsx",
+      "class": null,
+      "ctorArgs": [],
+      "provides": [
+        "World response composite panel"
+      ],
+      "dependsOn": [
+        "web-frontend.components.worldResponse.worldResponseHotspotsSection",
+        "web-frontend.components.worldResponse.worldResponseConsumersSection",
+        "web-frontend.components.worldResponse.worldResponseLedgerSection",
+        "web-frontend.components.worldResponse.worldResponseReceiptsSection",
+        "web-frontend.components.worldResponse.worldResponseActionsSection"
+      ],
+      "owns": [
+        "Composite world response panel used by WorldResponseSection"
+      ],
+      "notes": [
+        "Imported directly by WorldResponseSection to render the player-facing world consequence report shell."
+      ]
+    },
+    "web-frontend.components.worldResponse.worldResponseSection": {
+      "service": "ui.component",
+      "kind": "ui",
+      "lifecycle": "singleton",
+      "path": "web-frontend/components/worldResponse/WorldResponseSection.tsx",
+      "class": null,
+      "ctorArgs": [],
+      "provides": [
+        "World response section"
+      ],
+      "dependsOn": [
+        "web-frontend.components.worldResponse.worldConsequenceOutlookPanel",
+        "web-frontend.components.worldResponse.worldResponsePanel"
+      ],
+      "owns": [
+        "World response section used by MissionResponsePanel"
+      ],
+      "notes": [
+        "Imported directly by MissionResponsePanel to render world consequence outlook and action surfaces."
+      ]
+    },
+    "web-frontend.components.worldResponse.missionResponsePanel": {
+      "service": "ui.component",
+      "kind": "ui",
+      "lifecycle": "singleton",
+      "path": "web-frontend/components/worldResponse/MissionResponsePanel.tsx",
+      "class": null,
+      "ctorArgs": [],
+      "provides": [
+        "Mission response panel"
+      ],
+      "dependsOn": [
+        "web-frontend.components.worldResponse.missionBoardDigest",
+        "web-frontend.components.worldResponse.cityAlphaPanels",
+        "web-frontend.components.worldResponse.missionOffersSection",
+        "web-frontend.components.worldResponse.activeMissionsSection",
+        "web-frontend.components.worldResponse.missionWarningWindowsSection",
+        "web-frontend.components.worldResponse.missionPressureMapSection",
+        "web-frontend.components.worldResponse.missionDefenseReceiptsSection",
+        "web-frontend.components.worldResponse.worldResponseSection"
+      ],
+      "owns": [
+        "Mission response command board used by MePage"
+      ],
+      "notes": [
+        "Imported directly by MePage for mission command and bounded world response rendering."
+      ]
     }
   }
 }
