@@ -47,8 +47,8 @@ export function CityActionQuoteLine({
       </div>
       <div style={{ fontSize: 12, opacity: 0.75 }}>
         {prefix ?? "Current desk estimate."} {quote
-          ? "Use this as the expected civic cost before committing."
-          : "No live quote is posted yet, so this desk is showing the fallback read until the lane reports in."}
+          ? "Use this as the expected civic cost before you commit the order."
+          : "No live quote is posted yet, so this desk is carrying the standing read until the lane reports in."}
       </div>
     </div>
   );

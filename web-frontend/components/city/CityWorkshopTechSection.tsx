@@ -40,7 +40,7 @@ export function CityWorkshopTechSection({
           <strong>Workshop queue</strong>
           <div style={{ fontSize: 12, opacity: 0.76 }}>
             {me.workshopJobs.length === 0
-              ? "No workshop jobs are in flight."
+              ? "No workshop jobs are in flight. The benches are clear and waiting on the next order."
               : `${me.workshopJobs.length} crafting job${me.workshopJobs.length === 1 ? "" : "s"} currently tracked.`}
           </div>
         </div>
@@ -64,7 +64,7 @@ export function CityWorkshopTechSection({
         <div style={{ display: "grid", gap: 6 }}>
           {me.workshopJobs.length === 0 ? (
             <div style={{ border: "1px dashed #666", borderRadius: 8, padding: "10px 12px", fontSize: 13, opacity: 0.76 }}>
-              No workshop receipts yet. Once smiths and enchanters start filing jobs, collections and finish times will show up here instead of leaving you to guess.
+              No workshop receipts are posted yet. Once smiths and enchanters start filing jobs, collections and finish times will report here instead of leaving you to guess.
             </div>
           ) : null}
           {me.workshopJobs.map((job) => (
@@ -90,7 +90,7 @@ export function CityWorkshopTechSection({
         <div style={{ display: "grid", gap: 2 }}>
           <strong>Research desk</strong>
           <div style={{ fontSize: 12, opacity: 0.76 }}>
-            Queue long-term city improvements without digging through raw identifiers.
+            Queue long-term city improvements here without digging through raw identifiers or backend-shaped labels.
           </div>
         </div>
         <CityActionQuoteLine
@@ -112,7 +112,7 @@ export function CityWorkshopTechSection({
           ))}
           {!techOptions.length ? (
             <span style={{ opacity: 0.74, fontSize: 13 }}>
-              No research paths are open right now. The desk is waiting for the next doctrine or prerequisite to clear.
+              No research paths are open right now. The desk is waiting for the next doctrine window or prerequisite to clear.
             </span>
           ) : null}
         </div>

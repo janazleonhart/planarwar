@@ -58,7 +58,7 @@ function getArmyTone(army: Army): Tone {
 }
 
 function summarizeArmyReadiness(armies: MeProfile["armies"]): string {
-  if (!armies.length) return "No standing armies yet. The city has policy but no muscle behind it.";
+  if (!armies.length) return "No standing armies yet. The city has doctrine on paper, but no formations behind it.";
   const average = Math.round(armies.reduce((sum, army) => sum + (army.readiness ?? 0), 0) / armies.length);
   const deployed = armies.filter((army) => army.status === "on_mission").length;
   const ready = armies.filter((army) => (army.readiness ?? 0) >= 70 && army.status === "idle").length;
@@ -106,7 +106,7 @@ export function CityArmiesSection({
 
       {!armies.length ? (
         <div style={{ border: "1px dashed #666", borderRadius: 10, padding: 12, fontSize: 13, opacity: 0.8 }}>
-          No armies are mustered yet. The city can still posture, but policy without soldiers is just paperwork wearing a helmet.
+          No armies are mustered yet. The city can still posture, but until the first formation stands up this desk is measuring intent, not force.
         </div>
       ) : (
         <div style={{ display: "grid", gap: 8 }}>
@@ -153,7 +153,7 @@ export function CityArmiesSection({
                   <div style={{ border: "1px solid #4f4f4f", borderRadius: 8, padding: 8, display: "grid", gap: 2 }}>
                     <div style={{ fontSize: 12, opacity: 0.7 }}>Upkeep burden</div>
                     <div style={{ fontSize: 18, fontWeight: 700 }}>{army.upkeep?.wealth ?? 0}w / {army.upkeep?.materials ?? 0}m</div>
-                    <div style={{ fontSize: 12, opacity: 0.72 }}>Paid each tick to keep this force supplied and useful.</div>
+                    <div style={{ fontSize: 12, opacity: 0.72 }}>Paid each tick to keep this formation supplied, drilled, and worth fielding.</div>
                   </div>
                 </div>
 

@@ -47,7 +47,7 @@ export function CityDevelopmentSection({
       <div style={{ border: "1px solid #555", borderRadius: 8, padding: 12, display: "grid", gap: 8 }}>
         <strong>Construction desk</strong>
         <div style={{ fontSize: 12, opacity: 0.76 }}>
-          Queue new civic work with the current service lane cost already surfaced.
+          Queue new civic work with the current lane cost already surfaced before you commit the order.
         </div>
         <CityActionQuoteLine
           prefix={`Current lane: ${serviceMode.replace(/_/g, " ")}.`}
@@ -78,13 +78,13 @@ export function CityDevelopmentSection({
           <strong>Building ledger</strong>
           <div style={{ fontSize: 12, opacity: 0.76 }}>
             {city.buildings.length === 0
-              ? "No civic structures are standing yet. Founding choices still live mostly on paper."
+              ? "No civic structures are standing yet. The founding plan still lives mostly on paper."
               : `${city.buildings.length} active structure${city.buildings.length === 1 ? "" : "s"} ready for review.`}
           </div>
         </div>
         {city.buildings.length === 0 ? (
           <div style={{ border: "1px dashed #666", borderRadius: 8, padding: "10px 12px", fontSize: 13, opacity: 0.78 }}>
-            The ledger is still empty. Raise the first district pieces here so the city stops being a promise and starts becoming a place.
+            The ledger is still empty. Raise the first district pieces here so the city stops being a charter and starts becoming a place.
           </div>
         ) : (
           <div style={{ display: "grid", gap: 6 }}>
