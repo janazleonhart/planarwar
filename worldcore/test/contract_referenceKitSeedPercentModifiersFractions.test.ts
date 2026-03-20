@@ -20,32 +20,34 @@ function resolveSchemaDir(): string {
   throw new Error(`Unable to locate worldcore/infra/schema from ${__dirname}`);
 }
 
-const REFERENCE_KIT_SEED_FILES = [
-  "050_seed_reference_class_kits_L1_10.sql",
-  "056_seed_crusader_class_kit_L1_10.sql",
-  "056_seed_crusader_spellkit_L1_10.sql",
-  "057_seed_hunter_spellkit_L1_10.sql",
-  "059_seed_illusionist_spellkit_L1_10.sql",
-  "059_seed_runic_knight_spellkit_L1_10.sql",
-  "060_seed_ascetic_spellkit_L1_10.sql",
-  "061_seed_prophet_spellkit_L1_10.sql",
-  "062_seed_hierophant_spellkit_L1_10.sql",
-  "063_seed_revenant_spellkit_L1_10.sql",
-  "064_seed_outrider_spellkit_L1_10.sql",
-] as const;
-
-function readSeed(fileName: string): string {
+function readSqlFiles(): Array<{ fileName: string; sql: string }> {
   const schemaDir = resolveSchemaDir();
-  return fs.readFileSync(path.join(schemaDir, fileName), "utf8");
+  return fs
+    .readdirSync(schemaDir)
+    .filter((name) => name.endsWith(".sql"))
+    .sort()
+    .map((fileName) => ({
+      fileName,
+      sql: fs.readFileSync(path.join(schemaDir, fileName), "utf8"),
+    }));
 }
 
 const MODIFIER_PATTERN = /"(damageTakenPct|damageDealtPct)"\s*:\s*(-?\d+(?:\.\d+)?)/g;
 
+function looksLikeReferenceKitSeed(sql: string): boolean {
+  return (
+    /INSERT\s+INTO\s+public\.spells/i.test(sql) &&
+    /(reference_kit|ref_l1_10|reference-kit)/i.test(sql)
+  );
+}
+
 test("reference-kit seed SQL keeps percent modifiers in fractional form", () => {
   const offenders: string[] = [];
+  const scannedFiles: string[] = [];
 
-  for (const fileName of REFERENCE_KIT_SEED_FILES) {
-    const sql = readSeed(fileName);
+  for (const { fileName, sql } of readSqlFiles()) {
+    if (!looksLikeReferenceKitSeed(sql)) continue;
+    scannedFiles.push(fileName);
 
     for (const match of sql.matchAll(MODIFIER_PATTERN)) {
       const modifierName = match[1];
@@ -68,5 +70,6 @@ test("reference-kit seed SQL keeps percent modifiers in fractional form", () => 
     }
   }
 
+  assert.ok(scannedFiles.length > 0, "expected to discover at least one reference-kit seed SQL file");
   assert.deepEqual(offenders, [], offenders.join("\n"));
 });
