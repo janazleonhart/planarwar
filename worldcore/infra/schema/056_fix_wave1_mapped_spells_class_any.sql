@@ -23,11 +23,11 @@ WHERE id IN (
   'templar_minor_cleanse',
   'templar_restorative_prayer',
   'templar_smite',
-  'warlock_corruption',
-  'warlock_demonic_barrier',
   'warlock_shadow_bolt',
-  'warlock_soul_siphon',
-  'warlock_weakening_curse'
+  'warlock_siphon_life',
+  'warlock_drain_soul',
+  'warlock_unholy_brand',
+  'warlock_demon_skin'
 )
   AND class_id IS DISTINCT FROM 'any';
 
