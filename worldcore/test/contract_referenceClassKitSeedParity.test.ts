@@ -1,4 +1,4 @@
-//worldcore/test/contract_referenceClassKitSeedParity.test.ts
+// worldcore/test/contract_referenceClassKitSeedParity.test.ts
 
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -46,6 +46,25 @@ function assertSpellModifier(
   );
 }
 
+function assertUnlockNote(
+  seedSql: string,
+  classId: string,
+  spellId: string,
+  expectedSnippet: string,
+): void {
+  const rowPattern = new RegExp(
+    `\\('${escapeRegex(classId)}'\\s*,\\s*'${escapeRegex(spellId)}'[\\s\\S]*?\\)`,
+    "m",
+  );
+  const rowMatch = seedSql.match(rowPattern);
+  assert.ok(rowMatch, `${classId}/${spellId} unlock row must exist in 050 seed`);
+  assert.match(
+    rowMatch[0],
+    new RegExp(escapeRegex(expectedSnippet)),
+    `${classId}/${spellId} unlock note must contain ${expectedSnippet}`,
+  );
+}
+
 test("reference class kit seed keeps canonical vulnerability modifier semantics", () => {
   const seedSql = readSeed();
 
@@ -58,9 +77,33 @@ test("reference class kit seed keeps canonical vulnerability modifier semantics"
     /'warlock_unholy_brand'[\s\S]*?"damageDealtPct":0\.08/,
     "warlock_unholy_brand must not keep the legacy outgoing-damage modifier in 050 seed",
   );
+});
+
+test("reference class kit seed keeps canonical vulnerability unlock-note semantics", () => {
+  const seedSql = readSeed();
+
+  assertUnlockNote(
+    seedSql,
+    "archmage",
+    "archmage_expose_arcana",
+    "damageTakenPct debuff",
+  );
+  assertUnlockNote(
+    seedSql,
+    "warlock",
+    "warlock_unholy_brand",
+    "damageTakenPct debuff",
+  );
+  assertUnlockNote(
+    seedSql,
+    "templar",
+    "templar_judgment",
+    "damageTakenPct debuff",
+  );
+
   assert.doesNotMatch(
     seedSql,
-    /\('warlock', 'warlock_unholy_brand',[^\n]*damageDealtPct debuff/,
-    "warlock_unholy_brand unlock note must describe the canonical incoming-damage debuff",
+    /\('warlock'\s*,\s*'warlock_unholy_brand'[\s\S]*?damageDealtPct debuff/,
+    "warlock_unholy_brand unlock note must not use stale damageDealtPct wording",
   );
 });
