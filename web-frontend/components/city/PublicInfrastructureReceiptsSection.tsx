@@ -22,12 +22,14 @@ export function PublicInfrastructureReceiptsSection({
       <div style={{ display: "grid", gap: 4 }}>
         <strong>Recent public receipts</strong>
         <div style={{ fontSize: 12, opacity: 0.76 }}>
-          Permit decisions, service mode choices, and the administrative bill that followed them home.
+          Permit decisions, service mode choices, and the civic bill that followed them back to your desk.
         </div>
       </div>
 
       {orderedReceipts.length === 0 ? (
-        <div style={{ opacity: 0.7 }}>No public service receipts yet.</div>
+        <div style={{ border: "1px dashed #666", borderRadius: 8, padding: "10px 12px", fontSize: 13, opacity: 0.76 }}>
+          No public service receipts are logged yet. Once permit and service choices start landing, the paper trail will show up here instead of hiding the cost in the floorboards.
+        </div>
       ) : (
         <>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 8 }}>
@@ -39,7 +41,7 @@ export function PublicInfrastructureReceiptsSection({
             <div style={{ border: `1px solid ${summary.highestStrain >= 8 ? "#7a3d3d" : summary.highestStrain >= 5 ? "#77603a" : "#355d45"}`, background: summary.highestStrain >= 8 ? "rgba(100,30,30,0.16)" : summary.highestStrain >= 5 ? "rgba(90,70,30,0.16)" : "rgba(30,70,40,0.16)", borderRadius: 8, padding: 10, display: "grid", gap: 2 }}>
               <div style={{ fontSize: 12, opacity: 0.72 }}>Highest recorded strain</div>
               <div style={{ fontSize: 18, fontWeight: 700 }}>{summary.highestStrain}</div>
-              <div style={{ fontSize: 12, opacity: 0.76 }}>Useful for spotting which service lane threw the tantrum.</div>
+              <div style={{ fontSize: 12, opacity: 0.76 }}>Useful for spotting which service lane started pushing back first.</div>
             </div>
             <div style={{ border: `1px solid ${summary.queueAverage >= 30 ? "#77603a" : "#355d45"}`, background: summary.queueAverage >= 30 ? "rgba(90,70,30,0.16)" : "rgba(30,70,40,0.16)", borderRadius: 8, padding: 10, display: "grid", gap: 2 }}>
               <div style={{ fontSize: 12, opacity: 0.72 }}>Average queue</div>

@@ -35,7 +35,11 @@ export function PublicInfrastructureSummarySection({
   const infraSummary = infraStatus?.summary ?? null;
 
   if (!infraSummary) {
-    return <div style={{ opacity: 0.7 }}>No public infrastructure profile yet.</div>;
+    return (
+      <div style={{ border: "1px dashed #666", borderRadius: 8, padding: "10px 12px", fontSize: 13, opacity: 0.76 }}>
+        No public infrastructure profile is posted yet. Once the civic lanes report in, this desk will show whether permits and services are easing pressure or quietly making more of it.
+      </div>
+    );
   }
 
   const cards: SummaryCard[] = [
@@ -70,7 +74,7 @@ export function PublicInfrastructureSummarySection({
       <div style={{ display: "grid", gap: 4 }}>
         <strong>Public service desk summary</strong>
         <div style={{ fontSize: 12, opacity: 0.76 }}>
-          The civic lane is supposed to tell you whether public desks are helping, slowing down, or about to become one more problem with a clipboard.
+          This lane is meant to tell you whether the civic desks are carrying the city cleanly, slowing it down, or quietly building the next queue problem.
         </div>
       </div>
 

@@ -78,12 +78,14 @@ export function CityDevelopmentSection({
           <strong>Building ledger</strong>
           <div style={{ fontSize: 12, opacity: 0.76 }}>
             {city.buildings.length === 0
-              ? "No active structures yet."
+              ? "No civic structures are standing yet. Founding choices still live mostly on paper."
               : `${city.buildings.length} active structure${city.buildings.length === 1 ? "" : "s"} ready for review.`}
           </div>
         </div>
         {city.buildings.length === 0 ? (
-          <p style={{ opacity: 0.8 }}>No buildings yet.</p>
+          <div style={{ border: "1px dashed #666", borderRadius: 8, padding: "10px 12px", fontSize: 13, opacity: 0.78 }}>
+            The ledger is still empty. Raise the first district pieces here so the city stops being a promise and starts becoming a place.
+          </div>
         ) : (
           <div style={{ display: "grid", gap: 6 }}>
             {city.buildings.map((building) => {

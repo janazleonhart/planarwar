@@ -63,7 +63,9 @@ export function CityWorkshopTechSection({
         </div>
         <div style={{ display: "grid", gap: 6 }}>
           {me.workshopJobs.length === 0 ? (
-            <div style={{ fontSize: 12, opacity: 0.65 }}>No workshop receipts yet.</div>
+            <div style={{ border: "1px dashed #666", borderRadius: 8, padding: "10px 12px", fontSize: 13, opacity: 0.76 }}>
+              No workshop receipts yet. Once smiths and enchanters start filing jobs, collections and finish times will show up here instead of leaving you to guess.
+            </div>
           ) : null}
           {me.workshopJobs.map((job) => (
             <div key={job.id} style={{ border: "1px solid #555", borderRadius: 8, padding: 10, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
@@ -108,7 +110,11 @@ export function CityWorkshopTechSection({
               Start {tech.name}
             </button>
           ))}
-          {!techOptions.length ? <span style={{ opacity: 0.7, fontSize: 13 }}>No tech options available right now.</span> : null}
+          {!techOptions.length ? (
+            <span style={{ opacity: 0.74, fontSize: 13 }}>
+              No research paths are open right now. The desk is waiting for the next doctrine or prerequisite to clear.
+            </span>
+          ) : null}
         </div>
         {me.activeResearch ? <div style={{ fontSize: 13, opacity: 0.85 }}>Active research: {me.activeResearch.name} ({me.activeResearch.progress}/{me.activeResearch.cost})</div> : null}
       </div>

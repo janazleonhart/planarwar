@@ -46,7 +46,9 @@ export function CityActionQuoteLine({
         <span style={chipStyle(queueTone)}>Queue +{queueMinutes}m</span>
       </div>
       <div style={{ fontSize: 12, opacity: 0.75 }}>
-        {prefix ?? "Current desk estimate."} {quote ? "Use this as the expected civic cost before committing." : "No live quote is available yet, so this desk is using the fallback display."}
+        {prefix ?? "Current desk estimate."} {quote
+          ? "Use this as the expected civic cost before committing."
+          : "No live quote is posted yet, so this desk is showing the fallback read until the lane reports in."}
       </div>
     </div>
   );
