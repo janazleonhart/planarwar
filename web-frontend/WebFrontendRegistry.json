@@ -624,7 +624,10 @@
       "service": "web.adminPages",
       "lifecycle": "page",
       "ctorArgs": [],
-      "dependsOn": [],
+      "dependsOn": [
+        "web-backend.routes.adminAbilities",
+        "web-backend.routes.adminAbilityUnlocks"
+      ],
       "owns": [
         "admin abilities editor state"
       ],
@@ -655,7 +658,9 @@
     "web-frontend.pages.adminItems": {
       "class": null,
       "ctorArgs": [],
-      "dependsOn": [],
+      "dependsOn": [
+        "web-backend.routes.adminItems"
+      ],
       "kind": "ui",
       "lifecycle": "singleton",
       "notes": [
@@ -680,7 +685,8 @@
       "class": "AdminMotherBrainPage",
       "ctorArgs": [],
       "dependsOn": [
-        "web-frontend.lib.api"
+        "web-frontend.lib.api",
+        "web-backend.routes.adminMotherBrain"
       ],
       "kind": "page",
       "lifecycle": "page",
@@ -704,7 +710,9 @@
     "web-frontend.pages.adminNpcs": {
       "class": null,
       "ctorArgs": [],
-      "dependsOn": [],
+      "dependsOn": [
+        "web-backend.routes.adminNpcs"
+      ],
       "kind": "ui",
       "lifecycle": "singleton",
       "notes": [
@@ -727,7 +735,10 @@
     "web-frontend.pages.adminQuests": {
       "class": null,
       "ctorArgs": [],
-      "dependsOn": [],
+      "dependsOn": [
+        "web-backend.routes.adminItems",
+        "web-backend.routes.adminQuests"
+      ],
       "kind": "ui",
       "lifecycle": "singleton",
       "notes": [
@@ -751,7 +762,9 @@
     "web-frontend.pages.adminSpawnPoints": {
       "class": null,
       "ctorArgs": [],
-      "dependsOn": [],
+      "dependsOn": [
+        "web-backend.routes.adminSpawnPoints"
+      ],
       "kind": "ui",
       "lifecycle": "singleton",
       "notes": [
@@ -805,7 +818,9 @@
       "class": null,
       "lifecycle": "singleton",
       "ctorArgs": [],
-      "dependsOn": [],
+      "dependsOn": [
+        "web-backend.routes.adminSpells"
+      ],
       "notes": [
         "Uses same-origin /api requests (dev via Vite proxy; prod via reverse proxy / same host).",
         "Endpoints: GET /api/admin/spells?q&limit&offset; POST /api/admin/spells; then refreshes list.",
@@ -825,7 +840,9 @@
     "web-frontend.pages.adminVendorAudit": {
       "class": "AdminVendorAuditPage",
       "ctorArgs": [],
-      "dependsOn": [],
+      "dependsOn": [
+        "web-backend.routes.adminVendorAudit"
+      ],
       "kind": "page",
       "lifecycle": "page",
       "notes": [
@@ -850,7 +867,8 @@
       "dependsOn": [
         "web-frontend.lib.api",
         "web-frontend.components.itemPicker",
-        "web-frontend.components.admin.AdminUI"
+        "web-frontend.components.admin.AdminUI",
+        "web-backend.routes.adminVendorEconomy"
       ],
       "kind": "page",
       "lifecycle": "page",
