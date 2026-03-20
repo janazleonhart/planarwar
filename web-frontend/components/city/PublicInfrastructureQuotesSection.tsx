@@ -42,7 +42,9 @@ export function PublicInfrastructureQuotesSection({
         Live desk estimates for civic services. Read this as the current toll, queue, and strain picture before committing the city to paperwork.
       </div>
       {quotes.length === 0 ? (
-        <div style={{ opacity: 0.7 }}>No quote data.</div>
+        <div style={{ border: "1px solid #555", borderRadius: 8, padding: 10, fontSize: 12, opacity: 0.76 }}>
+          No service desks are posting live quotes yet. Once the civic lanes start reporting, this panel will show what the city is really paying in toll, time, and strain instead of leaving the cost hidden in the walls.
+        </div>
       ) : (
         <>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 8 }}>

@@ -70,7 +70,7 @@ export function CityCorePanel({
       {!city ? (
         <div style={{ display: "grid", gap: 10 }}>
           <p style={{ opacity: 0.85, margin: 0 }}>
-            No city attached to this profile yet. This account can bootstrap one now instead of staring at a sad 404 goblin.
+            No city is attached to this profile yet. Founding one here will wake the rest of the board and turn this from paperwork into an actual seat of rule.
           </p>
           {me.canCreateCity ? (
             <>

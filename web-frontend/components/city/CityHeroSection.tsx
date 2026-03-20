@@ -44,7 +44,7 @@ export function CityHeroSection({
         <strong>Hero command</strong>
         <div style={{ fontSize: 12, opacity: 0.76 }}>
           {me.heroes.length === 0
-            ? "No heroes are attached yet. Recruit the first officer cadre from here."
+            ? "No heroes are attached yet. Recruit the first officer cadre here so the city has actual field hands instead of just orders and wishes."
             : `${me.heroes.length} hero${me.heroes.length === 1 ? "" : "es"} currently attached to the city.`}
         </div>
       </div>
@@ -83,7 +83,7 @@ export function CityHeroSection({
               ))}
             </div>
             <div style={{ display: "grid", gap: 6 }}>
-              <div style={{ fontSize: 12, opacity: 0.82 }}>Gear</div>
+              <div style={{ fontSize: 12, opacity: 0.82 }}>Field kit</div>
               {(hero.attachments?.length ?? 0) === 0 ? (
                 <div style={{ fontSize: 12, opacity: 0.62 }}>No gear equipped.</div>
               ) : (

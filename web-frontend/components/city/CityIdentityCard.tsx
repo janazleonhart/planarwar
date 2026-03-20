@@ -90,7 +90,7 @@ export function CityIdentityCard({ me, cardStyle }: CityIdentityCardProps) {
         <div style={{ fontSize: 12, textTransform: "uppercase", letterSpacing: 0.6, opacity: 0.72 }}>
           Ruler&apos;s desk
         </div>
-        <div style={{ fontSize: 20, fontWeight: 700 }}>{city ? city.name : "No city established"}</div>
+        <div style={{ fontSize: 20, fontWeight: 700 }}>{city ? city.name : "No city founded yet"}</div>
         <div style={{ fontSize: 13, opacity: 0.82 }}>
           <strong>Ruler:</strong> {me.username ?? "(unknown)"}{" "}
           <span style={{ opacity: 0.7 }}>({me.userId ?? "?"})</span>
