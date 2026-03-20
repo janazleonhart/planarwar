@@ -24,18 +24,44 @@ function readSchemaFile(fileName: string): string {
   return fs.readFileSync(resolveSchemaPath(fileName), "utf8");
 }
 
+type UnlockNoteExpectation = {
+  spellId: string;
+  expectedNote: string;
+  staleNote?: string;
+};
+
+const EXPECTATIONS: readonly UnlockNoteExpectation[] = [
+  {
+    spellId: "archmage_expose_arcana",
+    expectedNote: "damageTakenPct debuff",
+  },
+  {
+    spellId: "warlock_unholy_brand",
+    expectedNote: "damageTakenPct debuff",
+    staleNote: "damageDealtPct debuff",
+  },
+  {
+    spellId: "templar_judgment",
+    expectedNote: "damageTakenPct debuff",
+  },
+] as const;
+
 test("reference spell unlock seed notes stay aligned with canonical vulnerability semantics", () => {
   const unlocksSql = readSchemaFile("051_seed_spell_unlocks_reference_kits_l1_10.sql");
 
-  assert.match(
-    unlocksSql,
-    /warlock_unholy_brand[^]*damageTakenPct debuff/,
-    "warlock_unholy_brand unlock note should describe damageTakenPct semantics",
-  );
+  for (const expectation of EXPECTATIONS) {
+    assert.match(
+      unlocksSql,
+      new RegExp(`${expectation.spellId}[^]*${expectation.expectedNote}`),
+      `${expectation.spellId} unlock note should describe ${expectation.expectedNote} semantics`,
+    );
 
-  assert.doesNotMatch(
-    unlocksSql,
-    /warlock_unholy_brand[^]*damageDealtPct debuff/,
-    "warlock_unholy_brand unlock note should not describe stale damageDealtPct semantics",
-  );
+    if (expectation.staleNote) {
+      assert.doesNotMatch(
+        unlocksSql,
+        new RegExp(`${expectation.spellId}[^]*${expectation.staleNote}`),
+        `${expectation.spellId} unlock note should not describe stale ${expectation.staleNote} semantics`,
+      );
+    }
+  }
 });
