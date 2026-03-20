@@ -538,6 +538,50 @@ export function AdminVendorEconomyPage() {
     detail?: string;
   };
 
+  type ScenarioEntrySeverity = "blocked" | "warning" | "applied" | "preview";
+
+  function summarizeScenarioEntry(entry: VendorScenarioReportEntry): { severity: ScenarioEntrySeverity; label: string; detail: string } {
+    if (entry.blockedCount > 0) {
+      return {
+        severity: "blocked",
+        label: `${entry.blockedCount} blocked`,
+        detail: entry.warningCount > 0 ? `${entry.warningCount} warning(s)` : "guardrail prevented changes",
+      };
+    }
+    if (entry.warningCount > 0) {
+      return {
+        severity: "warning",
+        label: `${entry.warningCount} warning${entry.warningCount === 1 ? "" : "s"}`,
+        detail: entry.appliedCount > 0 ? `${entry.appliedCount} applied` : `${entry.matchedCount} matched`,
+      };
+    }
+    if (entry.action === "apply" || entry.appliedCount > 0) {
+      return {
+        severity: "applied",
+        label: `${entry.appliedCount} applied`,
+        detail: `${entry.matchedCount} matched · ${entry.softenedCount} softened`,
+      };
+    }
+    return {
+      severity: "preview",
+      label: `${entry.matchedCount} matched`,
+      detail: `${entry.softenedCount} softened · preview only`,
+    };
+  }
+
+  function scenarioSeverityStyle(severity: ScenarioEntrySeverity): { background: string; color: string; border: string } {
+    switch (severity) {
+      case "blocked":
+        return { background: "rgba(255,107,107,0.14)", color: "#ffd7d7", border: "1px solid rgba(255,107,107,0.28)" };
+      case "warning":
+        return { background: "rgba(255,193,7,0.14)", color: "#ffe9a8", border: "1px solid rgba(255,193,7,0.24)" };
+      case "applied":
+        return { background: "rgba(72,187,120,0.14)", color: "#d7ffe5", border: "1px solid rgba(72,187,120,0.24)" };
+      default:
+        return { background: "rgba(96,165,250,0.14)", color: "#d7e8ff", border: "1px solid rgba(96,165,250,0.24)" };
+    }
+  }
+
   function buildScenarioActiveFilterChips(): Array<{ key: string; label: string; value: string }> {
     const chips: Array<{ key: string; label: string; value: string }> = [];
     chips.push({ key: "scope", label: "scope", value: scenarioVendorScope === "current" && vendorId ? `vendor ${vendorId}` : "all vendors" });
@@ -1439,17 +1483,42 @@ function stageRuntimePreview(row: VendorEconomyItem) {
           {renderScenarioBucketTable("Response phases", scenarioReport?.review.byResponsePhase ?? [])}
         </div>
 
+        <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap", marginTop: 12, alignItems: "center" }}>
+          <div style={{ fontSize: 12, opacity: 0.76 }}>
+            Scenario rows stay collapsed by default; expand the latest run or drill into a specific card when you need row-level detail.
+          </div>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <button
+              onClick={() => setScenarioExpandedAt(scenarioReport?.entries[0]?.at ?? null)}
+              disabled={(scenarioReport?.entries.length ?? 0) === 0}
+            >
+              Expand latest
+            </button>
+            <button onClick={() => setScenarioExpandedAt(null)} disabled={scenarioExpandedAt === null}>
+              Collapse all
+            </button>
+          </div>
+        </div>
+
         <div style={{ display: "grid", gap: 10, marginTop: 12 }}>
           {(scenarioReport?.entries ?? []).map((entry) => {
             const expanded = scenarioExpandedAt === entry.at;
+            const scenarioSummary = summarizeScenarioEntry(entry);
+            const severityStyle = scenarioSeverityStyle(scenarioSummary.severity);
             return (
               <div key={`${entry.at}-${entry.vendorId}-${entry.action}`} style={{ border: "1px solid rgba(255,255,255,0.12)", borderRadius: 12, padding: 12 }}>
                 <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
                   <div>
-                    <div style={{ fontWeight: 700 }}>{entry.note}</div>
+                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                      <div style={{ fontWeight: 700 }}>{entry.note}</div>
+                      <span style={{ padding: "3px 8px", borderRadius: 999, fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.4, ...severityStyle }}>
+                        {scenarioSummary.label}
+                      </span>
+                    </div>
                     <div style={{ fontSize: 12, opacity: 0.74, marginTop: 4 }}>
                       {formatScenarioTimestamp(entry.at)} · {entry.action} · {formatScenarioSelectionKind(entry)} · vendor {entry.vendorId}
                     </div>
+                    <div style={{ fontSize: 12, opacity: 0.76, marginTop: 6 }}>{scenarioSummary.detail}</div>
                   </div>
                   <button onClick={() => setScenarioExpandedAt(expanded ? null : entry.at)}>
                     {expanded ? "Hide details" : "Show details"}
@@ -1465,6 +1534,9 @@ function stageRuntimePreview(row: VendorEconomyItem) {
                   <span><b>phase:</b> {entry.responsePhase ?? "—"}</span>
                   <span><b>lane bias:</b> {entry.laneBias ?? "—"}</span>
                   <span><b>preset:</b> {entry.presetKey ?? "—"}</span>
+                  <span><b>matched:</b> {entry.matchedCount}</span>
+                  <span><b>applied:</b> {entry.appliedCount}</span>
+                  <span><b>blocked:</b> {entry.blockedCount}</span>
                 </div>
 
                 {expanded && (
