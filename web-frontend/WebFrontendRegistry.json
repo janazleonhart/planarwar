@@ -1257,13 +1257,23 @@
       "dependsOn": [
         "web-frontend.lib.api",
         "web-frontend.components.city.cityUiHelpers",
-        "web-frontend.components.worldResponse.worldResponseUi"
+        "web-frontend.components.worldResponse.worldResponseUi",
+        "web-backend.routes.buildings",
+        "web-backend.routes.city",
+        "web-backend.routes.armies",
+        "web-backend.routes.heroes",
+        "web-backend.routes.workshop",
+        "web-backend.routes.policies",
+        "web-backend.routes.tech",
+        "web-backend.routes.missions",
+        "web-backend.routes.worldConsequences"
       ],
       "kind": "ui",
       "lifecycle": "singleton",
       "notes": [
         "Pure action/controller helper extracted from the MePage controller hook.",
-        "Owns city, mission, workshop, hero, and bounded world action handler creation without changing runtime behavior."
+        "Owns city, mission, workshop, hero, and bounded world action handler creation without changing runtime behavior.",
+        "Registry-aligned with literal createMePageActions.ts consumers for /api/buildings, /api/city, /api/armies, /api/heroes, /api/workshop, /api/policies, /api/tech, /api/missions, and /api/world_consequences."
       ],
       "owns": [
         "MePage action-handler factory for city mutations, mission actions, and bounded world action execution"
