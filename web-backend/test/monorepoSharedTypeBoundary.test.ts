@@ -1,4 +1,4 @@
-//web-backend/test/monorepoSharedTypeBoundary.test.ts
+// web-backend/test/monorepoSharedTypeBoundary.test.ts
 
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -27,8 +27,12 @@ const CANONICAL_SHARED_TYPES = [
 
 test("monorepo shared presentation helpers import canonical apiTypes instead of browser runtime api module", () => {
   const citySummaries = readRepoFile("web-frontend/components/city/cityPolishSummaries.ts");
-  const worldResponseSummaries = readRepoFile("web-frontend/components/worldResponse/worldResponsePolishSummaries.ts");
-  const presentationHelperTest = readRepoFile("web-backend/test/cityPolishPresentationHelpers.test.ts");
+  const worldResponseSummaries = readRepoFile(
+    "web-frontend/components/worldResponse/worldResponsePolishSummaries.ts",
+  );
+  const presentationHelperTest = readRepoFile(
+    "web-backend/test/cityPolishPresentationHelpers.test.ts",
+  );
 
   assert.match(citySummaries, /from\s+["']\.\.\/\.\.\/lib\/apiTypes["']/);
   assert.doesNotMatch(citySummaries, /from\s+["']\.\.\/\.\.\/lib\/api["']/);
@@ -36,8 +40,14 @@ test("monorepo shared presentation helpers import canonical apiTypes instead of 
   assert.match(worldResponseSummaries, /from\s+["']\.\.\/\.\.\/lib\/apiTypes["']/);
   assert.doesNotMatch(worldResponseSummaries, /from\s+["']\.\.\/\.\.\/lib\/api["']/);
 
-  assert.match(presentationHelperTest, /from\s+["']\.\.\/\.\.\/web-frontend\/lib\/apiTypes["']/);
-  assert.doesNotMatch(presentationHelperTest, /from\s+["']\.\.\.\/\.\.\/web-frontend\/lib\/api["']/);
+  assert.match(
+    presentationHelperTest,
+    /from\s+["']\.\.\/\.\.\/web-frontend\/lib\/apiTypes["']/,
+  );
+  assert.doesNotMatch(
+    presentationHelperTest,
+    /from\s+["']\.\.\/\.\.\/web-frontend\/lib\/api["']/,
+  );
 });
 
 test("api.ts re-exports canonical shared types without redeclaring them locally", () => {
