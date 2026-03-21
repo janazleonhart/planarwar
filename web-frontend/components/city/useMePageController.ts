@@ -19,6 +19,7 @@ export type MePageNotice = { kind: "ok" | "err"; text: string } | null;
 
 export type OpeningActionReceipt = {
   id: string;
+  actionKey?: string;
   title: string;
   detail: string;
   impactSummary?: string;
@@ -30,7 +31,7 @@ function dedupeOpeningActionReceipts(receipts: OpeningActionReceipt[]): OpeningA
   const seen = new Set<string>();
   const deduped: OpeningActionReceipt[] = [];
   for (const receipt of receipts) {
-    const key = `${receipt.title}__${receipt.detail}__${receipt.impactSummary ?? ""}__${receipt.outcome}`;
+    const key = `${receipt.actionKey ?? ""}__${receipt.title}__${receipt.detail}__${receipt.impactSummary ?? ""}__${receipt.outcome}`;
     if (seen.has(key)) continue;
     seen.add(key);
     deduped.push(receipt);
@@ -40,7 +41,7 @@ function dedupeOpeningActionReceipts(receipts: OpeningActionReceipt[]): OpeningA
 }
 
 
-const OPENING_RECEIPTS_STORAGE_PREFIX = "planarwar:opening-action-receipts:v1:";
+const OPENING_RECEIPTS_STORAGE_PREFIX = "planarwar:opening-action-receipts:v2:";
 
 function getOpeningReceiptsStorageKey(cityId: string): string {
   return `${OPENING_RECEIPTS_STORAGE_PREFIX}${cityId}`;
@@ -57,6 +58,7 @@ function readStoredOpeningActionReceipts(cityId: string): OpeningActionReceipt[]
       .filter((entry): entry is OpeningActionReceipt => !!entry && typeof entry === "object")
       .map((entry: any) => ({
         id: String(entry.id ?? `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`),
+        actionKey: typeof entry.actionKey === "string" ? entry.actionKey : undefined,
         title: String(entry.title ?? "Recent action"),
         detail: String(entry.detail ?? "Action applied."),
         impactSummary: typeof entry.impactSummary === "string" ? entry.impactSummary : undefined,

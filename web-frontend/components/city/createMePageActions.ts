@@ -51,6 +51,10 @@ type ActionSuccessSummary = {
   outcome?: OpeningActionReceipt["outcome"];
 };
 
+function getOpeningOperationReceiptKey(operation: SettlementOpeningOperation): string {
+  return operation.id;
+}
+
 export function createMePageActions({
   busyAction,
   cityNameDraft,
@@ -175,14 +179,16 @@ export function createMePageActions({
     detail: string,
     outcome: OpeningActionReceipt["outcome"],
     impactSummary?: string | null,
+    actionKey?: string,
   ) => {
     setOpeningActionReceipts((current) => {
       const nowIso = new Date().toISOString();
       const duplicateIndex = current.findIndex(
-        (entry) => entry.title === title && entry.detail === detail && entry.impactSummary === (impactSummary ?? undefined) && entry.outcome === outcome,
+        (entry) => entry.actionKey === actionKey && entry.title === title && entry.detail === detail && entry.impactSummary === (impactSummary ?? undefined) && entry.outcome === outcome,
       );
       const nextReceipt: OpeningActionReceipt = {
         id: duplicateIndex >= 0 ? current[duplicateIndex].id : `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+        actionKey,
         title,
         detail,
         impactSummary: impactSummary ?? undefined,
@@ -200,6 +206,7 @@ export function createMePageActions({
     label: string,
     fn: () => Promise<T>,
     onSuccess?: (result: T, refreshed: MeProfile | null, previous: MeProfile | null) => string | ActionSuccessSummary | null,
+    receiptActionKey?: string,
   ) => {
     if (busyAction) return;
     setBusyAction(label);
@@ -216,19 +223,19 @@ export function createMePageActions({
       const impactSummary = normalized.impactSummary ?? summarizeLoopDelta(previousMe, refreshed);
       const outcome = normalized.outcome ?? "success";
       const message = impactSummary ? `${label} ✓ — ${detail} ${impactSummary}` : `${label} ✓ — ${detail}`;
-      pushOpeningReceipt(label, detail, outcome, impactSummary);
+      pushOpeningReceipt(label, detail, outcome, impactSummary, receiptActionKey);
       setFlash("ok", message);
     } catch (err: any) {
       console.error(err);
       const message = err?.message ?? `${label} failed`;
-      pushOpeningReceipt(label, message, "failure");
+      pushOpeningReceipt(label, message, "failure", undefined, receiptActionKey);
       setFlash("err", message);
     } finally {
       setBusyAction(null);
     }
   };
 
-  const handleBuildBuilding = (kind: CityBuilding["kind"]) => {
+  const handleBuildBuilding = (kind: CityBuilding["kind"], receiptActionKey?: string) => {
     const buildingLabel = titleCase(kind);
     return runAction(
       `Build ${buildingLabel}`,
@@ -237,11 +244,12 @@ export function createMePageActions({
           method: "POST",
           body: JSON.stringify({ kind, serviceMode }),
         }),
-      (result) => describePublicServiceResult(result.publicService, `${buildingLabel} secured for the settlement spine.`)
+      (result) => describePublicServiceResult(result.publicService, `${buildingLabel} secured for the settlement spine.`),
+      receiptActionKey,
     );
   };
 
-  const handleUpgradeBuilding = (buildingId: string) => {
+  const handleUpgradeBuilding = (buildingId: string, receiptActionKey?: string) => {
     const buildingLabel = getBuildingLabel(buildingId);
     return runAction(
       `Upgrade ${buildingLabel}`,
@@ -250,7 +258,8 @@ export function createMePageActions({
           method: "POST",
           body: JSON.stringify({ buildingId, serviceMode }),
         }),
-      (result) => describePublicServiceResult(result.publicService, `${buildingLabel} improved for the next action window.`)
+      (result) => describePublicServiceResult(result.publicService, `${buildingLabel} improved for the next action window.`),
+      receiptActionKey,
     );
   };
 
@@ -292,7 +301,7 @@ export function createMePageActions({
     }, () => `${armyLabel} reinforced and pushed back toward readiness.`);
   };
 
-  const handleRecruitHero = (role: HeroRole) => {
+  const handleRecruitHero = (role: HeroRole, receiptActionKey?: string) => {
     const roleLabel = titleCase(role);
     return runAction(
       `Recruit ${roleLabel}`,
@@ -301,7 +310,8 @@ export function createMePageActions({
           method: "POST",
           body: JSON.stringify({ role, serviceMode }),
         }),
-      (result) => describePublicServiceResult(result.publicService, `${roleLabel} added to the roster for immediate assignments.`)
+      (result) => describePublicServiceResult(result.publicService, `${roleLabel} added to the roster for immediate assignments.`),
+      receiptActionKey,
     );
   };
 
@@ -363,12 +373,14 @@ export function createMePageActions({
     missionId: string,
     heroId?: string,
     armyId?: string,
-    responsePosture?: "cautious" | "balanced" | "aggressive" | "desperate"
+    responsePosture?: "cautious" | "balanced" | "aggressive" | "desperate",
+    receiptActionKey?: string,
   ) =>
     runAction(
       "Start mission",
       () => startMission(missionId, heroId, armyId, responsePosture),
-      (result) => summarizeMissionLaunch(result)
+      (result) => summarizeMissionLaunch(result),
+      receiptActionKey,
     );
 
   const handleCompleteMission = (instanceId: string) =>
@@ -379,17 +391,19 @@ export function createMePageActions({
     );
 
   const handleExecuteOpeningOperation = (operation: SettlementOpeningOperation) => {
+    const receiptActionKey = getOpeningOperationReceiptKey(operation);
     switch (operation.action.kind) {
       case "build_building":
-        return handleBuildBuilding(operation.action.buildingKind);
+        return handleBuildBuilding(operation.action.buildingKind, receiptActionKey);
       case "upgrade_building":
-        return handleUpgradeBuilding(operation.action.buildingId);
+        return handleUpgradeBuilding(operation.action.buildingId, receiptActionKey);
       case "start_mission":
         return handleStartMission(
           operation.action.missionId,
           operation.action.heroId,
           operation.action.armyId,
           operation.action.responsePosture,
+          receiptActionKey,
         );
       case "execute_world_action": {
         const openingAction = operation.action as typeof operation.action & { actionId?: string };
@@ -403,16 +417,16 @@ export function createMePageActions({
           setFlash("err", "Opening action drifted out of the world-action board.");
           return;
         }
-        return handleExecuteWorldAction(action);
+        return handleExecuteWorldAction(action, receiptActionKey);
       }
       case "recruit_hero":
-        return handleRecruitHero(operation.action.role);
+        return handleRecruitHero(operation.action.role, receiptActionKey);
       default:
         return;
     }
   };
 
-  const handleExecuteWorldAction = async (action: WorldConsequenceActionItem) => {
+  const handleExecuteWorldAction = async (action: WorldConsequenceActionItem, receiptActionKey?: string) => {
     if (worldActionBusyId) return;
     setWorldActionBusyId(action.id);
     setError(null);
@@ -426,7 +440,7 @@ export function createMePageActions({
         : "";
       const message = `${result?.result?.message ?? `${action.title} executed.`}${appliedSummary}`;
       const loopImpact = summarizeLoopDelta(previousMe, refreshedMe);
-      pushOpeningReceipt(action.title, message, "success", loopImpact);
+      pushOpeningReceipt(action.title, message, "success", loopImpact, receiptActionKey);
       setFlash("ok", message);
     } catch (err: any) {
       console.error(err);
@@ -441,7 +455,7 @@ export function createMePageActions({
           ? ` Ready again at ${new Date(result.readyAt).toLocaleString()}.`
           : "";
       const message = `${err?.message ?? `Failed to execute ${action.title}.`}${shortfallText}${cooldownText}`;
-      pushOpeningReceipt(action.title, message, "failure");
+      pushOpeningReceipt(action.title, message, "failure", undefined, receiptActionKey);
       setFlash("err", message);
     } finally {
       setWorldActionBusyId(null);

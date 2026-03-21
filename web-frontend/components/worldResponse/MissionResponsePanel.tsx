@@ -1,3 +1,5 @@
+//web-frontend/components/worldResponse/MissionResponsePanel.tsx
+
 import type { Dispatch, SetStateAction } from "react";
 import type {
   ActiveMission,
@@ -39,6 +41,15 @@ function normalizeUnifiedTone(value: string | undefined): UnifiedRecentResult["t
   if (value === "failure") return "failure";
   if (value === "warning" || value === "partial") return "warning";
   return "success";
+}
+
+function getLatestOpeningReceiptByActionKey(receipts: OpeningActionReceipt[]): Map<string, OpeningActionReceipt> {
+  const latest = new Map<string, OpeningActionReceipt>();
+  for (const receipt of receipts) {
+    if (!receipt.actionKey) continue;
+    if (!latest.has(receipt.actionKey)) latest.set(receipt.actionKey, receipt);
+  }
+  return latest;
 }
 
 function buildUnifiedRecentResults({
@@ -213,6 +224,7 @@ export function MissionResponsePanel({
     highlightedReceipts,
     worldConsequenceResponseReceipts,
   });
+  const latestOpeningReceiptByActionKey = getLatestOpeningReceiptByActionKey(openingActionReceipts);
 
   return (
     <div style={{ border: "1px solid #444", borderRadius: 8, padding: 16, display: "grid", gap: 12 }}>
@@ -440,6 +452,7 @@ export function MissionResponsePanel({
           <div style={{ display: "grid", gap: 10 }}>
             {me.city.settlementOpeningOperations.map((operation) => {
               const actionable = operation.readiness !== "blocked";
+              const latestReceipt = latestOpeningReceiptByActionKey.get(operation.id);
               const readinessTone =
                 operation.readiness === "ready_now"
                   ? {
@@ -487,6 +500,29 @@ export function MissionResponsePanel({
                   <div style={{ fontSize: 12, opacity: 0.72 }}>
                     <strong>Risk:</strong> {operation.risk}
                   </div>
+                  {latestReceipt ? (
+                    <div
+                      style={{
+                        border: "1px dashed rgba(255,255,255,0.12)",
+                        borderRadius: 8,
+                        padding: 8,
+                        display: "grid",
+                        gap: 4,
+                        background: "rgba(255,255,255,0.02)",
+                      }}
+                    >
+                      <div style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: 0.4, opacity: 0.68 }}>
+                        Latest result for this step
+                      </div>
+                      <div style={{ fontSize: 12, opacity: 0.84 }}>{latestReceipt.detail}</div>
+                      {latestReceipt.impactSummary ? (
+                        <div style={{ fontSize: 11, opacity: 0.72 }}>{latestReceipt.impactSummary}</div>
+                      ) : null}
+                      <div style={{ fontSize: 11, opacity: 0.58 }}>
+                        {new Date(latestReceipt.timestamp).toLocaleTimeString()}
+                      </div>
+                    </div>
+                  ) : null}
                   <div>
                     <button
                       type="button"
