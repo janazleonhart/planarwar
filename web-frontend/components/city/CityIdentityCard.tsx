@@ -44,6 +44,20 @@ function getSlotTone(used: number, max: number): Tone {
   return "calm";
 }
 
+function getLaneBannerStyle(city: NonNullable<MeProfile["city"]>): CSSProperties {
+  return city.settlementLane === "black_market"
+    ? {
+        border: "1px solid #7a3d3d",
+        background: "rgba(80,24,32,0.18)",
+        color: "#f4d8d8",
+      }
+    : {
+        border: "1px solid #355d45",
+        background: "rgba(25,60,42,0.16)",
+        color: "#d9f0df",
+      };
+}
+
 export function CityIdentityCard({ me, cardStyle }: CityIdentityCardProps) {
   const city = me.city ?? null;
   const stressTone = getStressTone(me.cityStress.stage);
@@ -103,37 +117,61 @@ export function CityIdentityCard({ me, cardStyle }: CityIdentityCardProps) {
       </div>
 
       {city ? (
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 8 }}>
-          {digestItems.map((item) => {
-            const toneStyle = toneStyles[item.tone];
+        <>
+          <div
+            style={{
+              ...getLaneBannerStyle(city),
+              borderRadius: 10,
+              padding: "10px 12px",
+              display: "grid",
+              gap: 3,
+            }}
+          >
+            <div style={{ fontSize: 12, textTransform: "uppercase", letterSpacing: 0.5, opacity: 0.78 }}>
+              Settlement lane
+            </div>
+            <div style={{ fontSize: 16, fontWeight: 700 }}>
+              {city.settlementLaneProfile.label} · {city.settlementLaneProfile.posture}
+            </div>
+            <div style={{ fontSize: 12, opacity: 0.84 }}>
+              {city.settlementLane === "black_market"
+                ? "Shadow-founded settlement. Expect illicit throughput, hotter openings, and darker receipts."
+                : "Civic-founded settlement. Expect steadier public support, cleaner recovery, and calmer opening posture."}
+            </div>
+          </div>
 
-            return (
-              <div
-                key={item.label}
-                style={{
-                  border: `1px solid ${typeof toneStyle.borderColor === "string" ? toneStyle.borderColor : "#555"}`,
-                  background: typeof toneStyle.background === "string" ? toneStyle.background : undefined,
-                  borderRadius: 10,
-                  padding: 10,
-                  display: "grid",
-                  gap: 3,
-                }}
-              >
-                <div style={{ fontSize: 12, opacity: 0.72 }}>{item.label}</div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 8 }}>
+            {digestItems.map((item) => {
+              const toneStyle = toneStyles[item.tone];
+
+              return (
                 <div
+                  key={item.label}
                   style={{
-                    fontSize: 18,
-                    fontWeight: 700,
-                    textTransform: item.label === "City stress" ? "capitalize" : undefined,
+                    border: `1px solid ${typeof toneStyle.borderColor === "string" ? toneStyle.borderColor : "#555"}`,
+                    background: typeof toneStyle.background === "string" ? toneStyle.background : undefined,
+                    borderRadius: 10,
+                    padding: 10,
+                    display: "grid",
+                    gap: 3,
                   }}
                 >
-                  {item.value}
+                  <div style={{ fontSize: 12, opacity: 0.72 }}>{item.label}</div>
+                  <div
+                    style={{
+                      fontSize: 18,
+                      fontWeight: 700,
+                      textTransform: item.label === "City stress" ? "capitalize" : undefined,
+                    }}
+                  >
+                    {item.value}
+                  </div>
+                  <div style={{ fontSize: 12, opacity: 0.76 }}>{item.hint}</div>
                 </div>
-                <div style={{ fontSize: 12, opacity: 0.76 }}>{item.hint}</div>
-              </div>
-            );
-          })}
-        </div>
+              );
+            })}
+          </div>
+        </>
       ) : null}
     </div>
   );
