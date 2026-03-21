@@ -60,6 +60,27 @@ type MissionResponsePanelProps = {
   onExecuteWorldAction: (action: WorldConsequenceActionItem) => void | Promise<void>;
 };
 
+function BlackMarketStatusCard({ actions }: { actions: NonNullable<MissionResponsePanelProps["worldConsequenceActions"]> }) {
+  const blackMarketActions = actions.playerActions.filter((action) => action.lane === "black_market");
+  if (blackMarketActions.length === 0) return null;
+
+  const executableCount = blackMarketActions.filter((action) => action.runtime?.executable).length;
+  const regionLabel = blackMarketActions.find((action) => action.sourceRegionId)?.sourceRegionId ?? null;
+
+  return (
+    <div style={{ border: "1px solid #6b4d2b", borderRadius: 8, padding: 10, display: "grid", gap: 4, background: "linear-gradient(180deg, rgba(52,33,22,0.46) 0%, rgba(18,16,14,0.8) 100%)" }}>
+      <div><strong style={{ color: "#f3d29a" }}>Black market window open</strong></div>
+      <div style={{ fontSize: 12, opacity: 0.84 }}>
+        The shadow-economy path is currently riding on the same decision desk as the city consequence system. You can exploit, contain, or bribe patrol pressure from here without going through the builder loop.
+      </div>
+      <div style={{ fontSize: 12, opacity: 0.76 }}>
+        actions {blackMarketActions.length} • executable now {executableCount}
+        {regionLabel ? ` • hotspot ${regionLabel}` : ""}
+      </div>
+    </div>
+  );
+}
+
 export function MissionResponsePanel({
   me,
   missionBoard,
@@ -162,6 +183,7 @@ export function MissionResponsePanel({
 
       <div style={{ display: "grid", gap: 8 }}>
         <div style={{ fontSize: 12, textTransform: "uppercase", letterSpacing: 0.6, opacity: 0.72 }}>World spillover</div>
+        {worldConsequenceActions ? <BlackMarketStatusCard actions={worldConsequenceActions} /> : null}
         <WorldResponseSection
           worldConsequences={worldConsequences ?? []}
           worldConsequenceState={worldConsequenceState ?? null}

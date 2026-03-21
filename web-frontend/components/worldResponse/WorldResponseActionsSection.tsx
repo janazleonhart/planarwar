@@ -9,6 +9,24 @@ type WorldResponseActionsSectionProps = {
   onExecuteWorldAction: (action: WorldConsequenceActionItem) => void | Promise<void>;
 };
 
+function laneAccent(action: WorldConsequenceActionItem): { border: string; background: string; badge: string; badgeText: string } {
+  if (action.lane === "black_market") {
+    return {
+      border: "1px solid #6b4d2b",
+      background: "linear-gradient(180deg, rgba(58,34,22,0.42) 0%, rgba(22,18,16,0.72) 100%)",
+      badge: "rgba(122,86,44,0.24)",
+      badgeText: "#f3d29a",
+    };
+  }
+
+  return {
+    border: "1px solid #555",
+    background: "rgba(36,36,36,0.14)",
+    badge: "rgba(70,70,70,0.2)",
+    badgeText: "#cfcfcf",
+  };
+}
+
 function WorldResponseActionCard({
   action,
   isBusy,
@@ -19,10 +37,17 @@ function WorldResponseActionCard({
   onExecute: (action: WorldConsequenceActionItem) => void | Promise<void>;
 }) {
   const executable = action.runtime?.executable ?? false;
+  const accent = laneAccent(action);
 
   return (
-    <div style={{ border: "1px solid #555", borderRadius: 8, padding: 10, display: "grid", gap: 8, background: "rgba(36,36,36,0.14)" }}>
-      <div><strong>{action.title}</strong> <span style={{ color: worldHookTone(action.priority) }}>{action.priority}</span></div>
+    <div style={{ border: accent.border, borderRadius: 8, padding: 10, display: "grid", gap: 8, background: accent.background }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+        <strong>{action.title}</strong>
+        <span style={{ color: worldHookTone(action.priority) }}>{action.priority}</span>
+        <span style={{ fontSize: 11, letterSpacing: 0.4, textTransform: "uppercase", borderRadius: 999, padding: "2px 8px", background: accent.badge, color: accent.badgeText }}>
+          {action.lane === "black_market" ? "shadow lane" : action.lane.replace(/_/g, " ")}
+        </span>
+      </div>
       <div style={{ fontSize: 12, opacity: 0.82 }}>{action.summary}</div>
       <div style={{ fontSize: 12, opacity: 0.76 }}>lane {action.lane}{action.sourceRegionId ? ` • region ${getRegionDisplayName(action.sourceRegionId)}` : ""}</div>
       {action.evidence && action.evidence.length > 0 ? (
@@ -128,6 +153,9 @@ function WorldResponseActionCard({
 }
 
 export function WorldResponseActionsSection({ worldConsequenceActions, worldActionBusyId, onExecuteWorldAction }: WorldResponseActionsSectionProps) {
+  const blackMarketActions = worldConsequenceActions.playerActions.filter((action) => action.lane === "black_market");
+  const standardActions = worldConsequenceActions.playerActions.filter((action) => action.lane !== "black_market");
+
   return (
     <div style={{ display: "grid", gap: 6 }}>
       <div style={{ fontWeight: 700, fontSize: 13 }}>What to do next</div>
@@ -135,9 +163,29 @@ export function WorldResponseActionsSection({ worldConsequenceActions, worldActi
         <div><strong>{worldConsequenceActions.recommendedPrimaryAction}</strong></div>
         <div style={{ fontSize: 12, opacity: 0.8 }}>{worldConsequenceActions.headline}</div>
       </div>
+      {blackMarketActions.length > 0 ? (
+        <div style={{ border: "1px solid #6b4d2b", borderRadius: 10, padding: 12, display: "grid", gap: 8, background: "linear-gradient(180deg, rgba(52,33,22,0.52) 0%, rgba(20,16,14,0.82) 100%)" }}>
+          <div style={{ display: "grid", gap: 3 }}>
+            <div style={{ fontWeight: 700, color: "#f3d29a" }}>Shadow market window</div>
+            <div style={{ fontSize: 12, opacity: 0.82 }}>
+              The black market lane is live through the existing world response desk. This is the dark-side city path: fast upside, crooked heat control, and no civic halo.
+            </div>
+          </div>
+          {blackMarketActions.map((action) => (
+            <div key={action.id}>
+              <WorldResponseActionCard
+                action={action}
+                isBusy={worldActionBusyId === action.id}
+                onExecute={onExecuteWorldAction}
+              />
+            </div>
+          ))}
+        </div>
+      ) : null}
       {worldConsequenceActions.playerActions.length === 0 ? (
         <div style={{ opacity: 0.7 }}>No player-facing action recommendations yet.</div>
-      ) : worldConsequenceActions.playerActions.map((action) => (
+      ) : null}
+      {standardActions.map((action) => (
         <div key={action.id}>
           <WorldResponseActionCard
             action={action}
