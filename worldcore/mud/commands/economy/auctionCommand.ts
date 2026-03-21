@@ -139,7 +139,19 @@ export async function handleAuctionCommand(
       },
     });
 
-    await ctx.characters.saveCharacter(char);
+    try {
+      await ctx.characters.saveCharacter(char);
+    } catch (err) {
+      bag.slots[slotIndex] = originalSlot;
+      if (typeof ctx.auctions.revertFailedCreateListing === "function") {
+        await ctx.auctions.revertFailedCreateListing({
+          id: listing.id,
+          shardId,
+          sellerCharId: (char as any).id,
+        });
+      }
+      throw err;
+    }
 
     return `Created auction #${listing.id}: ${def.name} x${qty} for ${priceEach}g each (total ${listing.totalPriceGold}g).`;
   }

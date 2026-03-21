@@ -142,6 +142,27 @@ export class PostgresAuctionService implements AuctionService {
     return rowToListing(res.rows[0] as AuctionRow);
   }
 
+  async revertFailedCreateListing(args: {
+    id: number;
+    shardId: string;
+    sellerCharId: string;
+  }): Promise<boolean> {
+    const res = await db.query(
+      `
+      DELETE FROM auctions
+      WHERE id = $1
+        AND shard_id = $2
+        AND seller_char_id = $3
+        AND status = 'active'
+        AND buyer_char_id IS NULL
+        AND proceeds_gold IS NULL
+    `,
+      [args.id, args.shardId, args.sellerCharId]
+    );
+
+    return (res.rowCount ?? 0) > 0;
+  }
+
   async buyout(args: {
     id: number;
     shardId: string;

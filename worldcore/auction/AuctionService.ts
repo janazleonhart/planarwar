@@ -25,6 +25,13 @@ export interface AuctionService {
     unitPriceGold: number;
   }): Promise<AuctionListing>;
 
+  /** Delete a just-created listing when character persistence fails before the sell flow commits. */
+  revertFailedCreateListing(args: {
+    id: number;
+    shardId: string;
+    sellerCharId: string;
+  }): Promise<boolean>;
+
   /** Mark listing as sold + record proceeds. Returns updated listing or null. */
   buyout(args: {
     id: number;
