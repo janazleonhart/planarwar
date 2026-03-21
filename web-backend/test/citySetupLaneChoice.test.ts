@@ -9,6 +9,7 @@ import { seedWorld } from "../domain/world";
 import { buildCityRuntimeSnapshot, applyCityRuntimeSnapshot } from "../gameState/cityRuntimeSnapshot";
 import { applySettlementLaneBootstrap, normalizeSettlementLaneChoice } from "../routes/playerCityAccess";
 import { buildSettlementLaneProfile } from "../routes/me";
+import { getCityProductionPerTick } from "../domain/city";
 
 test("city setup lane choice defaults safely and accepts black market", () => {
   assert.equal(normalizeSettlementLaneChoice(undefined), "city");
@@ -70,6 +71,23 @@ test("black market lane bootstrap applies crooked founding posture", () => {
 });
 
 
+
+
+test("black market lane keeps a passive shadow surplus after founding", () => {
+  const civic = createInitialPlayerState("civic", seedWorld(), defaultPolicies);
+  const shadow = createInitialPlayerState("shadow", seedWorld(), defaultPolicies);
+
+  const civicProduction = getCityProductionPerTick(civic.city);
+
+  applySettlementLaneBootstrap(shadow, "black_market");
+  const shadowProduction = getCityProductionPerTick(shadow.city);
+
+  assert.equal(civicProduction.wealth ?? 0, 1);
+  assert.equal(civicProduction.knowledge ?? 0, 1);
+  assert.equal(shadowProduction.wealth ?? 0, (civicProduction.wealth ?? 0) + 2);
+  assert.equal(shadowProduction.knowledge ?? 0, (civicProduction.knowledge ?? 0) + 1);
+});
+
 test("settlement lane profile describes city and black-market starts distinctly", () => {
   const civic = buildSettlementLaneProfile("city");
   const shadow = buildSettlementLaneProfile("black_market");
@@ -78,5 +96,6 @@ test("settlement lane profile describes city and black-market starts distinctly"
   assert.equal(shadow.id, "black_market");
   assert.ok(civic.strengths.some((entry) => /standard civic baseline/i.test(entry)));
   assert.ok(shadow.strengths.some((entry) => /extra wealth, materials, and knowledge/i.test(entry)));
+  assert.ok(shadow.strengths.some((entry) => /passive shadow surplus/i.test(entry)));
   assert.ok(shadow.liabilities.some((entry) => /strained early posture/i.test(entry)));
 });

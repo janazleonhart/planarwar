@@ -34,6 +34,7 @@ export function buildSettlementLaneProfile(lane: "city" | "black_market"): Settl
         "Starts with extra wealth, materials, and knowledge",
         "Can act directly on black-market world consequence windows",
         "Built for deniable leverage instead of orderly civic growth",
+        "Generates a passive shadow surplus of wealth and knowledge each tick",
       ],
       liabilities: [
         "Opens with lower security, stability, and civic unity",

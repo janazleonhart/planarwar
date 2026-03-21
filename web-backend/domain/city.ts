@@ -79,6 +79,17 @@ export function getBuildingProductionPerTick(
   }
 }
 
+export function getSettlementLaneProductionModifier(city: City): BuildingProduction {
+  if (city.settlementLane === "black_market") {
+    return {
+      wealth: 2,
+      knowledge: 1,
+    };
+  }
+
+  return {};
+}
+
 export function getCityProductionPerTick(city: City): BuildingProduction {
   const total: BuildingProduction = {};
 
@@ -91,6 +102,14 @@ export function getCityProductionPerTick(city: City): BuildingProduction {
     if (p.knowledge) total.knowledge = (total.knowledge ?? 0) + p.knowledge;
     if (p.unity) total.unity = (total.unity ?? 0) + p.unity;
   }
+
+  const laneModifier = getSettlementLaneProductionModifier(city);
+  if (laneModifier.food) total.food = (total.food ?? 0) + laneModifier.food;
+  if (laneModifier.materials) total.materials = (total.materials ?? 0) + laneModifier.materials;
+  if (laneModifier.wealth) total.wealth = (total.wealth ?? 0) + laneModifier.wealth;
+  if (laneModifier.mana) total.mana = (total.mana ?? 0) + laneModifier.mana;
+  if (laneModifier.knowledge) total.knowledge = (total.knowledge ?? 0) + laneModifier.knowledge;
+  if (laneModifier.unity) total.unity = (total.unity ?? 0) + laneModifier.unity;
 
   return total;
 }
