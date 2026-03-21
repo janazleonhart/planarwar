@@ -177,3 +177,51 @@ test("identical pressure yields lane-specific economy and cartel advisories", ()
   assert.notEqual(civicCartel?.title, shadowCartel?.title);
   assert.notEqual(civicCartel?.summary, shadowCartel?.summary);
 });
+
+
+test("identical pressure prefers different primary action lanes by settlement lane", () => {
+  const civic = getOrCreatePlayerState("world_consequence_actions_lane_order_civic_player");
+  civic.city.settlementLane = "city";
+
+  const shadow = getOrCreatePlayerState("world_consequence_actions_lane_order_shadow_player");
+  shadow.city.settlementLane = "black_market";
+
+  const consequence = {
+    regionId: civic.city.regionId,
+    source: "mission_setback" as const,
+    severity: "severe" as const,
+    title: "Scarcity with shadow opportunity",
+    summary: "The same pressure should bias civic settlements toward stabilization and shadow settlements toward underworld handling.",
+    detail: "Primary action ordering should reflect lane identity instead of alphabetical accidents.",
+    audiences: ["player", "admin", "mother_brain"] as WorldConsequenceAudience[],
+    tags: [
+      "city_pressure_export",
+      "trade_disruption",
+      "black_market_opening",
+      "world_economy_hook",
+      "faction_drift",
+    ] as WorldConsequenceTag[],
+    metrics: {
+      pressureDelta: 20,
+      recoveryDelta: 11,
+      controlDelta: -6,
+      threatDelta: 9,
+    },
+    outcome: "failure" as const,
+  };
+
+  pushWorldConsequence(civic, consequence);
+  pushWorldConsequence(shadow, {
+    ...consequence,
+    regionId: shadow.city.regionId,
+    audiences: [...consequence.audiences],
+    tags: [...consequence.tags],
+  });
+
+  const civicActions = deriveWorldConsequenceActions(civic);
+  const shadowActions = deriveWorldConsequenceActions(shadow);
+
+  assert.equal(civicActions.playerActions[0]?.lane, "economy");
+  assert.equal(shadowActions.playerActions[0]?.lane, "black_market");
+  assert.notEqual(civicActions.recommendedPrimaryAction, shadowActions.recommendedPrimaryAction);
+});

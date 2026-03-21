@@ -154,6 +154,48 @@ function buildCartelPlayerAction(
   };
 }
 
+function lanePreferenceOrder(
+  settlementLane: "city" | "black_market",
+  lane: WorldConsequenceActionLane,
+): number {
+  if (settlementLane === "black_market") {
+    const order: Record<WorldConsequenceActionLane, number> = {
+      black_market: 0,
+      cartel: 1,
+      economy: 2,
+      regional: 3,
+      faction: 4,
+      observability: 5,
+    };
+    return order[lane];
+  }
+
+  const order: Record<WorldConsequenceActionLane, number> = {
+    economy: 0,
+    regional: 1,
+    faction: 2,
+    observability: 3,
+    cartel: 4,
+    black_market: 5,
+  };
+  return order[lane];
+}
+
+function sortedPlayerItems(
+  settlementLane: "city" | "black_market",
+  items: WorldConsequenceActionItem[],
+): WorldConsequenceActionItem[] {
+  return [...items].sort((a, b) => {
+    const prio = comparePriority(a.priority, b.priority);
+    if (prio !== 0) return prio;
+
+    const laneOrder = lanePreferenceOrder(settlementLane, a.lane) - lanePreferenceOrder(settlementLane, b.lane);
+    if (laneOrder !== 0) return laneOrder;
+
+    return a.title.localeCompare(b.title);
+  });
+}
+
 function sorted(items: WorldConsequenceActionItem[]): WorldConsequenceActionItem[] {
   return [...items].sort((a, b) => {
     const prio = comparePriority(a.priority, b.priority);
@@ -399,7 +441,9 @@ export function deriveWorldConsequenceActions(
     });
   }
 
-  const sortedPlayerBase = sorted(playerActions).slice(0, 7);
+  const settlementLane = ps.city?.settlementLane === "black_market" ? "black_market" : "city";
+
+  const sortedPlayerBase = sortedPlayerItems(settlementLane, playerActions).slice(0, 7);
   const sortedAdminBase = sorted(adminActions).slice(0, 7);
   const sortedMotherBrainBase = sorted(motherBrainActions).slice(0, 7);
 
