@@ -55,11 +55,22 @@ function makeCity(): CitySummary {
       posture: "civic",
       strengths: ["stable services", "legitimate governance"],
       liabilities: ["slower illicit profit", "less shadow leverage"],
+      responseFocus: {
+        preferredActionLanes: ["economy", "regional", "faction", "observability", "cartel", "black_market"],
+        advisoryTone: "stabilize supply lanes before scarcity hardens",
+        recommendedOpening: "Favor recovery, logistics, and public order before chasing opportunistic shadow gains.",
+      },
     },
     settlementLaneReceipt: {
       title: "Civic foundation established",
       summary: "The settlement opened as a lawful city with cleaner legitimacy and public order.",
       effects: ["No shadow surplus", "Service posture starts cleaner"],
+    },
+    settlementLaneLatestReceipt: {
+      title: "Latest civic receipt",
+      message: "Civic surplus kept the city steady (+5 food, +5 unity).",
+      kind: "city_morph",
+      timestamp: new Date("2026-03-19T12:05:00Z").toISOString(),
     },
     tier: 2,
     maxBuildingSlots: 8,
