@@ -8,7 +8,7 @@ import { defaultPolicies, tickPlayerState } from "../gameState";
 import { seedWorld } from "../domain/world";
 import { buildCityRuntimeSnapshot, applyCityRuntimeSnapshot } from "../gameState/cityRuntimeSnapshot";
 import { applySettlementLaneBootstrap, normalizeSettlementLaneChoice } from "../routes/playerCityAccess";
-import { buildCitySummary, buildSettlementLaneProfile } from "../routes/me";
+import { buildCitySummary, buildSettlementLaneChoice, buildSettlementLaneProfile } from "../routes/me";
 import { getCityProductionPerTick } from "../domain/city";
 
 test("city setup lane choice defaults safely and accepts black market", () => {
@@ -172,4 +172,29 @@ test("settlement lanes emit distinct passive receipts after enough ticks", () =>
 
   assert.match(civic.eventLog.at(-1)?.message ?? "", /Civic surplus kept the city steady \(\+5 food, \+5 unity\)\./i);
   assert.match(shadow.eventLog.at(-1)?.message ?? "", /Shadow surplus skimmed extra returns \(\+10 wealth, \+5 knowledge\)\./i);
+});
+
+
+test("settlement lane setup choices expose exact preview deltas", () => {
+  const civic = buildSettlementLaneChoice("city");
+  const shadow = buildSettlementLaneChoice("black_market");
+
+  assert.equal(civic.preview.foundingResources.wealth, 0);
+  assert.equal(civic.preview.passivePerTick.food, 1);
+  assert.equal(civic.preview.passivePerTick.unity, 1);
+  assert.equal(civic.preview.pressureFloor.stage, "steady");
+  assert.ok(civic.preview.runtimeAccess.some((entry) => /outside pressure/i.test(entry)));
+
+  assert.equal(shadow.preview.foundingResources.wealth, 18);
+  assert.equal(shadow.preview.foundingResources.materials, 6);
+  assert.equal(shadow.preview.foundingResources.knowledge, 4);
+  assert.equal(shadow.preview.foundingResources.unity, -2);
+  assert.equal(shadow.preview.foundingStats.prosperity, 6);
+  assert.equal(shadow.preview.foundingStats.influence, 8);
+  assert.equal(shadow.preview.foundingStats.security, -8);
+  assert.equal(shadow.preview.passivePerTick.wealth, 2);
+  assert.equal(shadow.preview.passivePerTick.knowledge, 1);
+  assert.equal(shadow.preview.pressureFloor.stage, "strained");
+  assert.equal(shadow.preview.pressureFloor.total, 33);
+  assert.ok(shadow.preview.runtimeAccess.some((entry) => /black-market world consequence windows/i.test(entry)));
 });

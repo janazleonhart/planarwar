@@ -956,6 +956,36 @@ export interface WorldConsequenceHooksView {
   };
 }
 
+export type SettlementLaneResourceDelta = {
+  food: number;
+  materials: number;
+  wealth: number;
+  mana: number;
+  knowledge: number;
+  unity: number;
+};
+
+export type SettlementLaneStatDelta = {
+  prosperity: number;
+  influence: number;
+  security: number;
+  stability: number;
+  unity: number;
+};
+
+export type SettlementLaneChoicePreview = {
+  foundingResources: SettlementLaneResourceDelta;
+  foundingStats: SettlementLaneStatDelta;
+  passivePerTick: SettlementLaneResourceDelta;
+  pressureFloor: {
+    stage: "steady" | "strained";
+    total: number;
+    threatPressure: number;
+    unityPressure: number;
+  };
+  runtimeAccess: string[];
+};
+
 export type CitySetupChoice = {
   id: "city" | "black_market";
   label: string;
@@ -963,6 +993,7 @@ export type CitySetupChoice = {
   posture: string;
   strengths: string[];
   liabilities: string[];
+  preview: SettlementLaneChoicePreview;
 };
 
 export interface MeProfile {

@@ -29,6 +29,72 @@ export type SettlementLaneReceipt = {
   effects: string[];
 };
 
+export type SettlementLaneResourceDelta = {
+  food: number;
+  materials: number;
+  wealth: number;
+  mana: number;
+  knowledge: number;
+  unity: number;
+};
+
+export type SettlementLaneStatDelta = {
+  prosperity: number;
+  influence: number;
+  security: number;
+  stability: number;
+  unity: number;
+};
+
+export type SettlementLaneChoicePreview = {
+  foundingResources: SettlementLaneResourceDelta;
+  foundingStats: SettlementLaneStatDelta;
+  passivePerTick: SettlementLaneResourceDelta;
+  pressureFloor: {
+    stage: "steady" | "strained";
+    total: number;
+    threatPressure: number;
+    unityPressure: number;
+  };
+  runtimeAccess: string[];
+};
+
+export type SettlementLaneChoice = SettlementLaneProfile & {
+  preview: SettlementLaneChoicePreview;
+};
+
+export function buildSettlementLaneChoice(lane: "city" | "black_market"): SettlementLaneChoice {
+  if (lane === "black_market") {
+    return {
+      ...buildSettlementLaneProfile("black_market"),
+      preview: {
+        foundingResources: { food: 0, materials: 6, wealth: 18, mana: 0, knowledge: 4, unity: -2 },
+        foundingStats: { prosperity: 6, influence: 8, security: -8, stability: -5, unity: -4 },
+        passivePerTick: { food: 0, materials: 0, wealth: 2, mana: 0, knowledge: 1, unity: 0 },
+        pressureFloor: { stage: "strained", total: 33, threatPressure: 8, unityPressure: 6 },
+        runtimeAccess: [
+          "Can act directly on black-market world consequence windows.",
+          "Reads cartel and scarcity pressure through a shadow-lane lens.",
+        ],
+      },
+    };
+  }
+
+  return {
+    ...buildSettlementLaneProfile("city"),
+    preview: {
+      foundingResources: { food: 0, materials: 0, wealth: 0, mana: 0, knowledge: 0, unity: 0 },
+      foundingStats: { prosperity: 0, influence: 0, security: 0, stability: 0, unity: 0 },
+      passivePerTick: { food: 1, materials: 0, wealth: 0, mana: 0, knowledge: 0, unity: 1 },
+      pressureFloor: { stage: "steady", total: 0, threatPressure: 0, unityPressure: 0 },
+      runtimeAccess: [
+        "Treats black-market pressure as outside pressure instead of a native lane.",
+        "Prefers overt civic stabilization before shadow opportunism.",
+      ],
+    },
+  };
+}
+
 export function buildSettlementLaneFoundingReceipt(lane: "city" | "black_market"): SettlementLaneReceipt {
   if (lane === "black_market") {
     return {
@@ -164,8 +230,8 @@ function buildMePayload(viewer: Awaited<ReturnType<typeof resolveViewer>>, ps: P
       canCreateCity: viewer.isAuthenticated,
       suggestedCityName: viewer.isAuthenticated ? suggestCityName(viewer.username) : undefined,
       citySetupChoices: viewer.isAuthenticated ? [
-        buildSettlementLaneProfile("city"),
-        buildSettlementLaneProfile("black_market"),
+        buildSettlementLaneChoice("city"),
+        buildSettlementLaneChoice("black_market"),
       ] : [],
       resources: emptyResources(),
       policies: { ...defaultPolicies },
