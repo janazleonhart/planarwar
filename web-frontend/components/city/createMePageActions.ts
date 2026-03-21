@@ -107,16 +107,21 @@ export function createMePageActions({
   };
 
   const pushOpeningReceipt = (title: string, detail: string, outcome: OpeningActionReceipt["outcome"]) => {
-    setOpeningActionReceipts((current) => [
-      {
-        id: `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+    setOpeningActionReceipts((current) => {
+      const nowIso = new Date().toISOString();
+      const duplicateIndex = current.findIndex((entry) => entry.title === title && entry.detail === detail && entry.outcome === outcome);
+      const nextReceipt: OpeningActionReceipt = {
+        id: duplicateIndex >= 0 ? current[duplicateIndex].id : `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
         title,
         detail,
         outcome,
-        timestamp: new Date().toISOString(),
-      },
-      ...current,
-    ].slice(0, 5));
+        timestamp: nowIso,
+      };
+      const remaining = duplicateIndex >= 0
+        ? current.filter((_, index) => index !== duplicateIndex)
+        : current;
+      return [nextReceipt, ...remaining].slice(0, 5);
+    });
   };
 
   const runAction = async <T,>(label: string, fn: () => Promise<T>, onSuccess?: (result: T) => string | null) => {

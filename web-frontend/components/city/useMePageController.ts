@@ -25,6 +25,19 @@ export type OpeningActionReceipt = {
   timestamp: string;
 };
 
+function dedupeOpeningActionReceipts(receipts: OpeningActionReceipt[]): OpeningActionReceipt[] {
+  const seen = new Set<string>();
+  const deduped: OpeningActionReceipt[] = [];
+  for (const receipt of receipts) {
+    const key = `${receipt.title}__${receipt.detail}__${receipt.outcome}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    deduped.push(receipt);
+    if (deduped.length >= 5) break;
+  }
+  return deduped;
+}
+
 
 const OPENING_RECEIPTS_STORAGE_PREFIX = "planarwar:opening-action-receipts:v1:";
 
@@ -39,7 +52,7 @@ function readStoredOpeningActionReceipts(cityId: string): OpeningActionReceipt[]
     if (!raw) return [];
     const parsed = JSON.parse(raw);
     if (!Array.isArray(parsed)) return [];
-    return parsed
+    const normalized = parsed
       .filter((entry): entry is OpeningActionReceipt => !!entry && typeof entry === "object")
       .map((entry: any) => ({
         id: String(entry.id ?? `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`),
@@ -47,8 +60,8 @@ function readStoredOpeningActionReceipts(cityId: string): OpeningActionReceipt[]
         detail: String(entry.detail ?? "Action applied."),
         outcome: entry.outcome === "failure" || entry.outcome === "warning" ? entry.outcome : "success",
         timestamp: String(entry.timestamp ?? new Date().toISOString()),
-      }))
-      .slice(0, 5);
+      }));
+    return dedupeOpeningActionReceipts(normalized);
   } catch {
     return [];
   }
@@ -57,7 +70,7 @@ function readStoredOpeningActionReceipts(cityId: string): OpeningActionReceipt[]
 function writeStoredOpeningActionReceipts(cityId: string, receipts: OpeningActionReceipt[]) {
   if (typeof window === "undefined") return;
   try {
-    window.sessionStorage.setItem(getOpeningReceiptsStorageKey(cityId), JSON.stringify(receipts.slice(0, 5)));
+    window.sessionStorage.setItem(getOpeningReceiptsStorageKey(cityId), JSON.stringify(dedupeOpeningActionReceipts(receipts)));
   } catch {
     // Ignore storage failures; the live UI state still works.
   }
@@ -138,6 +151,14 @@ export function useMePageController(serviceMode: InfrastructureMode) {
     writeStoredOpeningActionReceipts(cityId, openingActionReceipts);
   }, [me?.city?.id, openingActionReceipts]);
 
+  const dismissOpeningActionReceipt = (receiptId: string) => {
+    setOpeningActionReceipts((current) => current.filter((receipt) => receipt.id !== receiptId));
+  };
+
+  const clearOpeningActionReceipts = () => {
+    setOpeningActionReceipts([]);
+  };
+
   const {
     handleBuildBuilding,
     handleCompleteMission,
@@ -199,6 +220,8 @@ export function useMePageController(serviceMode: InfrastructureMode) {
     missionBoard,
     notice,
     openingActionReceipts,
+    dismissOpeningActionReceipt,
+    clearOpeningActionReceipts,
     refreshMe,
     setCityNameDraft,
     citySetupLane,

@@ -62,6 +62,8 @@ type MissionResponsePanelProps = {
   worldActionBusyId: string | null;
   onExecuteWorldAction: (action: WorldConsequenceActionItem) => void | Promise<void>;
   openingActionReceipts: OpeningActionReceipt[];
+  onDismissOpeningReceipt: (receiptId: string) => void;
+  onClearOpeningReceipts: () => void;
 };
 
 function BlackMarketStatusCard({ actions }: { actions: NonNullable<MissionResponsePanelProps["worldConsequenceActions"]> }) {
@@ -115,6 +117,8 @@ export function MissionResponsePanel({
   worldActionBusyId,
   onExecuteWorldAction,
   openingActionReceipts,
+  onDismissOpeningReceipt,
+  onClearOpeningReceipts,
 }: MissionResponsePanelProps) {
   return (
     <div style={{ border: "1px solid #444", borderRadius: 8, padding: 16, display: "grid", gap: 12 }}>
@@ -138,20 +142,54 @@ export function MissionResponsePanel({
         <div style={{ display: "grid", gap: 8 }}>
           {openingActionReceipts.length ? (
             <div style={{ display: "grid", gap: 8 }}>
-              <div style={{ fontSize: 12, textTransform: "uppercase", letterSpacing: 0.6, opacity: 0.72 }}>Immediate receipts</div>
+              <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                <div style={{ fontSize: 12, textTransform: "uppercase", letterSpacing: 0.6, opacity: 0.72 }}>Immediate receipts</div>
+                <button
+                  type="button"
+                  onClick={onClearOpeningReceipts}
+                  style={{
+                    padding: "4px 8px",
+                    borderRadius: 6,
+                    border: "1px solid #666",
+                    background: "#161616",
+                    cursor: "pointer",
+                    fontSize: 11,
+                  }}
+                >
+                  Clear receipts
+                </button>
+              </div>
               <div style={{ display: "grid", gap: 8 }}>
-                {openingActionReceipts.map((receipt) => {
+                {openingActionReceipts.map((receipt, index) => {
+                  const isNewest = index === 0 && Date.now() - new Date(receipt.timestamp).getTime() < 120000;
                   const tone = receipt.outcome === "success"
                     ? { border: "1px solid rgba(110,210,170,0.2)", background: "rgba(35,80,62,0.18)", label: "Applied" }
                     : receipt.outcome === "warning"
                       ? { border: "1px solid rgba(210,180,110,0.2)", background: "rgba(90,72,30,0.18)", label: "Watch" }
                       : { border: "1px solid rgba(210,110,110,0.2)", background: "rgba(90,38,38,0.18)", label: "Failed" };
                   return (
-                    <div key={receipt.id} style={{ border: tone.border, background: tone.background, borderRadius: 8, padding: 10, display: "grid", gap: 4 }}>
-                      <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
-                        <strong>{receipt.title}</strong>
-                        <span style={{ fontSize: 11, opacity: 0.72, textTransform: "uppercase", letterSpacing: 0.4 }}>{tone.label}</span>
-                        <span style={{ fontSize: 11, opacity: 0.6 }}>{new Date(receipt.timestamp).toLocaleTimeString()}</span>
+                    <div key={receipt.id} style={{ border: tone.border, background: tone.background, borderRadius: 8, padding: 10, display: "grid", gap: 4, boxShadow: isNewest ? "0 0 0 1px rgba(255,255,255,0.08) inset" : "none" }}>
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center", justifyContent: "space-between" }}>
+                        <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
+                          <strong>{receipt.title}</strong>
+                          <span style={{ fontSize: 11, opacity: 0.72, textTransform: "uppercase", letterSpacing: 0.4 }}>{tone.label}</span>
+                          {isNewest ? <span style={{ fontSize: 11, opacity: 0.82, textTransform: "uppercase", letterSpacing: 0.4 }}>Newest</span> : null}
+                          <span style={{ fontSize: 11, opacity: 0.6 }}>{new Date(receipt.timestamp).toLocaleTimeString()}</span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => onDismissOpeningReceipt(receipt.id)}
+                          style={{
+                            padding: "2px 6px",
+                            borderRadius: 6,
+                            border: "1px solid #666",
+                            background: "#161616",
+                            cursor: "pointer",
+                            fontSize: 11,
+                          }}
+                        >
+                          Dismiss
+                        </button>
                       </div>
                       <div style={{ fontSize: 12, opacity: 0.82 }}>{receipt.detail}</div>
                     </div>
