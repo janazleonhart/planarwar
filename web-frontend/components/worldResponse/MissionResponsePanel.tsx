@@ -1,5 +1,3 @@
-//web-frontend/components/worldResponse/MissionResponsePanel.tsx
-
 import type { Dispatch, SetStateAction } from "react";
 import type {
   ActiveMission,
@@ -26,6 +24,79 @@ import { MissionPressureMapSection } from "./MissionPressureMapSection";
 import { MissionWarningWindowsSection } from "./MissionWarningWindowsSection";
 import { WorldResponseSection } from "./WorldResponseSection";
 import { getThreatFamilyDisplayName } from "./worldResponseUi";
+
+type UnifiedRecentResult = {
+  id: string;
+  timestamp: string;
+  title: string;
+  detail: string;
+  impactSummary?: string;
+  tone: "success" | "warning" | "failure";
+  source: "opening" | "mission" | "world";
+};
+
+function normalizeUnifiedTone(value: string | undefined): UnifiedRecentResult["tone"] {
+  if (value === "failure") return "failure";
+  if (value === "warning" || value === "partial") return "warning";
+  return "success";
+}
+
+function buildUnifiedRecentResults({
+  openingActionReceipts,
+  highlightedReceipts,
+  worldConsequenceResponseReceipts,
+}: Pick<
+  MissionResponsePanelProps,
+  "openingActionReceipts" | "highlightedReceipts" | "worldConsequenceResponseReceipts"
+>): UnifiedRecentResult[] {
+  const opening: UnifiedRecentResult[] = openingActionReceipts.map((receipt) => ({
+    id: `opening_${receipt.id}`,
+    timestamp: receipt.timestamp,
+    title: receipt.title,
+    detail: receipt.detail,
+    impactSummary: receipt.impactSummary,
+    tone: normalizeUnifiedTone(receipt.outcome),
+    source: "opening",
+  }));
+
+  const mission: UnifiedRecentResult[] = highlightedReceipts.map((receipt) => ({
+    id: `mission_${receipt.id}`,
+    timestamp: receipt.createdAt,
+    title: receipt.missionTitle,
+    detail: receipt.summary,
+    impactSummary: receipt.setbacks?.[0]?.summary,
+    tone: normalizeUnifiedTone(receipt.outcome),
+    source: "mission",
+  }));
+
+  const world: UnifiedRecentResult[] = (worldConsequenceResponseReceipts?.recent ?? []).map((receipt) => ({
+    id: `world_${receipt.id}`,
+    timestamp: receipt.createdAt,
+    title: receipt.title,
+    detail: receipt.summary,
+    impactSummary:
+      [
+        receipt.metrics.pressureDelta
+          ? `pressure ${receipt.metrics.pressureDelta > 0 ? "+" : ""}${receipt.metrics.pressureDelta}`
+          : null,
+        receipt.metrics.recoveryDelta
+          ? `recovery ${receipt.metrics.recoveryDelta > 0 ? "+" : ""}${receipt.metrics.recoveryDelta}`
+          : null,
+        receipt.metrics.controlDelta
+          ? `control ${receipt.metrics.controlDelta > 0 ? "+" : ""}${receipt.metrics.controlDelta}`
+          : null,
+        receipt.metrics.threatDelta
+          ? `threat ${receipt.metrics.threatDelta > 0 ? "+" : ""}${receipt.metrics.threatDelta}`
+          : null,
+      ].filter((entry): entry is string => !!entry).join(" • ") || undefined,
+    tone: normalizeUnifiedTone(receipt.outcome),
+    source: "world",
+  }));
+
+  return [...opening, ...mission, ...world]
+    .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+    .slice(0, 5);
+}
 
 type MissionResponsePanelProps = {
   me: MeProfile;
@@ -66,7 +137,11 @@ type MissionResponsePanelProps = {
   onClearOpeningReceipts: () => void;
 };
 
-function BlackMarketStatusCard({ actions }: { actions: NonNullable<MissionResponsePanelProps["worldConsequenceActions"]> }) {
+function BlackMarketStatusCard({
+  actions,
+}: {
+  actions: NonNullable<MissionResponsePanelProps["worldConsequenceActions"]>;
+}) {
   const blackMarketActions = actions.playerActions.filter((action) => action.lane === "black_market");
   if (blackMarketActions.length === 0) return null;
 
@@ -74,10 +149,23 @@ function BlackMarketStatusCard({ actions }: { actions: NonNullable<MissionRespon
   const regionLabel = blackMarketActions.find((action) => action.sourceRegionId)?.sourceRegionId ?? null;
 
   return (
-    <div style={{ border: "1px solid #6b4d2b", borderRadius: 8, padding: 10, display: "grid", gap: 4, background: "linear-gradient(180deg, rgba(52,33,22,0.46) 0%, rgba(18,16,14,0.8) 100%)" }}>
-      <div><strong style={{ color: "#f3d29a" }}>Black market window open</strong></div>
+    <div
+      style={{
+        border: "1px solid #6b4d2b",
+        borderRadius: 8,
+        padding: 10,
+        display: "grid",
+        gap: 4,
+        background: "linear-gradient(180deg, rgba(52,33,22,0.46) 0%, rgba(18,16,14,0.8) 100%)",
+      }}
+    >
+      <div>
+        <strong style={{ color: "#f3d29a" }}>Black market window open</strong>
+      </div>
       <div style={{ fontSize: 12, opacity: 0.84 }}>
-        The shadow-economy path is currently riding on the same decision desk as the city consequence system. You can exploit, contain, or bribe patrol pressure from here without going through the builder loop.
+        The shadow-economy path is currently riding on the same decision desk as the city consequence
+        system. You can exploit, contain, or bribe patrol pressure from here without going through the
+        builder loop.
       </div>
       <div style={{ fontSize: 12, opacity: 0.76 }}>
         actions {blackMarketActions.length} • executable now {executableCount}
@@ -120,12 +208,24 @@ export function MissionResponsePanel({
   onDismissOpeningReceipt,
   onClearOpeningReceipts,
 }: MissionResponsePanelProps) {
+  const recentResults = buildUnifiedRecentResults({
+    openingActionReceipts,
+    highlightedReceipts,
+    worldConsequenceResponseReceipts,
+  });
+
   return (
     <div style={{ border: "1px solid #444", borderRadius: 8, padding: 16, display: "grid", gap: 12 }}>
       <h3 style={{ marginTop: 0, marginBottom: 0 }}>Mission Command Board</h3>
-      <div style={{ fontSize: 13, opacity: 0.82 }}>Mission offers now consume the city ↔ MUD bridge posture instead of pretending logistics are imaginary.</div>
+      <div style={{ fontSize: 13, opacity: 0.82 }}>
+        Mission offers now consume the city ↔ MUD bridge posture instead of pretending logistics are
+        imaginary.
+      </div>
       {me.cityStress ? (
-        <div style={{ fontSize: 12, opacity: 0.8 }}>City stress {me.cityStress.stage} • total {me.cityStress.total} • recovery burden {me.cityStress.recoveryBurden}</div>
+        <div style={{ fontSize: 12, opacity: 0.8 }}>
+          City stress {me.cityStress.stage} • total {me.cityStress.total} • recovery burden{" "}
+          {me.cityStress.recoveryBurden}
+        </div>
       ) : null}
 
       <MissionBoardDigest
@@ -138,12 +238,94 @@ export function MissionResponsePanel({
         economyCartelResponseState={economyCartelResponseState}
       />
 
+      {recentResults.length ? (
+        <div style={{ display: "grid", gap: 8 }}>
+          <div style={{ fontSize: 12, textTransform: "uppercase", letterSpacing: 0.6, opacity: 0.72 }}>
+            Latest field results
+          </div>
+          <div style={{ display: "grid", gap: 8 }}>
+            {recentResults.map((result, index) => {
+              const tone =
+                result.tone === "success"
+                  ? {
+                      border: "1px solid rgba(110,210,170,0.2)",
+                      background: "rgba(35,80,62,0.18)",
+                      label: "Applied",
+                    }
+                  : result.tone === "warning"
+                    ? {
+                        border: "1px solid rgba(210,180,110,0.2)",
+                        background: "rgba(90,72,30,0.18)",
+                        label: "Watch",
+                      }
+                    : {
+                        border: "1px solid rgba(210,110,110,0.2)",
+                        background: "rgba(90,38,38,0.18)",
+                        label: "Failed",
+                      };
+              const sourceLabel =
+                result.source === "opening" ? "opening" : result.source === "mission" ? "mission" : "world";
+              const isFresh = index === 0 && Date.now() - new Date(result.timestamp).getTime() < 180000;
+
+              return (
+                <div
+                  key={result.id}
+                  style={{
+                    border: tone.border,
+                    background: tone.background,
+                    borderRadius: 8,
+                    padding: 10,
+                    display: "grid",
+                    gap: 4,
+                    boxShadow: isFresh ? "0 0 0 1px rgba(255,255,255,0.08) inset" : "none",
+                  }}
+                >
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
+                    <strong>{result.title}</strong>
+                    <span style={{ fontSize: 11, opacity: 0.72, textTransform: "uppercase", letterSpacing: 0.4 }}>
+                      {tone.label}
+                    </span>
+                    <span style={{ fontSize: 11, opacity: 0.62, textTransform: "uppercase", letterSpacing: 0.4 }}>
+                      {sourceLabel}
+                    </span>
+                    {isFresh ? (
+                      <span
+                        style={{ fontSize: 11, opacity: 0.82, textTransform: "uppercase", letterSpacing: 0.4 }}
+                      >
+                        Newest
+                      </span>
+                    ) : null}
+                    <span style={{ fontSize: 11, opacity: 0.6 }}>
+                      {new Date(result.timestamp).toLocaleTimeString()}
+                    </span>
+                  </div>
+                  <div style={{ fontSize: 12, opacity: 0.82 }}>{result.detail}</div>
+                  {result.impactSummary ? (
+                    <div style={{ fontSize: 11, opacity: 0.72 }}>{result.impactSummary}</div>
+                  ) : null}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      ) : null}
+
       {me.city?.settlementOpeningOperations?.length ? (
         <div style={{ display: "grid", gap: 8 }}>
           {openingActionReceipts.length ? (
             <div style={{ display: "grid", gap: 8 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-                <div style={{ fontSize: 12, textTransform: "uppercase", letterSpacing: 0.6, opacity: 0.72 }}>Immediate receipts</div>
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  gap: 8,
+                  alignItems: "center",
+                  flexWrap: "wrap",
+                }}
+              >
+                <div style={{ fontSize: 12, textTransform: "uppercase", letterSpacing: 0.6, opacity: 0.72 }}>
+                  Immediate receipts
+                </div>
                 <button
                   type="button"
                   onClick={onClearOpeningReceipts}
@@ -162,19 +344,69 @@ export function MissionResponsePanel({
               <div style={{ display: "grid", gap: 8 }}>
                 {openingActionReceipts.map((receipt, index) => {
                   const isNewest = index === 0 && Date.now() - new Date(receipt.timestamp).getTime() < 120000;
-                  const tone = receipt.outcome === "success"
-                    ? { border: "1px solid rgba(110,210,170,0.2)", background: "rgba(35,80,62,0.18)", label: "Applied" }
-                    : receipt.outcome === "warning"
-                      ? { border: "1px solid rgba(210,180,110,0.2)", background: "rgba(90,72,30,0.18)", label: "Watch" }
-                      : { border: "1px solid rgba(210,110,110,0.2)", background: "rgba(90,38,38,0.18)", label: "Failed" };
+                  const tone =
+                    receipt.outcome === "success"
+                      ? {
+                          border: "1px solid rgba(110,210,170,0.2)",
+                          background: "rgba(35,80,62,0.18)",
+                          label: "Applied",
+                        }
+                      : receipt.outcome === "warning"
+                        ? {
+                            border: "1px solid rgba(210,180,110,0.2)",
+                            background: "rgba(90,72,30,0.18)",
+                            label: "Watch",
+                          }
+                        : {
+                            border: "1px solid rgba(210,110,110,0.2)",
+                            background: "rgba(90,38,38,0.18)",
+                            label: "Failed",
+                          };
+
                   return (
-                    <div key={receipt.id} style={{ border: tone.border, background: tone.background, borderRadius: 8, padding: 10, display: "grid", gap: 4, boxShadow: isNewest ? "0 0 0 1px rgba(255,255,255,0.08) inset" : "none" }}>
-                      <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center", justifyContent: "space-between" }}>
+                    <div
+                      key={receipt.id}
+                      style={{
+                        border: tone.border,
+                        background: tone.background,
+                        borderRadius: 8,
+                        padding: 10,
+                        display: "grid",
+                        gap: 4,
+                        boxShadow: isNewest ? "0 0 0 1px rgba(255,255,255,0.08) inset" : "none",
+                      }}
+                    >
+                      <div
+                        style={{
+                          display: "flex",
+                          flexWrap: "wrap",
+                          gap: 8,
+                          alignItems: "center",
+                          justifyContent: "space-between",
+                        }}
+                      >
                         <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
                           <strong>{receipt.title}</strong>
-                          <span style={{ fontSize: 11, opacity: 0.72, textTransform: "uppercase", letterSpacing: 0.4 }}>{tone.label}</span>
-                          {isNewest ? <span style={{ fontSize: 11, opacity: 0.82, textTransform: "uppercase", letterSpacing: 0.4 }}>Newest</span> : null}
-                          <span style={{ fontSize: 11, opacity: 0.6 }}>{new Date(receipt.timestamp).toLocaleTimeString()}</span>
+                          <span
+                            style={{ fontSize: 11, opacity: 0.72, textTransform: "uppercase", letterSpacing: 0.4 }}
+                          >
+                            {tone.label}
+                          </span>
+                          {isNewest ? (
+                            <span
+                              style={{
+                                fontSize: 11,
+                                opacity: 0.82,
+                                textTransform: "uppercase",
+                                letterSpacing: 0.4,
+                              }}
+                            >
+                              Newest
+                            </span>
+                          ) : null}
+                          <span style={{ fontSize: 11, opacity: 0.6 }}>
+                            {new Date(receipt.timestamp).toLocaleTimeString()}
+                          </span>
                         </div>
                         <button
                           type="button"
@@ -192,22 +424,41 @@ export function MissionResponsePanel({
                         </button>
                       </div>
                       <div style={{ fontSize: 12, opacity: 0.82 }}>{receipt.detail}</div>
-                      {receipt.impactSummary ? <div style={{ fontSize: 11, opacity: 0.72 }}>{receipt.impactSummary}</div> : null}
+                      {receipt.impactSummary ? (
+                        <div style={{ fontSize: 11, opacity: 0.72 }}>{receipt.impactSummary}</div>
+                      ) : null}
                     </div>
                   );
                 })}
               </div>
             </div>
           ) : null}
-          <div style={{ fontSize: 12, textTransform: "uppercase", letterSpacing: 0.6, opacity: 0.72 }}>Opening strike order</div>
+
+          <div style={{ fontSize: 12, textTransform: "uppercase", letterSpacing: 0.6, opacity: 0.72 }}>
+            Opening strike order
+          </div>
           <div style={{ display: "grid", gap: 10 }}>
             {me.city.settlementOpeningOperations.map((operation) => {
               const actionable = operation.readiness !== "blocked";
-              const readinessTone = operation.readiness === "ready_now"
-                ? { border: "1px solid rgba(110,210,170,0.2)", background: "rgba(35,80,62,0.2)", label: "Ready now" }
-                : operation.readiness === "prepare_soon"
-                  ? { border: "1px solid rgba(210,180,110,0.2)", background: "rgba(90,72,30,0.18)", label: "Prepare soon" }
-                  : { border: "1px solid rgba(210,110,110,0.2)", background: "rgba(90,38,38,0.18)", label: "Blocked" };
+              const readinessTone =
+                operation.readiness === "ready_now"
+                  ? {
+                      border: "1px solid rgba(110,210,170,0.2)",
+                      background: "rgba(35,80,62,0.2)",
+                      label: "Ready now",
+                    }
+                  : operation.readiness === "prepare_soon"
+                    ? {
+                        border: "1px solid rgba(210,180,110,0.2)",
+                        background: "rgba(90,72,30,0.18)",
+                        label: "Prepare soon",
+                      }
+                    : {
+                        border: "1px solid rgba(210,110,110,0.2)",
+                        background: "rgba(90,38,38,0.18)",
+                        label: "Blocked",
+                      };
+
               return (
                 <div
                   key={operation.id}
@@ -227,9 +478,15 @@ export function MissionResponsePanel({
                     </span>
                   </div>
                   <div style={{ fontSize: 12, opacity: 0.84 }}>{operation.summary}</div>
-                  <div style={{ fontSize: 12, opacity: 0.76 }}><strong>Why now:</strong> {operation.whyNow}</div>
-                  <div style={{ fontSize: 12, opacity: 0.76 }}><strong>Payoff:</strong> {operation.payoff}</div>
-                  <div style={{ fontSize: 12, opacity: 0.72 }}><strong>Risk:</strong> {operation.risk}</div>
+                  <div style={{ fontSize: 12, opacity: 0.76 }}>
+                    <strong>Why now:</strong> {operation.whyNow}
+                  </div>
+                  <div style={{ fontSize: 12, opacity: 0.76 }}>
+                    <strong>Payoff:</strong> {operation.payoff}
+                  </div>
+                  <div style={{ fontSize: 12, opacity: 0.72 }}>
+                    <strong>Risk:</strong> {operation.risk}
+                  </div>
                   <div>
                     <button
                       type="button"
@@ -256,21 +513,30 @@ export function MissionResponsePanel({
 
       {missionBoard?.bridgeConsumers?.missionBoard ? (
         <div style={{ border: "1px solid #555", borderRadius: 8, padding: 10, display: "grid", gap: 4 }}>
-          <div><strong>Support lane:</strong> {missionBoard.bridgeConsumers.missionBoard.state} • severity {missionBoard.bridgeConsumers.missionBoard.severity}</div>
+          <div>
+            <strong>Support lane:</strong> {missionBoard.bridgeConsumers.missionBoard.state} • severity{" "}
+            {missionBoard.bridgeConsumers.missionBoard.severity}
+          </div>
           <div style={{ fontSize: 12, opacity: 0.84 }}>{missionBoard.bridgeConsumers.missionBoard.headline}</div>
           <div style={{ fontSize: 12, opacity: 0.74 }}>{missionBoard.bridgeConsumers.missionBoard.detail}</div>
-          <div style={{ fontSize: 12, opacity: 0.72 }}>Recommended action: {missionBoard.bridgeConsumers.missionBoard.recommendedAction}</div>
+          <div style={{ fontSize: 12, opacity: 0.72 }}>
+            Recommended action: {missionBoard.bridgeConsumers.missionBoard.recommendedAction}
+          </div>
         </div>
       ) : null}
 
       <div style={{ display: "grid", gap: 8 }}>
-        <div style={{ fontSize: 12, textTransform: "uppercase", letterSpacing: 0.6, opacity: 0.72 }}>Incoming pressure</div>
+        <div style={{ fontSize: 12, textTransform: "uppercase", letterSpacing: 0.6, opacity: 0.72 }}>
+          Incoming pressure
+        </div>
         <MissionWarningWindowsSection highlightedWarnings={highlightedWarnings} />
         <MissionPressureMapSection highlightedPressure={highlightedPressure} />
       </div>
 
       <div style={{ display: "grid", gap: 8 }}>
-        <div style={{ fontSize: 12, textTransform: "uppercase", letterSpacing: 0.6, opacity: 0.72 }}>Strategic status</div>
+        <div style={{ fontSize: 12, textTransform: "uppercase", letterSpacing: 0.6, opacity: 0.72 }}>
+          Strategic status
+        </div>
         <CityAlphaPanels
           cityAlphaStatus={cityAlphaStatus}
           cityAlphaScopeLock={cityAlphaScopeLock}
@@ -281,7 +547,9 @@ export function MissionResponsePanel({
       </div>
 
       <div style={{ display: "grid", gap: 8 }}>
-        <div style={{ fontSize: 12, textTransform: "uppercase", letterSpacing: 0.6, opacity: 0.72 }}>Decision desk</div>
+        <div style={{ fontSize: 12, textTransform: "uppercase", letterSpacing: 0.6, opacity: 0.72 }}>
+          Decision desk
+        </div>
         <MissionOffersSection
           me={me}
           missionOffers={missionOffers}
@@ -303,12 +571,16 @@ export function MissionResponsePanel({
       </div>
 
       <div style={{ display: "grid", gap: 8 }}>
-        <div style={{ fontSize: 12, textTransform: "uppercase", letterSpacing: 0.6, opacity: 0.72 }}>Operational history</div>
+        <div style={{ fontSize: 12, textTransform: "uppercase", letterSpacing: 0.6, opacity: 0.72 }}>
+          Operational history
+        </div>
         <MissionDefenseReceiptsSection highlightedReceipts={highlightedReceipts} />
       </div>
 
       <div style={{ display: "grid", gap: 8 }}>
-        <div style={{ fontSize: 12, textTransform: "uppercase", letterSpacing: 0.6, opacity: 0.72 }}>World spillover</div>
+        <div style={{ fontSize: 12, textTransform: "uppercase", letterSpacing: 0.6, opacity: 0.72 }}>
+          World spillover
+        </div>
         {worldConsequenceActions ? <BlackMarketStatusCard actions={worldConsequenceActions} /> : null}
         <WorldResponseSection
           worldConsequences={worldConsequences ?? []}
