@@ -9,6 +9,8 @@ import {
   startMissionForPlayer,
 } from "../gameState";
 
+import {__testOnlyMissionOfferMerge} from "../gameState/gameStateMissions"
+
 function withRandomSequence<T>(values: number[], fn: () => T): T {
   const original = Math.random;
   let index = 0;
@@ -331,4 +333,81 @@ test("failed containment follow-ups spike city burden and open a sharper escalat
   assert.ok(nextFollowup, "expected a new escalation branch to open");
   assert.match(nextFollowup!.title, /Escalation/i);
   assert.ok(Number(nextFollowup!.targetingPressure ?? 0) >= 60, "expected escalation branch to advertise sharper pressure");
+});
+
+
+test("follow-up board merge keeps the sharper branch and surfaces it first when the same chain key reopens", () => {
+  const regionId = "grayhaven" as any;
+  const existing = [
+    {
+      id: "followup_seed_older",
+      kind: "hero",
+      difficulty: "medium",
+      title: "Contain the Fallout in grayhaven",
+      description: "Older containment branch.",
+      regionId,
+      recommendedPower: 96,
+      expectedRewards: { influence: 10 },
+      risk: { casualtyRisk: "moderate" },
+      responseTags: ["command", "recovery"],
+      threatFamily: "mercs",
+      targetingPressure: 58,
+      followupSourceMissionId: "mission_reopen_seed",
+      followupChainKind: "contain_fallout",
+      followupGeneratedByOutcome: "failure",
+    },
+    {
+      id: "routine_low_pressure",
+      kind: "hero",
+      difficulty: "low",
+      title: "Routine Patrol",
+      description: "Background civic cleanup.",
+      regionId,
+      recommendedPower: 44,
+      expectedRewards: { influence: 4 },
+      risk: { casualtyRisk: "low" },
+      responseTags: ["recon"],
+      threatFamily: "mercs",
+      targetingPressure: 14,
+    },
+  ] as any;
+
+  const mergedBoard = __testOnlyMissionOfferMerge(existing, [
+    {
+      id: "followup_seed_newer",
+      kind: "hero",
+      difficulty: "high",
+      title: "Contain the Fallout in grayhaven — Escalation 2",
+      description: "Newer and sharper containment branch.",
+      regionId,
+      recommendedPower: 142,
+      expectedRewards: { influence: 12, knowledge: 8 },
+      risk: { casualtyRisk: "moderate", heroInjuryRisk: "moderate" },
+      responseTags: ["command", "recovery", "recon"],
+      threatFamily: "mercs",
+      targetingPressure: 82,
+      followupSourceMissionId: "mission_reopen_seed",
+      followupChainKind: "contain_fallout",
+      followupGeneratedByOutcome: "failure",
+    },
+    {
+      id: "brand_new_low_signal",
+      kind: "hero",
+      difficulty: "low",
+      title: "Minor Lead",
+      description: "A low-pressure unrelated lead.",
+      regionId,
+      recommendedPower: 38,
+      expectedRewards: { knowledge: 3 },
+      risk: { casualtyRisk: "low" },
+      responseTags: ["recon"],
+      threatFamily: "mercs",
+      targetingPressure: 12,
+    },
+  ] as any);
+
+  const falloutOffers = mergedBoard.filter((offer) => offer.followupSourceMissionId === "mission_reopen_seed" && offer.followupChainKind === "contain_fallout");
+  assert.equal(falloutOffers.length, 1, "expected duplicate chain branches to collapse to the sharper live offer");
+  assert.equal(falloutOffers[0]!.id, "followup_seed_newer");
+  assert.equal(mergedBoard[0]!.id, "followup_seed_newer", "expected the sharper branch to surface ahead of low-pressure board noise");
 });

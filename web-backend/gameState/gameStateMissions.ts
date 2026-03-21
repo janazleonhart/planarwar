@@ -695,15 +695,50 @@ function clampMissionRecommendedPower(value: number): number {
   return Math.max(28, Math.round(value));
 }
 
+function missionOfferDedupKey(offer: MissionOffer): string {
+  if (offer.contractKind) return `contract:${offer.contractKind}:${offer.regionId}`;
+  if (offer.followupSourceMissionId && offer.followupChainKind) {
+    return `followup:${offer.followupSourceMissionId}:${offer.followupChainKind}:${offer.regionId}:${offer.kind}`;
+  }
+  return `offer:${offer.id}`;
+}
+
+function missionOfferUrgencyScore(offer: MissionOffer): number {
+  const pressure = Number(offer.targetingPressure ?? 0);
+  const power = Math.round(Number(offer.recommendedPower ?? 0) / 6);
+  const difficulty = offer.difficulty === "extreme" ? 18 : offer.difficulty === "high" ? 12 : offer.difficulty === "medium" ? 6 : 0;
+  const chain = offer.followupChainKind
+    ? offer.followupGeneratedByOutcome === "failure"
+      ? 28
+      : offer.followupGeneratedByOutcome === "partial"
+        ? 20
+        : 16
+    : 0;
+  const contract = offer.contractKind ? 14 : 0;
+  return pressure + power + difficulty + chain + contract;
+}
+
 function mergeMissionOffers(existing: MissionOffer[] | undefined, injected: MissionOffer[]): MissionOffer[] {
   const merged = new Map<string, MissionOffer>();
-  for (const offer of existing ?? []) {
-    merged.set(offer.id, offer);
+  for (const offer of [...(existing ?? []), ...injected]) {
+    const key = missionOfferDedupKey(offer);
+    const prior = merged.get(key);
+    if (!prior) {
+      merged.set(key, offer);
+      continue;
+    }
+
+    const replace = missionOfferUrgencyScore(offer) > missionOfferUrgencyScore(prior)
+      || (missionOfferUrgencyScore(offer) === missionOfferUrgencyScore(prior)
+        && Number(offer.recommendedPower ?? 0) >= Number(prior.recommendedPower ?? 0));
+    if (replace) {
+      merged.set(key, offer);
+    }
   }
-  for (const offer of injected) {
-    merged.set(offer.id, offer);
-  }
-  return Array.from(merged.values()).slice(0, 10);
+
+  return Array.from(merged.values())
+    .sort((a, b) => missionOfferUrgencyScore(b) - missionOfferUrgencyScore(a) || Number(b.recommendedPower ?? 0) - Number(a.recommendedPower ?? 0))
+    .slice(0, 10);
 }
 
 function bumpDifficulty(difficulty: MissionDifficulty, delta: -1 | 0 | 1): MissionDifficulty {
@@ -1936,6 +1971,8 @@ function applyFollowupChainEffects(ps: PlayerState, active: ActiveMission, outco
     summary,
   };
 }
+
+export const __testOnlyMissionOfferMerge = mergeMissionOffers;
 
 export function completeMissionForPlayer(
   deps: MissionStateDeps,
