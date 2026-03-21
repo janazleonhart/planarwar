@@ -73,7 +73,7 @@ test("black market lane bootstrap applies crooked founding posture", () => {
 
 
 
-test("black market lane keeps a passive shadow surplus after founding", () => {
+test("settlement lanes apply distinct passive production after founding", () => {
   const civic = createInitialPlayerState("civic", seedWorld(), defaultPolicies);
   const shadow = createInitialPlayerState("shadow", seedWorld(), defaultPolicies);
 
@@ -82,8 +82,12 @@ test("black market lane keeps a passive shadow surplus after founding", () => {
   applySettlementLaneBootstrap(shadow, "black_market");
   const shadowProduction = getCityProductionPerTick(shadow.city);
 
-  assert.equal(civicProduction.wealth ?? 0, 1);
-  assert.equal(civicProduction.knowledge ?? 0, 1);
+  // Assert the lane-driven delta, not a hardcoded seeded baseline.
+  assert.equal(civic.city.settlementLane, "city");
+  assert.equal(shadow.city.settlementLane, "black_market");
+
+  assert.equal(shadowProduction.food ?? 0, (civicProduction.food ?? 0) - 1);
+  assert.equal(shadowProduction.unity ?? 0, (civicProduction.unity ?? 0) - 1);
   assert.equal(shadowProduction.wealth ?? 0, (civicProduction.wealth ?? 0) + 2);
   assert.equal(shadowProduction.knowledge ?? 0, (civicProduction.knowledge ?? 0) + 1);
 });
@@ -95,6 +99,7 @@ test("settlement lane profile describes city and black-market starts distinctly"
   assert.equal(civic.id, "city");
   assert.equal(shadow.id, "black_market");
   assert.ok(civic.strengths.some((entry) => /standard civic baseline/i.test(entry)));
+  assert.ok(civic.strengths.some((entry) => /passive civic surplus of food and unity/i.test(entry)));
   assert.ok(shadow.strengths.some((entry) => /extra wealth, materials, and knowledge/i.test(entry)));
   assert.ok(shadow.strengths.some((entry) => /passive shadow surplus/i.test(entry)));
   assert.ok(shadow.liabilities.some((entry) => /strained early posture/i.test(entry)));
@@ -109,12 +114,24 @@ test("city summary exposes settlement lane production breakdown", () => {
   const civicSummary = buildCitySummary(civic);
   const shadowSummary = buildCitySummary(shadow);
 
+  assert.equal(civicSummary.productionBreakdown.settlementLane.foodPerTick, 1);
+  assert.equal(civicSummary.productionBreakdown.settlementLane.unityPerTick, 1);
   assert.equal(civicSummary.productionBreakdown.settlementLane.wealthPerTick, 0);
   assert.equal(civicSummary.productionBreakdown.settlementLane.knowledgePerTick, 0);
 
+  assert.equal(shadowSummary.productionBreakdown.settlementLane.foodPerTick, 0);
+  assert.equal(shadowSummary.productionBreakdown.settlementLane.unityPerTick, 0);
   assert.equal(shadowSummary.productionBreakdown.settlementLane.wealthPerTick, 2);
   assert.equal(shadowSummary.productionBreakdown.settlementLane.knowledgePerTick, 1);
 
+  assert.equal(
+    civicSummary.production.foodPerTick,
+    civicSummary.productionBreakdown.buildings.foodPerTick + civicSummary.productionBreakdown.settlementLane.foodPerTick
+  );
+  assert.equal(
+    civicSummary.production.unityPerTick,
+    civicSummary.productionBreakdown.buildings.unityPerTick + civicSummary.productionBreakdown.settlementLane.unityPerTick
+  );
   assert.equal(
     shadowSummary.production.wealthPerTick,
     shadowSummary.productionBreakdown.buildings.wealthPerTick + shadowSummary.productionBreakdown.settlementLane.wealthPerTick
@@ -137,5 +154,6 @@ test("city summary exposes a canonical settlement lane founding receipt", () => 
   assert.match(civicSummary.settlementLaneReceipt.title, /city founding posture/i);
   assert.match(shadowSummary.settlementLaneReceipt.title, /black market founding posture/i);
   assert.ok(civicSummary.settlementLaneReceipt.effects.some((entry) => /standard civic baseline/i.test(entry)));
+  assert.ok(civicSummary.settlementLaneReceipt.effects.some((entry) => /passive civic surplus of food and unity/i.test(entry)));
   assert.ok(shadowSummary.settlementLaneReceipt.effects.some((entry) => /extra wealth, materials, and knowledge/i.test(entry)));
 });

@@ -47,6 +47,7 @@ export function buildSettlementLaneFoundingReceipt(lane: "city" | "black_market"
     summary: "This settlement opened on the civic baseline: steadier legitimacy, cleaner administration, and no native shadow lane.",
     effects: [
       "Starts from the standard civic baseline.",
+      "Generates a passive civic surplus of food and unity each tick.",
       "Treats black-market pressure as outside pressure instead of a native lane.",
       "Built for orderly public growth rather than deniable leverage.",
     ],
@@ -81,6 +82,7 @@ export function buildSettlementLaneProfile(lane: "city" | "black_market"): Settl
     posture: "steady growth, cleaner legitimacy, slower shadow upside",
     strengths: [
       "Starts from the standard civic baseline",
+      "Generates a passive civic surplus of food and unity each tick",
       "Built for overt administration, public infrastructure, and stable growth",
       "Keeps illicit pressure as outside pressure instead of a native lane",
     ],

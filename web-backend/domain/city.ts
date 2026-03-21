@@ -87,7 +87,10 @@ export function getSettlementLaneProductionModifier(city: City): BuildingProduct
     };
   }
 
-  return {};
+  return {
+    food: 1,
+    unity: 1,
+  };
 }
 
 export function getCityProductionPerTick(city: City): BuildingProduction {
