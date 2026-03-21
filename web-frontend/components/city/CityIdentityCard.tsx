@@ -168,6 +168,32 @@ export function CityIdentityCard({ me, cardStyle }: CityIdentityCardProps) {
                   ))}
                 </div>
               ) : null}
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                <span
+                  style={{
+                    display: "inline-block",
+                    padding: "3px 8px",
+                    borderRadius: 999,
+                    fontSize: 11,
+                    background: "rgba(255,255,255,0.08)",
+                    border: "1px solid rgba(255,255,255,0.14)",
+                  }}
+                >
+                  Opening: {city.settlementLaneProfile.responseFocus.recommendedOpening}
+                </span>
+                <span
+                  style={{
+                    display: "inline-block",
+                    padding: "3px 8px",
+                    borderRadius: 999,
+                    fontSize: 11,
+                    background: "rgba(255,255,255,0.08)",
+                    border: "1px solid rgba(255,255,255,0.14)",
+                  }}
+                >
+                  Tone: {city.settlementLaneProfile.responseFocus.advisoryTone}
+                </span>
+              </div>
             </div>
 
             <div
