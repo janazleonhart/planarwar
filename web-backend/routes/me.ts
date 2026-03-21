@@ -19,6 +19,7 @@ export type SettlementLaneResponseFocus = {
   preferredActionLanes: string[];
   advisoryTone: string;
   recommendedOpening: string;
+  openingChecklist: string[];
 };
 
 export type SettlementLaneProfile = {
@@ -157,6 +158,11 @@ export function buildSettlementLaneProfile(lane: "city" | "black_market"): Settl
         preferredActionLanes: getSettlementLanePreferredActionOrder("black_market"),
         advisoryTone: "shadow-pressure management",
         recommendedOpening: "Secure illicit throughput and cool cartel heat before public strain turns the shadow lane into a trap.",
+        openingChecklist: [
+          "Secure wealth and knowledge throughput before strain compounds.",
+          "Cool cartel heat early so pressure stays transactional instead of coercive.",
+          "Do not let public instability trap the shadow lane before it pays for itself.",
+        ],
       },
     };
   }
@@ -181,6 +187,11 @@ export function buildSettlementLaneProfile(lane: "city" | "black_market"): Settl
       preferredActionLanes: getSettlementLanePreferredActionOrder("city"),
       advisoryTone: "civic stabilization",
       recommendedOpening: "Stabilize supply, logistics, and public order before chasing shadow upside.",
+      openingChecklist: [
+        "Stabilize food and unity generation before taking on optional strain.",
+        "Keep logistics and public order steady so early setbacks do not cascade.",
+        "Treat black-market pressure as an external risk until the civic core is secure.",
+      ],
     },
   };
 }

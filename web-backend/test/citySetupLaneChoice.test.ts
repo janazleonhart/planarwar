@@ -115,6 +115,19 @@ test("settlement lane profile describes city and black-market starts distinctly"
 });
 
 
+
+
+test("settlement lane response focus exposes actionable opening checklists", () => {
+  const civic = buildSettlementLaneProfile("city");
+  const shadow = buildSettlementLaneProfile("black_market");
+
+  assert.equal(civic.responseFocus.openingChecklist.length, 3);
+  assert.equal(shadow.responseFocus.openingChecklist.length, 3);
+  assert.match(civic.responseFocus.openingChecklist[0] ?? "", /food and unity generation/i);
+  assert.match(civic.responseFocus.openingChecklist[1] ?? "", /logistics and public order/i);
+  assert.match(shadow.responseFocus.openingChecklist[0] ?? "", /wealth and knowledge throughput/i);
+  assert.match(shadow.responseFocus.openingChecklist[1] ?? "", /cartel heat/i);
+});
 test("city summary exposes settlement lane production breakdown", () => {
   const civic = createInitialPlayerState("lane-civic", seedWorld(), defaultPolicies);
   const shadow = createInitialPlayerState("lane-shadow", seedWorld(), defaultPolicies);

@@ -59,6 +59,7 @@ export interface SettlementLaneResponseFocus {
   preferredActionLanes: string[];
   advisoryTone: string;
   recommendedOpening: string;
+  openingChecklist: string[];
 }
 
 export interface SettlementLaneProfile {
