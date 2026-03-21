@@ -66,6 +66,24 @@ type CitySetupChoiceDetails = {
   };
 };
 
+
+const SETTLEMENT_LANE_TONES: Record<"city" | "black_market", { cardBg: string; activeBg: string; border: string; chipBg: string; chipText: string; }> = {
+  city: {
+    cardBg: "#101716",
+    activeBg: "#14211f",
+    border: "#4d7f74",
+    chipBg: "#17312c",
+    chipText: "#bfe8dc",
+  },
+  black_market: {
+    cardBg: "#181112",
+    activeBg: "#241517",
+    border: "#8b5458",
+    chipBg: "#3a1d20",
+    chipText: "#ffd7db",
+  },
+};
+
 const DEFAULT_CITY_SETUP_CHOICES: CitySetupChoiceDetails[] = [
   {
     id: "city",
@@ -123,6 +141,7 @@ export function CityCorePanel({
                 <div style={{ display: "grid", gap: 8, gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))" }}>
                   {citySetupChoices.map((choice) => {
                     const active = citySetupLane === choice.id;
+                    const tone = SETTLEMENT_LANE_TONES[choice.id];
                     return (
                       <button
                         key={choice.id}
@@ -132,8 +151,9 @@ export function CityCorePanel({
                           textAlign: "left",
                           padding: "10px 12px",
                           borderRadius: 10,
-                          border: active ? "2px solid #777" : "1px solid #666",
-                          background: active ? "#161616" : "#111",
+                          border: `1px solid ${tone.border}`,
+                          boxShadow: active ? `inset 0 0 0 1px ${tone.border}` : "none",
+                          background: active ? tone.activeBg : tone.cardBg,
                           color: "#eee",
                           cursor: disabled ? "not-allowed" : "pointer",
                           opacity: disabled ? 0.7 : 1,
@@ -142,10 +162,26 @@ export function CityCorePanel({
                         <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center", marginBottom: 4 }}>
                           <div style={{ fontWeight: 700 }}>{choice.label}</div>
                           {choice.posture ? (
-                            <span style={{ fontSize: 11, opacity: 0.75 }}>{choice.posture}</span>
+                            <span style={{ fontSize: 11, opacity: 0.82, textTransform: "capitalize" }}>{choice.posture}</span>
                           ) : null}
                         </div>
                         <div style={{ fontSize: 12, opacity: 0.82 }}>{choice.summary}</div>
+                        {choice.responseFocus?.recommendedOpening ? (
+                          <div style={{ marginTop: 8 }}>
+                            <span
+                              style={{
+                                display: "inline-block",
+                                padding: "3px 8px",
+                                borderRadius: 999,
+                                fontSize: 11,
+                                background: tone.chipBg,
+                                color: tone.chipText,
+                              }}
+                            >
+                              {choice.responseFocus.recommendedOpening}
+                            </span>
+                          </div>
+                        ) : null}
                         {choice.preview ? (
                           <div style={{ marginTop: 8, display: "grid", gap: 4, fontSize: 11, opacity: 0.78 }}>
                             <div>
