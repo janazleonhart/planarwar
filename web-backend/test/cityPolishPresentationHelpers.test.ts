@@ -59,6 +59,11 @@ function makeCity(): CitySummary {
         preferredActionLanes: ["economy", "regional", "faction", "observability", "cartel", "black_market"],
         advisoryTone: "stabilize supply lanes before scarcity hardens",
         recommendedOpening: "Favor recovery, logistics, and public order before chasing opportunistic shadow gains.",
+        openingChecklist: [
+          "Stabilize food and unity generation before taking on optional strain.",
+          "Keep logistics and public order steady so early setbacks do not cascade.",
+          "Treat black-market pressure as an external risk until the civic core is secure.",
+        ],
       },
     },
     settlementLaneReceipt: {
