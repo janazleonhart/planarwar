@@ -14,6 +14,54 @@ import { resolvePlayerAccess, resolveViewer, suggestCityName, withPlayerAccessMu
 
 const router = Router();
 
+export type SettlementLaneProfile = {
+  id: "city" | "black_market";
+  label: string;
+  summary: string;
+  posture: string;
+  strengths: string[];
+  liabilities: string[];
+};
+
+export function buildSettlementLaneProfile(lane: "city" | "black_market"): SettlementLaneProfile {
+  if (lane === "black_market") {
+    return {
+      id: "black_market",
+      label: "Black Market",
+      summary: "Shadow-rooted settlement with deniable leverage, illicit openings, and a riskier opening posture.",
+      posture: "fast profit, weaker legitimacy, hotter starting pressure",
+      strengths: [
+        "Starts with extra wealth, materials, and knowledge",
+        "Can act directly on black-market world consequence windows",
+        "Built for deniable leverage instead of orderly civic growth",
+      ],
+      liabilities: [
+        "Opens with lower security, stability, and civic unity",
+        "Carries a strained early posture instead of a clean civic start",
+        "Shadow gains are stronger, but legitimacy and trust cost more",
+      ],
+    };
+  }
+
+  return {
+    id: "city",
+    label: "City",
+    summary: "Orderly civic settlement with public desks, visible administration, and steadier formal development.",
+    posture: "steady growth, cleaner legitimacy, slower shadow upside",
+    strengths: [
+      "Starts from the standard civic baseline",
+      "Built for overt administration, public infrastructure, and stable growth",
+      "Keeps illicit pressure as outside pressure instead of a native lane",
+    ],
+    liabilities: [
+      "Shadow-economy openings stay indirect unless you later pivot design",
+      "Less front-loaded dirty profit than a black-market start",
+      "Relies more on formal growth than deniable leverage",
+    ],
+  };
+}
+
+
 function emptyResources() {
   return { food: 0, materials: 0, wealth: 0, mana: 0, knowledge: 0, unity: 0 };
 }
@@ -26,6 +74,7 @@ function buildCitySummary(ps: PlayerState) {
     shardId: ps.city.shardId,
     regionId: ps.city.regionId,
     settlementLane: ps.city.settlementLane ?? "city",
+    settlementLaneProfile: buildSettlementLaneProfile(ps.city.settlementLane === "black_market" ? "black_market" : "city"),
     tier: ps.city.tier,
     maxBuildingSlots: ps.city.maxBuildingSlots,
     stats: ps.city.stats,
@@ -58,8 +107,8 @@ function buildMePayload(viewer: Awaited<ReturnType<typeof resolveViewer>>, ps: P
       canCreateCity: viewer.isAuthenticated,
       suggestedCityName: viewer.isAuthenticated ? suggestCityName(viewer.username) : undefined,
       citySetupChoices: viewer.isAuthenticated ? [
-        { id: "city", label: "City", summary: "Orderly civic growth with open administration, public desks, and formal development lanes." },
-        { id: "black_market", label: "Black Market", summary: "Shadow-city start with deniable leverage, illicit opportunity, and a darker lane identity." },
+        buildSettlementLaneProfile("city"),
+        buildSettlementLaneProfile("black_market"),
       ] : [],
       resources: emptyResources(),
       policies: { ...defaultPolicies },

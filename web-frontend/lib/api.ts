@@ -960,6 +960,9 @@ export type CitySetupChoice = {
   id: "city" | "black_market";
   label: string;
   summary: string;
+  posture: string;
+  strengths: string[];
+  liabilities: string[];
 };
 
 export interface MeProfile {

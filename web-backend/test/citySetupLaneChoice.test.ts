@@ -8,6 +8,7 @@ import { defaultPolicies } from "../gameState";
 import { seedWorld } from "../domain/world";
 import { buildCityRuntimeSnapshot, applyCityRuntimeSnapshot } from "../gameState/cityRuntimeSnapshot";
 import { applySettlementLaneBootstrap, normalizeSettlementLaneChoice } from "../routes/playerCityAccess";
+import { buildSettlementLaneProfile } from "../routes/me";
 
 test("city setup lane choice defaults safely and accepts black market", () => {
   assert.equal(normalizeSettlementLaneChoice(undefined), "city");
@@ -66,4 +67,16 @@ test("black market lane bootstrap applies crooked founding posture", () => {
 
   assert.equal(ps.eventLog.length, baseline.eventCount + 1);
   assert.equal(ps.eventLog.at(-1)?.kind, "city_stress_change");
+});
+
+
+test("settlement lane profile describes city and black-market starts distinctly", () => {
+  const civic = buildSettlementLaneProfile("city");
+  const shadow = buildSettlementLaneProfile("black_market");
+
+  assert.equal(civic.id, "city");
+  assert.equal(shadow.id, "black_market");
+  assert.ok(civic.strengths.some((entry) => /standard civic baseline/i.test(entry)));
+  assert.ok(shadow.strengths.some((entry) => /extra wealth, materials, and knowledge/i.test(entry)));
+  assert.ok(shadow.liabilities.some((entry) => /strained early posture/i.test(entry)));
 });

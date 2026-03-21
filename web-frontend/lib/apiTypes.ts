@@ -36,12 +36,22 @@ export interface CityProduction {
   unityPerTick: number;
 }
 
+export interface SettlementLaneProfile {
+  id: "city" | "black_market";
+  label: string;
+  summary: string;
+  posture: string;
+  strengths: string[];
+  liabilities: string[];
+}
+
 export interface CitySummary {
   id: string;
   name: string;
   shardId: string;
   regionId: string;
   settlementLane: "city" | "black_market";
+  settlementLaneProfile: SettlementLaneProfile;
   tier: number;
   maxBuildingSlots: number;
   stats: CityStats;
