@@ -59,6 +59,35 @@ function isStaleRecentResult(timestamp: string, staleAfterMs: number): boolean {
   return Date.now() - new Date(timestamp).getTime() >= staleAfterMs;
 }
 
+
+function getOperationAvailability(operation: SettlementOpeningOperation, disabled: boolean): {
+  label: string;
+  detail: string;
+} {
+  if (disabled) {
+    return {
+      label: "Board busy",
+      detail: "Another command is still resolving on the board. Wait for it to finish before issuing this step.",
+    };
+  }
+  if (operation.readiness === "ready_now") {
+    return {
+      label: "Ready now",
+      detail: "This step can be executed immediately.",
+    };
+  }
+  if (operation.readiness === "prepare_soon") {
+    return {
+      label: "Needs setup",
+      detail: operation.whyNow,
+    };
+  }
+  return {
+    label: "Blocked",
+    detail: operation.whyNow,
+  };
+}
+
 function getLatestOpeningReceiptByActionKey(receipts: OpeningActionReceipt[]): Map<string, OpeningActionReceipt> {
   const latest = new Map<string, OpeningActionReceipt>();
   for (const receipt of receipts) {
@@ -474,6 +503,7 @@ export function MissionResponsePanel({
           <div style={{ display: "grid", gap: 10 }}>
             {me.city.settlementOpeningOperations.map((operation) => {
               const actionable = operation.readiness !== "blocked";
+              const availability = getOperationAvailability(operation, disabled);
               const latestReceipt = latestOpeningReceiptByActionKey.get(operation.id);
               const readinessTone =
                 operation.readiness === "ready_now"
@@ -550,9 +580,11 @@ export function MissionResponsePanel({
                     </div>
                     );
                   })() : null}
-                  <div>
+                  <div style={{ display: "grid", gap: 6 }}>
                     <button
                       type="button"
+                      title={availability.detail}
+                      aria-label={`${operation.ctaLabel} — ${availability.label}`}
                       disabled={disabled || !actionable}
                       onClick={() => void handleExecuteOpeningOperation(operation)}
                       style={{
@@ -566,6 +598,9 @@ export function MissionResponsePanel({
                     >
                       {operation.ctaLabel}
                     </button>
+                    <div style={{ fontSize: 11, opacity: 0.66 }}>
+                      <strong>{availability.label}:</strong> {availability.detail}
+                    </div>
                   </div>
                 </div>
               );
