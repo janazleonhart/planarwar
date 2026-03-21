@@ -209,41 +209,28 @@ export class PostgresAuctionService implements AuctionService {
     shardId: string;
     sellerCharId: string;
   }): Promise<number> {
-    const sumRes = await db.query(
+    const res = await db.query(
       `
-      SELECT SUM(proceeds_gold) AS sum
-      FROM auctions
-      WHERE shard_id = $1
-        AND seller_char_id = $2
-        AND status = 'sold'
-        AND proceeds_gold IS NOT NULL
-        AND proceeds_claimed = false
+      WITH claimed AS (
+        UPDATE auctions
+        SET proceeds_claimed = true
+        WHERE shard_id = $1
+          AND seller_char_id = $2
+          AND status = 'sold'
+          AND proceeds_gold IS NOT NULL
+          AND proceeds_claimed = false
+        RETURNING proceeds_gold
+      )
+      SELECT COALESCE(SUM(proceeds_gold), 0) AS total
+      FROM claimed
     `,
       [args.shardId, args.sellerCharId]
     );
 
-    const sumRow = sumRes.rows[0] as { sum: string | null } | undefined;
-    const sumStr = sumRow?.sum;
-    const total = sumStr ? Number(sumStr) : 0;
-
-    if (!total || total <= 0) {
-      return 0;
-    }
-
-    await db.query(
-      `
-      UPDATE auctions
-      SET proceeds_claimed = true
-      WHERE shard_id = $1
-        AND seller_char_id = $2
-        AND status = 'sold'
-        AND proceeds_gold IS NOT NULL
-        AND proceeds_claimed = false
-    `,
-      [args.shardId, args.sellerCharId]
-    );
-
-    return total;
+    const row = res.rows[0] as { total: string | number | null } | undefined;
+    const totalRaw = row?.total;
+    const total = typeof totalRaw === "number" ? totalRaw : Number(totalRaw ?? 0);
+    return Number.isFinite(total) && total > 0 ? total : 0;
   }
 
   async expireOld(shardId: string, now: Date): Promise<number> {
