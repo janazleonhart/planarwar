@@ -8,7 +8,7 @@ import { defaultPolicies, tickPlayerState } from "../gameState";
 import { seedWorld } from "../domain/world";
 import { buildCityRuntimeSnapshot, applyCityRuntimeSnapshot } from "../gameState/cityRuntimeSnapshot";
 import { applySettlementLaneBootstrap, normalizeSettlementLaneChoice } from "../routes/playerCityAccess";
-import { buildCitySummary, buildSettlementLaneChoice, buildSettlementLaneLatestReceipt, buildSettlementLaneProfile } from "../routes/me";
+import { buildCitySummary, buildSettlementLaneChoice, buildSettlementLaneLatestReceipt, buildSettlementLaneProfile, buildSettlementLaneNextActionHint } from "../routes/me";
 import { getSettlementLanePreferredActionOrder } from "../domain/worldConsequenceActions";
 import { getCityProductionPerTick } from "../domain/city";
 
@@ -325,4 +325,32 @@ test("city summary exposes the latest lane receipt from the event trail", () => 
 
   assert.equal(civicSummary.settlementLaneLatestReceipt.message, buildSettlementLaneLatestReceipt(civic).message);
   assert.equal(shadowSummary.settlementLaneLatestReceipt.message, buildSettlementLaneLatestReceipt(shadow).message);
+});
+
+
+test("city summary exposes a lane-aware next action hint", () => {
+  const civic = createInitialPlayerState("lane-next-civic", seedWorld(), defaultPolicies);
+  const shadow = createInitialPlayerState("lane-next-shadow", seedWorld(), defaultPolicies);
+
+  const civicHint = buildSettlementLaneNextActionHint(civic);
+  applySettlementLaneBootstrap(shadow, "black_market");
+  const shadowHint = buildSettlementLaneNextActionHint(shadow);
+
+  assert.ok(civicHint.lane);
+  assert.ok(shadowHint.lane);
+  assert.ok(civicHint.title.length > 0);
+  assert.ok(shadowHint.title.length > 0);
+  assert.ok(civicHint.summary.length > 0);
+  assert.ok(shadowHint.summary.length > 0);
+
+  const civicSummary = buildCitySummary(civic);
+  const shadowSummary = buildCitySummary(shadow);
+
+  assert.equal(civicSummary.settlementLaneNextActionHint?.lane, civicHint.lane);
+  assert.equal(civicSummary.settlementLaneNextActionHint?.title, civicHint.title);
+  assert.equal(civicSummary.settlementLaneNextActionHint?.summary, civicHint.summary);
+
+  assert.equal(shadowSummary.settlementLaneNextActionHint?.lane, shadowHint.lane);
+  assert.equal(shadowSummary.settlementLaneNextActionHint?.title, shadowHint.title);
+  assert.equal(shadowSummary.settlementLaneNextActionHint?.summary, shadowHint.summary);
 });

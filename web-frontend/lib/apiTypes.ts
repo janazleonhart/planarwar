@@ -50,6 +50,15 @@ export interface SettlementLaneLatestReceipt {
   timestamp: string;
 }
 
+
+export interface SettlementLaneNextActionHint {
+  title: string;
+  summary: string;
+  lane: string;
+  priority: string;
+}
+
+
 export interface CityProductionBreakdown {
   buildings: CityProduction;
   settlementLane: CityProduction;
@@ -81,6 +90,7 @@ export interface CitySummary {
   settlementLaneProfile: SettlementLaneProfile;
   settlementLaneReceipt: SettlementLaneReceipt;
   settlementLaneLatestReceipt: SettlementLaneLatestReceipt;
+  settlementLaneNextActionHint?: SettlementLaneNextActionHint;
   tier: number;
   maxBuildingSlots: number;
   stats: CityStats;

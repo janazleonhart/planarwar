@@ -45,6 +45,13 @@ export type SettlementLaneLatestReceipt = {
   timestamp: string;
 };
 
+export type SettlementLaneNextActionHint = {
+  title: string;
+  summary: string;
+  lane: string;
+  priority: string;
+};
+
 export type SettlementLaneResourceDelta = {
   food: number;
   materials: number;
@@ -227,6 +234,29 @@ export function buildSettlementLaneLatestReceipt(ps: PlayerState): SettlementLan
   };
 }
 
+
+export function buildSettlementLaneNextActionHint(ps: PlayerState): SettlementLaneNextActionHint {
+  const actions = deriveWorldConsequenceActions(ps);
+  const top = actions.playerActions[0];
+  if (top) {
+    return {
+      title: top.title,
+      summary: top.summary,
+      lane: top.lane,
+      priority: top.priority,
+    };
+  }
+
+  const lane = ps.city.settlementLane === "black_market" ? "black_market" : "city";
+  const profile = buildSettlementLaneProfile(lane);
+  return {
+    title: lane === "black_market" ? "Shadow lane opening focus" : "Civic opening focus",
+    summary: profile.responseFocus.recommendedOpening,
+    lane: profile.responseFocus.preferredActionLanes[0] ?? (lane === "black_market" ? "black_market" : "economy"),
+    priority: "watch",
+  };
+}
+
 function emptyResources() {
   return { food: 0, materials: 0, wealth: 0, mana: 0, knowledge: 0, unity: 0 };
 }
@@ -261,6 +291,7 @@ export function buildCitySummary(ps: PlayerState) {
     settlementLaneProfile: buildSettlementLaneProfile(ps.city.settlementLane === "black_market" ? "black_market" : "city"),
     settlementLaneReceipt: buildSettlementLaneFoundingReceipt(ps.city.settlementLane === "black_market" ? "black_market" : "city"),
     settlementLaneLatestReceipt: buildSettlementLaneLatestReceipt(ps),
+    settlementLaneNextActionHint: buildSettlementLaneNextActionHint(ps),
     tier: ps.city.tier,
     maxBuildingSlots: ps.city.maxBuildingSlots,
     stats: ps.city.stats,
