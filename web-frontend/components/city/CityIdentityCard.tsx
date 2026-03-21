@@ -146,7 +146,7 @@ export function CityIdentityCard({ me, cardStyle }: CityIdentityCardProps) {
                 borderTop: "1px solid rgba(255,255,255,0.16)",
                 paddingTop: 8,
                 display: "grid",
-                gap: 4,
+                gap: 6,
               }}
             >
               <div style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: 0.5, opacity: 0.72 }}>
@@ -154,6 +154,25 @@ export function CityIdentityCard({ me, cardStyle }: CityIdentityCardProps) {
               </div>
               <div style={{ fontSize: 14, fontWeight: 700 }}>{city.settlementLaneReceipt.title}</div>
               <div style={{ fontSize: 12, opacity: 0.84 }}>{city.settlementLaneReceipt.summary}</div>
+              {city.settlementLaneReceipt.effects.length ? (
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                  {city.settlementLaneReceipt.effects.slice(0, 3).map((effect) => (
+                    <span
+                      key={effect}
+                      style={{
+                        display: "inline-block",
+                        padding: "3px 8px",
+                        borderRadius: 999,
+                        fontSize: 11,
+                        background: city.settlementLane === "black_market" ? "rgba(120,45,55,0.24)" : "rgba(45,95,75,0.24)",
+                        border: "1px solid rgba(255,255,255,0.14)",
+                      }}
+                    >
+                      {effect}
+                    </span>
+                  ))}
+                </div>
+              ) : null}
               {city.settlementLaneLatestReceipt.message !== city.settlementLaneReceipt.summary ? (
                 <div style={{ fontSize: 12, opacity: 0.78 }}>
                   <strong>{city.settlementLaneLatestReceipt.title}:</strong> {city.settlementLaneLatestReceipt.message}
