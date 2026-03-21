@@ -250,6 +250,42 @@ export function CityCorePanel({
                     </div>
                   );
                 })()}
+                {(() => {
+                  const activeChoice = citySetupChoices.find((choice) => choice.id === citySetupLane);
+                  if (!activeChoice?.preview) return null;
+
+                  const passiveSummary = Object.entries(activeChoice.preview.passivePerTick)
+                    .filter(([, value]) => Number(value) !== 0)
+                    .map(([key, value]) => `${value > 0 ? "+" : ""}${value} ${key}`)
+                    .join(", ") || "none";
+
+                  return (
+                    <div
+                      style={{
+                        border: "1px solid #555",
+                        borderRadius: 10,
+                        padding: "10px 12px",
+                        background: citySetupLane === "black_market" ? "#171012" : "#101619",
+                        display: "grid",
+                        gap: 6,
+                      }}
+                    >
+                      <div style={{ fontSize: 11, opacity: 0.72, textTransform: "uppercase" }}>Founding confirmation</div>
+                      <div style={{ fontWeight: 700 }}>
+                        {activeChoice.label} · {activeChoice.posture ?? activeChoice.preview.pressureFloor.stage}
+                      </div>
+                      <div style={{ fontSize: 12, opacity: 0.82 }}>Passive: {passiveSummary}</div>
+                      <div style={{ fontSize: 12, opacity: 0.82 }}>
+                        Pressure floor: {activeChoice.preview.pressureFloor.stage} · total {activeChoice.preview.pressureFloor.total}
+                      </div>
+                      {activeChoice.responseFocus?.recommendedOpening ? (
+                        <div style={{ fontSize: 12, opacity: 0.82 }}>
+                          Opening: {activeChoice.responseFocus.recommendedOpening}
+                        </div>
+                      ) : null}
+                    </div>
+                  );
+                })()}
               </div>
               <label style={{ display: "grid", gap: 6 }}>
                 <span>{citySetupLane === "black_market" ? "Front name" : "City name"}</span>
