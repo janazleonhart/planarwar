@@ -1,6 +1,6 @@
 //web-backend/gameState/gameStateEconomy.ts
 
-import { getCityProductionPerTick, type BuildingProduction } from "../domain/city";
+import { getCityProductionPerTick, getSettlementLaneProductionModifier, type BuildingProduction } from "../domain/city";
 import { addResources, type ResourceVector } from "../domain/resources";
 import { getTechById, type TechDefinition } from "../domain/tech";
 import { decayPublicInfrastructureHeat } from "../domain/publicInfrastructure";
@@ -213,6 +213,40 @@ function applyCityGrowthAndUpkeep(
   }
 }
 
+
+function emitSettlementLanePassiveReceipt(
+  deps: GameStateEconomyDeps,
+  ps: PlayerState,
+  ticks: number
+): void {
+  if (ticks < 5) return;
+
+  const laneModifier = getSettlementLaneProductionModifier(ps.city);
+  let message: string | null = null;
+
+  if (ps.city.settlementLane === "black_market") {
+    const wealth = (laneModifier.wealth ?? 0) * ticks;
+    const knowledge = (laneModifier.knowledge ?? 0) * ticks;
+    if (wealth > 0 || knowledge > 0) {
+      message = `Shadow surplus skimmed extra returns (+${wealth} wealth, +${knowledge} knowledge).`;
+    }
+  } else {
+    const food = (laneModifier.food ?? 0) * ticks;
+    const unity = (laneModifier.unity ?? 0) * ticks;
+    if (food > 0 || unity > 0) {
+      message = `Civic surplus kept the city steady (+${food} food, +${unity} unity).`;
+    }
+  }
+
+  if (!message) return;
+  if (ps.eventLog.at(-1)?.message === message) return;
+
+  deps.pushEvent(ps, {
+    kind: "city_morph",
+    message,
+  });
+}
+
 function applyTechCompletion(
   deps: GameStateEconomyDeps,
   ps: PlayerState,
@@ -358,4 +392,6 @@ export function tickPlayerState(
   ps.lastTickAt = advancedDate.toISOString();
 
   recomputeCityStress(deps, ps, advancedDate);
+  emitSettlementLanePassiveReceipt(deps, ps, ticks);
 }
+

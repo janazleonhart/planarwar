@@ -4,7 +4,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { createInitialPlayerState } from "../gameState/gameStateCore";
-import { defaultPolicies } from "../gameState";
+import { defaultPolicies, tickPlayerState } from "../gameState";
 import { seedWorld } from "../domain/world";
 import { buildCityRuntimeSnapshot, applyCityRuntimeSnapshot } from "../gameState/cityRuntimeSnapshot";
 import { applySettlementLaneBootstrap, normalizeSettlementLaneChoice } from "../routes/playerCityAccess";
@@ -156,4 +156,20 @@ test("city summary exposes a canonical settlement lane founding receipt", () => 
   assert.ok(civicSummary.settlementLaneReceipt.effects.some((entry) => /standard civic baseline/i.test(entry)));
   assert.ok(civicSummary.settlementLaneReceipt.effects.some((entry) => /passive civic surplus of food and unity/i.test(entry)));
   assert.ok(shadowSummary.settlementLaneReceipt.effects.some((entry) => /extra wealth, materials, and knowledge/i.test(entry)));
+});
+
+
+test("settlement lanes emit distinct passive receipts after enough ticks", () => {
+  const civic = createInitialPlayerState("lane-receipt-civic-tick", seedWorld(), defaultPolicies);
+  const shadow = createInitialPlayerState("lane-receipt-shadow-tick", seedWorld(), defaultPolicies);
+  applySettlementLaneBootstrap(shadow, "black_market");
+
+  const advanceCivicTo = new Date(new Date(civic.lastTickAt).getTime() + 5 * 60_000);
+  const advanceShadowTo = new Date(new Date(shadow.lastTickAt).getTime() + 5 * 60_000);
+
+  tickPlayerState(civic, advanceCivicTo);
+  tickPlayerState(shadow, advanceShadowTo);
+
+  assert.match(civic.eventLog.at(-1)?.message ?? "", /Civic surplus kept the city steady \(\+5 food, \+5 unity\)\./i);
+  assert.match(shadow.eventLog.at(-1)?.message ?? "", /Shadow surplus skimmed extra returns \(\+10 wealth, \+5 knowledge\)\./i);
 });
