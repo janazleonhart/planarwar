@@ -73,6 +73,87 @@ function comparePriority(a: WorldConsequenceActionPriority, b: WorldConsequenceA
   return order[b] - order[a];
 }
 
+
+function buildWorldEconomyPlayerAction(
+  settlementLane: "city" | "black_market",
+  priority: WorldConsequenceActionPriority,
+  hottestRegion: string | null,
+): WorldConsequenceActionItem {
+  if (settlementLane === "black_market") {
+    return {
+      id: "action_stabilize_supply_lanes",
+      audience: "player",
+      lane: "economy",
+      priority,
+      title: "Protect shadow supply lanes before scarcity turns predatory",
+      summary:
+        "Trade disruption is now strong enough to threaten both public supply and illicit throughput, so sloppy pressure management will cost you on both fronts.",
+      recommendedMoves: [
+        "Keep essentials flowing first so shadow surplus does not get choked by collapsing public routes.",
+        "Use the hottest region as a profit filter, not an excuse to stack heat until cartel pressure owns the story.",
+      ],
+      sourceRegionId: hottestRegion,
+      sourceHook: "worldEconomy",
+    };
+  }
+
+  return {
+    id: "action_stabilize_supply_lanes",
+    audience: "player",
+    lane: "economy",
+    priority,
+    title: "Stabilize supply lanes before scarcity hardens",
+    summary:
+      "Trade disruption and supply friction are high enough to spill back into city pressure if left alone.",
+    recommendedMoves: [
+      "Favor recovery or logistics contracts over greedier mission picks for a cycle.",
+      "Keep public services and essentials supplied so economy pressure does not echo into fresh setbacks.",
+    ],
+    sourceRegionId: hottestRegion,
+    sourceHook: "worldEconomy",
+  };
+}
+
+function buildCartelPlayerAction(
+  settlementLane: "city" | "black_market",
+  priority: WorldConsequenceActionPriority,
+  hottestRegion: string | null,
+): WorldConsequenceActionItem {
+  if (settlementLane === "black_market") {
+    return {
+      id: "action_cartel_pressure",
+      audience: "player",
+      lane: "cartel",
+      priority,
+      title: "Keep cartel pressure transactional before it becomes control",
+      summary:
+        "Route pressure and illicit openings are attracting cartel behavior that will happily turn your shadow lane into somebody else’s leash.",
+      recommendedMoves: [
+        "Bleed heat deliberately instead of letting cartel attention define the price of doing business.",
+        "Protect the hottest region from becoming a permanent extraction pit just because the profit line looks good today.",
+      ],
+      sourceRegionId: hottestRegion,
+      sourceHook: "cartel",
+    };
+  }
+
+  return {
+    id: "action_cartel_pressure",
+    audience: "player",
+    lane: "cartel",
+    priority,
+    title: "Cartel attention is active on your consequence trail",
+    summary:
+      "Route pressure and illicit openings are attracting cartel behavior that will punish sloppy recovery choices.",
+    recommendedMoves: [
+      "Protect essentials first; luxury recovery can wait.",
+      "Do not stack more heat in the hottest region unless you actually want a harder world response.",
+    ],
+    sourceRegionId: hottestRegion,
+    sourceHook: "cartel",
+  };
+}
+
 function sorted(items: WorldConsequenceActionItem[]): WorldConsequenceActionItem[] {
   return [...items].sort((a, b) => {
     const prio = comparePriority(a.priority, b.priority);
@@ -124,21 +205,7 @@ export function deriveWorldConsequenceActions(
     const priority: WorldConsequenceActionPriority =
       hooks.worldEconomy.riskTier === "severe" ? "critical" : "high";
 
-    pushUnique(playerActions, {
-      id: "action_stabilize_supply_lanes",
-      audience: "player",
-      lane: "economy",
-      priority,
-      title: "Stabilize supply lanes before scarcity hardens",
-      summary:
-        "Trade disruption and supply friction are high enough to spill back into city pressure if left alone.",
-      recommendedMoves: [
-        "Favor recovery or logistics contracts over greedier mission picks for a cycle.",
-        "Keep public services and essentials supplied so economy pressure does not echo into fresh setbacks.",
-      ],
-      sourceRegionId: hottestRegion,
-      sourceHook: "worldEconomy",
-    });
+    pushUnique(playerActions, buildWorldEconomyPlayerAction(ps.city?.settlementLane === "black_market" ? "black_market" : "city", priority, hottestRegion));
 
     pushUnique(adminActions, {
       id: "admin_watch_trade_pressure",
@@ -240,21 +307,7 @@ export function deriveWorldConsequenceActions(
     const priority: WorldConsequenceActionPriority =
       hooks.cartel.pressureTier === "severe" ? "critical" : "high";
 
-    pushUnique(playerActions, {
-      id: "action_cartel_pressure",
-      audience: "player",
-      lane: "cartel",
-      priority,
-      title: "Cartel attention is active on your consequence trail",
-      summary:
-        "Route pressure and illicit openings are attracting cartel behavior that will punish sloppy recovery choices.",
-      recommendedMoves: [
-        "Protect essentials first; luxury recovery can wait.",
-        "Do not stack more heat in the hottest region unless you actually want a harder world response.",
-      ],
-      sourceRegionId: hottestRegion,
-      sourceHook: "cartel",
-    });
+    pushUnique(playerActions, buildCartelPlayerAction(ps.city?.settlementLane === "black_market" ? "black_market" : "city", priority, hottestRegion));
 
     pushUnique(adminActions, {
       id: "admin_cartel_observability",

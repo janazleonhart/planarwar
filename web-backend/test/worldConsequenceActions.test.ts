@@ -6,6 +6,7 @@ import assert from "node:assert/strict";
 import { getOrCreatePlayerState } from "../gameState";
 import { deriveWorldConsequenceActions } from "../domain/worldConsequenceActions";
 import { pushWorldConsequence } from "../domain/worldConsequences";
+import type { WorldConsequenceAudience, WorldConsequenceTag } from "../domain/worldConsequences";
 
 test("quiet world consequence state still returns an observe-only recommendation", () => {
   const ps = getOrCreatePlayerState("world_consequence_actions_quiet_player");
@@ -117,4 +118,62 @@ test("active black-market hooks expose both exploit and contain player choices",
   assert.ok(blackMarketIds.includes("action_black_market_window_exploit"));
   assert.ok(blackMarketIds.includes("action_black_market_window_contain"));
   assert.ok(blackMarketIds.includes("action_black_market_window_bribe"));
+});
+
+
+test("identical pressure yields lane-specific economy and cartel advisories", () => {
+  const civic = getOrCreatePlayerState("world_consequence_actions_lane_specific_civic_player");
+  civic.city.settlementLane = "city";
+
+  const shadow = getOrCreatePlayerState("world_consequence_actions_lane_specific_shadow_player");
+  shadow.city.settlementLane = "black_market";
+
+  const consequence = {
+    regionId: civic.city.regionId,
+    source: "mission_setback" as const,
+    severity: "severe" as const,
+    title: "Supply crackdown",
+    summary: "The same scarcity-and-cartel pressure should read differently by settlement lane.",
+    detail: "City should receive civic stabilization advice; black market should receive shadow heat-management advice.",
+    audiences: ["player", "admin", "mother_brain"] as WorldConsequenceAudience[],
+    tags: [
+      "city_pressure_export",
+      "trade_disruption",
+      "black_market_opening",
+      "world_economy_hook",
+      "faction_drift",
+    ] as WorldConsequenceTag[],
+    metrics: {
+      pressureDelta: 19,
+      recoveryDelta: 11,
+      controlDelta: -6,
+      threatDelta: 9,
+    },
+    outcome: "failure" as const,
+  };
+
+  pushWorldConsequence(civic, consequence);
+  pushWorldConsequence(shadow, {
+    ...consequence,
+    regionId: shadow.city.regionId,
+    audiences: [...consequence.audiences],
+    tags: [...consequence.tags],
+  });
+
+  const civicActions = deriveWorldConsequenceActions(civic);
+  const shadowActions = deriveWorldConsequenceActions(shadow);
+
+  const civicEconomy = civicActions.playerActions.find((action) => action.lane === "economy");
+  const shadowEconomy = shadowActions.playerActions.find((action) => action.lane === "economy");
+  assert.ok(civicEconomy);
+  assert.ok(shadowEconomy);
+  assert.notEqual(civicEconomy?.title, shadowEconomy?.title);
+  assert.notEqual(civicEconomy?.summary, shadowEconomy?.summary);
+
+  const civicCartel = civicActions.playerActions.find((action) => action.lane === "cartel");
+  const shadowCartel = shadowActions.playerActions.find((action) => action.lane === "cartel");
+  assert.ok(civicCartel);
+  assert.ok(shadowCartel);
+  assert.notEqual(civicCartel?.title, shadowCartel?.title);
+  assert.notEqual(civicCartel?.summary, shadowCartel?.summary);
 });
