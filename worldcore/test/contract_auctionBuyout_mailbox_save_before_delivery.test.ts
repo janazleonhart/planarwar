@@ -1,5 +1,5 @@
-// worldcore/test/contract_auctionBuyout_rolls_back_when_delivery_fails.test.ts
-// Contract: buyout must roll back sold state when delivery cannot be completed.
+// worldcore/test/contract_auctionBuyout_mailbox_save_before_delivery.test.ts
+// Contract: mailbox buyout must persist buyer gold before delivery and roll back before mailing on save failure.
 
 import assert from "node:assert/strict";
 import test from "node:test";
@@ -19,8 +19,8 @@ import { handleAuctionCommand } from "../mud/commands/economy/auctionCommand";
 function makeChar(overrides: Partial<CharacterState> = {}): CharacterState {
   const now = new Date();
   const base: CharacterState = {
-    id: "char_auction_buyout_rollback_1",
-    userId: "user_auction_buyout_rollback_1",
+    id: "char_auction_buyout_mailbox_save_1",
+    userId: "user_auction_buyout_mailbox_save_1",
     shardId: "prime_shard",
     name: "Auction Tester",
     classId: "warrior",
@@ -46,13 +46,14 @@ function makeChar(overrides: Partial<CharacterState> = {}): CharacterState {
   return { ...base, ...overrides };
 }
 
-test("[contract] auction buyout rolls back when delivery fully fails", async () => {
+test("[contract] auction mailbox buyout saves buyer before delivery and rolls back on save failure", async () => {
   const char = makeChar();
   setGold(char.inventory, 250);
   const goldBefore = getGold(char.inventory);
 
   let revertCalls = 0;
   let saveCalls = 0;
+  let mailCalls = 0;
 
   const ctx: any = {
     session: { identity: { userId: char.userId } },
@@ -89,23 +90,24 @@ test("[contract] auction buyout rolls back when delivery fully fails", async () 
     },
     mail: {
       sendSystemMail: async () => {
-        throw new Error("mail down");
+        mailCalls += 1;
       },
     },
     items: {
       get: () => ({ id: "potion_heal_minor", name: "Minor Healing Potion" }),
-      addToInventory: () => ({ leftover: 2 }),
+      addToInventory: () => ({ leftover: 0 }),
     },
     characters: {
       saveCharacter: async () => {
         saveCalls += 1;
+        throw new Error("save down");
       },
     },
   };
 
-  const msg = await handleAuctionCommand(ctx, char, ["buy", "123"]);
-  assert.match(msg, /buyout was rolled back/i);
+  await assert.rejects(() => handleAuctionCommand(ctx, char, ["buy", "123"]), /save down/i);
   assert.equal(getGold(char.inventory), goldBefore);
   assert.equal(revertCalls, 1);
-  assert.equal(saveCalls, 2);
+  assert.equal(saveCalls, 1);
+  assert.equal(mailCalls, 0);
 });

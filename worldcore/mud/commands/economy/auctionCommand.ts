@@ -213,6 +213,15 @@ export async function handleAuctionCommand(
     };
 
     if (canMailbox) {
+      setCharacterGold(char, currentGold - price);
+      try {
+        await ctx.characters.saveCharacter(char);
+      } catch (error) {
+        setCharacterGold(char, currentGold);
+        await revertFailedBuyout();
+        throw error;
+      }
+
       try {
         await ctx.mail.sendSystemMail(
           ctx.session.identity.userId,
@@ -222,17 +231,14 @@ export async function handleAuctionCommand(
           [{ itemId: def.id, qty: listing.qty }]
         );
       } catch {
+        setCharacterGold(char, currentGold);
+        try {
+          await ctx.characters.saveCharacter(char);
+        } catch {
+          // Best-effort rollback of buyer gold state; the buyout row is still reverted below.
+        }
         await revertFailedBuyout();
         return "That auction could not be delivered right now, so the buyout was rolled back. Clear bag space and try again.";
-      }
-
-      setCharacterGold(char, currentGold - price);
-      try {
-        await ctx.characters.saveCharacter(char);
-      } catch (error) {
-        setCharacterGold(char, currentGold);
-        await revertFailedBuyout();
-        throw error;
       }
 
       await logAuctionEvent({
