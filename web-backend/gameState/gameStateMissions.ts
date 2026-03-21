@@ -695,10 +695,19 @@ function clampMissionRecommendedPower(value: number): number {
   return Math.max(28, Math.round(value));
 }
 
+const MAX_FOLLOWUP_CHAIN_DEPTH = 3;
+
+function isFollowupOfferExpired(offer: MissionOffer, now: Date): boolean {
+  if (!offer.followupExpiresAt) return false;
+  const expiresAt = Date.parse(offer.followupExpiresAt);
+  return Number.isFinite(expiresAt) && expiresAt <= now.getTime();
+}
+
 function missionOfferDedupKey(offer: MissionOffer): string {
   if (offer.contractKind) return `contract:${offer.contractKind}:${offer.regionId}`;
-  if (offer.followupSourceMissionId && offer.followupChainKind) {
-    return `followup:${offer.followupSourceMissionId}:${offer.followupChainKind}:${offer.regionId}:${offer.kind}`;
+  if (offer.followupChainKind) {
+    const rootId = offer.followupRootMissionId ?? offer.followupSourceMissionId ?? offer.id;
+    return `followup:${rootId}:${offer.followupChainKind}:${offer.regionId}:${offer.kind}`;
   }
   return `offer:${offer.id}`;
 }
@@ -718,9 +727,12 @@ function missionOfferUrgencyScore(offer: MissionOffer): number {
   return pressure + power + difficulty + chain + contract;
 }
 
-function mergeMissionOffers(existing: MissionOffer[] | undefined, injected: MissionOffer[]): MissionOffer[] {
+function mergeMissionOffers(existing: MissionOffer[] | undefined, injected: MissionOffer[], now: Date = new Date()): MissionOffer[] {
   const merged = new Map<string, MissionOffer>();
   for (const offer of [...(existing ?? []), ...injected]) {
+    if (isFollowupOfferExpired(offer, now)) continue;
+    if (Number(offer.followupChainDepth ?? 0) > MAX_FOLLOWUP_CHAIN_DEPTH) continue;
+
     const key = missionOfferDedupKey(offer);
     const prior = merged.get(key);
     if (!prior) {
@@ -730,6 +742,7 @@ function mergeMissionOffers(existing: MissionOffer[] | undefined, injected: Miss
 
     const replace = missionOfferUrgencyScore(offer) > missionOfferUrgencyScore(prior)
       || (missionOfferUrgencyScore(offer) === missionOfferUrgencyScore(prior)
+        && Number(offer.followupChainDepth ?? 0) >= Number(prior.followupChainDepth ?? 0)
         && Number(offer.recommendedPower ?? 0) >= Number(prior.recommendedPower ?? 0));
     if (replace) {
       merged.set(key, offer);
@@ -752,10 +765,17 @@ function buildMissionOutcomeFollowupOffers(ps: PlayerState, active: ActiveMissio
   if (active.mission.contractKind) return [];
 
   const baseMission = active.mission;
+  const rootMissionId = baseMission.followupRootMissionId ?? baseMission.followupSourceMissionId ?? baseMission.id;
+  const parentChainDepth = Math.max(0, Math.round(Number(baseMission.followupChainDepth ?? (baseMission.followupChainKind ? 1 : 0))));
+  const nextChainDepth = parentChainDepth + 1;
+  if (nextChainDepth > MAX_FOLLOWUP_CHAIN_DEPTH) {
+    return [];
+  }
+
   const region = ps.regionWar.find((entry) => entry.regionId === baseMission.regionId);
   const regionThreat = Number(region?.threat ?? 0);
   const consequencePressure = Number(ps.cityStress.threatPressure ?? 0) + Number(ps.cityStress.recoveryBurden ?? 0);
-  const chainDepth = (baseMission.followupSourceMissionId ? 1 : 0) + (baseMission.followupChainKind ? 1 : 0);
+  const chainDepth = parentChainDepth;
   const pressureScale = chainDepth > 0 ? 1 + chainDepth * 0.12 : 1;
   const payoffScale = chainDepth > 0 && outcome.kind === "success" ? 1 + chainDepth * 0.2 : chainDepth > 0 ? 1 + chainDepth * 0.08 : 1;
 
@@ -843,8 +863,14 @@ function buildMissionOutcomeFollowupOffers(ps: PlayerState, active: ActiveMissio
     ...(baseMission.targetingReasons ?? []).slice(0, 2),
   ].slice(0, 3);
 
+  const expiresInMinutes = outcome.kind === "success"
+    ? Math.max(10, 32 - nextChainDepth * 6)
+    : outcome.kind === "partial"
+      ? Math.max(12, 40 - nextChainDepth * 5)
+      : Math.max(14, 48 - nextChainDepth * 4);
+
   return [{
-    id: `followup_${baseMission.id}_${chainKind}`,
+    id: `followup_${rootMissionId}_${chainKind}_${nextChainDepth}`,
     kind,
     difficulty,
     title,
@@ -858,7 +884,10 @@ function buildMissionOutcomeFollowupOffers(ps: PlayerState, active: ActiveMissio
     targetingPressure,
     targetingReasons,
     followupSourceMissionId: baseMission.id,
+    followupRootMissionId: rootMissionId,
     followupChainKind: chainKind,
+    followupChainDepth: nextChainDepth,
+    followupExpiresAt: new Date(now.getTime() + expiresInMinutes * 60_000).toISOString(),
     followupGeneratedByOutcome: outcome.kind,
   }];
 }
@@ -1037,6 +1066,7 @@ export function startMissionForPlayer(
     assignedArmyId,
   };
 
+  ps.currentOffers = (ps.currentOffers ?? []).filter((offer) => offer.id !== mission.id);
   ps.activeMissions.push(active);
 
   deps.pushEvent(ps, {
@@ -2064,7 +2094,9 @@ export function completeMissionForPlayer(
 
   const followupOffers = buildMissionOutcomeFollowupOffers(ps, active, outcome, now);
   if (followupOffers.length > 0) {
-    ps.currentOffers = mergeMissionOffers(ps.currentOffers, followupOffers);
+    ps.currentOffers = mergeMissionOffers(ps.currentOffers, followupOffers, now);
+  } else if ((ps.currentOffers?.length ?? 0) > 0) {
+    ps.currentOffers = mergeMissionOffers(ps.currentOffers, [], now);
   }
 
   deps.pushEvent(ps, {

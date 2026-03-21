@@ -121,7 +121,10 @@ export interface MissionOffer {
   responseTags: MissionResponseTag[];
   supportGuidance?: MissionOfferSupportGuidance;
   followupSourceMissionId?: string;
+  followupRootMissionId?: string;
   followupChainKind?: MissionFollowupChainKind;
+  followupChainDepth?: number;
+  followupExpiresAt?: string;
   followupGeneratedByOutcome?: "success" | "partial" | "failure";
 }
 

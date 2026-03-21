@@ -411,3 +411,120 @@ test("follow-up board merge keeps the sharper branch and surfaces it first when 
   assert.equal(falloutOffers[0]!.id, "followup_seed_newer");
   assert.equal(mergedBoard[0]!.id, "followup_seed_newer", "expected the sharper branch to surface ahead of low-pressure board noise");
 });
+
+
+test("follow-up board merge drops expired chain offers and keeps fresh live pressure", () => {
+  const now = new Date("2026-03-21T23:30:00Z");
+  const regionId = "grayhaven" as any;
+  const mergedBoard = __testOnlyMissionOfferMerge([
+    {
+      id: "expired_chain_offer",
+      kind: "hero",
+      difficulty: "high",
+      title: "Contain the Fallout in grayhaven — Escalation 1",
+      description: "Expired branch.",
+      regionId,
+      recommendedPower: 124,
+      expectedRewards: { influence: 10 },
+      risk: { casualtyRisk: "moderate" },
+      responseTags: ["command", "recovery"],
+      threatFamily: "mercs",
+      targetingPressure: 78,
+      followupSourceMissionId: "mission_expired_seed",
+      followupRootMissionId: "mission_expired_seed",
+      followupChainKind: "contain_fallout",
+      followupChainDepth: 1,
+      followupExpiresAt: "2026-03-21T23:00:00Z",
+      followupGeneratedByOutcome: "failure",
+    },
+  ] as any, [
+    {
+      id: "fresh_chain_offer",
+      kind: "hero",
+      difficulty: "high",
+      title: "Contain the Fallout in grayhaven — Escalation 2",
+      description: "Fresh live branch.",
+      regionId,
+      recommendedPower: 132,
+      expectedRewards: { influence: 12 },
+      risk: { casualtyRisk: "moderate" },
+      responseTags: ["command", "recovery", "recon"],
+      threatFamily: "mercs",
+      targetingPressure: 84,
+      followupSourceMissionId: "mission_expired_seed",
+      followupRootMissionId: "mission_expired_seed",
+      followupChainKind: "contain_fallout",
+      followupChainDepth: 2,
+      followupExpiresAt: "2026-03-21T23:45:00Z",
+      followupGeneratedByOutcome: "failure",
+    },
+  ] as any, now);
+
+  assert.equal(mergedBoard.length, 1, "expected expired chain noise to be purged from the board");
+  assert.equal(mergedBoard[0]!.id, "fresh_chain_offer");
+});
+
+
+test("follow-up chains stop reopening once the bounded escalation depth is exhausted", () => {
+  const ps = getOrCreatePlayerState("mission_followup_depth_cap_player");
+  const now = new Date("2026-03-21T23:45:00Z");
+
+  ps.resources.wealth = 1200;
+  ps.resources.materials = 1100;
+  ps.resources.food = 700;
+  ps.resources.unity = 180;
+  ps.city.stats.security = 68;
+  ps.city.stats.infrastructure = 66;
+  ps.city.stats.unity = 69;
+  ps.cityStress.threatPressure = 34;
+  ps.cityStress.recoveryBurden = 20;
+  ps.regionWar[0]!.threat = 52;
+  ps.city.regionId = ps.regionWar[0]!.regionId as any;
+  ps.heroes = [
+    {
+      id: "hero_depth_cap",
+      ownerId: ps.playerId,
+      name: "Serin Holt",
+      role: "captain",
+      responseRoles: ["command", "recovery"],
+      traits: [],
+      power: 104,
+      tags: [],
+      status: "idle",
+      attachments: [],
+    },
+  ] as any;
+
+  ps.currentOffers = [
+    {
+      id: "followup_depth_cap_seed",
+      kind: "hero",
+      difficulty: "high",
+      title: "Contain the Fallout in grayhaven — Escalation 3",
+      description: "This branch is already at the cap.",
+      regionId: ps.city.regionId,
+      recommendedPower: 148,
+      expectedRewards: { influence: 14, knowledge: 10 },
+      risk: { casualtyRisk: "moderate", heroInjuryRisk: "moderate" },
+      responseTags: ["command", "recovery", "recon"],
+      threatFamily: "mercs",
+      targetingPressure: 88,
+      followupSourceMissionId: "followup_depth_cap_parent",
+      followupRootMissionId: "mission_depth_cap_root",
+      followupChainKind: "contain_fallout",
+      followupChainDepth: 3,
+      followupExpiresAt: "2026-03-22T00:10:00Z",
+      followupGeneratedByOutcome: "failure",
+    },
+  ] as any;
+
+  const active = startMissionForPlayer(ps.playerId, "followup_depth_cap_seed", now, "hero_depth_cap", undefined, "balanced");
+  assert.ok(active, "expected capped follow-up mission to start");
+  active!.finishesAt = now.toISOString();
+
+  const result = withRandomSequence([0.96, 0.82], () => completeMissionForPlayer(ps.playerId, active!.instanceId, now));
+  assert.equal(result.status, "ok");
+  assert.equal(result.outcome?.kind, "failure");
+  assert.equal(result.followupOffers?.length ?? 0, 0, "expected no new branch once chain depth cap is reached");
+  assert.ok(!(ps.currentOffers ?? []).some((offer) => offer.followupRootMissionId === "mission_depth_cap_root"), "expected capped branch to clear instead of reopening forever");
+});
