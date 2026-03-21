@@ -250,6 +250,29 @@ export function CityOverviewSection({
             <div style={{ fontSize: 14, fontWeight: 700 }}>{city.settlementLaneProfile.responseFocus.advisoryTone}</div>
             <div style={{ fontSize: 12 }}>{city.settlementLaneProfile.responseFocus.preferredActionLanes.join(" → ")}</div>
             <div style={{ fontSize: 12, opacity: 0.76 }}>{city.settlementLaneProfile.responseFocus.recommendedOpening}</div>
+            <div style={{ marginTop: 6, display: "grid", gap: 4 }}>
+              {city.settlementLaneProfile.responseFocus.openingChecklist.slice(0, 3).map((item) => (
+                <div
+                  key={item}
+                  style={{
+                    fontSize: 11,
+                    opacity: 0.78,
+                    padding: "4px 8px",
+                    borderRadius: 8,
+                    background:
+                      city.settlementLane === "black_market"
+                        ? "rgba(140,40,40,0.18)"
+                        : "rgba(40,120,100,0.16)",
+                    border:
+                      city.settlementLane === "black_market"
+                        ? "1px solid rgba(220,90,90,0.18)"
+                        : "1px solid rgba(110,210,170,0.18)",
+                  }}
+                >
+                  • {item}
+                </div>
+              ))}
+            </div>
           </div>
           <div style={{
             border: "1px solid #555",
