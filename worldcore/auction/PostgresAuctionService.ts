@@ -157,9 +157,10 @@ export class PostgresAuctionService implements AuctionService {
       WHERE id = $1
         AND shard_id = $2
         AND status = 'active'
+        AND seller_char_id <> $3
       RETURNING *
     `,
-    [args.id, args.shardId, args.buyerCharId, args.buyerCharName]
+      [args.id, args.shardId, args.buyerCharId, args.buyerCharName]
     );
 
     if (res.rowCount === 0) return null;

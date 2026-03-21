@@ -24,7 +24,11 @@ export async function handleAuctionCommand(
   if (!ctx.items) return "Item service is not available.";
   if (!ctx.characters) return "Character service is not available.";
 
-  const sub = (parts[1] || "").toLowerCase();
+  const normalizedParts =
+    parts.length > 0 && ["auction", "ah"].includes((parts[0] || "").toLowerCase())
+      ? parts.slice(1)
+      : parts;
+  const sub = (normalizedParts[0] || "").toLowerCase();
   const shardId = (char as any).shardId || "prime_shard";
 
   if (!sub || sub === "help") {
@@ -43,7 +47,7 @@ export async function handleAuctionCommand(
 
   // ah browse [search]
   if (sub === "browse") {
-    const search = parts.slice(2).join(" ").trim() || undefined;
+    const search = normalizedParts.slice(1).join(" ").trim() || undefined;
     const listings = await ctx.auctions.browse(shardId, {
       search,
       limit: 20,
@@ -60,10 +64,10 @@ export async function handleAuctionCommand(
 
   // ah sell <bagIndex> <slotIndex> <qty> <priceEach>
   if (sub === "sell") {
-    const bagIndex = Number(parts[2] ?? "-1");
-    const slotIndex = Number(parts[3] ?? "-1");
-    const qtyStr = parts[4];
-    const priceStr = parts[5];
+    const bagIndex = Number(normalizedParts[1] ?? "-1");
+    const slotIndex = Number(normalizedParts[2] ?? "-1");
+    const qtyStr = normalizedParts[3];
+    const priceStr = normalizedParts[4];
 
     if (
       !Number.isInteger(bagIndex) ||
@@ -125,7 +129,7 @@ export async function handleAuctionCommand(
 
   // ah buy <listingId>
   if (sub === "buy") {
-    const idStr = parts[2];
+    const idStr = normalizedParts[1];
     if (!idStr) return "Usage: ah buy <listingId>";
     const id = Number(idStr);
     if (!Number.isInteger(id) || id <= 0) return "Invalid listing id.";
@@ -133,6 +137,9 @@ export async function handleAuctionCommand(
     const listing = await ctx.auctions.get(id);
     if (!listing || listing.status !== "active" || listing.shardId !== shardId) {
       return "That auction is not available.";
+    }
+    if (listing.sellerCharId === (char as any).id) {
+      return "You cannot buy your own auction.";
     }
 
     const def = ctx.items.get(listing.itemId);
@@ -298,7 +305,7 @@ export async function handleAuctionCommand(
 
   // ah cancel <listingId>
   if (sub === "cancel") {
-    const idStr = parts[2];
+    const idStr = normalizedParts[1];
     if (!idStr) return "Usage: ah cancel <listingId>";
     const id = Number(idStr);
     if (!Number.isInteger(id) || id <= 0) return "Invalid listing id.";
