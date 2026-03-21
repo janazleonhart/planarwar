@@ -36,6 +36,12 @@ export interface CityProduction {
   unityPerTick: number;
 }
 
+
+export interface CityProductionBreakdown {
+  buildings: CityProduction;
+  settlementLane: CityProduction;
+}
+
 export interface SettlementLaneProfile {
   id: "city" | "black_market";
   label: string;
@@ -62,6 +68,7 @@ export interface CitySummary {
   buildingSlotsUsed: number;
   buildingSlotsMax: number;
   production: CityProduction;
+  productionBreakdown: CityProductionBreakdown;
 }
 
 export interface CityStressState {

@@ -8,7 +8,7 @@ import { defaultPolicies } from "../gameState";
 import { seedWorld } from "../domain/world";
 import { buildCityRuntimeSnapshot, applyCityRuntimeSnapshot } from "../gameState/cityRuntimeSnapshot";
 import { applySettlementLaneBootstrap, normalizeSettlementLaneChoice } from "../routes/playerCityAccess";
-import { buildSettlementLaneProfile } from "../routes/me";
+import { buildCitySummary, buildSettlementLaneProfile } from "../routes/me";
 import { getCityProductionPerTick } from "../domain/city";
 
 test("city setup lane choice defaults safely and accepts black market", () => {
@@ -98,4 +98,29 @@ test("settlement lane profile describes city and black-market starts distinctly"
   assert.ok(shadow.strengths.some((entry) => /extra wealth, materials, and knowledge/i.test(entry)));
   assert.ok(shadow.strengths.some((entry) => /passive shadow surplus/i.test(entry)));
   assert.ok(shadow.liabilities.some((entry) => /strained early posture/i.test(entry)));
+});
+
+
+test("city summary exposes settlement lane production breakdown", () => {
+  const civic = createInitialPlayerState("lane-civic", seedWorld(), defaultPolicies);
+  const shadow = createInitialPlayerState("lane-shadow", seedWorld(), defaultPolicies);
+  applySettlementLaneBootstrap(shadow, "black_market");
+
+  const civicSummary = buildCitySummary(civic);
+  const shadowSummary = buildCitySummary(shadow);
+
+  assert.equal(civicSummary.productionBreakdown.settlementLane.wealthPerTick, 0);
+  assert.equal(civicSummary.productionBreakdown.settlementLane.knowledgePerTick, 0);
+
+  assert.equal(shadowSummary.productionBreakdown.settlementLane.wealthPerTick, 2);
+  assert.equal(shadowSummary.productionBreakdown.settlementLane.knowledgePerTick, 1);
+
+  assert.equal(
+    shadowSummary.production.wealthPerTick,
+    shadowSummary.productionBreakdown.buildings.wealthPerTick + shadowSummary.productionBreakdown.settlementLane.wealthPerTick
+  );
+  assert.equal(
+    shadowSummary.production.knowledgePerTick,
+    shadowSummary.productionBreakdown.buildings.knowledgePerTick + shadowSummary.productionBreakdown.settlementLane.knowledgePerTick
+  );
 });

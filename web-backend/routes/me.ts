@@ -9,7 +9,7 @@ import { deriveWorldConsequenceActions } from "../domain/worldConsequenceActions
 import { summarizeWorldConsequenceResponseReceipts } from "../domain/worldConsequences";
 import { deriveWorldConsequenceConsumers } from "../domain/worldConsequenceConsumers";
 import { deriveEconomyCartelResponseState } from "../domain/economyCartelResponse";
-import { getCityProductionPerTick, maxBuildingSlotsForTier } from "../domain/city";
+import { getBuildingProductionPerTick, getCityProductionPerTick, getSettlementLaneProductionModifier, maxBuildingSlotsForTier } from "../domain/city";
 import { resolvePlayerAccess, resolveViewer, suggestCityName, withPlayerAccessMutation } from "./playerCityAccess";
 
 const router = Router();
@@ -67,8 +67,27 @@ function emptyResources() {
   return { food: 0, materials: 0, wealth: 0, mana: 0, knowledge: 0, unity: 0 };
 }
 
-function buildCitySummary(ps: PlayerState) {
+export function buildCitySummary(ps: PlayerState) {
   const production = getCityProductionPerTick(ps.city);
+  const buildingProduction = ps.city.buildings.reduce((acc, b) => {
+    const p = getBuildingProductionPerTick(b);
+    if (p.food) acc.foodPerTick += p.food;
+    if (p.materials) acc.materialsPerTick += p.materials;
+    if (p.wealth) acc.wealthPerTick += p.wealth;
+    if (p.mana) acc.manaPerTick += p.mana;
+    if (p.knowledge) acc.knowledgePerTick += p.knowledge;
+    if (p.unity) acc.unityPerTick += p.unity;
+    return acc;
+  }, { foodPerTick: 0, materialsPerTick: 0, wealthPerTick: 0, manaPerTick: 0, knowledgePerTick: 0, unityPerTick: 0 });
+  const laneModifier = getSettlementLaneProductionModifier(ps.city);
+  const settlementLaneProduction = {
+    foodPerTick: laneModifier.food ?? 0,
+    materialsPerTick: laneModifier.materials ?? 0,
+    wealthPerTick: laneModifier.wealth ?? 0,
+    manaPerTick: laneModifier.mana ?? 0,
+    knowledgePerTick: laneModifier.knowledge ?? 0,
+    unityPerTick: laneModifier.unity ?? 0,
+  };
   return {
     id: ps.city.id,
     name: ps.city.name,
@@ -92,6 +111,10 @@ function buildCitySummary(ps: PlayerState) {
       manaPerTick: production.mana ?? 0,
       knowledgePerTick: production.knowledge ?? 0,
       unityPerTick: production.unity ?? 0,
+    },
+    productionBreakdown: {
+      buildings: buildingProduction,
+      settlementLane: settlementLaneProduction,
     },
   };
 }
