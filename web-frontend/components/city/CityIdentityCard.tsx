@@ -44,6 +44,14 @@ function getSlotTone(used: number, max: number): Tone {
   return "calm";
 }
 
+
+function formatLanePassiveChips(city: NonNullable<MeProfile["city"]>): string[] {
+  const entries = Object.entries(city.productionBreakdown.settlementLane)
+    .filter(([, value]) => Number(value) !== 0)
+    .slice(0, 3);
+  return entries.map(([key, value]) => `${key.replace(/PerTick$/, "")}: ${value > 0 ? "+" : ""}${value}/tick`);
+}
+
 function getLaneBannerStyle(city: NonNullable<MeProfile["city"]>): CSSProperties {
   return city.settlementLane === "black_market"
     ? {
@@ -127,18 +135,39 @@ export function CityIdentityCard({ me, cardStyle }: CityIdentityCardProps) {
               gap: 8,
             }}
           >
-            <div style={{ display: "grid", gap: 3 }}>
-              <div style={{ fontSize: 12, textTransform: "uppercase", letterSpacing: 0.5, opacity: 0.78 }}>
-                Settlement lane
+            <div style={{ display: "grid", gap: 6 }}>
+              <div style={{ display: "grid", gap: 3 }}>
+                <div style={{ fontSize: 12, textTransform: "uppercase", letterSpacing: 0.5, opacity: 0.78 }}>
+                  Settlement lane
+                </div>
+                <div style={{ fontSize: 16, fontWeight: 700 }}>
+                  {city.settlementLaneProfile.label} · {city.settlementLaneProfile.posture}
+                </div>
+                <div style={{ fontSize: 12, opacity: 0.84 }}>
+                  {city.settlementLane === "black_market"
+                    ? "Shadow-founded settlement. Expect illicit throughput, hotter openings, and darker receipts."
+                    : "Civic-founded settlement. Expect steadier public support, cleaner recovery, and calmer opening posture."}
+                </div>
               </div>
-              <div style={{ fontSize: 16, fontWeight: 700 }}>
-                {city.settlementLaneProfile.label} · {city.settlementLaneProfile.posture}
-              </div>
-              <div style={{ fontSize: 12, opacity: 0.84 }}>
-                {city.settlementLane === "black_market"
-                  ? "Shadow-founded settlement. Expect illicit throughput, hotter openings, and darker receipts."
-                  : "Civic-founded settlement. Expect steadier public support, cleaner recovery, and calmer opening posture."}
-              </div>
+              {formatLanePassiveChips(city).length ? (
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                  {formatLanePassiveChips(city).map((chip) => (
+                    <span
+                      key={chip}
+                      style={{
+                        display: "inline-block",
+                        padding: "3px 8px",
+                        borderRadius: 999,
+                        fontSize: 11,
+                        background: city.settlementLane === "black_market" ? "rgba(120,45,55,0.24)" : "rgba(45,95,75,0.24)",
+                        border: "1px solid rgba(255,255,255,0.14)",
+                      }}
+                    >
+                      {chip}
+                    </span>
+                  ))}
+                </div>
+              ) : null}
             </div>
 
             <div
