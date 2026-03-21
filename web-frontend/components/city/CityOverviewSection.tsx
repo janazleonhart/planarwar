@@ -185,6 +185,70 @@ export function CityOverviewSection({
       </div>
 
       <div style={sectionStyle}>
+        <strong>Settlement lane desk</strong>
+        <div style={{ fontSize: 12, opacity: 0.76 }}>
+          The founding lane this settlement lives under. Read this as the standing doctrine for how the city answers pressure before later UI splits turn City and Black Market into their own full surfaces.
+        </div>
+        <div style={{ display: "grid", gap: 8, gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))" }}>
+          <div style={{
+            border: "1px solid #555",
+            borderRadius: 10,
+            padding: 10,
+            display: "grid",
+            gap: 4,
+            background: city.settlementLane === "black_market" ? "rgba(70,25,30,0.16)" : "rgba(30,55,75,0.14)",
+          }}>
+            <div style={{ fontSize: 12, opacity: 0.72 }}>Lane posture</div>
+            <div style={{ fontSize: 18, fontWeight: 700 }}>{city.settlementLaneProfile.label}</div>
+            <div style={{ fontSize: 12, opacity: 0.82 }}>{city.settlementLaneProfile.posture}</div>
+            <div style={{ fontSize: 12, opacity: 0.76 }}>{city.settlementLaneProfile.summary}</div>
+          </div>
+          <div style={{
+            border: "1px solid #555",
+            borderRadius: 10,
+            padding: 10,
+            display: "grid",
+            gap: 4,
+          }}>
+            <div style={{ fontSize: 12, opacity: 0.72 }}>Response doctrine</div>
+            <div style={{ fontSize: 14, fontWeight: 700 }}>{city.settlementLaneProfile.responseFocus.advisoryTone}</div>
+            <div style={{ fontSize: 12 }}>{city.settlementLaneProfile.responseFocus.preferredActionLanes.join(" → ")}</div>
+            <div style={{ fontSize: 12, opacity: 0.76 }}>{city.settlementLaneProfile.responseFocus.recommendedOpening}</div>
+          </div>
+          <div style={{
+            border: "1px solid #555",
+            borderRadius: 10,
+            padding: 10,
+            display: "grid",
+            gap: 4,
+          }}>
+            <div style={{ fontSize: 12, opacity: 0.72 }}>Lane contribution</div>
+            <div style={{ fontSize: 12 }}>
+              Food {city.productionBreakdown.settlementLane.foodPerTick >= 0 ? "+" : ""}{city.productionBreakdown.settlementLane.foodPerTick} · Materials {city.productionBreakdown.settlementLane.materialsPerTick >= 0 ? "+" : ""}{city.productionBreakdown.settlementLane.materialsPerTick}
+            </div>
+            <div style={{ fontSize: 12 }}>
+              Wealth {city.productionBreakdown.settlementLane.wealthPerTick >= 0 ? "+" : ""}{city.productionBreakdown.settlementLane.wealthPerTick} · Mana {city.productionBreakdown.settlementLane.manaPerTick >= 0 ? "+" : ""}{city.productionBreakdown.settlementLane.manaPerTick}
+            </div>
+            <div style={{ fontSize: 12 }}>
+              Knowledge {city.productionBreakdown.settlementLane.knowledgePerTick >= 0 ? "+" : ""}{city.productionBreakdown.settlementLane.knowledgePerTick} · Unity {city.productionBreakdown.settlementLane.unityPerTick >= 0 ? "+" : ""}{city.productionBreakdown.settlementLane.unityPerTick}
+            </div>
+          </div>
+        </div>
+        <div style={{
+          border: "1px dashed #666",
+          borderRadius: 10,
+          padding: 10,
+          display: "grid",
+          gap: 4,
+        }}>
+          <div style={{ fontSize: 12, opacity: 0.72 }}>{city.settlementLaneLatestReceipt.title}</div>
+          <div style={{ fontSize: 14, fontWeight: 700 }}>{city.settlementLaneReceipt.title}</div>
+          <div style={{ fontSize: 12 }}>{city.settlementLaneLatestReceipt.message}</div>
+          <div style={{ fontSize: 11, opacity: 0.68 }}>{city.settlementLaneLatestReceipt.kind} · {new Date(city.settlementLaneLatestReceipt.timestamp).toLocaleString()}</div>
+        </div>
+      </div>
+
+      <div style={sectionStyle}>
         <strong>City stat ledger</strong>
         <div style={{ fontSize: 12, opacity: 0.76 }}>
           Core city ratings that influence resilience, growth, and how much punishment this place can absorb before it starts making your life interesting.
