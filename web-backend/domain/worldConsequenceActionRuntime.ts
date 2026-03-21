@@ -5,6 +5,7 @@ import type { PlayerState, Resources } from "../gameState";
 export interface RuntimeWorldConsequenceActionPlan {
   contractKind: "stabilize_district" | "repair_works" | "relief_convoys" | "counter_rumors";
   spent: Partial<Resources>;
+  grants?: Partial<Resources>;
   pressureDelta: number;
   recoveryDelta: number;
   trustDelta: number;
@@ -19,6 +20,7 @@ export interface WorldConsequenceActionRuntimeEffectPreview {
   trustDelta: number;
   controlDelta: number;
   threatDelta: number;
+  grants?: Partial<Resources>;
   summary: string;
 }
 
@@ -171,6 +173,20 @@ export function getWorldConsequenceRuntimePlan(actionId: string): RuntimeWorldCo
     };
   }
 
+  if (actionId === "action_black_market_window_exploit") {
+    return {
+      contractKind: "counter_rumors",
+      spent: { food: 3, materials: 2, unity: 1 },
+      grants: { wealth: 14, knowledge: 2 },
+      pressureDelta: 4,
+      recoveryDelta: 2,
+      trustDelta: -2,
+      controlDelta: -1,
+      threatDelta: 3,
+      summaryNote: "A shadow-market window was exploited for fast profit, trading civic stability for illicit upside.",
+    };
+  }
+
   if (actionId.startsWith("action_region_")) {
     return {
       contractKind: "stabilize_district",
@@ -229,8 +245,14 @@ function derivePreviewStage(total: number): "stable" | "strained" | "crisis" | "
   return "lockdown";
 }
 
+function getUnityPressureDeltaFromTrust(trustDelta: number): number {
+  if (trustDelta > 0) return -Math.max(1, Math.round(trustDelta * 0.6));
+  if (trustDelta < 0) return Math.max(1, Math.round(Math.abs(trustDelta) * 0.6));
+  return 0;
+}
+
 function buildPostCommitStatePreview(ps: PlayerState, plan: RuntimeWorldConsequenceActionPlan) {
-  const trustPressureDrop = Math.max(1, Math.round(plan.trustDelta * 0.6));
+  const unityPressureDelta = getUnityPressureDeltaFromTrust(plan.trustDelta);
   const total = clampPreviewStat(
     Number(ps.cityStress.total ?? 0) +
       Math.round(plan.pressureDelta * 0.35 + plan.recoveryDelta * 0.35 - plan.trustDelta * 0.2),
@@ -248,7 +270,7 @@ function buildPostCommitStatePreview(ps: PlayerState, plan: RuntimeWorldConseque
     unity: clampPreviewStat(Number(ps.city.stats.unity ?? 0) + plan.trustDelta),
     threatPressure: clampPreviewStat(Number(ps.cityStress.threatPressure ?? 0) + plan.pressureDelta),
     recoveryBurden: clampPreviewStat(Number(ps.cityStress.recoveryBurden ?? 0) + plan.recoveryDelta),
-    unityPressure: clampPreviewStat(Number(ps.cityStress.unityPressure ?? 0) - trustPressureDrop),
+    unityPressure: clampPreviewStat(Number(ps.cityStress.unityPressure ?? 0) + unityPressureDelta),
     total,
   };
 }
@@ -263,6 +285,7 @@ function runtimeButtonLabel(
   if (actionId === "action_cartel_pressure" || actionId === "action_black_market_window_contain") {
     return "Fund containment";
   }
+  if (actionId === "action_black_market_window_exploit") return "Exploit window";
   if (actionId.startsWith("action_region_")) return "Dispatch response";
   return "Advisory only";
 }
@@ -276,6 +299,7 @@ function buildRuntimeEffectPreview(
     trustDelta: plan.trustDelta,
     controlDelta: plan.controlDelta ?? 0,
     threatDelta: plan.threatDelta ?? 0,
+    grants: plan.grants,
     summary: plan.summaryNote,
   };
 }

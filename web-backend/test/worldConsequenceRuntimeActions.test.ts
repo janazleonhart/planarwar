@@ -51,7 +51,7 @@ test("successful response action cools propagated world state", () => {
   assert.ok((ps.resources.wealth ?? 0) < beforeWealth);
 });
 
-test("unsupported black-market exploit action remains advisory only", () => {
+test("black-market exploit action executes as a bounded shadow-economy loop", () => {
   const ps = seedPressure();
   ps.techFlags = ["BLACK_MARKET_ENABLED"];
   pushWorldConsequence(
@@ -68,10 +68,22 @@ test("unsupported black-market exploit action remains advisory only", () => {
       setbackCount: 3,
     }),
   );
+  const beforeWealth = ps.resources.wealth;
+  const beforeKnowledge = ps.resources.knowledge;
+  const beforeFood = ps.resources.food;
+  const beforeMaterials = ps.resources.materials;
+  const beforeUnity = ps.resources.unity;
 
   const result = executeWorldConsequenceAction(ps, "action_black_market_window_exploit");
-  assert.equal(result.ok, false);
-  assert.equal(result.status, "not_executable");
+  assert.equal(result.ok, true);
+  assert.equal(result.status, "ok");
+  assert.deepEqual(result.spent, { food: 3, materials: 2, unity: 1 });
+  assert.deepEqual(result.appliedEffect?.grants, { wealth: 14, knowledge: 2 });
+  assert.equal(ps.resources.wealth, beforeWealth + 14);
+  assert.equal(ps.resources.knowledge, beforeKnowledge + 2);
+  assert.equal(ps.resources.food, beforeFood - 3);
+  assert.equal(ps.resources.materials, beforeMaterials - 2);
+  assert.equal(ps.resources.unity, beforeUnity - 1);
 });
 
 test("player action cards expose runtime truth instead of frontend guesses", () => {
@@ -210,8 +222,28 @@ test("player action cards expose runtime impact previews instead of hidden payof
   assert.equal(stabilize?.runtime?.effect?.threatDelta, -2);
   assert.match(stabilize?.runtime?.effect?.summary ?? "", /scarcity pressure/i);
 
-  const exploit = actions.playerActions.find((action) => action.id === "action_black_market_window_exploit");
-  assert.equal(exploit?.runtime?.effect, undefined);
+  const exploitReady = seedPressure();
+  exploitReady.techFlags = ["BLACK_MARKET_ENABLED"];
+  pushWorldConsequence(
+    exploitReady,
+    buildSetbackWorldConsequence({
+      missionId: "mission_smuggling_window",
+      missionTitle: "Smuggling window",
+      regionId: exploitReady.city.regionId,
+      outcome: "failure",
+      pressureDelta: 10,
+      recoveryDelta: 12,
+      controlDelta: -2,
+      threatDelta: 5,
+      setbackCount: 3,
+    }),
+  );
+  const exploit = deriveWorldConsequenceActions(exploitReady).playerActions.find((action) => action.id === "action_black_market_window_exploit");
+  assert.ok(exploit?.runtime?.effect);
+  assert.deepEqual(exploit?.runtime?.cost, { food: 3, materials: 2, unity: 1 });
+  assert.deepEqual(exploit?.runtime?.effect?.grants, { wealth: 14, knowledge: 2 });
+  assert.equal(exploit?.runtime?.effect?.pressureDelta, 4);
+  assert.equal(exploit?.runtime?.effect?.threatDelta, 3);
 });
 
 test("successful response action is surfaced as a bounded runtime receipt", () => {

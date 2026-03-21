@@ -22,6 +22,21 @@ test("advisory-only world consequence actions stay non-executable", () => {
   assert.equal(runtime.effect, undefined);
 });
 
+test("black-market exploit runtime view exposes shadow-economy upside and downside", () => {
+  const ps = getOrCreatePlayerState("world_consequence_runtime_black_market_player");
+  ps.techFlags = ["BLACK_MARKET_ENABLED"];
+
+  const runtime = buildWorldConsequenceActionRuntimeView(ps, "action_black_market_window_exploit");
+  assert.equal(runtime.executable, true);
+  assert.equal(runtime.affordability, "affordable");
+  assert.equal(runtime.buttonLabel, "Exploit window");
+  assert.deepEqual(runtime.cost, { food: 3, materials: 2, unity: 1 });
+  assert.deepEqual(runtime.effect?.grants, { wealth: 14, knowledge: 2 });
+  assert.equal(runtime.effect?.pressureDelta, 4);
+  assert.equal(runtime.effect?.threatDelta, 3);
+  assert.ok((runtime.postCommitState?.unityPressure ?? 0) >= Number(ps.cityStress.unityPressure ?? 0));
+});
+
 test("affordable runtime view exposes blocked follow-up actions after hypothetical spend", () => {
   const ps = getOrCreatePlayerState("world_consequence_runtime_followup_player");
   ps.resources.wealth = 15;

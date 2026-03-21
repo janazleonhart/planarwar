@@ -23,6 +23,7 @@ export interface WorldConsequenceActionExecutionResult {
     trustDelta: number;
     controlDelta: number;
     threatDelta: number;
+    grants?: Partial<Resources>;
     summary: string;
   };
 }
@@ -62,6 +63,14 @@ function fallbackAction(actionId: string, ps: PlayerState): WorldConsequenceActi
       recommendedMoves: [], sourceRegionId: regionId, sourceHook: "fallback",
     };
   }
+  if (actionId === "action_black_market_window_exploit") {
+    return {
+      id: actionId, audience: "player", lane: "black_market", priority: "high",
+      title: "Exploit the black-market window before the city closes it",
+      summary: "Fallback execution path for a real runtime action.",
+      recommendedMoves: [], sourceRegionId: regionId, sourceHook: "fallback",
+    };
+  }
   return {
     id: actionId, audience: "player", lane: "regional", priority: "high",
     title: `Region ${regionId} is carrying the hottest consequence load`,
@@ -78,6 +87,14 @@ function spend(resources: Resources, spent: Partial<Resources>): void {
   for (const [key, value] of Object.entries(spent)) {
     const typedKey = key as keyof Resources;
     resources[typedKey] = Math.max(0, Number(resources[typedKey] ?? 0) - Number(value ?? 0));
+  }
+}
+
+function grant(resources: Resources, grants: Partial<Resources> | undefined): void {
+  if (!grants) return;
+  for (const [key, value] of Object.entries(grants)) {
+    const typedKey = key as keyof Resources;
+    resources[typedKey] = Math.max(0, Number(resources[typedKey] ?? 0) + Number(value ?? 0));
   }
 }
 
@@ -133,10 +150,17 @@ export function executeWorldConsequenceAction(ps: PlayerState, actionId: string)
   }
 
   spend(ps.resources, plan.spent);
+  grant(ps.resources, plan.grants);
+  const unityPressureDelta =
+    plan.trustDelta > 0
+      ? -Math.max(1, Math.round(plan.trustDelta * 0.6))
+      : plan.trustDelta < 0
+        ? Math.max(1, Math.round(Math.abs(plan.trustDelta) * 0.6))
+        : 0;
   ps.city.stats.unity = clampStat(Number(ps.city.stats.unity ?? 0) + plan.trustDelta);
   ps.cityStress.threatPressure = clampStat(Number(ps.cityStress.threatPressure ?? 0) + plan.pressureDelta);
   ps.cityStress.recoveryBurden = clampStat(Number(ps.cityStress.recoveryBurden ?? 0) + plan.recoveryDelta);
-  ps.cityStress.unityPressure = clampStat(Number(ps.cityStress.unityPressure ?? 0) - Math.max(1, Math.round(plan.trustDelta * 0.6)));
+  ps.cityStress.unityPressure = clampStat(Number(ps.cityStress.unityPressure ?? 0) + unityPressureDelta);
   ps.cityStress.total = clampStat(Number(ps.cityStress.total ?? 0) + Math.round(plan.pressureDelta * 0.35 + plan.recoveryDelta * 0.35 - plan.trustDelta * 0.2));
 
   const entry = buildRecoveryContractWorldConsequence({
@@ -153,7 +177,7 @@ export function executeWorldConsequenceAction(ps: PlayerState, actionId: string)
   });
 
   entry.title = `Response action executed: ${action.title}`;
-  entry.summary = `${plan.summaryNote} Costs committed: ${Object.entries(plan.spent).map(([key, value]) => `${key} ${value}`).join(", ")}.`;
+  entry.summary = `${plan.summaryNote} Costs committed: ${Object.entries(plan.spent).map(([key, value]) => `${key} ${value}`).join(", ")}.${plan.grants ? ` Gains: ${Object.entries(plan.grants).map(([key, value]) => `${key} ${value}`).join(", ")}.` : ""}`;
   entry.detail = `Player-facing world consequence guidance is no longer text only for this lane. The city committed a bounded runtime response in ${action.sourceRegionId ?? ps.city.regionId}, which should cool propagated pressure instead of merely narrating it.`;
   entry.metrics.controlDelta = plan.controlDelta ?? entry.metrics.controlDelta;
   entry.metrics.threatDelta = plan.threatDelta ?? entry.metrics.threatDelta;
@@ -183,6 +207,7 @@ export function executeWorldConsequenceAction(ps: PlayerState, actionId: string)
       trustDelta: plan.trustDelta,
       controlDelta: entry.metrics.controlDelta,
       threatDelta: entry.metrics.threatDelta,
+      grants: plan.grants,
       summary: plan.summaryNote,
     },
   };
