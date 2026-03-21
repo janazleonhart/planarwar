@@ -465,6 +465,54 @@ test("follow-up board merge drops expired chain offers and keeps fresh live pres
 });
 
 
+
+
+test("crowded mission boards keep protected live branches instead of letting routine offer spam evict them", () => {
+  const regionId = "grayhaven" as any;
+  const routineOffers = Array.from({ length: 10 }, (_, index) => ({
+    id: `routine_board_fill_${index + 1}`,
+    kind: "hero",
+    difficulty: "medium",
+    title: `Routine Sweep ${index + 1}`,
+    description: "Regular mission board noise.",
+    regionId,
+    recommendedPower: 72 + index,
+    expectedRewards: { wealth: 6 },
+    risk: { casualtyRisk: "low" },
+    responseTags: ["recon"],
+    threatFamily: "mercs",
+    targetingPressure: 18,
+  }));
+
+  const mergedBoard = __testOnlyMissionOfferMerge(routineOffers as any, [
+    {
+      id: "live_chain_branch",
+      kind: "hero",
+      difficulty: "low",
+      title: "Contain the Fallout in grayhaven",
+      description: "Live chain pressure that should not be crowded out.",
+      regionId,
+      recommendedPower: 22,
+      expectedRewards: { influence: 8 },
+      risk: { casualtyRisk: "moderate" },
+      responseTags: ["command", "recovery"],
+      threatFamily: "mercs",
+      targetingPressure: 4,
+      followupSourceMissionId: "mission_crowded_board_seed",
+      followupRootMissionId: "mission_crowded_board_seed",
+      followupChainKind: "contain_fallout",
+      followupChainDepth: 1,
+      followupExpiresAt: "2026-03-22T01:00:00Z",
+      followupGeneratedByOutcome: "failure",
+    },
+  ] as any, new Date("2026-03-22T00:00:00Z"));
+
+  assert.equal(mergedBoard.length, 10);
+  assert.ok(mergedBoard.some((offer) => offer.id === "live_chain_branch"), "expected the live branch to survive routine board crowding");
+  assert.ok(mergedBoard.some((offer) => offer.id === "routine_board_fill_1"), "expected routine offers to still fill the non-reserved board space");
+  assert.ok(!mergedBoard.some((offer) => offer.id === "routine_board_fill_10"), "expected the lowest-priority routine filler to lose its slot first");
+});
+
 test("follow-up chains stop reopening once the bounded escalation depth is exhausted", () => {
   const ps = getOrCreatePlayerState("mission_followup_depth_cap_player");
   const now = new Date("2026-03-21T23:45:00Z");

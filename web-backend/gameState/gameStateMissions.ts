@@ -727,6 +727,16 @@ function missionOfferUrgencyScore(offer: MissionOffer): number {
   return pressure + power + difficulty + chain + contract;
 }
 
+const RESERVED_LIVE_BRANCH_SLOTS = 2;
+
+function isProtectedMissionBoardOffer(offer: MissionOffer): boolean {
+  return Boolean(offer.followupChainKind || offer.contractKind);
+}
+
+function compareMissionBoardPriority(a: MissionOffer, b: MissionOffer): number {
+  return missionOfferUrgencyScore(b) - missionOfferUrgencyScore(a) || Number(b.recommendedPower ?? 0) - Number(a.recommendedPower ?? 0);
+}
+
 function mergeMissionOffers(existing: MissionOffer[] | undefined, injected: MissionOffer[], now: Date = new Date()): MissionOffer[] {
   const merged = new Map<string, MissionOffer>();
   for (const offer of [...(existing ?? []), ...injected]) {
@@ -749,9 +759,26 @@ function mergeMissionOffers(existing: MissionOffer[] | undefined, injected: Miss
     }
   }
 
-  return Array.from(merged.values())
-    .sort((a, b) => missionOfferUrgencyScore(b) - missionOfferUrgencyScore(a) || Number(b.recommendedPower ?? 0) - Number(a.recommendedPower ?? 0))
-    .slice(0, 10);
+  const prioritized = Array.from(merged.values()).sort(compareMissionBoardPriority);
+  if (prioritized.length <= 10) {
+    return prioritized;
+  }
+
+  const protectedOffers = prioritized.filter(isProtectedMissionBoardOffer);
+  if (protectedOffers.length === 0) {
+    return prioritized.slice(0, 10);
+  }
+
+  const stableRoutineOrder = Array.from(merged.values()).filter((offer) => !isProtectedMissionBoardOffer(offer));
+  const reservedProtected = protectedOffers.slice(0, Math.min(RESERVED_LIVE_BRANCH_SLOTS, protectedOffers.length));
+  const selectedIds = new Set(reservedProtected.map((offer) => offer.id));
+  const routineSelection = stableRoutineOrder.slice(0, Math.max(0, 10 - reservedProtected.length));
+  const remainingSlots = Math.max(0, 10 - reservedProtected.length - routineSelection.length);
+  const extraProtected = protectedOffers
+    .filter((offer) => !selectedIds.has(offer.id))
+    .slice(0, remainingSlots);
+
+  return [...reservedProtected, ...routineSelection, ...extraProtected].sort(compareMissionBoardPriority).slice(0, 10);
 }
 
 function bumpDifficulty(difficulty: MissionDifficulty, delta: -1 | 0 | 1): MissionDifficulty {
