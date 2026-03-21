@@ -37,6 +37,13 @@ export type SettlementLaneReceipt = {
   effects: string[];
 };
 
+export type SettlementLaneLatestReceipt = {
+  title: string;
+  message: string;
+  kind: string;
+  timestamp: string;
+};
+
 export type SettlementLaneResourceDelta = {
   food: number;
   materials: number;
@@ -179,6 +186,36 @@ export function buildSettlementLaneProfile(lane: "city" | "black_market"): Settl
 }
 
 
+export function buildSettlementLaneLatestReceipt(ps: PlayerState): SettlementLaneLatestReceipt {
+  const lane = ps.city.settlementLane === "black_market" ? "black_market" : "city";
+  const events = [...(ps.eventLog ?? [])].reverse();
+  const match = events.find((event) => {
+    if (event.kind !== "city_morph") return false;
+    if (lane === "black_market") {
+      return /black market|shadow surplus/i.test(event.message);
+    }
+    return /city founding posture|civic surplus/i.test(event.message);
+  });
+
+  if (match) {
+    return {
+      title: lane === "black_market" ? "Latest shadow receipt" : "Latest civic receipt",
+      message: match.message,
+      kind: match.kind,
+      timestamp: match.timestamp,
+    };
+  }
+
+  return {
+    title: lane === "black_market" ? "Latest shadow receipt" : "Latest civic receipt",
+    message: lane === "black_market"
+      ? "No shadow receipt has landed yet. Watch for the first black-market founding or passive event."
+      : "No civic receipt has landed yet. Watch for the first city founding or passive event.",
+    kind: "city_morph",
+    timestamp: new Date(0).toISOString(),
+  };
+}
+
 function emptyResources() {
   return { food: 0, materials: 0, wealth: 0, mana: 0, knowledge: 0, unity: 0 };
 }
@@ -212,6 +249,7 @@ export function buildCitySummary(ps: PlayerState) {
     settlementLane: ps.city.settlementLane ?? "city",
     settlementLaneProfile: buildSettlementLaneProfile(ps.city.settlementLane === "black_market" ? "black_market" : "city"),
     settlementLaneReceipt: buildSettlementLaneFoundingReceipt(ps.city.settlementLane === "black_market" ? "black_market" : "city"),
+    settlementLaneLatestReceipt: buildSettlementLaneLatestReceipt(ps),
     tier: ps.city.tier,
     maxBuildingSlots: ps.city.maxBuildingSlots,
     stats: ps.city.stats,

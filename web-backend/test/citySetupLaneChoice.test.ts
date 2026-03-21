@@ -8,7 +8,7 @@ import { defaultPolicies, tickPlayerState } from "../gameState";
 import { seedWorld } from "../domain/world";
 import { buildCityRuntimeSnapshot, applyCityRuntimeSnapshot } from "../gameState/cityRuntimeSnapshot";
 import { applySettlementLaneBootstrap, normalizeSettlementLaneChoice } from "../routes/playerCityAccess";
-import { buildCitySummary, buildSettlementLaneChoice, buildSettlementLaneProfile } from "../routes/me";
+import { buildCitySummary, buildSettlementLaneChoice, buildSettlementLaneLatestReceipt, buildSettlementLaneProfile } from "../routes/me";
 import { getSettlementLanePreferredActionOrder } from "../domain/worldConsequenceActions";
 import { getCityProductionPerTick } from "../domain/city";
 
@@ -277,4 +277,31 @@ test("settlement lane profiles expose response focus that matches lane ordering 
   assert.match(civic.responseFocus.advisoryTone, /civic/i);
   assert.match(shadow.responseFocus.advisoryTone, /shadow/i);
   assert.notEqual(civic.responseFocus.recommendedOpening, shadow.responseFocus.recommendedOpening);
+});
+
+
+test("city summary exposes the latest lane receipt from the event trail", () => {
+  const civic = createInitialPlayerState("lane-latest-civic", seedWorld(), defaultPolicies);
+  const shadow = createInitialPlayerState("lane-latest-shadow", seedWorld(), defaultPolicies);
+  applySettlementLaneBootstrap(civic, "city");
+  applySettlementLaneBootstrap(shadow, "black_market");
+
+  const civicAdvanceTo = new Date(new Date(civic.lastTickAt).getTime() + 5 * 60_000);
+  const shadowAdvanceTo = new Date(new Date(shadow.lastTickAt).getTime() + 5 * 60_000);
+  tickPlayerState(civic, civicAdvanceTo);
+  tickPlayerState(shadow, shadowAdvanceTo);
+
+  const civicSummary = buildCitySummary(civic);
+  const shadowSummary = buildCitySummary(shadow);
+
+  assert.match(civicSummary.settlementLaneLatestReceipt.title, /latest civic receipt/i);
+  assert.match(civicSummary.settlementLaneLatestReceipt.message, /Civic surplus kept the city steady/i);
+  assert.equal(civicSummary.settlementLaneLatestReceipt.kind, "city_morph");
+
+  assert.match(shadowSummary.settlementLaneLatestReceipt.title, /latest shadow receipt/i);
+  assert.match(shadowSummary.settlementLaneLatestReceipt.message, /Shadow surplus skimmed extra returns/i);
+  assert.equal(shadowSummary.settlementLaneLatestReceipt.kind, "city_morph");
+
+  assert.equal(civicSummary.settlementLaneLatestReceipt.message, buildSettlementLaneLatestReceipt(civic).message);
+  assert.equal(shadowSummary.settlementLaneLatestReceipt.message, buildSettlementLaneLatestReceipt(shadow).message);
 });

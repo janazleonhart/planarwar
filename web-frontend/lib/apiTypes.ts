@@ -43,6 +43,13 @@ export interface SettlementLaneReceipt {
   effects: string[];
 }
 
+export interface SettlementLaneLatestReceipt {
+  title: string;
+  message: string;
+  kind: string;
+  timestamp: string;
+}
+
 export interface CityProductionBreakdown {
   buildings: CityProduction;
   settlementLane: CityProduction;
@@ -72,6 +79,7 @@ export interface CitySummary {
   settlementLane: "city" | "black_market";
   settlementLaneProfile: SettlementLaneProfile;
   settlementLaneReceipt: SettlementLaneReceipt;
+  settlementLaneLatestReceipt: SettlementLaneLatestReceipt;
   tier: number;
   maxBuildingSlots: number;
   stats: CityStats;
