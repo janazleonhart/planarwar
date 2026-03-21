@@ -167,9 +167,14 @@ export function createMePageActions({
 
   const summarizeMissionCompletion = (result: Awaited<ReturnType<typeof completeMission>>) => {
     const latestReceipt = result.missionReceipts?.[0];
+    const followup = result.followupOffers?.[0];
     if (latestReceipt) {
       const setbackText = latestReceipt.setbacks?.[0]?.summary ? ` ${latestReceipt.setbacks[0].summary}` : "";
-      return `${latestReceipt.missionTitle} resolved ${latestReceipt.outcome}.${setbackText}`.trim();
+      const followupText = followup ? ` Follow-up opened: ${followup.title}.` : "";
+      return `${latestReceipt.missionTitle} resolved ${latestReceipt.outcome}.${setbackText}${followupText}`.trim();
+    }
+    if (followup) {
+      return `Mission resolved. Follow-up opened: ${followup.title}.`;
     }
     return "Mission resolved and city state refreshed.";
   };

@@ -14,6 +14,7 @@ export type MissionResponseTag = "frontline" | "recon" | "command" | "recovery" 
 export type MissionResponsePosture = "cautious" | "balanced" | "aggressive" | "desperate";
 export type ThreatFamily = "bandits" | "mercs" | "desperate_towns" | "organized_hostile_forces" | "early_planar_strike";
 export type RecoveryContractKind = "stabilize_district" | "repair_works" | "relief_convoys" | "counter_rumors";
+export type MissionFollowupChainKind = "press_advantage" | "secure_gains" | "contain_fallout" | "salvage_losses";
 
 export type MissionSetbackKind = "resource_loss" | "infrastructure_damage" | "unrest" | "hero_injury" | "army_attrition" | "threat_surge";
 
@@ -119,6 +120,9 @@ export interface MissionOffer {
   risk: RiskSummary;
   responseTags: MissionResponseTag[];
   supportGuidance?: MissionOfferSupportGuidance;
+  followupSourceMissionId?: string;
+  followupChainKind?: MissionFollowupChainKind;
+  followupGeneratedByOutcome?: "success" | "partial" | "failure";
 }
 
 export interface MissionContext {

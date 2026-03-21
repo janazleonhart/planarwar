@@ -6,7 +6,7 @@ import { missionDurationConfig } from "../config";
 import type { Army, ArmyResponseRole } from "../domain/armies";
 import type { Hero, HeroAttachment, HeroResponseRole, HeroTrait } from "../domain/heroes";
 import { getHeroAttachmentDef } from "./gameStateHeroes";
-import type { MissionDefenseReceipt, MissionDifficulty, MissionOffer, MissionResponsePosture, MissionResponseTag, MissionSetback, MotherBrainPressureWindow, PressureMapConfidence, RecoveryContractKind, RewardBundle, ThreatFamily, ThreatWarning, WarningIntelQuality } from "../domain/missions";
+import type { MissionDefenseReceipt, MissionDifficulty, MissionFollowupChainKind, MissionOffer, MissionResponsePosture, MissionResponseTag, MissionSetback, MotherBrainPressureWindow, PressureMapConfidence, RecoveryContractKind, RewardBundle, ThreatFamily, ThreatWarning, WarningIntelQuality } from "../domain/missions";
 import type { RegionId, World } from "../domain/world";
 import { buildRecoveryContractWorldConsequence, buildSetbackWorldConsequence, deriveWorldConsequenceState, pushWorldConsequence, summarizeWorldConsequences } from "../domain/worldConsequences";
 import { deriveEconomyCartelResponseState } from "../domain/economyCartelResponse";
@@ -54,6 +54,7 @@ export interface CompleteMissionResult {
   resources?: Resources;
   outcome?: MissionOutcome;
   receipt?: MissionDefenseReceipt;
+  followupOffers?: MissionOffer[];
 }
 
 
@@ -688,6 +689,121 @@ function pickArmyForMission(ps: PlayerState, mission: MissionOffer, preferredArm
   }
   idle.sort((a, b) => scoreArmyForMission(b, mission) - scoreArmyForMission(a, mission) || b.power - a.power);
   return idle[0];
+}
+
+function clampMissionRecommendedPower(value: number): number {
+  return Math.max(28, Math.round(value));
+}
+
+function mergeMissionOffers(existing: MissionOffer[] | undefined, injected: MissionOffer[]): MissionOffer[] {
+  const merged = new Map<string, MissionOffer>();
+  for (const offer of existing ?? []) {
+    merged.set(offer.id, offer);
+  }
+  for (const offer of injected) {
+    merged.set(offer.id, offer);
+  }
+  return Array.from(merged.values()).slice(0, 10);
+}
+
+function bumpDifficulty(difficulty: MissionDifficulty, delta: -1 | 0 | 1): MissionDifficulty {
+  const ranks: MissionDifficulty[] = ["low", "medium", "high", "extreme"];
+  const index = Math.max(0, ranks.indexOf(difficulty));
+  const nextIndex = Math.max(0, Math.min(ranks.length - 1, index + delta));
+  return ranks[nextIndex] ?? difficulty;
+}
+
+function buildMissionOutcomeFollowupOffers(ps: PlayerState, active: ActiveMission, outcome: MissionOutcome, now: Date): MissionOffer[] {
+  if (active.mission.contractKind) return [];
+
+  const baseMission = active.mission;
+  const region = ps.regionWar.find((entry) => entry.regionId === baseMission.regionId);
+  const regionThreat = Number(region?.threat ?? 0);
+  const consequencePressure = Number(ps.cityStress.threatPressure ?? 0) + Number(ps.cityStress.recoveryBurden ?? 0);
+
+  let chainKind: MissionFollowupChainKind;
+  let kind: MissionOffer["kind"];
+  let difficulty: MissionDifficulty;
+  let title: string;
+  let description: string;
+  let responseTags: MissionResponseTag[];
+  let expectedRewards: RewardBundle;
+  let risk: MissionOffer["risk"];
+  let recommendedPower: number;
+
+  if (outcome.kind === "success") {
+    if (baseMission.kind === "hero") {
+      chainKind = "press_advantage";
+      kind = "army";
+      difficulty = bumpDifficulty(baseMission.difficulty, 0);
+      title = `Exploit the Opening at ${baseMission.regionId}`;
+      description = "Your scouts and handlers found a real opening. Commit troops before the enemy regroups and turns a near-break into another long problem.";
+      responseTags = ["frontline", "command", "defense"];
+      expectedRewards = { materials: 26, wealth: 20, influence: 12 };
+      risk = { casualtyRisk: "moderate", notes: "Outcome follow-up: a success window exists, but it closes if you leave it unattended." };
+      recommendedPower = clampMissionRecommendedPower(baseMission.recommendedPower * 0.92 + regionThreat * 0.35);
+    } else {
+      chainKind = "secure_gains";
+      kind = "hero";
+      difficulty = bumpDifficulty(baseMission.difficulty, -1);
+      title = `Secure the Gains in ${baseMission.regionId}`;
+      description = "The line moved. Now someone competent must lock down witnesses, routes, and supplies before the gain dissolves into rumor and leakage.";
+      responseTags = ["command", "recon", "recovery"];
+      expectedRewards = { knowledge: 16, influence: 18, wealth: 10 };
+      risk = { casualtyRisk: "low", heroInjuryRisk: "low", notes: "Outcome follow-up: lower direct danger, but sloppy consolidation throws the win away." };
+      recommendedPower = clampMissionRecommendedPower(baseMission.recommendedPower * 0.62 + consequencePressure * 0.28);
+    }
+  } else if (outcome.kind === "partial") {
+    chainKind = "salvage_losses";
+    kind = baseMission.kind === "army" ? "hero" : "army";
+    difficulty = bumpDifficulty(baseMission.difficulty, 0);
+    title = `Salvage the Loose Ends in ${baseMission.regionId}`;
+    description = "The operation limped across the line. Send a follow-on team to recover what can still be saved before the half-win curdles into a fresh mess.";
+    responseTags = baseMission.kind === "army" ? ["recon", "command", "recovery"] : ["defense", "recovery", "frontline"];
+    expectedRewards = kind === "army" ? { food: 18, materials: 14, influence: 8 } : { knowledge: 14, influence: 12, wealth: 8 };
+    risk = kind === "army"
+      ? { casualtyRisk: "moderate", notes: "Outcome follow-up: enemy resistance remains uneven and opportunistic." }
+      : { casualtyRisk: "low", heroInjuryRisk: "moderate", notes: "Outcome follow-up: cleanup is delicate and failure will deepen the embarrassment." };
+    recommendedPower = clampMissionRecommendedPower(baseMission.recommendedPower * 0.78 + regionThreat * 0.4);
+  } else {
+    chainKind = "contain_fallout";
+    kind = baseMission.kind === "hero" ? "army" : "hero";
+    difficulty = bumpDifficulty(baseMission.difficulty, 1);
+    title = `Contain the Fallout in ${baseMission.regionId}`;
+    description = "The mission failed loudly enough that the aftermath is now its own problem. Answer it quickly or the pressure spike becomes the new normal.";
+    responseTags = kind === "army" ? ["defense", "recovery", "frontline"] : ["command", "recovery", "recon"];
+    expectedRewards = kind === "army" ? { food: 20, materials: 20, influence: 10 } : { influence: 20, knowledge: 12, wealth: 10 };
+    risk = kind === "army"
+      ? { casualtyRisk: "high", notes: "Outcome follow-up: hostile momentum is up and civilians are now in the blast radius." }
+      : { casualtyRisk: "moderate", heroInjuryRisk: "moderate", notes: "Outcome follow-up: panic, rumor, and political damage are now part of the battlefield." };
+    recommendedPower = clampMissionRecommendedPower(baseMission.recommendedPower * 0.96 + regionThreat * 0.55 + consequencePressure * 0.22);
+  }
+
+  const threatFamily = baseMission.threatFamily;
+  const targetingPressure = Math.max(Number(baseMission.targetingPressure ?? 0), outcome.kind === "failure" ? 55 : outcome.kind === "partial" ? 35 : 22);
+  const targetingReasons = [
+    `${baseMission.title} resolved ${outcome.kind}, which reopened pressure in ${baseMission.regionId}.`,
+    ...(baseMission.targetingReasons ?? []).slice(0, 2),
+  ].slice(0, 3);
+
+  return [{
+    id: `followup_${baseMission.id}_${chainKind}`,
+    kind,
+    difficulty,
+    title,
+    description,
+    regionId: baseMission.regionId,
+    recommendedPower,
+    expectedRewards,
+    risk,
+    responseTags,
+    threatFamily,
+    targetingPressure,
+    targetingReasons,
+    followupSourceMissionId: baseMission.id,
+    followupChainKind: chainKind,
+    followupGeneratedByOutcome: outcome.kind,
+  }];
 }
 
 function buildRecoveryContractOffer(ps: PlayerState, kind: RecoveryContractKind, now: Date, slot: number): MissionOffer {
@@ -1714,9 +1830,14 @@ export function completeMissionForPlayer(
     }));
   }
 
+  const followupOffers = buildMissionOutcomeFollowupOffers(ps, active, outcome, now);
+  if (followupOffers.length > 0) {
+    ps.currentOffers = mergeMissionOffers(ps.currentOffers, followupOffers);
+  }
+
   deps.pushEvent(ps, {
     kind: "mission_complete",
-    message: `${receipt.summary}`,
+    message: `${receipt.summary}${followupOffers[0] ? ` Follow-up opened: ${followupOffers[0].title}.` : ""}`,
     missionId: active.mission.id,
     heroId: active.assignedHeroId,
     armyId: active.assignedArmyId,
@@ -1728,5 +1849,5 @@ export function completeMissionForPlayer(
   syncRecoveryContractsForState(ps, now);
   ps.worldConsequenceState = deriveWorldConsequenceState(ps.worldConsequences ?? []);
 
-  return { status: "ok", rewards, resources: ps.resources, outcome, receipt };
+  return { status: "ok", rewards, resources: ps.resources, outcome, receipt, followupOffers };
 }

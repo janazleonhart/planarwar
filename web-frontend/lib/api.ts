@@ -630,6 +630,8 @@ export interface CompleteMissionResponse {
   armies: Army[];
   resources: Resources;
   regionWar: RegionWarState[];
+  followupOffers?: MissionOffer[];
+  missions?: MissionOffer[];
 }
 
 export interface WorldConsequenceLedgerMetrics {
