@@ -51,6 +51,12 @@ export interface AuctionService {
     sellerCharId: string;
   }): Promise<number>;
 
+  /** Revert a sold listing back to active when post-buy delivery fails. */
+  revertFailedBuyout(args: {
+    id: number;
+    shardId: string;
+    buyerCharId: string;
+  }): Promise<AuctionListing | null>;
 
   /** Mark one expired, unreclaimed listing as reclaimed and return it. */
   reclaimExpiredListing(args: {

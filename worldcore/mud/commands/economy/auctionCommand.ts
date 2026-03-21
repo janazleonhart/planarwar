@@ -10,12 +10,15 @@ import { logAuctionEvent } from "../../../auction/AuctionAuditLog";
 import { formatAuctionListing } from "../../../auction/AuctionFormat";
 
 function deepClone<T>(v: T): T {
-  // Inventory state is plain JSON data; a JSON clone is sufficient and keeps
-  // this command independent from structuredClone typings.
   return JSON.parse(JSON.stringify(v)) as T;
 }
 
-function canFitItemInBags(ctx: any, char: any, itemId: string, qty: number): boolean {
+function canFitItemInBags(
+  ctx: any,
+  char: any,
+  itemId: string,
+  qty: number
+): boolean {
   try {
     const previewInv = deepClone(char.inventory);
     const preview = ctx.items.addToInventory(previewInv, itemId, qty);
@@ -55,7 +58,6 @@ export async function handleAuctionCommand(
     ].join("\n");
   }
 
-  // ah browse [search]
   if (sub === "browse") {
     const search = normalizedParts.slice(1).join(" ").trim() || undefined;
     const listings = await ctx.auctions.browse(shardId, {
@@ -72,7 +74,6 @@ export async function handleAuctionCommand(
     return lines.join("\n");
   }
 
-  // ah sell <bagIndex> <slotIndex> <qty> <priceEach>
   if (sub === "sell") {
     const bagIndex = Number(normalizedParts[1] ?? "-1");
     const slotIndex = Number(normalizedParts[2] ?? "-1");
@@ -102,11 +103,9 @@ export async function handleAuctionCommand(
       return `You only have ${slot.qty} of that item in that slot.`;
     }
 
-    // Only DB-backed items for AH v1
     const def = ctx.items.get(slot.itemId);
     if (!def) return "Only DB-backed items can be auctioned.";
 
-    // Remove from inventory (direct slot manipulation is fine here)
     if (qty === slot.qty) bag.slots[slotIndex] = null;
     else slot.qty -= qty;
 
@@ -137,7 +136,6 @@ export async function handleAuctionCommand(
     return `Created auction #${listing.id}: ${def.name} x${qty} for ${priceEach}g each (total ${listing.totalPriceGold}g).`;
   }
 
-  // ah buy <listingId>
   if (sub === "buy") {
     const idStr = normalizedParts[1];
     if (!idStr) return "Usage: ah buy <listingId>";
@@ -161,10 +159,6 @@ export async function handleAuctionCommand(
       return `You do not have enough gold. You need ${price}, but have ${currentGold}.`;
     }
 
-    // If mailbox delivery is unavailable, we must ensure the items can fit in bags
-    // BEFORE committing the buyout. Auction buyout is a shared resource and we
-    // don't want to end up with a sold listing + charged gold + nowhere safe to
-    // put the items.
     const canMailbox = !!(ctx.mail && ctx.session?.identity?.userId);
     if (!canMailbox) {
       try {
@@ -174,7 +168,6 @@ export async function handleAuctionCommand(
           return "Your bags are full and mailbox delivery is unavailable. Clear space and try again.";
         }
       } catch {
-        // If we cannot reliably preflight inventory, fail safe.
         return "Cannot verify inventory space for delivery (mailbox unavailable). Please try again or contact staff.";
       }
     }
@@ -189,22 +182,18 @@ export async function handleAuctionCommand(
       return "That auction was just bought or cancelled by someone else.";
     }
 
-    await logAuctionEvent({
-      shardId,
-      listing: updated,
-      action: "buy",
-      actorCharId: (char as any).id,
-      actorCharName: (char as any).name,
-      details: { priceGold: price },
-    });
+    const revertFailedBuyout = async () => {
+      if (typeof ctx.auctions.revertFailedBuyout === "function") {
+        await ctx.auctions.revertFailedBuyout({
+          id: updated.id,
+          shardId,
+          buyerCharId: (char as any).id,
+        });
+      }
+    };
 
-    // Charge after buyout commit.
-    setCharacterGold(char, currentGold - price);
-
-    // Deliver: prefer mailbox (keeps bags clean); if mailbox is unavailable, deliver to bags.
     if (canMailbox) {
       try {
-        // Uses system mail for auction lifecycle delivery (mail is the feature; not overflow).
         await ctx.mail.sendSystemMail(
           ctx.session.identity.userId,
           "account",
@@ -213,52 +202,43 @@ export async function handleAuctionCommand(
           [{ itemId: def.id, qty: listing.qty }]
         );
 
+        setCharacterGold(char, currentGold - price);
+        await logAuctionEvent({
+          shardId,
+          listing: updated,
+          action: "buy",
+          actorCharId: (char as any).id,
+          actorCharName: (char as any).name,
+          details: { priceGold: price },
+        });
         await ctx.characters.saveCharacter(char);
         return `You bought ${listing.qty}x ${def.name} for ${price} gold. The items have been mailed to you.`;
       } catch {
-        // If mail fails, fall back to bags (never drop undelivered).
-        const deliver = await deliverItemToBagsOrMail(ctx, {
-          inventory: char.inventory,
-          itemId: def.id,
-          qty: listing.qty,
-
-          ownerId: ctx.session?.identity?.userId,
-          ownerKind: "account",
-
-          sourceVerb: "receiving",
-          sourceName: `auction #${listing.id}`,
-          mailSubject: "Auction purchase overflow",
-          mailBody: `Your bags were full while receiving items from auction #${listing.id}.`,
-
-          undeliveredPolicy: "keep",
-        });
-
-        await ctx.characters.saveCharacter(char);
-
-        const deliveredQty = deliver.added + deliver.mailed;
-        if (deliveredQty <= 0) {
-          return `You bought ${listing.qty}x ${def.name} for ${price} gold, but delivery failed (mail error and bags full). Please contact staff.`;
-        }
-
-        let msg = `You bought ${deliveredQty}x ${def.name} for ${price} gold. ${deliver.added} item(s) went into your bags.`;
-        if (deliver.mailed > 0) msg += ` ${deliver.mailed} item(s) were mailed.`;
-        if (deliver.leftover > 0)
-          msg += ` (${deliver.leftover} item(s) could not be delivered.)`;
-        return msg;
+        await revertFailedBuyout();
+        return "That auction could not be delivered right now, so the buyout was rolled back. Clear bag space and try again.";
       }
     }
 
-    // No mailbox available: bags-only (preflighted above).
     const res = ctx.items.addToInventory(char.inventory, def.id, listing.qty);
-    await ctx.characters.saveCharacter(char);
     if (res?.leftover > 0) {
-      return `You bought ${listing.qty}x ${def.name} for ${price} gold, but delivery failed because your bags filled unexpectedly and mailbox delivery is unavailable. Please contact staff.`;
+      await revertFailedBuyout();
+      return "That auction could not be delivered right now, so the buyout was rolled back. Clear bag space and try again.";
     }
+
+    setCharacterGold(char, currentGold - price);
+    await logAuctionEvent({
+      shardId,
+      listing: updated,
+      action: "buy",
+      actorCharId: (char as any).id,
+      actorCharName: (char as any).name,
+      details: { priceGold: price },
+    });
+    await ctx.characters.saveCharacter(char);
 
     return `You bought ${listing.qty}x ${def.name} for ${price} gold. The items were delivered to your bags.`;
   }
 
-  // ah my
   if (sub === "my") {
     const listings = await ctx.auctions.listBySeller({
       shardId,
@@ -279,7 +259,6 @@ export async function handleAuctionCommand(
     return lines.join("\n");
   }
 
-  // ah claim
   if (sub === "claim") {
     const total = await ctx.auctions.claimProceeds({
       shardId,
@@ -313,7 +292,6 @@ export async function handleAuctionCommand(
     return `You claim ${total} gold from completed auctions.`;
   }
 
-  // ah cancel <listingId>
   if (sub === "cancel") {
     const idStr = normalizedParts[1];
     if (!idStr) return "Usage: ah cancel <listingId>";
@@ -346,20 +324,16 @@ export async function handleAuctionCommand(
       return "That auction was just bought or already cancelled.";
     }
 
-    // Return items: bags first; overflow via mail when possible (never drop).
     const deliver = await deliverItemToBagsOrMail(ctx, {
       inventory: char.inventory,
       itemId: def.id,
       qty: listing.qty,
-
       ownerId: ctx.session?.identity?.userId,
       ownerKind: "account",
-
       sourceVerb: "returning",
       sourceName: `cancelled auction #${listing.id}`,
       mailSubject: "Auction cancel overflow",
       mailBody: `Some items from your cancelled auction #${listing.id} could not fit in your bags and were sent by mail.`,
-
       undeliveredPolicy: "keep",
     });
 
@@ -390,12 +364,12 @@ export async function handleAuctionCommand(
     let msg = `Cancelled auction #${listing.id}.`;
     if (added > 0) msg += ` Returned ${added}x ${def.name} to your bags.`;
     if (totalToMail > 0) msg += ` ${totalToMail}x sent to your mailbox.`;
-    if (deliver.leftover > 0)
+    if (deliver.leftover > 0) {
       msg += ` (${deliver.leftover}x could not be delivered.)`;
+    }
     return msg;
   }
 
-  // ah expire (staff-only)
   if (sub === "expire") {
     const identity = ctx.session?.identity;
     const flags = identity?.flags;
@@ -407,15 +381,18 @@ export async function handleAuctionCommand(
     return `Expired ${count} old auctions for shard ${shardId}.`;
   }
 
-  // ah reclaim
   if (sub === "reclaim") {
     const sellerCharId = (char as any).id;
     const canMailbox = !!(ctx.mail && ctx.session?.identity?.userId);
 
-    const reclaimable = (await ctx.auctions.listBySeller({
-      shardId,
-      sellerCharId,
-    })).filter((listing: any) => listing.status === "expired" && !listing.itemsReclaimed);
+    const reclaimable = (
+      await ctx.auctions.listBySeller({
+        shardId,
+        sellerCharId,
+      })
+    ).filter(
+      (listing: any) => listing.status === "expired" && !listing.itemsReclaimed
+    );
 
     if (reclaimable.length === 0) {
       return "You have no expired auctions to reclaim.";
@@ -456,15 +433,12 @@ export async function handleAuctionCommand(
         inventory: char.inventory,
         itemId: def.id,
         qty: claimed.qty,
-
         ownerId: ctx.session?.identity?.userId,
         ownerKind: "account",
-
         sourceVerb: "reclaiming",
         sourceName: `expired auction #${claimed.id}`,
         mailSubject: "Auction reclaim overflow",
         mailBody: `Some items from your expired auction #${claimed.id} could not fit in your bags and were sent by mail.`,
-
         undeliveredPolicy: "keep",
       });
 
@@ -504,10 +478,11 @@ export async function handleAuctionCommand(
     let msg = `Reclaimed items from ${totalListings} expired auction(s).`;
     if (totalToBags > 0) msg += ` ${totalToBags} item(s) went to your bags.`;
     if (totalToMail > 0) msg += ` ${totalToMail} item(s) were sent to your mailbox.`;
-    if (blockedListings > 0) msg += ` ${blockedListings} auction(s) were left untouched because you lacked bag space and mailbox delivery was unavailable.`;
+    if (blockedListings > 0) {
+      msg += ` ${blockedListings} auction(s) were left untouched because you lacked bag space and mailbox delivery was unavailable.`;
+    }
     return msg;
   }
-
 
   return "Usage: ah browse [search] | ah sell <bag> <slot> <qty> <priceEach> | ah buy <id> | ah my | ah claim";
 }

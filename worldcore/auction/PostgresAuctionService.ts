@@ -209,6 +209,33 @@ export class PostgresAuctionService implements AuctionService {
     return (res.rows as AuctionRow[]).map(rowToListing);
   }
 
+  async revertFailedBuyout(args: {
+    id: number;
+    shardId: string;
+    buyerCharId: string;
+  }): Promise<AuctionListing | null> {
+    const res = await db.query(
+      `
+      UPDATE auctions
+      SET status = 'active',
+          buyer_char_id = NULL,
+          buyer_char_name = NULL,
+          sold_at = NULL,
+          proceeds_gold = NULL
+      WHERE id = $1
+        AND shard_id = $2
+        AND status = 'sold'
+        AND buyer_char_id = $3
+        AND proceeds_claimed = false
+      RETURNING *
+    `,
+      [args.id, args.shardId, args.buyerCharId]
+    );
+
+    if (res.rowCount === 0) return null;
+    return rowToListing(res.rows[0] as AuctionRow);
+  }
+
   async claimProceeds(args: {
     shardId: string;
     sellerCharId: string;
