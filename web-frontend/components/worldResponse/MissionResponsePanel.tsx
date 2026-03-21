@@ -43,6 +43,22 @@ function normalizeUnifiedTone(value: string | undefined): UnifiedRecentResult["t
   return "success";
 }
 
+
+function formatRecentAgeLabel(timestamp: string): string {
+  const ageMs = Date.now() - new Date(timestamp).getTime();
+  if (ageMs < 60_000) return "just now";
+  const minutes = Math.floor(ageMs / 60_000);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  return `${days}d ago`;
+}
+
+function isStaleRecentResult(timestamp: string, staleAfterMs: number): boolean {
+  return Date.now() - new Date(timestamp).getTime() >= staleAfterMs;
+}
+
 function getLatestOpeningReceiptByActionKey(receipts: OpeningActionReceipt[]): Map<string, OpeningActionReceipt> {
   const latest = new Map<string, OpeningActionReceipt>();
   for (const receipt of receipts) {
@@ -277,7 +293,9 @@ export function MissionResponsePanel({
                       };
               const sourceLabel =
                 result.source === "opening" ? "opening" : result.source === "mission" ? "mission" : "world";
-              const isFresh = index === 0 && Date.now() - new Date(result.timestamp).getTime() < 180000;
+              const isFresh = index === 0 && !isStaleRecentResult(result.timestamp, 180_000);
+              const isStale = isStaleRecentResult(result.timestamp, 900_000);
+              const ageLabel = formatRecentAgeLabel(result.timestamp);
 
               return (
                 <div
@@ -290,6 +308,7 @@ export function MissionResponsePanel({
                     display: "grid",
                     gap: 4,
                     boxShadow: isFresh ? "0 0 0 1px rgba(255,255,255,0.08) inset" : "none",
+                    opacity: isStale ? 0.72 : 1,
                   }}
                 >
                   <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
@@ -308,12 +327,12 @@ export function MissionResponsePanel({
                       </span>
                     ) : null}
                     <span style={{ fontSize: 11, opacity: 0.6 }}>
-                      {new Date(result.timestamp).toLocaleTimeString()}
+                      {new Date(result.timestamp).toLocaleTimeString()} • {ageLabel}
                     </span>
                   </div>
                   <div style={{ fontSize: 12, opacity: 0.82 }}>{result.detail}</div>
                   {result.impactSummary ? (
-                    <div style={{ fontSize: 11, opacity: 0.72 }}>{result.impactSummary}</div>
+                    <div style={{ fontSize: 11, opacity: isStale ? 0.58 : 0.72 }}>{result.impactSummary}</div>
                   ) : null}
                 </div>
               );
@@ -355,7 +374,9 @@ export function MissionResponsePanel({
               </div>
               <div style={{ display: "grid", gap: 8 }}>
                 {openingActionReceipts.map((receipt, index) => {
-                  const isNewest = index === 0 && Date.now() - new Date(receipt.timestamp).getTime() < 120000;
+                  const isNewest = index === 0 && !isStaleRecentResult(receipt.timestamp, 120_000);
+                  const isStale = isStaleRecentResult(receipt.timestamp, 900_000);
+                  const ageLabel = formatRecentAgeLabel(receipt.timestamp);
                   const tone =
                     receipt.outcome === "success"
                       ? {
@@ -386,6 +407,7 @@ export function MissionResponsePanel({
                         display: "grid",
                         gap: 4,
                         boxShadow: isNewest ? "0 0 0 1px rgba(255,255,255,0.08) inset" : "none",
+                        opacity: isStale ? 0.72 : 1,
                       }}
                     >
                       <div
@@ -417,7 +439,7 @@ export function MissionResponsePanel({
                             </span>
                           ) : null}
                           <span style={{ fontSize: 11, opacity: 0.6 }}>
-                            {new Date(receipt.timestamp).toLocaleTimeString()}
+                            {new Date(receipt.timestamp).toLocaleTimeString()} • {ageLabel}
                           </span>
                         </div>
                         <button
@@ -437,7 +459,7 @@ export function MissionResponsePanel({
                       </div>
                       <div style={{ fontSize: 12, opacity: 0.82 }}>{receipt.detail}</div>
                       {receipt.impactSummary ? (
-                        <div style={{ fontSize: 11, opacity: 0.72 }}>{receipt.impactSummary}</div>
+                        <div style={{ fontSize: 11, opacity: isStale ? 0.58 : 0.72 }}>{receipt.impactSummary}</div>
                       ) : null}
                     </div>
                   );
@@ -500,7 +522,10 @@ export function MissionResponsePanel({
                   <div style={{ fontSize: 12, opacity: 0.72 }}>
                     <strong>Risk:</strong> {operation.risk}
                   </div>
-                  {latestReceipt ? (
+                  {latestReceipt ? (() => {
+                    const latestAgeLabel = formatRecentAgeLabel(latestReceipt.timestamp);
+                    const latestIsStale = isStaleRecentResult(latestReceipt.timestamp, 900_000);
+                    return (
                     <div
                       style={{
                         border: "1px dashed rgba(255,255,255,0.12)",
@@ -509,20 +534,22 @@ export function MissionResponsePanel({
                         display: "grid",
                         gap: 4,
                         background: "rgba(255,255,255,0.02)",
+                        opacity: latestIsStale ? 0.74 : 1,
                       }}
                     >
                       <div style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: 0.4, opacity: 0.68 }}>
                         Latest result for this step
                       </div>
-                      <div style={{ fontSize: 12, opacity: 0.84 }}>{latestReceipt.detail}</div>
+                      <div style={{ fontSize: 12, opacity: latestIsStale ? 0.72 : 0.84 }}>{latestReceipt.detail}</div>
                       {latestReceipt.impactSummary ? (
-                        <div style={{ fontSize: 11, opacity: 0.72 }}>{latestReceipt.impactSummary}</div>
+                        <div style={{ fontSize: 11, opacity: latestIsStale ? 0.58 : 0.72 }}>{latestReceipt.impactSummary}</div>
                       ) : null}
                       <div style={{ fontSize: 11, opacity: 0.58 }}>
-                        {new Date(latestReceipt.timestamp).toLocaleTimeString()}
+                        {new Date(latestReceipt.timestamp).toLocaleTimeString()} • {latestAgeLabel}
                       </div>
                     </div>
-                  ) : null}
+                    );
+                  })() : null}
                   <div>
                     <button
                       type="button"
