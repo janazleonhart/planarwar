@@ -23,4 +23,7 @@ export interface AuctionListing {
 
   proceedsGold?: number | null;
   proceedsClaimed?: boolean | null;
+  expiresAt?: string | null;
+  itemsReclaimed?: boolean | null;
 }
+

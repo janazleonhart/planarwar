@@ -44,6 +44,8 @@ function rowToListing(row: AuctionRow): AuctionListing {
     soldAt: row.sold_at ? row.sold_at.toISOString() : undefined,
     proceedsGold: row.proceeds_gold ?? undefined,
     proceedsClaimed: row.proceeds_claimed,
+    expiresAt: row.expires_at ? row.expires_at.toISOString() : undefined,
+    itemsReclaimed: row.items_reclaimed ?? undefined,
   };
 }
 
@@ -231,6 +233,29 @@ export class PostgresAuctionService implements AuctionService {
     const totalRaw = row?.total;
     const total = typeof totalRaw === "number" ? totalRaw : Number(totalRaw ?? 0);
     return Number.isFinite(total) && total > 0 ? total : 0;
+  }
+
+  async reclaimExpiredListing(args: {
+    id: number;
+    shardId: string;
+    sellerCharId: string;
+  }): Promise<AuctionListing | null> {
+    const res = await db.query(
+      `
+      UPDATE auctions
+      SET items_reclaimed = true
+      WHERE id = $1
+        AND shard_id = $2
+        AND seller_char_id = $3
+        AND status = 'expired'
+        AND items_reclaimed = false
+      RETURNING *
+    `,
+      [args.id, args.shardId, args.sellerCharId]
+    );
+
+    if (res.rowCount === 0) return null;
+    return rowToListing(res.rows[0] as AuctionRow);
   }
 
   async expireOld(shardId: string, now: Date): Promise<number> {

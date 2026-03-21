@@ -15,6 +15,16 @@ function deepClone<T>(v: T): T {
   return JSON.parse(JSON.stringify(v)) as T;
 }
 
+function canFitItemInBags(ctx: any, char: any, itemId: string, qty: number): boolean {
+  try {
+    const previewInv = deepClone(char.inventory);
+    const preview = ctx.items.addToInventory(previewInv, itemId, qty);
+    return (preview?.leftover ?? 0) <= 0;
+  } catch {
+    return false;
+  }
+}
+
 export async function handleAuctionCommand(
   ctx: any,
   char: any,
@@ -322,6 +332,11 @@ export async function handleAuctionCommand(
     const def = ctx.items.get(listing.itemId);
     if (!def) return "Auction refers to an unknown item.";
 
+    const canMailbox = !!(ctx.mail && ctx.session?.identity?.userId);
+    if (!canMailbox && !canFitItemInBags(ctx, char, def.id, listing.qty)) {
+      return "Your bags are full and mailbox delivery is unavailable; clear space before cancelling this auction.";
+    }
+
     const cancelled = await ctx.auctions.cancelListing({
       id: listing.id,
       sellerCharId: (char as any).id,
@@ -394,20 +409,23 @@ export async function handleAuctionCommand(
   // ah reclaim
   if (sub === "reclaim") {
     const sellerCharId = (char as any).id;
+    const canMailbox = !!(ctx.mail && ctx.session?.identity?.userId);
 
-    const listings = await ctx.auctions.reclaimExpiredForSeller({
+    const reclaimable = (await ctx.auctions.listBySeller({
       shardId,
       sellerCharId,
-    });
-    if (listings.length === 0) {
+    })).filter((listing: any) => listing.status === "expired" && !listing.itemsReclaimed);
+
+    if (reclaimable.length === 0) {
       return "You have no expired auctions to reclaim.";
     }
 
     let totalListings = 0;
     let totalToBags = 0;
     let totalToMail = 0;
+    let blockedListings = 0;
 
-    for (const listing of listings) {
+    for (const listing of reclaimable) {
       const def = ctx.items.get(listing.itemId);
       if (!def) {
         await logAuctionEvent({
@@ -421,18 +439,30 @@ export async function handleAuctionCommand(
         continue;
       }
 
+      if (!canMailbox && !canFitItemInBags(ctx, char, def.id, listing.qty)) {
+        blockedListings += 1;
+        continue;
+      }
+
+      const claimed = await ctx.auctions.reclaimExpiredListing({
+        id: listing.id,
+        shardId,
+        sellerCharId,
+      });
+      if (!claimed) continue;
+
       const deliver = await deliverItemToBagsOrMail(ctx, {
         inventory: char.inventory,
         itemId: def.id,
-        qty: listing.qty,
+        qty: claimed.qty,
 
         ownerId: ctx.session?.identity?.userId,
         ownerKind: "account",
 
         sourceVerb: "reclaiming",
-        sourceName: `expired auction #${listing.id}`,
+        sourceName: `expired auction #${claimed.id}`,
         mailSubject: "Auction reclaim overflow",
-        mailBody: `Some items from your expired auction #${listing.id} could not fit in your bags and were sent by mail.`,
+        mailBody: `Some items from your expired auction #${claimed.id} could not fit in your bags and were sent by mail.`,
 
         undeliveredPolicy: "keep",
       });
@@ -444,12 +474,12 @@ export async function handleAuctionCommand(
 
       await logAuctionEvent({
         shardId,
-        listing,
+        listing: claimed,
         action: "reclaim",
         actorCharId: sellerCharId,
         actorCharName: (char as any).name,
         details: {
-          qty: listing.qty,
+          qty: claimed.qty,
           toBags: added,
           toMail: mailed,
           undeliveredQty: deliver.leftover,
@@ -464,14 +494,19 @@ export async function handleAuctionCommand(
     }
 
     if (totalListings === 0) {
+      if (blockedListings > 0) {
+        return "Your bags are full and mailbox delivery is unavailable; clear space before reclaiming expired auctions.";
+      }
       return "There were expired auctions, but none could be reclaimed (unknown items).";
     }
 
     let msg = `Reclaimed items from ${totalListings} expired auction(s).`;
     if (totalToBags > 0) msg += ` ${totalToBags} item(s) went to your bags.`;
     if (totalToMail > 0) msg += ` ${totalToMail} item(s) were sent to your mailbox.`;
+    if (blockedListings > 0) msg += ` ${blockedListings} auction(s) were left untouched because you lacked bag space and mailbox delivery was unavailable.`;
     return msg;
   }
+
 
   return "Usage: ah browse [search] | ah sell <bag> <slot> <qty> <priceEach> | ah buy <id> | ah my | ah claim";
 }

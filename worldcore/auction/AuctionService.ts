@@ -50,6 +50,14 @@ export interface AuctionService {
     sellerCharId: string;
   }): Promise<number>;
 
+
+  /** Mark one expired, unreclaimed listing as reclaimed and return it. */
+  reclaimExpiredListing(args: {
+    id: number;
+    shardId: string;
+    sellerCharId: string;
+  }): Promise<AuctionListing | null>;
+
   /** Expire old active auctions for a shard; returns how many rows were affected. */
   expireOld(shardId: string, now: Date): Promise<number>;
 
