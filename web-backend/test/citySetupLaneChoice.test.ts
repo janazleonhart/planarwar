@@ -182,7 +182,7 @@ test("settlement lane setup choices expose exact preview deltas", () => {
   assert.equal(civic.preview.foundingResources.wealth, 0);
   assert.equal(civic.preview.passivePerTick.food, 1);
   assert.equal(civic.preview.passivePerTick.unity, 1);
-  assert.equal(civic.preview.pressureFloor.stage, "steady");
+  assert.equal(civic.preview.pressureFloor.stage, "stable");
   assert.ok(civic.preview.runtimeAccess.some((entry) => /outside pressure/i.test(entry)));
 
   assert.equal(shadow.preview.foundingResources.wealth, 18);
@@ -198,3 +198,70 @@ test("settlement lane setup choices expose exact preview deltas", () => {
   assert.equal(shadow.preview.pressureFloor.total, 33);
   assert.ok(shadow.preview.runtimeAccess.some((entry) => /black-market world consequence windows/i.test(entry)));
 });
+
+test("settlement lane setup preview matches applied bootstrap and passive truth", () => {
+  const civicBaseline = createInitialPlayerState("preview-civic-baseline", seedWorld(), defaultPolicies);
+  const civicApplied = createInitialPlayerState("preview-civic-applied", seedWorld(), defaultPolicies);
+  const shadowBaseline = createInitialPlayerState("preview-shadow-baseline", seedWorld(), defaultPolicies);
+  const shadowApplied = createInitialPlayerState("preview-shadow-applied", seedWorld(), defaultPolicies);
+
+  const civicChoice = buildSettlementLaneChoice("city");
+  const shadowChoice = buildSettlementLaneChoice("black_market");
+
+  applySettlementLaneBootstrap(civicApplied, "city");
+  applySettlementLaneBootstrap(shadowApplied, "black_market");
+
+  assert.equal(civicApplied.resources.food - civicBaseline.resources.food, civicChoice.preview.foundingResources.food);
+  assert.equal(civicApplied.resources.materials - civicBaseline.resources.materials, civicChoice.preview.foundingResources.materials);
+  assert.equal(civicApplied.resources.wealth - civicBaseline.resources.wealth, civicChoice.preview.foundingResources.wealth);
+  assert.equal(civicApplied.resources.mana - civicBaseline.resources.mana, civicChoice.preview.foundingResources.mana);
+  assert.equal(civicApplied.resources.knowledge - civicBaseline.resources.knowledge, civicChoice.preview.foundingResources.knowledge);
+  assert.equal(civicApplied.resources.unity - civicBaseline.resources.unity, civicChoice.preview.foundingResources.unity);
+
+  assert.equal(shadowApplied.resources.food - shadowBaseline.resources.food, shadowChoice.preview.foundingResources.food);
+  assert.equal(shadowApplied.resources.materials - shadowBaseline.resources.materials, shadowChoice.preview.foundingResources.materials);
+  assert.equal(shadowApplied.resources.wealth - shadowBaseline.resources.wealth, shadowChoice.preview.foundingResources.wealth);
+  assert.equal(shadowApplied.resources.mana - shadowBaseline.resources.mana, shadowChoice.preview.foundingResources.mana);
+  assert.equal(shadowApplied.resources.knowledge - shadowBaseline.resources.knowledge, shadowChoice.preview.foundingResources.knowledge);
+  assert.equal(shadowApplied.resources.unity - shadowBaseline.resources.unity, shadowChoice.preview.foundingResources.unity);
+
+  assert.equal(civicApplied.city.stats.prosperity - civicBaseline.city.stats.prosperity, civicChoice.preview.foundingStats.prosperity);
+  assert.equal(civicApplied.city.stats.influence - civicBaseline.city.stats.influence, civicChoice.preview.foundingStats.influence);
+  assert.equal(civicApplied.city.stats.security - civicBaseline.city.stats.security, civicChoice.preview.foundingStats.security);
+  assert.equal(civicApplied.city.stats.stability - civicBaseline.city.stats.stability, civicChoice.preview.foundingStats.stability);
+  assert.equal(civicApplied.city.stats.unity - civicBaseline.city.stats.unity, civicChoice.preview.foundingStats.unity);
+
+  assert.equal(shadowApplied.city.stats.prosperity - shadowBaseline.city.stats.prosperity, shadowChoice.preview.foundingStats.prosperity);
+  assert.equal(shadowApplied.city.stats.influence - shadowBaseline.city.stats.influence, shadowChoice.preview.foundingStats.influence);
+  assert.equal(shadowApplied.city.stats.security - shadowBaseline.city.stats.security, shadowChoice.preview.foundingStats.security);
+  assert.equal(shadowApplied.city.stats.stability - shadowBaseline.city.stats.stability, shadowChoice.preview.foundingStats.stability);
+  assert.equal(shadowApplied.city.stats.unity - shadowBaseline.city.stats.unity, shadowChoice.preview.foundingStats.unity);
+
+  const civicSummary = buildCitySummary(civicApplied);
+  const shadowSummary = buildCitySummary(shadowApplied);
+
+  assert.equal(civicSummary.productionBreakdown.settlementLane.foodPerTick, civicChoice.preview.passivePerTick.food);
+  assert.equal(civicSummary.productionBreakdown.settlementLane.materialsPerTick, civicChoice.preview.passivePerTick.materials);
+  assert.equal(civicSummary.productionBreakdown.settlementLane.wealthPerTick, civicChoice.preview.passivePerTick.wealth);
+  assert.equal(civicSummary.productionBreakdown.settlementLane.manaPerTick, civicChoice.preview.passivePerTick.mana);
+  assert.equal(civicSummary.productionBreakdown.settlementLane.knowledgePerTick, civicChoice.preview.passivePerTick.knowledge);
+  assert.equal(civicSummary.productionBreakdown.settlementLane.unityPerTick, civicChoice.preview.passivePerTick.unity);
+
+  assert.equal(shadowSummary.productionBreakdown.settlementLane.foodPerTick, shadowChoice.preview.passivePerTick.food);
+  assert.equal(shadowSummary.productionBreakdown.settlementLane.materialsPerTick, shadowChoice.preview.passivePerTick.materials);
+  assert.equal(shadowSummary.productionBreakdown.settlementLane.wealthPerTick, shadowChoice.preview.passivePerTick.wealth);
+  assert.equal(shadowSummary.productionBreakdown.settlementLane.manaPerTick, shadowChoice.preview.passivePerTick.mana);
+  assert.equal(shadowSummary.productionBreakdown.settlementLane.knowledgePerTick, shadowChoice.preview.passivePerTick.knowledge);
+  assert.equal(shadowSummary.productionBreakdown.settlementLane.unityPerTick, shadowChoice.preview.passivePerTick.unity);
+
+  assert.equal(civicApplied.cityStress.stage, civicChoice.preview.pressureFloor.stage);
+  assert.equal(civicApplied.cityStress.total, civicChoice.preview.pressureFloor.total);
+  assert.equal(civicApplied.cityStress.threatPressure, civicChoice.preview.pressureFloor.threatPressure);
+  assert.equal(civicApplied.cityStress.unityPressure, civicChoice.preview.pressureFloor.unityPressure);
+
+  assert.equal(shadowApplied.cityStress.stage, shadowChoice.preview.pressureFloor.stage);
+  assert.equal(shadowApplied.cityStress.total, shadowChoice.preview.pressureFloor.total);
+  assert.equal(shadowApplied.cityStress.threatPressure, shadowChoice.preview.pressureFloor.threatPressure);
+  assert.equal(shadowApplied.cityStress.unityPressure, shadowChoice.preview.pressureFloor.unityPressure);
+});
+

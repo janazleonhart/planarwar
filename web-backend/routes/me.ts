@@ -51,7 +51,7 @@ export type SettlementLaneChoicePreview = {
   foundingStats: SettlementLaneStatDelta;
   passivePerTick: SettlementLaneResourceDelta;
   pressureFloor: {
-    stage: "steady" | "strained";
+    stage: "stable" | "strained"; 
     total: number;
     threatPressure: number;
     unityPressure: number;
@@ -86,7 +86,7 @@ export function buildSettlementLaneChoice(lane: "city" | "black_market"): Settle
       foundingResources: { food: 0, materials: 0, wealth: 0, mana: 0, knowledge: 0, unity: 0 },
       foundingStats: { prosperity: 0, influence: 0, security: 0, stability: 0, unity: 0 },
       passivePerTick: { food: 1, materials: 0, wealth: 0, mana: 0, knowledge: 0, unity: 1 },
-      pressureFloor: { stage: "steady", total: 0, threatPressure: 0, unityPressure: 0 },
+      pressureFloor: { stage: "stable", total: 0, threatPressure: 0, unityPressure: 0 },
       runtimeAccess: [
         "Treats black-market pressure as outside pressure instead of a native lane.",
         "Prefers overt civic stabilization before shadow opportunism.",
