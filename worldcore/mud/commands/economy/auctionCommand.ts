@@ -339,6 +339,7 @@ export async function handleAuctionCommand(
 
     const cancelled = await ctx.auctions.cancelListing({
       id: listing.id,
+      shardId,
       sellerCharId: (char as any).id,
     });
     if (!cancelled) {

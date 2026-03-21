@@ -36,6 +36,7 @@ export interface AuctionService {
   /** Seller cancels their own active listing, returns listing or null. */
   cancelListing(args: {
     id: number;
+    shardId: string;
     sellerCharId: string;
   }): Promise<AuctionListing | null>;
 

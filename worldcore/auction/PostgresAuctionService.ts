@@ -171,6 +171,7 @@ export class PostgresAuctionService implements AuctionService {
 
   async cancelListing(args: {
     id: number;
+    shardId: string;
     sellerCharId: string;
   }): Promise<AuctionListing | null> {
     const res = await db.query(
@@ -178,11 +179,12 @@ export class PostgresAuctionService implements AuctionService {
       UPDATE auctions
       SET status = 'cancelled'
       WHERE id = $1
-        AND seller_char_id = $2
+        AND shard_id = $2
+        AND seller_char_id = $3
         AND status = 'active'
       RETURNING *
     `,
-      [args.id, args.sellerCharId]
+      [args.id, args.shardId, args.sellerCharId]
     );
 
     if (res.rowCount === 0) return null;
