@@ -29,6 +29,7 @@ export type MePageFlashSetter = (kind: "ok" | "err", text: string) => void;
 export type CreateMePageActionsArgs = {
   busyAction: string | null;
   cityNameDraft: string;
+  citySetupLane: "city" | "black_market";
   me: MeProfile | null;
   refreshMe: (mode?: InfrastructureMode) => Promise<void>;
   serviceMode: InfrastructureMode;
@@ -42,6 +43,7 @@ export type CreateMePageActionsArgs = {
 export function createMePageActions({
   busyAction,
   cityNameDraft,
+  citySetupLane,
   me,
   refreshMe,
   serviceMode,
@@ -100,7 +102,7 @@ export function createMePageActions({
 
   const handleCreateCity = () =>
     runAction("Create city", async () => {
-      await bootstrapCity(cityNameDraft);
+      await bootstrapCity(cityNameDraft, undefined, citySetupLane);
     });
 
   const handleRenameCity = () =>

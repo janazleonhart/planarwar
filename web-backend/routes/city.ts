@@ -28,7 +28,8 @@ router.post("/bootstrap", async (req, res) => {
 
     const rawName = String(req.body?.name ?? "").trim() || suggestCityName(viewer.username);
     const shardId = String(req.body?.shardId ?? "").trim() || "prime_shard";
-    const result = await createCityForViewer(viewer, { name: rawName, shardId });
+    const settlementLane = String(req.body?.settlementLane ?? req.body?.laneChoice ?? "").trim();
+    const result = await createCityForViewer(viewer, { name: rawName, shardId, settlementLane });
 
     return res.status(result.created ? 201 : 200).json({
       ok: true,

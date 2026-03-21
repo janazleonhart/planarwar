@@ -32,6 +32,7 @@ export function MePage() {
     bridgeStatus,
     busyAction,
     cityNameDraft,
+    citySetupLane,
     error,
     handleBuildBuilding,
     handleCompleteMission,
@@ -56,6 +57,7 @@ export function MePage() {
     notice,
     refreshMe,
     setCityNameDraft,
+    setCitySetupLane,
     worldActionBusyId,
   } = useMePageController(serviceMode);
 
@@ -208,6 +210,8 @@ export function MePage() {
         serviceMode={serviceMode}
         cityNameDraft={cityNameDraft}
         setCityNameDraft={setCityNameDraft}
+        citySetupLane={citySetupLane}
+        setCitySetupLane={setCitySetupLane}
         disabled={disabled}
         techOptions={techOptions}
         quoteMap={quoteMap}

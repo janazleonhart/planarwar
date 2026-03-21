@@ -41,6 +41,7 @@ export interface CitySummary {
   name: string;
   shardId: string;
   regionId: string;
+  settlementLane: "city" | "black_market";
   tier: number;
   maxBuildingSlots: number;
   stats: CityStats;

@@ -47,6 +47,7 @@ function makeCity(): CitySummary {
     name: "Asterfall",
     shardId: "shard_1",
     regionId: "starter_plains",
+    settlementLane: "city",
     tier: 2,
     maxBuildingSlots: 8,
     stats: {

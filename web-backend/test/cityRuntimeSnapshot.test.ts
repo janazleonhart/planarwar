@@ -47,6 +47,7 @@ function makePlayerState(overrides: Partial<PlayerState> = {}): PlayerState {
     shardId: "prime_shard",
     regionId: "default_region" as any,
     tier: 1,
+    settlementLane: "city",
     maxBuildingSlots: 6,
     stats: {
       population: 10,

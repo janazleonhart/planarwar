@@ -20,6 +20,8 @@ type CityCorePanelProps = {
   serviceMode: InfrastructureMode;
   cityNameDraft: string;
   setCityNameDraft: (value: string) => void;
+  citySetupLane: "city" | "black_market";
+  setCitySetupLane: (value: "city" | "black_market") => void;
   disabled: boolean;
   techOptions: NonNullable<MeProfile["availableTechs"]>;
   quoteMap: Map<string, PublicServiceQuote>;
@@ -44,6 +46,8 @@ export function CityCorePanel({
   serviceMode,
   cityNameDraft,
   setCityNameDraft,
+  citySetupLane,
+  setCitySetupLane,
   disabled,
   techOptions,
   quoteMap,
@@ -74,8 +78,39 @@ export function CityCorePanel({
           </p>
           {me.canCreateCity ? (
             <>
+              <div style={{ display: "grid", gap: 8 }}>
+                <div style={{ fontSize: 13, fontWeight: 700 }}>Choose your founding lane</div>
+                <div style={{ display: "grid", gap: 8, gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))" }}>
+                  {(me.citySetupChoices ?? [
+                    { id: "city", label: "City", summary: "Orderly civic growth with formal desks and visible administration." },
+                    { id: "black_market", label: "Black Market", summary: "A shadow-rooted start for players who want deniable leverage and illicit opportunity." },
+                  ]).map((choice) => {
+                    const active = citySetupLane === choice.id;
+                    return (
+                      <button
+                        key={choice.id}
+                        type="button"
+                        onClick={() => setCitySetupLane(choice.id)}
+                        style={{
+                          textAlign: "left",
+                          padding: "10px 12px",
+                          borderRadius: 10,
+                          border: active ? "2px solid #777" : "1px solid #666",
+                          background: active ? "#161616" : "#111",
+                          color: "#eee",
+                          cursor: disabled ? "not-allowed" : "pointer",
+                          opacity: disabled ? 0.7 : 1,
+                        }}
+                      >
+                        <div style={{ fontWeight: 700, marginBottom: 4 }}>{choice.label}</div>
+                        <div style={{ fontSize: 12, opacity: 0.82 }}>{choice.summary}</div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
               <label style={{ display: "grid", gap: 6 }}>
-                <span>City name</span>
+                <span>{citySetupLane === "black_market" ? "Front name" : "City name"}</span>
                 <input
                   value={cityNameDraft}
                   onChange={(e) => setCityNameDraft(e.target.value)}
@@ -92,6 +127,9 @@ export function CityCorePanel({
               </label>
               <div style={{ fontSize: 12, opacity: 0.7 }}>
                 3–24 characters. Letters, numbers, spaces, apostrophes, and hyphens only.
+                {citySetupLane === "black_market"
+                  ? " This starts the settlement on the shadow-market lane; the full split UI comes later."
+                  : " This starts the settlement on the civic city lane."}
               </div>
               <button
                 onClick={() => void handleCreateCity()}
@@ -106,7 +144,7 @@ export function CityCorePanel({
                   opacity: disabled ? 0.6 : 1,
                 }}
               >
-                Create City
+                {citySetupLane === "black_market" ? "Found Black Market" : "Create City"}
               </button>
             </>
           ) : null}

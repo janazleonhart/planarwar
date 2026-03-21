@@ -136,6 +136,7 @@ export function buildCityRuntimeSnapshot(ps: PlayerState): CityRuntimeSnapshotV1
     city: deepCloneJson({
       tier: ps.city.tier,
       regionId: ps.city.regionId,
+      settlementLane: ps.city.settlementLane ?? "city",
       maxBuildingSlots: ps.city.maxBuildingSlots,
       stats: ps.city.stats,
       buildings: ps.city.buildings,
@@ -178,6 +179,7 @@ export function applyCityRuntimeSnapshot(ps: PlayerState, snapshot: CityRuntimeS
     ...ps.city,
     tier: typeof city.tier === "number" ? city.tier : ps.city.tier,
     regionId: typeof city.regionId === "string" && city.regionId.trim() ? (city.regionId as any) : ps.city.regionId,
+    settlementLane: city.settlementLane === "black_market" ? "black_market" : "city",
     maxBuildingSlots: typeof city.maxBuildingSlots === "number" ? city.maxBuildingSlots : ps.city.maxBuildingSlots,
     stats: isRecord(city.stats) ? (deepCloneJson(city.stats) as PlayerState["city"]["stats"]) : ps.city.stats,
     buildings: Array.isArray(city.buildings) ? (deepCloneJson(city.buildings) as PlayerState["city"]["buildings"]) : ps.city.buildings,
@@ -257,6 +259,7 @@ export function hydratePlayerStateFromCityRow(ps: PlayerState, row: CityRowAutho
     if (regionId) {
       (ps.city as any).regionId = regionId;
     }
+    (ps.city as any).settlementLane = meta.settlementLane === "black_market" ? "black_market" : "city";
   }
 
   return applyCityRowAuthority(ps, row, viewer);

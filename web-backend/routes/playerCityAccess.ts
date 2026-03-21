@@ -15,6 +15,13 @@ const auth = new PostgresAuthService();
 const DEFAULT_CITY_SHARD_ID = "prime_shard";
 const DEFAULT_CITY_REGION_ID = "ancient_elwynn";
 
+
+export type SettlementLaneChoice = "city" | "black_market";
+
+export function normalizeSettlementLaneChoice(input: unknown): SettlementLaneChoice {
+  return String(input ?? "").trim().toLowerCase() === "black_market" ? "black_market" : "city";
+}
+
 export interface ViewerIdentity {
   userId: string;
   username: string;
@@ -244,7 +251,7 @@ function pgErrCode(err: any): string | null {
 
 export async function createCityForViewer(
   viewer: ViewerIdentity,
-  args: { name: string; shardId?: string },
+  args: { name: string; shardId?: string; settlementLane?: SettlementLaneChoice | string },
 ): Promise<{ city: CityRow; playerState: PlayerState; created: boolean }> {
   if (!viewer.isAuthenticated || viewer.isDemo) throw new Error("auth_required");
 
@@ -258,9 +265,11 @@ export async function createCityForViewer(
   if (validated.ok === false) throw new Error(validated.error);
 
   const shardId = safeTrim(args.shardId) || DEFAULT_CITY_SHARD_ID;
+  const settlementLane = normalizeSettlementLaneChoice(args.settlementLane);
   const meta = {
     regionId: DEFAULT_CITY_REGION_ID,
-    createdBy: "city_bootstrap_v1",
+    settlementLane,
+    createdBy: "city_bootstrap_lane_choice_v1",
   };
 
   try {

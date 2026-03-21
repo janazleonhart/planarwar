@@ -25,6 +25,7 @@ export function useMePageController(serviceMode: InfrastructureMode) {
   const [loading, setLoading] = useState(true);
   const [busyAction, setBusyAction] = useState<string | null>(null);
   const [cityNameDraft, setCityNameDraft] = useState("");
+  const [citySetupLane, setCitySetupLane] = useState<"city" | "black_market">("city");
   const [worldActionBusyId, setWorldActionBusyId] = useState<string | null>(null);
   const [notice, setNotice] = useState<MePageNotice>(null);
 
@@ -51,6 +52,7 @@ export function useMePageController(serviceMode: InfrastructureMode) {
       setBridgeStatus(bridge);
       setMissionBoard(missions);
       setCityNameDraft(data.city?.name ?? data.suggestedCityName ?? "");
+      setCitySetupLane(data.city?.settlementLane ?? "city");
     } catch (err: any) {
       console.error(err);
       setError(err?.message ?? "Failed to refresh city state");
@@ -93,6 +95,7 @@ export function useMePageController(serviceMode: InfrastructureMode) {
   } = createMePageActions({
     busyAction,
     cityNameDraft,
+    citySetupLane,
     me,
     refreshMe,
     serviceMode,
@@ -131,6 +134,8 @@ export function useMePageController(serviceMode: InfrastructureMode) {
     notice,
     refreshMe,
     setCityNameDraft,
+    citySetupLane,
+    setCitySetupLane,
     worldActionBusyId,
   };
 }

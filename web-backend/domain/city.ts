@@ -1,8 +1,9 @@
-//backend/src/domain/city.ts
+//web-backend/domain/city.ts
 
 import type { RegionId } from "./world";
 
 export type BuildingKind = "housing" | "farmland" | "mine" | "arcane_spire";
+export type SettlementLane = "city" | "black_market";
 
 export interface CityBuilding {
   id: string;
@@ -28,6 +29,7 @@ export interface City {
   name: string;
   shardId: string;
   regionId: RegionId;
+  settlementLane: SettlementLane;
   tier: number;
   maxBuildingSlots: number;
   stats: CityStats;
@@ -222,6 +224,7 @@ export function seedStarterCity(ownerId: string): City {
     // satisfy RegionId for now
     regionId: "ancient_elwynn" as RegionId,
     tier: 1,
+    settlementLane: "city",
     specializationId: undefined,
     specializationStars: 0,
     specializationStarsHistory: {},

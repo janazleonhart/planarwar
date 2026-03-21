@@ -956,12 +956,19 @@ export interface WorldConsequenceHooksView {
   };
 }
 
+export type CitySetupChoice = {
+  id: "city" | "black_market";
+  label: string;
+  summary: string;
+};
+
 export interface MeProfile {
   ok?: boolean;
   isDemo?: boolean;
   hasCity?: boolean;
   canCreateCity?: boolean;
   suggestedCityName?: string;
+  citySetupChoices?: CitySetupChoice[];
   userId: string;
   username: string;
   city: CitySummary | null;
@@ -1227,10 +1234,10 @@ export type CityBootstrapResult = {
 };
 export type CityRenameResult = { ok: boolean; city?: CitySummary; error?: string };
 
-export async function bootstrapCity(name: string, shardId?: string): Promise<CityBootstrapResult> {
+export async function bootstrapCity(name: string, shardId?: string, settlementLane: "city" | "black_market" = "city"): Promise<CityBootstrapResult> {
   return api<CityBootstrapResult>("/api/city/bootstrap", {
     method: "POST",
-    body: JSON.stringify({ name, shardId }),
+    body: JSON.stringify({ name, shardId, settlementLane }),
   });
 }
 
