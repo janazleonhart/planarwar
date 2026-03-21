@@ -124,19 +124,41 @@ export function CityIdentityCard({ me, cardStyle }: CityIdentityCardProps) {
               borderRadius: 10,
               padding: "10px 12px",
               display: "grid",
-              gap: 3,
+              gap: 8,
             }}
           >
-            <div style={{ fontSize: 12, textTransform: "uppercase", letterSpacing: 0.5, opacity: 0.78 }}>
-              Settlement lane
+            <div style={{ display: "grid", gap: 3 }}>
+              <div style={{ fontSize: 12, textTransform: "uppercase", letterSpacing: 0.5, opacity: 0.78 }}>
+                Settlement lane
+              </div>
+              <div style={{ fontSize: 16, fontWeight: 700 }}>
+                {city.settlementLaneProfile.label} · {city.settlementLaneProfile.posture}
+              </div>
+              <div style={{ fontSize: 12, opacity: 0.84 }}>
+                {city.settlementLane === "black_market"
+                  ? "Shadow-founded settlement. Expect illicit throughput, hotter openings, and darker receipts."
+                  : "Civic-founded settlement. Expect steadier public support, cleaner recovery, and calmer opening posture."}
+              </div>
             </div>
-            <div style={{ fontSize: 16, fontWeight: 700 }}>
-              {city.settlementLaneProfile.label} · {city.settlementLaneProfile.posture}
-            </div>
-            <div style={{ fontSize: 12, opacity: 0.84 }}>
-              {city.settlementLane === "black_market"
-                ? "Shadow-founded settlement. Expect illicit throughput, hotter openings, and darker receipts."
-                : "Civic-founded settlement. Expect steadier public support, cleaner recovery, and calmer opening posture."}
+
+            <div
+              style={{
+                borderTop: "1px solid rgba(255,255,255,0.16)",
+                paddingTop: 8,
+                display: "grid",
+                gap: 4,
+              }}
+            >
+              <div style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: 0.5, opacity: 0.72 }}>
+                Founding receipt
+              </div>
+              <div style={{ fontSize: 14, fontWeight: 700 }}>{city.settlementLaneReceipt.title}</div>
+              <div style={{ fontSize: 12, opacity: 0.84 }}>{city.settlementLaneReceipt.summary}</div>
+              {city.settlementLaneLatestReceipt.message !== city.settlementLaneReceipt.summary ? (
+                <div style={{ fontSize: 12, opacity: 0.78 }}>
+                  <strong>{city.settlementLaneLatestReceipt.title}:</strong> {city.settlementLaneLatestReceipt.message}
+                </div>
+              ) : null}
             </div>
           </div>
 
