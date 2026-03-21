@@ -368,21 +368,33 @@ export function CityCorePanel({
                   ? " This starts the settlement on the shadow-market lane; the full split UI comes later."
                   : " This starts the settlement on the civic city lane."}
               </div>
-              <button
-                onClick={() => void handleCreateCity()}
-                disabled={disabled || cityNameDraft.trim().length < 3}
-                style={{
-                  padding: "8px 12px",
-                  borderRadius: 6,
-                  border: "1px solid #777",
-                  background: "#111",
-                  cursor: disabled ? "not-allowed" : "pointer",
-                  width: "fit-content",
-                  opacity: disabled ? 0.6 : 1,
-                }}
-              >
-                {citySetupLane === "black_market" ? "Found Black Market" : "Create City"}
-              </button>
+              <div style={{ display: "grid", gap: 6, width: "fit-content" }}>
+                <div style={{ fontSize: 11, opacity: 0.72, textTransform: "uppercase" }}>
+                  Ready to found
+                </div>
+                <button
+                  onClick={() => void handleCreateCity()}
+                  disabled={disabled || cityNameDraft.trim().length < 3}
+                  style={{
+                    padding: "8px 12px",
+                    borderRadius: 6,
+                    border: citySetupLane === "black_market" ? "1px solid #8b3a3a" : "1px solid #2d6f63",
+                    background: citySetupLane === "black_market" ? "#1a1113" : "#0f1716",
+                    color: citySetupLane === "black_market" ? "#ffd7d7" : "#d7fff2",
+                    cursor: disabled ? "not-allowed" : "pointer",
+                    width: "fit-content",
+                    opacity: disabled ? 0.6 : 1,
+                    fontWeight: 700,
+                  }}
+                >
+                  {citySetupLane === "black_market" ? "Found Black Market" : "Create City"}
+                </button>
+                <div style={{ fontSize: 12, opacity: 0.78 }}>
+                  {citySetupLane === "black_market"
+                    ? "This locks in the shadow-market opening path for this settlement."
+                    : "This locks in the civic city opening path for this settlement."}
+                </div>
+              </div>
             </>
           ) : null}
         </div>
