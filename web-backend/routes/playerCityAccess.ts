@@ -5,6 +5,7 @@ import type { Request } from "express";
 import { PostgresAuthService } from "../../worldcore/auth/PostgresAuthService";
 import { db } from "../../worldcore/db/Database";
 import { DEMO_PLAYER_ID, getDemoPlayer, getOrCreatePlayerState, type PlayerState } from "../gameState";
+import { pushEvent } from "../gameState/gameStateCore";
 import blockedNames from "../data/cityBlockedNames.json";
 import {
   buildCityRuntimeEnvelope,
@@ -14,7 +15,6 @@ import {
 const auth = new PostgresAuthService();
 const DEFAULT_CITY_SHARD_ID = "prime_shard";
 const DEFAULT_CITY_REGION_ID = "ancient_elwynn";
-
 
 export type SettlementLaneChoice = "city" | "black_market";
 
@@ -249,6 +249,35 @@ function pgErrCode(err: any): string | null {
   return typeof code === "string" && code.trim() ? code.trim() : null;
 }
 
+export function applySettlementLaneBootstrap(ps: PlayerState, lane: SettlementLaneChoice): void {
+  ps.city.settlementLane = lane;
+  if (lane !== "black_market") return;
+
+  ps.city.stats.prosperity += 6;
+  ps.city.stats.influence += 8;
+  ps.city.stats.security = Math.max(0, ps.city.stats.security - 8);
+  ps.city.stats.stability = Math.max(0, ps.city.stats.stability - 5);
+  ps.city.stats.unity = Math.max(0, ps.city.stats.unity - 4);
+
+  ps.resources.wealth += 18;
+  ps.resources.knowledge += 4;
+  ps.resources.materials += 6;
+  ps.resources.unity = Math.max(0, ps.resources.unity - 2);
+
+  ps.cityStress.stage = ps.cityStress.total >= 33 ? ps.cityStress.stage : "strained";
+  ps.cityStress.total = Math.max(ps.cityStress.total, 33);
+  ps.cityStress.threatPressure = Math.max(ps.cityStress.threatPressure, 8);
+  ps.cityStress.unityPressure = Math.max(ps.cityStress.unityPressure, 6);
+  ps.cityStress.lastUpdatedAt = new Date().toISOString();
+
+  pushEvent(ps, {
+    kind: "city_stress_change",
+    message: "Black market founding posture applied: quicker profit, weaker legitimacy, hotter opening pressure.",
+    regionId: ps.city.regionId,
+    outcome: "partial",
+  });
+}
+
 export async function createCityForViewer(
   viewer: ViewerIdentity,
   args: { name: string; shardId?: string; settlementLane?: SettlementLaneChoice | string },
@@ -286,6 +315,7 @@ export async function createCityForViewer(
     if (!row) throw new Error("city_create_failed");
 
     const ps = syncPlayerStateFromCityRow(getOrCreatePlayerState(viewer.playerId), row, viewer);
+    applySettlementLaneBootstrap(ps, settlementLane);
     const access: PlayerAccess = { viewer, playerId: viewer.playerId, playerState: ps, city: row };
     await persistPlayerStateForCity(access);
     return { city: row, playerState: ps, created: true };
