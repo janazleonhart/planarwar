@@ -258,6 +258,12 @@ export function applySettlementLaneBootstrap(ps: PlayerState, lane: SettlementLa
       regionId: ps.city.regionId,
       outcome: "success",
     });
+    pushEvent(ps, {
+      kind: "city_morph",
+      message: "Opening directive: stabilize supply, logistics, and public order before chasing shadow upside.",
+      regionId: ps.city.regionId,
+      outcome: "success",
+    });
     return;
   }
 
@@ -281,6 +287,12 @@ export function applySettlementLaneBootstrap(ps: PlayerState, lane: SettlementLa
   pushEvent(ps, {
     kind: "city_morph",
     message: "Black market founding posture applied: quicker profit, weaker legitimacy, hotter opening pressure.",
+    regionId: ps.city.regionId,
+    outcome: "partial",
+  });
+  pushEvent(ps, {
+    kind: "city_morph",
+    message: "Opening directive: secure illicit throughput and cool cartel heat before public strain turns the shadow lane into a trap.",
     regionId: ps.city.regionId,
     outcome: "partial",
   });

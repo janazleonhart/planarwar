@@ -67,8 +67,16 @@ test("black market lane bootstrap applies crooked founding posture", () => {
   assert.equal(ps.city.stats.stability, Math.max(0, baseline.stability - 5));
   assert.equal(ps.city.stats.unity, Math.max(0, baseline.cityUnity - 4));
 
-  assert.equal(ps.eventLog.length, baseline.eventCount + 1);
+  assert.equal(ps.eventLog.length, baseline.eventCount + 2);
   assert.equal(ps.eventLog.at(-1)?.kind, "city_morph");
+  assert.match(
+    ps.eventLog.at(-2)?.message ?? "",
+    /Black market founding posture applied/i,
+  );
+  assert.match(
+    ps.eventLog.at(-1)?.message ?? "",
+    /Opening directive: secure illicit throughput and cool cartel heat/i,
+  );
 });
 
 

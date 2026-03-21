@@ -192,9 +192,9 @@ export function buildSettlementLaneLatestReceipt(ps: PlayerState): SettlementLan
   const match = events.find((event) => {
     if (event.kind !== "city_morph") return false;
     if (lane === "black_market") {
-      return /black market|shadow surplus/i.test(event.message);
+      return /black market|shadow surplus|secure illicit throughput/i.test(event.message);
     }
-    return /city founding posture|civic surplus/i.test(event.message);
+    return /city founding posture|civic surplus|stabilize supply, logistics, and public order/i.test(event.message);
   });
 
   if (match) {
