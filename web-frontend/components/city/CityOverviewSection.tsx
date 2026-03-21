@@ -195,13 +195,49 @@ export function CityOverviewSection({
             borderRadius: 10,
             padding: 10,
             display: "grid",
-            gap: 4,
+            gap: 8,
             background: city.settlementLane === "black_market" ? "rgba(70,25,30,0.16)" : "rgba(30,55,75,0.14)",
           }}>
             <div style={{ fontSize: 12, opacity: 0.72 }}>Lane posture</div>
             <div style={{ fontSize: 18, fontWeight: 700 }}>{city.settlementLaneProfile.label}</div>
             <div style={{ fontSize: 12, opacity: 0.82 }}>{city.settlementLaneProfile.posture}</div>
             <div style={{ fontSize: 12, opacity: 0.76 }}>{city.settlementLaneProfile.summary}</div>
+            <div style={{ display: "grid", gap: 6 }}>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                {city.settlementLaneProfile.strengths.slice(0, 2).map((strength) => (
+                  <span
+                    key={strength}
+                    style={{
+                      display: "inline-block",
+                      padding: "3px 8px",
+                      borderRadius: 999,
+                      fontSize: 11,
+                      background: city.settlementLane === "black_market" ? "rgba(120,45,55,0.24)" : "rgba(45,95,75,0.24)",
+                      border: "1px solid rgba(255,255,255,0.14)",
+                    }}
+                  >
+                    + {strength}
+                  </span>
+                ))}
+              </div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                {city.settlementLaneProfile.liabilities.slice(0, 2).map((liability) => (
+                  <span
+                    key={liability}
+                    style={{
+                      display: "inline-block",
+                      padding: "3px 8px",
+                      borderRadius: 999,
+                      fontSize: 11,
+                      background: "rgba(80,80,80,0.22)",
+                      border: "1px solid rgba(255,255,255,0.12)",
+                    }}
+                  >
+                    − {liability}
+                  </span>
+                ))}
+              </div>
+            </div>
           </div>
           <div style={{
             border: "1px solid #555",
