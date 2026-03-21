@@ -221,24 +221,32 @@ export async function handleAuctionCommand(
           `You bought ${listing.qty}x ${def.name} for ${price} gold from ${listing.sellerCharName}.`,
           [{ itemId: def.id, qty: listing.qty }]
         );
-
-        setCharacterGold(char, currentGold - price);
-        await logAuctionEvent({
-          shardId,
-          listing: updated,
-          action: "buy",
-          actorCharId: (char as any).id,
-          actorCharName: (char as any).name,
-          details: { priceGold: price },
-        });
-        await ctx.characters.saveCharacter(char);
-        return `You bought ${listing.qty}x ${def.name} for ${price} gold. The items have been mailed to you.`;
       } catch {
         await revertFailedBuyout();
         return "That auction could not be delivered right now, so the buyout was rolled back. Clear bag space and try again.";
       }
+
+      setCharacterGold(char, currentGold - price);
+      try {
+        await ctx.characters.saveCharacter(char);
+      } catch (error) {
+        setCharacterGold(char, currentGold);
+        await revertFailedBuyout();
+        throw error;
+      }
+
+      await logAuctionEvent({
+        shardId,
+        listing: updated,
+        action: "buy",
+        actorCharId: (char as any).id,
+        actorCharName: (char as any).name,
+        details: { priceGold: price },
+      });
+      return `You bought ${listing.qty}x ${def.name} for ${price} gold. The items have been mailed to you.`;
     }
 
+    const inventoryBefore = deepClone(char.inventory);
     const res = ctx.items.addToInventory(char.inventory, def.id, listing.qty);
     if (res?.leftover > 0) {
       await revertFailedBuyout();
@@ -246,6 +254,15 @@ export async function handleAuctionCommand(
     }
 
     setCharacterGold(char, currentGold - price);
+    try {
+      await ctx.characters.saveCharacter(char);
+    } catch (error) {
+      char.inventory = inventoryBefore;
+      setCharacterGold(char, currentGold);
+      await revertFailedBuyout();
+      throw error;
+    }
+
     await logAuctionEvent({
       shardId,
       listing: updated,
@@ -254,7 +271,6 @@ export async function handleAuctionCommand(
       actorCharName: (char as any).name,
       details: { priceGold: price },
     });
-    await ctx.characters.saveCharacter(char);
 
     return `You bought ${listing.qty}x ${def.name} for ${price} gold. The items were delivered to your bags.`;
   }
