@@ -106,17 +106,25 @@ export async function handleAuctionCommand(
     const def = ctx.items.get(slot.itemId);
     if (!def) return "Only DB-backed items can be auctioned.";
 
+    const originalSlot = slot ? { ...slot } : null;
+
     if (qty === slot.qty) bag.slots[slotIndex] = null;
     else slot.qty -= qty;
 
-    const listing = await ctx.auctions.createListing({
-      shardId,
-      sellerCharId: (char as any).id,
-      sellerCharName: (char as any).name,
-      itemId: def.id,
-      qty,
-      unitPriceGold: priceEach,
-    });
+    let listing;
+    try {
+      listing = await ctx.auctions.createListing({
+        shardId,
+        sellerCharId: (char as any).id,
+        sellerCharName: (char as any).name,
+        itemId: def.id,
+        qty,
+        unitPriceGold: priceEach,
+      });
+    } catch (err) {
+      bag.slots[slotIndex] = originalSlot;
+      throw err;
+    }
 
     await logAuctionEvent({
       shardId,
