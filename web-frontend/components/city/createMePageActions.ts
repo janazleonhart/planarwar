@@ -1,6 +1,6 @@
-import type { Dispatch, SetStateAction } from "react";
 // web-frontend/components/city/createMePageActions.ts
 
+import type { Dispatch, SetStateAction } from "react";
 import {
   api,
   ApiResponseError,
@@ -58,6 +58,54 @@ export function createMePageActions({
   setOpeningActionReceipts,
   worldActionBusyId,
 }: CreateMePageActionsArgs) {
+  const titleCase = (value: string) =>
+    value
+      .replace(/_/g, " ")
+      .replace(/\b\w/g, (char) => char.toUpperCase());
+
+  const getBuildingLabel = (buildingId: string) => {
+    const building = me?.city?.buildings.find((entry) => entry.id === buildingId);
+    return building?.name ?? (building ? titleCase(building.kind) : "Building");
+  };
+
+  const getTechLabel = (techId: string) => me?.availableTechs.find((tech) => tech.id === techId)?.name ?? techId;
+
+  const getHeroName = (heroId?: string) => {
+    if (!heroId) return null;
+    return me?.heroes.find((hero) => hero.id === heroId)?.name ?? null;
+  };
+
+  const getArmyLabel = (armyId?: string) => {
+    if (!armyId) return null;
+    const army = me?.armies.find((entry) => entry.id === armyId);
+    return army ? `${titleCase(army.type)} army` : null;
+  };
+
+  const describePublicServiceResult = (usage: AppliedPublicServiceUsage | null | undefined, fallback: string) => {
+    const summary = summarizeUsage(usage);
+    return summary ? `${fallback} ${summary}` : fallback;
+  };
+
+  const summarizeMissionLaunch = (result: Awaited<ReturnType<typeof startMission>>) => {
+    const missionTitle = result.activeMission?.mission?.title ?? "Mission";
+    const support = result.missionSupport;
+    const assignedHero = getHeroName(result.activeMission?.assignedHeroId);
+    const assignedArmy = getArmyLabel(result.activeMission?.assignedArmyId);
+    const assignedUnit = assignedHero ?? assignedArmy;
+    const assignmentText = assignedUnit ? `${assignedUnit} committed.` : "Force committed.";
+    if (!support) return `${missionTitle} launched. ${assignmentText}`;
+    return `${missionTitle} launched. ${assignmentText} ${support.headline} (${support.state}).`;
+  };
+
+  const summarizeMissionCompletion = (result: Awaited<ReturnType<typeof completeMission>>) => {
+    const latestReceipt = result.missionReceipts?.[0];
+    if (latestReceipt) {
+      const setbackText = latestReceipt.setbacks?.[0]?.summary ? ` ${latestReceipt.setbacks[0].summary}` : "";
+      return `${latestReceipt.missionTitle} resolved ${latestReceipt.outcome}.${setbackText}`.trim();
+    }
+    return "Mission resolved and city state refreshed.";
+  };
+
   const pushOpeningReceipt = (title: string, detail: string, outcome: OpeningActionReceipt["outcome"]) => {
     setOpeningActionReceipts((current) => [
       {
@@ -92,27 +140,31 @@ export function createMePageActions({
     }
   };
 
-  const handleBuildBuilding = (kind: CityBuilding["kind"]) =>
-    runAction(
-      `Build ${kind}`,
+  const handleBuildBuilding = (kind: CityBuilding["kind"]) => {
+    const buildingLabel = titleCase(kind);
+    return runAction(
+      `Build ${buildingLabel}`,
       () =>
         api<{ publicService?: AppliedPublicServiceUsage }>("/api/buildings/construct", {
           method: "POST",
           body: JSON.stringify({ kind, serviceMode }),
         }),
-      (result) => summarizeUsage(result.publicService)
+      (result) => describePublicServiceResult(result.publicService, `${buildingLabel} secured for the settlement spine.`)
     );
+  };
 
-  const handleUpgradeBuilding = (buildingId: string) =>
-    runAction(
-      "Upgrade building",
+  const handleUpgradeBuilding = (buildingId: string) => {
+    const buildingLabel = getBuildingLabel(buildingId);
+    return runAction(
+      `Upgrade ${buildingLabel}`,
       () =>
         api<{ publicService?: AppliedPublicServiceUsage }>("/api/buildings/upgrade", {
           method: "POST",
           body: JSON.stringify({ buildingId, serviceMode }),
         }),
-      (result) => summarizeUsage(result.publicService)
+      (result) => describePublicServiceResult(result.publicService, `${buildingLabel} improved for the next action window.`)
     );
+  };
 
   const handleTierUpCity = () =>
     runAction("Tier up city", async () => {
@@ -123,7 +175,7 @@ export function createMePageActions({
     });
 
   const handleCreateCity = () =>
-    runAction("Create city", async () => {
+    runAction(`Create ${citySetupLane === "black_market" ? "Black Market" : "City"}`, async () => {
       await bootstrapCity(cityNameDraft, undefined, citySetupLane);
     });
 
@@ -132,54 +184,65 @@ export function createMePageActions({
       await renameCity(cityNameDraft);
     });
 
-  const handleRaiseArmy = (type: ArmyType) =>
-    runAction(`Raise ${type}`, async () => {
+  const handleRaiseArmy = (type: ArmyType) => {
+    const armyLabel = titleCase(type);
+    return runAction(`Raise ${armyLabel}`, async () => {
       await api("/api/armies/raise", {
         method: "POST",
         body: JSON.stringify({ type }),
       });
-    });
+    }, () => `${armyLabel} army raised for immediate deployment.`);
+  };
 
-  const handleReinforceArmy = (armyId: string) =>
-    runAction("Reinforce army", async () => {
+  const handleReinforceArmy = (armyId: string) => {
+    const armyLabel = getArmyLabel(armyId) ?? "Army";
+    return runAction("Reinforce army", async () => {
       await api("/api/armies/reinforce", {
         method: "POST",
         body: JSON.stringify({ armyId }),
       });
-    });
+    }, () => `${armyLabel} reinforced and pushed back toward readiness.`);
+  };
 
-  const handleRecruitHero = (role: HeroRole) =>
-    runAction(
-      `Recruit ${role}`,
+  const handleRecruitHero = (role: HeroRole) => {
+    const roleLabel = titleCase(role);
+    return runAction(
+      `Recruit ${roleLabel}`,
       () =>
         api<{ publicService?: AppliedPublicServiceUsage }>("/api/heroes/recruit", {
           method: "POST",
           body: JSON.stringify({ role, serviceMode }),
         }),
-      (result) => summarizeUsage(result.publicService)
+      (result) => describePublicServiceResult(result.publicService, `${roleLabel} added to the roster for immediate assignments.`)
     );
+  };
 
   const handleEquipHeroAttachment = (
     heroId: string,
     kind: "valor_charm" | "scouting_cloak" | "arcane_focus"
-  ) =>
-    runAction("Equip attachment", async () => {
+  ) => {
+    const heroName = getHeroName(heroId) ?? "Hero";
+    const attachmentLabel = titleCase(kind);
+    return runAction("Equip attachment", async () => {
       await api("/api/heroes/equip_attachment", {
         method: "POST",
         body: JSON.stringify({ heroId, kind }),
       });
-    });
+    }, () => `${attachmentLabel} equipped on ${heroName}.`);
+  };
 
-  const handleWorkshopCraft = (kind: "valor_charm" | "scouting_cloak" | "arcane_focus") =>
-    runAction(
-      `Craft ${kind}`,
+  const handleWorkshopCraft = (kind: "valor_charm" | "scouting_cloak" | "arcane_focus") => {
+    const craftLabel = titleCase(kind);
+    return runAction(
+      `Craft ${craftLabel}`,
       () =>
         api<{ publicService?: AppliedPublicServiceUsage }>("/api/workshop/craft", {
           method: "POST",
           body: JSON.stringify({ kind, serviceMode }),
         }),
-      (result) => summarizeUsage(result.publicService)
+      (result) => describePublicServiceResult(result.publicService, `${craftLabel} entered the workshop queue.`)
     );
+  };
 
   const handleWorkshopCollect = (jobId: string) =>
     runAction("Collect craft", async () => {
@@ -187,7 +250,7 @@ export function createMePageActions({
         method: "POST",
         body: JSON.stringify({ jobId }),
       });
-    });
+    }, () => "Workshop output collected and returned to inventory.");
 
   const handleTogglePolicy = (key: keyof MeProfile["policies"]) => {
     if (!me) return;
@@ -196,15 +259,17 @@ export function createMePageActions({
         method: "POST",
         body: JSON.stringify({ key, value: !me.policies[key] }),
       });
-    });
+    }, () => `${titleCase(String(key))} policy updated.`);
   };
 
-  const handleStartTech = (techId: string) =>
-    runAction(
-      `Start tech ${techId}`,
+  const handleStartTech = (techId: string) => {
+    const techLabel = getTechLabel(techId);
+    return runAction(
+      `Start research ${techLabel}`,
       () => startTech(techId, serviceMode),
-      (result: any) => summarizeUsage(result?.publicService)
+      (result: any) => describePublicServiceResult(result?.publicService, `${techLabel} research opened for the city.`)
     );
+  };
 
   const handleStartMission = (
     missionId: string,
@@ -215,18 +280,14 @@ export function createMePageActions({
     runAction(
       "Start mission",
       () => startMission(missionId, heroId, armyId, responsePosture),
-      (result) => {
-        const support = result?.missionSupport;
-        if (!support) return "Mission launched.";
-        return `${support.headline} (${support.state})`;
-      }
+      (result) => summarizeMissionLaunch(result)
     );
 
   const handleCompleteMission = (instanceId: string) =>
     runAction(
       "Complete mission",
       () => completeMission(instanceId),
-      () => "Mission resolved and city state refreshed."
+      (result) => summarizeMissionCompletion(result)
     );
 
   const handleExecuteOpeningOperation = (operation: SettlementOpeningOperation) => {
