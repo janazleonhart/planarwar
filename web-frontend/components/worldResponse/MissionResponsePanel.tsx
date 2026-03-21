@@ -37,6 +37,9 @@ type UnifiedRecentResult = {
   source: "opening" | "mission" | "world";
 };
 
+const MAX_RECENT_RESULTS = 5;
+const MAX_RECENT_RESULTS_PER_SOURCE = 2;
+
 function normalizeUnifiedTone(value: string | undefined): UnifiedRecentResult["tone"] {
   if (value === "failure") return "failure";
   if (value === "warning" || value === "partial") return "warning";
@@ -149,9 +152,33 @@ function buildUnifiedRecentResults({
     source: "world",
   }));
 
-  return [...opening, ...mission, ...world]
-    .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
-    .slice(0, 5);
+  const sorted = [...opening, ...mission, ...world]
+    .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+
+  const sourceCounts: Record<UnifiedRecentResult["source"], number> = {
+    opening: 0,
+    mission: 0,
+    world: 0,
+  };
+  const balanced: UnifiedRecentResult[] = [];
+  const overflow: UnifiedRecentResult[] = [];
+
+  for (const result of sorted) {
+    if (sourceCounts[result.source] < MAX_RECENT_RESULTS_PER_SOURCE) {
+      balanced.push(result);
+      sourceCounts[result.source] += 1;
+      if (balanced.length === MAX_RECENT_RESULTS) return balanced;
+      continue;
+    }
+    overflow.push(result);
+  }
+
+  for (const result of overflow) {
+    balanced.push(result);
+    if (balanced.length === MAX_RECENT_RESULTS) break;
+  }
+
+  return balanced;
 }
 
 type MissionResponsePanelProps = {
