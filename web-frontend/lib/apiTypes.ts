@@ -37,6 +37,12 @@ export interface CityProduction {
 }
 
 
+export interface SettlementLaneReceipt {
+  title: string;
+  summary: string;
+  effects: string[];
+}
+
 export interface CityProductionBreakdown {
   buildings: CityProduction;
   settlementLane: CityProduction;
@@ -58,6 +64,7 @@ export interface CitySummary {
   regionId: string;
   settlementLane: "city" | "black_market";
   settlementLaneProfile: SettlementLaneProfile;
+  settlementLaneReceipt: SettlementLaneReceipt;
   tier: number;
   maxBuildingSlots: number;
   stats: CityStats;

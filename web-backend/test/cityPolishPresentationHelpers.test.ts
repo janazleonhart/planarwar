@@ -48,6 +48,19 @@ function makeCity(): CitySummary {
     shardId: "shard_1",
     regionId: "starter_plains",
     settlementLane: "city",
+    settlementLaneProfile: {
+      id: "city",
+      label: "City",
+      summary: "Orderly civic administration with cleaner legitimacy and steadier support.",
+      posture: "civic",
+      strengths: ["stable services", "legitimate governance"],
+      liabilities: ["slower illicit profit", "less shadow leverage"],
+    },
+    settlementLaneReceipt: {
+      title: "Civic foundation established",
+      summary: "The settlement opened as a lawful city with cleaner legitimacy and public order.",
+      effects: ["No shadow surplus", "Service posture starts cleaner"],
+    },
     tier: 2,
     maxBuildingSlots: 8,
     stats: {
@@ -73,6 +86,24 @@ function makeCity(): CitySummary {
       manaPerTick: 5,
       knowledgePerTick: 1,
       unityPerTick: 3,
+    },
+    productionBreakdown: {
+      buildings: {
+        foodPerTick: 4,
+        materialsPerTick: -2,
+        wealthPerTick: 0,
+        manaPerTick: 5,
+        knowledgePerTick: 1,
+        unityPerTick: 3,
+      },
+      settlementLane: {
+        foodPerTick: 0,
+        materialsPerTick: 0,
+        wealthPerTick: 0,
+        manaPerTick: 0,
+        knowledgePerTick: 0,
+        unityPerTick: 0,
+      },
     },
   };
 }

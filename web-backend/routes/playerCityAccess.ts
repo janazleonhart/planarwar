@@ -251,7 +251,15 @@ function pgErrCode(err: any): string | null {
 
 export function applySettlementLaneBootstrap(ps: PlayerState, lane: SettlementLaneChoice): void {
   ps.city.settlementLane = lane;
-  if (lane !== "black_market") return;
+  if (lane !== "black_market") {
+    pushEvent(ps, {
+      kind: "city_morph",
+      message: "City founding posture applied: steady civic baseline, formal administration, and no native shadow lane.",
+      regionId: ps.city.regionId,
+      outcome: "success",
+    });
+    return;
+  }
 
   ps.city.stats.prosperity += 6;
   ps.city.stats.influence += 8;
@@ -271,7 +279,7 @@ export function applySettlementLaneBootstrap(ps: PlayerState, lane: SettlementLa
   ps.cityStress.lastUpdatedAt = new Date().toISOString();
 
   pushEvent(ps, {
-    kind: "city_stress_change",
+    kind: "city_morph",
     message: "Black market founding posture applied: quicker profit, weaker legitimacy, hotter opening pressure.",
     regionId: ps.city.regionId,
     outcome: "partial",

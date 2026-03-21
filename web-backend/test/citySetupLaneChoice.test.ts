@@ -67,7 +67,7 @@ test("black market lane bootstrap applies crooked founding posture", () => {
   assert.equal(ps.city.stats.unity, Math.max(0, baseline.cityUnity - 4));
 
   assert.equal(ps.eventLog.length, baseline.eventCount + 1);
-  assert.equal(ps.eventLog.at(-1)?.kind, "city_stress_change");
+  assert.equal(ps.eventLog.at(-1)?.kind, "city_morph");
 });
 
 
@@ -123,4 +123,19 @@ test("city summary exposes settlement lane production breakdown", () => {
     shadowSummary.production.knowledgePerTick,
     shadowSummary.productionBreakdown.buildings.knowledgePerTick + shadowSummary.productionBreakdown.settlementLane.knowledgePerTick
   );
+});
+
+
+test("city summary exposes a canonical settlement lane founding receipt", () => {
+  const civic = createInitialPlayerState("lane-receipt-civic", seedWorld(), defaultPolicies);
+  const shadow = createInitialPlayerState("lane-receipt-shadow", seedWorld(), defaultPolicies);
+  applySettlementLaneBootstrap(shadow, "black_market");
+
+  const civicSummary = buildCitySummary(civic);
+  const shadowSummary = buildCitySummary(shadow);
+
+  assert.match(civicSummary.settlementLaneReceipt.title, /city founding posture/i);
+  assert.match(shadowSummary.settlementLaneReceipt.title, /black market founding posture/i);
+  assert.ok(civicSummary.settlementLaneReceipt.effects.some((entry) => /standard civic baseline/i.test(entry)));
+  assert.ok(shadowSummary.settlementLaneReceipt.effects.some((entry) => /extra wealth, materials, and knowledge/i.test(entry)));
 });

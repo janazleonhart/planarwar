@@ -23,6 +23,36 @@ export type SettlementLaneProfile = {
   liabilities: string[];
 };
 
+export type SettlementLaneReceipt = {
+  title: string;
+  summary: string;
+  effects: string[];
+};
+
+export function buildSettlementLaneFoundingReceipt(lane: "city" | "black_market"): SettlementLaneReceipt {
+  if (lane === "black_market") {
+    return {
+      title: "Black Market founding posture",
+      summary: "This settlement opened as a shadow market: faster dirty upside, weaker legitimacy, and a hotter starting pressure picture.",
+      effects: [
+        "Starts with extra wealth, materials, and knowledge.",
+        "Begins under a strained posture with higher threat and unity pressure.",
+        "Can act directly on black-market windows instead of only observing them.",
+      ],
+    };
+  }
+
+  return {
+    title: "City founding posture",
+    summary: "This settlement opened on the civic baseline: steadier legitimacy, cleaner administration, and no native shadow lane.",
+    effects: [
+      "Starts from the standard civic baseline.",
+      "Treats black-market pressure as outside pressure instead of a native lane.",
+      "Built for orderly public growth rather than deniable leverage.",
+    ],
+  };
+}
+
 export function buildSettlementLaneProfile(lane: "city" | "black_market"): SettlementLaneProfile {
   if (lane === "black_market") {
     return {
@@ -95,6 +125,7 @@ export function buildCitySummary(ps: PlayerState) {
     regionId: ps.city.regionId,
     settlementLane: ps.city.settlementLane ?? "city",
     settlementLaneProfile: buildSettlementLaneProfile(ps.city.settlementLane === "black_market" ? "black_market" : "city"),
+    settlementLaneReceipt: buildSettlementLaneFoundingReceipt(ps.city.settlementLane === "black_market" ? "black_market" : "city"),
     tier: ps.city.tier,
     maxBuildingSlots: ps.city.maxBuildingSlots,
     stats: ps.city.stats,
