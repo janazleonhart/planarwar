@@ -63,6 +63,27 @@ export function MePage() {
 
   const city = me?.city ?? null;
   const disabled = !!busyAction;
+  const laneTone = city?.settlementLane === "black_market" || (!city && citySetupLane === "black_market")
+    ? {
+        border: "1px solid #7a3d3d",
+        background: "rgba(80,24,32,0.18)",
+        color: "#f4d8d8",
+      }
+    : {
+        border: "1px solid #355d45",
+        background: "rgba(25,60,42,0.16)",
+        color: "#d9f0df",
+      };
+  const laneHeading = city
+    ? `${city.settlementLaneProfile.label} · ${city.settlementLaneProfile.posture}`
+    : citySetupLane === "black_market"
+      ? "Black Market · pending founding lane"
+      : "City · pending founding lane";
+  const laneHint = city
+    ? city.settlementLaneProfile.responseFocus.recommendedOpening
+    : citySetupLane === "black_market"
+      ? "Shadow-first founding path selected"
+      : "Civic-first founding path selected";
 
   const banner = useMemo(() => {
     if (!notice) return null;
@@ -139,7 +160,24 @@ export function MePage() {
 
   return (
     <section style={{ padding: 16, display: "grid", gap: 16 }}>
-      <h2 style={{ margin: 0 }}>CityBuilder /me</h2>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
+        <h2 style={{ margin: 0 }}>CityBuilder /me</h2>
+        <span
+          style={{
+            ...laneTone,
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 6,
+            padding: "4px 10px",
+            borderRadius: 999,
+            fontSize: 12,
+            fontWeight: 700,
+          }}
+        >
+          {laneHeading}
+        </span>
+        <span style={{ opacity: 0.68, fontSize: 12 }}>{laneHint}</span>
+      </div>
 
       {banner}
 
