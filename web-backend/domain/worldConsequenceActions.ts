@@ -176,32 +176,47 @@ export function deriveWorldConsequenceActions(
   }
 
   if (hooks.blackMarket.status === "active" || hooks.blackMarket.status === "surging") {
-    const priority: WorldConsequenceActionPriority =
+    const primaryPriority: WorldConsequenceActionPriority =
       hooks.blackMarket.status === "surging" ? "critical" : "high";
-    const exploit =
+    const secondaryPriority: WorldConsequenceActionPriority =
+      hooks.blackMarket.status === "surging" ? "high" : "watch";
+    const exploitRecommended =
       hooks.blackMarket.recommendedPosture === "exploit" || hooks.blackMarket.recommendedPosture === "probe";
 
-    pushUnique(playerActions, {
-      id: exploit ? "action_black_market_window_exploit" : "action_black_market_window_contain",
+    const exploitAction: WorldConsequenceActionItem = {
+      id: "action_black_market_window_exploit",
       audience: "player",
       lane: "black_market",
-      priority,
-      title: exploit ? "A real black-market window is open" : "Contain black-market heat before it bites back",
-      summary: exploit
-        ? "Illicit opportunity is live enough to be a strategic choice instead of flavor text."
-        : "Opportunity exists, but heat is high enough that careless use invites cartel teeth.",
-      recommendedMoves: exploit
-        ? [
-            "Use the opening deliberately and keep an eye on cartel attention rather than pretending this is free upside.",
-            "Bias missions toward the hottest region only if you can absorb the civic and recovery fallout.",
-          ]
-        : [
-            "Reduce pressure in the driver region before leaning harder into illicit routes.",
-            "Treat black-market activity as a temporary pressure valve, not your new religion.",
-          ],
+      priority: exploitRecommended ? primaryPriority : secondaryPriority,
+      title: "A real black-market window is open",
+      summary:
+        "Illicit opportunity is live enough to be a strategic choice instead of flavor text.",
+      recommendedMoves: [
+        "Use the opening deliberately and keep an eye on cartel attention rather than pretending this is free upside.",
+        "Bias missions toward the hottest region only if you can absorb the civic and recovery fallout.",
+      ],
       sourceRegionId: hooks.blackMarket.driverRegionId,
       sourceHook: "blackMarket",
-    });
+    };
+
+    const containAction: WorldConsequenceActionItem = {
+      id: "action_black_market_window_contain",
+      audience: "player",
+      lane: "black_market",
+      priority: exploitRecommended ? secondaryPriority : primaryPriority,
+      title: "Contain black-market heat before it bites back",
+      summary:
+        "Opportunity exists, but heat is high enough that careless use invites cartel teeth.",
+      recommendedMoves: [
+        "Reduce pressure in the driver region before leaning harder into illicit routes.",
+        "Treat black-market activity as a temporary pressure valve, not your new religion.",
+      ],
+      sourceRegionId: hooks.blackMarket.driverRegionId,
+      sourceHook: "blackMarket",
+    };
+
+    pushUnique(playerActions, exploitAction);
+    pushUnique(playerActions, containAction);
   }
 
   if (hooks.cartel.pressureTier === "active" || hooks.cartel.pressureTier === "severe") {

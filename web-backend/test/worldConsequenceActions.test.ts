@@ -85,3 +85,35 @@ test("regional action evidence follows the hottest hotspot instead of page-level
   assert.ok((regional?.evidence?.[0]?.value ?? 0) > 0);
   assert.ok(["watch", "high", "critical"].includes(regional?.evidence?.[0]?.tone ?? ""));
 });
+
+
+test("active black-market hooks expose both exploit and contain player choices", () => {
+  const ps = getOrCreatePlayerState("world_consequence_actions_black_market_choices_player");
+  ps.techFlags = ["BLACK_MARKET_ENABLED"];
+
+  pushWorldConsequence(ps, {
+    regionId: ps.city.regionId,
+    source: "mission_setback",
+    severity: "severe",
+    title: "Port authority collapse",
+    summary: "Heat and scarcity opened a live black-market window with real downside.",
+    detail: "Players should see both the greedy option and the containment option instead of one hidden by posture math.",
+    audiences: ["player", "admin", "mother_brain"],
+    tags: ["city_pressure_export", "trade_disruption", "black_market_opening", "world_economy_hook", "faction_drift"],
+    metrics: {
+      pressureDelta: 17,
+      recoveryDelta: 9,
+      controlDelta: -5,
+      threatDelta: 8,
+    },
+    outcome: "failure",
+  });
+
+  const actions = deriveWorldConsequenceActions(ps);
+  const blackMarketIds = actions.playerActions
+    .filter((action) => action.lane === "black_market")
+    .map((action) => action.id);
+
+  assert.ok(blackMarketIds.includes("action_black_market_window_exploit"));
+  assert.ok(blackMarketIds.includes("action_black_market_window_contain"));
+});

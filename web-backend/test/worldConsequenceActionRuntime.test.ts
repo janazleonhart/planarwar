@@ -119,3 +119,18 @@ test("insufficient-resource runtime view reports shortfall and withholds post-co
   assert.ok(runtime.note.includes("wealth 1"));
   assert.ok(runtime.note.includes("unity 3"));
 });
+
+
+test("black-market runtime preview surfaces the alternate contain follow-up when both choices are visible", () => {
+  const ps = getOrCreatePlayerState("world_consequence_runtime_black_market_followup_player");
+  ps.techFlags = ["BLACK_MARKET_ENABLED"];
+
+  const runtime = buildWorldConsequenceActionRuntimeView(ps, "action_black_market_window_exploit", [
+    { id: "action_black_market_window_exploit", title: "Exploit the window" },
+    { id: "action_black_market_window_contain", title: "Contain the heat" },
+  ]);
+
+  assert.equal(runtime.executable, true);
+  assert.ok(runtime.availableFollowupActionIds?.includes("action_black_market_window_contain"));
+  assert.ok(runtime.availableFollowupActionTitles?.includes("Contain the heat"));
+});
