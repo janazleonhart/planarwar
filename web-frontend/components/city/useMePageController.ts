@@ -1,6 +1,7 @@
 //web-frontend/components/city/useMePageController.ts
 
 import { useEffect, useRef, useState } from "react";
+
 import {
   fetchCityMudBridgeStatus,
   fetchMe,
@@ -23,6 +24,44 @@ export type OpeningActionReceipt = {
   outcome: "success" | "warning" | "failure";
   timestamp: string;
 };
+
+
+const OPENING_RECEIPTS_STORAGE_PREFIX = "planarwar:opening-action-receipts:v1:";
+
+function getOpeningReceiptsStorageKey(cityId: string): string {
+  return `${OPENING_RECEIPTS_STORAGE_PREFIX}${cityId}`;
+}
+
+function readStoredOpeningActionReceipts(cityId: string): OpeningActionReceipt[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = window.sessionStorage.getItem(getOpeningReceiptsStorageKey(cityId));
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .filter((entry): entry is OpeningActionReceipt => !!entry && typeof entry === "object")
+      .map((entry: any) => ({
+        id: String(entry.id ?? `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`),
+        title: String(entry.title ?? "Recent action"),
+        detail: String(entry.detail ?? "Action applied."),
+        outcome: entry.outcome === "failure" || entry.outcome === "warning" ? entry.outcome : "success",
+        timestamp: String(entry.timestamp ?? new Date().toISOString()),
+      }))
+      .slice(0, 5);
+  } catch {
+    return [];
+  }
+}
+
+function writeStoredOpeningActionReceipts(cityId: string, receipts: OpeningActionReceipt[]) {
+  if (typeof window === "undefined") return;
+  try {
+    window.sessionStorage.setItem(getOpeningReceiptsStorageKey(cityId), JSON.stringify(receipts.slice(0, 5)));
+  } catch {
+    // Ignore storage failures; the live UI state still works.
+  }
+}
 
 export function useMePageController(serviceMode: InfrastructureMode) {
   const [me, setMe] = useState<MeProfile | null>(null);
@@ -83,6 +122,21 @@ export function useMePageController(serviceMode: InfrastructureMode) {
     if (!me) return;
     void refreshMe(serviceMode);
   }, [serviceMode]);
+
+  useEffect(() => {
+    const cityId = me?.city?.id;
+    if (!cityId) {
+      setOpeningActionReceipts([]);
+      return;
+    }
+    setOpeningActionReceipts(readStoredOpeningActionReceipts(cityId));
+  }, [me?.city?.id]);
+
+  useEffect(() => {
+    const cityId = me?.city?.id;
+    if (!cityId) return;
+    writeStoredOpeningActionReceipts(cityId, openingActionReceipts);
+  }, [me?.city?.id, openingActionReceipts]);
 
   const {
     handleBuildBuilding,
