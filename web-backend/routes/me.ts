@@ -6,6 +6,7 @@ import { defaultPolicies, summarizeCityAlphaScopeLock, summarizeCityAlphaStatus,
 import { getAvailableTechsForPlayer, getTechById } from "../domain/tech";
 import { deriveWorldConsequenceHooks } from "../domain/worldConsequenceHooks";
 import { deriveWorldConsequenceActions } from "../domain/worldConsequenceActions";
+import { getSettlementLanePreferredActionOrder } from "../domain/worldConsequenceActions";
 import { summarizeWorldConsequenceResponseReceipts } from "../domain/worldConsequences";
 import { deriveWorldConsequenceConsumers } from "../domain/worldConsequenceConsumers";
 import { deriveEconomyCartelResponseState } from "../domain/economyCartelResponse";
@@ -14,6 +15,12 @@ import { resolvePlayerAccess, resolveViewer, suggestCityName, withPlayerAccessMu
 
 const router = Router();
 
+export type SettlementLaneResponseFocus = {
+  preferredActionLanes: string[];
+  advisoryTone: string;
+  recommendedOpening: string;
+};
+
 export type SettlementLaneProfile = {
   id: "city" | "black_market";
   label: string;
@@ -21,6 +28,7 @@ export type SettlementLaneProfile = {
   posture: string;
   strengths: string[];
   liabilities: string[];
+  responseFocus: SettlementLaneResponseFocus;
 };
 
 export type SettlementLaneReceipt = {
@@ -138,6 +146,11 @@ export function buildSettlementLaneProfile(lane: "city" | "black_market"): Settl
         "Carries a strained early posture instead of a clean civic start",
         "Shadow gains are stronger, but legitimacy and trust cost more",
       ],
+      responseFocus: {
+        preferredActionLanes: getSettlementLanePreferredActionOrder("black_market"),
+        advisoryTone: "shadow-pressure management",
+        recommendedOpening: "Secure illicit throughput and cool cartel heat before public strain turns the shadow lane into a trap.",
+      },
     };
   }
 
@@ -157,6 +170,11 @@ export function buildSettlementLaneProfile(lane: "city" | "black_market"): Settl
       "Less front-loaded dirty profit than a black-market start",
       "Relies more on formal growth than deniable leverage",
     ],
+    responseFocus: {
+      preferredActionLanes: getSettlementLanePreferredActionOrder("city"),
+      advisoryTone: "civic stabilization",
+      recommendedOpening: "Stabilize supply, logistics, and public order before chasing shadow upside.",
+    },
   };
 }
 

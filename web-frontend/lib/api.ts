@@ -978,7 +978,7 @@ export type SettlementLaneChoicePreview = {
   foundingStats: SettlementLaneStatDelta;
   passivePerTick: SettlementLaneResourceDelta;
   pressureFloor: {
-    stage: "steady" | "strained";
+    stage: "stable" | "strained";
     total: number;
     threatPressure: number;
     unityPressure: number;
@@ -993,6 +993,11 @@ export type CitySetupChoice = {
   posture: string;
   strengths: string[];
   liabilities: string[];
+  responseFocus: {
+    preferredActionLanes: string[];
+    advisoryTone: string;
+    recommendedOpening: string;
+  };
   preview: SettlementLaneChoicePreview;
 };
 

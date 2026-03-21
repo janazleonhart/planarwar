@@ -48,6 +48,12 @@ export interface CityProductionBreakdown {
   settlementLane: CityProduction;
 }
 
+export interface SettlementLaneResponseFocus {
+  preferredActionLanes: string[];
+  advisoryTone: string;
+  recommendedOpening: string;
+}
+
 export interface SettlementLaneProfile {
   id: "city" | "black_market";
   label: string;
@@ -55,6 +61,7 @@ export interface SettlementLaneProfile {
   posture: string;
   strengths: string[];
   liabilities: string[];
+  responseFocus: SettlementLaneResponseFocus;
 }
 
 export interface CitySummary {

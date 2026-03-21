@@ -9,6 +9,7 @@ import { seedWorld } from "../domain/world";
 import { buildCityRuntimeSnapshot, applyCityRuntimeSnapshot } from "../gameState/cityRuntimeSnapshot";
 import { applySettlementLaneBootstrap, normalizeSettlementLaneChoice } from "../routes/playerCityAccess";
 import { buildCitySummary, buildSettlementLaneChoice, buildSettlementLaneProfile } from "../routes/me";
+import { getSettlementLanePreferredActionOrder } from "../domain/worldConsequenceActions";
 import { getCityProductionPerTick } from "../domain/city";
 
 test("city setup lane choice defaults safely and accepts black market", () => {
@@ -265,3 +266,15 @@ test("settlement lane setup preview matches applied bootstrap and passive truth"
   assert.equal(shadowApplied.cityStress.unityPressure, shadowChoice.preview.pressureFloor.unityPressure);
 });
 
+
+
+test("settlement lane profiles expose response focus that matches lane ordering truth", () => {
+  const civic = buildSettlementLaneChoice("city");
+  const shadow = buildSettlementLaneChoice("black_market");
+
+  assert.deepEqual(civic.responseFocus.preferredActionLanes, getSettlementLanePreferredActionOrder("city"));
+  assert.deepEqual(shadow.responseFocus.preferredActionLanes, getSettlementLanePreferredActionOrder("black_market"));
+  assert.match(civic.responseFocus.advisoryTone, /civic/i);
+  assert.match(shadow.responseFocus.advisoryTone, /shadow/i);
+  assert.notEqual(civic.responseFocus.recommendedOpening, shadow.responseFocus.recommendedOpening);
+});

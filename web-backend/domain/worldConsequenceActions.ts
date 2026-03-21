@@ -154,31 +154,22 @@ function buildCartelPlayerAction(
   };
 }
 
+export function getSettlementLanePreferredActionOrder(
+  settlementLane: "city" | "black_market",
+): WorldConsequenceActionLane[] {
+  if (settlementLane === "black_market") {
+    return ["black_market", "cartel", "economy", "regional", "faction", "observability"];
+  }
+
+  return ["economy", "regional", "faction", "observability", "cartel", "black_market"];
+}
+
 function lanePreferenceOrder(
   settlementLane: "city" | "black_market",
   lane: WorldConsequenceActionLane,
 ): number {
-  if (settlementLane === "black_market") {
-    const order: Record<WorldConsequenceActionLane, number> = {
-      black_market: 0,
-      cartel: 1,
-      economy: 2,
-      regional: 3,
-      faction: 4,
-      observability: 5,
-    };
-    return order[lane];
-  }
-
-  const order: Record<WorldConsequenceActionLane, number> = {
-    economy: 0,
-    regional: 1,
-    faction: 2,
-    observability: 3,
-    cartel: 4,
-    black_market: 5,
-  };
-  return order[lane];
+  const order = getSettlementLanePreferredActionOrder(settlementLane);
+  return order.indexOf(lane);
 }
 
 function sortedPlayerItems(
