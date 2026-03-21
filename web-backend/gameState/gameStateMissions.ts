@@ -720,6 +720,9 @@ function buildMissionOutcomeFollowupOffers(ps: PlayerState, active: ActiveMissio
   const region = ps.regionWar.find((entry) => entry.regionId === baseMission.regionId);
   const regionThreat = Number(region?.threat ?? 0);
   const consequencePressure = Number(ps.cityStress.threatPressure ?? 0) + Number(ps.cityStress.recoveryBurden ?? 0);
+  const chainDepth = (baseMission.followupSourceMissionId ? 1 : 0) + (baseMission.followupChainKind ? 1 : 0);
+  const pressureScale = chainDepth > 0 ? 1 + chainDepth * 0.12 : 1;
+  const payoffScale = chainDepth > 0 && outcome.kind === "success" ? 1 + chainDepth * 0.2 : chainDepth > 0 ? 1 + chainDepth * 0.08 : 1;
 
   let chainKind: MissionFollowupChainKind;
   let kind: MissionOffer["kind"];
@@ -779,8 +782,27 @@ function buildMissionOutcomeFollowupOffers(ps: PlayerState, active: ActiveMissio
     recommendedPower = clampMissionRecommendedPower(baseMission.recommendedPower * 0.96 + regionThreat * 0.55 + consequencePressure * 0.22);
   }
 
+  if (chainDepth > 0) {
+    recommendedPower = clampMissionRecommendedPower(recommendedPower * pressureScale + consequencePressure * 0.08);
+    expectedRewards = Object.fromEntries(
+      Object.entries(expectedRewards).map(([key, value]) => [key, Math.max(0, Math.round(Number(value ?? 0) * payoffScale))]),
+    ) as RewardBundle;
+    if (outcome.kind === "success") {
+      title = `${title} — Window ${Math.min(3, chainDepth + 1)}`;
+      description = `${description} This is chain pressure now; the payoff is larger, but so is the cost of hesitation.`;
+    } else if (outcome.kind === "failure") {
+      title = `${title} — Escalation ${Math.min(3, chainDepth + 1)}`;
+      description = `${description} Chain fallout is stacking, so this response is sharper and less forgiving than the first branch.`;
+    } else {
+      description = `${description} The chain is still live, and unresolved loose ends are compounding into a bigger early-game tax.`;
+    }
+  }
+
   const threatFamily = baseMission.threatFamily;
-  const targetingPressure = Math.max(Number(baseMission.targetingPressure ?? 0), outcome.kind === "failure" ? 55 : outcome.kind === "partial" ? 35 : 22);
+  const targetingPressure = Math.max(
+    Number(baseMission.targetingPressure ?? 0),
+    Math.round((outcome.kind === "failure" ? 55 : outcome.kind === "partial" ? 35 : 22) * pressureScale),
+  );
   const targetingReasons = [
     `${baseMission.title} resolved ${outcome.kind}, which reopened pressure in ${baseMission.regionId}.`,
     ...(baseMission.targetingReasons ?? []).slice(0, 2),
@@ -1754,6 +1776,167 @@ function applyRecoveryContractEffects(ps: PlayerState, active: ActiveMission, ou
   return { pressureDelta: failurePressure, trustDelta: failureTrust, recoveryDelta: failureBurden };
 }
 
+
+function applyResourceBundle(ps: PlayerState, rewards: RewardBundle): RewardBundle {
+  const applied: RewardBundle = {};
+  for (const [key, value] of Object.entries(rewards) as Array<[keyof RewardBundle, number | undefined]>) {
+    const amount = Math.round(Number(value ?? 0));
+    if (!amount) continue;
+    switch (key) {
+      case "wealth":
+      case "food":
+      case "materials":
+      case "mana":
+      case "knowledge":
+      case "influence":
+        (ps.resources as any)[key] = Math.max(0, Number((ps.resources as any)[key] ?? 0) + amount);
+        applied[key] = amount;
+        break;
+      default:
+        break;
+    }
+  }
+  return applied;
+}
+
+function adjustRegionThreat(ps: PlayerState, regionId: string, delta: number): number {
+  if (!delta) return 0;
+  const region = ps.regionWar.find((entry) => entry.regionId === regionId);
+  if (!region) return 0;
+  const before = Number(region.threat ?? 0);
+  region.threat = Math.max(0, Math.min(100, before + delta));
+  return Number(region.threat ?? 0) - before;
+}
+
+function applyFollowupChainEffects(ps: PlayerState, active: ActiveMission, outcome: MissionOutcome): {
+  bonusRewards: RewardBundle;
+  pressureDelta: number;
+  recoveryDelta: number;
+  unityDelta: number;
+  securityDelta: number;
+  regionThreatDelta: number;
+  summary?: string;
+} {
+  const chainKind = active.mission.followupChainKind;
+  if (!chainKind) {
+    return { bonusRewards: {}, pressureDelta: 0, recoveryDelta: 0, unityDelta: 0, securityDelta: 0, regionThreatDelta: 0 };
+  }
+
+  let bonusRewards: RewardBundle = {};
+  let pressureDelta = 0;
+  let recoveryDelta = 0;
+  let unityDelta = 0;
+  let securityDelta = 0;
+  let regionThreatDelta = 0;
+  let summary = "";
+
+  switch (chainKind) {
+    case "press_advantage":
+      if (outcome.kind === "success") {
+        bonusRewards = { wealth: 48, materials: 40, influence: 12 };
+        pressureDelta = -5;
+        regionThreatDelta = -3;
+        summary = "Momentum held and the opening turned into a real payoff window.";
+      } else if (outcome.kind === "partial") {
+        bonusRewards = { wealth: 6, materials: 8 };
+        pressureDelta = -2;
+        regionThreatDelta = -1;
+        summary = "The push landed unevenly, but some of the opening was converted into tangible gain.";
+      } else {
+        pressureDelta = 6;
+        recoveryDelta = 4;
+        regionThreatDelta = 3;
+        summary = "The attempted exploitation overreached and gave the enemy a second wind.";
+      }
+      break;
+    case "secure_gains":
+      if (outcome.kind === "success") {
+        bonusRewards = { knowledge: 10, influence: 12, wealth: 6 };
+        recoveryDelta = -4;
+        unityDelta = 3;
+        securityDelta = 2;
+        summary = "The gain held, leaks were closed, and the city banked a cleaner victory.";
+      } else if (outcome.kind === "partial") {
+        bonusRewards = { knowledge: 5, influence: 6 };
+        recoveryDelta = -2;
+        unityDelta = 1;
+        summary = "Some of the gain was preserved, but slippage is still visible.";
+      } else {
+        pressureDelta = 3;
+        recoveryDelta = 5;
+        unityDelta = -3;
+        summary = "The gain was not locked down and the aftermath fed rumor and drift.";
+      }
+      break;
+    case "salvage_losses":
+      if (outcome.kind === "success") {
+        bonusRewards = active.mission.kind === "army" ? { food: 12, materials: 10 } : { knowledge: 8, wealth: 6 };
+        recoveryDelta = -5;
+        pressureDelta = -2;
+        summary = "The salvage team recovered enough value to stop the half-loss from hardening.";
+      } else if (outcome.kind === "partial") {
+        bonusRewards = active.mission.kind === "army" ? { food: 6, materials: 4 } : { knowledge: 4 };
+        recoveryDelta = -2;
+        summary = "Only part of the damage was clawed back, but the bleed slowed.";
+      } else {
+        recoveryDelta = 6;
+        pressureDelta = 2;
+        regionThreatDelta = 1;
+        summary = "The salvage failed and the loose ends turned into a larger burden.";
+      }
+      break;
+    case "contain_fallout":
+      if (outcome.kind === "success") {
+        pressureDelta = -7;
+        recoveryDelta = -6;
+        unityDelta = 3;
+        regionThreatDelta = -2;
+        bonusRewards = active.mission.kind === "army" ? { materials: 10, food: 8 } : { influence: 10, knowledge: 8 };
+        summary = "The fallout was contained before panic and hostile momentum could normalize.";
+      } else if (outcome.kind === "partial") {
+        pressureDelta = -3;
+        recoveryDelta = -2;
+        unityDelta = 1;
+        summary = "The fallout was checked, but the city still feels the bruise.";
+      } else {
+        pressureDelta = 9;
+        recoveryDelta = 8;
+        unityDelta = -4;
+        securityDelta = -3;
+        regionThreatDelta = 2;
+        summary = "Containment failed and the aftermath is now dragging the whole district downward.";
+      }
+      break;
+    default:
+      break;
+  }
+
+  if (pressureDelta !== 0) {
+    ps.cityStress.threatPressure = Math.max(0, Math.min(100, Number(ps.cityStress.threatPressure ?? 0) + pressureDelta));
+  }
+  if (recoveryDelta !== 0) {
+    ps.cityStress.recoveryBurden = Math.max(0, Math.min(100, Number(ps.cityStress.recoveryBurden ?? 0) + recoveryDelta));
+  }
+  if (unityDelta !== 0) {
+    ps.city.stats.unity = Math.max(0, Math.min(100, Number(ps.city.stats.unity ?? 0) + unityDelta));
+  }
+  if (securityDelta !== 0) {
+    ps.city.stats.security = Math.max(0, Math.min(100, Number(ps.city.stats.security ?? 0) + securityDelta));
+  }
+  const appliedRewards = applyResourceBundle(ps, bonusRewards);
+  const appliedRegionThreatDelta = adjustRegionThreat(ps, active.mission.regionId, regionThreatDelta);
+
+  return {
+    bonusRewards: appliedRewards,
+    pressureDelta,
+    recoveryDelta,
+    unityDelta,
+    securityDelta,
+    regionThreatDelta: appliedRegionThreatDelta,
+    summary,
+  };
+}
+
 export function completeMissionForPlayer(
   deps: MissionStateDeps,
   playerId: string,
@@ -1797,7 +1980,19 @@ export function completeMissionForPlayer(
   deps.applyRewards(ps, rewards);
   const regionImpact = applyMissionImpactToRegion(ps, active.mission, outcome);
   const recoveryImpact = applyRecoveryContractEffects(ps, active, outcome);
+  const chainImpact = applyFollowupChainEffects(ps, active, outcome);
+  const totalRewards: RewardBundle = {
+    wealth: Number(rewards.wealth ?? 0) + Number(chainImpact.bonusRewards.wealth ?? 0),
+    food: Number(rewards.food ?? 0) + Number(chainImpact.bonusRewards.food ?? 0),
+    materials: Number(rewards.materials ?? 0) + Number(chainImpact.bonusRewards.materials ?? 0),
+    mana: Number(rewards.mana ?? 0) + Number(chainImpact.bonusRewards.mana ?? 0),
+    knowledge: Number(rewards.knowledge ?? 0) + Number(chainImpact.bonusRewards.knowledge ?? 0),
+    influence: Number(rewards.influence ?? 0) + Number(chainImpact.bonusRewards.influence ?? 0),
+  };
   const receipt = buildMissionReceipt(active, outcome, now);
+  if (chainImpact.summary) {
+    receipt.summary = `${receipt.summary} ${chainImpact.summary}`.trim();
+  }
   ps.missionReceipts = [receipt, ...(ps.missionReceipts ?? [])].slice(0, 20);
 
   if ((receipt.setbacks?.length ?? 0) > 0 && outcome.kind !== "success") {
@@ -1849,5 +2044,5 @@ export function completeMissionForPlayer(
   syncRecoveryContractsForState(ps, now);
   ps.worldConsequenceState = deriveWorldConsequenceState(ps.worldConsequences ?? []);
 
-  return { status: "ok", rewards, resources: ps.resources, outcome, receipt, followupOffers };
+  return { status: "ok", rewards: totalRewards, resources: ps.resources, outcome, receipt, followupOffers };
 }
