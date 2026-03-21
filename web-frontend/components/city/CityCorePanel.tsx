@@ -58,6 +58,8 @@ type CitySetupChoiceDetails = {
   label: string;
   summary: string;
   posture?: string;
+  strengths?: string[];
+  liabilities?: string[];
   preview?: CitySetupChoicePreview;
   responseFocus?: {
     preferredActionLanes?: string[];
@@ -96,6 +98,35 @@ const DEFAULT_CITY_SETUP_CHOICES: CitySetupChoiceDetails[] = [
     summary: "A shadow-rooted start for players who want deniable leverage and illicit opportunity.",
   },
 ];
+
+function renderSignalChips(
+  values: string[] | undefined,
+  tone: { chipBg: string; chipText: string },
+  borderColor: string,
+  limit = 2,
+) {
+  if (!values?.length) return null;
+  return (
+    <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+      {values.slice(0, limit).map((value) => (
+        <span
+          key={value}
+          style={{
+            display: "inline-block",
+            padding: "3px 8px",
+            borderRadius: 999,
+            fontSize: 11,
+            background: tone.chipBg,
+            color: tone.chipText,
+            border: `1px solid ${borderColor}`,
+          }}
+        >
+          {value}
+        </span>
+      ))}
+    </div>
+  );
+}
 
 export function CityCorePanel({
   cardStyle,
@@ -196,6 +227,18 @@ export function CityCorePanel({
                             </div>
                           </div>
                         ) : null}
+                        {choice.strengths?.length ? (
+                          <div style={{ marginTop: 8, display: "grid", gap: 4 }}>
+                            <div style={{ fontSize: 11, opacity: 0.72, textTransform: "uppercase" }}>Top strengths</div>
+                            {renderSignalChips(choice.strengths, tone, "rgba(255,255,255,0.12)")}
+                          </div>
+                        ) : null}
+                        {choice.liabilities?.length ? (
+                          <div style={{ marginTop: 8, display: "grid", gap: 4 }}>
+                            <div style={{ fontSize: 11, opacity: 0.72, textTransform: "uppercase" }}>Tradeoffs</div>
+                            {renderSignalChips(choice.liabilities, { chipBg: "rgba(255,255,255,0.06)", chipText: "#ddd" }, "rgba(255,255,255,0.1)")}
+                          </div>
+                        ) : null}
                       </button>
                     );
                   })}
@@ -221,6 +264,22 @@ export function CityCorePanel({
                     }}>
                       <div style={{ fontWeight: 700 }}>{activeChoice.label} opening preview</div>
                       <div style={{ fontSize: 12, opacity: 0.82 }}>{activeChoice.responseFocus?.recommendedOpening ?? activeChoice.summary}</div>
+                      {activeChoice.strengths?.length || activeChoice.liabilities?.length ? (
+                        <div style={{ display: "grid", gap: 6 }}>
+                          {activeChoice.strengths?.length ? (
+                            <div style={{ display: "grid", gap: 4 }}>
+                              <div style={{ fontSize: 11, opacity: 0.72, textTransform: "uppercase" }}>Top strengths</div>
+                              {renderSignalChips(activeChoice.strengths, SETTLEMENT_LANE_TONES[activeChoice.id], "rgba(255,255,255,0.12)")}
+                            </div>
+                          ) : null}
+                          {activeChoice.liabilities?.length ? (
+                            <div style={{ display: "grid", gap: 4 }}>
+                              <div style={{ fontSize: 11, opacity: 0.72, textTransform: "uppercase" }}>Tradeoffs</div>
+                              {renderSignalChips(activeChoice.liabilities, { chipBg: "rgba(255,255,255,0.06)", chipText: "#ddd" }, "rgba(255,255,255,0.1)")}
+                            </div>
+                          ) : null}
+                        </div>
+                      ) : null}
                       <div style={{ display: "grid", gap: 6, gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))" }}>
                         <div>
                           <div style={{ fontSize: 11, opacity: 0.72, textTransform: "uppercase" }}>Founding resources</div>
