@@ -21,6 +21,7 @@ export type OpeningActionReceipt = {
   id: string;
   title: string;
   detail: string;
+  impactSummary?: string;
   outcome: "success" | "warning" | "failure";
   timestamp: string;
 };
@@ -29,7 +30,7 @@ function dedupeOpeningActionReceipts(receipts: OpeningActionReceipt[]): OpeningA
   const seen = new Set<string>();
   const deduped: OpeningActionReceipt[] = [];
   for (const receipt of receipts) {
-    const key = `${receipt.title}__${receipt.detail}__${receipt.outcome}`;
+    const key = `${receipt.title}__${receipt.detail}__${receipt.impactSummary ?? ""}__${receipt.outcome}`;
     if (seen.has(key)) continue;
     seen.add(key);
     deduped.push(receipt);
@@ -58,6 +59,7 @@ function readStoredOpeningActionReceipts(cityId: string): OpeningActionReceipt[]
         id: String(entry.id ?? `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`),
         title: String(entry.title ?? "Recent action"),
         detail: String(entry.detail ?? "Action applied."),
+        impactSummary: typeof entry.impactSummary === "string" ? entry.impactSummary : undefined,
         outcome: entry.outcome === "failure" || entry.outcome === "warning" ? entry.outcome : "success",
         timestamp: String(entry.timestamp ?? new Date().toISOString()),
       }));
@@ -98,7 +100,7 @@ export function useMePageController(serviceMode: InfrastructureMode) {
     noticeTimer.current = window.setTimeout(() => setNotice(null), 4500);
   };
 
-  const refreshMe = async (mode = serviceMode) => {
+  const refreshMe = async (mode = serviceMode): Promise<MeProfile | null> => {
     setLoading(true);
     setError(null);
     try {
@@ -114,9 +116,11 @@ export function useMePageController(serviceMode: InfrastructureMode) {
       setMissionBoard(missions);
       setCityNameDraft(data.city?.name ?? data.suggestedCityName ?? "");
       setCitySetupLane(data.city?.settlementLane ?? "city");
+      return data;
     } catch (err: any) {
       console.error(err);
       setError(err?.message ?? "Failed to refresh city state");
+      return null;
     } finally {
       setLoading(false);
     }

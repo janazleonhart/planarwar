@@ -16,6 +16,7 @@ import {
   type HeroRole,
   type InfrastructureMode,
   type MeProfile,
+  type Resources,
   type SettlementOpeningOperation,
   type WorldConsequenceActionItem,
 } from "../../lib/api";
@@ -34,7 +35,7 @@ export type CreateMePageActionsArgs = {
   cityNameDraft: string;
   citySetupLane: "city" | "black_market";
   me: MeProfile | null;
-  refreshMe: (mode?: InfrastructureMode) => Promise<void>;
+  refreshMe: (mode?: InfrastructureMode) => Promise<MeProfile | null>;
   serviceMode: InfrastructureMode;
   setBusyAction: (value: string | null) => void;
   setError: (value: string | null) => void;
@@ -42,6 +43,12 @@ export type CreateMePageActionsArgs = {
   setWorldActionBusyId: (value: string | null) => void;
   setOpeningActionReceipts: Dispatch<SetStateAction<OpeningActionReceipt[]>>;
   worldActionBusyId: string | null;
+};
+
+type ActionSuccessSummary = {
+  detail?: string | null;
+  impactSummary?: string | null;
+  outcome?: OpeningActionReceipt["outcome"];
 };
 
 export function createMePageActions({
@@ -58,6 +65,63 @@ export function createMePageActions({
   setOpeningActionReceipts,
   worldActionBusyId,
 }: CreateMePageActionsArgs) {
+  const formatSigned = (value: number) => `${value > 0 ? "+" : ""}${value}`;
+
+  const summarizeResourceDelta = (before: Resources, after: Resources): string[] => {
+    const labels: Array<[keyof Resources, string]> = [
+      ["food", "food"],
+      ["materials", "materials"],
+      ["wealth", "wealth"],
+      ["mana", "mana"],
+      ["knowledge", "knowledge"],
+      ["unity", "unity"],
+    ];
+    return labels
+      .map(([key, label]) => {
+        const delta = Number(after[key] ?? 0) - Number(before[key] ?? 0);
+        return delta !== 0 ? `${label} ${formatSigned(delta)}` : null;
+      })
+      .filter((entry): entry is string => !!entry);
+  };
+
+  const summarizeCityDelta = (before: NonNullable<MeProfile["city"]>, after: NonNullable<MeProfile["city"]>): string[] => {
+    const lines: string[] = [];
+    const buildingDelta = (after.buildings?.length ?? 0) - (before.buildings?.length ?? 0);
+    if (buildingDelta !== 0) lines.push(`buildings ${formatSigned(buildingDelta)}`);
+    const heroDelta = (after.stats?.population ?? 0) - (before.stats?.population ?? 0);
+    if (heroDelta !== 0) lines.push(`population ${formatSigned(heroDelta)}`);
+    const statLabels: Array<[keyof typeof before.stats, string]> = [
+      ["stability", "stability"],
+      ["prosperity", "prosperity"],
+      ["security", "security"],
+      ["influence", "influence"],
+      ["unity", "unity"],
+      ["infrastructure", "infrastructure"],
+      ["arcaneSaturation", "arcane"],
+    ];
+    for (const [key, label] of statLabels) {
+      const delta = Number(after.stats?.[key] ?? 0) - Number(before.stats?.[key] ?? 0);
+      if (delta !== 0) {
+        lines.push(`${label} ${formatSigned(delta)}`);
+      }
+      if (lines.length >= 4) break;
+    }
+    return lines;
+  };
+
+  const summarizeLoopDelta = (before: MeProfile | null, after: MeProfile | null): string | null => {
+    if (!before || !after || !before.city || !after.city) return null;
+    const fragments = [
+      ...summarizeResourceDelta(before.resources, after.resources),
+      ...summarizeCityDelta(before.city, after.city),
+    ];
+    const activeMissionDelta = (after.activeMissions?.length ?? 0) - (before.activeMissions?.length ?? 0);
+    if (activeMissionDelta !== 0) fragments.push(`active missions ${formatSigned(activeMissionDelta)}`);
+    const heroRosterDelta = (after.heroes?.length ?? 0) - (before.heroes?.length ?? 0);
+    if (heroRosterDelta !== 0) fragments.push(`heroes ${formatSigned(heroRosterDelta)}`);
+    return fragments.length ? `Impact: ${fragments.slice(0, 4).join(" • ")}` : null;
+  };
+
   const titleCase = (value: string) =>
     value
       .replace(/_/g, " ")
@@ -106,14 +170,22 @@ export function createMePageActions({
     return "Mission resolved and city state refreshed.";
   };
 
-  const pushOpeningReceipt = (title: string, detail: string, outcome: OpeningActionReceipt["outcome"]) => {
+  const pushOpeningReceipt = (
+    title: string,
+    detail: string,
+    outcome: OpeningActionReceipt["outcome"],
+    impactSummary?: string | null,
+  ) => {
     setOpeningActionReceipts((current) => {
       const nowIso = new Date().toISOString();
-      const duplicateIndex = current.findIndex((entry) => entry.title === title && entry.detail === detail && entry.outcome === outcome);
+      const duplicateIndex = current.findIndex(
+        (entry) => entry.title === title && entry.detail === detail && entry.impactSummary === (impactSummary ?? undefined) && entry.outcome === outcome,
+      );
       const nextReceipt: OpeningActionReceipt = {
         id: duplicateIndex >= 0 ? current[duplicateIndex].id : `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
         title,
         detail,
+        impactSummary: impactSummary ?? undefined,
         outcome,
         timestamp: nowIso,
       };
@@ -124,16 +196,27 @@ export function createMePageActions({
     });
   };
 
-  const runAction = async <T,>(label: string, fn: () => Promise<T>, onSuccess?: (result: T) => string | null) => {
+  const runAction = async <T,>(
+    label: string,
+    fn: () => Promise<T>,
+    onSuccess?: (result: T, refreshed: MeProfile | null, previous: MeProfile | null) => string | ActionSuccessSummary | null,
+  ) => {
     if (busyAction) return;
     setBusyAction(label);
     setError(null);
+    const previousMe = me;
     try {
       const result = await fn();
-      await refreshMe(serviceMode);
-      const extra = onSuccess?.(result);
-      const message = extra ? `${label} ✓ — ${extra}` : `${label} ✓`;
-      pushOpeningReceipt(label, extra ?? "Action applied and city state refreshed.", "success");
+      const refreshed = await refreshMe(serviceMode);
+      const successSummary = onSuccess?.(result, refreshed, previousMe);
+      const normalized = typeof successSummary === "string"
+        ? { detail: successSummary }
+        : (successSummary ?? {});
+      const detail = normalized.detail ?? "Action applied and city state refreshed.";
+      const impactSummary = normalized.impactSummary ?? summarizeLoopDelta(previousMe, refreshed);
+      const outcome = normalized.outcome ?? "success";
+      const message = impactSummary ? `${label} ✓ — ${detail} ${impactSummary}` : `${label} ✓ — ${detail}`;
+      pushOpeningReceipt(label, detail, outcome, impactSummary);
       setFlash("ok", message);
     } catch (err: any) {
       console.error(err);
@@ -264,7 +347,7 @@ export function createMePageActions({
         method: "POST",
         body: JSON.stringify({ key, value: !me.policies[key] }),
       });
-    }, () => `${titleCase(String(key))} policy updated.`);
+    }, () => ({ detail: `${titleCase(String(key))} policy updated.` }));
   };
 
   const handleStartTech = (techId: string) => {
@@ -334,14 +417,16 @@ export function createMePageActions({
     setWorldActionBusyId(action.id);
     setError(null);
     try {
+      const previousMe = me;
       const result = await executeWorldConsequenceAction(action.id);
-      await refreshMe(serviceMode);
+      const refreshedMe = await refreshMe(serviceMode);
       const applied = result?.result?.appliedEffect;
       const appliedSummary = applied
         ? ` pressure ${formatWorldDelta(applied.pressureDelta)} • recovery ${formatWorldDelta(applied.recoveryDelta)} • trust ${formatWorldDelta(applied.trustDelta)} • control ${formatWorldDelta(applied.controlDelta)} • threat ${formatWorldDelta(applied.threatDelta)}`
         : "";
       const message = `${result?.result?.message ?? `${action.title} executed.`}${appliedSummary}`;
-      pushOpeningReceipt(action.title, message, "success");
+      const loopImpact = summarizeLoopDelta(previousMe, refreshedMe);
+      pushOpeningReceipt(action.title, message, "success", loopImpact);
       setFlash("ok", message);
     } catch (err: any) {
       console.error(err);

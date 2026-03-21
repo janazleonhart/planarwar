@@ -192,6 +192,7 @@ export function MissionResponsePanel({
                         </button>
                       </div>
                       <div style={{ fontSize: 12, opacity: 0.82 }}>{receipt.detail}</div>
+                      {receipt.impactSummary ? <div style={{ fontSize: 11, opacity: 0.72 }}>{receipt.impactSummary}</div> : null}
                     </div>
                   );
                 })}
