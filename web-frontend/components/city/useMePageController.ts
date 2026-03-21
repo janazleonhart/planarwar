@@ -16,6 +16,14 @@ import { createMePageActions } from "./createMePageActions";
 
 export type MePageNotice = { kind: "ok" | "err"; text: string } | null;
 
+export type OpeningActionReceipt = {
+  id: string;
+  title: string;
+  detail: string;
+  outcome: "success" | "warning" | "failure";
+  timestamp: string;
+};
+
 export function useMePageController(serviceMode: InfrastructureMode) {
   const [me, setMe] = useState<MeProfile | null>(null);
   const [infraStatus, setInfraStatus] = useState<PublicInfrastructureStatusResponse | null>(null);
@@ -28,6 +36,7 @@ export function useMePageController(serviceMode: InfrastructureMode) {
   const [citySetupLane, setCitySetupLane] = useState<"city" | "black_market">("city");
   const [worldActionBusyId, setWorldActionBusyId] = useState<string | null>(null);
   const [notice, setNotice] = useState<MePageNotice>(null);
+  const [openingActionReceipts, setOpeningActionReceipts] = useState<OpeningActionReceipt[]>([]);
 
   const noticeTimer = useRef<number | null>(null);
 
@@ -104,6 +113,7 @@ export function useMePageController(serviceMode: InfrastructureMode) {
     setError,
     setFlash,
     setWorldActionBusyId,
+    setOpeningActionReceipts,
     worldActionBusyId,
   });
 
@@ -134,6 +144,7 @@ export function useMePageController(serviceMode: InfrastructureMode) {
     me,
     missionBoard,
     notice,
+    openingActionReceipts,
     refreshMe,
     setCityNameDraft,
     citySetupLane,

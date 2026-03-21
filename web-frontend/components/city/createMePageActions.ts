@@ -1,3 +1,4 @@
+import type { Dispatch, SetStateAction } from "react";
 // web-frontend/components/city/createMePageActions.ts
 
 import {
@@ -24,6 +25,7 @@ import {
   formatWorldDelta,
 } from "../worldResponse/worldResponseUi";
 import { summarizeUsage } from "./CityUiHelpers";
+import type { OpeningActionReceipt } from "./useMePageController";
 
 export type MePageFlashSetter = (kind: "ok" | "err", text: string) => void;
 
@@ -38,6 +40,7 @@ export type CreateMePageActionsArgs = {
   setError: (value: string | null) => void;
   setFlash: MePageFlashSetter;
   setWorldActionBusyId: (value: string | null) => void;
+  setOpeningActionReceipts: Dispatch<SetStateAction<OpeningActionReceipt[]>>;
   worldActionBusyId: string | null;
 };
 
@@ -52,8 +55,22 @@ export function createMePageActions({
   setError,
   setFlash,
   setWorldActionBusyId,
+  setOpeningActionReceipts,
   worldActionBusyId,
 }: CreateMePageActionsArgs) {
+  const pushOpeningReceipt = (title: string, detail: string, outcome: OpeningActionReceipt["outcome"]) => {
+    setOpeningActionReceipts((current) => [
+      {
+        id: `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+        title,
+        detail,
+        outcome,
+        timestamp: new Date().toISOString(),
+      },
+      ...current,
+    ].slice(0, 5));
+  };
+
   const runAction = async <T,>(label: string, fn: () => Promise<T>, onSuccess?: (result: T) => string | null) => {
     if (busyAction) return;
     setBusyAction(label);
@@ -62,10 +79,14 @@ export function createMePageActions({
       const result = await fn();
       await refreshMe(serviceMode);
       const extra = onSuccess?.(result);
-      setFlash("ok", extra ? `${label} ✓ — ${extra}` : `${label} ✓`);
+      const message = extra ? `${label} ✓ — ${extra}` : `${label} ✓`;
+      pushOpeningReceipt(label, extra ?? "Action applied and city state refreshed.", "success");
+      setFlash("ok", message);
     } catch (err: any) {
       console.error(err);
-      setFlash("err", err?.message ?? `${label} failed`);
+      const message = err?.message ?? `${label} failed`;
+      pushOpeningReceipt(label, message, "failure");
+      setFlash("err", message);
     } finally {
       setBusyAction(null);
     }
@@ -253,7 +274,9 @@ export function createMePageActions({
       const appliedSummary = applied
         ? ` pressure ${formatWorldDelta(applied.pressureDelta)} • recovery ${formatWorldDelta(applied.recoveryDelta)} • trust ${formatWorldDelta(applied.trustDelta)} • control ${formatWorldDelta(applied.controlDelta)} • threat ${formatWorldDelta(applied.threatDelta)}`
         : "";
-      setFlash("ok", `${result?.result?.message ?? `${action.title} executed.`}${appliedSummary}`);
+      const message = `${result?.result?.message ?? `${action.title} executed.`}${appliedSummary}`;
+      pushOpeningReceipt(action.title, message, "success");
+      setFlash("ok", message);
     } catch (err: any) {
       console.error(err);
       const result = err instanceof ApiResponseError ? err.data?.result : undefined;
@@ -266,7 +289,9 @@ export function createMePageActions({
         : result?.status === "cooldown_active" && result?.readyAt
           ? ` Ready again at ${new Date(result.readyAt).toLocaleString()}.`
           : "";
-      setFlash("err", `${err?.message ?? `Failed to execute ${action.title}.`}${shortfallText}${cooldownText}`);
+      const message = `${err?.message ?? `Failed to execute ${action.title}.`}${shortfallText}${cooldownText}`;
+      pushOpeningReceipt(action.title, message, "failure");
+      setFlash("err", message);
     } finally {
       setWorldActionBusyId(null);
     }

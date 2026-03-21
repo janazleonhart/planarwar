@@ -16,6 +16,7 @@ import type {
   ThreatWarning,
   WorldConsequenceActionItem,
 } from "../../lib/api";
+import type { OpeningActionReceipt } from "../city/useMePageController";
 import { ActiveMissionsSection } from "./ActiveMissionsSection";
 import { CityAlphaPanels } from "./CityAlphaPanels";
 import { MissionBoardDigest } from "./MissionBoardDigest";
@@ -60,6 +61,7 @@ type MissionResponsePanelProps = {
   worldConsequenceActions: MeProfile["worldConsequenceActions"];
   worldActionBusyId: string | null;
   onExecuteWorldAction: (action: WorldConsequenceActionItem) => void | Promise<void>;
+  openingActionReceipts: OpeningActionReceipt[];
 };
 
 function BlackMarketStatusCard({ actions }: { actions: NonNullable<MissionResponsePanelProps["worldConsequenceActions"]> }) {
@@ -112,6 +114,7 @@ export function MissionResponsePanel({
   worldConsequenceActions,
   worldActionBusyId,
   onExecuteWorldAction,
+  openingActionReceipts,
 }: MissionResponsePanelProps) {
   return (
     <div style={{ border: "1px solid #444", borderRadius: 8, padding: 16, display: "grid", gap: 12 }}>
@@ -133,6 +136,30 @@ export function MissionResponsePanel({
 
       {me.city?.settlementOpeningOperations?.length ? (
         <div style={{ display: "grid", gap: 8 }}>
+          {openingActionReceipts.length ? (
+            <div style={{ display: "grid", gap: 8 }}>
+              <div style={{ fontSize: 12, textTransform: "uppercase", letterSpacing: 0.6, opacity: 0.72 }}>Immediate receipts</div>
+              <div style={{ display: "grid", gap: 8 }}>
+                {openingActionReceipts.map((receipt) => {
+                  const tone = receipt.outcome === "success"
+                    ? { border: "1px solid rgba(110,210,170,0.2)", background: "rgba(35,80,62,0.18)", label: "Applied" }
+                    : receipt.outcome === "warning"
+                      ? { border: "1px solid rgba(210,180,110,0.2)", background: "rgba(90,72,30,0.18)", label: "Watch" }
+                      : { border: "1px solid rgba(210,110,110,0.2)", background: "rgba(90,38,38,0.18)", label: "Failed" };
+                  return (
+                    <div key={receipt.id} style={{ border: tone.border, background: tone.background, borderRadius: 8, padding: 10, display: "grid", gap: 4 }}>
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
+                        <strong>{receipt.title}</strong>
+                        <span style={{ fontSize: 11, opacity: 0.72, textTransform: "uppercase", letterSpacing: 0.4 }}>{tone.label}</span>
+                        <span style={{ fontSize: 11, opacity: 0.6 }}>{new Date(receipt.timestamp).toLocaleTimeString()}</span>
+                      </div>
+                      <div style={{ fontSize: 12, opacity: 0.82 }}>{receipt.detail}</div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ) : null}
           <div style={{ fontSize: 12, textTransform: "uppercase", letterSpacing: 0.6, opacity: 0.72 }}>Opening strike order</div>
           <div style={{ display: "grid", gap: 10 }}>
             {me.city.settlementOpeningOperations.map((operation) => {

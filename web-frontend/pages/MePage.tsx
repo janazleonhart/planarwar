@@ -56,6 +56,7 @@ export function MePage() {
     me,
     missionBoard,
     notice,
+    openingActionReceipts,
     refreshMe,
     setCityNameDraft,
     setCitySetupLane,
@@ -242,6 +243,7 @@ export function MePage() {
         worldConsequenceActions={worldConsequenceActions}
         worldActionBusyId={worldActionBusyId}
         onExecuteWorldAction={handleExecuteWorldAction}
+        openingActionReceipts={openingActionReceipts}
       />
 
       <CityCorePanel
