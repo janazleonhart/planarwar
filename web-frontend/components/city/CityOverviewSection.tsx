@@ -273,6 +273,31 @@ export function CityOverviewSection({
                 </div>
               ))}
             </div>
+            {city.settlementLaneNextActionHint ? (
+              <div
+                style={{
+                  marginTop: 8,
+                  padding: 8,
+                  borderRadius: 8,
+                  background:
+                    city.settlementLane === "black_market"
+                      ? "rgba(120,45,55,0.18)"
+                      : "rgba(45,95,75,0.18)",
+                  border:
+                    city.settlementLane === "black_market"
+                      ? "1px solid rgba(220,90,90,0.16)"
+                      : "1px solid rgba(110,210,170,0.16)",
+                  display: "grid",
+                  gap: 3,
+                }}
+              >
+                <div style={{ fontSize: 11, opacity: 0.72, textTransform: "uppercase", letterSpacing: 0.4 }}>
+                  Next action hint · {city.settlementLaneNextActionHint.lane}
+                </div>
+                <div style={{ fontSize: 13, fontWeight: 700 }}>{city.settlementLaneNextActionHint.title}</div>
+                <div style={{ fontSize: 12, opacity: 0.8 }}>{city.settlementLaneNextActionHint.summary}</div>
+              </div>
+            ) : null}
           </div>
           <div style={{
             border: "1px solid #555",
