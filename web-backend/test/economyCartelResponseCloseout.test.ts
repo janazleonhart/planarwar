@@ -11,7 +11,7 @@ import { pushWorldConsequence } from "../domain/worldConsequences";
 
 test("economy/cartel closeout keeps vendor and mission runtime on the same response story", () => {
   const ps = getOrCreatePlayerState(`economy_cartel_closeout_${Date.now()}`);
-  ps.techFlags = ["BLACK_MARKET_ENABLED"];
+  ps.city.settlementLane = "black_market";
   ps.resources.food = 180;
   ps.resources.materials = 165;
   ps.resources.wealth = 140;

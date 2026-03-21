@@ -25,7 +25,7 @@ test("quiet world consequence state still returns an observe-only recommendation
 
 test("active world consequence pressure yields player and admin recommendations", () => {
   const ps = getOrCreatePlayerState("world_consequence_actions_hot_player");
-  ps.techFlags = ["BLACK_MARKET_ENABLED"];
+  ps.city.settlementLane = "black_market";
 
   pushWorldConsequence(ps, {
     regionId: ps.city.regionId,
@@ -55,7 +55,7 @@ test("active world consequence pressure yields player and admin recommendations"
 
 test("regional action evidence follows the hottest hotspot instead of page-level guesses", () => {
   const ps = getOrCreatePlayerState("world_consequence_actions_regional_evidence_player");
-  ps.techFlags = ["BLACK_MARKET_ENABLED"];
+  ps.city.settlementLane = "black_market";
 
   pushWorldConsequence(ps, {
     regionId: ps.city.regionId,
@@ -89,7 +89,7 @@ test("regional action evidence follows the hottest hotspot instead of page-level
 
 test("active black-market hooks expose both exploit and contain player choices", () => {
   const ps = getOrCreatePlayerState("world_consequence_actions_black_market_choices_player");
-  ps.techFlags = ["BLACK_MARKET_ENABLED"];
+  ps.city.settlementLane = "black_market";
 
   pushWorldConsequence(ps, {
     regionId: ps.city.regionId,

@@ -33,7 +33,7 @@ test("economy/cartel response stays locked or watch-only when black market is no
 
 test("economy/cartel response becomes runtime-active and escalates cartel tier under heavy pressure", () => {
   const ps = getOrCreatePlayerState("economy_cartel_response_hot_player");
-  ps.techFlags = ["BLACK_MARKET_ENABLED"];
+  ps.city.settlementLane = "black_market";
 
   pushWorldConsequence(ps, {
     regionId: ps.city.regionId,

@@ -24,7 +24,7 @@ test("advisory-only world consequence actions stay non-executable", () => {
 
 test("black-market exploit runtime view exposes shadow-economy upside and downside", () => {
   const ps = getOrCreatePlayerState("world_consequence_runtime_black_market_player");
-  ps.techFlags = ["BLACK_MARKET_ENABLED"];
+  ps.city.settlementLane = "black_market";
 
   const runtime = buildWorldConsequenceActionRuntimeView(ps, "action_black_market_window_exploit");
   assert.equal(runtime.executable, true);
@@ -123,7 +123,7 @@ test("insufficient-resource runtime view reports shortfall and withholds post-co
 
 test("black-market runtime preview surfaces the alternate contain follow-up when both choices are visible", () => {
   const ps = getOrCreatePlayerState("world_consequence_runtime_black_market_followup_player");
-  ps.techFlags = ["BLACK_MARKET_ENABLED"];
+  ps.city.settlementLane = "black_market";
 
   const runtime = buildWorldConsequenceActionRuntimeView(ps, "action_black_market_window_exploit", [
     { id: "action_black_market_window_exploit", title: "Exploit the window" },
@@ -138,7 +138,7 @@ test("black-market runtime preview surfaces the alternate contain follow-up when
 
 test("black-market bribe runtime view exposes crooked cooldown without civic upside cosplay", () => {
   const ps = getOrCreatePlayerState("world_consequence_runtime_black_market_bribe_player");
-  ps.techFlags = ["BLACK_MARKET_ENABLED"];
+  ps.city.settlementLane = "black_market";
 
   const runtime = buildWorldConsequenceActionRuntimeView(ps, "action_black_market_window_bribe", [
     { id: "action_black_market_window_exploit", title: "Exploit the window" },

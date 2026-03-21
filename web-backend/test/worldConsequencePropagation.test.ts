@@ -36,7 +36,7 @@ test("mission setback propagates into regional, faction, and economy pressure st
   ps.city.stats.stability = 57;
   ps.city.stats.unity = 60;
   ps.city.stats.infrastructure = 52;
-  ps.techFlags = ["BLACK_MARKET_ENABLED"];
+  ps.city.settlementLane = "black_market";
   ps.armies = [
     {
       id: "army_consequence_chain",

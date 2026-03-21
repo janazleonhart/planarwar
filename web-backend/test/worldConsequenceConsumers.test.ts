@@ -32,7 +32,7 @@ test("quiet world consequence consumers leave vendor policy unchanged", () => {
 
 test("active world consequence consumers tighten vendor policy and mission guidance", () => {
   const ps = getOrCreatePlayerState("world_consequence_consumers_hot_player");
-  ps.techFlags = ["BLACK_MARKET_ENABLED"];
+  ps.city.settlementLane = "black_market";
 
   ps.currentOffers = [
     {

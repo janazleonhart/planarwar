@@ -165,10 +165,10 @@ export function deriveWorldConsequenceActions(
       priority: "watch",
       title: "A black-market seam is opening, but the city cannot exploit it yet",
       summary:
-        "Pressure is creating illicit opportunity, but the city still lacks the unlock or doctrine to act on it.",
+        "Pressure is creating illicit opportunity, but this settlement is on the civic lane and cannot act on it directly yet.",
       recommendedMoves: [
         "Treat this as a warning, not free money.",
-        "Either unlock the lane later or contain the conditions creating the opening now.",
+        "Either found a future settlement on the black-market lane or contain the conditions creating the opening now.",
       ],
       sourceRegionId: hooks.blackMarket.driverRegionId,
       sourceHook: "blackMarket",

@@ -69,6 +69,11 @@ function safeState(ps: PlayerState, state?: WorldConsequenceState | null): World
   } satisfies WorldConsequenceState;
 }
 
+
+function isBlackMarketLaneUnlocked(ps: PlayerState): boolean {
+  return ps.city?.settlementLane === "black_market";
+}
+
 function hottestRegionId(state: WorldConsequenceState): string | null {
   const topRegion = [...(state.regions ?? [])].sort((a, b) => {
     const scoreA = Number(a.tradeDisruption ?? 0) + Number(a.blackMarketHeat ?? 0) + Math.abs(Number(a.factionDrift ?? 0));
@@ -81,7 +86,7 @@ function hottestRegionId(state: WorldConsequenceState): string | null {
 export function deriveEconomyCartelResponseState(ps: PlayerState, state?: WorldConsequenceState | null): EconomyCartelResponseState {
   const current = safeState(ps, state);
   const sourceRegionId = hottestRegionId(current);
-  const unlocked = (ps.techFlags ?? []).includes("BLACK_MARKET_ENABLED");
+  const unlocked = isBlackMarketLaneUnlocked(ps);
   const opportunityScore = Number(current.blackMarket?.opportunityScore ?? 0);
   const heat = Number(current.blackMarket?.heat ?? 0);
   const cartelAttention = Number(current.worldEconomy?.cartelAttention ?? 0);
@@ -210,8 +215,8 @@ export function deriveEconomyCartelResponseState(ps: PlayerState, state?: WorldC
   const blackMarketNote =
     !unlocked
       ? blackMarketState === "opening"
-        ? "The world is opening illicit seams, but the city still lacks an unlocked runtime lane to exploit them."
-        : "No black-market runtime state is available because the city has not unlocked that lane."
+        ? "The world is opening illicit seams, but this settlement was founded on the civic lane and cannot exploit them directly."
+        : "No black-market runtime state is available because this settlement is currently on the civic lane."
       : blackMarketState === "surging"
       ? "Black-market runtime state is surging: this is actionable upside with cartel risk attached."
       : blackMarketState === "active"

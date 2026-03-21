@@ -53,7 +53,7 @@ test("successful response action cools propagated world state", () => {
 
 test("black-market exploit action executes as a bounded shadow-economy loop", () => {
   const ps = seedPressure();
-  ps.techFlags = ["BLACK_MARKET_ENABLED"];
+  ps.city.settlementLane = "black_market";
   pushWorldConsequence(
     ps,
     buildSetbackWorldConsequence({
@@ -223,7 +223,7 @@ test("player action cards expose runtime impact previews instead of hidden payof
   assert.match(stabilize?.runtime?.effect?.summary ?? "", /scarcity pressure/i);
 
   const exploitReady = seedPressure();
-  exploitReady.techFlags = ["BLACK_MARKET_ENABLED"];
+  exploitReady.city.settlementLane = "black_market";
   pushWorldConsequence(
     exploitReady,
     buildSetbackWorldConsequence({
@@ -346,7 +346,7 @@ test("player action cards expose last actual spend for bounded runtime responses
 
 test("black-market bribe action buys breathing room without pretending the city got cleaner", () => {
   const ps = seedPressure();
-  ps.techFlags = ["BLACK_MARKET_ENABLED"];
+  ps.city.settlementLane = "black_market";
   pushWorldConsequence(
     ps,
     buildSetbackWorldConsequence({

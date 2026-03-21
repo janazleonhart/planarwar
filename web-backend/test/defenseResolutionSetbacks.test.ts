@@ -192,7 +192,7 @@ test("economy/cartel response applies mission runtime pressure beyond offer text
   assert.equal(baselineResult.status, "ok");
 
   const ps = getOrCreatePlayerState("defense_cartel_runtime_player");
-  ps.techFlags = ["BLACK_MARKET_ENABLED"];
+  ps.city.settlementLane = "black_market";
   ps.resources.wealth = 900;
   ps.resources.materials = 900;
   ps.resources.mana = 300;

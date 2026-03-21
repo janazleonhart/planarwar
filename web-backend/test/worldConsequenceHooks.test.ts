@@ -38,7 +38,7 @@ test("black market hooks stay locked without unlock flag but expose an opening w
 
 test("black market and cartel hooks become active once the city can actually exploit the seam", () => {
   const ps = getOrCreatePlayerState("world_consequence_hooks_active_player");
-  ps.techFlags = ["BLACK_MARKET_ENABLED"];
+  ps.city.settlementLane = "black_market";
 
   pushWorldConsequence(ps, {
     regionId: ps.city.regionId,
