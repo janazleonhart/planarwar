@@ -116,4 +116,5 @@ test("active black-market hooks expose both exploit and contain player choices",
 
   assert.ok(blackMarketIds.includes("action_black_market_window_exploit"));
   assert.ok(blackMarketIds.includes("action_black_market_window_contain"));
+  assert.ok(blackMarketIds.includes("action_black_market_window_bribe"));
 });

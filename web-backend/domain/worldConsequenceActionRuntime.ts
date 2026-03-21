@@ -187,6 +187,20 @@ export function getWorldConsequenceRuntimePlan(actionId: string): RuntimeWorldCo
     };
   }
 
+
+  if (actionId === "action_black_market_window_bribe") {
+    return {
+      contractKind: "counter_rumors",
+      spent: { wealth: 6, knowledge: 1 },
+      pressureDelta: -2,
+      recoveryDelta: -1,
+      trustDelta: -2,
+      controlDelta: -1,
+      threatDelta: -4,
+      summaryNote: "Patrols were bribed to cool immediate heat, lowering threat while deepening civic rot.",
+    };
+  }
+
   if (actionId.startsWith("action_region_")) {
     return {
       contractKind: "stabilize_district",
@@ -286,6 +300,7 @@ function runtimeButtonLabel(
     return "Fund containment";
   }
   if (actionId === "action_black_market_window_exploit") return "Exploit window";
+  if (actionId === "action_black_market_window_bribe") return "Bribe patrols";
   if (actionId.startsWith("action_region_")) return "Dispatch response";
   return "Advisory only";
 }

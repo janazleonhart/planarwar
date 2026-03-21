@@ -116,7 +116,8 @@ export function buildWorldConsequenceActionEvidence(
   if (
     actionId === "action_cartel_pressure" ||
     actionId === "action_black_market_window_contain" ||
-    actionId === "action_black_market_window_exploit"
+    actionId === "action_black_market_window_exploit" ||
+    actionId === "action_black_market_window_bribe"
   ) {
     return buildCartelOrBlackMarketEvidence(propagated, hooks);
   }

@@ -342,3 +342,39 @@ test("player action cards expose last actual spend for bounded runtime responses
   assert.ok(stabilize);
   assert.deepEqual(stabilize?.runtime?.lastSpent, { wealth: 10, materials: 8 });
 });
+
+
+test("black-market bribe action buys breathing room without pretending the city got cleaner", () => {
+  const ps = seedPressure();
+  ps.techFlags = ["BLACK_MARKET_ENABLED"];
+  pushWorldConsequence(
+    ps,
+    buildSetbackWorldConsequence({
+      missionId: "mission_bribe_window",
+      missionTitle: "Inspection surge",
+      regionId: ps.city.regionId,
+      outcome: "failure",
+      pressureDelta: 10,
+      recoveryDelta: 8,
+      controlDelta: -2,
+      threatDelta: 6,
+      setbackCount: 2,
+    }),
+  );
+  const beforeWealth = ps.resources.wealth;
+  const beforeKnowledge = ps.resources.knowledge;
+  const beforeThreat = ps.cityStress.threatPressure ?? 0;
+  const beforePressure = ps.cityStress.total ?? 0;
+
+  const result = executeWorldConsequenceAction(ps, "action_black_market_window_bribe");
+  assert.equal(result.ok, true);
+  assert.equal(result.status, "ok");
+  assert.deepEqual(result.spent, { wealth: 6, knowledge: 1 });
+  assert.equal(result.appliedEffect?.pressureDelta, -2);
+  assert.equal(result.appliedEffect?.threatDelta, -4);
+  assert.equal(result.appliedEffect?.trustDelta, -2);
+  assert.equal(ps.resources.wealth, beforeWealth - 6);
+  assert.equal(ps.resources.knowledge, beforeKnowledge - 1);
+  assert.ok((ps.cityStress.threatPressure ?? 0) <= beforeThreat);
+  assert.ok((ps.cityStress.total ?? 0) <= beforePressure);
+});

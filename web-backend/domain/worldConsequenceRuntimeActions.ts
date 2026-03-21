@@ -71,6 +71,14 @@ function fallbackAction(actionId: string, ps: PlayerState): WorldConsequenceActi
       recommendedMoves: [], sourceRegionId: regionId, sourceHook: "fallback",
     };
   }
+  if (actionId === "action_black_market_window_bribe") {
+    return {
+      id: actionId, audience: "player", lane: "black_market", priority: "high",
+      title: "Bribe patrols to keep the window open",
+      summary: "Fallback execution path for a real runtime action.",
+      recommendedMoves: [], sourceRegionId: regionId, sourceHook: "fallback",
+    };
+  }
   return {
     id: actionId, audience: "player", lane: "regional", priority: "high",
     title: `Region ${regionId} is carrying the hottest consequence load`,

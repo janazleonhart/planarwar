@@ -215,8 +215,25 @@ export function deriveWorldConsequenceActions(
       sourceHook: "blackMarket",
     };
 
+    const bribeAction: WorldConsequenceActionItem = {
+      id: "action_black_market_window_bribe",
+      audience: "player",
+      lane: "black_market",
+      priority: hooks.blackMarket.status === "surging" ? "high" : "watch",
+      title: "Bribe patrols to keep the window open",
+      summary:
+        "Spend dirty money to cool heat fast without pretending the city got healthier.",
+      recommendedMoves: [
+        "Use this when the shadow lane is worth preserving but a full containment pivot would cost too much momentum.",
+        "Expect trust and control posture to rot even while immediate threat cools.",
+      ],
+      sourceRegionId: hooks.blackMarket.driverRegionId,
+      sourceHook: "blackMarket",
+    };
+
     pushUnique(playerActions, exploitAction);
     pushUnique(playerActions, containAction);
+    pushUnique(playerActions, bribeAction);
   }
 
   if (hooks.cartel.pressureTier === "active" || hooks.cartel.pressureTier === "severe") {
@@ -329,9 +346,9 @@ export function deriveWorldConsequenceActions(
     });
   }
 
-  const sortedPlayerBase = sorted(playerActions).slice(0, 5);
-  const sortedAdminBase = sorted(adminActions).slice(0, 5);
-  const sortedMotherBrainBase = sorted(motherBrainActions).slice(0, 5);
+  const sortedPlayerBase = sorted(playerActions).slice(0, 7);
+  const sortedAdminBase = sorted(adminActions).slice(0, 7);
+  const sortedMotherBrainBase = sorted(motherBrainActions).slice(0, 7);
 
   const playerCandidates = sortedPlayerBase.map((item) => ({ id: item.id, title: item.title }));
   const adminCandidates = sortedAdminBase.map((item) => ({ id: item.id, title: item.title }));

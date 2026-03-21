@@ -134,3 +134,24 @@ test("black-market runtime preview surfaces the alternate contain follow-up when
   assert.ok(runtime.availableFollowupActionIds?.includes("action_black_market_window_contain"));
   assert.ok(runtime.availableFollowupActionTitles?.includes("Contain the heat"));
 });
+
+
+test("black-market bribe runtime view exposes crooked cooldown without civic upside cosplay", () => {
+  const ps = getOrCreatePlayerState("world_consequence_runtime_black_market_bribe_player");
+  ps.techFlags = ["BLACK_MARKET_ENABLED"];
+
+  const runtime = buildWorldConsequenceActionRuntimeView(ps, "action_black_market_window_bribe", [
+    { id: "action_black_market_window_exploit", title: "Exploit the window" },
+    { id: "action_black_market_window_contain", title: "Contain the heat" },
+    { id: "action_black_market_window_bribe", title: "Bribe patrols" },
+  ]);
+
+  assert.equal(runtime.executable, true);
+  assert.equal(runtime.affordability, "affordable");
+  assert.equal(runtime.buttonLabel, "Bribe patrols");
+  assert.deepEqual(runtime.cost, { wealth: 6, knowledge: 1 });
+  assert.equal(runtime.effect?.pressureDelta, -2);
+  assert.equal(runtime.effect?.threatDelta, -4);
+  assert.equal(runtime.effect?.trustDelta, -2);
+  assert.ok(runtime.availableFollowupActionIds?.includes("action_black_market_window_exploit"));
+});
