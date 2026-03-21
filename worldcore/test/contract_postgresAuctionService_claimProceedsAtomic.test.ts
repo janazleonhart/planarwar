@@ -31,8 +31,8 @@ test("[contract] postgres auction claimProceeds updates and sums in one atomic s
 
   assert.match(
     src,
-    /async\s+claimProceeds\s*\(args:\s*\{[\s\S]*?sellerCharId:\s*string;[\s\S]*?\}\)\s*:\s*Promise<number>\s*\{[\s\S]*?WITH claimed AS \([\s\S]*?UPDATE auctions[\s\S]*?SET proceeds_claimed = true[\s\S]*?WHERE shard_id = \$1[\s\S]*?AND seller_char_id = \$2[\s\S]*?AND status = 'sold'[\s\S]*?AND proceeds_gold IS NOT NULL[\s\S]*?AND proceeds_claimed = false[\s\S]*?RETURNING proceeds_gold[\s\S]*?\)[\s\S]*?SELECT COALESCE\(SUM\(proceeds_gold\), 0\) AS total[\s\S]*?FROM claimed/m,
-    "PostgresAuctionService.claimProceeds should atomically mark proceeds claimed and sum only the rows it updated",
+    /async\s+claimProceeds\s*\(args:\s*\{[\s\S]*?sellerCharId:\s*string;[\s\S]*?\}\)\s*:\s*Promise<\{ listingIds: number\[\]; total: number \}>\s*\{[\s\S]*?WITH claimed AS \([\s\S]*?UPDATE auctions[\s\S]*?SET proceeds_claimed = true[\s\S]*?WHERE shard_id = \$1[\s\S]*?AND seller_char_id = \$2[\s\S]*?AND status = 'sold'[\s\S]*?AND proceeds_gold IS NOT NULL[\s\S]*?AND proceeds_claimed = false[\s\S]*?RETURNING id, proceeds_gold[\s\S]*?\)[\s\S]*?SELECT COALESCE\(array_agg\(id\), '\{\}'\) AS listing_ids,[\s\S]*?COALESCE\(SUM\(proceeds_gold\), 0\) AS total[\s\S]*?FROM claimed/m,
+    "PostgresAuctionService.claimProceeds should atomically mark proceeds claimed, return the exact claimed listing ids, and sum only the rows it updated",
   );
 
   assert.doesNotMatch(

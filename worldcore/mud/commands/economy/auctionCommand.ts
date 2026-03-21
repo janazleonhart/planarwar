@@ -280,14 +280,26 @@ export async function handleAuctionCommand(
   }
 
   if (sub === "claim") {
-    const total = await ctx.auctions.claimProceeds({
+    const claim = await ctx.auctions.claimProceeds({
       shardId,
       sellerCharId: (char as any).id,
     });
-    if (total <= 0) return "You have no auction proceeds to claim.";
+    if ((claim?.total ?? 0) <= 0) return "You have no auction proceeds to claim.";
 
-    giveGold(char, total);
-    await ctx.characters.saveCharacter(char);
+    giveGold(char, claim.total);
+    try {
+      await ctx.characters.saveCharacter(char);
+    } catch (error) {
+      setCharacterGold(char, getCharacterGold(char) - claim.total);
+      if (typeof ctx.auctions.revertFailedClaimProceeds === "function") {
+        await ctx.auctions.revertFailedClaimProceeds({
+          shardId,
+          sellerCharId: (char as any).id,
+          listingIds: claim.listingIds,
+        });
+      }
+      throw error;
+    }
 
     await logAuctionEvent({
       shardId,
@@ -306,10 +318,10 @@ export async function handleAuctionCommand(
       action: "claim",
       actorCharId: (char as any).id,
       actorCharName: (char as any).name,
-      details: { totalGold: total },
+      details: { totalGold: claim.total },
     });
 
-    return `You claim ${total} gold from completed auctions.`;
+    return `You claim ${claim.total} gold from completed auctions.`;
   }
 
   if (sub === "cancel") {

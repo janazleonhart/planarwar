@@ -260,7 +260,7 @@ export class PostgresAuctionService implements AuctionService {
   async claimProceeds(args: {
     shardId: string;
     sellerCharId: string;
-  }): Promise<number> {
+  }): Promise<{ listingIds: number[]; total: number }> {
     const res = await db.query(
       `
       WITH claimed AS (
@@ -271,18 +271,53 @@ export class PostgresAuctionService implements AuctionService {
           AND status = 'sold'
           AND proceeds_gold IS NOT NULL
           AND proceeds_claimed = false
-        RETURNING proceeds_gold
+        RETURNING id, proceeds_gold
       )
-      SELECT COALESCE(SUM(proceeds_gold), 0) AS total
+      SELECT COALESCE(array_agg(id), '{}') AS listing_ids,
+             COALESCE(SUM(proceeds_gold), 0) AS total
       FROM claimed
     `,
       [args.shardId, args.sellerCharId]
     );
 
-    const row = res.rows[0] as { total: string | number | null } | undefined;
+    const row =
+      (res.rows[0] as
+        | { listing_ids?: number[] | null; total: string | number | null }
+        | undefined) ?? undefined;
     const totalRaw = row?.total;
     const total = typeof totalRaw === "number" ? totalRaw : Number(totalRaw ?? 0);
-    return Number.isFinite(total) && total > 0 ? total : 0;
+    const listingIds = Array.isArray(row?.listing_ids)
+      ? row!.listing_ids.map((id) => Number(id)).filter((id) => Number.isInteger(id) && id > 0)
+      : [];
+
+    return {
+      listingIds,
+      total: Number.isFinite(total) && total > 0 ? total : 0,
+    };
+  }
+
+  async revertFailedClaimProceeds(args: {
+    shardId: string;
+    sellerCharId: string;
+    listingIds: number[];
+  }): Promise<number> {
+    if (args.listingIds.length === 0) return 0;
+
+    const res = await db.query(
+      `
+      UPDATE auctions
+      SET proceeds_claimed = false
+      WHERE shard_id = $1
+        AND seller_char_id = $2
+        AND id = ANY($3::int[])
+        AND status = 'sold'
+        AND proceeds_gold IS NOT NULL
+        AND proceeds_claimed = true
+    `,
+      [args.shardId, args.sellerCharId, args.listingIds]
+    );
+
+    return res.rowCount ?? 0;
   }
 
   async reclaimExpiredListing(args: {

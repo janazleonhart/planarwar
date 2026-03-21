@@ -52,10 +52,17 @@ export interface AuctionService {
     sellerCharId: string;
   }): Promise<AuctionListing[]>;
 
-  /** Mark all unclaimed proceeds for seller as claimed, returning total gold. */
+  /** Mark all unclaimed proceeds for seller as claimed, returning ids + total gold. */
   claimProceeds(args: {
     shardId: string;
     sellerCharId: string;
+  }): Promise<{ listingIds: number[]; total: number }>;
+
+  /** Revert a failed proceeds claim before the gold save commits. */
+  revertFailedClaimProceeds(args: {
+    shardId: string;
+    sellerCharId: string;
+    listingIds: number[];
   }): Promise<number>;
 
   /** Revert a sold listing back to active when post-buy delivery fails. */
