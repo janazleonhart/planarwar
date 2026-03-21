@@ -390,3 +390,40 @@ test("city summary exposes shadow-facing opening operations after black-market b
   assert.equal(mission?.action.kind, "start_mission");
   assert.equal(mission?.action.responsePosture, "aggressive");
 });
+
+
+test("opening operations surface recovery contracts first when city strain is real", () => {
+  const civic = createInitialPlayerState("opening-contract-civic", seedWorld(), defaultPolicies);
+  civic.cityStress.total = 42;
+  civic.cityStress.threatPressure = 58;
+  civic.cityStress.recoveryBurden = 41;
+  civic.resources.food = 70;
+  civic.currentOffers = [];
+
+  const summary = buildCitySummary(civic);
+  const mission = (summary.settlementOpeningOperations ?? []).find((operation) => operation.action.kind === "start_mission");
+
+  assert.ok(mission, "expected a mission opening op");
+  assert.match(mission?.summary ?? "", /escort relief convoys|stabilize district|repair civic works|counter rumors/i);
+  assert.match(mission?.whyNow ?? "", /visible early success|civic lane/i);
+});
+
+test("opening operations mark backbone and staffing steps as prepare_soon when short on costs", () => {
+  const civic = createInitialPlayerState("opening-shortfall-civic", seedWorld(), defaultPolicies);
+  civic.resources.materials = 5;
+  civic.resources.wealth = 5;
+  civic.resources.unity = 0;
+
+  const summary = buildCitySummary(civic);
+  const operations = summary.settlementOpeningOperations ?? [];
+  const backbone = operations[0];
+  const recruit = operations.find((operation) => operation.action.kind === "recruit_hero");
+
+  assert.equal(backbone?.readiness, "prepare_soon");
+  assert.match(backbone?.whyNow ?? "", /short on/i);
+  assert.ok(/prep/i.test(backbone?.ctaLabel ?? ""));
+
+  assert.ok(recruit, "expected recruit fallback op");
+  assert.equal(recruit?.readiness, "prepare_soon");
+  assert.match(recruit?.whyNow ?? "", /need .* first/i);
+});

@@ -1,5 +1,3 @@
-//web-backend/routes/me.ts
-
 import { Router } from "express";
 
 import { defaultPolicies, summarizeCityAlphaScopeLock, summarizeCityAlphaStatus, tickPlayerState, type PlayerState } from "../gameState";
@@ -18,6 +16,7 @@ import {
   type BuildingKind,
 } from "../domain/city";
 import { applyMissionConsumerGuidance, generateMissionOffers, type MissionOffer } from "../domain/missions";
+import { syncRecoveryContractsForState } from "../gameState/gameStateMissions";
 import { deriveCityMudConsumers, summarizeCityMudBridge } from "../domain/cityMudBridge";
 import { resolvePlayerAccess, resolveViewer, suggestCityName, withPlayerAccessMutation } from "./playerCityAccess";
 
@@ -331,8 +330,74 @@ function getMissionDifficultyRank(difficulty: MissionOffer["difficulty"]): numbe
   }
 }
 
+
+const OPENING_BUILD_BASE_COSTS: Partial<Record<BuildingKind, { materials: number; wealth: number; mana?: number }>> = {
+  farmland: { materials: 50, wealth: 20 },
+  arcane_spire: { materials: 70, wealth: 50, mana: 30 },
+};
+
+const OPENING_HERO_RECRUIT_COSTS: Record<"champion" | "scout" | "tactician" | "mage", { wealth: number; unity: number }> = {
+  champion: { wealth: 150, unity: 10 },
+  scout: { wealth: 110, unity: 7 },
+  tactician: { wealth: 130, unity: 9 },
+  mage: { wealth: 140, unity: 8 },
+};
+
+function getOpeningBuildAffordability(ps: PlayerState, buildingKind: BuildingKind, level: number): { ok: boolean; shortfall: string } {
+  const base = OPENING_BUILD_BASE_COSTS[buildingKind];
+  if (!base) return { ok: true, shortfall: "" };
+  const scale = 1 + (Math.max(1, level) - 1) * 0.4;
+  const cost = {
+    materials: Math.round(base.materials * scale),
+    wealth: Math.round(base.wealth * scale),
+    mana: base.mana != null ? Math.round(base.mana * scale) : 0,
+  };
+  const missing: string[] = [];
+  if ((ps.resources.materials ?? 0) < cost.materials) missing.push(`${cost.materials - (ps.resources.materials ?? 0)} materials`);
+  if ((ps.resources.wealth ?? 0) < cost.wealth) missing.push(`${cost.wealth - (ps.resources.wealth ?? 0)} wealth`);
+  if ((ps.resources.mana ?? 0) < cost.mana) missing.push(`${cost.mana - (ps.resources.mana ?? 0)} mana`);
+  return { ok: missing.length === 0, shortfall: missing.join(', ') };
+}
+
+function getOpeningRecruitAffordability(ps: PlayerState, role: "champion" | "scout" | "tactician" | "mage"): { ok: boolean; shortfall: string } {
+  const cost = OPENING_HERO_RECRUIT_COSTS[role];
+  const missing: string[] = [];
+  if ((ps.resources.wealth ?? 0) < cost.wealth) missing.push(`${cost.wealth - (ps.resources.wealth ?? 0)} wealth`);
+  if ((ps.resources.unity ?? 0) < cost.unity) missing.push(`${cost.unity - (ps.resources.unity ?? 0)} unity`);
+  return { ok: missing.length === 0, shortfall: missing.join(', ') };
+}
+
+function formatOpeningContractLabel(mission: MissionOffer): string {
+  switch (mission.contractKind) {
+    case "relief_convoys":
+      return "Escort relief convoys";
+    case "stabilize_district":
+      return "Stabilize district";
+    case "repair_works":
+      return "Repair civic works";
+    case "counter_rumors":
+      return "Counter rumors";
+    default:
+      return mission.title;
+  }
+}
+
+function scoreOpeningMission(ps: PlayerState, mission: MissionOffer, lane: "city" | "black_market"): number {
+  const difficultyRank = getMissionDifficultyRank(mission.difficulty);
+  const supportSeverity = mission.supportGuidance?.severity ?? 0;
+  const recoveryBias = mission.contractKind ? 120 : mission.responseTags.includes("recovery") ? 40 : 0;
+  const strainBoost = Number(ps.cityStress?.threatPressure ?? 0) + Number(ps.cityStress?.recoveryBurden ?? 0) + Number(ps.cityStress?.total ?? 0);
+  const severeRecoveryMode = Number(ps.cityStress?.threatPressure ?? 0) >= 45 || Number(ps.cityStress?.recoveryBurden ?? 0) >= 35 || Number(ps.cityStress?.total ?? 0) >= 35;
+  const laneBias = lane === "city"
+    ? (mission.contractKind ? 20 : mission.responseTags.includes("recovery") || mission.responseTags.includes("defense") ? 8 : 0)
+    : (mission.responseTags.includes("recon") || mission.responseTags.includes("command") ? 8 : 0);
+  return difficultyRank * 20 + supportSeverity - laneBias - (severeRecoveryMode ? recoveryBias + Math.floor(strainBoost / 6) : 0);
+}
+
 function buildSettlementOpeningOperations(ps: PlayerState): SettlementOpeningOperation[] {
   const lane = ps.city.settlementLane === "black_market" ? "black_market" : "city";
+  const now = new Date(ps.lastTickAt || Date.now());
+  syncRecoveryContractsForState(ps, now);
   const bridgeSummary = summarizeCityMudBridge(ps);
   const bridgeConsumers = deriveCityMudConsumers(bridgeSummary);
   const consequenceConsumers = deriveWorldConsequenceConsumers(ps);
@@ -352,11 +417,7 @@ function buildSettlementOpeningOperations(ps: PlayerState): SettlementOpeningOpe
     bridgeConsumers,
     consequenceConsumers,
   );
-  const firstMission = [...offers].sort((a, b) => {
-    const difficultyDelta = getMissionDifficultyRank(a.difficulty) - getMissionDifficultyRank(b.difficulty);
-    if (difficultyDelta !== 0) return difficultyDelta;
-    return (a.supportGuidance?.severity ?? 0) - (b.supportGuidance?.severity ?? 0);
-  })[0];
+  const firstMission = [...offers].sort((a, b) => scoreOpeningMission(ps, a, lane) - scoreOpeningMission(ps, b, lane))[0];
   const worldActions = deriveWorldConsequenceActions(ps).playerActions;
   const preferredWorldAction = lane === "black_market"
     ? worldActions.find((action) => action.lane === "black_market" && action.runtime?.executable)
@@ -370,6 +431,10 @@ function buildSettlementOpeningOperations(ps: PlayerState): SettlementOpeningOpe
 
   const farmland = ps.city.buildings.find((building) => building.kind === "farmland");
   const arcaneSpire = ps.city.buildings.find((building) => building.kind === "arcane_spire");
+  const civicBackboneAffordability = farmland
+    ? getOpeningBuildAffordability(ps, "farmland", (farmland.level ?? 1) + 1)
+    : getOpeningBuildAffordability(ps, "farmland", 1);
+
   const backboneOperation: SettlementOpeningOperation = lane === "black_market"
     ? arcaneSpire
       ? {
@@ -403,26 +468,30 @@ function buildSettlementOpeningOperations(ps: PlayerState): SettlementOpeningOpe
           id: "opening_civic_backbone",
           title: "Thicken the food spine",
           summary: "Upgrade the Farmland so the civic lane has a sturdier food-and-order base before pressure starts asking unpleasant questions.",
-          whyNow: "City starts win by stable throughput, not by pretending stability appears out of thin air.",
+          whyNow: civicBackboneAffordability.ok
+            ? "City starts win by stable throughput, not by pretending stability appears out of thin air."
+            : `You are short on ${civicBackboneAffordability.shortfall} before the civic backbone can be thickened.`,
           payoff: "Improves the city’s food backbone and supports safer early missions.",
           risk: "If food and unity slip early, every other civic action starts costing more composure.",
           lane: "economy",
           priority: "opening",
-          readiness: "ready_now",
-          ctaLabel: "Upgrade Farmland",
+          readiness: civicBackboneAffordability.ok ? "ready_now" : "prepare_soon",
+          ctaLabel: civicBackboneAffordability.ok ? "Upgrade Farmland" : "Prep Farmland upgrade",
           action: { kind: "upgrade_building", buildingId: farmland.id },
         }
       : {
           id: "opening_civic_farmland_seed",
           title: "Plant the civic surplus",
           summary: "Build farmland first so the settlement’s civic lane starts with dependable food instead of borrowed optimism.",
-          whyNow: "The city lane’s promise is steady growth; this is where that promise stops being a slogan.",
+          whyNow: civicBackboneAffordability.ok
+            ? "The city lane’s promise is steady growth; this is where that promise stops being a slogan."
+            : `You are short on ${civicBackboneAffordability.shortfall} before the food spine can be planted cleanly.`,
           payoff: "Adds a visible food backbone for the first real turns after founding.",
           risk: "Skipping the food spine makes the civic lane feel decorative instead of practical.",
           lane: "economy",
           priority: "opening",
-          readiness: "ready_now",
-          ctaLabel: "Build Farmland",
+          readiness: civicBackboneAffordability.ok ? "ready_now" : "prepare_soon",
+          ctaLabel: civicBackboneAffordability.ok ? "Build Farmland" : "Prep Farmland build",
           action: { kind: "build_building", buildingKind: "farmland" },
         };
 
@@ -434,7 +503,7 @@ function buildSettlementOpeningOperations(ps: PlayerState): SettlementOpeningOpe
     operations.push({
       id: `opening_mission_${firstMission.id}`,
       title: lane === "black_market" ? "Push the first shadow run" : "Run the first civic sortie",
-      summary: `${firstMission.title}. ${firstMission.supportGuidance?.headline ?? "Mission lanes are open."}`,
+      summary: `${formatOpeningContractLabel(firstMission)}. ${firstMission.supportGuidance?.headline ?? "Mission lanes are open."}`,
       whyNow: lane === "black_market"
         ? "Shadow settlements need an early payoff before pressure turns from transactional to coercive."
         : "City starts need a visible early success so the civic lane feels like action, not décor.",
@@ -454,7 +523,32 @@ function buildSettlementOpeningOperations(ps: PlayerState): SettlementOpeningOpe
     });
   }
 
-  if (preferredWorldAction) {
+  const recruitRole = lane === "black_market" ? "scout" : "tactician";
+  const recruitAffordability = getOpeningRecruitAffordability(ps, recruitRole);
+  const recruitOperation: SettlementOpeningOperation = {
+    id: lane === "black_market" ? "opening_shadow_recruit" : "opening_civic_recruit",
+    title: lane === "black_market" ? "Buy another pair of quiet eyes" : "Add another steady hand",
+    summary: lane === "black_market"
+      ? "Recruit a scout so the settlement can see pressure before it is forced to pay for it."
+      : "Recruit a tactician so the civic lane gets better at orderly response instead of improvising under strain.",
+    whyNow: recruitAffordability.ok
+      ? "The starter roster is useful, but the first bounded expansion should still feel like a choice you can make right away."
+      : `You need ${recruitAffordability.shortfall} first before staffing expands cleanly.`,
+    payoff: "Gives the early loop one more concrete lever without reopening a whole subsystem family.",
+    risk: "Overinvesting in staffing before acting on the board can leave resources sitting still.",
+    lane: lane === "black_market" ? "black_market" : "economy",
+    priority: "watch",
+    readiness: recruitAffordability.ok ? "ready_now" : "prepare_soon",
+    ctaLabel: recruitAffordability.ok ? (lane === "black_market" ? "Recruit scout" : "Recruit tactician") : (lane === "black_market" ? "Prep scout hire" : "Prep tactician hire"),
+    action: { kind: "recruit_hero", role: recruitRole },
+  };
+
+  const shouldPreferRecruitFallback = backboneOperation.readiness !== "ready_now" || !preferredWorldAction?.runtime?.executable;
+  if (shouldPreferRecruitFallback) {
+    operations.push(recruitOperation);
+  }
+
+  if (preferredWorldAction && preferredWorldAction.runtime?.executable && operations.length < 3) {
     operations.push({
       id: `opening_world_${preferredWorldAction.id}`,
       title: preferredWorldAction.title,
@@ -462,35 +556,18 @@ function buildSettlementOpeningOperations(ps: PlayerState): SettlementOpeningOpe
       whyNow: lane === "black_market"
         ? "This is the fastest route from shadow posture into an actual world-facing consequence seam."
         : "This is where civic posture turns into a public result instead of remaining an internal mood board.",
-      payoff: preferredWorldAction.runtime?.executable
-        ? "Ready now: this can immediately change pressure, recovery, or regional posture."
-        : "This becomes stronger once you cover the remaining cost or cooldown gate."
-      ,
+      payoff: "Ready now: this can immediately change pressure, recovery, or regional posture.",
       risk: preferredWorldAction.recommendedMoves?.[0] ?? "Unanswered spillover will keep compounding in the background.",
       lane: preferredWorldAction.lane,
       priority: preferredWorldAction.priority === "critical" ? "opening" : preferredWorldAction.priority === "high" ? "high" : "watch",
-      readiness: preferredWorldAction.runtime?.executable ? "ready_now" : preferredWorldAction.runtime ? "prepare_soon" : "blocked",
-      ctaLabel: preferredWorldAction.runtime?.executable ? "Execute world action" : "Review world action",
+      readiness: "ready_now",
+      ctaLabel: "Execute world action",
       action: { kind: "execute_world_action", actionId: preferredWorldAction.id },
     });
   }
 
   if (operations.length < 3) {
-    operations.push({
-      id: lane === "black_market" ? "opening_shadow_recruit" : "opening_civic_recruit",
-      title: lane === "black_market" ? "Buy another pair of quiet eyes" : "Add another steady hand",
-      summary: lane === "black_market"
-        ? "Recruit a scout so the settlement can see pressure before it is forced to pay for it."
-        : "Recruit a tactician so the civic lane gets better at orderly response instead of improvising under strain.",
-      whyNow: "The starter roster is useful, but the first bounded expansion should still feel like a choice you can make right away.",
-      payoff: "Gives the early loop one more concrete lever without reopening a whole subsystem family.",
-      risk: "Overinvesting in staffing before acting on the board can leave resources sitting still.",
-      lane: lane === "black_market" ? "black_market" : "economy",
-      priority: "watch",
-      readiness: "ready_now",
-      ctaLabel: lane === "black_market" ? "Recruit scout" : "Recruit tactician",
-      action: { kind: "recruit_hero", role: lane === "black_market" ? "scout" : "tactician" },
-    });
+    operations.push(recruitOperation);
   }
 
   return operations.slice(0, 3);

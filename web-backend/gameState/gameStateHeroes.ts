@@ -531,6 +531,25 @@ function pickHeroName(role: HeroRole, index: number): string {
   return pool[index % pool.length];
 }
 
+
+export function getHeroRecruitQuote(role: HeroRole): { wealth: number; unity: number } | null {
+  const def = HERO_RECRUIT_DEFS[role];
+  if (!def) return null;
+  return { wealth: def.wealthCost, unity: def.unityCost };
+}
+
+export function canAffordHeroRecruit(
+  resources: Resources,
+  role: HeroRole,
+): { ok: boolean; cost: { wealth: number; unity: number } } | null {
+  const cost = getHeroRecruitQuote(role);
+  if (!cost) return null;
+  return {
+    ok: resources.wealth >= cost.wealth && resources.unity >= cost.unity,
+    cost,
+  };
+}
+
 export function recruitHeroForPlayer(
   deps: HeroStateDeps,
   playerId: string,

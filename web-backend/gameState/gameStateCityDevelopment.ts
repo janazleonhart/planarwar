@@ -106,6 +106,26 @@ function canAffordBuilding(
   };
 }
 
+
+export function getBuildingProjectQuote(
+  kind: BuildingKind,
+  level: number = 1,
+): { materials: number; wealth: number; mana?: number } | null {
+  const base = BUILDING_BASE_COST[kind];
+  if (!base) return null;
+  return canAffordBuilding({ materials: 9_000_000_000, wealth: 9_000_000_000, food: 0, mana: 9_000_000_000, knowledge: 0, unity: 0 }, base, level).cost;
+}
+
+export function canAffordBuildingProject(
+  resources: Resources,
+  kind: BuildingKind,
+  level: number = 1,
+): { ok: boolean; cost: { materials: number; wealth: number; mana?: number } } | null {
+  const base = BUILDING_BASE_COST[kind];
+  if (!base) return null;
+  return canAffordBuilding(resources, base, level);
+}
+
 export function buildBuildingForPlayer(
   deps: CityDevelopmentDeps,
   playerId: string,
