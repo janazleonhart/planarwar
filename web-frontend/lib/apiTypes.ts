@@ -58,6 +58,26 @@ export interface SettlementLaneNextActionHint {
   priority: string;
 }
 
+export type SettlementOpeningAction =
+  | { kind: "build_building"; buildingKind: CityBuilding["kind"] }
+  | { kind: "upgrade_building"; buildingId: string }
+  | { kind: "start_mission"; missionId: string; heroId?: string; armyId?: string; responsePosture?: MissionResponsePosture }
+  | { kind: "execute_world_action"; actionId: string }
+  | { kind: "recruit_hero"; role: "champion" | "scout" | "tactician" | "mage" };
+
+export interface SettlementOpeningOperation {
+  id: string;
+  title: string;
+  summary: string;
+  whyNow: string;
+  payoff: string;
+  risk: string;
+  lane: string;
+  priority: "opening" | "high" | "watch";
+  readiness: "ready_now" | "prepare_soon" | "blocked";
+  ctaLabel: string;
+  action: SettlementOpeningAction;
+}
 
 export interface CityProductionBreakdown {
   buildings: CityProduction;
@@ -91,6 +111,7 @@ export interface CitySummary {
   settlementLaneReceipt: SettlementLaneReceipt;
   settlementLaneLatestReceipt: SettlementLaneLatestReceipt;
   settlementLaneNextActionHint?: SettlementLaneNextActionHint;
+  settlementOpeningOperations?: SettlementOpeningOperation[];
   tier: number;
   maxBuildingSlots: number;
   stats: CityStats;

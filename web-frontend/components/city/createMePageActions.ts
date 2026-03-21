@@ -15,6 +15,7 @@ import {
   type HeroRole,
   type InfrastructureMode,
   type MeProfile,
+  type SettlementOpeningOperation,
   type WorldConsequenceActionItem,
 } from "../../lib/api";
 import {
@@ -207,6 +208,40 @@ export function createMePageActions({
       () => "Mission resolved and city state refreshed."
     );
 
+  const handleExecuteOpeningOperation = (operation: SettlementOpeningOperation) => {
+    switch (operation.action.kind) {
+      case "build_building":
+        return handleBuildBuilding(operation.action.buildingKind);
+      case "upgrade_building":
+        return handleUpgradeBuilding(operation.action.buildingId);
+      case "start_mission":
+        return handleStartMission(
+          operation.action.missionId,
+          operation.action.heroId,
+          operation.action.armyId,
+          operation.action.responsePosture,
+        );
+      case "execute_world_action": {
+        const openingAction = operation.action as typeof operation.action & { actionId?: string };
+        const actionId = typeof openingAction.actionId === "string" ? openingAction.actionId : null;
+        if (!actionId) {
+          setFlash("err", "Opening action is missing its world-action id.");
+          return;
+        }
+        const action = me?.worldConsequenceActions?.playerActions.find((entry) => entry.id === actionId);
+        if (!action) {
+          setFlash("err", "Opening action drifted out of the world-action board.");
+          return;
+        }
+        return handleExecuteWorldAction(action);
+      }
+      case "recruit_hero":
+        return handleRecruitHero(operation.action.role);
+      default:
+        return;
+    }
+  };
+
   const handleExecuteWorldAction = async (action: WorldConsequenceActionItem) => {
     if (worldActionBusyId) return;
     setWorldActionBusyId(action.id);
@@ -242,6 +277,7 @@ export function createMePageActions({
     handleCompleteMission,
     handleCreateCity,
     handleEquipHeroAttachment,
+    handleExecuteOpeningOperation,
     handleExecuteWorldAction,
     handleRaiseArmy,
     handleRecruitHero,

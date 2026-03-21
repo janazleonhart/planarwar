@@ -12,6 +12,7 @@ import type {
   MissionOffer,
   MissionResponsePosture,
   MotherBrainPressureWindow,
+  SettlementOpeningOperation,
   ThreatWarning,
   WorldConsequenceActionItem,
 } from "../../lib/api";
@@ -50,6 +51,7 @@ type MissionResponsePanelProps = {
     responsePosture?: MissionResponsePosture
   ) => void | Promise<void>;
   handleCompleteMission: (instanceId: string) => void | Promise<void>;
+  handleExecuteOpeningOperation: (operation: SettlementOpeningOperation) => void | Promise<void>;
   worldConsequences: MeProfile["worldConsequences"] extends infer T ? NonNullable<T> : never;
   worldConsequenceState: MeProfile["worldConsequenceState"];
   worldConsequenceHooks: MeProfile["worldConsequenceHooks"];
@@ -101,6 +103,7 @@ export function MissionResponsePanel({
   setMissionPostureSelection,
   handleStartMission,
   handleCompleteMission,
+  handleExecuteOpeningOperation,
   worldConsequences,
   worldConsequenceState,
   worldConsequenceHooks,
@@ -127,6 +130,63 @@ export function MissionResponsePanel({
         highlightedReceipts={highlightedReceipts}
         economyCartelResponseState={economyCartelResponseState}
       />
+
+      {me.city?.settlementOpeningOperations?.length ? (
+        <div style={{ display: "grid", gap: 8 }}>
+          <div style={{ fontSize: 12, textTransform: "uppercase", letterSpacing: 0.6, opacity: 0.72 }}>Opening strike order</div>
+          <div style={{ display: "grid", gap: 10 }}>
+            {me.city.settlementOpeningOperations.map((operation) => {
+              const actionable = operation.readiness !== "blocked";
+              const readinessTone = operation.readiness === "ready_now"
+                ? { border: "1px solid rgba(110,210,170,0.2)", background: "rgba(35,80,62,0.2)", label: "Ready now" }
+                : operation.readiness === "prepare_soon"
+                  ? { border: "1px solid rgba(210,180,110,0.2)", background: "rgba(90,72,30,0.18)", label: "Prepare soon" }
+                  : { border: "1px solid rgba(210,110,110,0.2)", background: "rgba(90,38,38,0.18)", label: "Blocked" };
+              return (
+                <div
+                  key={operation.id}
+                  style={{
+                    border: readinessTone.border,
+                    background: readinessTone.background,
+                    borderRadius: 10,
+                    padding: 12,
+                    display: "grid",
+                    gap: 5,
+                  }}
+                >
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
+                    <strong>{operation.title}</strong>
+                    <span style={{ fontSize: 11, opacity: 0.74, textTransform: "uppercase", letterSpacing: 0.4 }}>
+                      {readinessTone.label} · {operation.lane}
+                    </span>
+                  </div>
+                  <div style={{ fontSize: 12, opacity: 0.84 }}>{operation.summary}</div>
+                  <div style={{ fontSize: 12, opacity: 0.76 }}><strong>Why now:</strong> {operation.whyNow}</div>
+                  <div style={{ fontSize: 12, opacity: 0.76 }}><strong>Payoff:</strong> {operation.payoff}</div>
+                  <div style={{ fontSize: 12, opacity: 0.72 }}><strong>Risk:</strong> {operation.risk}</div>
+                  <div>
+                    <button
+                      type="button"
+                      disabled={disabled || !actionable}
+                      onClick={() => void handleExecuteOpeningOperation(operation)}
+                      style={{
+                        padding: "7px 10px",
+                        borderRadius: 8,
+                        border: "1px solid #777",
+                        background: disabled || !actionable ? "#222" : "#111",
+                        color: disabled || !actionable ? "#888" : "inherit",
+                        cursor: disabled || !actionable ? "not-allowed" : "pointer",
+                      }}
+                    >
+                      {operation.ctaLabel}
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      ) : null}
 
       {missionBoard?.bridgeConsumers?.missionBoard ? (
         <div style={{ border: "1px solid #555", borderRadius: 8, padding: 10, display: "grid", gap: 4 }}>

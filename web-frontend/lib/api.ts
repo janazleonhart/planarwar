@@ -23,6 +23,7 @@ import type {
   MissionResponsePosture,
   MissionSetback,
   Resources,
+  SettlementOpeningOperation,
   RewardBundle,
   ThreatFamily,
 } from "./apiTypes";
@@ -37,6 +38,7 @@ export type {
   MissionResponsePosture,
   MissionSetback,
   Resources,
+  SettlementOpeningOperation,
   RewardBundle,
   ThreatFamily,
 } from "./apiTypes";

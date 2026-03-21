@@ -38,6 +38,7 @@ export function MePage() {
     handleCompleteMission,
     handleCreateCity,
     handleEquipHeroAttachment,
+    handleExecuteOpeningOperation,
     handleExecuteWorldAction,
     handleRaiseArmy,
     handleRecruitHero,
@@ -232,6 +233,7 @@ export function MePage() {
         setMissionPostureSelection={setMissionPostureSelection}
         handleStartMission={handleStartMission}
         handleCompleteMission={handleCompleteMission}
+        handleExecuteOpeningOperation={handleExecuteOpeningOperation}
         worldConsequences={worldConsequences}
         worldConsequenceState={worldConsequenceState}
         worldConsequenceHooks={worldConsequenceHooks}

@@ -354,3 +354,39 @@ test("city summary exposes a lane-aware next action hint", () => {
   assert.equal(shadowSummary.settlementLaneNextActionHint?.title, shadowHint.title);
   assert.equal(shadowSummary.settlementLaneNextActionHint?.summary, shadowHint.summary);
 });
+
+test("city summary exposes concrete opening operations for civic starts", () => {
+  const civic = createInitialPlayerState("opening-civic", seedWorld(), defaultPolicies);
+
+  const summary = buildCitySummary(civic);
+  const operations = summary.settlementOpeningOperations ?? [];
+
+  assert.equal(operations.length, 3);
+  assert.match(operations[0]?.title ?? "", /food spine|civic surplus|plant/i);
+  assert.equal(operations[0]?.readiness, "ready_now");
+  assert.ok(
+    operations.some((operation) => operation.action.kind === "start_mission"),
+    "expected a mission launch opening op for civic starts",
+  );
+  assert.ok(
+    operations.some((operation) => operation.action.kind === "execute_world_action" || operation.action.kind === "recruit_hero"),
+    "expected a third concrete opening lever",
+  );
+});
+
+test("city summary exposes shadow-facing opening operations after black-market bootstrap", () => {
+  const shadow = createInitialPlayerState("opening-shadow", seedWorld(), defaultPolicies);
+  applySettlementLaneBootstrap(shadow, "black_market");
+
+  const summary = buildCitySummary(shadow);
+  const operations = summary.settlementOpeningOperations ?? [];
+
+  assert.equal(operations.length, 3);
+  assert.match(operations[0]?.title ?? "", /shadow|counting room|books/i);
+  assert.equal(operations[0]?.lane, "black_market");
+  assert.equal(operations[0]?.readiness, "ready_now");
+  const mission = operations.find((operation) => operation.action.kind === "start_mission");
+  assert.ok(mission, "expected a first mission opening op for shadow starts");
+  assert.equal(mission?.action.kind, "start_mission");
+  assert.equal(mission?.action.responsePosture, "aggressive");
+});
