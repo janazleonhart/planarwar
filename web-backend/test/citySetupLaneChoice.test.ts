@@ -483,3 +483,29 @@ test("city summary latest receipt surfaces solved recovery lane improvements bef
   assert.match(summary.settlementLaneLatestReceipt?.message ?? "", /infrastructure improved by 6/i);
 });
 
+
+
+test("city summary latest recovery receipt translates solved lane changes into plain settlement terms", () => {
+  const civic = createInitialPlayerState("latest-recovery-receipt-plain-language", seedWorld(), defaultPolicies);
+  civic.missionReceipts = [
+    {
+      id: "receipt_relief_success",
+      missionId: "relief_contract_1",
+      missionTitle: "Escort Relief Convoys",
+      createdAt: "2026-03-22T16:00:00Z",
+      outcome: "success",
+      posture: "balanced",
+      summary: "Recovery contract: SUCCESS with balanced posture. Food reserves restored by 28.",
+      setbacks: [],
+    },
+  ] as any;
+
+  const latest = buildSettlementLaneLatestReceipt(civic);
+  assert.match(latest.title, /latest recovery receipt/i);
+  assert.match(latest.message, /escort relief convoys/i);
+  assert.match(latest.message, /food reserves restored by 28/i);
+  assert.match(latest.message, /settlement change: supply pressure easing/i);
+
+  const summary = buildCitySummary(civic);
+  assert.match(summary.settlementLaneLatestReceipt?.message ?? "", /supply pressure easing/i);
+});

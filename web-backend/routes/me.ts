@@ -243,6 +243,18 @@ function classifyLatestReceiptTitle(message: string, lane: "city" | "black_marke
   return lane === "black_market" ? "Latest shadow receipt" : "Latest civic receipt";
 }
 
+
+function summarizeRecoveryReceiptImpact(message: string): string | null {
+  const clauses: string[] = [];
+  if (/infrastructure improved/i.test(message)) clauses.push("outer works recovering");
+  if (/food reserves restored|food improved|convoy/i.test(message)) clauses.push("supply pressure easing");
+  if (/stability improved/i.test(message)) clauses.push("district strain easing");
+  if (/security improved|counter rumors/i.test(message)) clauses.push("security confidence improving");
+  if (clauses.length === 0) return null;
+  const unique = Array.from(new Set(clauses));
+  return `Settlement change: ${unique.join('; ')}.`;
+}
+
 export function buildSettlementLaneLatestReceipt(ps: PlayerState): SettlementLaneLatestReceipt {
   const lane = ps.city.settlementLane === "black_market" ? "black_market" : "city";
   const latestMissionReceipt = (ps.missionReceipts ?? [])
@@ -251,9 +263,10 @@ export function buildSettlementLaneLatestReceipt(ps: PlayerState): SettlementLan
 
   if (latestMissionReceipt) {
     const message = `${latestMissionReceipt.missionTitle}: ${latestMissionReceipt.summary}`.trim();
+    const impact = summarizeRecoveryReceiptImpact(message);
     return {
       title: classifyLatestReceiptTitle(message, lane),
-      message,
+      message: impact ? `${message} ${impact}` : message,
       kind: "mission_complete",
       timestamp: latestMissionReceipt.createdAt,
     };
