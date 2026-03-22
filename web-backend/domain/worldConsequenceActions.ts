@@ -234,6 +234,57 @@ export function deriveWorldConsequenceActions(
     };
   }
 
+  const fullyCooled =
+    !hooks.summary.hasActiveHooks &&
+    hooks.hotspots.length <= 0 &&
+    hooks.worldEconomy.riskTier === "low" &&
+    hooks.cartel.pressureTier === "low" &&
+    hooks.blackMarket.status !== "active" &&
+    hooks.blackMarket.status !== "surging" &&
+    hooks.faction.responseBias === "quiet";
+
+  if (fullyCooled) {
+    const quietAgain: WorldConsequenceActionItem = {
+      id: "action_observe_until_pressure_returns",
+      audience: "player",
+      lane: "observability",
+      priority: "watch",
+      title: "Pressure has cooled; observe until a real consequence seam returns",
+      summary:
+        "The world-consequence ledger still exists, but the exported pressure footprint has cooled enough that no active player lane needs intervention right now.",
+      recommendedMoves: [
+        "Treat this as a recovery window, not an invitation to reopen heat for no reason.",
+        "Watch for a fresh hotspot or response phase change before spending into consequence-specific actions again.",
+      ],
+      sourceRegionId: hottestRegion,
+      sourceHook: "summary",
+    };
+
+    const adminQuiet: WorldConsequenceActionItem = {
+      id: "admin_validate_signal_visibility",
+      audience: "admin",
+      lane: "observability",
+      priority: "watch",
+      title: "Confirm cooled consequence surfaces stay aligned",
+      summary:
+        "The seam is still historically present, but downstream action surfaces should now read as cooled rather than artificially active.",
+      recommendedMoves: [
+        "Confirm player, admin, and Mother Brain surfaces all agree that propagated pressure is currently quiet.",
+        "If action lanes still look hot, treat that as stale state drift rather than a new gameplay event.",
+      ],
+      sourceRegionId: hottestRegion,
+      sourceHook: "summary",
+    };
+
+    return {
+      headline: "Previously exported pressure has cooled; active action lanes are quiet again.",
+      recommendedPrimaryAction: quietAgain.title,
+      playerActions: [attachActionTruth(quietAgain, ps, propagated, hooks, [quietAgain])],
+      adminActions: [attachActionTruth(adminQuiet, ps, propagated, hooks, [adminQuiet])],
+      motherBrainActions: [],
+    };
+  }
+
   if (hooks.worldEconomy.riskTier === "active" || hooks.worldEconomy.riskTier === "severe") {
     const priority: WorldConsequenceActionPriority =
       hooks.worldEconomy.riskTier === "severe" ? "critical" : "high";

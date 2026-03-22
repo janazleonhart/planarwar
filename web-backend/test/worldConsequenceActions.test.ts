@@ -225,3 +225,71 @@ test("identical pressure prefers different primary action lanes by settlement la
   assert.equal(shadowActions.playerActions[0]?.lane, "black_market");
   assert.notEqual(civicActions.recommendedPrimaryAction, shadowActions.recommendedPrimaryAction);
 });
+
+
+test("world consequence actions can cool back to observe-only after stabilization exports despite ledger history", () => {
+  const ps = getOrCreatePlayerState("world_consequence_actions_cooling_player");
+  ps.city.settlementLane = "city";
+
+  pushWorldConsequence(ps, {
+    regionId: ps.city.regionId,
+    source: "mission_setback",
+    severity: "severe",
+    title: "Regional convoy shock",
+    summary: "Pressure spikes outward hard enough to wake economy and black-market surfaces.",
+    detail: "This should create actionable world-consequence lanes before a later cooling export unwinds them.",
+    audiences: ["player", "admin", "mother_brain"],
+    tags: [
+      "city_pressure_export",
+      "regional_instability",
+      "recovery_load",
+      "world_economy_hook",
+      "trade_disruption",
+      "black_market_opening",
+      "faction_drift",
+    ],
+    metrics: {
+      pressureDelta: 5,
+      recoveryDelta: 4,
+      controlDelta: -2,
+      threatDelta: 2,
+    },
+    outcome: "failure",
+  });
+
+  pushWorldConsequence(ps, {
+    regionId: ps.city.regionId,
+    source: "bridge_snapshot",
+    severity: "pressure",
+    title: "Regional cooling after stabilization",
+    summary: "Stabilization exports a matching cooling signal back into the world layer.",
+    detail: "This should quiet action surfaces even though ledger history remains present.",
+    audiences: ["player", "admin", "mother_brain"],
+    tags: [
+      "city_pressure_export",
+      "regional_instability",
+      "recovery_load",
+      "world_economy_hook",
+      "trade_disruption",
+      "black_market_opening",
+      "faction_drift",
+    ],
+    metrics: {
+      pressureDelta: -5,
+      recoveryDelta: -4,
+      controlDelta: 2,
+      threatDelta: -2,
+    },
+    outcome: "success",
+  });
+
+  const actions = deriveWorldConsequenceActions(ps);
+  assert.equal(actions.playerActions.length, 1);
+  assert.equal(actions.playerActions[0]?.id, "action_observe_until_pressure_returns");
+  assert.equal(actions.playerActions[0]?.lane, "observability");
+  assert.equal(actions.adminActions.length, 1);
+  assert.equal(actions.adminActions[0]?.id, "admin_validate_signal_visibility");
+  assert.equal(actions.motherBrainActions.length, 0);
+  assert.match(actions.headline, /cooled/i);
+  assert.match(actions.recommendedPrimaryAction, /observe/i);
+});
