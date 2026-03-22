@@ -427,3 +427,25 @@ test("opening operations mark backbone and staffing steps as prepare_soon when s
   assert.equal(recruit?.readiness, "prepare_soon");
   assert.match(recruit?.whyNow ?? "", /need .* first/i);
 });
+
+test("lane next action hint surfaces the dominant recovery lane when the city is already hurting", () => {
+  const civic = createInitialPlayerState("lane-next-recovery-civic", seedWorld(), defaultPolicies);
+  civic.currentOffers = [];
+  civic.resources.food = 72;
+  civic.cityStress.total = 41;
+  civic.cityStress.threatPressure = 61;
+  civic.cityStress.recoveryBurden = 28;
+  civic.city.stats.infrastructure = 70;
+  civic.city.stats.stability = 66;
+  civic.city.stats.security = 64;
+  civic.city.stats.unity = 71;
+
+  const hint = buildSettlementLaneNextActionHint(civic);
+  assert.match(hint.title, /escort relief convoys/i);
+  assert.match(hint.summary, /supply|food|convoy|relief/i);
+  assert.match(hint.priority, /critical|high/);
+
+  const summary = buildCitySummary(civic);
+  assert.match(summary.settlementLaneNextActionHint?.title ?? "", /escort relief convoys/i);
+  assert.match(summary.settlementLaneNextActionHint?.summary ?? "", /supply|food|convoy|relief/i);
+});

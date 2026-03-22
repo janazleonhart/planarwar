@@ -264,6 +264,18 @@ export function buildSettlementLaneLatestReceipt(ps: PlayerState): SettlementLan
 
 
 export function buildSettlementLaneNextActionHint(ps: PlayerState): SettlementLaneNextActionHint {
+  const dominantRecovery = getDominantRecoveryContract(ps);
+  if (dominantRecovery) {
+    return {
+      title: formatOpeningContractLabel(dominantRecovery),
+      summary: dominantRecovery.supportGuidance?.headline
+        ? `${dominantRecovery.supportGuidance.headline} ${summarizeRecoveryReasons(dominantRecovery)}`
+        : summarizeRecoveryReasons(dominantRecovery),
+      lane: "city",
+      priority: Number(dominantRecovery.targetingPressure ?? 0) >= 60 ? "critical" : "high",
+    };
+  }
+
   const actions = deriveWorldConsequenceActions(ps);
   const top = actions.playerActions[0];
   if (top) {
@@ -380,6 +392,24 @@ function formatOpeningContractLabel(mission: MissionOffer): string {
     default:
       return mission.title;
   }
+}
+
+function getDominantRecoveryContract(ps: PlayerState): MissionOffer | null {
+  const now = new Date(ps.lastTickAt || Date.now());
+  syncRecoveryContractsForState(ps, now);
+  const recoveryContracts = (ps.currentOffers ?? []).filter((offer) => offer.contractKind);
+  if (recoveryContracts.length === 0) return null;
+  return [...recoveryContracts].sort((a, b) => {
+    const pressureDiff = Number(b.targetingPressure ?? 0) - Number(a.targetingPressure ?? 0);
+    if (pressureDiff !== 0) return pressureDiff;
+    return Number(b.supportGuidance?.severity ?? 0) - Number(a.supportGuidance?.severity ?? 0);
+  })[0] ?? null;
+}
+
+function summarizeRecoveryReasons(mission: MissionOffer): string {
+  const reasons = (mission.targetingReasons ?? []).map((entry) => entry.trim()).filter(Boolean);
+  if (reasons.length === 0) return mission.supportGuidance?.headline ?? "The settlement needs immediate recovery work.";
+  return reasons.slice(0, 2).join(" ");
 }
 
 function scoreOpeningMission(ps: PlayerState, mission: MissionOffer, lane: "city" | "black_market"): number {
