@@ -137,3 +137,41 @@ test("recovery contracts propagate reduced threat and persistent recovery load i
   assert.ok(state.summary.affectedRegionIds.includes(String(contract!.regionId)));
   assert.ok(state.lastUpdatedAt);
 });
+
+test("ignored recovery strain exports bridge-snapshot pressure into world consequence state over time", () => {
+  const ps = getOrCreatePlayerState("world_consequence_bridge_snapshot_player");
+  const now = new Date("2026-03-23T10:00:00Z");
+
+  ps.currentOffers = [];
+  ps.activeMissions = [];
+  ps.missionReceipts = [];
+  ps.worldConsequences = [];
+  ps.worldConsequenceState = undefined as any;
+  ps.city.regionId = ps.regionWar[0]!.regionId as any;
+  ps.regionWar[0]!.threat = 44;
+  ps.resources.food = 160;
+  ps.resources.unity = 88;
+  ps.city.stats.infrastructure = 41;
+  ps.city.stats.stability = 60;
+  ps.city.stats.security = 58;
+  ps.city.stats.unity = 62;
+  ps.cityStress.recoveryBurden = 34;
+  ps.cityStress.threatPressure = 32;
+  ps.lastTickAt = new Date(now.getTime() - 4 * 60 * 60 * 1000).toISOString();
+
+  tickPlayerState(ps, now);
+
+  const snapshot = (ps.worldConsequences ?? []).find((entry) => entry.source === "bridge_snapshot");
+  assert.ok(snapshot, "expected a bridge snapshot export from ignored recovery strain");
+  assert.ok(snapshot?.contractKind, "expected exported snapshot to identify the dominant recovery lane");
+  assert.ok(snapshot?.tags.includes("city_pressure_export"));
+  assert.ok(snapshot?.tags.includes("world_economy_hook"));
+
+  const state = ps.worldConsequenceState;
+  assert.ok(state, "expected propagated world consequence state after ignored recovery export");
+  const region = state.regions.find((entry) => entry.regionId === ps.city.regionId);
+  assert.ok(region, "expected exported pressure to reach the city region");
+  assert.ok((region?.netPressure ?? 0) > 0, "expected exported pressure to raise regional net pressure");
+  assert.ok((region?.netRecoveryLoad ?? 0) > 0, "expected exported pressure to carry recovery load outward");
+  assert.ok(state.worldEconomy.tradePressure > 0 || state.worldEconomy.supplyFriction > 0, "expected world economy hooks to wake up from ignored recovery strain");
+});

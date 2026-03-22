@@ -397,6 +397,50 @@ export function pushWorldConsequence(ps: PlayerState, entry: Omit<WorldConsequen
   return record;
 }
 
+export function buildBridgeSnapshotWorldConsequence(input: {
+  regionId: string;
+  contractKind?: RecoveryContractKind;
+  severityHint?: number;
+  pressureDelta: number;
+  recoveryDelta: number;
+  controlDelta?: number;
+  threatDelta?: number;
+  summary: string;
+  detail: string;
+}): Omit<WorldConsequenceLedgerEntry, "id" | "createdAt" | "playerId" | "cityId"> {
+  const severityScore = Math.max(
+    0,
+    Number(input.severityHint ?? 0),
+    Math.abs(input.pressureDelta) + Math.abs(input.recoveryDelta) + Math.abs(input.threatDelta ?? 0) + Math.abs(input.controlDelta ?? 0),
+  );
+  const severity = clampSeverity(severityScore);
+  const tags: WorldConsequenceTag[] = ["city_pressure_export", "regional_instability"];
+  if (input.recoveryDelta > 0) tags.push("recovery_load");
+  if (input.pressureDelta >= 4 || input.recoveryDelta >= 4) tags.push("world_economy_hook");
+  if ((input.threatDelta ?? 0) > 0 || input.pressureDelta >= 5) tags.push("trade_disruption", "black_market_opening");
+  if ((input.controlDelta ?? 0) < 0 || (input.threatDelta ?? 0) > 0) tags.push("faction_drift");
+
+  return {
+    regionId: input.regionId,
+    source: "bridge_snapshot",
+    severity,
+    title: input.contractKind
+      ? `Recovery pressure exported: ${input.contractKind}`
+      : "City pressure exported to the world layer",
+    summary: input.summary,
+    detail: input.detail,
+    audiences: ["player", "mother_brain", "admin"],
+    tags: unique(tags),
+    metrics: {
+      pressureDelta: input.pressureDelta,
+      recoveryDelta: input.recoveryDelta,
+      controlDelta: Number(input.controlDelta ?? 0),
+      threatDelta: Number(input.threatDelta ?? 0),
+    },
+    contractKind: input.contractKind,
+  };
+}
+
 export function buildSetbackWorldConsequence(input: {
   missionId: string;
   missionTitle: string;

@@ -4,6 +4,8 @@ import { getCityProductionPerTick, getSettlementLaneProductionModifier, type Bui
 import { addResources, type ResourceVector } from "../domain/resources";
 import { getTechById, type TechDefinition } from "../domain/tech";
 import { decayPublicInfrastructureHeat } from "../domain/publicInfrastructure";
+import { buildBridgeSnapshotWorldConsequence, pushWorldConsequence } from "../domain/worldConsequences";
+import { syncRecoveryContractsForState } from "./gameStateMissions";
 import type { World } from "../domain/world";
 import type {
   CityStressStage,
@@ -368,6 +370,7 @@ function applyRecoveryContractNeglect(
 ): void {
   if (ticks <= 0) return;
 
+  syncRecoveryContractsForState(ps, new Date(ps.lastTickAt || Date.now()));
   const contracts = (ps.currentOffers ?? []).filter((offer) => offer.contractKind);
   if (contracts.length === 0) return;
 
@@ -390,7 +393,7 @@ function applyRecoveryContractNeglect(
         const foodLoss = Math.max(24, Math.floor(hours * 36));
         const burdenGain = Math.max(1, Math.floor(hours));
         const pressureGain = Math.max(1, Math.floor(hours / 2));
-        ps.resources.food = Math.max(0, ps.resources.food - foodLoss);
+        ps.resources.food = Math.max(0, Number(ps.resources.food ?? 0) - foodLoss);
         ps.cityStress.recoveryBurden = deps.clampStat((ps.cityStress.recoveryBurden ?? 0) + burdenGain);
         ps.cityStress.threatPressure = deps.clampStat((ps.cityStress.threatPressure ?? 0) + pressureGain);
         summary ??= "Unescorted relief lanes are bleeding supplies and sustaining city pressure.";
@@ -401,7 +404,7 @@ function applyRecoveryContractNeglect(
         const unityLoss = Math.max(1, Math.floor(hours * 2));
         const burdenGain = Math.max(1, Math.floor(hours));
         ps.city.stats.stability = deps.clampStat(ps.city.stats.stability - stabilityLoss);
-        ps.resources.unity = Math.max(0, ps.resources.unity - unityLoss);
+        ps.resources.unity = Math.max(0, Number(ps.resources.unity ?? 0) - unityLoss);
         ps.cityStress.recoveryBurden = deps.clampStat((ps.cityStress.recoveryBurden ?? 0) + burdenGain);
         summary ??= "Unanswered district strain is hardening into civic fatigue and deeper recovery burden.";
         break;
@@ -427,6 +430,51 @@ function applyRecoveryContractNeglect(
       message: summary,
     });
   }
+}
+
+function maybeExportRecoveryPressureSnapshot(
+  deps: GameStateEconomyDeps,
+  ps: PlayerState,
+  now: Date,
+): void {
+  syncRecoveryContractsForState(ps, now);
+  const contracts = (ps.currentOffers ?? []).filter((offer) => offer.contractKind);
+  if (contracts.length === 0) return;
+
+  const regionId = String(ps.city.regionId ?? contracts[0]?.regionId ?? "unknown");
+  const burden = Number(ps.cityStress?.recoveryBurden ?? 0);
+  const pressure = Number(ps.cityStress?.threatPressure ?? 0);
+  const total = Number(ps.cityStress?.total ?? 0);
+  const dominant = [...contracts].sort((a, b) => Number(b.targetingPressure ?? 0) - Number(a.targetingPressure ?? 0))[0];
+  const severityHint = Math.round(Math.max(Number(dominant?.targetingPressure ?? 0), pressure + burden * 0.5, total * 1.2));
+  const pressureDelta = Math.max(1, Math.round(pressure / 12 + Number(dominant?.targetingPressure ?? 0) / 40));
+  const recoveryDelta = Math.max(1, Math.round(burden / 10 + contracts.length));
+  const threatDelta = Math.max(0, Math.round(pressure / 18));
+  const controlDelta = burden >= 45 || pressure >= 55 ? -1 : 0;
+
+  const latest = (ps.worldConsequences ?? []).find((entry) => entry.source === "bridge_snapshot" && String(entry.regionId) === regionId);
+  const latestAt = latest ? Date.parse(latest.createdAt) : 0;
+  const hoursSinceLatest = latestAt ? (now.getTime() - latestAt) / (1000 * 60 * 60) : Infinity;
+  const severityDelta = Math.abs(Number(latest?.metrics?.pressureDelta ?? 0) - pressureDelta) + Math.abs(Number(latest?.metrics?.recoveryDelta ?? 0) - recoveryDelta);
+  if (hoursSinceLatest < 3 && severityDelta < 2) return;
+
+  const headline = dominant?.title ?? "Recovery pressure";
+  const summary = `${headline} is now exporting regional pressure (${pressureDelta >= 0 ? '+' : ''}${pressureDelta}) and recovery load (${recoveryDelta >= 0 ? '+' : ''}${recoveryDelta}).`;
+  const detail = dominant?.supportGuidance?.headline
+    ? `${dominant.supportGuidance.headline} Ignored city strain is no longer local-only; it is now feeding the world consequence ledger for downstream region, economy, and faction consumers.`
+    : "Ignored city strain is no longer local-only; it is now feeding the world consequence ledger for downstream region, economy, and faction consumers.";
+
+  pushWorldConsequence(ps, buildBridgeSnapshotWorldConsequence({
+    regionId,
+    contractKind: dominant?.contractKind,
+    severityHint,
+    pressureDelta,
+    recoveryDelta,
+    controlDelta,
+    threatDelta,
+    summary,
+    detail,
+  }));
 }
 
 export function tickPlayerState(
@@ -462,6 +510,7 @@ export function tickPlayerState(
   ps.lastTickAt = advancedDate.toISOString();
 
   recomputeCityStress(deps, ps, advancedDate);
+  maybeExportRecoveryPressureSnapshot(deps, ps, advancedDate);
   emitSettlementLanePassiveReceipt(deps, ps, ticks);
 }
 
