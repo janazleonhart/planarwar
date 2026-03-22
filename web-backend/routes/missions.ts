@@ -65,7 +65,7 @@ router.post("/complete", async (req, res) => {
       return { ok: false as const, code: 400, body: { error: result.message ?? "Unable to complete mission", status: result.status } };
     }
 
-    return { ok: true as const, body: { ok: true, result, activeMissions: access.playerState.activeMissions, threatWarnings: access.playerState.threatWarnings ?? [], motherBrainPressureMap: access.playerState.motherBrainPressureMap ?? [], heroes: access.playerState.heroes, armies: access.playerState.armies, resources: access.playerState.resources, regionWar: access.playerState.regionWar, missionReceipts: access.playerState.missionReceipts ?? [], followupOffers: result.followupOffers ?? [], missions: access.playerState.currentOffers ?? [] } };
+    return { ok: true as const, body: { ok: true, result, activeMissions: access.playerState.activeMissions, threatWarnings: access.playerState.threatWarnings ?? [], motherBrainPressureMap: access.playerState.motherBrainPressureMap ?? [], heroes: access.playerState.heroes, armies: access.playerState.armies, resources: access.playerState.resources, regionWar: access.playerState.regionWar, missionReceipts: access.playerState.missionReceipts ?? [], followupOffers: result.followupOffers ?? [], recoveryOffers: result.recoveryOffers ?? [], missions: access.playerState.currentOffers ?? [] } };
   });
 
   if (access.ok === false) return res.status(access.status).json({ error: access.error });

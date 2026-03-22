@@ -254,8 +254,8 @@ test("failed containment follow-ups spike city burden and open a sharper escalat
   ps.city.stats.security = 54;
   ps.city.stats.infrastructure = 50;
   ps.city.stats.unity = 58;
-  ps.cityStress.threatPressure = 34;
-  ps.cityStress.recoveryBurden = 24;
+  ps.cityStress.threatPressure = 26;
+  ps.cityStress.recoveryBurden = 10;
   ps.regionWar[0]!.threat = 58;
   ps.city.regionId = ps.regionWar[0]!.regionId as any;
   ps.armies = [
@@ -524,8 +524,8 @@ test("follow-up chains stop reopening once the bounded escalation depth is exhau
   ps.city.stats.security = 68;
   ps.city.stats.infrastructure = 66;
   ps.city.stats.unity = 69;
-  ps.cityStress.threatPressure = 34;
-  ps.cityStress.recoveryBurden = 20;
+  ps.cityStress.threatPressure = 26;
+  ps.cityStress.recoveryBurden = 10;
   ps.regionWar[0]!.threat = 52;
   ps.city.regionId = ps.regionWar[0]!.regionId as any;
   ps.heroes = [
@@ -796,4 +796,69 @@ test("mission board merge stays stable across repeated merges with the same prot
     mergedOnce.map((offer) => offer.id),
     "expected repeated merges with the same protected families to remain stable",
   );
+});
+
+
+test("failed containment follow-ups immediately surface recovery contracts when city strain tips into settlement trouble", () => {
+  const ps = getOrCreatePlayerState("mission_followup_recovery_contract_player");
+  const now = new Date("2026-03-22T10:00:00Z");
+
+  ps.resources.wealth = 1200;
+  ps.resources.materials = 900;
+  ps.resources.food = 140;
+  ps.resources.unity = 170;
+  ps.city.stats.security = 51;
+  ps.city.stats.infrastructure = 53;
+  ps.city.stats.unity = 58;
+  ps.cityStress.threatPressure = 26;
+  ps.cityStress.recoveryBurden = 10;
+  ps.regionWar[0]!.threat = 58;
+  ps.city.regionId = ps.regionWar[0]!.regionId as any;
+  ps.heroes = [
+    {
+      id: "hero_chain_failure_recovery",
+      ownerId: ps.playerId,
+      name: "Mara Flint",
+      role: "champion",
+      responseRoles: ["frontline", "command"],
+      traits: [],
+      power: 88,
+      tags: [],
+      status: "idle",
+      attachments: [],
+    },
+  ] as any;
+
+  ps.currentOffers = [
+    {
+      id: "mission_followup_recovery_seed",
+      kind: "hero",
+      difficulty: "high",
+      title: "Seal the Alley Breach",
+      description: "Hold the breach long enough for the district to regroup.",
+      regionId: ps.city.regionId,
+      recommendedPower: 82,
+      expectedRewards: { influence: 18, knowledge: 10 },
+      risk: { casualtyRisk: "high", heroInjuryRisk: "moderate" },
+      responseTags: ["frontline", "command"],
+      threatFamily: "organized_hostile_forces",
+      followupChainKind: "contain_fallout",
+      followupRootMissionId: "mission_followup_recovery_seed",
+      followupChainDepth: 1,
+      followupGeneratedByOutcome: "failure",
+    },
+  ] as any;
+
+  const active = startMissionForPlayer(ps.playerId, "mission_followup_recovery_seed", now, "hero_chain_failure_recovery", undefined, "desperate");
+  assert.ok(active, "expected containment follow-up to start");
+  active!.finishesAt = now.toISOString();
+
+  const result = withRandomSequence([0.5, 0.98, 0.62], () => completeMissionForPlayer(ps.playerId, active!.instanceId, now));
+  assert.equal(result.status, "ok");
+  assert.equal(result.outcome?.kind, "failure");
+  assert.ok((ps.cityStress.recoveryBurden ?? 0) >= 32, "expected failed containment to push the city into recovery-contract territory");
+  assert.ok((ps.cityStress.threatPressure ?? 0) >= 43, "expected failed containment to raise city pressure toward recovery-contract territory");
+  assert.ok((result.recoveryOffers?.length ?? 0) >= 1, "expected settlement recovery contracts to surface immediately after the failed chain");
+  assert.ok(result.recoveryOffers?.some((offer) => offer.contractKind === "stabilize_district" || offer.contractKind === "repair_works" || offer.contractKind === "relief_convoys"), "expected a real recovery contract instead of only another combat branch");
+  assert.ok((ps.currentOffers ?? []).some((offer) => offer.contractKind), "expected the live board to contain at least one recovery contract after the failed chain");
 });

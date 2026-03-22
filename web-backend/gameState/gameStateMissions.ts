@@ -55,6 +55,7 @@ export interface CompleteMissionResult {
   outcome?: MissionOutcome;
   receipt?: MissionDefenseReceipt;
   followupOffers?: MissionOffer[];
+  recoveryOffers?: MissionOffer[];
 }
 
 
@@ -2163,9 +2164,16 @@ export function completeMissionForPlayer(
     ps.currentOffers = mergeMissionOffers(ps.currentOffers, [], now);
   }
 
+  const existingContractIds = new Set((ps.currentOffers ?? []).filter((offer) => offer.contractKind).map((offer) => offer.id));
+
+  ps.activeMissions.splice(index, 1);
+  syncRecoveryContractsForState(ps, now);
+
+  const recoveryOffers = (ps.currentOffers ?? []).filter((offer) => offer.contractKind && !existingContractIds.has(offer.id));
+
   deps.pushEvent(ps, {
     kind: "mission_complete",
-    message: `${receipt.summary}${followupOffers[0] ? ` Follow-up opened: ${followupOffers[0].title}.` : ""}`,
+    message: `${receipt.summary}${followupOffers[0] ? ` Follow-up opened: ${followupOffers[0].title}.` : ""}${recoveryOffers[0] ? ` Recovery contract opened: ${recoveryOffers[0].title}.` : ""}`,
     missionId: active.mission.id,
     heroId: active.assignedHeroId,
     armyId: active.assignedArmyId,
@@ -2173,9 +2181,7 @@ export function completeMissionForPlayer(
     outcome: outcome.kind,
   });
 
-  ps.activeMissions.splice(index, 1);
-  syncRecoveryContractsForState(ps, now);
   ps.worldConsequenceState = deriveWorldConsequenceState(ps.worldConsequences ?? []);
 
-  return { status: "ok", rewards: totalRewards, resources: ps.resources, outcome, receipt, followupOffers };
+  return { status: "ok", rewards: totalRewards, resources: ps.resources, outcome, receipt, followupOffers, recoveryOffers };
 }

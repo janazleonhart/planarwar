@@ -631,6 +631,7 @@ export interface CompleteMissionResponse {
   resources: Resources;
   regionWar: RegionWarState[];
   followupOffers?: MissionOffer[];
+  recoveryOffers?: MissionOffer[];
   missions?: MissionOffer[];
 }
 

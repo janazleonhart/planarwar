@@ -168,13 +168,15 @@ export function createMePageActions({
   const summarizeMissionCompletion = (result: Awaited<ReturnType<typeof completeMission>>) => {
     const latestReceipt = result.missionReceipts?.[0];
     const followup = result.followupOffers?.[0];
+    const recovery = result.recoveryOffers?.[0];
     if (latestReceipt) {
       const setbackText = latestReceipt.setbacks?.[0]?.summary ? ` ${latestReceipt.setbacks[0].summary}` : "";
       const followupText = followup ? ` Follow-up opened: ${followup.title}.` : "";
-      return `${latestReceipt.missionTitle} resolved ${latestReceipt.outcome}.${setbackText}${followupText}`.trim();
+      const recoveryText = recovery ? ` Recovery contract opened: ${recovery.title}.` : "";
+      return `${latestReceipt.missionTitle} resolved ${latestReceipt.outcome}.${setbackText}${followupText}${recoveryText}`.trim();
     }
-    if (followup) {
-      return `Mission resolved. Follow-up opened: ${followup.title}.`;
+    if (followup || recovery) {
+      return `Mission resolved.${followup ? ` Follow-up opened: ${followup.title}.` : ""}${recovery ? ` Recovery contract opened: ${recovery.title}.` : ""}`.trim();
     }
     return "Mission resolved and city state refreshed.";
   };
