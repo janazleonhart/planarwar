@@ -86,3 +86,51 @@ test("black market and cartel hooks become active once the city can actually exp
   assert.notEqual(hooks.faction.responseBias, "quiet");
   assert.equal(hooks.summary.hasActiveHooks, true);
 });
+
+
+test("world consequence hooks can cool back to quiet after stabilization exports despite ledger history", () => {
+  const ps = getOrCreatePlayerState("world_consequence_hooks_cooling_player");
+  ps.city.settlementLane = "black_market";
+
+  pushWorldConsequence(ps, {
+    regionId: ps.city.regionId,
+    source: "bridge_snapshot",
+    severity: "pressure",
+    title: "Recovery pressure exported: stabilization",
+    summary: "Recovery strain is exporting regional pressure and recovery load.",
+    detail: "Initial exported strain should wake hook consumers.",
+    audiences: ["player", "mother_brain", "admin"],
+    tags: ["city_pressure_export", "regional_instability", "recovery_load", "world_economy_hook", "trade_disruption", "black_market_opening"],
+    metrics: { pressureDelta: 5, recoveryDelta: 4, controlDelta: 0, threatDelta: 2 },
+    contractKind: "stabilize_district",
+  });
+
+  const hot = deriveWorldConsequenceHooks(ps);
+  assert.equal(hot.summary.hasActiveHooks, true);
+  assert.ok(hot.summary.topRegionIds.includes(String(ps.city.regionId)));
+
+  pushWorldConsequence(ps, {
+    regionId: ps.city.regionId,
+    source: "bridge_snapshot",
+    severity: "watch",
+    title: "Recovery pressure exported: stabilization",
+    summary: "City stabilization has cooled exported regional pressure and recovery load after recovery pressure subsided.",
+    detail: "Cooling propagation should let hook consumers relax instead of staying stuck on ledger history.",
+    audiences: ["player", "mother_brain", "admin"],
+    tags: ["city_pressure_export", "regional_instability", "recovery_load", "world_economy_hook", "trade_disruption", "black_market_opening"],
+    metrics: { pressureDelta: -5, recoveryDelta: -4, controlDelta: 0, threatDelta: -2 },
+    contractKind: "stabilize_district",
+  });
+
+  const cooled = deriveWorldConsequenceHooks(ps);
+  assert.equal(cooled.summary.hasActiveHooks, false);
+  assert.equal(cooled.summary.topRegionIds.length, 0);
+  assert.equal(cooled.blackMarket.status, "latent");
+  assert.equal(cooled.cartel.pressureTier, "low");
+  assert.equal(cooled.worldEconomy.riskTier, "low");
+  assert.equal(cooled.faction.responseBias, "quiet");
+  assert.match(cooled.summary.headline, /cooled|quiet again/i);
+
+  
+  
+});

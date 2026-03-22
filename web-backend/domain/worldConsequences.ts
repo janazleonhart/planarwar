@@ -240,7 +240,7 @@ export function deriveWorldConsequenceState(entries: WorldConsequenceLedgerEntry
   let severeCount = 0;
   let lastUpdatedAt: string | undefined;
 
-  for (const entry of entries) {
+  for (const entry of [...entries].reverse()) {
     const regionId = String(entry.regionId ?? "unknown");
     const current = regionMap.get(regionId) ?? {
       regionId,

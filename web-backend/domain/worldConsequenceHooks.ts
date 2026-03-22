@@ -60,20 +60,34 @@ export interface WorldConsequenceHooksView {
 }
 
 function topHotspots(regions: WorldConsequenceRegionState[]): WorldConsequenceHookHotspot[] {
-  return regions.slice(0, 3).map((region) => ({
-    regionId: region.regionId,
-    tradeDisruption: region.tradeDisruption,
-    blackMarketHeat: region.blackMarketHeat,
-    factionDrift: region.factionDrift,
-    note:
-      region.blackMarketHeat >= 10
-        ? "Black-market pressure is visibly pooling here."
-        : region.tradeDisruption >= 8
-        ? "Trade disruption is turning this region into a soft target."
-        : region.factionDrift >= 6
-        ? "Faction drift is widening local political cracks."
-        : "This region is carrying the strongest exported consequence load.",
-  }));
+  return regions
+    .filter((region) => {
+      const footprint =
+        Number(region.tradeDisruption ?? 0)
+        + Number(region.blackMarketHeat ?? 0)
+        + Number(region.factionDrift ?? 0)
+        + Math.max(0, Number(region.netPressure ?? 0))
+        + Math.max(0, Number(region.netRecoveryLoad ?? 0))
+        + Math.max(0, Number(region.threatDrift ?? 0))
+        + Math.abs(Number(region.controlDrift ?? 0));
+
+      return footprint >= 3;
+    })
+    .slice(0, 3)
+    .map((region) => ({
+      regionId: region.regionId,
+      tradeDisruption: region.tradeDisruption,
+      blackMarketHeat: region.blackMarketHeat,
+      factionDrift: region.factionDrift,
+      note:
+        region.blackMarketHeat >= 10
+          ? "Black-market pressure is visibly pooling here."
+          : region.tradeDisruption >= 8
+          ? "Trade disruption is turning this region into a soft target."
+          : region.factionDrift >= 6
+          ? "Faction drift is widening local political cracks."
+          : "This region is carrying the strongest exported consequence load.",
+    }));
 }
 
 function deriveBlackMarketHook(ps: PlayerState, state: WorldConsequenceState, hottestRegionId: string | null): WorldConsequenceBlackMarketHook {
@@ -162,6 +176,13 @@ export function deriveWorldConsequenceHooks(ps: PlayerState, state?: WorldConseq
   const worldEconomy = deriveWorldEconomyHook(safeState);
   const faction = deriveFactionHook(safeState);
 
+  const hasResidualPressure =
+    hotspots.length > 0
+    || blackMarket.status !== "latent"
+    || cartel.pressureTier !== "low"
+    || worldEconomy.riskTier !== "low"
+    || faction.responseBias !== "quiet";
+
   const hasActiveHooks =
     blackMarket.status === "active" ||
     blackMarket.status === "surging" ||
@@ -173,6 +194,8 @@ export function deriveWorldConsequenceHooks(ps: PlayerState, state?: WorldConseq
 
   const headline = !safeState.summary || safeState.summary.totalLedgerEntries <= 0
     ? "No world consequence hooks are live yet."
+    : !hasResidualPressure
+    ? "Previously exported pressure has cooled and the hook layer is quiet again."
     : blackMarket.status === "surging"
     ? "Black-market opportunity is surging and cartel teeth are showing."
     : blackMarket.status === "active"
