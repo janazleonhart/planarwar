@@ -957,11 +957,98 @@ function buildMissionOutcomeFollowupOffers(ps: PlayerState, active: ActiveMissio
   }];
 }
 
+function getRecoveryContractDiagnostics(ps: PlayerState, kind: RecoveryContractKind): { targetingPressure: number; targetingReasons: string[]; supportGuidance: MissionOffer["supportGuidance"] } {
+  const burden = Number(ps.cityStress.recoveryBurden ?? 0);
+  const pressure = Number(ps.cityStress.threatPressure ?? 0);
+  const trust = Number(ps.city.stats.unity ?? 0);
+  const food = Number(ps.resources.food ?? 0);
+  const infrastructure = Number(ps.city.stats.infrastructure ?? 0);
+  const stability = Number(ps.city.stats.stability ?? 0);
+  const security = Number(ps.city.stats.security ?? 0);
+
+  switch (kind) {
+    case "stabilize_district": {
+      const targetingPressure = Math.max(18, Math.round((burden - 12) * 1.6 + (100 - stability) * 0.8));
+      const targetingReasons = [
+        `Recovery burden is ${Math.round(burden)}/100 and stability is ${Math.round(stability)}/100.`,
+        "District routines are at risk of hardening into unrest unless civic coordination lands quickly.",
+      ];
+      return {
+        targetingPressure,
+        targetingReasons,
+        supportGuidance: {
+          state: burden >= 45 || stability <= 55 ? "restricted" : burden >= 28 ? "pressured" : "stable",
+          severity: targetingPressure,
+          headline: stability <= 55 ? "Stability is slipping; calm the district before strain hardens." : "Burden is stacking up; re-open civic routines before panic spreads.",
+          detail: `Stability ${Math.round(stability)}/100, recovery burden ${Math.round(burden)}/100. This lane is best when the city needs order and visible reassurance more than raw repair throughput.`,
+          recommendedAction: "Send a command-capable hero to quiet panic and reset district tempo.",
+        },
+      };
+    }
+    case "repair_works": {
+      const targetingPressure = Math.max(24, Math.round((100 - infrastructure) * 1.7 + (burden - 20) * 1.1 + (pressure - 35) * 0.9));
+      const targetingReasons = [
+        `Infrastructure is only ${Math.round(infrastructure)}/100 while recovery burden is ${Math.round(burden)}/100.`,
+        "Outer works and supply lanes will keep failing until crews get guarded repair time.",
+      ];
+      return {
+        targetingPressure,
+        targetingReasons,
+        supportGuidance: {
+          state: infrastructure <= 50 || burden >= 40 ? "restricted" : pressure >= 55 ? "pressured" : "stable",
+          severity: targetingPressure,
+          headline: infrastructure <= 55 ? "Outer works are the weak link; repair lanes before the next hit lands." : "Repair backlog is turning pressure into permanent damage.",
+          detail: `Infrastructure ${Math.round(infrastructure)}/100, threat pressure ${Math.round(pressure)}/100, recovery burden ${Math.round(burden)}/100. This lane buys back defensive integrity and clears the backlog.`,
+          recommendedAction: "Commit disciplined troops or labor cover to guarded repair operations.",
+        },
+      };
+    }
+    case "relief_convoys": {
+      const targetingPressure = Math.max(22, Math.round((110 - food) * 1.2 + (pressure - 30) * 1.3 + burden * 0.35));
+      const targetingReasons = [
+        `Threat pressure is ${Math.round(pressure)}/100 and food reserves are ${Math.round(food)}.`,
+        "Supply strain is feeding rumor, theft, and district fragility; convoys will buy breathing room fast.",
+      ];
+      return {
+        targetingPressure,
+        targetingReasons,
+        supportGuidance: {
+          state: food <= 110 || pressure >= 60 ? "restricted" : pressure >= 45 ? "pressured" : "stable",
+          severity: targetingPressure,
+          headline: food <= 110 ? "Supply pressure is biting; relief needs an escort before shortages cascade." : "Pressure is high enough that convoys can steady the city before hunger turns into unrest.",
+          detail: `Food ${Math.round(food)}, threat pressure ${Math.round(pressure)}/100. This lane is strongest when shortages or interdiction are amplifying settlement strain.`,
+          recommendedAction: "Assign a disciplined escort to push food, medicine, and tools through the hottest lanes.",
+        },
+      };
+    }
+    case "counter_rumors":
+    default: {
+      const targetingPressure = Math.max(16, Math.round((56 - trust) * 1.5 + (100 - security) * 0.9 + (burden - 18) * 0.7));
+      const targetingReasons = [
+        `Unity is ${Math.round(trust)}/100 and security is ${Math.round(security)}/100.`,
+        "Bad information is widening the gap between fear, order, and cooperation across the streets.",
+      ];
+      return {
+        targetingPressure,
+        targetingReasons,
+        supportGuidance: {
+          state: trust <= 50 || security <= 55 ? "restricted" : burden >= 30 ? "pressured" : "stable",
+          severity: targetingPressure,
+          headline: trust <= 55 ? "Rumor pressure is eroding confidence; counter it before recovery stalls." : "Security and civic confidence are drifting apart; visible reassurance is needed.",
+          detail: `Unity ${Math.round(trust)}/100, security ${Math.round(security)}/100. This lane restores confidence when fear is doing almost as much damage as the threat itself.`,
+          recommendedAction: "Send a credible hero to steady the streets and collapse bad narratives.",
+        },
+      };
+    }
+  }
+}
+
 function buildRecoveryContractOffer(ps: PlayerState, kind: RecoveryContractKind, now: Date, slot: number): MissionOffer {
   const burden = Number(ps.cityStress.recoveryBurden ?? 0);
   const pressure = Number(ps.cityStress.threatPressure ?? 0);
   const trust = Number(ps.city.stats.unity ?? 0);
   const suffix = `${ps.city.regionId}_${kind}`;
+  const diagnostics = getRecoveryContractDiagnostics(ps, kind);
 
   switch (kind) {
     case "stabilize_district":
@@ -977,6 +1064,9 @@ function buildRecoveryContractOffer(ps: PlayerState, kind: RecoveryContractKind,
         expectedRewards: { influence: 24, knowledge: 14, wealth: 12 },
         risk: { casualtyRisk: burden >= 60 ? "moderate" : "low", heroInjuryRisk: burden >= 70 ? "moderate" : "low", notes: "City-centered contract: lowers recovery burden, restores stability, and rebuilds trust if handled well." },
         responseTags: ["command", "recovery"],
+        targetingPressure: diagnostics.targetingPressure,
+        targetingReasons: diagnostics.targetingReasons,
+        supportGuidance: diagnostics.supportGuidance,
         contractPressureDelta: -4,
         contractTrustDelta: 5,
         contractRecoveryBurdenDelta: -12,
@@ -994,6 +1084,9 @@ function buildRecoveryContractOffer(ps: PlayerState, kind: RecoveryContractKind,
         expectedRewards: { materials: 32, wealth: 18 },
         risk: { casualtyRisk: pressure >= 60 ? "moderate" : "low", notes: "City-centered contract: trims future pressure, lowers repair backlog, and restores infrastructure if it lands cleanly." },
         responseTags: ["defense", "recovery", "frontline"],
+        targetingPressure: diagnostics.targetingPressure,
+        targetingReasons: diagnostics.targetingReasons,
+        supportGuidance: diagnostics.supportGuidance,
         contractPressureDelta: -6,
         contractTrustDelta: 2,
         contractRecoveryBurdenDelta: -10,
@@ -1011,6 +1104,9 @@ function buildRecoveryContractOffer(ps: PlayerState, kind: RecoveryContractKind,
         expectedRewards: { food: 26, wealth: 16, influence: 10 },
         risk: { casualtyRisk: pressure >= 75 ? "high" : "moderate", notes: "City-centered contract: eases pressure, restores food reserves, and softens the burden on nearby districts." },
         responseTags: ["defense", "recovery", "command"],
+        targetingPressure: diagnostics.targetingPressure,
+        targetingReasons: diagnostics.targetingReasons,
+        supportGuidance: diagnostics.supportGuidance,
         contractPressureDelta: -8,
         contractTrustDelta: 3,
         contractRecoveryBurdenDelta: -8,
@@ -1029,6 +1125,9 @@ function buildRecoveryContractOffer(ps: PlayerState, kind: RecoveryContractKind,
         expectedRewards: { influence: 28, knowledge: 10 },
         risk: { casualtyRisk: "low", heroInjuryRisk: "low", notes: "City-centered contract: restores trust, steadies security, and keeps recovery from stalling out." },
         responseTags: ["recon", "command", "recovery"],
+        targetingPressure: diagnostics.targetingPressure,
+        targetingReasons: diagnostics.targetingReasons,
+        supportGuidance: diagnostics.supportGuidance,
         contractPressureDelta: -3,
         contractTrustDelta: 7,
         contractRecoveryBurdenDelta: -6,
@@ -1049,72 +1148,67 @@ export function syncRecoveryContractsForState(ps: PlayerState, now: Date): void 
 
   const desired: RecoveryContractKind[] = [];
   if (burden >= 18 || recentSetbacks >= 2) desired.push("stabilize_district");
-  if (burden >= 32 || pressure >= 55) desired.push("repair_works");
-  if (pressure >= 45 || food <= 90) desired.push("relief_convoys");
-  if (trust <= 55 || burden >= 40) desired.push("counter_rumors");
+  if (infrastructure <= 60 || burden >= 32 || pressure >= 55) desired.push("repair_works");
+  if (pressure >= 60 || food <= 90) desired.push("relief_convoys");
+  if (trust <= 55 || security <= 58 || burden >= 40) desired.push("counter_rumors");
 
   const uniqueDesired = Array.from(new Set<RecoveryContractKind>(desired));
+
   const contractPriority = (kind: RecoveryContractKind): number => {
     switch (kind) {
       case "repair_works":
-        return Math.max(
-          0,
-          (100 - infrastructure) * 4,
-          (pressure - 54) * 7,
-          (burden - 31) * 6,
+        return (
+          Math.max(0, 75 - infrastructure) * 5 +
+          Math.max(0, burden - 20) * 3 +
+          Math.max(0, pressure - 50) * 2
         );
       case "relief_convoys":
-        return Math.max(
-          0,
-          (110 - food) * 3,
-          (pressure - 44) * 7,
+        return (
+          Math.max(0, 120 - food) * 5 +
+          Math.max(0, pressure - 60) * 2
         );
       case "stabilize_district":
-        return Math.max(
-          0,
-          (100 - stability) * 2,
-          (burden - 17) * 4,
-          recentSetbacks * 12,
+        return (
+          Math.max(0, 70 - stability) * 4 +
+          Math.max(0, burden - 18) * 3 +
+          recentSetbacks * 8
         );
       case "counter_rumors":
       default:
-        return Math.max(
-          0,
-          (56 - trust) * 5,
-          (100 - security) * 2,
-          (burden - 39) * 3,
+        return (
+          Math.max(0, 62 - trust) * 4 +
+          Math.max(0, 60 - security) * 3 +
+          Math.max(0, burden - 32) * 2
         );
     }
   };
 
-  const mustKeep = new Set<RecoveryContractKind>();
-  if (uniqueDesired.includes("repair_works") && (infrastructure <= 60 || burden >= 40 || pressure >= 55)) {
-    mustKeep.add("repair_works");
-  }
-  if (uniqueDesired.includes("relief_convoys") && (food <= 110 || pressure >= 60)) {
-    mustKeep.add("relief_convoys");
-  }
+  const dominantKind: RecoveryContractKind | null =
+    infrastructure <= 45 ? "repair_works" :
+    food <= 110 ? "relief_convoys" :
+    stability <= 55 ? "stabilize_district" :
+    (trust <= 52 || security <= 55) ? "counter_rumors" :
+    null;
 
-  const contractKinds: RecoveryContractKind[] = [];
-  for (const kind of uniqueDesired) {
-    if (!mustKeep.has(kind)) continue;
-    contractKinds.push(kind);
-    if (contractKinds.length >= 2) break;
-  }
+  const tieOrder: RecoveryContractKind[] = [
+    "repair_works",
+    "relief_convoys",
+    "stabilize_district",
+    "counter_rumors",
+  ];
 
-  if (contractKinds.length < 2) {
-    const prioritizedRemainder = uniqueDesired
-      .filter((kind) => !contractKinds.includes(kind))
-      .slice()
-      .sort((a, b) => contractPriority(b) - contractPriority(a));
+  const orderedContractKinds = uniqueDesired
+    .slice()
+    .sort((a, b) => {
+      const bonusA = a === dominantKind ? 10_000 : 0;
+      const bonusB = b === dominantKind ? 10_000 : 0;
+      const diff = (bonusB + contractPriority(b)) - (bonusA + contractPriority(a));
+      if (diff !== 0) return diff;
+      return tieOrder.indexOf(a) - tieOrder.indexOf(b);
+    })
+    .slice(0, 2);
 
-    for (const kind of prioritizedRemainder) {
-      contractKinds.push(kind);
-      if (contractKinds.length >= 2) break;
-    }
-  }
-
-  const contracts = contractKinds.map((kind, index) => buildRecoveryContractOffer(ps, kind, now, index));
+  const contracts = orderedContractKinds.map((kind, index) => buildRecoveryContractOffer(ps, kind, now, index));
   ps.currentOffers = [...existingNonContracts, ...contracts];
 }
 

@@ -183,3 +183,56 @@ test("recovery contract lanes now hit distinct settlement stats and supplies", (
   assert.ok(Number(relief.resources.food ?? 0) >= foodBefore + 50, "successful relief convoys should restore food on top of mission rewards");
   assert.match(reliefResult.receipt?.summary ?? "", /food reserves rose by 28/i);
 });
+
+
+test("recovery contracts prioritize the most damaged settlement lane and explain why", () => {
+  const now = new Date("2026-03-22T15:00:00Z");
+
+  const repair = getOrCreatePlayerState("recovery_lane_priority_repair_player");
+  repair.currentOffers = [];
+  repair.activeMissions = [];
+  repair.missionReceipts = [];
+  repair.resources.wealth = 1800;
+  repair.resources.materials = 1700;
+  repair.resources.food = 2200;
+  repair.city.regionId = repair.regionWar[0]!.regionId as any;
+  repair.regionWar[0]!.threat = 48;
+  repair.cityStress.recoveryBurden = 46;
+  repair.cityStress.threatPressure = 49;
+  repair.city.stats.infrastructure = 28;
+  repair.city.stats.stability = 63;
+  repair.city.stats.security = 68;
+  repair.city.stats.unity = 71;
+
+  tickPlayerState(repair, now);
+  const repairContracts = repair.currentOffers.filter((offer) => offer.contractKind);
+  assert.ok(repairContracts.length >= 1, "expected at least one repair-state recovery contract");
+  assert.equal(repairContracts[0]?.contractKind, "repair_works");
+  assert.ok((repairContracts[0]?.targetingPressure ?? 0) >= 40, "expected damaged-lane contract to carry real targeting pressure");
+  assert.match((repairContracts[0]?.targetingReasons ?? []).join(" "), /infrastructure|outer works|repair/i);
+  assert.match(repairContracts[0]?.supportGuidance?.headline ?? "", /repair|outer works|backlog/i);
+
+  const relief = getOrCreatePlayerState("recovery_lane_priority_relief_player");
+  relief.currentOffers = [];
+  relief.activeMissions = [];
+  relief.missionReceipts = [];
+  relief.resources.wealth = 1750;
+  relief.resources.materials = 1600;
+  relief.resources.food = 72;
+  relief.city.regionId = relief.regionWar[0]!.regionId as any;
+  relief.regionWar[0]!.threat = 71;
+  relief.cityStress.recoveryBurden = 24;
+  relief.cityStress.threatPressure = 61;
+  relief.city.stats.infrastructure = 72;
+  relief.city.stats.stability = 67;
+  relief.city.stats.security = 66;
+  relief.city.stats.unity = 73;
+
+  tickPlayerState(relief, now);
+  const reliefContracts = relief.currentOffers.filter((offer) => offer.contractKind);
+  assert.ok(reliefContracts.length >= 1, "expected at least one relief-state recovery contract");
+  assert.equal(reliefContracts[0]?.contractKind, "relief_convoys");
+  assert.ok((reliefContracts[0]?.targetingPressure ?? 0) >= 40, "expected supply crisis contract to carry real targeting pressure");
+  assert.match((reliefContracts[0]?.targetingReasons ?? []).join(" "), /food|supply|convoy/i);
+  assert.match(reliefContracts[0]?.supportGuidance?.headline ?? "", /supply|relief|escort/i);
+});
