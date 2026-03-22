@@ -576,3 +576,91 @@ test("follow-up chains stop reopening once the bounded escalation depth is exhau
   assert.equal(result.followupOffers?.length ?? 0, 0, "expected no new branch once chain depth cap is reached");
   assert.ok(!(ps.currentOffers ?? []).some((offer) => offer.followupRootMissionId === "mission_depth_cap_root"), "expected capped branch to clear instead of reopening forever");
 });
+
+
+test("crowded mission boards throttle protected offers from the same chain family before evicting unrelated live branches", () => {
+  const regionId = "grayhaven" as any;
+  const routineOffers = Array.from({ length: 8 }, (_, index) => ({
+    id: `routine_family_fill_${index + 1}`,
+    kind: "hero",
+    difficulty: "medium",
+    title: `Routine Sweep Family ${index + 1}`,
+    description: "Regular mission board noise.",
+    regionId,
+    recommendedPower: 60 + index,
+    expectedRewards: { wealth: 5 },
+    risk: { casualtyRisk: "low" },
+    responseTags: ["recon"],
+    threatFamily: "mercs",
+    targetingPressure: 16,
+  }));
+
+  const mergedBoard = __testOnlyMissionOfferMerge(routineOffers as any, [
+    {
+      id: "chain_family_a_1",
+      kind: "hero",
+      difficulty: "high",
+      title: "Contain the Fallout in grayhaven",
+      description: "First live branch from the same chain family.",
+      regionId,
+      recommendedPower: 118,
+      expectedRewards: { influence: 8 },
+      risk: { casualtyRisk: "moderate" },
+      responseTags: ["command", "recovery"],
+      threatFamily: "mercs",
+      targetingPressure: 68,
+      followupSourceMissionId: "mission_family_seed_a_parent_1",
+      followupRootMissionId: "mission_family_seed_a",
+      followupChainKind: "contain_fallout",
+      followupChainDepth: 1,
+      followupExpiresAt: "2026-03-22T01:00:00Z",
+      followupGeneratedByOutcome: "failure",
+    },
+    {
+      id: "chain_family_a_2",
+      kind: "hero",
+      difficulty: "high",
+      title: "Contain the Fallout in grayhaven — Escalation 2",
+      description: "Second live branch from the same chain family.",
+      regionId,
+      recommendedPower: 126,
+      expectedRewards: { influence: 10 },
+      risk: { casualtyRisk: "moderate" },
+      responseTags: ["command", "recovery", "recon"],
+      threatFamily: "mercs",
+      targetingPressure: 76,
+      followupSourceMissionId: "mission_family_seed_a_parent_2",
+      followupRootMissionId: "mission_family_seed_a",
+      followupChainKind: "contain_fallout",
+      followupChainDepth: 2,
+      followupExpiresAt: "2026-03-22T01:00:00Z",
+      followupGeneratedByOutcome: "failure",
+    },
+    {
+      id: "chain_family_b_1",
+      kind: "hero",
+      difficulty: "high",
+      title: "Secure the Gains in grayhaven",
+      description: "Different live chain family that should still survive.",
+      regionId,
+      recommendedPower: 116,
+      expectedRewards: { wealth: 10 },
+      risk: { casualtyRisk: "moderate" },
+      responseTags: ["command", "frontline"],
+      threatFamily: "mercs",
+      targetingPressure: 70,
+      followupSourceMissionId: "mission_family_seed_b_parent_1",
+      followupRootMissionId: "mission_family_seed_b",
+      followupChainKind: "secure_gains",
+      followupChainDepth: 1,
+      followupExpiresAt: "2026-03-22T01:00:00Z",
+      followupGeneratedByOutcome: "success",
+    },
+  ] as any, new Date("2026-03-22T00:00:00Z"));
+
+  assert.equal(mergedBoard.length, 10);
+  assert.ok(mergedBoard.some((offer) => offer.id === "chain_family_b_1"), "expected unrelated live branch family to survive protected reservation");
+  assert.ok(mergedBoard.some((offer) => offer.id === "chain_family_a_2"), "expected the sharper representative from chain family A to survive");
+  assert.ok(!mergedBoard.some((offer) => offer.id === "chain_family_a_1"), "expected lower-priority duplicate family representative to yield its slot");
+  assert.ok(mergedBoard.some((offer) => offer.id === "routine_family_fill_1"), "expected routine offers to continue filling the remaining board space");
+});

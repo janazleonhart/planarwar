@@ -737,6 +737,39 @@ function compareMissionBoardPriority(a: MissionOffer, b: MissionOffer): number {
   return missionOfferUrgencyScore(b) - missionOfferUrgencyScore(a) || Number(b.recommendedPower ?? 0) - Number(a.recommendedPower ?? 0);
 }
 
+function missionBoardProtectedFamilyKey(offer: MissionOffer): string {
+  if (offer.followupChainKind) {
+    return `followup:${offer.followupRootMissionId ?? offer.followupSourceMissionId ?? offer.id}`;
+  }
+  if (offer.contractKind) {
+    return `contract:${offer.contractKind}:${offer.regionId}`;
+  }
+  return `offer:${offer.id}`;
+}
+
+function selectProtectedMissionBoardOffers(protectedOffers: MissionOffer[], maxCount: number): MissionOffer[] {
+  if (maxCount <= 0 || protectedOffers.length === 0) return [];
+
+  const selected: MissionOffer[] = [];
+  const seenFamilies = new Set<string>();
+
+  for (const offer of protectedOffers) {
+    const familyKey = missionBoardProtectedFamilyKey(offer);
+    if (seenFamilies.has(familyKey)) continue;
+    selected.push(offer);
+    seenFamilies.add(familyKey);
+    if (selected.length >= maxCount) return selected;
+  }
+
+  for (const offer of protectedOffers) {
+    if (selected.some((selectedOffer) => selectedOffer.id === offer.id)) continue;
+    selected.push(offer);
+    if (selected.length >= maxCount) break;
+  }
+
+  return selected;
+}
+
 function mergeMissionOffers(existing: MissionOffer[] | undefined, injected: MissionOffer[], now: Date = new Date()): MissionOffer[] {
   const merged = new Map<string, MissionOffer>();
   for (const offer of [...(existing ?? []), ...injected]) {
@@ -770,13 +803,17 @@ function mergeMissionOffers(existing: MissionOffer[] | undefined, injected: Miss
   }
 
   const stableRoutineOrder = Array.from(merged.values()).filter((offer) => !isProtectedMissionBoardOffer(offer));
-  const reservedProtected = protectedOffers.slice(0, Math.min(RESERVED_LIVE_BRANCH_SLOTS, protectedOffers.length));
+  const reservedProtected = selectProtectedMissionBoardOffers(
+    protectedOffers,
+    Math.min(RESERVED_LIVE_BRANCH_SLOTS, protectedOffers.length),
+  );
   const selectedIds = new Set(reservedProtected.map((offer) => offer.id));
   const routineSelection = stableRoutineOrder.slice(0, Math.max(0, 10 - reservedProtected.length));
   const remainingSlots = Math.max(0, 10 - reservedProtected.length - routineSelection.length);
-  const extraProtected = protectedOffers
-    .filter((offer) => !selectedIds.has(offer.id))
-    .slice(0, remainingSlots);
+  const extraProtected = selectProtectedMissionBoardOffers(
+    protectedOffers.filter((offer) => !selectedIds.has(offer.id)),
+    remainingSlots,
+  );
 
   return [...reservedProtected, ...routineSelection, ...extraProtected].sort(compareMissionBoardPriority).slice(0, 10);
 }
