@@ -24,6 +24,18 @@ function withRandomSequence<T>(values: number[], fn: () => T): T {
   }
 }
 
+function resetRecoveryTestState(ps: any, now: Date): void {
+  ps.currentOffers = [];
+  ps.activeMissions = [];
+  ps.missionReceipts = [];
+  ps.worldConsequences = [];
+  ps.worldConsequenceState = undefined as any;
+  ps.cityEvents = [];
+  ps.armies = [];
+  ps.heroes = [];
+  ps.lastTickAt = new Date(now.getTime() - 60 * 60 * 1000).toISOString();
+}
+
 test("recovery contracts appear when city burden and pressure stay elevated", () => {
   const ps = getOrCreatePlayerState("recovery_contract_offer_player");
   const now = new Date("2026-03-18T18:00:00Z");
@@ -121,6 +133,7 @@ test("recovery contract lanes now hit distinct settlement stats and supplies", (
   const now = new Date("2026-03-22T14:00:00Z");
 
   const repair = getOrCreatePlayerState("recovery_lane_repair_player");
+  resetRecoveryTestState(repair, now);
   repair.resources.wealth = 2500;
   repair.resources.materials = 2500;
   repair.resources.food = 2500;
@@ -147,12 +160,13 @@ test("recovery contract lanes now hit distinct settlement stats and supplies", (
   const repairActive = startMissionForPlayer(repair.playerId, repairContract!.id, now, undefined, "army_repair_lane", "balanced");
   assert.ok(repairActive);
   repairActive!.finishesAt = now.toISOString();
-  const repairResult = withRandomSequence([0.2, 0.12], () => completeMissionForPlayer(repair.playerId, repairActive!.instanceId, now));
+  const repairResult = withRandomSequence([0.01, 0.12], () => completeMissionForPlayer(repair.playerId, repairActive!.instanceId, now));
   assert.equal(repairResult.status, "ok");
   assert.ok((repair.city.stats.infrastructure ?? 0) >= infraBefore + 6, "successful repair works should materially improve infrastructure");
   assert.match(repairResult.receipt?.summary ?? "", /infrastructure improved by 6/i);
 
   const relief = getOrCreatePlayerState("recovery_lane_relief_player");
+  resetRecoveryTestState(relief, now);
   relief.resources.wealth = 2500;
   relief.resources.materials = 2500;
   relief.resources.food = 180;
@@ -178,7 +192,7 @@ test("recovery contract lanes now hit distinct settlement stats and supplies", (
   const reliefActive = startMissionForPlayer(relief.playerId, reliefContract!.id, now, undefined, "army_relief_lane", "balanced");
   assert.ok(reliefActive);
   reliefActive!.finishesAt = now.toISOString();
-  const reliefResult = withRandomSequence([0.22, 0.14], () => completeMissionForPlayer(relief.playerId, reliefActive!.instanceId, now));
+  const reliefResult = withRandomSequence([0.01, 0.14], () => completeMissionForPlayer(relief.playerId, reliefActive!.instanceId, now));
   assert.equal(reliefResult.status, "ok");
   assert.ok(Number(relief.resources.food ?? 0) >= foodBefore + 50, "successful relief convoys should restore food on top of mission rewards");
   assert.match(reliefResult.receipt?.summary ?? "", /food reserves rose by 28/i);
@@ -235,4 +249,66 @@ test("recovery contracts prioritize the most damaged settlement lane and explain
   assert.ok((reliefContracts[0]?.targetingPressure ?? 0) >= 40, "expected supply crisis contract to carry real targeting pressure");
   assert.match((reliefContracts[0]?.targetingReasons ?? []).join(" "), /food|supply|convoy/i);
   assert.match(reliefContracts[0]?.supportGuidance?.headline ?? "", /supply|relief|escort/i);
+});
+
+
+test("unresolved recovery contracts now worsen the damaged city lane over time", () => {
+  const now = new Date("2026-03-22T16:00:00Z");
+
+  const repair = getOrCreatePlayerState("recovery_neglect_repair_player");
+  resetRecoveryTestState(repair, now);
+  repair.resources.food = 2400;
+  repair.city.regionId = repair.regionWar[0]!.regionId as any;
+  repair.regionWar[0]!.threat = 52;
+  repair.cityStress.recoveryBurden = 38;
+  repair.cityStress.threatPressure = 54;
+  repair.city.stats.infrastructure = 34;
+  repair.city.stats.stability = 66;
+  repair.city.stats.security = 69;
+  repair.city.stats.unity = 72;
+
+  tickPlayerState(repair, now);
+  const repairContract = repair.currentOffers.find((offer) => offer.contractKind === "repair_works");
+  assert.ok(repairContract, "expected repair contract before neglect tick");
+  const infraBeforeNeglect = Number(repair.city.stats.infrastructure ?? 0);
+  const burdenBeforeNeglect = Number(repair.cityStress.recoveryBurden ?? 0);
+
+  tickPlayerState(repair, new Date(now.getTime() + 60 * 60 * 1000));
+  assert.ok(
+    Number(repair.city.stats.infrastructure ?? 0) < infraBeforeNeglect,
+    "expected neglected repair crisis to degrade infrastructure over time",
+  );
+  assert.ok(
+    Number(repair.cityStress.recoveryBurden ?? 0) > burdenBeforeNeglect,
+    "expected neglected repair crisis to raise recovery burden over time",
+  );
+
+  const relief = getOrCreatePlayerState("recovery_neglect_relief_player");
+  resetRecoveryTestState(relief, now);
+  relief.resources.food = 84;
+  relief.city.regionId = relief.regionWar[0]!.regionId as any;
+  relief.regionWar[0]!.threat = 68;
+  relief.cityStress.recoveryBurden = 20;
+  relief.cityStress.threatPressure = 64;
+  relief.city.stats.infrastructure = 72;
+  relief.city.stats.stability = 68;
+  relief.city.stats.security = 67;
+  relief.city.stats.unity = 73;
+
+  tickPlayerState(relief, now);
+  const reliefContract = relief.currentOffers.find((offer) => offer.contractKind === "relief_convoys");
+  assert.ok(reliefContract, "expected relief contract before neglect tick");
+  const foodBeforeNeglect = Number(relief.resources.food ?? 0);
+  const pressureBeforeNeglect = Number(relief.cityStress.threatPressure ?? 0);
+
+  tickPlayerState(relief, new Date(now.getTime() + 3 * 60 * 60 * 1000));
+  assert.ok(
+    Number(relief.resources.food ?? 0) < foodBeforeNeglect ||
+      Number(relief.cityStress.recoveryBurden ?? 0) > burdenBeforeNeglect,
+    "expected neglected relief crisis to either drain food reserves or deepen recovery burden over time",
+  );
+  assert.ok(
+    Number(relief.cityStress.threatPressure ?? 0) >= pressureBeforeNeglect,
+    "expected neglected relief crisis to sustain or worsen pressure",
+  );
 });

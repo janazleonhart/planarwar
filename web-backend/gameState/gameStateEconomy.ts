@@ -360,6 +360,75 @@ function applyWarfrontDrift(
   }
 }
 
+
+function applyRecoveryContractNeglect(
+  deps: GameStateEconomyDeps,
+  ps: PlayerState,
+  ticks: number
+): void {
+  if (ticks <= 0) return;
+
+  const contracts = (ps.currentOffers ?? []).filter((offer) => offer.contractKind);
+  if (contracts.length === 0) return;
+
+  const hours = Math.max(1, Math.floor(ticks / 6));
+  let summary: string | null = null;
+
+  for (const contract of contracts) {
+    switch (contract.contractKind) {
+      case "repair_works": {
+        const infraLoss = Math.max(1, Math.floor(hours));
+        const burdenGain = Math.max(1, Math.floor(hours));
+        const pressureGain = Math.max(1, Math.floor(hours / 2));
+        ps.city.stats.infrastructure = deps.clampStat(ps.city.stats.infrastructure - infraLoss);
+        ps.cityStress.recoveryBurden = deps.clampStat((ps.cityStress.recoveryBurden ?? 0) + burdenGain);
+        ps.cityStress.threatPressure = deps.clampStat((ps.cityStress.threatPressure ?? 0) + pressureGain);
+        summary ??= "Neglected repair backlog is chewing through outer works and raising recovery burden.";
+        break;
+      }
+      case "relief_convoys": {
+        const foodLoss = Math.max(24, Math.floor(hours * 36));
+        const burdenGain = Math.max(1, Math.floor(hours));
+        const pressureGain = Math.max(1, Math.floor(hours / 2));
+        ps.resources.food = Math.max(0, ps.resources.food - foodLoss);
+        ps.cityStress.recoveryBurden = deps.clampStat((ps.cityStress.recoveryBurden ?? 0) + burdenGain);
+        ps.cityStress.threatPressure = deps.clampStat((ps.cityStress.threatPressure ?? 0) + pressureGain);
+        summary ??= "Unescorted relief lanes are bleeding supplies and sustaining city pressure.";
+        break;
+      }
+      case "stabilize_district": {
+        const stabilityLoss = Math.max(1, Math.floor(hours));
+        const unityLoss = Math.max(1, Math.floor(hours * 2));
+        const burdenGain = Math.max(1, Math.floor(hours));
+        ps.city.stats.stability = deps.clampStat(ps.city.stats.stability - stabilityLoss);
+        ps.resources.unity = Math.max(0, ps.resources.unity - unityLoss);
+        ps.cityStress.recoveryBurden = deps.clampStat((ps.cityStress.recoveryBurden ?? 0) + burdenGain);
+        summary ??= "Unanswered district strain is hardening into civic fatigue and deeper recovery burden.";
+        break;
+      }
+      case "counter_rumors": {
+        const securityLoss = Math.max(1, Math.floor(hours));
+        const unityLoss = Math.max(1, Math.floor(hours));
+        const burdenGain = Math.max(1, Math.floor(hours / 2));
+        ps.city.stats.security = deps.clampStat(ps.city.stats.security - securityLoss);
+        ps.city.stats.unity = deps.clampStat(ps.city.stats.unity - unityLoss);
+        ps.cityStress.recoveryBurden = deps.clampStat((ps.cityStress.recoveryBurden ?? 0) + burdenGain);
+        summary ??= "Rumors left unchecked are eroding order and compounding the recovery bill.";
+        break;
+      }
+      default:
+        break;
+    }
+  }
+
+  if (summary && ps.eventLog.at(-1)?.message !== summary) {
+    deps.pushEvent(ps, {
+      kind: "city_morph",
+      message: summary,
+    });
+  }
+}
+
 export function tickPlayerState(
   deps: GameStateEconomyDeps,
   ps: PlayerState,
@@ -385,6 +454,7 @@ export function tickPlayerState(
   applyPolicyTickEffects(deps, ps, tieredProd, ticks);
   applyCityGrowthAndUpkeep(deps, ps, prodPerTick, ticks);
   applyWarfrontDrift(deps, ps, ticks);
+  applyRecoveryContractNeglect(deps, ps, ticks);
   applyResearchProgress(deps, ps, tieredProd, ticks);
 
   const advancedTime = last + ticks * deps.tickMs;

@@ -1200,10 +1200,9 @@ export function syncRecoveryContractsForState(ps: PlayerState, now: Date): void 
   const orderedContractKinds = uniqueDesired
     .slice()
     .sort((a, b) => {
-      const bonusA = a === dominantKind ? 10_000 : 0;
-      const bonusB = b === dominantKind ? 10_000 : 0;
-      const diff = (bonusB + contractPriority(b)) - (bonusA + contractPriority(a));
-      if (diff !== 0) return diff;
+      const scoreA = contractPriority(a) + (a === dominantKind ? 10_000 : 0);
+      const scoreB = contractPriority(b) + (b === dominantKind ? 10_000 : 0);
+      if (scoreB !== scoreA) return scoreB - scoreA;
       return tieOrder.indexOf(a) - tieOrder.indexOf(b);
     })
     .slice(0, 2);
