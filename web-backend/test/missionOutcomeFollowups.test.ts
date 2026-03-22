@@ -664,3 +664,136 @@ test("crowded mission boards throttle protected offers from the same chain famil
   assert.ok(!mergedBoard.some((offer) => offer.id === "chain_family_a_1"), "expected lower-priority duplicate family representative to yield its slot");
   assert.ok(mergedBoard.some((offer) => offer.id === "routine_family_fill_1"), "expected routine offers to continue filling the remaining board space");
 });
+
+
+test("crowded mission boards keep a recovery contract and a live follow-up branch visible at the same time", () => {
+  const regionId = "grayhaven" as any;
+  const routineOffers = Array.from({ length: 10 }, (_, index) => ({
+    id: `routine_mixed_fill_${index + 1}`,
+    kind: "hero",
+    difficulty: "medium",
+    title: `Routine Mixed Sweep ${index + 1}`,
+    description: "Regular mission board noise.",
+    regionId,
+    recommendedPower: 70 + index,
+    expectedRewards: { wealth: 6 },
+    risk: { casualtyRisk: "low" },
+    responseTags: ["recon"],
+    threatFamily: "mercs",
+    targetingPressure: 20,
+  }));
+
+  const mergedBoard = __testOnlyMissionOfferMerge(routineOffers as any, [
+    {
+      id: "protected_contract_branch",
+      kind: "hero",
+      difficulty: "high",
+      title: "Recovery contract: stabilize the district",
+      description: "City recovery work that should remain visible.",
+      regionId,
+      recommendedPower: 112,
+      expectedRewards: { unity: 10 },
+      risk: { casualtyRisk: "moderate" },
+      responseTags: ["command", "recovery"],
+      threatFamily: "desperate_towns",
+      targetingPressure: 58,
+      contractKind: "stabilize_district",
+    },
+    {
+      id: "protected_followup_branch",
+      kind: "hero",
+      difficulty: "high",
+      title: "Contain the Fallout in grayhaven",
+      description: "Live fallout pressure that should remain visible.",
+      regionId,
+      recommendedPower: 120,
+      expectedRewards: { influence: 9 },
+      risk: { casualtyRisk: "moderate" },
+      responseTags: ["command", "recovery"],
+      threatFamily: "mercs",
+      targetingPressure: 74,
+      followupSourceMissionId: "mission_mixed_board_seed",
+      followupRootMissionId: "mission_mixed_board_seed",
+      followupChainKind: "contain_fallout",
+      followupChainDepth: 1,
+      followupExpiresAt: "2026-03-22T01:00:00Z",
+      followupGeneratedByOutcome: "failure",
+    },
+  ] as any, new Date("2026-03-22T00:00:00Z"));
+
+  assert.equal(mergedBoard.length, 10);
+  assert.ok(mergedBoard.some((offer) => offer.id === "protected_contract_branch"), "expected recovery contract to survive protected reservation");
+  assert.ok(mergedBoard.some((offer) => offer.id === "protected_followup_branch"), "expected live follow-up branch to survive protected reservation");
+  assert.ok(mergedBoard.some((offer) => offer.id === "routine_mixed_fill_1"), "expected routine offers to continue filling non-reserved board space");
+  assert.ok(!mergedBoard.some((offer) => offer.id === "routine_mixed_fill_10"), "expected the last routine filler to yield once both protected slots are occupied");
+});
+
+test("mission board merge stays stable across repeated merges with the same protected families", () => {
+  const regionId = "grayhaven" as any;
+  const routineOffers = Array.from({ length: 8 }, (_, index) => ({
+    id: `routine_repeat_fill_${index + 1}`,
+    kind: "hero",
+    difficulty: "medium",
+    title: `Routine Repeat Sweep ${index + 1}`,
+    description: "Regular mission board noise.",
+    regionId,
+    recommendedPower: 64 + index,
+    expectedRewards: { wealth: 5 },
+    risk: { casualtyRisk: "low" },
+    responseTags: ["recon"],
+    threatFamily: "mercs",
+    targetingPressure: 18,
+  }));
+
+  const protectedOffers = [
+    {
+      id: "repeat_family_a",
+      kind: "hero",
+      difficulty: "high",
+      title: "Contain the Fallout in grayhaven",
+      description: "Repeat family A protected branch.",
+      regionId,
+      recommendedPower: 122,
+      expectedRewards: { influence: 10 },
+      risk: { casualtyRisk: "moderate" },
+      responseTags: ["command", "recovery"],
+      threatFamily: "mercs",
+      targetingPressure: 78,
+      followupSourceMissionId: "mission_repeat_seed_a_parent",
+      followupRootMissionId: "mission_repeat_seed_a",
+      followupChainKind: "contain_fallout",
+      followupChainDepth: 2,
+      followupExpiresAt: "2026-03-22T01:00:00Z",
+      followupGeneratedByOutcome: "failure",
+    },
+    {
+      id: "repeat_family_b",
+      kind: "hero",
+      difficulty: "high",
+      title: "Secure the Gains in grayhaven",
+      description: "Repeat family B protected branch.",
+      regionId,
+      recommendedPower: 116,
+      expectedRewards: { wealth: 10 },
+      risk: { casualtyRisk: "moderate" },
+      responseTags: ["command", "frontline"],
+      threatFamily: "mercs",
+      targetingPressure: 70,
+      followupSourceMissionId: "mission_repeat_seed_b_parent",
+      followupRootMissionId: "mission_repeat_seed_b",
+      followupChainKind: "secure_gains",
+      followupChainDepth: 1,
+      followupExpiresAt: "2026-03-22T01:00:00Z",
+      followupGeneratedByOutcome: "success",
+    },
+  ];
+
+  const mergedOnce = __testOnlyMissionOfferMerge(routineOffers as any, protectedOffers as any, new Date("2026-03-22T00:00:00Z"));
+  const mergedTwice = __testOnlyMissionOfferMerge(mergedOnce as any, protectedOffers as any, new Date("2026-03-22T00:00:00Z"));
+
+  assert.deepEqual(
+    mergedTwice.map((offer) => offer.id),
+    mergedOnce.map((offer) => offer.id),
+    "expected repeated merges with the same protected families to remain stable",
+  );
+});
