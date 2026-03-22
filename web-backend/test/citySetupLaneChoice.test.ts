@@ -449,3 +449,37 @@ test("lane next action hint surfaces the dominant recovery lane when the city is
   assert.match(summary.settlementLaneNextActionHint?.title ?? "", /escort relief convoys/i);
   assert.match(summary.settlementLaneNextActionHint?.summary ?? "", /supply|food|convoy|relief/i);
 });
+
+
+test("city summary latest receipt surfaces solved recovery lane improvements before old founding flavor", () => {
+  const civic = createInitialPlayerState("latest-recovery-receipt-civic", seedWorld(), defaultPolicies);
+  civic.eventLog.push({
+    id: "city_morph_old",
+    timestamp: "2026-03-20T09:00:00Z",
+    kind: "city_morph",
+    message: "City founding posture established with a civic surplus baseline.",
+  });
+  civic.missionReceipts = [
+    {
+      id: "receipt_repair_success",
+      missionId: "repair_contract_1",
+      missionTitle: "Repair Civic Works",
+      createdAt: "2026-03-22T15:30:00Z",
+      outcome: "success",
+      posture: "balanced",
+      summary: "Recovery contract: SUCCESS with balanced posture. Infrastructure improved by 6.",
+      setbacks: [],
+    },
+  ] as any;
+
+  const latest = buildSettlementLaneLatestReceipt(civic);
+  assert.match(latest.title, /latest recovery receipt/i);
+  assert.match(latest.message, /repair civic works/i);
+  assert.match(latest.message, /infrastructure improved by 6/i);
+
+  const summary = buildCitySummary(civic);
+  assert.match(summary.settlementLaneLatestReceipt?.title ?? "", /latest recovery receipt/i);
+  assert.match(summary.settlementLaneLatestReceipt?.message ?? "", /repair civic works/i);
+  assert.match(summary.settlementLaneLatestReceipt?.message ?? "", /infrastructure improved by 6/i);
+});
+

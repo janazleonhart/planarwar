@@ -1,3 +1,5 @@
+//web-backend/routes/me.ts
+
 import { Router } from "express";
 
 import { defaultPolicies, summarizeCityAlphaScopeLock, summarizeCityAlphaStatus, tickPlayerState, type PlayerState } from "../gameState";
@@ -232,8 +234,31 @@ export function buildSettlementLaneProfile(lane: "city" | "black_market"): Settl
 }
 
 
+function isRecoveryReceiptCandidate(message: string): boolean {
+  return /repair|relief|convoy|stabilize|district|counter rumors|security improved|infrastructure improved|food reserves restored|stability improved/i.test(message);
+}
+
+function classifyLatestReceiptTitle(message: string, lane: "city" | "black_market"): string {
+  if (isRecoveryReceiptCandidate(message)) return "Latest recovery receipt";
+  return lane === "black_market" ? "Latest shadow receipt" : "Latest civic receipt";
+}
+
 export function buildSettlementLaneLatestReceipt(ps: PlayerState): SettlementLaneLatestReceipt {
   const lane = ps.city.settlementLane === "black_market" ? "black_market" : "city";
+  const latestMissionReceipt = (ps.missionReceipts ?? [])
+    .slice()
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0];
+
+  if (latestMissionReceipt) {
+    const message = `${latestMissionReceipt.missionTitle}: ${latestMissionReceipt.summary}`.trim();
+    return {
+      title: classifyLatestReceiptTitle(message, lane),
+      message,
+      kind: "mission_complete",
+      timestamp: latestMissionReceipt.createdAt,
+    };
+  }
+
   const events = [...(ps.eventLog ?? [])].reverse();
   const match = events.find((event) => {
     if (event.kind !== "city_morph") return false;
