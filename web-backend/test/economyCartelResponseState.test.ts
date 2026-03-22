@@ -55,3 +55,46 @@ test("economy/cartel response becomes runtime-active and escalates cartel tier u
   assert.ok(state.vendors.stockMultiplierDelta < 0);
   assert.ok(state.missions.severityBoost > 0);
 });
+
+
+test("economy/cartel response can cool back to quiet after stabilization exports despite ledger history", () => {
+  const ps = getOrCreatePlayerState("economy_cartel_response_cooling_player");
+  ps.city.settlementLane = "black_market";
+
+  pushWorldConsequence(ps, {
+    regionId: ps.city.regionId,
+    source: "bridge_snapshot",
+    severity: "pressure",
+    title: "Recovery pressure exported: stabilization",
+    summary: "Recovery strain is exporting regional pressure and recovery load.",
+    detail: "Initial exported strain should wake the downstream response state.",
+    audiences: ["player", "admin", "mother_brain"],
+    tags: ["city_pressure_export", "regional_instability", "recovery_load", "world_economy_hook", "trade_disruption", "black_market_opening"],
+    metrics: { pressureDelta: 5, recoveryDelta: 4, controlDelta: 0, threatDelta: 2 },
+    contractKind: "stabilize_district",
+  });
+
+  const hot = deriveEconomyCartelResponseState(ps);
+  assert.ok(["watch", "active", "severe"].includes(hot.summary.responsePhase));
+
+  pushWorldConsequence(ps, {
+    regionId: ps.city.regionId,
+    source: "bridge_snapshot",
+    severity: "watch",
+    title: "Recovery pressure exported: stabilization",
+    summary: "City stabilization has cooled exported regional pressure and recovery load after recovery pressure subsided.",
+    detail: "Cooling propagation should let downstream runtime response relax instead of staying stuck on historical ledger count.",
+    audiences: ["player", "admin", "mother_brain"],
+    tags: ["city_pressure_export", "world_economy_hook", "trade_disruption", "black_market_opening"],
+    metrics: { pressureDelta: -5, recoveryDelta: -4, controlDelta: 0, threatDelta: -2 },
+    contractKind: "stabilize_district",
+  });
+
+  const cooled = deriveEconomyCartelResponseState(ps);
+  assert.equal(cooled.summary.responsePhase, "quiet");
+  assert.equal(cooled.summary.shouldNudgeRuntime, false);
+  assert.equal(cooled.blackMarket.state, "latent");
+  assert.equal(cooled.cartel.tier, "none");
+  assert.equal(cooled.vendors.state, "none");
+  assert.equal(cooled.missions.state, "none");
+});

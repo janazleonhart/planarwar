@@ -135,12 +135,29 @@ export function deriveEconomyCartelResponseState(ps: PlayerState, state?: WorldC
       ? "opportunistic"
       : "none";
 
+  const livePressureFootprint =
+    destabilization
+    + opportunityScore
+    + heat
+    + cartelAttention
+    + Number(current.worldEconomy?.tradePressure ?? 0)
+    + Number(current.worldEconomy?.supplyFriction ?? 0)
+    + Number(current.factionPressure?.instability ?? 0);
+  const hasResidualWatchPressure =
+    destabilization >= 2
+    || opportunityScore > 0
+    || heat > 0
+    || cartelAttention > 0
+    || Number(current.worldEconomy?.tradePressure ?? 0) > 0
+    || Number(current.worldEconomy?.supplyFriction ?? 0) > 0
+    || Number(current.factionPressure?.instability ?? 0) > 0;
+
   const responsePhase: EconomyCartelResponseSummary["responsePhase"] =
     severeCount >= 2 || destabilization >= 32 || blackMarketState === "surging" || cartelTier === "crackdown"
       ? "severe"
-      : totalLedgerEntries > 0 || severeCount > 0 || destabilization >= 8 || blackMarketState === "active" || cartelTier === "active"
+      : destabilization >= 8 || blackMarketState === "active" || cartelTier === "active" || livePressureFootprint >= 20
       ? "active"
-      : destabilization >= 4 || blackMarketState === "opening" || cartelTier === "probing"
+      : destabilization >= 4 || blackMarketState === "opening" || cartelTier === "probing" || (totalLedgerEntries > 0 && hasResidualWatchPressure)
       ? "watch"
       : "quiet";
 
