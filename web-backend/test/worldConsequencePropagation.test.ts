@@ -175,3 +175,62 @@ test("ignored recovery strain exports bridge-snapshot pressure into world conseq
   assert.ok((region?.netRecoveryLoad ?? 0) > 0, "expected exported pressure to carry recovery load outward");
   assert.ok(state.worldEconomy.tradePressure > 0 || state.worldEconomy.supplyFriction > 0, "expected world economy hooks to wake up from ignored recovery strain");
 });
+
+
+test("city stabilization exports cooling bridge snapshots once recovery pressure subsides", () => {
+  const ps = getOrCreatePlayerState("world_consequence_bridge_cooling_player");
+  const firstTick = new Date("2026-03-23T10:00:00Z");
+
+  ps.currentOffers = [];
+  ps.activeMissions = [];
+  ps.missionReceipts = [];
+  ps.worldConsequences = [];
+  ps.worldConsequenceState = undefined as any;
+  ps.city.regionId = ps.regionWar[0]!.regionId as any;
+  ps.regionWar[0]!.threat = 48;
+  ps.resources.food = 150;
+  ps.resources.unity = 86;
+  ps.city.stats.infrastructure = 42;
+  ps.city.stats.stability = 58;
+  ps.city.stats.security = 56;
+  ps.city.stats.unity = 60;
+  ps.cityStress.recoveryBurden = 36;
+  ps.cityStress.threatPressure = 34;
+  ps.lastTickAt = new Date(firstTick.getTime() - 4 * 60 * 60 * 1000).toISOString();
+
+  tickPlayerState(ps, firstTick);
+
+  const beforeTrade = ps.worldConsequenceState?.worldEconomy.tradePressure ?? 0;
+  const beforeDestabilization = ps.worldConsequenceState?.summary.destabilizationScore ?? 0;
+  const firstSnapshotCount = (ps.worldConsequences ?? []).filter((entry) => entry.source === "bridge_snapshot").length;
+  assert.ok(firstSnapshotCount >= 1, "expected an initial pressure export before cooling");
+
+  const secondTick = new Date("2026-03-23T14:30:00Z");
+  ps.currentOffers = [];
+  ps.activeMissions = [];
+  ps.regionWar[0]!.threat = 12;
+  ps.city.stats.infrastructure = 72;
+  ps.city.stats.stability = 74;
+  ps.city.stats.security = 70;
+  ps.city.stats.unity = 71;
+  ps.cityStress.recoveryBurden = 6;
+  ps.cityStress.threatPressure = 8;
+  ps.cityStress.total = 12;
+  ps.lastTickAt = new Date(secondTick.getTime() - 4 * 60 * 60 * 1000).toISOString();
+
+  tickPlayerState(ps, secondTick);
+
+  const coolingSnapshot = (ps.worldConsequences ?? []).find(
+    (entry) => entry.source === "bridge_snapshot" && Number(entry.metrics?.pressureDelta ?? 0) < 0 && Number(entry.metrics?.recoveryDelta ?? 0) < 0,
+  );
+  assert.ok(coolingSnapshot, "expected a cooling bridge snapshot after stabilization");
+  assert.match(coolingSnapshot?.summary ?? "", /cooling exported regional pressure|stabilization/i);
+  assert.ok(coolingSnapshot?.tags.includes("city_pressure_export"));
+  assert.ok(coolingSnapshot?.tags.includes("world_economy_hook"));
+
+  const state = ps.worldConsequenceState;
+  assert.ok(state, "expected propagated world consequence state after stabilization export");
+  assert.ok((state.worldEconomy.tradePressure ?? 0) < beforeTrade, "expected stabilization export to cool world trade pressure");
+  assert.ok((state.summary.destabilizationScore ?? 0) < beforeDestabilization, "expected stabilization export to cool overall destabilization");
+  assert.match(state.summary.note, /cooling previously exported regional pressure|propagat/i);
+});

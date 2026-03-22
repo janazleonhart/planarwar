@@ -305,6 +305,8 @@ export function deriveWorldConsequenceState(entries: WorldConsequenceLedgerEntry
     ? "City consequence exports are destabilizing multiple fronts and feeding black-market escalation."
     : dominantStance === "destabilizing"
     ? "Propagated city setbacks are destabilizing regional posture and opening black-market routes."
+    : tradePressure < 0 || blackMarketOpportunity < 0 || factionInstability < 0
+    ? "Propagated city recovery is cooling regional and world-facing pressure."
     : blackMarketScore > 0
     ? "Consequence propagation is creating black-market and trade pressure signals."
     : "Propagated world consequence pressure is active.";
@@ -414,9 +416,12 @@ export function buildBridgeSnapshotWorldConsequence(input: {
     Math.abs(input.pressureDelta) + Math.abs(input.recoveryDelta) + Math.abs(input.threatDelta ?? 0) + Math.abs(input.controlDelta ?? 0),
   );
   const severity = clampSeverity(severityScore);
-  const tags: WorldConsequenceTag[] = ["city_pressure_export", "regional_instability"];
+  const tags: WorldConsequenceTag[] = ["city_pressure_export"];
+  if (input.pressureDelta > 0 || input.recoveryDelta > 0 || (input.threatDelta ?? 0) > 0 || (input.controlDelta ?? 0) < 0) {
+    tags.push("regional_instability");
+  }
   if (input.recoveryDelta > 0) tags.push("recovery_load");
-  if (input.pressureDelta >= 4 || input.recoveryDelta >= 4) tags.push("world_economy_hook");
+  if (Math.abs(input.pressureDelta) >= 4 || Math.abs(input.recoveryDelta) >= 4 || Math.abs(input.threatDelta ?? 0) >= 3) tags.push("world_economy_hook");
   if ((input.threatDelta ?? 0) > 0 || input.pressureDelta >= 5) tags.push("trade_disruption", "black_market_opening");
   if ((input.controlDelta ?? 0) < 0 || (input.threatDelta ?? 0) > 0) tags.push("faction_drift");
 

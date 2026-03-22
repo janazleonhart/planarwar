@@ -437,29 +437,103 @@ function maybeExportRecoveryPressureSnapshot(
   ps: PlayerState,
   now: Date,
 ): void {
+  const latest = (ps.worldConsequences ?? []).find(
+    (entry) => entry.source === "bridge_snapshot" && String(entry.regionId) === String(ps.city.regionId ?? entry.regionId ?? "unknown"),
+  );
+
   syncRecoveryContractsForState(ps, now);
   const contracts = (ps.currentOffers ?? []).filter((offer) => offer.contractKind);
-  if (contracts.length === 0) return;
-
-  const regionId = String(ps.city.regionId ?? contracts[0]?.regionId ?? "unknown");
+  const regionId = String(ps.city.regionId ?? contracts[0]?.regionId ?? latest?.regionId ?? "unknown");
   const burden = Number(ps.cityStress?.recoveryBurden ?? 0);
   const pressure = Number(ps.cityStress?.threatPressure ?? 0);
   const total = Number(ps.cityStress?.total ?? 0);
   const dominant = [...contracts].sort((a, b) => Number(b.targetingPressure ?? 0) - Number(a.targetingPressure ?? 0))[0];
-  const severityHint = Math.round(Math.max(Number(dominant?.targetingPressure ?? 0), pressure + burden * 0.5, total * 1.2));
-  const pressureDelta = Math.max(1, Math.round(pressure / 12 + Number(dominant?.targetingPressure ?? 0) / 40));
-  const recoveryDelta = Math.max(1, Math.round(burden / 10 + contracts.length));
-  const threatDelta = Math.max(0, Math.round(pressure / 18));
-  const controlDelta = burden >= 45 || pressure >= 55 ? -1 : 0;
 
-  const latest = (ps.worldConsequences ?? []).find((entry) => entry.source === "bridge_snapshot" && String(entry.regionId) === regionId);
-  const latestAt = latest ? Date.parse(latest.createdAt) : 0;
-  const hoursSinceLatest = latestAt ? (now.getTime() - latestAt) / (1000 * 60 * 60) : Infinity;
-  const severityDelta = Math.abs(Number(latest?.metrics?.pressureDelta ?? 0) - pressureDelta) + Math.abs(Number(latest?.metrics?.recoveryDelta ?? 0) - recoveryDelta);
+  const latestAtRaw = latest ? Date.parse(latest.createdAt) : NaN;
+  const hoursSinceLatest = Number.isFinite(latestAtRaw)
+    ? latestAtRaw > now.getTime()
+      ? Infinity
+      : (now.getTime() - latestAtRaw) / (1000 * 60 * 60)
+    : Infinity;
+
+  const currentPressureDelta = contracts.length > 0
+    ? Math.max(1, Math.round(pressure / 12 + Number(dominant?.targetingPressure ?? 0) / 40))
+    : 0;
+  const currentRecoveryDelta = contracts.length > 0
+    ? Math.max(1, Math.round(burden / 10 + contracts.length))
+    : 0;
+  const currentThreatDelta = contracts.length > 0
+    ? Math.max(0, Math.round(pressure / 18))
+    : 0;
+  const currentControlDelta = contracts.length > 0 && (burden >= 45 || pressure >= 55) ? -1 : 0;
+
+  const latestPressureDelta = Number(latest?.metrics?.pressureDelta ?? 0);
+  const latestRecoveryDelta = Number(latest?.metrics?.recoveryDelta ?? 0);
+  const latestThreatDelta = Number(latest?.metrics?.threatDelta ?? 0);
+  const latestControlDelta = Number(latest?.metrics?.controlDelta ?? 0);
+
+  const coolingPressureDelta = currentPressureDelta - latestPressureDelta;
+  const coolingRecoveryDelta = currentRecoveryDelta - latestRecoveryDelta;
+  const coolingThreatDelta = currentThreatDelta - latestThreatDelta;
+  const coolingControlDelta = currentControlDelta - latestControlDelta;
+  const coolingSeverityDelta = Math.abs(coolingPressureDelta) + Math.abs(coolingRecoveryDelta) + Math.abs(coolingThreatDelta) + Math.abs(coolingControlDelta);
+
+  const previouslyExportedStrain =
+    Math.max(0, latestPressureDelta) +
+    Math.max(0, latestRecoveryDelta) +
+    Math.max(0, latestThreatDelta) +
+    Math.max(0, -latestControlDelta);
+
+  const fullySubsided = contracts.length === 0 && (burden <= 12 || pressure <= 12 || total <= 20);
+  const hasCoolingSignal = !!latest && (
+    coolingPressureDelta <= -1 ||
+    coolingRecoveryDelta <= -1 ||
+    coolingThreatDelta <= -1 ||
+    coolingControlDelta >= 1 ||
+    (previouslyExportedStrain > 0 && fullySubsided)
+  );
+
+  if (hasCoolingSignal) {
+    if (hoursSinceLatest < 3 && coolingSeverityDelta < 2 && !fullySubsided) return;
+
+    const exportedCoolingPressureDelta = Math.min(-1, coolingPressureDelta || -Math.max(1, latestPressureDelta));
+    const exportedCoolingRecoveryDelta = Math.min(-1, coolingRecoveryDelta || -Math.max(1, latestRecoveryDelta));
+    const exportedCoolingThreatDelta = latestThreatDelta > 0 || coolingThreatDelta < 0
+      ? Math.min(0, coolingThreatDelta || -Math.max(1, latestThreatDelta))
+      : 0;
+    const exportedCoolingControlDelta = latestControlDelta < 0 || coolingControlDelta > 0
+      ? Math.max(0, coolingControlDelta || Math.abs(latestControlDelta))
+      : 0;
+
+    const summary = contracts.length > 0
+      ? `City stabilization is cooling exported regional pressure (${exportedCoolingPressureDelta}) and recovery load (${exportedCoolingRecoveryDelta}).`
+      : `City stabilization has cooled exported regional pressure (${exportedCoolingPressureDelta}) and recovery load (${exportedCoolingRecoveryDelta}) after recovery pressure subsided.`;
+    const detail = contracts.length > 0
+      ? "Recovery work is still active, but city strain has eased enough to cool downstream regional, economy, and faction pressure."
+      : "Recovery pressure has subsided enough that the world consequence ledger now records an outward cooling snapshot instead of more exported strain.";
+
+    pushWorldConsequence(ps, buildBridgeSnapshotWorldConsequence({
+      regionId,
+      contractKind: dominant?.contractKind ?? latest?.contractKind,
+      severityHint: Math.round(Math.max(0, previouslyExportedStrain, total, burden + pressure * 0.5)),
+      pressureDelta: exportedCoolingPressureDelta,
+      recoveryDelta: exportedCoolingRecoveryDelta,
+      controlDelta: exportedCoolingControlDelta,
+      threatDelta: exportedCoolingThreatDelta,
+      summary,
+      detail,
+    }));
+    return;
+  }
+
+  if (contracts.length === 0) return;
+
+  const severityHint = Math.round(Math.max(Number(dominant?.targetingPressure ?? 0), pressure + burden * 0.5, total * 1.2));
+  const severityDelta = Math.abs(latestPressureDelta - currentPressureDelta) + Math.abs(latestRecoveryDelta - currentRecoveryDelta);
   if (hoursSinceLatest < 3 && severityDelta < 2) return;
 
   const headline = dominant?.title ?? "Recovery pressure";
-  const summary = `${headline} is now exporting regional pressure (${pressureDelta >= 0 ? '+' : ''}${pressureDelta}) and recovery load (${recoveryDelta >= 0 ? '+' : ''}${recoveryDelta}).`;
+  const summary = `${headline} is now exporting regional pressure (${currentPressureDelta >= 0 ? '+' : ''}${currentPressureDelta}) and recovery load (${currentRecoveryDelta >= 0 ? '+' : ''}${currentRecoveryDelta}).`;
   const detail = dominant?.supportGuidance?.headline
     ? `${dominant.supportGuidance.headline} Ignored city strain is no longer local-only; it is now feeding the world consequence ledger for downstream region, economy, and faction consumers.`
     : "Ignored city strain is no longer local-only; it is now feeding the world consequence ledger for downstream region, economy, and faction consumers.";
@@ -468,10 +542,10 @@ function maybeExportRecoveryPressureSnapshot(
     regionId,
     contractKind: dominant?.contractKind,
     severityHint,
-    pressureDelta,
-    recoveryDelta,
-    controlDelta,
-    threatDelta,
+    pressureDelta: currentPressureDelta,
+    recoveryDelta: currentRecoveryDelta,
+    controlDelta: currentControlDelta,
+    threatDelta: currentThreatDelta,
     summary,
     detail,
   }));
