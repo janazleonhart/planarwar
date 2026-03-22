@@ -115,3 +115,71 @@ test("recovery contract outcomes change burden, pressure, and trust directionall
   assert.ok((ps.city.stats.unity ?? 0) < trustBeforeFailure, "failed contracts should damage trust/unity");
   assert.ok((ps.cityStress.threatPressure ?? 0) >= pressureBeforeFailure, "failed contracts should worsen or sustain pressure");
 });
+
+
+test("recovery contract lanes now hit distinct settlement stats and supplies", () => {
+  const now = new Date("2026-03-22T14:00:00Z");
+
+  const repair = getOrCreatePlayerState("recovery_lane_repair_player");
+  repair.resources.wealth = 2500;
+  repair.resources.materials = 2500;
+  repair.resources.food = 2500;
+  repair.city.regionId = repair.regionWar[0]!.regionId as any;
+  repair.regionWar[0]!.threat = 78;
+  repair.cityStress.recoveryBurden = 42;
+  repair.cityStress.threatPressure = 58;
+  repair.city.stats.infrastructure = 41;
+  repair.armies = [{
+    id: "army_repair_lane",
+    ownerId: repair.playerId,
+    name: "Mason Guard",
+    power: 140,
+    size: 160,
+    status: "idle",
+    specialties: ["defense", "frontline"],
+    readiness: 88,
+    upkeep: { wealth: 10, materials: 7 },
+  }] as any;
+  tickPlayerState(repair, now);
+  const repairContract = repair.currentOffers.find((offer) => offer.contractKind === "repair_works");
+  assert.ok(repairContract, "expected repair contract to be available");
+  const infraBefore = repair.city.stats.infrastructure;
+  const repairActive = startMissionForPlayer(repair.playerId, repairContract!.id, now, undefined, "army_repair_lane", "balanced");
+  assert.ok(repairActive);
+  repairActive!.finishesAt = now.toISOString();
+  const repairResult = withRandomSequence([0.2, 0.12], () => completeMissionForPlayer(repair.playerId, repairActive!.instanceId, now));
+  assert.equal(repairResult.status, "ok");
+  assert.ok((repair.city.stats.infrastructure ?? 0) >= infraBefore + 6, "successful repair works should materially improve infrastructure");
+  assert.match(repairResult.receipt?.summary ?? "", /infrastructure improved by 6/i);
+
+  const relief = getOrCreatePlayerState("recovery_lane_relief_player");
+  relief.resources.wealth = 2500;
+  relief.resources.materials = 2500;
+  relief.resources.food = 180;
+  relief.city.regionId = relief.regionWar[0]!.regionId as any;
+  relief.regionWar[0]!.threat = 76;
+  relief.cityStress.recoveryBurden = 28;
+  relief.cityStress.threatPressure = 62;
+  relief.armies = [{
+    id: "army_relief_lane",
+    ownerId: relief.playerId,
+    name: "Convoy Lancers",
+    power: 132,
+    size: 150,
+    status: "idle",
+    specialties: ["defense", "command"],
+    readiness: 86,
+    upkeep: { wealth: 10, materials: 6 },
+  }] as any;
+  tickPlayerState(relief, now);
+  const reliefContract = relief.currentOffers.find((offer) => offer.contractKind === "relief_convoys");
+  assert.ok(reliefContract, "expected relief convoy contract to be available");
+  const foodBefore = Number(relief.resources.food ?? 0);
+  const reliefActive = startMissionForPlayer(relief.playerId, reliefContract!.id, now, undefined, "army_relief_lane", "balanced");
+  assert.ok(reliefActive);
+  reliefActive!.finishesAt = now.toISOString();
+  const reliefResult = withRandomSequence([0.22, 0.14], () => completeMissionForPlayer(relief.playerId, reliefActive!.instanceId, now));
+  assert.equal(reliefResult.status, "ok");
+  assert.ok(Number(relief.resources.food ?? 0) >= foodBefore + 50, "successful relief convoys should restore food on top of mission rewards");
+  assert.match(reliefResult.receipt?.summary ?? "", /food reserves rose by 28/i);
+});
