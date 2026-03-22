@@ -485,27 +485,26 @@ test("city summary latest receipt surfaces solved recovery lane improvements bef
 
 
 
-test("city summary latest recovery receipt translates solved lane changes into plain settlement terms", () => {
-  const civic = createInitialPlayerState("latest-recovery-receipt-plain-language", seedWorld(), defaultPolicies);
-  civic.missionReceipts = [
-    {
-      id: "receipt_relief_success",
-      missionId: "relief_contract_1",
-      missionTitle: "Escort Relief Convoys",
-      createdAt: "2026-03-22T16:00:00Z",
-      outcome: "success",
-      posture: "balanced",
-      summary: "Recovery contract: SUCCESS with balanced posture. Food reserves restored by 28.",
-      setbacks: [],
-    },
-  ] as any;
+test("mild recovery strain does not bury the baseline next-action hint", () => {
+  const baseline = createInitialPlayerState("lane-next-baseline-civic", seedWorld(), defaultPolicies);
+  const mildRecovery = createInitialPlayerState("lane-next-mild-recovery-civic", seedWorld(), defaultPolicies);
 
-  const latest = buildSettlementLaneLatestReceipt(civic);
-  assert.match(latest.title, /latest recovery receipt/i);
-  assert.match(latest.message, /escort relief convoys/i);
-  assert.match(latest.message, /food reserves restored by 28/i);
-  assert.match(latest.message, /settlement change: supply pressure easing/i);
+  mildRecovery.currentOffers = [];
+  mildRecovery.resources.food = 160;
+  mildRecovery.cityStress.total = 18;
+  mildRecovery.cityStress.threatPressure = 20;
+  mildRecovery.cityStress.recoveryBurden = 18;
+  mildRecovery.city.stats.infrastructure = 58;
+  mildRecovery.city.stats.stability = 67;
+  mildRecovery.city.stats.security = 66;
+  mildRecovery.city.stats.unity = 72;
 
-  const summary = buildCitySummary(civic);
-  assert.match(summary.settlementLaneLatestReceipt?.message ?? "", /supply pressure easing/i);
+  const baselineHint = buildSettlementLaneNextActionHint(baseline);
+  const mildHint = buildSettlementLaneNextActionHint(mildRecovery);
+
+  assert.equal(mildHint.title, baselineHint.title);
+  assert.doesNotMatch(mildHint.title, /repair civic works|escort relief convoys|stabilize district/i);
+
+  const summary = buildCitySummary(mildRecovery);
+  assert.equal(summary.settlementLaneNextActionHint?.title ?? "", baselineHint.title);
 });

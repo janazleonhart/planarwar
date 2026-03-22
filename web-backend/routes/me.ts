@@ -243,18 +243,6 @@ function classifyLatestReceiptTitle(message: string, lane: "city" | "black_marke
   return lane === "black_market" ? "Latest shadow receipt" : "Latest civic receipt";
 }
 
-
-function summarizeRecoveryReceiptImpact(message: string): string | null {
-  const clauses: string[] = [];
-  if (/infrastructure improved/i.test(message)) clauses.push("outer works recovering");
-  if (/food reserves restored|food improved|convoy/i.test(message)) clauses.push("supply pressure easing");
-  if (/stability improved/i.test(message)) clauses.push("district strain easing");
-  if (/security improved|counter rumors/i.test(message)) clauses.push("security confidence improving");
-  if (clauses.length === 0) return null;
-  const unique = Array.from(new Set(clauses));
-  return `Settlement change: ${unique.join('; ')}.`;
-}
-
 export function buildSettlementLaneLatestReceipt(ps: PlayerState): SettlementLaneLatestReceipt {
   const lane = ps.city.settlementLane === "black_market" ? "black_market" : "city";
   const latestMissionReceipt = (ps.missionReceipts ?? [])
@@ -263,10 +251,9 @@ export function buildSettlementLaneLatestReceipt(ps: PlayerState): SettlementLan
 
   if (latestMissionReceipt) {
     const message = `${latestMissionReceipt.missionTitle}: ${latestMissionReceipt.summary}`.trim();
-    const impact = summarizeRecoveryReceiptImpact(message);
     return {
       title: classifyLatestReceiptTitle(message, lane),
-      message: impact ? `${message} ${impact}` : message,
+      message,
       kind: "mission_complete",
       timestamp: latestMissionReceipt.createdAt,
     };
@@ -302,20 +289,44 @@ export function buildSettlementLaneLatestReceipt(ps: PlayerState): SettlementLan
 
 
 export function buildSettlementLaneNextActionHint(ps: PlayerState): SettlementLaneNextActionHint {
-  const dominantRecovery = getDominantRecoveryContract(ps);
-  if (dominantRecovery) {
+  const actions = deriveWorldConsequenceActions(ps);
+  const top = actions.playerActions[0];
+
+  const recoveryHint = getDominantRecoveryContract(ps);
+  if (recoveryHint.dominant) {
     return {
-      title: formatOpeningContractLabel(dominantRecovery),
-      summary: dominantRecovery.supportGuidance?.headline
-        ? `${dominantRecovery.supportGuidance.headline} ${summarizeRecoveryReasons(dominantRecovery)}`
-        : summarizeRecoveryReasons(dominantRecovery),
+      title: formatOpeningContractLabel(recoveryHint.dominant),
+      summary: recoveryHint.dominant.supportGuidance?.headline
+        ? `${recoveryHint.dominant.supportGuidance.headline} ${summarizeRecoveryReasons(recoveryHint.dominant)}`
+        : summarizeRecoveryReasons(recoveryHint.dominant),
       lane: "city",
-      priority: Number(dominantRecovery.targetingPressure ?? 0) >= 60 ? "critical" : "high",
+      priority: Number(recoveryHint.dominant.targetingPressure ?? 0) >= 60 ? "critical" : "high",
     };
   }
 
-  const actions = deriveWorldConsequenceActions(ps);
-  const top = actions.playerActions[0];
+  const genericObserve = top?.title === "Keep observing until exported pressure is real";
+  if (genericObserve) {
+    const threatPressure = Number(ps.cityStress?.threatPressure ?? 0);
+    const recoveryBurden = Number(ps.cityStress?.recoveryBurden ?? 0);
+    const unity = Number(ps.city?.stats?.unity ?? 0);
+    const security = Number(ps.city?.stats?.security ?? 0);
+
+    const mildCivicConcern =
+      threatPressure > 0 ||
+      recoveryBurden > 0 ||
+      unity <= 75 ||
+      security <= 75;
+
+    if (mildCivicConcern) {
+      return {
+        title: "Counter rumors",
+        summary: "Quiet civic anxiety is building even if exported pressure is not severe yet. Counter rumors before low-grade strain becomes a real public-order problem.",
+        lane: "city",
+        priority: "watch",
+      };
+    }
+  }
+
   if (top) {
     return {
       title: top.title,
@@ -432,16 +443,60 @@ function formatOpeningContractLabel(mission: MissionOffer): string {
   }
 }
 
-function getDominantRecoveryContract(ps: PlayerState): MissionOffer | null {
+function getRecoveryContractPreferenceRank(offer: MissionOffer): number {
+  switch (offer.contractKind) {
+    case "counter_rumors":
+      return 0;
+    case "stabilize_district":
+      return 1;
+    case "repair_works":
+      return 2;
+    case "relief_convoys":
+      return 3;
+    default:
+      return 9;
+  }
+}
+
+function sortRecoveryContracts(a: MissionOffer, b: MissionOffer): number {
+  const pressureDiff = Number(b.targetingPressure ?? 0) - Number(a.targetingPressure ?? 0);
+  if (pressureDiff !== 0) return pressureDiff;
+  const severityDiff = Number(b.supportGuidance?.severity ?? 0) - Number(a.supportGuidance?.severity ?? 0);
+  if (severityDiff !== 0) return severityDiff;
+  return getRecoveryContractPreferenceRank(a) - getRecoveryContractPreferenceRank(b);
+}
+
+function getDominantRecoveryContract(ps: PlayerState): { dominant: MissionOffer | null; baseline: MissionOffer | null } {
   const now = new Date(ps.lastTickAt || Date.now());
   syncRecoveryContractsForState(ps, now);
   const recoveryContracts = (ps.currentOffers ?? []).filter((offer) => offer.contractKind);
-  if (recoveryContracts.length === 0) return null;
-  return [...recoveryContracts].sort((a, b) => {
-    const pressureDiff = Number(b.targetingPressure ?? 0) - Number(a.targetingPressure ?? 0);
-    if (pressureDiff !== 0) return pressureDiff;
-    return Number(b.supportGuidance?.severity ?? 0) - Number(a.supportGuidance?.severity ?? 0);
+  if (recoveryContracts.length === 0) return { dominant: null, baseline: null };
+
+  const baseline = [...recoveryContracts].sort((a, b) => {
+    const prefDiff = getRecoveryContractPreferenceRank(a) - getRecoveryContractPreferenceRank(b);
+    if (prefDiff !== 0) return prefDiff;
+    return sortRecoveryContracts(a, b);
   })[0] ?? null;
+
+  const threatPressure = Number(ps.cityStress?.threatPressure ?? 0);
+  const recoveryBurden = Number(ps.cityStress?.recoveryBurden ?? 0);
+  const totalStress = Number(ps.cityStress?.total ?? 0);
+
+  const isSevereRecoveryContract = (offer: MissionOffer): boolean => {
+    const targetingPressure = Number(offer.targetingPressure ?? 0);
+    const severity = Number(offer.supportGuidance?.severity ?? 0);
+    return (
+      targetingPressure >= 60 ||
+      severity >= 60 ||
+      recoveryBurden >= 40 ||
+      threatPressure >= 50 ||
+      totalStress >= 40
+    );
+  };
+
+  const severeContracts = recoveryContracts.filter(isSevereRecoveryContract);
+  const dominant = severeContracts.length === 0 ? null : [...severeContracts].sort(sortRecoveryContracts)[0] ?? null;
+  return { dominant, baseline };
 }
 
 function summarizeRecoveryReasons(mission: MissionOffer): string {
